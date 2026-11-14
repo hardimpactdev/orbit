@@ -16,6 +16,7 @@ use App\Console\Commands\InstallSwampReaderCredentialCommand;
 use App\Console\Commands\MachineRecipeCommand;
 use App\Console\Commands\NodeAddCommand;
 use App\Console\Commands\NodeConvergeCommand;
+use App\Console\Commands\NodeConvergeDigestCommand;
 use App\Console\Commands\ProvisionNodeCommand;
 use App\Console\Commands\ReconcilePeerDnsCommand;
 use App\Console\Commands\RenderNodeRecipeCommand;
@@ -47,6 +48,7 @@ final class ApplicationServiceProvider extends ServiceProvider
             MachineRecipeCommand::class,
             NodeAddCommand::class,
             NodeConvergeCommand::class,
+            NodeConvergeDigestCommand::class,
             ProvisionNodeCommand::class,
             ReconcilePeerDnsCommand::class,
             RoleAddCommand::class,

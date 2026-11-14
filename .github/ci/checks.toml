@@ -194,9 +194,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2596
-slices = 33
+cost = 2794
+slices = 36
 inputs = [
+  "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -219,7 +220,7 @@ inputs = [
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
   "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 50
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79
-  "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 35
+  "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
   "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 44
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
@@ -231,9 +232,9 @@ inputs = [
   "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 85
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 20
   "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 82
-  "a changed input alone runs its own part, once: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 114
-  "a changed input alone runs its own part, once: the code without a pending migration migrates, restarts and converges, and keeps base" = 108
-  "a changed input alone runs its own part, once: swamp converges" = 138
+  "a changed input alone runs its own part, once: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 114
+  "a changed input alone runs its own part, once: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 108
+  "a changed input alone runs its own part, once: a swamp file the base converge reads converges" = 138
   "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 126
   "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too" = 141 # local 70s on Beast, x2, plus 1s
   "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three" = 140
@@ -242,11 +243,14 @@ inputs = [
   "an unreadable record runs every part and never fails the refresh" = 116
   "a failed digest read runs every part and never fails the refresh" = 106
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 101 # ESTIMATE: two refreshes and a reset, about 50s local, x2, plus 1s
-  "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges" = 138
+  "a changed input alone runs its own part, once: the agent contract migrates and restarts" = 138
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 103
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 100
   "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
+  "a moved base intent of one Node converges the three Nodes one by one, and the result names why" = 67 # ESTIMATE: local 22s x 3, plus 1s
+  "a converge older than seven days runs although no input changed, and the result names it stale" = 64 # ESTIMATE: local 21s x 3, plus 1s
+  "an unreadable base intent digest converges, names why, and records no converge digest" = 67 # ESTIMATE: local 22s x 3, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"

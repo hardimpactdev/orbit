@@ -64,21 +64,25 @@ sequenceDiagram
   %%> - no key within 60 s: the step says the nested Gateway's WireGuard key was not ready, and sets no peer
   SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
-  %%> - reads the refresh record in the container (`/var/lib/orbit/fleet-refresh.json`) and the digests of the checkout: `code` (`apps/gateway`, which holds the migrations and the Composer lock of packages that ship migrations, and `apps/agent/contract`, which it reads) and `converge` (`code`, `swamp` and the fleet intent)
+  %%> - reads the refresh record in the container (`/var/lib/orbit/fleet-refresh.json`) and the digest `code` of the checkout: `apps/gateway`, which holds the migrations and the Composer lock of packages that ship migrations, and `apps/agent/contract`, which it reads
+  %%> - after the migrate, makes the digest `converge` from what a base converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the nested Gateway's digest of each Node's base intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
   %%> - a part runs when its digest differs from the record; a missing record, or one it cannot read, makes every part run, and an unreadable record adds a warning
+  %%> - the converge also runs when a digest cannot be read, or when the last converge that ran (`converged` in the record) is more than 7 days old
   %%> - every run: waits until the state mounts of the nested Gateway (with its Swamp state when the Club key is there) and app-dev are active (60 s), places the agent delivery (into the checkout) and reloads the grants (on the nested Gateway's own disk)
-  %%> - `code` changed: migrates the nested Gateway and restarts its services; when it restarted or the converges run, waits until the three agents are online (300 s)
+  %%> - `code` changed: migrates the nested Gateway and restarts its services
   %%> - every run: reads the fleet rules on the running fleet and writes the fleet files that differ
-  %%> - `converge` changed: converges the base of the three nested Nodes one by one and reads how many tasks each changed
+  %%> - the converge is due: waits until the three agents are online (300 s), converges the base of the three nested Nodes one by one, and reads how many tasks each changed; a failed converge fails the refresh
   %%> - every run: waits for readiness once (Doctor healthy, three agents, the operator), so the seed holds a ready fleet
   %%> - retakes `base` only for the containers whose disk changed: a step that writes a nested disk and reported a change (the migrate that applied one, the grants reload that changed a file), that container; a converge that changed a Node, that Node and the nested Gateway; a missing `base`, that container; a missing or unreadable record or a rule or file that differed, all three
   %%> - each of them stops first; the others keep running; with all three stopped it writes the owned rules (and a build rule only where it is absent), and it checks every rule; with some stopped the rules only compare, and a difference fails the refresh
   %%> - otherwise the fleet keeps running and `base` stays
   %%> - removes the record before its first write to a nested disk and writes it again last, so a run that stops in the middle leaves none, and the next run does every part and retakes `base` of all three
-  %%> - the result names each part, ran or skipped, the tasks the converges changed, `base` retaken or kept and for which containers, and the seconds of each part
+  %%> - the result names each part, ran or skipped, why the converge ran or was skipped, the tasks the converges changed, `base` retaken or kept and for which containers, and the seconds of each part
   %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and body, or curl's error
   %%> Why:
-  %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes
+  %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes, and three base converges that change nothing about 87 s
+  %%> - a file list cannot follow the Gateway code that builds a base intent, so the nested Gateway hashes the intent itself; the `swamp` list has a cover test
+  %%> - the converges run one by one: every step of the converge workflow has a fixed behavior name, so a second run at once waits for the first one's Swamp lock and fails after 60 s
   %%> - a reset restores `base` of all three in seconds; taking `base` costs about 32 s per container, so only what changed is retaken
   %%> - the set stays consistent: the nested Gateway's database holds the schema and records each converge, so its `base` is retaken with any other
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state, so `base` is taken with the fleet stopped

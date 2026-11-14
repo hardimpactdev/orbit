@@ -1,0 +1,94 @@
+{
+  "about": "What a nested Node's base converge reads from swamp/. The nested-fleet refresh hashes their Git object IDs into its converge digest, with the inner Gateway's base intent digests (orbit:node-converge-digest) and the fleet intent. swamp/tests/fleet_converge_inputs_test.ts fails on a file the base converge reads that is not here. A cut is an include whose guard is empty in every base intent. Rule: docs/reference/development-containers.md#what-a-refresh-skips",
+  "inputs": [
+    "swamp/workflows/workflow-operation-node-converge-direct.yaml",
+    "swamp/extensions/behaviors/_lib/public_output.ts",
+    "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts",
+    "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+    "swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_input.ts",
+    "swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_plan.ts",
+    "swamp/extensions/behaviors/operations/node/ci_host_spec.ts",
+    "swamp/extensions/behaviors/operations/routes/caddy-input.ts",
+    "swamp/extensions/behaviors/operations/routes/mutation-command/dns.ts",
+    "swamp/extensions/behaviors/operations/routes/publication-command/assets.ts",
+    "swamp/extensions/behaviors/operations/routes/publication-command/sections.ts",
+    "swamp/extensions/behaviors/operations/tools/constraints.ts",
+    "swamp/extensions/behaviors/operations/tools/contract.ts",
+    "swamp/extensions/behaviors/operations/tools/native.ts",
+    "swamp/ansible/ansible.cfg",
+    "swamp/ansible/build_vars.py",
+    "swamp/ansible/requirements.txt",
+    "swamp/ansible/requirements.yml",
+    "swamp/ansible/library/",
+    "swamp/ansible/module_utils/",
+    "swamp/ansible/operation-node-converge.yml",
+    "swamp/ansible/tasks/node-converge-address.yml",
+    "swamp/ansible/tasks/node-converge-base.yml",
+    "swamp/ansible/tasks/node-converge-cli-absent.yml",
+    "swamp/ansible/tasks/node-converge-hub.yml",
+    "swamp/ansible/tasks/node-converge-hub-prune.yml",
+    "swamp/ansible/tasks/node-converge-replace.yml",
+    "swamp/ansible/tasks/node-hub-source.yml",
+    "swamp/ansible/tasks/node-kernel-policy.yml",
+    "swamp/ansible/tasks/node-update-policy.yml"
+  ],
+  "clone_only": [
+    "scripts/instance_clone.py",
+    "scripts/instance_clone_launch.py",
+    "scripts/instance_clone_guest.py",
+    "ansible/instance_network.py",
+    "ansible/instance_nested.py",
+    "ansible/instance_node_services.py",
+    "ansible/instance_mail.py",
+    "ansible/instance_bridge.py",
+    "ansible/instance_node_runtime.py",
+    "ansible/instance_nested_club_key.sh"
+  ],
+  "cut": [
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-software.yml",
+      "guard": "intent.selected_roles | length > 0 or intent.tools | length > 0"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-role.yml",
+      "guard": "{{ intent.roles }}"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-tool.yml",
+      "guard": "{{ intent.tools }}"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-network.yml",
+      "guard": "intent.network != None"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-software-check.yml",
+      "guard": "intent.selected_roles | length > 0 or intent.tools | length > 0"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-handshake.yml",
+      "guard": "intent.network != None and intent.network.mode == 'peer'"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-hub-peers.yml",
+      "guard": "intent.network != None and intent.network.mode == 'hub'"
+    },
+    {
+      "file": "swamp/ansible/operation-node-converge.yml",
+      "include": "tasks/node-converge-role-check.yml",
+      "guard": "{{ intent.roles }}"
+    }
+  ]
+}

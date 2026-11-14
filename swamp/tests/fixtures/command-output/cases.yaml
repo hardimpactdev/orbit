@@ -820,6 +820,27 @@ contexts:
     fleet_record_read:
       rc: 1
       stdout: ''
+  fleet-intents-read:
+    fleet_roles: [gateway, app-dev, app-prod]
+    fleet_intents_read:
+      rc: 0
+      stdout_lines:
+      - '{"gateway":"1111111111111111111111111111111111111111111111111111111111111111","app-dev":"2222222222222222222222222222222222222222222222222222222222222222","app-prod":"3333333333333333333333333333333333333333333333333333333333333333"}'
+  fleet-intents-short:
+    fleet_roles: [gateway, app-dev, app-prod]
+    fleet_intents_read:
+      rc: 0
+      stdout_lines:
+      - '{"gateway":"1111111111111111111111111111111111111111111111111111111111111111","app-dev":"2222222222222222222222222222222222222222222222222222222222222222"}'
+  fleet-intents-failed:
+    fleet_roles: [gateway, app-dev, app-prod]
+    fleet_intents_read:
+      rc: 1
+      stdout_lines: []
+  fleet-converged-malformed:
+    fleet_recorded:
+      code: 4f1c2a6b
+      converged: 12ab
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -1692,6 +1713,29 @@ cases:
   context: fleet-record-absent
   expected: false
 - file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the converge is due
+  field: vars.fleet_intents
+  context: fleet-intents-read
+  expected:
+    gateway: '1111111111111111111111111111111111111111111111111111111111111111'
+    app-dev: '2222222222222222222222222222222222222222222222222222222222222222'
+    app-prod: '3333333333333333333333333333333333333333333333333333333333333333'
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the converge is due
+  field: vars.fleet_intents
+  context: fleet-intents-short
+  expected: {}
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the converge is due
+  field: vars.fleet_intents
+  context: fleet-intents-failed
+  expected: {}
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the converge is due
+  field: vars.fleet_converged_age
+  context: fleet-converged-malformed
+  expected: null
+- file: tasks/instance-fleet-refresh.yml
   task: Reconcile the Swamp grants
   field: changed_when
   context: grants-current
@@ -1768,6 +1812,10 @@ cases:
   context: freeze-memory-reclaimed
   expected: false
 non_command_output:
+- file: tasks/instance-fleet-refresh.yml
+  task: Read the digests of the checkout
+  field: ansible.builtin.command.argv
+  reason: Prefixes the paths of the converge input list, a file of the checkout, with HEAD:; it parses no command output.
 - file: tasks/task-instance-workspace-phase.yml
   task: Validate the recorded workspace target
   field: ansible.builtin.assert.that[1]

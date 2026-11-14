@@ -1557,23 +1557,41 @@ The run deploys the release commit itself. A commit missing from the Project's r
 
 A Swamp step that exits nonzero keeps no output. So a failed fleet phase writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body.
 
-The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway and waits for the three agents. Then it converges the Nodes, and only then waits for Doctor.
+The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 
 #### What a refresh skips
 
-A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest, made from Git object IDs of the checkout. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
+A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
 
 | Part | Digest | When it runs |
 | --- | --- | --- |
-| Migrate the nested Gateway, restart its services | `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
-| Wait for the three agents | | The services restarted, or the converges run |
-| Base converge of the three nested Nodes | `apps/gateway`, `apps/agent/contract`, `swamp` and the fleet intent | The digest differs |
+| Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
+| Wait for the three agents | | The converges run |
+| Base converge of the three nested Nodes | The `swamp` files a base converge reads, the nested Gateway's digest of each Node's base intent, and the fleet intent | The digest differs, a digest cannot be read, or the last converge that ran is more than 7 days old |
 | Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
-The converge digest is coarse on purpose. The nested Gateway builds the converge intent from its code, and the converge runs `swamp`. A narrower digest could miss an input, and then a nested Node would keep old files.
+The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. It has three inputs:
+
+| Input | What it holds |
+| --- | --- |
+| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and its imports, the playbook and the task files it reaches, and the play's configuration and modules |
+| The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target and the CLI plan |
+| The fleet intent | The fleet's names, layout, checkout and proxy |
+
+A cover test, `swamp/tests/fleet_converge_inputs_test.ts`, walks the playbook and the imports. It fails on a file that the list does not hold.
+
+After the migrate, the refresh runs `php artisan orbit:node-converge-digest --base gateway app-dev app-prod` in the nested Gateway. The command builds each intent as `node.converge` with `base: true` does. It admits no Operation, makes no execution copy and writes nothing.
+
+A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself. The intent holds no time, token, signed URL or random id. The Operation id and the agent verifier live in the execution copies, which are not part of it.
+
+The list leaves out four include groups of the playbook: roles, software, Tools and the network. Each runs only when the intent selects roles, Tools or a network, and a base intent never does. The cover test fails when the guard of such an include changes.
+
+A digest that cannot be read makes the converge run and is not recorded, so the next refresh runs it too. The record also holds `converged`, the time of the last converge that ran. When that is more than 7 days old, the converge runs whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+
+When the converge runs, the three Nodes converge one by one. They cannot run side by side: every step of the converge workflow has a fixed behavior name. Swamp locks each behavior, so a second run would wait for the first one's lock and fail after 60 s. A failed converge fails the refresh, and the run restores the old seed, as for any failed step.
 
 A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 
@@ -1604,7 +1622,7 @@ The record is owned by root, mode 0644, in a root-owned folder. The workspace us
 
 The write goes to a file beside the record, and a rename puts it in place. So a cut write leaves no record, never a partial one. The write reads stdin as a stream. The container has an isolated id map, so it refuses a command that opens `/dev/stdin` by path. A source check fails when an Ansible task or workflow step behind `incus exec` opens stdin by path. A task that runs in a virtual machine is exempt.
 
-The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `changed` (the tasks the converges changed), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
 
 When `base` stays, the seed is taken while the inner fleet runs. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
