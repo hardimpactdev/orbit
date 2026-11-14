@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design: docs/reference/tasks.md#run-an-external-turn; flow-tighten rule 14. Official SSH and Pi operations remain separate; native assert is the end check.
-  %% Orchestrator 2026-11-14: a turn of a nested-fleet Project's task runs in its copy as `tasks.copy_turn` (copy-turn.mmd); InstancePlacement::taskRuntime decides, once.
+  %% Orchestrator 2026-11-14: a turn of a task that owns a copy (a nested-fleet Project, or since 2026-11-14 any Project whose default is a container) runs in its copy as `tasks.copy_turn` (copy-turn.mmd); InstancePlacement::taskRuntime decides, once.
   %% status: migrated
   %% command: task:turn
   %% kind: tasks.turn

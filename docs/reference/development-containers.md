@@ -1268,7 +1268,7 @@ The agents use their own subagents only. MCP servers come from the project's own
 
 ## Tasks in an Instance container
 
-This section is the target. Built today, for a Project with `nested_fleet` on: the start, the check ([Task Instance workspace](/reference/task-instance-workspace)), a new implementer turn ([`tasks.copy_turn`](/cli/task/turn#a-task-that-runs-in-a-copy)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
+This section is the target. Built today, for a Project whose default is a container (a nested-fleet Project included): the start, the check ([Task Instance workspace](/reference/task-instance-workspace)), a new implementer turn ([`tasks.copy_turn`](/cli/task/turn#a-task-that-runs-in-a-copy)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. A publish is held per Project until an operator releases it. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
 
 A task group runs in one Instance container. Everything else about a group, its subtasks, checks, reviews and reads, stays as [Tasks](/reference/tasks) describes.
 
