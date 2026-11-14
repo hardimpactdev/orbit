@@ -1382,7 +1382,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 
 | Value | The idle sleep acts on |
 | --- | --- |
-| `false`, the default | No Instance |
+| `false`, the default, or any value not in this table | No Instance. A value not in this table is logged once as an error |
 | `without_t3` | Only Instances without a T3 server: the runtime records no T3 port. Today these are the defaults |
 | `true` | Every development container |
 
@@ -1421,7 +1421,7 @@ Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-swe
 
 `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with the evidence it used: the watch start, the last HTTP request, the last T3 activity or `turn running` (`no T3 server` without one), the last wake and the last deployment. It prints the decision and the reason of each row under each value of the setting, `false`, `without_t3` and `true`, and names the value in force. Under `false` every row reads `off`; under `without_t3` a row with a T3 server reads `t3_server`. It changes nothing.
 
-`--instance=ID`, repeated, limits a run to those Instances and acts as under `true`, whatever the value. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
+`--instance=ID`, repeated, limits a run to those Instances and acts as under `true`, whatever the value; its dry run says so. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
 
 **Compared with the checkout rule.** The [checkout rule](/reference/app-dev-runtime-hibernation) stops only an Instance's Processes; its site keeps serving. The container rule freezes the whole Instance, site and T3 included, and it wakes on a Route visit, from Conn, or by [`instance:wake`](/cli/instance/wake).
 

@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 
 uses(LazilyRefreshDatabase::class);
@@ -108,14 +109,40 @@ it('puts only Instances without a T3 server to sleep under without_t3', function
     expect(Operation::query()->where('kind', InstanceSleep::Kind)->sole()->target_id)->toBe($default->id);
 });
 
-it('fails each run on a value outside the setting, names it, and puts nothing to sleep', function (bool $dryRun): void {
+it('counts a value outside the setting as false: it logs one error naming it, once, and no run fails or puts a container to sleep', function (): void {
     config(['orbit.hibernation.container_sleep' => 'sometimes']);
+    Log::spy();
 
-    $this->artisan('orbit:runtime-hibernator'.($dryRun ? ' --dry-run' : ''))->assertFailed()
-        ->expectsOutputToContain('ORBIT_HIBERNATION_CONTAINER_SLEEP must be false, without_t3 or true, not [sometimes].');
+    foreach ([1, 2] as $run) {
+        $this->artisan('orbit:runtime-hibernator')->assertSuccessful()
+            ->expectsOutputToContain('Halted [0] idle app-dev Instance runtime groups.')
+            ->doesntExpectOutputToContain('development containers');
+    }
 
     expect($this->reads)->toBe(0)->and(sleepsAdmitted())->toBe(0);
-})->with(['acting' => [false], 'dry run' => [true]]);
+    Log::shouldHaveReceived('error')->once()->with(
+        'ORBIT_HIBERNATION_CONTAINER_SLEEP is [sometimes], not false, without_t3 or true: it counts as false, so no container sleeps by itself.');
+});
+
+it('says in each dry run that a value outside the setting counts as false', function (): void {
+    config(['orbit.hibernation.container_sleep' => '1']);
+
+    $this->artisan('orbit:runtime-hibernator --dry-run')->assertSuccessful()
+        ->expectsOutputToContain('ORBIT_HIBERNATION_CONTAINER_SLEEP is [1], not false, without_t3 or true: it counts as false.')
+        ->expectsOutputToContain('ORBIT_HIBERNATION_CONTAINER_SLEEP is [false].')
+        ->expectsOutputToContain('Would put [0] idle development containers to sleep.');
+});
+
+it('prints the value a named dry run acts under, which is true whatever the setting says', function (): void {
+    config(['orbit.hibernation.container_sleep' => false]);
+
+    $this->artisan('orbit:runtime-hibernator --dry-run --instance='.$this->clone->id.' --idle-seconds=120')->assertSuccessful()
+        ->expectsOutputToContain('The named Instances act as under [true], whatever ORBIT_HIBERNATION_CONTAINER_SLEEP says.')
+        ->doesntExpectOutputToContain('ORBIT_HIBERNATION_CONTAINER_SLEEP is [false].')
+        ->expectsOutputToContain('Would put [1] idle development containers to sleep.');
+
+    expect(sleepsAdmitted())->toBe(0);
+});
 
 it('acts on named Instances with the window of the run while the switch is off, and leaves the checkout sweep alone', function (?string $idle, int $sleeps): void {
     config(['orbit.hibernation.container_sleep' => false]);

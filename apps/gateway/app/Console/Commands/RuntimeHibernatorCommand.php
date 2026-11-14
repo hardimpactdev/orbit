@@ -10,7 +10,6 @@ use App\Domain\Instances\Power\ContainerIdleDecision;
 use App\Domain\Instances\Power\ContainerIdleSweep;
 use App\Domain\Instances\Power\ContainerSleepScope;
 use Illuminate\Console\Command;
-use InvalidArgumentException;
 use Throwable;
 
 final class RuntimeHibernatorCommand extends Command
@@ -55,18 +54,11 @@ final class RuntimeHibernatorCommand extends Command
         }
 
         // The setting names which containers the idle sleep acts on; a named run acts on its Instances as under `true`.
-        try {
-            $scope = ContainerSleepScope::configured();
-        } catch (InvalidArgumentException $exception) {
-            $this->error($exception->getMessage());
-
-            return self::FAILURE;
-        }
+        $scope = $only === null ? ContainerSleepScope::configured() : ContainerSleepScope::All;
         if ($dryRun) {
             // A dry run never runs the checkout sweep.
             return $this->preview($containers, $scope, $only, $idle === null ? null : (int) $idle) ? self::SUCCESS : self::FAILURE;
         }
-        $scope = $only === null ? $scope : ContainerSleepScope::All;
         if ($scope !== ContainerSleepScope::Off) {
             try {
                 $decisions = $containers->run(false, $only, $idle === null ? null : (int) $idle, scope: $scope);
@@ -102,7 +94,11 @@ final class RuntimeHibernatorCommand extends Command
 
             return false;
         }
-        $this->info("ORBIT_HIBERNATION_CONTAINER_SLEEP is [{$scope->setting()}].");
+        if (($invalid = ContainerSleepScope::invalid()) !== null) {
+            $this->warn("ORBIT_HIBERNATION_CONTAINER_SLEEP is [{$invalid}], not false, without_t3 or true: it counts as false.");
+        }
+        $this->info($only === null ? "ORBIT_HIBERNATION_CONTAINER_SLEEP is [{$scope->setting()}]."
+            : "The named Instances act as under [{$scope->setting()}], whatever ORBIT_HIBERNATION_CONTAINER_SLEEP says.");
         $cell = static fn (ContainerIdleDecision $decision): string => $decision->decision === 'sleep' ? 'sleep' : 'skip: '.$decision->reason;
         $rows = [];
         foreach ($preview[ContainerSleepScope::All->value] as $index => $decision) {
