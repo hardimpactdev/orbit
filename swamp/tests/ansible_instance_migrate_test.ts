@@ -784,6 +784,10 @@ Deno.test({
       assertEquals(f.state().containers["instance-7"].devices.filter((device: string) => device.startsWith("root,")), [
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
       ]);
+      // Its NIC accepts only its own IPv4 and MAC address, as a create's.
+      assertEquals(f.state().containers["instance-7"].devices.filter((device: string) => device.includes("_filtering=")), [
+        "eth0,security.ipv4_filtering=true", "eth0,security.mac_filtering=true",
+      ]);
       // Container staging is removed; the private source snapshot stays until retirement or restore.
       assertEquals([...Deno.readDirSync(`${f.rootfs}/srv`)].map((entry) => entry.name), ["workspace"]);
       const nodeFiles = [...Deno.readDirSync(`${f.folder}/mirror`)].map((entry) => entry.name);

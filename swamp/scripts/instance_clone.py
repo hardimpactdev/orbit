@@ -273,6 +273,11 @@ def main():
                     "eth0,security.acls.default.egress.action=reject",
                     "--device",
                     "eth0,security.acls.default.ingress.action=reject",
+                    # The address filters of instance_network.py's FILTERS: the NIC accepts only its own IPv4 and MAC address.
+                    "--device",
+                    "eth0,security.ipv4_filtering=true",
+                    "--device",
+                    "eth0,security.mac_filtering=true",
                 ]
                 change(argv)
                 read = json.loads(

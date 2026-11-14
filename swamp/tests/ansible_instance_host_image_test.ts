@@ -293,8 +293,9 @@ Deno.test({
                 .map((byte) => byte.toString(16).padStart(2, "0")).join("");
             // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape; and
             // again when the image removed its linker cache last and the converge read the existing containers (two calls more), and
-            // when the image took the Node's Orbit root CA (one push, and `update-ca-certificates` in the definition's finish: two calls more).
-            assertEquals([f.calls().length, digest], [57, "17192b9d380bc5414d71944b0ac6c31f0d0acdb3e7fcb4233879ffa6157f6b28"]);
+            // when the image took the Node's Orbit root CA (one push, and `update-ca-certificates` in the definition's finish: two calls more);
+            // and when the build container's init took the NIC address filters (the same 57 calls, its init has two `--device` keys more).
+            assertEquals([f.calls().length, digest], [57, "12d18278a10e4a104895b9397bf43806cf2899844de911354c607c99525150bc"]);
             assert(f.calls().some((call) => call.includes("exec") && call.at(-1) === "update-ca-certificates"));
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
@@ -326,7 +327,9 @@ Deno.test({
             const exec = (words: string[]) => nested.filter((call) => call[0] === "exec" && words.every((word) => call.includes(word)));
             assertEquals(nested.find((call) => call.includes("init") && call.includes("orbit-instance-build")),
                 ["--project", "orbit-instances-nested", "init", "ubuntu-26.04-instance-stock", "orbit-instance-build",
-                    "--config", "security.idmap.isolated=true", "--device", "eth0,ipv4.address=10.253.0.254"]);
+                    // Its fixed address takes the address filters of an Instance NIC.
+                    "--config", "security.idmap.isolated=true", "--device", "eth0,ipv4.address=10.253.0.254",
+                    "--device", "eth0,security.ipv4_filtering=true", "--device", "eth0,security.mac_filtering=true"]);
             assertEquals(exec(["apt-get", "install"]).map((call) => call.slice(call.indexOf("--yes"))), [
                 ["--yes", "--no-install-recommends", "--", "acl", "git", "nftables", "wireguard-tools", "sqlite3", "sudo"],
                 ["--yes", "--no-install-recommends", "--", "/tmp/incus-base.deb", "/tmp/incus-client.deb"],

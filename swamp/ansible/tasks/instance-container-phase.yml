@@ -6,6 +6,15 @@
   when: phase != 'node-service'
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
+    # The NIC of a new container, in the one call that makes it: its address, both ACLs with reject defaults, and the address filters
+    # of instance_network.py's FILTERS, so it accepts only its own IPv4 and MAC address. Create, clone and migrate write the same.
+    nic_args: >-
+      {{ ['--device', 'eth0,ipv4.address=' ~ container.address,
+          '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
+          '--device', 'eth0,security.acls.default.egress.action=reject',
+          '--device', 'eth0,security.acls.default.ingress.action=reject',
+          '--device', 'eth0,security.ipv4_filtering=true',
+          '--device', 'eth0,security.mac_filtering=true'] }}
     resource_args: >-
       {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
          + ['--device', 'root,type=disk', '--device', 'root,path=/',
@@ -176,11 +185,7 @@
       when: phase == 'container' and container_read.rc != 0
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
-              '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
-              '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
+          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true'] + nic_args + resource_args }}
       changed_when: true
 
 # Lifecycle mutations only add; removal belongs to host reconciliation from current Gateway intent.
@@ -219,11 +224,7 @@
       when: container_read.rc != 0
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
-              '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
-              '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
+          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name] + nic_args + resource_args }}
       changed_when: true
     - name: Read the copy's devices
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }

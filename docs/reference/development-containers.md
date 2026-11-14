@@ -518,6 +518,7 @@ A container reaches only what this table lists. Everything else is dropped by it
 | --- | --- |
 | T3 | An Incus proxy device in NAT mode publishes T3 at a port from 3800 to 3999 on the Node's WireGuard address. A firewall route rule admits WireGuard peers, but not task VMs |
 | Other containers | None. Each NIC has `security.port_isolation`, so containers on the bridge cannot reach each other |
+| Its own address | Each NIC accepts only its own IPv4 and MAC address: `security.ipv4_filtering` and `security.mac_filtering`. Root in a container cannot send as another bridge address |
 | Preview | The Instance's Route on the Node's Caddy proxies to FrankenPHP in the container, at its bridge address |
 | Development ports | Any port from 1024 of a private Route, redirected to the Node's Caddy and proxied to the same port in a clone. Only the Node's Caddy reaches them in the container |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
@@ -530,6 +531,12 @@ A container reaches only what this table lists. Everything else is dropped by it
 The NIC filters the published target address before Docker's DNAT. The bridge forwarding hook sees the translated tuple, so its exact allow uses the current DNAT destination for a local Docker target. An unguarded NIC can reach that exact private service tuple, but no other Docker-private service.
 
 For a target on another Node, Orbit also adds the exact route allowance from the container's address through WireGuard; Incus masquerades the bridge source to the Node's address. A profile-only NIC can reach the two proxies, but no attached target. Before starting, the native clone, container phases, image builder and host clone probe use the same check of every effective NIC on the Instance bridge. A missing ACL, a missing default egress reject, a reference to the bridge union ACL, or an unexpected extra NIC refuses with `instance.container_network_unsafe`.
+
+**Address filters.** Create, clone and migrate write `security.ipv4_filtering=true` and `security.mac_filtering=true` on `eth0` in the one call that makes the container. The image build container does the same at its fixed address. The project profile's `eth0` has no address, so it carries no filter.
+
+No Orbit path rewrites the `eth0` of an existing container. A container made before the filters keeps its NIC until an operator sets the two keys; Incus applies them to a running or frozen container with no restart. Until every existing NIC has them, the NIC check admits a NIC without them, and its log names it with `instance.nic_unfiltered`. The nested guard compares the other keys only. A later change makes the check refuse such a NIC.
+
+**Open after the filters.** The egress proxy and the model forwarder admit the whole bridge range without identity. A container that can only send from its own address still reaches both, and neither tells one container from another.
 
 **F10, current ingress limit.** The bridge admits TCP 1024–65535 from its gateway address and TCP 3773 from any source. The NIC combines that common ACL with its own ACL as a union: a live scratch default admitted the Node on 8080, 3773 and 5173, although its own ACL named only 8080.
 

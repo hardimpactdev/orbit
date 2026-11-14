@@ -220,7 +220,9 @@ class CloneTest(unittest.TestCase):
                         if arg.startswith("eth0,"):
                             key, value = arg[5:].split("=", 1)
                             device[key] = value
+                    # Incus names the instance in its own record; the NIC check's report reads it.
                     read = {
+                        "name": container["name"],
                         "status": "Stopped",
                         "devices": {"t3": {}},
                         "expanded_devices": {"eth0": device},
@@ -272,6 +274,9 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(nic["security.acls"], "orbitinst0-proxy,instance-7")
         self.assertEqual(nic["security.acls.default.egress.action"], "reject")
         self.assertEqual(nic["security.acls.default.ingress.action"], "reject")
+        # The copy's NIC accepts only its own IPv4 and MAC address.
+        self.assertEqual(nic["security.ipv4_filtering"], "true")
+        self.assertEqual(nic["security.mac_filtering"], "true")
         start = ["incus", "--project", "orbit-instances", "start", "instance-7"]
         self.assertIn(start, calls)
         links = next(call for call in calls if call[3:5] == ['file', 'delete'] and '--force' not in call)
@@ -417,7 +422,7 @@ class CloneTest(unittest.TestCase):
         self.assertIn(f"instance-7/etc/ssl/certs/{new_digest}.0", [call[-2] for call in calls if call[3:5] == ["file", "create"]])
 
     def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
-        running = {"status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
+        running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
                    "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
                                                  "security.acls": "orbitinst0-proxy,instance-7",
                                                  "security.acls.default.egress.action": "reject",
@@ -554,6 +559,46 @@ class CloneTest(unittest.TestCase):
                 calls, _, error = self.clone(damage)
                 self.assertEqual(error, "instance.container_network_unsafe\n")
                 self.assertFalse(any("start" in call for call in calls))
+
+    def test_nic_check_reports_a_stock_nic_without_filters_and_still_refuses_a_real_defect(self):
+        stock = {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2", "security.port_isolation": "true",
+                 "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
+                 "security.acls.default.ingress.action": "reject"}
+
+        def check(device):
+            container = {"name": "instance-7", "expanded_devices": {"eth0": device}}
+            return subprocess.run(["python3", str(NETWORK_CHECK), "orbitinst0", "eth0"], input=json.dumps(container),
+                                  capture_output=True, text=True, check=False)
+
+        # A NIC made before the filters passes, and the check names it.
+        result = check(stock)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "instance-7/eth0 lacks security.ipv4_filtering and security.mac_filtering\n")
+        # One filter is not enough to pass silently.
+        result = check({**stock, "security.ipv4_filtering": "true"})
+        self.assertEqual((result.returncode, result.stdout != ""), (0, True))
+        # With both filters the check is silent.
+        result = check({**stock, "security.ipv4_filtering": "true", "security.mac_filtering": "true"})
+        self.assertEqual((result.returncode, result.stdout), (0, ""))
+        # A missing ACL still refuses, filters or not.
+        for filters in [{}, {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}]:
+            result = check({**stock, **filters, "security.acls": ""})
+            self.assertEqual(result.returncode, 1)
+
+    def test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it(self):
+        namespace = {}
+        exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0]
+             + (NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], namespace)
+        nic = {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7",
+               "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"}
+        # The Gateway's allowlist names the filters; a container made before them lacks them.
+        allowed = {"eth0": {**nic, "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}
+        stock = {"name": "instance-7", "expanded_config": {}, "expanded_devices": {"eth0": dict(nic)}}
+        self.assertEqual(namespace["nested_unsafe_device"](stock, allowed, {}), "")
+        self.assertNotEqual(namespace["unfiltered_report"](stock, "orbitinst0"), "")
+        # Any other change to the NIC still refuses.
+        changed = {"name": "instance-7", "expanded_config": {}, "expanded_devices": {"eth0": {**nic, "ipv4.address": "10.253.0.9"}}}
+        self.assertEqual(namespace["nested_unsafe_device"](changed, allowed, {}), "eth0")
 
     def test_normal_clone_uses_the_exact_original_checker_program_and_argv(self):
         calls, _, error = self.clone()

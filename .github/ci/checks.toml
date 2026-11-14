@@ -250,8 +250,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3957
-# 162.648s, hosted four-worker run 43002948719 (completed unit).
+cost = 4009
+# 162.648s, hosted four-worker run 43002948719 (completed unit). The retained case_costs total (4009 s) since the stock-NIC case.
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
@@ -261,8 +261,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 71 slices give each of the 71 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 71
+# 72 slices give each of the 72 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 72
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -325,6 +325,7 @@ inputs = [
   "start refuses a NIC with permissive default before starting the container" = 36 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.9-34.6s
   "start refuses a NIC with bridge union ACL before starting the container" = 35 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 16.3-33.9s
   "start refuses an unguarded extra bridge NIC beside guarded eth0" = 36 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.9-34.8s
+  "start admits a stock NIC without the address filters and reports it; the rollout's device set keeps the status and ends the report" = 52 # ESTIMATE: the extra-NIC case (36s) plus one more start, plus 1s
   "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes" = 40 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 24.9-41.4s
   "a copied seed with an unguarded extra local NIC refuses before the clone starts" = 65 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 34.3-69.0s
   "a queued container Process start is nonblocking and every intended running unit has a bounded readiness read" = 83 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 54.0-83.8s
@@ -1939,7 +1940,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 91
+cost = 95
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1976,6 +1977,8 @@ inputs = [
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
   "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
+  "test_nic_check_reports_a_stock_nic_without_filters_and_still_refuses_a_real_defect" = 2
+  "test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2

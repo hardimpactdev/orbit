@@ -3,15 +3,17 @@
  * build, a rerun that changes nothing, a deployment, the refusals of a deployment and the result file each phase writes. The Node is
  * this machine: the run's connection is local and nothing becomes root.
  */
-import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { fixture as hostFixture } from "./_support/instance_host.ts";
 
 /** The normal host transcript of main; see the case that compares it. */
 // The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
 // list, and the image's last `rm -f /etc/ld.so.cache`); the Orbit root CA in the image adds one task and two Incus calls (one push, and
-// `update-ca-certificates` in the definition's finish); the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 66, tasks: 174, digest: "4f193b4cd5168f4f65ae0c51b5a3e9698b8144f7ea613dead27c2cd60da768d0"};
+// `update-ca-certificates` in the definition's finish); the host files stay as they were. The NIC address filters add two `--device`
+// keys to the build container's init (digest 4f193b4c… → b21a521d…) and two report tasks (174 → 176): the clone probe's profile NIC,
+// which has no address and so no filter, and the build container, whose init `--device` keys this fake host does not keep.
+const MAIN_NORMAL_HOST = {calls: 66, tasks: 176, digest: "b21a521da2ee6c2f7f75de1306bdb09e1810f2bef5ed0c64f742878ee2cbca4e"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -204,6 +206,9 @@ Deno.test({
         "eth0,security.acls=orbitinst0-proxy,instance-7",
         "eth0,security.acls.default.egress.action=reject",
         "eth0,security.acls.default.ingress.action=reject",
+        // The NIC accepts only its own IPv4 and MAC address (instance_network.py's FILTERS).
+        "eth0,security.ipv4_filtering=true",
+        "eth0,security.mac_filtering=true",
         "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB",
       ]);
       assertEquals(state.containers["instance-7"].config, ["security.idmap.isolated=true", "limits.cpu=4", "limits.memory=8GiB", "limits.processes=4096"]);
@@ -468,7 +473,8 @@ Deno.test({
       }
       const state = f.state();
       assertEquals(state.containers["instance-8"].source, `instance-7/seed-${seed}`);
-      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-proxy,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
+      // The copy's NIC carries the same address filters as a create.
+      assertEquals(state.containers["instance-8"].devices, ["eth0,ipv4.address=10.253.0.3", "eth0,security.acls=orbitinst0-proxy,instance-8", "eth0,security.acls.default.egress.action=reject", "eth0,security.acls.default.ingress.action=reject", "eth0,security.ipv4_filtering=true", "eth0,security.mac_filtering=true", "root,type=disk", "root,path=/", "root,pool=orbit-instances", "root,size=40GiB"]);
       assertEquals(state.containers["instance-8"].added, {
         t3: { type: "proxy", settings: ["listen=tcp:10.44.0.7:3800", "connect=tcp:10.253.0.3:3773", "nat=true"] },
       });
@@ -1427,6 +1433,51 @@ for (const damage of ["missing ACL", "permissive default", "bridge union ACL"]) 
     },
   });
 }
+
+Deno.test({
+  name: "start admits a stock NIC without the address filters and reports it; the rollout's device set keeps the status and ends the report",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      assert(f.run("container").ok);
+      // A container made before the filters: its NIC has every other key.
+      const state = f.state();
+      state.containers["instance-7"].devices = state.containers["instance-7"].devices
+        .filter((device: string) => !device.startsWith("eth0,security.ipv4_filtering=") && !device.startsWith("eth0,security.mac_filtering="));
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const stock = f.run("start");
+      assert(stock.ok, stock.output);
+      assertStringIncludes(stock.output, "instance.nic_unfiltered: instance-7/eth0 lacks security.ipv4_filtering and security.mac_filtering");
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      // The live rollout step, on the running container and on a frozen one: one device set, no restart.
+      for (const status of ["Running", "Frozen"]) {
+        const before = f.state();
+        before.containers["instance-7"].status = status;
+        before.containers["instance-7"].devices = before.containers["instance-7"].devices
+          .filter((device: string) => !device.includes("_filtering="));
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(before));
+        const set = new Deno.Command(`${f.folder}/bin/incus`, {
+          args: ["--project", "orbit-instances", "config", "device", "set", "instance-7", "eth0", "security.ipv4_filtering=true",
+            "security.mac_filtering=true"],
+          env: { HOST_FIXTURE: f.folder },
+        }).outputSync();
+        assert(set.success, new TextDecoder().decode(set.stderr));
+        const after = f.state().containers["instance-7"];
+        assertEquals(after.status, status);
+        assert(after.devices.includes("eth0,security.ipv4_filtering=true") && after.devices.includes("eth0,security.mac_filtering=true"));
+      }
+      // The next start of the stopped container reads the filters and reports nothing.
+      const stopped = f.state();
+      stopped.containers["instance-7"].status = "Stopped";
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stopped));
+      const filtered = f.run("start");
+      assert(filtered.ok, filtered.output);
+      assert(!filtered.output.includes("instance.nic_unfiltered"), filtered.output);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+    } finally { f.cleanup(); }
+  },
+});
 
 Deno.test({
   name: "start refuses an unguarded extra bridge NIC beside guarded eth0",
