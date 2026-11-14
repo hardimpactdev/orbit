@@ -173,16 +173,19 @@ describe("a thread's clone", function (): void {
             ->assertJsonPath('data.id', $operation->id)->assertJsonPath('data.target_id', $clone->id);
     });
 
-    it('shows the create only to the Node that started it', function (): void {
+    it('shows and cancels the create only for the Node that started it', function (): void {
         $default = threadDefault($this->beast, 'tool');
         $operation = threadCreate($this->phone, $default->project, 'fix-login-k3j9');
         $laptop = threadNode('laptop', '10.44.0.78');
         $laptop->accessibleNodes()->attach($this->beast->id);
 
         threadCall($laptop, 'GET', "operations/{$operation->id}")->assertNotFound();
-        test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
-            ->call('POST', "/api/v1/conn/operations/{$operation->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
-            ->assertNotFound();
+        foreach ([[$laptop, 404], [$this->phone, 200]] as [$caller, $status]) {
+            test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])
+                ->call('POST', "/api/v1/conn/operations/{$operation->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], content: '{}')
+                ->assertStatus($status);
+        }
+        expect($operation->refresh()->cancel_requested_at)->not->toBeNull();
     });
 
     it('refuses a name that means the default Instance', function (string $name): void {
@@ -1654,14 +1657,16 @@ describe('the Conn read of a clone\'s completion', function (): void {
         threadCall($stranger, 'GET', "operations/{$retry->id}")->assertNotFound();
     });
 
-    it('keeps the Conn cancel closed for a completion: 404, and the completion runs on', function (): void {
-        [, $completion] = threadCreatedClone($this->phone);
+    it('cancels the completion for the clone\'s creator, keeps the clone, and its Retry admits a new completion', function (): void {
+        [$create, $completion] = threadCreatedClone($this->phone);
 
         // The body Conn sends: an empty JSON object.
         $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->call('POST', "/api/v1/conn/operations/{$completion->id}/cancel",
-            [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}')->assertNotFound();
+            [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}')->assertOk()
+            ->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.result.recovery.retry.command', 'instance:complete');
 
-        expect($completion->refresh()->cancel_requested_at)->toBeNull()
-            ->and($completion->status->terminal())->toBeFalse();
+        expect(Instance::query()->findOrFail($create->target_id)->status)->toBe(InstanceState::SourceResolved);
+        threadCall($this->phone, 'POST', "instances/{$create->target_id}/complete", [], ['Idempotency-Key' => 'retry-1'])
+            ->assertAccepted()->assertJsonPath('data.kind', 'instance.complete');
     });
 });

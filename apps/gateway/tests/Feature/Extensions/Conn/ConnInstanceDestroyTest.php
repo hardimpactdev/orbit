@@ -1083,3 +1083,148 @@ describe('a removal while the clone\'s create runs', function (): void {
             ->and($create->refresh()->cancel_requested_at)->not->toBeNull();
     });
 });
+
+/**
+ * The clone's create as Conn admits it: the phone started it, and its input names the reservation, so a cancelled end keeps the clone for a
+ * retry (DevelopmentInstanceCreateProjection::recovery). `queued` has not started its run yet.
+ *
+ * @return array{Instance, Operation, Route}
+ */
+function connCancelCreate(string $status = 'running', string $mode = 'free', ?Node $caller = null): array
+{
+    [$instance, $create, $route] = connCreatingClone('feature', $mode);
+    $create->update(['triggered_by' => 'node:'.($caller ?? test()->phone)->id, 'input' => [...$create->input, 'project_id' => $instance->project_id,
+        'node_id' => $instance->node_id, 'name' => $instance->name, 'prepare_id' => $instance->source_prepare_id],
+        ...($status === 'queued' ? ['status' => 'queued', 'state' => [], 'attempts' => 0, 'started_at' => null] : [])]);
+
+    return [$instance, $create->refresh(), $route];
+}
+
+function connCancelCall(Operation $operation, ?Node $caller = null): TestResponse
+{
+    // The body Conn sends: an empty JSON object.
+    return test()->withServerVariables(['REMOTE_ADDR' => ($caller ?? test()->phone)->wireguard_ip])->call('POST', "/api/v1/conn/operations/{$operation->id}/cancel",
+        [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}');
+}
+
+/** @return list<string> */
+function connSwampCancels(): array
+{
+    return array_values(array_filter(array_column(test()->socket->messages, 'type'), static fn (string $type): bool => $type === 'workflow.cancel'));
+}
+
+describe('the Conn cancel', function (): void {
+    it('ends the caller\'s own create that has not started at once, and keeps the reserved clone for a retry', function (): void {
+        [$instance, $create] = connCancelCreate('queued');
+
+        connCancelCall($create)->assertOk()->assertJsonPath('data.id', $create->id)->assertJsonPath('data.kind', 'instance.create')
+            ->assertJsonPath('data.status', 'cancelled')->assertJsonPath('data.cancel_requested', true)
+            ->assertJsonPath('data.result.recovery.state', 'retained_for_retry')->assertJsonPath('data.result.recovery.retry.command', 'instance:create')
+            ->assertJsonStructure(['data' => ['id', 'kind', 'status', 'result'], 'meta' => ['request_id']]);
+
+        expect($create->refresh()->lock_key)->toBeNull()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Reserved)
+            ->and(connSwampCancels())->toBe([]);
+    });
+
+    it('records the cancel of the caller\'s running create and asks Swamp; the run\'s end keeps the clone and frees the Route hold', function (): void {
+        [$instance, $create, $route] = connCancelCreate();
+
+        connCancelCall($create)->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.cancel_requested', true);
+
+        expect($create->refresh()->cancel_requested_at)->not->toBeNull()
+            ->and($create->state['native_cancel_requested_at'] ?? null)->not->toBeNull()
+            ->and(connSwampCancels())->toBe(['workflow.cancel']);
+        connCreateEnds($create);
+        expect($create->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($create->result['recovery']['state'] ?? null)->toBe('retained_for_retry')
+            ->and($create->result['completion_operation_id'] ?? null)->toBeNull()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Reserved)
+            ->and($instance->error_code)->toBe('operation.cancelled')
+            ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
+            ->and(Route::query()->whereKey($route->id)->exists())->toBeTrue();
+    });
+
+    it('answers a second cancel as the first, with no second effect', function (string $status): void {
+        [, $create] = connCancelCreate($status);
+        $first = connCancelCall($create)->assertOk();
+        $create->refresh();
+        $this->travel(5)->seconds();
+
+        $second = connCancelCall($create)->assertOk();
+
+        expect(array_keys($second->json('data')))->toBe(array_keys($first->json('data')))
+            ->and($second->json('data.status'))->toBe($first->json('data.status'))
+            ->and($second->json('data.cancel_requested'))->toBeTrue()
+            ->and($create->fresh()->cancel_requested_at?->toISOString())->toBe($create->cancel_requested_at?->toISOString())
+            ->and($create->fresh()->finished_at?->toISOString())->toBe($create->finished_at?->toISOString());
+    })->with(['ended before its run' => ['queued'], 'running, its cancel requested' => ['running']]);
+
+    it('answers 404 for another Node\'s create and leaves it running', function (): void {
+        $tablet = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'tablet', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.78', 'public_ssh_host' => '10.44.0.78', 'user' => 'orbit',
+        ]));
+        $tablet->accessibleNodes()->attach($this->node->id);
+        [, $create] = connCancelCreate(caller: $tablet);
+
+        connCancelCall($create)->assertNotFound();
+
+        expect($create->refresh()->cancel_requested_at)->toBeNull()->and(connSwampCancels())->toBe([]);
+    });
+
+    it('cancels the clone\'s completion for the Node that started it or created the clone, and keeps the clone for a Retry', function (string $starter): void {
+        [$instance, $completion] = connCompletingClone(status: 'queued');
+        if ($starter === 'completion') {
+            $completion->update(['triggered_by' => 'node:'.$this->phone->id]);
+        } else {
+            Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+                'triggered_by' => 'node:'.$this->phone->id, 'input' => [], 'status' => 'succeeded', 'sequence' => 1, 'attempts' => 1, 'finished_at' => now()]);
+        }
+
+        connCancelCall($completion)->assertOk()->assertJsonPath('data.kind', 'instance.complete')->assertJsonPath('data.status', 'cancelled')
+            ->assertJsonPath('data.result.recovery.retry.command', 'instance:complete');
+
+        expect($instance->refresh()->status)->toBe(InstanceState::SourceResolved)
+            ->and($instance->error_code)->toBe('operation.cancelled')
+            ->and($completion->refresh()->lock_key)->toBeNull();
+    })->with(['started the completion' => ['completion'], 'created the clone' => ['create']]);
+
+    it('records the cancel of a running completion and asks Swamp; another Node gets 404', function (): void {
+        [, $completion] = connCompletingClone();
+        $completion->update(['triggered_by' => 'node:'.$this->phone->id]);
+        $tablet = Node::withoutEvents(fn (): Node => Node::query()->create([
+            'name' => 'tablet', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.78', 'public_ssh_host' => '10.44.0.78', 'user' => 'orbit',
+        ]));
+        $tablet->accessibleNodes()->attach($this->node->id);
+
+        connCancelCall($completion, $tablet)->assertNotFound();
+        expect($completion->refresh()->cancel_requested_at)->toBeNull();
+
+        connCancelCall($completion)->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.cancel_requested', true);
+        expect($completion->refresh()->cancel_requested_at)->not->toBeNull()->and(connSwampCancels())->toBe(['workflow.cancel']);
+    });
+
+    it('keeps a removal closed: 404, though Conn shows it', function (): void {
+        $instance = connRemovalClone();
+        connRemovalResources($instance);
+        $removal = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        connRemovalRead($removal)->assertOk();
+
+        connCancelCall($removal)->assertNotFound();
+
+        expect($removal->refresh()->cancel_requested_at)->toBeNull();
+    });
+
+    it('keeps the other kinds as they were: the caller\'s own Conn effect is cancelled, another kind answers 404', function (): void {
+        $renew = Operation::query()->create(['kind' => 'conn.environment_renew', 'target_type' => 'conn_environment', 'target_id' => 1,
+            'node_id' => $this->node->id, 'input' => ['caller_node_id' => $this->phone->id], 'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
+        $start = Operation::query()->create(['kind' => 'instance.start', 'target_type' => 'instance', 'target_id' => $this->default->id,
+            'node_id' => $this->node->id, 'triggered_by' => 'node:'.$this->phone->id, 'input' => ['caller_node_id' => $this->phone->id],
+            'status' => 'queued', 'sequence' => 1, 'attempts' => 0]);
+
+        connCancelCall($renew)->assertOk()->assertJsonPath('data.status', 'cancelled');
+        connCancelCall($start)->assertNotFound();
+
+        expect($start->refresh()->cancel_requested_at)->toBeNull();
+    });
+});

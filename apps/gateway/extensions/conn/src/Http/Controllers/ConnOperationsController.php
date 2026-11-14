@@ -33,9 +33,9 @@ final class ConnOperationsController extends Controller
 
     public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
-        // Instance lifecycle Operations are followed here; cancellation uses the core Instance tools. Conn offers no Cancel for a clone's
-        // completion: a removal cancels it (docs/reference/conn.md#remove-a-clone-whose-completion-runs).
-        abort_if(in_array($operation->kind, ['instance.create', 'instance.complete', 'instance.destroy'], true), 404);
+        // The caller cancels what it may read here, through the core cancel: its create and the clone's completion end retained for a
+        // retry or a removal. A removal is not cancelled (docs/reference/conn.md#cancel-an-operation).
+        abort_if($operation->kind === 'instance.destroy', 404);
         $this->assertOwner($request, $operation);
 
         return response()->json(['data' => OperationData::fromModel($cancel->execute($operation), $operation->caller_node_name)->toArray(),
