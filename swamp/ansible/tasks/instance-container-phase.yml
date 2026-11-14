@@ -1465,8 +1465,8 @@
               changed_when: true
             # A snapshot of the volume is a snapshot of its block device: it holds only what btrfs has committed, and btrfs commits
             # every 30 s. An inner pool made a moment ago was missing from a copy (live proof 2026-11-14). The flush commits the file
-            # system right before its half of the seed. No fsfreeze: the unprivileged container may not freeze it, and the halves
-            # are two snapshots one after the other anyway, each as after a power cut.
+            # system right before its half of the seed. No fsfreeze: the two halves are separate snapshots anyway, so a freeze adds
+            # nothing over the flush and btrfs's own crash consistency, and it would stall the inner fleet's writes.
             - name: Flush the inner volume
               when: container.inner_volume is defined
               ansible.builtin.command: { argv: "{{ as_root + ['sync', '-f', container.inner_volume.path] }}" }

@@ -350,6 +350,8 @@ Deno.test({
       assert(at("create", `next-${head}`) < at("delete", `seed-${head}`), "the old seed goes only after the new one exists");
       assert(at("delete", `seed-${head}`) < at("rename", `next-${head}`));
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      // A default without an inner volume flushes nothing before its seed.
+      assertEquals(f.state().syncs, undefined);
     } finally {
       f.cleanup();
     }
@@ -2566,6 +2568,8 @@ Deno.test({
       const normal = stops();
       assert(f.run("seed").ok);
       assertEquals(stops(), normal);
+      // A nested-fleet default without an inner volume (Instance 2454's shape) flushes nothing before any of its seeds.
+      assertEquals(f.state().syncs, undefined);
     } finally {
       f.cleanup();
     }
@@ -2646,7 +2650,10 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       const failed = f.run("seed");
       assert(!failed.ok);
-      assertEquals(f.result().error_code, "instance.seed_volume_flush_failed");
+      assertEquals(f.result(), { error_code: "instance.seed_volume_flush_failed",
+        detail: "Flush the inner volume: sync: error syncing '/srv/inner-pool': Input/output error. The old seed stays." });
+      // The failed take made its container half and flushed, and took no volume half.
+      assertEquals(seedOrder(f), ["c", "f", "v", "c", "f", "v", "c", "f"]);
       assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
       assert(failed.output.includes("TASK [Start the Processes again]"), failed.output);
     } finally { f.cleanup(); }
