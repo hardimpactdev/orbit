@@ -39,9 +39,10 @@ final readonly class DatabaseServerProcess
 
     /**
      * initdb's default trusts the socket and the loopback for every user, so a client in the container would log in as
-     * anyone without a password. The first start sets SCRAM for both; every Orbit login gives its password.
+     * anyone without a password. The first start sets peer for the socket, so only the container's OS user postgres logs
+     * in as postgres there (root has no role), and SCRAM for the loopback. Every Orbit login uses TCP with its password.
      */
-    public const string POSTGRES_INITDB_ARGS = '--auth-local=scram-sha-256 --auth-host=scram-sha-256';
+    public const string POSTGRES_INITDB_ARGS = '--auth-local=peer --auth-host=scram-sha-256';
 
     public static function data(
         DatabaseServer $server,
