@@ -688,8 +688,9 @@ def main():
             if container.get("mail") is not None:
                 try:
                     bundle = json.loads(sys.argv[6])
-                    attempted = run(["python3", "-c", bundle["mail"],
-                                     json.dumps(container), json.dumps(bundle)], check=False)
+                    # `started`: this phase has just started the copy, so a silent systemd is its boot (instance_mail.py).
+                    attempted = run(["python3", "-c", bundle["mail"], json.dumps(container), json.dumps(bundle)]
+                                    + (["started"] if read["status"] != "Running" else []), check=False)
                     if attempted.returncode:
                         code = attempted.stderr.removesuffix("\n")
                         mail = {"status": "failed", "reason": code if code in

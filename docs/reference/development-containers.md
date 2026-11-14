@@ -591,6 +591,10 @@ Updated endpoint settings rewrite the proxy services and restart active proxies,
 
 A clone keeps the seed's mail socket links. Its default's mail units are the Node's, the same for every copy, so the container launch finds them in place and reports `unchanged`. A seed taken before mail existed gets them as `applied`. The launch rewrites and restarts them only when the Node's endpoint changed after the seed.
 
+A socket's link in `sockets.target.wants`, absolute or relative, is its enablement. The preflight reads it on disk, because a clone's mail part runs right after `incus start`, often before the copy's systemd answers. A missing link is a change: the install enables and starts the socket. A linked socket that does not listen is started, which is no change; `enable` would reload systemd in the middle of the boot.
+
+The install reads the sockets again after its reload, so a booting copy whose units changed still ends with both sockets listening. A silent systemd means a boot only in a copy that the clone's container phase has just started. That boot starts the linked sockets itself, so a clone of a seed with the right units runs no install and reports `unchanged`. Anywhere else a silent systemd fails the install, as before.
+
 Destroy deletes the container, its private Node activation state and its own ACL, including the SMTP rule. It does not withdraw the shared bridge tuple: that stays for ordinary host reconciliation, like database tuples, and remains needed while other Instances use Mailpit. There is no new helper withdrawal.
 
 The mailer rule edits `/srv/workspace/.env` only when the byte string `MAIL_MAILER` occurs exactly once in the whole file and that occurrence forms exactly `MAIL_MAILER=log`, with or without matching single or double quotes, as a whole line. It replaces only `log` with `smtp`, preserving the quote style. It keeps LF or CRLF, all other bytes, and the file's owner, group, mode, POSIX ACLs and extended attributes.
@@ -1170,6 +1174,7 @@ Work is what lies beyond the Instance's baseline:
 - `commits`: commits on local branches that no remote-tracking ref, baseline head or published commit reaches.
 - **Remote refs.** The read compares with the remote refs as last fetched.
 - **Published commits.** A task copy never fetches. Its read names the commits that the task's publishes pushed.
+- **Check commits.** A check of a clean head that an earlier check recorded adds no commit. A published head that is checked again still reads `clean`; a commit with a changed tree after it counts.
 - **No upstream.** A branch without an upstream gets no special case.
 - `stashes`: stash entries that are not in the baseline.
 
@@ -1944,12 +1949,17 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
+| Room before a change | The check reads the room on the nested Nodes' disk first. When a refresh could not end above the inner Doctor's floor, it refuses with `instance.container_fleet_no_room` and the numbers. Nothing changed |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
 | A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`. `error.detail` names the failed task and its message |
 | Migrate before Doctor | The check checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | The refresh starts again what it stopped for `base`, before the seed. After a restore, the run starts the restored fleet |
 
-A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
+A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is every issue of the last Doctor body: its code, Node, summary and observed value, each at most 240 characters, and at most 12 issues. Any other body gives its first 300 characters. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
+
+The nested Nodes' `/` lies in the inner pool: a directory pool on the outer container's disk, or the [inner volume](#the-inner-volume). So the room the inner Doctor reads for `node.disk_low` is the outer container's `df /`, or `df` of the inner volume's mount. It wants at least 2 GiB and 10% of the size free.
+
+A refresh writes up to 2 GiB more before its readiness wait: on Instance 2454 a seed after a refresh that retook `base` held 1.66 GiB of its own blocks, and each refresh added 0.1 to 0.3 GiB of data. The check refuses when the free space minus 2 GiB is under the floor, before anything changes. On a quota that counts snapshots, the seeds that copies still pin count too.
 
 The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
@@ -2230,7 +2240,9 @@ The fleet step never reads, prints or copies the Club key file. Without the file
 
 ## Git in and out
 
-A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
+A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository as a Git bundle.
+
+The bundle holds only what the workspace lacks: its prerequisite is the newest commit the branch shares with the workspace's HEAD, or the tip's parent when the workspace already holds the tip. A workspace whose HEAD the mirror does not hold, or that has none, gets the whole branch. On the Orbit Project the whole branch was 89 MB and took 4 s to bundle; a release's bundle is a few kilobytes. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
 
 ## Production Instances
 
@@ -2317,6 +2329,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
 | `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore, or the [inner volume](#the-inner-volume) lacks the seed's half. Nothing is restored, and the default stays as the run left it |
+| `instance.container_fleet_no_room` | 502 | A refresh would end under the inner Doctor's disk floor (see [Refresh after a release](#refresh-after-a-release)). The detail names the numbers. Nothing changed |
 | `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The Operation's result `fleet_drift` names each difference. Nothing changed |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
 | `instance.default_seed_missing` | 409 | The default has no seed snapshot at all. Deploy the default; its seed step takes one |

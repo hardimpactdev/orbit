@@ -56,6 +56,11 @@
     fleet_tunnel_port: "51821"
     fleet_hub_port: "51820"
     fleet_ready_delay: 5
+    # The inner Doctor's floor for `node.disk_low` (FactDoctor::MinimumFreeKib, with 10% of the size), and what a refresh writes on the
+    # Instance container's disk before its readiness wait: a seed after a refresh that retook `base` held 1.66 GiB of its own blocks
+    # (Instance 2454, 14 November 2026), and each refresh adds 0.1 to 0.3 GiB of data (instance-fleet-room.yml).
+    fleet_room_floor_bytes: 2147483648
+    fleet_room_refresh_bytes: 2147483648
     # The bound of a wait for what a nested container sets up at boot (the hub key, the state mounts), polled every `fleet_ready_delay`.
     fleet_boot_seconds: 60
     # The services of the nested Gateway that run the checkout, and the Swamp units that need the Club key.

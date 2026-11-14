@@ -79,7 +79,8 @@ const Evidence = z.union([
         }).strict(),
         changed: z.literal(false),
     }).strict(),
-    z.object({ commit_read: Run, changed: z.literal(true) }).strict(),
+    // A clean checked tree makes no commit, so the commit phase may change nothing.
+    z.object({ commit_read: Run, changed: z.boolean() }).strict(),
     z.object({
         ref: z.string().regex(/^refs\/orbit\/check-operations\/[1-9][0-9]*$/),
         commit: Hash,
@@ -99,7 +100,7 @@ type Context = {
 // All machine work stays in Ansible; this method only bounds and validates its result.
 export const behavior = {
     type: "@nckrtl/task-instance-workspace",
-    version: "2026.11.14.1",
+    version: "2026.11.14.2",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

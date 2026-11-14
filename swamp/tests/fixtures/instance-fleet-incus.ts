@@ -85,6 +85,11 @@ if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c") {
   done(JSON.stringify({ tools: "built", reason: "missing", ...names }));
 }
 
+// `df` of the container's `/`, in bytes: `room` is [size, free]; by default 40 GiB with 20 GiB free.
+if (command[0] === "df") {
+  const [size, free] = state.room ?? [42949672960, 21474836480];
+  done(`1B-blocks       Avail\n${size} ${free}`);
+}
 if (command[0] === "test" && command[1] === "-s") {
   save();
   Deno.exit(state.outer.files[command[2]] ? 0 : 1);

@@ -108,7 +108,20 @@ class BudgetTest(unittest.TestCase):
                 patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
             part = check['fixtures'](plan, time.monotonic() + 5, table)
         self.assertEqual(part.status, 'skipped')
-        self.assertEqual(part.detail, f'1 skipped: zip missing in this copy ({runtime}#0/2); budget skipped: {load} (budget: declared 60s)')
+        self.assertEqual(part.detail, f'1 not runnable here: zip missing in this copy ({runtime}#0/2); budget skipped: {load} (budget: declared 60s)')
+
+    def test_the_schedules_fixture_is_named_not_runnable_in_a_copy_without_jq(self):
+        budget, table, _defaults = check['units'].configuration()
+        schedules = 'swamp/tests/swamp_node_schedules_test.ts'
+        # Its release load script exits 127 in 4 of its 8 cases without jq.
+        self.assertEqual(table[schedules]['host_programs'], ['jq', 'timeout'])
+        plan = {'shards': [{'units': [schedules]}], 'deferred': [], 'budget': budget,
+                'units': {schedules: {'declared_seconds': 7}}}
+        with patch.object(check['shutil'], 'which', side_effect={'timeout': '/usr/bin/timeout'}.get), \
+                patch.dict(check['fixtures'].__globals__, {'run': self.fail}):
+            part = check['fixtures'](plan, time.monotonic() + 5, table)
+        self.assertEqual(part.status, 'skipped')
+        self.assertEqual(part.detail, f'1 not runnable here: jq missing in this copy ({schedules})')
 
 
 class FixtureRunTest(unittest.TestCase):
@@ -236,21 +249,54 @@ class StartCommitTest(unittest.TestCase):
         self.assertEqual(self.git('worktree', 'list', '--porcelain').count('worktree '), 1)
         self.assertFalse((self.repo / '.git/worktrees').exists() and any((self.repo / '.git/worktrees').iterdir()))
 
-    def test_the_default_start_commit_is_the_merge_base_with_origin_main_else_main(self):
-        first = self.commit('first')
-        self.git('checkout', '--quiet', '-b', 'task')
-        self.commit('task')
-        (self.repo / 'untracked').write_text('')
-        self.assertEqual(check['changes'](self.repo, None), (False, first, ['task', 'untracked']))
-        self.git('checkout', '--quiet', 'main')
+    def test_a_branch_at_its_start_starts_at_the_seed(self):
         seed = self.commit('seed')
         self.git('update-ref', 'refs/remotes/origin/main', seed)
-        self.git('checkout', '--quiet', '-b', 'copy')
+        self.git('checkout', '--quiet', '-b', 'task')
         self.commit('work')
-        (self.repo / 'untracked').unlink()
-        self.git('update-ref', 'refs/heads/main', first)
-        self.assertEqual(check['changes'](self.repo, None), (True, seed, ['work']))
-        self.assertEqual(check['changes'](self.repo, first)[1:], (first, ['seed', 'work']))
+        (self.repo / 'untracked').write_text('')
+        self.assertEqual(check['changes'](self.repo, None), (False, seed, 'origin/main', ['untracked', 'work']))
+
+    def newer_main(self):
+        """A copy whose task branch did work on the seed, then a newer main fetched into origin/main from a bundle."""
+        seed = self.commit('seed')
+        self.git('update-ref', 'refs/remotes/origin/main', seed)
+        self.git('checkout', '--quiet', '-b', 'task')
+        self.commit('work')
+        self.git('checkout', '--quiet', '--detach', 'main')
+        newer = self.commit('newer')
+        self.git('update-ref', 'refs/remotes/origin/main', newer)
+        self.git('checkout', '--quiet', 'task')
+        return seed, newer
+
+    def test_a_branch_that_merged_a_newer_main_starts_at_that_main(self):
+        _seed, newer = self.newer_main()
+        self.git('merge', '--quiet', '--no-edit', 'origin/main')
+        self.assertEqual(check['changes'](self.repo, None), (True, newer, 'origin/main', ['work']))
+
+    def test_a_branch_rebased_on_a_newer_main_starts_at_that_main(self):
+        _seed, newer = self.newer_main()
+        self.git('rebase', '--quiet', 'origin/main')
+        self.assertEqual(check['changes'](self.repo, None), (True, newer, 'origin/main', ['work']))
+
+    def test_head_on_a_main_ahead_of_origin_main_counts_its_own_commits(self):
+        seed = self.commit('seed')
+        self.git('update-ref', 'refs/remotes/origin/main', seed)
+        self.commit('unpushed')
+        self.assertEqual(check['changes'](self.repo, None), (True, seed, 'origin/main', ['unpushed']))
+
+    def test_without_origin_main_the_start_commit_is_the_merge_base_with_main(self):
+        seed = self.commit('seed')
+        self.git('checkout', '--quiet', '-b', 'task')
+        self.commit('work')
+        self.assertEqual(check['changes'](self.repo, None), (True, seed, 'main', ['work']))
+
+    def test_an_explicit_start_commit_is_used_as_given(self):
+        first = self.commit('first')
+        self.commit('seed')
+        self.git('checkout', '--quiet', '-b', 'task')
+        self.commit('work')
+        self.assertEqual(check['changes'](self.repo, first), (True, first, first, ['seed', 'work']))
 
 
 class ReportTest(unittest.TestCase):
@@ -267,10 +313,51 @@ class ReportTest(unittest.TestCase):
                                      '  skipped      pest apps/gateway suite (0.0s; CI runs the full suite)',
                                      '  FAILED       pest packages/php-sdk (1.0s; exit 1: pest; the whole suite)',
                                      '  not selected pest apps/cli (0.0s; CI does not select the cli-tests job)'])
-        self.assertTrue(lines[7].startswith('Not in this check: '))
+        self.assertEqual(lines[7:9], ['Last lines of pest packages/php-sdk:', 'output'])
+        self.assertTrue(lines[9].startswith('Not in this check: '))
         self.assertEqual(lines[-1], 'Task check FAILED against 0123456789ab in 130.0s')
         self.assertEqual(check['report'](parts[:3], '0123456789abcdef', 1)[-1], 'Task check PASSED against 0123456789ab in 1.0s')
 
+
+    def test_the_summary_stays_within_its_bound_and_names_every_part(self):
+        # Check 21615: a fixtures line of every budget-skipped unit was longer than the stored 16 KiB tail.
+        skipped = 'budget skipped: ' + ', '.join(f'swamp/tests/unit_{index}_test.ts#0/2' for index in range(800))
+        failures = '\n'.join(f'FAILED case {index} ' + 'x' * 500 for index in range(400))
+        parts = [Part('ci-plan', 'passed', 1.0)]
+        parts += [Part(f'pest project-{index}', 'FAILED', 40.0, 'exit 1', failures) for index in range(6)]
+        parts.append(Part('fixtures', 'skipped', 200.0, skipped))
+        lines = check['report'](parts, '0123456789abcdef', 206.6)
+        self.assertLessEqual(len('\n'.join(lines).encode()) + 1, check['SUMMARY_BYTES'])
+        self.assertTrue(all(len(line.encode()) <= check['LINE_BYTES'] for line in lines))
+        summary = lines[2:2 + len(parts)]
+        self.assertEqual([line[15:].split(' (')[0] for line in summary], [part.name for part in parts])
+        self.assertTrue(summary[-1].startswith('  skipped      fixtures (200.0s; budget skipped: '))
+        self.assertTrue(summary[-1].endswith(f'… ({len(f"  skipped      fixtures (200.0s; {skipped})".encode())} bytes)'))
+        for index in range(6):
+            block = lines.index(f'Last lines of pest project-{index}:')
+            # Each failed part shows its newest lines, up to its share of the bound.
+            self.assertTrue(lines[block + 1].startswith('FAILED case '))
+        self.assertTrue(lines[lines.index('Last lines of pest project-1:') - 1].startswith('FAILED case 399 '))
+        self.assertEqual(lines[-2:], [check['NOT_IN_CHECK'], 'Task check FAILED against 0123456789ab in 206.6s'])
+
+    def test_every_part_output_is_bounded_whatever_made_it(self):
+        # Such as an error message or the stale-fixture and capacity rows, which no command printed.
+        part = Part('fixture-population', 'FAILED', 0, 'the fixture table does not load',
+                    'x' * 5000 + '\n' + '\n'.join(f'row {index}' for index in range(200)))
+        rows = part.output.splitlines()
+        self.assertEqual((rows[0], rows[-1], len(rows)), ('…', 'row 199', check['OUTPUT_LINES'] + 1))
+        self.assertTrue(all(len(row.encode()) <= check['LINE_BYTES'] for row in rows))
+        self.assertTrue(Part('ci-plan', 'FAILED', 0, '', 'y' * 5000).output.endswith('… (5000 bytes)'))
+        self.assertEqual(Part('ci-plan', 'passed').output, '')
+
+    def test_a_very_long_output_line_keeps_its_start_and_names_its_size(self):
+        text = 'first\n' + 'é' * 10000 + '\nlast\n'
+        rows = check['tail'](text).splitlines()
+        self.assertEqual(rows[0], 'first')
+        self.assertEqual(rows[2], 'last')
+        self.assertTrue(rows[1].endswith('… (20000 bytes)'))
+        self.assertLessEqual(len(rows[1].encode()), check['LINE_BYTES'])
+        self.assertTrue(rows[1].startswith('é' * 100))
 
 if __name__ == '__main__':
     unittest.main()

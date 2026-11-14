@@ -326,6 +326,14 @@ if (family === "list") {
     : Deno.readFileSync(source);
   Deno.writeFileSync(path, content);
   Deno.chmodSync(path, parseInt(mode, 8));
+  // A Git bundle's header names its prerequisites (`-<sha>`) and its refs: the tests read what a deployment sent.
+  if (target.endsWith(".bundle")) {
+    // A v3 bundle adds `@capability` lines after the signature; they name no prerequisite and no ref.
+    const header = new TextDecoder().decode(content.slice(0, 4096)).split("\n\n")[0].split("\n").slice(1).filter((line) => !line.startsWith("@"));
+    state.bundles ??= [];
+    state.bundles.push({ prerequisites: header.filter((line) => line.startsWith("-")).map((line) => line.slice(1, 41)),
+      refs: header.filter((line) => !line.startsWith("-")).map((line) => line.split(" ")[1]) });
+  }
   state.files ??= {};
   state.files[target.slice(name.length)] = { uid, gid, mode };
 } else if (family === "exec") {
