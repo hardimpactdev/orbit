@@ -954,7 +954,8 @@ Decided on 2026-11-14 by the owner: the create publishes the clone's address bes
 
 The admission then looks at the Route publication hold of the Route's serving Nodes ([coordinate publication](/reference/routes#coordinate-publication)):
 
-- **Free.** No Route write holds one of the Nodes, and none waits for one. The create takes the hold in its admission transaction, so its Caddy render is fresh. Its job `publication` runs `clone-route-csr-<i>` and `clone-route`, the Route create child with its TLS probe, beside the clone steps.
+- **Free.** No Route write holds or waits for one of the Nodes. The create takes the hold in its admission transaction. Its Caddy render is fresh.
+- **Publication.** With the hold, the create's job `publication` runs beside the clone steps: `clone-route-csr-<i>`, then `clone-route`, the Route create child with its TLS probe.
 - **Held.** The create never waits. Its intent carries no publication, and the completion publishes the address, as before.
 
 The hold table's key is the Node, so of two creates admitted in the same second exactly one takes the hold. The other gets the completion path, and its thread never waits for the first create.
@@ -1077,7 +1078,9 @@ A task copy is a clone like any other, so it gets the same. So does a clone in t
 
 [`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([why](#a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, a check, and the Route when the create did not publish it. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
 
-The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing. The input is the create's admitted database plan and Processes. A Route whose sites are not published gets a publication captured again from the current site catalog: its Nodes were held at the create's admission, its publication failed in the create, or an earlier completion failed to publish it. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
+The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing.
+
+The input is the create's admitted database plan and Processes. A Route whose sites are not published gets a publication captured again from the current site catalog: its Nodes were held at the create's admission, its publication failed in the create, or an earlier completion failed to publish it. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
 
 The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md):
 
