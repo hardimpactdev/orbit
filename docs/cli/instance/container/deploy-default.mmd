@@ -41,6 +41,7 @@ sequenceDiagram
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - the same checks as a checkout default: a dirty tree refuses `deployment.checkout_dirty`, a diverged branch `deployment.branch_diverged`
+  %%> - after the checkout, a bounded repack in the foreground (`git repack -d --geometric=2`, 30 s): each fetch adds a pack and Orbit's Git calls start no automatic maintenance; it first removes the temporary files of an earlier repack that are an hour old; a repack that fails or times out prints one `orbit-workspace-repack=` line and never fails the deployment
   Note over SW: Read the steps to skip<br/>run folder
   %%> What it does:
   %%> - reads the names the checkout found unchanged; only a deployment with a step that has `inputs` runs it

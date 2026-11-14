@@ -557,9 +557,21 @@ Deno.test({
 
       // As the workflow's steps: one play for start and fetch, the checkout, one play for the seed and the check (the processes phase of
       // "Finish the container" has its own cases, and the after-merge case runs all three).
+      // A repack that ran out of time at an earlier deployment left its temporary files; one is an hour old, one is being written.
+      const packFolder = `${f.folder}/containers/instance-7/srv/workspace/.git/objects/pack`;
+      for (const name of ["tmp_pack_old", "tmp_idx_old", "tmp_pack_new"]) Deno.writeTextFileSync(`${packFolder}/${name}`, "x");
+      for (const name of ["tmp_pack_old", "tmp_idx_old"]) Deno.utimeSync(`${packFolder}/${name}`, new Date(Date.now() - 61 * 60_000), new Date(Date.now() - 61 * 60_000));
       for (const phases of [["start", "fetch"], ["checkout"], ["seed", "check"]]) {
         const result = f.phases(phases);
         assert(result.ok, `${phases}: ${result.output}`);
+        // The checkout's repack passed (one that did not names itself in an `orbit-workspace-repack=` line) and rolled the fetched
+        // pack into the first one; it removed only the hour-old temporary files.
+        if (phases[0] === "checkout") {
+          assert(!result.output.includes("orbit-workspace-repack="), result.output);
+          const names = [...Deno.readDirSync(packFolder)].map((entry) => entry.name);
+          assertEquals(names.filter((name) => name.endsWith(".pack")).length, 1);
+          assertEquals(names.filter((name) => name.startsWith("tmp_")), ["tmp_pack_new"]);
+        }
       }
       assertEquals(f.result(), { commit: second, phases_passed: ["seed", "check"] });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);

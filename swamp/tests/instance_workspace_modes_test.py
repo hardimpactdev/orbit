@@ -22,6 +22,12 @@ PROGRAM = next(task for task in TASKS if task.get('name') == 'Keep the workspace
 # The Git options of every Orbit Git call in the workspace: the quoted words after 'git' in `in_workspace`.
 IN_WORKSPACE = next(task for task in TASKS if task.get('name') == 'Name the container commands')['ansible.builtin.set_fact']['in_workspace']
 GIT_OPTIONS = re.findall(r"'([^']*)'", IN_WORKSPACE.split("'git',", 1)[1])
+CHECKOUT = next(task for task in TASKS if task.get('name') == 'Check out the commit')['block']
+REPACK = next(task for task in CHECKOUT if task['name'] == 'Repack the workspace')
+REPACK_NOTE = next(task for task in CHECKOUT if task['name'] == 'Report a repack that did not pass')
+# The repack's own words after the workspace's Git options, and the time limit before them.
+REPACK_ARGV = REPACK['ansible.builtin.command']['argv']
+REPACK_ARGS = re.findall(r"'([^']*)'", REPACK_ARGV[REPACK_ARGV.index("['repack'"):])
 
 # A fault injection that runs before the shipped program: an entry named in VANISH is removed just before the pass opens it, as a
 # repack removes a pack file; a file named in LOCKED refuses its mode change, as a file the pass may not change does.
@@ -140,6 +146,59 @@ class WorkspaceGitMaintenanceTest(unittest.TestCase):
         self.assertEqual(['maintenance.auto=false', 'gc.auto=0'], [option for option in GIT_OPTIONS if 'auto' in option])
         # Every fetched bundle stays its own pack: no repack ran.
         self.assertEqual(len(list(packs.glob('pack-*.pack'))), 4)
+
+    def test_the_checkout_repack_keeps_the_pack_count_bounded_after_many_fetches(self):
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ['rm', '-rf', str(folder)])
+        source, workspace = folder / 'source', folder / 'workspace'
+        source.mkdir()
+        self.git(source, 'init', '--quiet', '--initial-branch', 'main')
+        self.git(folder, 'init', '--quiet', '--shared=group', '--initial-branch', 'main', str(workspace))
+        packs = workspace / '.git/objects/pack'
+        self.assertEqual(REPACK_ARGS, ['repack', '-d', '-q', '--geometric=2'])
+        self.assertIn("as_orbit + ['timeout', '30'] + in_workspace[in_workspace.index('git'):]", REPACK_ARGV)
+        counts = []
+        for index in range(40):
+            # Each deployment's bundle adds files of its own, so each fetch adds one pack.
+            (source / f'file-{index}').write_text(str(index) * (index + 1) * 100)
+            self.git(source, 'add', '.')
+            self.git(source, 'commit', '--quiet', '-m', str(index))
+            self.git(source, 'bundle', 'create', '--quiet', str(folder / 'deploy.bundle'), 'main')
+            self.git(workspace, 'fetch', '--quiet', str(folder / 'deploy.bundle'), '+refs/heads/main:refs/remotes/origin/main',
+                     options=GIT_OPTIONS)
+            self.git(workspace, *REPACK_ARGS, options=GIT_OPTIONS)
+            counts.append(len(list(packs.glob('pack-*.pack'))))
+        # Without the repack the workspace would hold 40 packs; with it the count stays near log2 of the history.
+        self.assertLessEqual(max(counts), 3, counts)
+        # Every object stays: the branch's whole history reads back, and the packs keep the shared group's read bit.
+        self.git(workspace, 'fsck', '--connectivity-only', '--no-dangling')
+        self.assertEqual(self.git(workspace, 'rev-list', '--count', 'refs/remotes/origin/main').stdout.strip(), '40')
+        self.assertTrue(all(mode(pack) & 0o040 for pack in packs.glob('pack-*')))
+        # With nothing to merge it rewrites nothing.
+        before = sorted(path.name for path in packs.iterdir())
+        self.git(workspace, *REPACK_ARGS, options=GIT_OPTIONS)
+        self.assertEqual(sorted(path.name for path in packs.iterdir()), before)
+
+    def test_a_repack_that_fails_or_times_out_is_reported_and_never_fails_the_checkout(self):
+        self.assertIs(REPACK['failed_when'], False)
+        folder = Path(tempfile.mkdtemp())
+        self.addCleanup(subprocess.run, ['rm', '-rf', str(folder)])
+        note = REPACK_NOTE['ansible.builtin.debug']['msg']
+        results = {'passed': {'rc': 0, 'stderr': ''}, 'timed_out': {'rc': 124, 'stderr': ''},
+                   'failed': {'rc': 128, 'stderr': 'fatal: unable to create temporary file\n'}}
+        play = [{'hosts': 'localhost', 'gather_facts': False, 'connection': 'local', 'tasks': [
+            {'name': f'Note {name}', 'when': REPACK_NOTE['when'].replace('workspace_repack', name),
+             'vars': {name: result, 'word': note.replace('workspace_repack', name)},
+             'ansible.builtin.copy': {'content': '{{ word }}', 'dest': str(folder / name), 'mode': '0600'}}
+            for name, result in results.items()]}]
+        (folder / 'play.yml').write_text(yaml.safe_dump(play))
+        playbook = Path(sys.executable).parent / 'ansible-playbook'
+        done = subprocess.run([str(playbook) if playbook.exists() else 'ansible-playbook', '-i', 'localhost,', str(folder / 'play.yml')],
+                              check=False, capture_output=True, text=True, env={**os.environ, 'ANSIBLE_PYTHON_INTERPRETER': sys.executable})
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertFalse((folder / 'passed').exists())
+        self.assertEqual((folder / 'timed_out').read_text(), 'orbit-workspace-repack=timed_out')
+        self.assertEqual((folder / 'failed').read_text(), 'orbit-workspace-repack=failed: fatal: unable to create temporary file')
 
 
 class CheckoutFailureDetailTest(unittest.TestCase):
