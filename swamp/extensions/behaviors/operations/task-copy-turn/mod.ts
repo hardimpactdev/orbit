@@ -4,14 +4,23 @@ import { redactText } from "../../_lib/public_output.ts";
 /** The longest public transcript of one turn, as for a task VM turn. */
 const TranscriptBytes = 262144;
 const ErrorChars = 2000;
-const StartBytes = 1048576;
+const StartBytes = 16777216;
 const ReadBytes = 16777216;
 const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
 // What `task-copy-turn.yml` writes, each file as soon as its command ended: `launch.json` before the start, `start.json` with the
 // exit code and stdout of `t3 thread start --wait --json`, and `read.json` with what `t3 thread list` found and `t3 thread show` read.
 const Start = z.object({ start_exit: z.number().int(), start: z.string() }).strict();
-const Read = z.object({ list_exit: z.number().int().nullable(), found: z.number().int(), show_exit: z.number().int().nullable(), show: z.string() }).strict();
+const Read = z.object({
+    list_exit: z.number().int().nullable(),
+    found: z.number().int(),
+    // The status `t3 thread list` gives the thread of this turn's title.
+    status: z.string().nullable(),
+    show_exit: z.number().int().nullable(),
+    show: z.string(),
+}).strict();
+/** Thread states in which T3's run may still change the checkout. */
+const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 export type Evidence = { launched: boolean; start: z.infer<typeof Start> | null; read: z.infer<typeof Read> | null };
 const Started = z.object({
     threadId: z.string().min(1),
@@ -71,8 +80,11 @@ function transcript(shown: z.infer<typeof Shown> | null): Turn["transcript"] {
 export function shapeTurn(evidence: Evidence): Turn {
     const started = evidence.start === null ? null : parse(Started, evidence.start.start);
     const shown = evidence.read?.show_exit === 0 ? parse(Shown, evidence.read.show) : null;
-    // Over when the start printed its end, when nothing was launched, or when T3 holds no thread of this title.
-    const ended = started !== null || !evidence.launched || (evidence.read?.list_exit === 0 && evidence.read.found === 0);
+    // Over when nothing was launched, when the start printed an end that is not a wait for an answer, or when T3 holds no thread
+    // of this title or holds it in no active state. Anything else may still write in the checkout.
+    const listed = evidence.read?.list_exit === 0 ? evidence.read : null;
+    const ended = !evidence.launched || (started !== null && started.status !== "waiting")
+        || (listed !== null && (listed.found === 0 || (listed.found === 1 && listed.status !== null && !Active.has(listed.status))));
     const base = {
         ended,
         t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? null,

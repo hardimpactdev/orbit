@@ -49,6 +49,8 @@ assert args[7:11] == ['/usr/sbin/runuser', '-u', 'agent', '--'], args
 assert args[11:15] == ['/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/local/bin:/usr/bin:/bin'], args
 rest = args[15:]
 thread = 'mcp:66105c2c'
+if rest == ['/usr/bin/true']:
+    sys.exit(1 if os.environ['T3_START'] == 'unreachable' else 0)
 if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     assert rest[2] == '3600' and rest[3] == '/opt/orbit-agent/current/agent/bin/t3' and rest[4:6] == ['thread', 'start'], rest
     assert rest[-4:] == ['--wait', '--json', '/srv/workspace', '-'], rest
@@ -68,7 +70,7 @@ if rest[3:5] == ['thread', 'list']:
     if os.environ['T3_START'] == 'garbled':
         print('not json')
         sys.exit(0)
-    print(json.dumps([{'threadId': thread, 'status': 'running', 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}]))
+    print(json.dumps([{'threadId': thread, 'status': 'completed', 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}]))
     sys.exit(0)
 assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8] == thread, rest
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
@@ -106,23 +108,27 @@ async function phase(start: string, change: Record<string, unknown> = {}): Promi
 Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back", ignore: !available, async fn() {
     const done = await phase("completed");
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 3);
-    const start = done.calls[0];
+    assertEquals(done.calls.length, 4);
+    const start = done.calls[1];
     assertEquals(start.stdin, turn.prompt);
     assertEquals(start.args.slice(21, 29), ["--provider", "claudeAgent", "--model", "claude-opus-5-5", "--title", turn.title, "--wait", "--json"]);
     assertEquals([done.launched, done.start!.start_exit, JSON.parse(done.start!.start as string).status], [true, 0, "completed"]);
-    assertEquals([done.read!.list_exit, done.read!.found, done.read!.show_exit], [0, 1, 0]);
+    assertEquals([done.read!.list_exit, done.read!.found, done.read!.status, done.read!.show_exit], [0, 1, "completed", 0]);
     // The phase never prints the agent's text: every T3 reply stays in the run folder.
     assertEquals(done.output.includes("Subtask: Doctor note"), false);
 } });
 
-Deno.test({ name: "a turn cut by its bound still reads the thread it started; a refused start reads none", ignore: !available, async fn() {
+Deno.test({ name: "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing", ignore: !available, async fn() {
     const cut = await phase("timeout");
     assert(cut.ok, cut.output);
     assertEquals([cut.launched, cut.start!.start_exit, cut.start!.start, cut.read!.found, cut.read!.show_exit], [true, 124, "", 1, 0]);
     const refused = await phase("refused");
     assert(refused.ok, refused.output);
-    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, 2]);
+    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 3]);
+    // A copy the phase cannot reach launches nothing, so no turn can hold its group.
+    const unreachable = await phase("unreachable");
+    assert(!unreachable.ok, unreachable.output);
+    assertEquals([unreachable.launched, unreachable.start, unreachable.read, unreachable.calls.length], [false, null, null, 1]);
 } });
 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
@@ -137,5 +143,5 @@ Deno.test({ name: "a thread list that is not JSON reads as no thread, and the st
     const garbled = await phase("garbled");
     assert(garbled.ok, garbled.output);
     assertEquals([JSON.parse(garbled.start!.start as string).status, garbled.read!.list_exit, garbled.read!.found, garbled.read!.show_exit, garbled.calls.length],
-        ["completed", null, 0, null, 2]);
+        ["completed", null, 0, null, 3]);
 } });

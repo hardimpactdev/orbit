@@ -1249,12 +1249,16 @@ The Gateway's `ORBIT_TASKS_COPY_TURN_MODEL` names the provider and model of ever
 These hold until a T3 server gives Swamp a full-access MCP session:
 
 - **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
-- **Cancel ends it.** `task:cancel` destroys the copy, and the run ends with it.
-- **The group waits for the cancel.** A turn whose run may still go on leaves its group refusing turns and checks with `tasks.copy_turn_unended`.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
 - **No effort setting.** T3 runs the model at its own default effort.
 - **One new implementer thread per turn.** A reviewer turn, a continued thread and a caller's model are refused with `tasks.copy_turn_unsupported`.
+
+### Hold after a turn that may still run
+
+A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
+
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A turn cancelled before its run step reports holds the group the same way.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 

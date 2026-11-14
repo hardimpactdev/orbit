@@ -14,15 +14,16 @@ const transcript: { id: string; kind: "message"; label: string; text: string; at
 ];
 const started = (status: string, error: string | null = null) =>
     JSON.stringify({ threadId: thread, runId: run, status, reply: status === "completed" ? "Committed d867aba2." : null, error });
-const read = { list_exit: 0, found: 1, show_exit: 0, show };
+const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
 const turn = (start_exit: number, start: string, change: Partial<Evidence> = {}) => shapeTurn({ launched: true, start: { start_exit, start }, read, ...change });
 
 Deno.test("a completed run is done and over, and records the message transcript and the T3 thread", () => {
     assertEquals(turn(0, started("completed")), { state: "done", error: null, ended: true, t3_thread_id: thread, run_id: run, transcript });
 });
 
-Deno.test("a run that waits for an answer asks for input; any other end fails the turn with T3's status", () => {
-    assertEquals(turn(2, started("waiting")).state, "asking_for_input");
+Deno.test("a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status", () => {
+    const waiting = turn(2, started("waiting"), { read: { ...read, status: "waiting" } });
+    assertEquals([waiting.state, waiting.ended], ["asking_for_input", false]);
     assertEquals(turn(1, started("failed", "api_error_529")), {
         state: "failed", error: "T3 run failed: api_error_529", error_code: "tasks.turn_failed", ended: true, t3_thread_id: thread, run_id: run, transcript,
     });
@@ -30,21 +31,26 @@ Deno.test("a run that waits for an answer asks for input; any other end fails th
     assertEquals(turn(0, JSON.stringify({ threadId: thread, projectId: "p", runId: null })).error, "T3 started no run");
 });
 
-Deno.test("a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is not over", () => {
+Deno.test("a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is", () => {
     for (const exit of [124, 137]) {
-        const cut = turn(exit, "");
+        const cut = turn(exit, "", { read: { ...read, status: "running" } });
         assertEquals([cut.state, cut.error_code, cut.ended, cut.t3_thread_id, cut.transcript.length], ["failed", "tasks.turn_timeout", false, thread, 2]);
     }
+    // The run ended inside the kill grace: T3 lists the thread as completed.
+    assertEquals(turn(124, "").ended, true);
+    assertEquals(turn(124, "", { read: { ...read, status: null } }).ended, false);
 });
 
 Deno.test("a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread", () => {
     const cut = shapeTurn({ launched: true, start: null, read: null });
     assertEquals([cut.state, cut.error_code, cut.ended], ["failed", "tasks.copy_turn_failed", false]);
     assertEquals(shapeTurn({ launched: false, start: null, read: null }).ended, true);
-    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: 0, found: 0, show_exit: null, show: "" } }), {
+    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } }), {
         state: "failed", error: "T3 did not report the turn's end (exit 1).", error_code: "tasks.copy_turn_failed", ended: true, t3_thread_id: null, run_id: null, transcript: [],
     });
-    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: null, found: 0, show_exit: null, show: "" } }).ended, false);
+    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { list_exit: null, found: 0, status: null, show_exit: null, show: "" } }).ended, false);
+    // T3 made the thread but refused its run: the listed thread is idle.
+    assertEquals(shapeTurn({ launched: true, start: { start_exit: 1, start: "" }, read: { ...read, status: "idle" } }).ended, true);
 });
 
 Deno.test("a message without a run id keeps the transcript", () => {

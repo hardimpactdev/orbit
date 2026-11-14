@@ -42,6 +42,11 @@
           - intent.turn.seconds | default(0) | int >= 60 and intent.turn.seconds | int <= 3600
           - intent.turn.prompt | default('') | length > 0
         fail_msg: tasks.copy_turn_invalid
+    # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
+    - name: Reach the copy as agent
+      ansible.builtin.command:
+        argv: "{{ copy_exec + ['/usr/bin/true'] }}"
+      changed_when: false
     # Each evidence file is written as soon as its command ends, so a phase that the outer bound or a cancel cuts still tells
     # whether a turn was launched and how far it came.
     - name: Mark the turn as launched
@@ -91,12 +96,12 @@
           ansible.builtin.set_fact:
             turn_found: >-
               {{ ((turn_list.stdout | from_json) if turn_list.rc == 0 else [])
-                 | selectattr('title', 'equalto', intent.turn.title) | map(attribute='threadId') | list }}
+                 | selectattr('title', 'equalto', intent.turn.title) | list }}
           no_log: true
         - name: Show the thread
           when: turn_found | length == 1
           ansible.builtin.command:
-            argv: "{{ copy_exec + ['/usr/bin/timeout', '120', intent.turn.t3, 'thread', 'show', '--messages', '200', '--json', turn_found | first] }}"
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '120', intent.turn.t3, 'thread', 'show', '--messages', '200', '--json', (turn_found | first).threadId] }}"
           register: turn_show
           failed_when: false
           changed_when: false
@@ -113,6 +118,7 @@
             content: >-
               {{ {'list_exit': none if turn_list_unreadable | default(false) else turn_list.rc | default(none),
                   'found': turn_found | default([]) | length,
+                  'status': ((turn_found | first).status | default(none)) if turn_found | default([]) | length == 1 else none,
                   'show_exit': turn_show.rc | default(none), 'show': turn_show.stdout | default('')} | to_json }}
             dest: "{{ run }}/read.json"
             mode: "0600"

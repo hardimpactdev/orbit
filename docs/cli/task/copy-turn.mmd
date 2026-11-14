@@ -36,6 +36,7 @@ sequenceDiagram
   SW->>N: Run the turn
   %%> What it does:
   %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
+  %%> - first one `true` in the copy: a copy the phase cannot reach fails before anything is launched, so its group stays free
   %%> - `t3 thread start --provider --model --title --wait --json /srv/workspace -` with the prompt on stdin, bounded by `timeout` at 3,600 s
   %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back
   %%> - writes each evidence file as soon as its command ends: the launch mark, the start's end, the read; a cut phase still tells whether a turn was launched
@@ -44,7 +45,7 @@ sequenceDiagram
   %%> What it does:
   %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`
   %%> - keeps the message text of the thread, redacted and bounded to 256 KiB; T3's CLI gives no tool items and no token use
-  %%> - records whether T3's run is over: the start printed its end, nothing was launched, or T3 holds no thread of this title
+  %%> - records whether T3's run is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state
   Note over SW: cleanup
   %%> What it does:
   %%> - removes the private run folder
