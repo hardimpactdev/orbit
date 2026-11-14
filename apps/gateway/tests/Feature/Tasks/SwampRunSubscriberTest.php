@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampRunSubscriber;
+use App\Jobs\Operations\ProjectEndedNativeRun;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -67,7 +69,7 @@ function endedRunSocket(string $workflow, string $status, bool $child = false): 
     };
 }
 
-it('asks the reconciler for a pass when a followed run ends, and projects nothing itself', function (): void {
+it('queues the prompt projection of that Operation when its root run ends, and projects nothing itself', function (): void {
     Queue::fake();
     $run = '986bc349-54dc-4dea-9f22-76e3353d1ca1';
     $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
@@ -79,6 +81,10 @@ it('asks the reconciler for a pass when a followed run ends, and projects nothin
     $subscriber->pass();
     $subscriber->pass();
 
+    Queue::assertPushed(ProjectEndedNativeRun::class, 1);
+    Queue::assertPushed(ProjectEndedNativeRun::class, fn (ProjectEndedNativeRun $job): bool => $job->operationId === $operation->id
+        && $job->queue === GatewayQueue::OperationsPrompt->value);
+    // The pass is still asked for, for its sweeps; it projects nothing that the prompt job already projected.
     Queue::assertPushed(ReconcileSwampOperations::class, 1);
     expect($operation->refresh()->status)->toBe(OperationStatus::Running);
 });
@@ -93,7 +99,9 @@ it('requests child evidence reconciliation and keeps following the parent root',
     $subscriber = new SwampRunSubscriber($socket, new NullLogger);
     $subscriber->follow($operation->id);
     $subscriber->pass();
+    // A child run's end asks for a full pass, which records its evidence; it queues no prompt projection.
     Queue::assertPushed(ReconcileSwampOperations::class, 1);
+    Queue::assertNotPushed(ProjectEndedNativeRun::class);
     expect($operation->refresh()->status)->toBe(OperationStatus::Running);
     $subscriber->close();
     $subscriber->pass();
