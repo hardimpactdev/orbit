@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Instances\StartInstanceDestroyAction;
-use App\Actions\Operations\StartOperationAction;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -17,14 +17,14 @@ use App\Models\Task;
 use Illuminate\Support\Facades\DB;
 
 /**
- * The cancel of a task group that owns a copy (docs/cli/task/cancel.mmd). It reads what the copy holds that origin does not, admits the
- * normal `instance.destroy` of the copy with force, and records the cancel with that read and the destroy's id. It does not wait for
+ * The cancel of a task group that owns a copy (docs/cli/task/cancel.mmd). It reads what the copy holds that origin does not, records
+ * the cancel with that read and admits the normal `instance.destroy` of the copy with force. It does not wait for
  * the work: the group is cancelled when the destroy succeeds (TaskCopyLifecycle::destroyed), and a failed destroy leaves the group
  * running and bound, so the next `task:cancel` admits a new destroy.
  */
 final readonly class TaskCopyEnd
 {
-    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read) {}
+    public function __construct(private OperationStore $store, private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read) {}
 
     /**
      * What the copy's workspace holds beyond the seed: commits that origin lacks, uncommitted and untracked files. A stopped or unreachable
@@ -54,8 +54,9 @@ final readonly class TaskCopyEnd
     }
 
     /**
-     * Admits the destroy of the copy and records the cancel. Refused while an Operation holds the copy: its create still runs, or an
-     * earlier destroy has not ended.
+     * Records the cancel and admits the destroy of the copy, in one transaction. The record comes first and takes the group's lock key,
+     * so an Operation that holds or takes the group lock refuses the record and the transaction admits no destroy. Refused while an
+     * Operation holds the copy: its create still runs, or an earlier destroy has not ended.
      *
      * @param  array<string, mixed>  $workspace
      */
@@ -64,11 +65,18 @@ final readonly class TaskCopyEnd
         self::assertFree($copy);
         $key = $this->idempotency->key;
         $admit = static fn (): Operation => app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true, $caller, $request);
-        $destroy = $key === null ? $admit() : $this->idempotency->under('instance.destroy', $key, (string) $this->idempotency->fingerprint, $admit);
+        $input = ['group_id' => $group->id, 'instance_id' => $copy->id, 'task_vm_id' => null];
 
-        return DB::transaction(fn (): Operation => $this->start->record('tasks.cancel', 'task_group', $group->id, $copy->node_id,
-            ['group_id' => $group->id, 'instance_id' => $copy->id, 'task_vm_id' => null, 'destroy_operation_id' => $destroy->id],
-            ['group_id' => $group->id, 'instance_id' => $copy->id, 'destroy_operation_id' => $destroy->id, 'workspace' => $workspace],
-            $caller, $request, OperationStore::lockKey('task_group', $group->id)));
+        return DB::transaction(function () use ($group, $copy, $workspace, $caller, $request, $key, $admit, $input): Operation {
+            app(DirectOperation::class)->writer('tasks.cancel');
+            $cancel = $this->store->create('tasks.cancel', 'task_group', $group->id, $copy->node_id, $input, $caller, $request,
+                OperationStore::lockKey('task_group', $group->id));
+            $destroy = $key === null ? $admit() : $this->idempotency->under('instance.destroy', $key, (string) $this->idempotency->fingerprint, $admit);
+            $this->store->change($cancel, ['status' => OperationStatus::Succeeded, 'input' => [...$input, 'destroy_operation_id' => $destroy->id],
+                'result' => ['group_id' => $group->id, 'instance_id' => $copy->id, 'destroy_operation_id' => $destroy->id, 'workspace' => $workspace],
+                'started_at' => now(), 'finished_at' => now(), 'lock_key' => null]);
+
+            return $cancel;
+        });
     }
 }

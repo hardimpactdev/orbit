@@ -568,6 +568,27 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($held->refresh()->lock_key)->not->toBeNull();
     });
 
+    it('admits no destroy when another Operation takes the group lock after the cancel\'s checks', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        // The race: the first Operation the cancel writes after its checks finds the group lock taken by another Operation.
+        $raced = false;
+        Operation::creating(function (Operation $operation) use ($group, $copy, &$raced): void {
+            if ($raced || $operation->kind === 'tasks.publish') {
+                return;
+            }
+            $raced = true;
+            Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+                'lock_key' => OperationStore::lockKey('task_group', $group->id), 'input' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+        });
+
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409')
+            ->and($raced)->toBeTrue()
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'tasks.cancel')->exists())->toBeFalse()
+            ->and(Instance::query()->find($copy->id))->not->toBeNull();
+    });
+
     it('leaves the destroy of a clone that no group owns as it was', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);
