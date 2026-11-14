@@ -517,18 +517,16 @@ if (family === "list") {
     for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
     Deno.exit(0);
   }
-  // The container's process list: the lines a test gives as `ps`, as `ps -e -o pid=,ppid=,etimes=,cgroup=,comm=` prints them.
-  if (command[0] === "ps") {
-    for (const line of state.containers[name].ps ?? []) console.log(line);
-    Deno.exit(0);
-  }
-  // The restart phase's one read of T3's service (conn-environment-restart.yml): `main <t3_main>`, then the `ps` lines a test gives
-  // for the cgroup's members; `procs_unreadable` makes cgroup.procs unreadable.
-  if (command[0] === "sh" && command[2]?.includes("/sys/fs/cgroup/system.slice/t3.service/cgroup.procs")) {
-    if (state.containers[name].procs_unreadable) fail("cat: cgroup.procs: No such file or directory");
-    console.log(`main ${state.containers[name].t3_main ?? 0}`);
-    for (const line of state.containers[name].ps ?? []) console.log(line);
-    Deno.exit(0);
+  // The restart phase's one read of T3's service (conn-environment-restart.yml): `main <t3_main>`, `children <t3_children>`, then the
+  // `ps` lines a test gives for the cgroup's members. `procs_unreadable` makes cgroup.procs unreadable; `procs_fail` prints the list,
+  // then fails, as a read that broke half way.
+  if (command[0] === "sh" && command[2]?.includes("/sys/fs/cgroup/system.slice/t3.service")) {
+    const container = state.containers[name];
+    if (container.procs_unreadable) fail("cat: cgroup.procs: No such file or directory");
+    console.log(`main ${container.t3_main ?? 0}`);
+    console.log(`children ${container.t3_children ?? 0}`);
+    for (const line of container.ps ?? []) console.log(line);
+    Deno.exit(container.procs_fail ? 1 : 0);
   }
   // T3 in the container: its well-known document once started (its label `t3_label`, else `t3`), sessions it issues and knows, and the project it adds.
   if (command[0] === "curl") {

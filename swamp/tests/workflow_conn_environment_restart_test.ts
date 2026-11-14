@@ -30,20 +30,22 @@ Deno.test("the restart runs one tagged phase of the shipped playbook between the
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
 
-/** The members of t3.service as the phase's read prints them (`pid ppid etimes comm`), as measured on running containers. */
-const base = ["  389     1  4217 node-MainThread", "  466   389  4216 t3-resource-mon"];
-const idle = [...base, " 3630   389  4091 claude", " 3631  3630  4091 sh"];
+/** The members of t3.service as the phase's read prints them (`pid ppid sid tty comm`), as measured on running containers. */
+const base = ["  389     1   389 ?        node-MainThread", "  466   389   466 ?        t3-resource-mon"];
+// Measured idle: the provider leads its own session, and its setup `sh` stays in it.
+const idle = [...base, " 3630   389  3630 ?        claude", " 3631  3630  3630 ?        sh"];
 
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
 /** One run of the phase against a container in `status`, whose /etc/machine-info holds `written`, and whose T3 (the fixture's) answers `label` or not at all. */
-async function restart(options: { status?: string; down?: boolean; label?: string; written?: string; ps?: string[]; main?: number; unreadable?: boolean }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
+async function restart(options: { status?: string; down?: boolean; label?: string; written?: string; ps?: string[]; main?: number; unreadable?: boolean; children?: number; broken?: boolean }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
     const folder = Deno.makeTempDirSync();
     try {
         for (const dir of ["bin", "run", "containers/instance-7/etc"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
         Deno.writeTextFileSync(`${folder}/containers/instance-7/etc/machine-info`, options.written ?? "PRETTY_HOSTNAME=clone.shop\n");
         Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
-            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop", ps: options.ps ?? idle, t3_main: options.main ?? 389, procs_unreadable: options.unreadable === true } } }));
+            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop", ps: options.ps ?? idle, t3_main: options.main ?? 389, procs_unreadable: options.unreadable === true,
+            t3_children: options.children ?? 0, procs_fail: options.broken === true } } }));
         Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
@@ -107,13 +109,13 @@ Deno.test({ name: "a T3 that answers without the name fails with conn.t3_label_m
     assertEquals(run.result.error_code, "conn.t3_label_mismatch");
 } });
 
-Deno.test({ name: "an idle T3 restarts: its monitor, its own git, idle providers and the session's MCP servers started with them", ignore: !available, async fn() {
+Deno.test({ name: "an idle T3 restarts: its monitor, its own git, providers and what stays in the claude session", ignore: !available, async fn() {
     for (const ps of [
         idle,
-        // Measured: a live Claude session with a stdio MCP server (php) and npm's node, all started with claude.
-        [...base, " 3630   389  4091 claude", " 3631  3630  4091 sh", " 3632  3630  4090 php", " 3633  3630  4088 npm", " 3640  3633  4085 node"],
-        [...base, " 3700   389   600 codex"],
-        [...base, " 3800   389     0 git"],
+        // A live Claude session: its stdio MCP servers (php, npm and its node) stay in the provider's session.
+        [...idle, " 3632  3630  3630 ?        php", " 3633  3630  3630 ?        npm", " 3640  3633  3630 ?        node"],
+        [...base, " 3700   389  3700 ?        codex"],
+        [...base, " 3800   389   389 ?        git"],
         base,
     ]) {
         const run = await restart({ ps });
@@ -123,11 +125,14 @@ Deno.test({ name: "an idle T3 restarts: its monitor, its own git, idle providers
     }
 } });
 
-Deno.test({ name: "a T3 terminal, open idle or running a command, keeps the container busy and nothing restarts", ignore: !available, async fn() {
+Deno.test({ name: "a T3 terminal, open idle, running a command or an exec'd provider name, keeps the container busy", ignore: !available, async fn() {
     for (const [ps, terminals, commands] of [
-        [[...idle, " 4100   389    30 bash"], 1, 0],
-        [[...idle, " 4100   389   300 bash", " 4120  4100   200 node", " 4121  4120   200 esbuild"], 1, 2],
-        [[...base, " 4100   389   300 zsh", " 4130  4100    40 sleep"], 1, 1],
+        [[...idle, " 4100   389  4100 pts/0    bash"], 1, 0],
+        [[...idle, " 4100   389  4100 pts/0    bash", " 4120  4100  4100 pts/0    node", " 4121  4120  4100 pts/0    esbuild"], 1, 2],
+        [[...base, " 4100   389  4100 pts/1    zsh", " 4130  4100  4100 pts/1    sleep"], 1, 1],
+        // `exec claude` or `exec git` typed in a terminal keeps T3 as the parent and that name, but holds the terminal's tty.
+        [[...idle, " 4200   389  4200 pts/2    claude"], 1, 0],
+        [[...idle, " 4300   389  4300 pts/3    git"], 1, 0],
     ] as const) {
         const run = await restart({ ps: [...ps] });
         assert(run.ok, run.output);
@@ -136,12 +141,16 @@ Deno.test({ name: "a T3 terminal, open idle or running a command, keeps the cont
     }
 } });
 
-Deno.test({ name: "a provider's descendant started after its session, or a turn's tool, keeps the container busy", ignore: !available, async fn() {
+Deno.test({ name: "a turn's tool tree, in its own session, keeps the container busy however soon after the provider it started", ignore: !available, async fn() {
     for (const [ps, commands] of [
-        // Measured mid-turn: the provider runs a tool shell with its commands.
-        [[...idle, "203790  3630     0 bash", "203791 203790     0 ps", "203792 203790     0 bash"], 3],
-        // A dev server an earlier turn started, 60 s after the session began.
-        [[...idle, " 3900  3630  4031 node"], 1],
+        // Measured mid-turn: the tool shell leads its own session, and its commands stay in it.
+        [[...idle, "316382  3630 316382 ?        bash", "316383 316382 316382 ?        sleep"], 2],
+        // A first turn's `npm run dev`, two seconds after T3 started the provider: a dev server the turn leaves running.
+        [[...idle, " 3634  3630  3634 ?        npm", " 3635  3634  3634 ?        node"], 2],
+        // The provider's own session member whose parent left the service is an orphan: not the session's setup.
+        [[...idle, " 3660     1  3630 ?        node"], 1],
+        // codex: no session allowance; any descendant keeps it busy.
+        [[...base, " 3700   389  3700 ?        codex", " 3701  3700  3700 ?        sh"], 1],
     ] as const) {
         const run = await restart({ ps: [...ps] });
         assert(run.ok, run.output);
@@ -150,16 +159,18 @@ Deno.test({ name: "a provider's descendant started after its session, or a turn'
     }
 } });
 
-Deno.test({ name: "an orphan left in T3's service, such as a backgrounded dev server, keeps the container busy", ignore: !available, async fn() {
-    // Measured: node processes reparented to PID 1 that stay in t3.service's cgroup.
-    const run = await restart({ ps: [...base, " 5000     1 90000 MainThread", " 5001     1 90000 MainThread"] });
-    assert(run.ok, run.output);
-    assertEquals(run.result, { answer: "busy", reason: "processes", terminals: 0, commands: 2 });
-    assertEquals(run.systemctl, []);
+Deno.test({ name: "an orphan left in T3's service, or a member line that does not parse, keeps the container busy", ignore: !available, async fn() {
+    // Measured: node processes of past turns reparented to PID 1, in their own sessions, still in t3.service's cgroup.
+    for (const [ps, commands] of [[[...base, " 5000     1  2944 ?        node", " 5001     1  6586 ?        node"], 2], [[...idle, "garbled line"], 1]] as const) {
+        const run = await restart({ ps: [...ps] });
+        assert(run.ok, run.output);
+        assertEquals(run.result, { answer: "busy", reason: "processes", terminals: 0, commands });
+        assertEquals(run.systemctl, []);
+    }
 } });
 
-Deno.test({ name: "a process read that fails or does not hold systemd's MainPID keeps the container busy: it fails closed", ignore: !available, async fn() {
-    for (const options of [{ unreadable: true }, { main: 0 }, { main: 777 }, { ps: [] as string[] }]) {
+Deno.test({ name: "a read that fails, a MainPID outside the service or a child cgroup keeps the container busy: it fails closed", ignore: !available, async fn() {
+    for (const options of [{ unreadable: true }, { main: 0 }, { main: 777 }, { ps: [] as string[] }, { children: 1 }, { broken: true }]) {
         const run = await restart(options);
         assert(run.ok, run.output);
         assertEquals(run.result, { answer: "busy", reason: "processes_unreadable" });
@@ -177,7 +188,8 @@ Deno.test("the provider names of the process rule are the binaries the recipe sh
     };
     walk(recipe);
     const template = Deno.readTextFileSync(new URL("../ansible/templates/t3-service-processes.j2", import.meta.url));
-    const named = [...template.matchAll(/selectattr\('comm', 'in', \[([^\]]+)\]\)/g)].flatMap((match) => match[1].split(",").map((name) => name.trim().replaceAll("'", "")));
+    const list = (name: string) => template.match(new RegExp(`set ${name} = \\[([^\\]]+)\\]`))![1].split(",").map((entry) => entry.trim().replaceAll("'", ""));
     assertEquals(bins.sort(), ["claude", "codex"]);
-    assertEquals(named.sort(), bins.sort());
+    assertEquals(list("providers").sort(), bins.sort());
+    assert(list("session_providers").every((name) => list("providers").includes(name)));
 });
