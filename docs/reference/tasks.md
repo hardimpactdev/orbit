@@ -376,7 +376,24 @@ Instead of the VM reads, the [workspace phases](/reference/task-instance-workspa
 
 After the import, a step on 209 checks every commit from the copy's start to the candidate: each must hold the `.env` path exactly as the start does. A commit that adds or changes it fails with `tasks.publish_secret_path` before the token is minted, also when a later commit removes it again, because the key would stay in the pushed history. The same code answers when the branch history lacks the start commit, for example after a rebase past it.
 
-The check reads that one path: a copy of the file's content under another name is not detected. A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
+A second step then checks the content. It takes every object that is new in the range: file contents, file names and commit messages, also of commits that a later commit undoes. It refuses with `tasks.publish_secret_content` when one holds the whole `.env`, or one of its values of 8 bytes or more that the start tree does not already hold. The pull request title and body are checked the same way.
+
+The values come from two references: the copy's own file, fetched from its Node beside the bundle, and the Gateway's render of the Instance's stored values. A value is read as Orbit writes it, with its escapes undone, and as a default's file may hold it: after `export`, before an inline comment, or in a commented-out line. The refusal names the commit and the object, and the file only when its path holds no value. Any error of the check refuses with `tasks.publish_secret_unchecked`. The token is minted only after the check succeeded.
+
+The content check catches copies and plain lines, not transformed text. It misses:
+
+- a value that is encoded, compressed, escaped or split over lines;
+- a value shorter than 8 bytes, unless the whole file is copied;
+- a value that the start tree already holds, which is public already;
+- an inherited key of the default's file that the agent changed in the copy's file;
+- an old value from before an `env:update` during the task;
+- the `.env.testing` of a copy with a test database;
+- a value in an unpushed start commit, because the start tree counts as public;
+- every secret that is not in this `.env`.
+
+A long value of the copy that is no secret is refused too, when the start tree lacks it: its `APP_URL`, a host address or a user name. So is such a value in new commits of the default branch that the task branch merged. Remove it from the branch history and check again.
+
+A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 

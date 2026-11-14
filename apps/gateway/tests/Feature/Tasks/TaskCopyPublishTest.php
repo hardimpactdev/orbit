@@ -190,7 +190,7 @@ it('keeps the task VM path for a group without a container: no VM workspace refu
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.no_workspace'));
 });
 
-it('names a refused environment file with its own code', function (): void {
+it('names a refused environment file, its content and an unchecked content with their own codes', function (string $step, ?string $detail, string $code): void {
     [$group, $check] = copyPublishWorld();
     $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
 
@@ -198,8 +198,14 @@ it('names a refused environment file with its own code', function (): void {
     $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
 
     $projected = app(TaskPublishProjection::class)->apply($operation->refresh(), ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
-        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => ['failed_step' => 'Check the environment file', 'detail' => null]]);
+        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => ['failed_step' => $step, 'detail' => $detail]]);
 
-    expect($projected->error_code)->toBe('tasks.publish_secret_path')
+    expect($projected->error_code)->toBe($code)
         ->and($group->refresh()->pr_url)->toBeNull();
-});
+})->with([
+    'path' => ['Check the environment file', null, 'tasks.publish_secret_path'],
+    'content' => ['Check the .env content', "warning: x\ntasks.publish_secret_content: a value of the .env is in the file 'a.txt' in commit ".str_repeat('b', 40)."\n", 'tasks.publish_secret_content'],
+    'check error' => ['Check the .env content', "fatal: bad revision\n", 'tasks.publish_secret_unchecked'],
+    'no detail' => ['Check the .env content', null, 'tasks.publish_secret_unchecked'],
+    'refusal line only mid-line' => ['Check the .env content', 'x tasks.publish_secret_content: y', 'tasks.publish_secret_unchecked'],
+]);

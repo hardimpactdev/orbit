@@ -45,6 +45,7 @@ sequenceDiagram
   %%> Inputs:
   %%> - the commit, tree, branch `task-42`, default branch and the optional title and body
   %%> - the vault key names of the token and Git authorization header, never their values; no token exists yet
+  %%> - for a task copy: the `.env` the Gateway renders from the Instance's stored values, as the vault copy `task-publish-environment-<operation>`; the agent cannot change it
   GW-->>CLI: 202 Accepted<br/>task #5165
   %%> What you get:
   %%> - the task number, at once
@@ -60,6 +61,7 @@ sequenceDiagram
     SW->>N: Export the copy
     %%> How:
     %%> - the workspace phase bundles the branch as `agent`, checks its head and tree against the candidate, and fetches it to this worker; the Node keeps no copy
+    %%> - the Node also pulls the copy's `.env` as a regular file and fetches it beside the bundle; its bytes enter no result or log
   else a task VM
     SW->>N: Read the index
     %%> How:
@@ -99,6 +101,10 @@ sequenceDiagram
     Note over SW: Check the environment file
     %%> How:
     %%> - every commit from the copy's start to the candidate must hold the `.env` path exactly as the start does; a commit that adds it, even one a later commit removes, refuses with `tasks.publish_secret_path` before any token exists
+    Note over SW: Check the .env content
+    %%> How:
+    %%> - every object new in the range (file contents, file names, commit messages) and the pull request title and body are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render
+    %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`; a copy mints only after this step succeeded
   end
   SW->>GW: Mint the push token<br/>operation:direct:github-token
   %%> How:
@@ -168,6 +174,8 @@ sequenceDiagram
     %%> When:
     %%> - the workspace moved, the tip diverged, the push or PR write was refused, or a reply was lost
     %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
+    %%> - a commit of a task copy holds the `.env` content or one of its values under any name: `tasks.publish_secret_content`; remove it from the branch history and check again
+    %%> - the content check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, such as `tasks.push_failed`
