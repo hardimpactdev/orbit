@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Data;
 
 use App\Models\Node;
+use Orbit\Extensions\Conn\Domain\ConnAttachedThreads;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -13,8 +14,9 @@ use stdClass;
 
 /**
  * The profile's settings document as Conn wrote it; its own keys keep Conn's camelCase. `sections` says
- * which Node last wrote each section and when. A section that is not listed, including one written
- * before sections had versions, is at version 0.
+ * which Node last wrote each section and when; `updated_by` is null when Orbit wrote it. A section that is
+ * not listed, including one written before sections had versions, is at version 0. The attached threads of
+ * an environment that is gone are left out.
  */
 #[MapOutputName(SnakeCaseMapper::class)]
 final class ConnProfileSettingsData extends Data
@@ -44,7 +46,7 @@ final class ConnProfileSettingsData extends Data
         return new self(
             profileId: $profile->id,
             version: $profile->settings_version,
-            settings: $profile->settings,
+            settings: app(ConnAttachedThreads::class)->withoutGone($profile->settings),
             sections: array_map(static fn (array $section): array => [
                 'version' => $section['version'],
                 'updated_at' => $section['updated_at'],

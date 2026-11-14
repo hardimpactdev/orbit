@@ -13,7 +13,7 @@ covers:
 
 # Conn layer
 
-This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, and device settings with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
+This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, device settings, and the attached threads with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
 
 The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired.
 
@@ -51,7 +51,7 @@ Removing an edge does not revoke sessions that the consumer already paired. Revo
 
 A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node that may use profiles ([Access](#access)) sees every profile.
 
-A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has three kinds of section:
+A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has four kinds of section:
 
 ```json
 {
@@ -81,11 +81,15 @@ A profile holds one settings document. Its keys follow Conn's stores, so they st
   "devices": {
     "desktop": {"schema": 1, "values": {"fontFamilySans": "Inter", "chatWidth": "wide"}},
     "iphone": {"schema": 1, "values": {"baseFontSize": 16, "codeWordBreak": false}}
+  },
+  "attachedThreads": {
+    "schema": 1,
+    "threads": [{"environmentId": "env-fix-login", "threadId": "thread-7d2a"}]
   }
 }
 ```
 
-A section is `workspaces`, `appearance`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
+A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
 
 | Field | Rule |
 | --- | --- |
@@ -106,6 +110,11 @@ A section is `workspaces`, `appearance`, or `devices.<type>`. The document accep
 | `devices.<type>` | Object of at most 64 KB, serialized. At most 8 types per profile. |
 | `devices.<type>.schema` | Required integer, 1 or more. |
 | `devices.<type>.values` | Required flat map of at most 128 entries. |
+| `attachedThreads` | Object of at most 64 KB, serialized. |
+| `attachedThreads.schema` | Required integer, 1 or more. |
+| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
+| `attachedThreads.threads[].environmentId` | Required: the `environment_id` of a Conn environment, at most 255 characters, no spaces or colons. See [Attached threads](#attached-threads) for which environments a write may name. |
+| `attachedThreads.threads[].threadId` | Required: the T3 thread id, at most 255 characters, no spaces. |
 
 A device type is 2 to 24 lowercase letters, digits, and hyphens, and starts with a letter, such as `desktop` or `iphone`.
 
@@ -121,11 +130,45 @@ An empty object is refused wherever a map is expected, such as `colors`, `values
 
 A workspace covers its `projectRefs` and every project whose logical key is in `projectKeys`, as Conn combines them. T3 derives a logical key from the git remote by default, so devices that keep T3's default repository grouping agree on it.
 
+### Attached threads
+
+`attachedThreads` is the profile's list of threads: the sidebar of every device on the profile. A thread is attached when it is on this list. Detaching a thread removes it from the list. It never touches the T3 server or the thread, which stays as it is on its Instance.
+
+A device connects to a container T3 server only while the profile has a thread of it attached. The servers a device connects to are the environments in `attachedThreads.threads` that `GET /environments` lists for that device, so each device keeps to its own [node access](#access). The Gateway adds no field for this set: the device derives it from the two reads it already makes. When the last thread of an environment is detached, the environment leaves the set, and every device on the profile disconnects from it at its next read. Host servers are not in this set: a device keeps them connected as before.
+
+Write the section with `PATCH`, as the whole set, with the section version the client read:
+
+```json
+{"sections": {"attachedThreads": {"version": 4, "value": {"schema": 1, "threads": [
+  {"environmentId": "env-fix-login", "threadId": "thread-7d2a"},
+  {"environmentId": "env-fix-login", "threadId": "thread-9b10"}
+]}}}}
+```
+
+To attach a thread, send the set with the thread added. To detach one, send the set without it; send `"threads": []` to detach every thread. The set is a list inside an object, so an empty set keeps its shape. `null` removes the section, which reads as no attached threads.
+
+The Gateway checks each entry on the locked profile, after the version check:
+
+- An environment that is already in the stored set may stay, whoever writes. A device may carry an entry it cannot see itself, so the merge below never fails because of another device's access.
+- An environment that is not yet in the stored set must exist, and the writing Node must have node access to its Node, as for `GET /environments`. The writer is the only identity a request carries, and a write needs no binding to the profile, so the check cannot rest on the profile's other Nodes. A Node attaches only servers it may reach, which is also all that it can pick. Otherwise the request is refused with `validation.failed` (422), and the error names the field, such as `sections.attachedThreads.value.threads.1.environmentId`.
+- An entry whose environment no longer exists is dropped from what the Gateway stores.
+
+Two devices that change the set at the same time are handled by the section version, as for every section ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways: the remote set, plus the threads it added since its base, minus the threads it removed since its base. Then it retries with the new version. So an attach on one device and a detach on another both land. The Gateway needs nothing more for a set.
+
+Orbit drops the entries of an environment that is gone:
+
+- When an Instance is removed, the destroy's terminal projection deletes its environment and removes that environment's threads from every profile that holds one. This write adds 1 to the section version and to the document version, with `updated_by` `null`. A device sees the new `settings_version` in `GET /me`, reads the section, and merges the drop as a remote change. A device that writes from its older version gets a conflict instead of writing the threads back.
+- A read leaves out the threads of an environment that no longer exists, without a write and without a new version. The next write of the section drops them from the store.
+
+A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
+
+A profile from before this section has no `attachedThreads` key and no version for it. It reads as no attached threads, at section version 0, so the first patch sends version 0. No migration runs. A client that does not know the section keeps working: it ignores the key, `PUT` cannot send it and keeps it as it is, and a patch changes only the sections it names.
+
 ### Versions
 
 The document has a version, and so has each section. A new profile starts at document version 1 with no workspaces. Every write adds 1 to the document version. A write also adds 1 to the version of each section it changed. A section with no recorded version is at version 0. This includes a section written before sections had versions.
 
-`GET /profiles/{id}/settings` returns `sections`: for each section that was written, its `version`, the time of the last write in `updated_at`, and the name of the Node that wrote it in `updated_by`. A section that is not listed is at version 0.
+`GET /profiles/{id}/settings` returns `sections`: for each section that was written, its `version`, the time of the last write in `updated_at`, and the name of the Node that wrote it in `updated_by`, or `null` when Orbit wrote it. A section that is not listed is at version 0.
 
 There are two ways to write. Prefer `PATCH`.
 
@@ -135,7 +178,7 @@ There are two ways to write. Prefer `PATCH`.
 
 A patch whose section is at another version is refused with `conn.settings_version_conflict` (409), and the Gateway writes nothing. `details.current_version` is the document version. `details.sections` holds the current version of each section the request named. The client reads again, merges the sections that changed, and retries.
 
-A `value` of `null` removes `appearance` or a device section. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
+A `value` of `null` removes any section but `workspaces`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
 
 Both run in one transaction on the locked profile row, so two writes from the same version cannot both win. A section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`, is refused with `validation.failed`. A rule error names its field with dots, such as `sections.devices.iphone.value.values.baseFontSize`.
 
@@ -176,7 +219,7 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
-Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. New pairings refuse an Instance marked removing.
+Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings, and drops the environment's [attached threads](#attached-threads) from every profile, before core deletes the Instance. New pairings refuse an Instance marked removing.
 
 ### Renewal of an Instance server
 
@@ -470,7 +513,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
 | `GET /profiles/{id}/settings` | — | settings |
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
-| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}` | settings |
+| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`; any of `workspaces`, `appearance`, `attachedThreads`, `devices.<type>` | settings |
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
@@ -507,7 +550,7 @@ The objects:
 | `instance.name_taken` | 409 | Another device's create holds the name of a thread's clone. |
 | `instance.default_missing` | 409 | The Project has no default Instance in a container that is active and has a seed snapshot. |
 | `instance.complete_unavailable` | 409 | The clone is not `source_resolved` with its starting commit and a registered T3 server. |
-| `validation.failed` | 422 | The request breaks a rule; `details` names each field. |
+| `validation.failed` | 422 | The request breaks a rule; `details` names each field. This includes an attached thread whose environment is new to the set and is gone or not one the caller may see. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
@@ -553,6 +596,10 @@ Each device type has its own section for the same reason: a phone and a desktop 
 The Gateway stores the versions apart from the document, in `section_meta` on the profile. A profile from before sections has no entry, so every section of it is at version 0, and the first patch of a section sends version 0.
 
 `PUT` stays for clients that only know workspaces. It replaces just the sections it sends, so such a client cannot erase the appearance or device settings that a newer client wrote.
+
+### Why the attached set is a profile section
+
+The devices on a profile should connect to the same servers, so the set lives in the profile, beside the settings every device already reads. As a section it gets its own version, so attaching a thread never conflicts with a theme change, and it needs no new route and no client clock. A set merges three ways without loss, so the per-section version and a client retry are enough. The Gateway still checks the entries, so a device cannot attach a server it may not reach, and a removed Instance leaves no entry behind.
 
 ## Session cleanup
 

@@ -8,14 +8,20 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The sections of a profile's settings document. Each section has its own version, so two devices that
- * change different sections never conflict. A section is `workspaces`, `appearance`, or `devices.<type>`,
- * where `<type>` names a kind of device such as `desktop` or `iphone`.
+ * change different sections never conflict. A section is `workspaces`, `appearance`, `attachedThreads`, or
+ * `devices.<type>`, where `<type>` names a kind of device such as `desktop` or `iphone`.
  */
 final readonly class ConnProfileSections
 {
     public const string Workspaces = 'workspaces';
 
     public const string Appearance = 'appearance';
+
+    /** The threads the profile has attached: the servers its devices connect to ({@see ConnAttachedThreads}). */
+    public const string AttachedThreads = 'attachedThreads';
+
+    /** The sections that are one name each; the device sections are `devices.<type>`. */
+    public const array Named = [self::Workspaces, self::Appearance, self::AttachedThreads];
 
     private const string DevicePrefix = 'devices.';
 
@@ -27,6 +33,10 @@ final readonly class ConnProfileSections
     public const int MaxAppearanceBytes = 512 * 1024;
 
     public const int MaxDeviceBytes = 64 * 1024;
+
+    public const int MaxAttachedThreads = 500;
+
+    public const int MaxAttachedThreadsBytes = 64 * 1024;
 
     public const int MaxDocumentBytes = 4 * 1024 * 1024;
 
@@ -49,11 +59,11 @@ final readonly class ConnProfileSections
 
     public static function isKnown(string $section): bool
     {
-        return $section === self::Workspaces || $section === self::Appearance || self::deviceType($section) !== null;
+        return in_array($section, self::Named, true) || self::deviceType($section) !== null;
     }
 
     /**
-     * The document with one section replaced. A null value removes `appearance` or a device section, and
+     * The document with one section replaced. A null value removes any section but `workspaces`, and
      * `devices` goes away with its last device. `workspaces` always stays a list.
      *
      * @param  array<string, mixed>  $settings
