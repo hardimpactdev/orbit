@@ -153,7 +153,9 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
                 sort($keys, SORT_STRING);
                 // The admitted keys of env:update are written (or kept as the Project's reference): later syncs leave their lines alone.
                 $admitted = ValidatedData::stringList(ValidatedData::object($operation->input['connection_environment'])['keys']);
-                $pending = array_values(array_diff($instance->environment_pending_keys ?? [], $admitted));
+                // A key whose stored value is gone leaves the list too: only a new env:update marks it again.
+                $stored = array_keys(app(InstanceEnvironmentStore::class)->values($instance));
+                $pending = array_values(array_intersect(array_diff($instance->environment_pending_keys ?? [], $admitted), $stored));
                 $instance->forceFill(['environment_owned_keys' => $keys, 'environment_pending_keys' => $pending === [] ? null : $pending])->saveOrFail();
             }
 

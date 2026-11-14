@@ -339,5 +339,15 @@ it('keeps the pending keys after a failed sync and drops a key whose stored valu
         ->and($instance->refresh()->environment_pending_keys)->toBe(['GONE_KEY', 'VITE_REVERB_HOST']);
 
     pendingKeysSync($instance);
-    expect($instance->refresh()->environment_pending_keys)->toBe(['GONE_KEY']);
+    expect($instance->refresh()->environment_pending_keys)->toBeNull();
+});
+
+it('refuses env:update on a container while an env:sync runs, so no stored value is lost when that sync clears its keys', function (): void {
+    $instance = pendingKeysFixture();
+    app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'VITE_REVERB_HOST', 'first.example');
+    app(ContainerConnectionEnvironment::class)->start($instance->refresh(), null, null);
+
+    expect(fn () => app(UpdateInstanceEnvironmentAction::class)->execute($instance->refresh(), 'VITE_REVERB_HOST', 'second.example'))->toThrow(
+        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.lifecycle_busy'));
+    expect(app(InstanceEnvironmentStore::class)->values($instance)['VITE_REVERB_HOST'])->toBe('first.example');
 });
