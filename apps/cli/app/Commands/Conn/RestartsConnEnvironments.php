@@ -49,11 +49,11 @@ trait RestartsConnEnvironments
     private function restartLine(GatewayConnector $connector, ConnEnvironmentRestartResponse $restart): array
     {
         [$answer, $reason] = [$restart->answer, $restart->reason];
-        if ($restart->operation instanceof OperationResponse) {
+        if ($restart->answer === 'restarting' && $restart->operationId !== null) {
             if ($this->option('json') !== true) {
-                $this->writeHumanMessage("{$restart->instanceId} {$restart->instance}: restarting T3 (Operation {$restart->operation->id})");
+                $this->writeHumanMessage("{$restart->instanceId} {$restart->instance}: restarting T3 (Operation {$restart->operationId})");
             }
-            $operation = $this->restartEnd($connector, $restart->operation);
+            $operation = $this->restartEnd($connector, $restart->operationId);
             $result = $operation->result ?? [];
             [$answer, $reason] = $operation->succeeded() && in_array($result['answer'] ?? null, ['restarted', 'skipped'], true)
                 ? [(string) $result['answer'], is_string($result['reason'] ?? null) ? $result['reason'] : null]
@@ -64,13 +64,15 @@ trait RestartsConnEnvironments
         }
 
         return ['instance_id' => $restart->instanceId, 'instance' => $restart->instance, 'answer' => $answer, 'reason' => $reason,
-            'operation_id' => $restart->operation?->id];
+            'operation_id' => $restart->operationId];
     }
 
     /** Each restart ends within its run budget; the Operation never retries, so the follow reads until it is terminal. */
-    private function restartEnd(GatewayConnector $connector, OperationResponse $operation): OperationResponse
+    private function restartEnd(GatewayConnector $connector, int $operationId): OperationResponse
     {
-        $follower = new OperationFollower(fn (): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operation->id), OperationResponse::class), null);
+        $read = fn (): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operationId), OperationResponse::class);
+        $operation = $read();
+        $follower = new OperationFollower($read, null);
         try {
             while (! $operation->terminal()) {
                 $operation = $follower->next($operation);

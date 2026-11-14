@@ -33,19 +33,19 @@ function restartOperation(string $status, int $sequence, ?array $result = null, 
         'sequence' => $sequence, 'poll_after_seconds' => 0, 'result' => $result, 'error_code' => $error];
 }
 
-function restartAnswers(array $operation): array
+function restartAnswers(): array
 {
     return ['restarts' => [
-        ['instance_id' => 3, 'instance' => 'default', 'answer' => 'current', 'reason' => null, 'operation' => null],
-        ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation' => $operation],
-        ['instance_id' => 5, 'instance' => 'review', 'answer' => 'busy', 'reason' => 't3_working', 'operation' => null],
-        ['instance_id' => 6, 'instance' => 'asleep', 'answer' => 'skipped', 'reason' => 'frozen', 'operation' => null],
+        ['instance_id' => 3, 'instance' => 'default', 'answer' => 'current', 'reason' => null, 'operation_id' => null],
+        ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation_id' => 9],
+        ['instance_id' => 5, 'instance' => 'review', 'answer' => 'busy', 'reason' => 't3_working', 'operation_id' => null],
+        ['instance_id' => 6, 'instance' => 'asleep', 'answer' => 'skipped', 'reason' => 'frozen', 'operation_id' => null],
     ]];
 }
 
 it('walks a Node, follows each admitted restart to its end, and prints one answer per Instance in JSON', function (array $final, string $answer, ?string $reason, int $exit): void {
     $mock = MockClient::global([
-        RestartNodeConnEnvironmentsRequest::class => MockResponse::make(['data' => restartAnswers(restartOperation('queued', 1)), 'meta' => ['request_id' => RestartRequestId]], 202),
+        RestartNodeConnEnvironmentsRequest::class => MockResponse::make(['data' => restartAnswers(), 'meta' => ['request_id' => RestartRequestId]]),
         ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => RestartRequestId]]),
     ]);
 
@@ -66,7 +66,7 @@ it('walks a Node, follows each admitted restart to its end, and prints one answe
 
 it('prints one line per answer for one Instance and needs no Operation read without a restart', function (): void {
     $mock = MockClient::global([RestartConnEnvironmentRequest::class => MockResponse::make(['data' => ['restarts' => [
-        ['instance_id' => 5, 'instance' => 'review', 'answer' => 'busy', 'reason' => 't3_working', 'operation' => null],
+        ['instance_id' => 5, 'instance' => 'review', 'answer' => 'busy', 'reason' => 't3_working', 'operation_id' => null],
     ]], 'meta' => ['request_id' => RestartRequestId]])]);
 
     $code = Artisan::call('conn:environment-restart', ['instance' => 5, '--no-interaction' => true]);

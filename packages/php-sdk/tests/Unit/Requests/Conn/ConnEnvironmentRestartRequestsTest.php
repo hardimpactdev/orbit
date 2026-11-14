@@ -25,20 +25,20 @@ it('restarts one Instance or each container of a Node', function (string $reques
 it('reads each answer, with the Operation of a restart', function (): void {
     $connector = new GatewayConnector('https://gateway.orbit', caPemPath: '/tmp/root.pem');
     MockClient::global([RestartNodeConnEnvironmentsRequest::class => MockResponse::make(['data' => ['restarts' => [
-        ['instance_id' => 3, 'instance' => 'default', 'answer' => 'current', 'reason' => null, 'operation' => null],
-        ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation' => [
-            'id' => 9, 'kind' => 'conn.environment_restart', 'target_type' => 'instance', 'target_id' => 4, 'status' => 'queued', 'sequence' => 1]],
-        ['instance_id' => 5, 'instance' => 'busy', 'answer' => 'busy', 'reason' => 't3_working', 'operation' => null],
-    ]], 'meta' => ['request_id' => 'restart-id']], 202)]);
+        ['instance_id' => 3, 'instance' => 'default', 'answer' => 'current', 'reason' => null, 'operation_id' => null],
+        ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation_id' => 9],
+        ['instance_id' => 5, 'instance' => 'busy', 'answer' => 'busy', 'reason' => 't3_working', 'operation_id' => null],
+        ['instance_id' => 6, 'instance' => 'odd', 'answer' => 'failed', 'reason' => 'conn.restart_admission_failed', 'operation_id' => null],
+    ]], 'meta' => ['request_id' => 'restart-id']])]);
 
     $response = $connector->send(new RestartNodeConnEnvironmentsRequest(7))->dto();
 
-    expect(array_map(static fn ($restart): array => [$restart->instanceId, $restart->answer, $restart->reason, $restart->operation?->id], $response->restarts))
-        ->toBe([[3, 'current', null, null], [4, 'restarting', null, 9], [5, 'busy', 't3_working', null]]);
+    expect(array_map(static fn ($restart): array => [$restart->instanceId, $restart->answer, $restart->reason, $restart->operationId], $response->restarts))
+        ->toBe([[3, 'current', null, null], [4, 'restarting', null, 9], [5, 'busy', 't3_working', null], [6, 'failed', 'conn.restart_admission_failed', null]]);
 });
 
 it('refuses a restarting answer without its Operation', function (): void {
     expect(fn () => ConnEnvironmentRestartsResponse::fromGatewayData(['restarts' => [
-        ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation' => null],
+        ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation_id' => null],
     ]], 'restart-id'))->toThrow(InvalidArgumentException::class, 'invalid T3 restart answer');
 });

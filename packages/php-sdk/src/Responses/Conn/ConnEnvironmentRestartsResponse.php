@@ -20,12 +20,12 @@ final readonly class ConnEnvironmentRestartsResponse
             throw new InvalidArgumentException('Gateway response contains invalid T3 restart answers.');
         }
 
-        return new self(array_map(static function (mixed $restart) use ($requestId): ConnEnvironmentRestartResponse {
+        return new self(array_map(static function (mixed $restart): ConnEnvironmentRestartResponse {
             if (! is_array($restart)) {
                 throw new InvalidArgumentException('Gateway response contains an invalid T3 restart answer.');
             }
 
-            return ConnEnvironmentRestartResponse::fromGatewayData($restart, $requestId);
+            return ConnEnvironmentRestartResponse::fromGatewayData($restart);
         }, $restarts), $requestId);
     }
 }
