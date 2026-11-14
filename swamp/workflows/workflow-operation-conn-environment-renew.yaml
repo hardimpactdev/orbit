@@ -196,8 +196,9 @@ jobs:
     dependsOn:
     - step: Remove the local copy
       condition: {type: completed}
+    # Guarded off when the Node step never ran; the report still runs and names the failure.
     - step: Remove the Node copy
-      condition: {type: completed}
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     task:
       type: behavior
       behaviorType: command/shell

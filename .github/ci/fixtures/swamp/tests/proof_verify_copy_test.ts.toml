@@ -1,0 +1,22 @@
+order = 1430
+source_sha256 = "774f0f73120e739f2ec05a391075b048af8726b78a675a59164dbcaa85034834"
+cases = [
+  "a copy reads its plan and token age as agent in the copy, through root on its Node",
+  "the copy prefix is the fixed shape of a copy turn, names from the intent only, and closed stdin",
+  "a task VM keeps its argv and runs them as the SSH user",
+  "a copy runs no restore and no re-mint, even with stale tokens or a restore flag set, and starts every batch with the copy prefix",
+  "a task VM still restores first and last and passes no prefix",
+  "the first batch of a copy runs its setup and cases as agent in the copy",
+  "a later batch of a copy starts nothing and reports its cases unrun",
+  "a later batch of a task VM restores, then runs its setup as the SSH user",
+]
+file = "swamp/tests/proof_verify_copy_test.ts"
+cost = 1
+inputs = [
+  "swamp/ansible/task-copy-turn.yml",
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/tests/fixtures/proof-verify-copy.json",
+  "swamp/workflows/workflow-proof-fleet-verify-batch.yaml",
+  "swamp/workflows/workflow-proof-fleet-verify.yaml",
+]

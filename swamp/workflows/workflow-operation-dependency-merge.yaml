@@ -558,12 +558,11 @@ jobs:
       message: Dependency merge or private scratch cleanup failed.
       severity: high
     dependsOn:
+    # A revoke is guarded off when no token was minted; the end check still runs and names the failure.
     - step: Revoke the read token
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Revoke the write token
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove merge scratch
       condition:
         type: completed

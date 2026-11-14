@@ -36,7 +36,8 @@ use Throwable;
  * The one place that settles an Operation with its Swamp run. Every pass reads each open Operation against Swamp and projects
  * the ones whose run ended. It also expires an Operation at its budget, finds a run whose start confirmation was lost,
  * forwards a recorded cancel, and frees the target of a run that nothing proves ended. A failed read changes nothing; the
- * next pass reads again. The scheduler runs it every minute, and the event observer asks for a pass when a run ends.
+ * next pass reads again. The scheduler runs it every minute, and the event observer asks for a pass when a run ends. A root run's end also queues the prompt projection of its Operation
+ * ({@see ProjectEndedNativeRun}), which runs this same settlement for that Operation at once.
  */
 final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
 {
@@ -77,30 +78,9 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
                 $operations++;
-                $completedAt = null;
-                $settled = true;
-                $onTerminal = static function (CarbonImmutable $at) use (&$completedAt): void {
-                    $completedAt = $at;
-                };
-                try {
-                    if (InstanceMigrateProjection::unsettled($operation)) {
-                        app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
-                    }
-                    $operation = $this->reconcile($operation, $step, $expire, $onTerminal);
-                    if ($cancellation->awaitsForwarding($operation)) {
-                        $forward[] = $operation;
-                    }
-                } catch (Throwable $exception) {
-                    $settled = false;
-                    $this->warn($operation, $exception);
-                } finally {
-                    if ($operation->kind === 'instance.migrate' && InstanceMigrateProjection::unsettled($operation->refresh())) {
-                        app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
-                        app(InstanceMigrateProjection::class)->endUnavailable($operation);
-                    }
-                    if ($completedAt !== null) {
-                        $health->observe($operation, $completedAt, $settled);
-                    }
+                $operation = $this->settle($operation, $step, $expire, $health);
+                if ($cancellation->awaitsForwarding($operation)) {
+                    $forward[] = $operation;
                 }
             }
             // Reads first: a cancel can wait for Swamp's reply for half a minute.
@@ -131,6 +111,62 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         app(RoutePublicationHolds::class)->sweep();
 
         return $operations;
+    }
+
+    /**
+     * The prompt settlement of one Operation whose run ended ({@see ProjectEndedNativeRun}): the same read and projection as a pass,
+     * for this Operation only, then its recorded cancel if one waits. An Operation that a pass would not read is left alone.
+     */
+    public function settleOne(int $operationId, SwampCommandStep $step, ExpireOperationAction $expire): void
+    {
+        $kinds = array_keys(app(DirectOperation::class)->definitions());
+        $operation = $kinds === [] ? null : self::open($kinds)->whereKey($operationId)->first();
+        if (! $operation instanceof Operation) {
+            return;
+        }
+        OperationRunBudgets::duringTick(function () use ($operation, $step, $expire): void {
+            $operation = $this->settle($operation, $step, $expire, new OperationReconcileHealth);
+            $cancellation = app(NativeRunCancellation::class);
+            if ($cancellation->awaitsForwarding($operation)) {
+                try {
+                    $cancellation->forward($operation);
+                } catch (Throwable $exception) {
+                    $this->warn($operation, $exception);
+                }
+            }
+        });
+    }
+
+    /**
+     * One Operation of a pass: reads it against its run and projects its end. A failure is logged and changes nothing; the next
+     * pass reads again. Only the row lock and terminal checks of the projection decide that an end is projected once.
+     */
+    private function settle(Operation $operation, SwampCommandStep $step, ExpireOperationAction $expire, OperationReconcileHealth $health): Operation
+    {
+        $completedAt = null;
+        $settled = true;
+        $onTerminal = static function (CarbonImmutable $at) use (&$completedAt): void {
+            $completedAt = $at;
+        };
+        try {
+            if (InstanceMigrateProjection::unsettled($operation)) {
+                app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
+            }
+            $operation = $this->reconcile($operation, $step, $expire, $onTerminal);
+        } catch (Throwable $exception) {
+            $settled = false;
+            $this->warn($operation, $exception);
+        } finally {
+            if ($operation->kind === 'instance.migrate' && InstanceMigrateProjection::unsettled($operation->refresh())) {
+                app(InstanceMigrateProjection::class)->rememberSettlementLimit($operation);
+                app(InstanceMigrateProjection::class)->endUnavailable($operation);
+            }
+            if ($completedAt !== null) {
+                $health->observe($operation, $completedAt, $settled);
+            }
+        }
+
+        return $operation;
     }
 
     /** Remote text can contain inputs: log identity and type only. */
