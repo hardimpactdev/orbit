@@ -32,3 +32,19 @@ A task of a Project with a nested fleet runs in a [task copy](/reference/tasks#t
 ### In a task copy
 
 <div className="flow-at" data-chart="task/copy-turn"></div>
+
+## Errors
+
+A turn in a task copy adds these answers and Operation errors:
+
+| Code | When |
+| --- | --- |
+| `tasks.no_workspace` (409) | The group owns no task copy. |
+| `tasks.copy_not_ready` (409) | The task copy is not `active` yet: its create or its completion still runs. |
+| `tasks.copy_turn_unsupported` (422) | The turn is a reviewer turn, continues a thread or names a model. |
+| `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
+| `tasks.copy_turn_model_invalid` (503) | `ORBIT_TASKS_COPY_TURN_MODEL` does not read `PROVIDER/MODEL`. |
+| `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. |
+| `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
+| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down. |
+
