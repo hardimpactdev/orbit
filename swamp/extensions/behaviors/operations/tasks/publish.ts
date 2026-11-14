@@ -182,7 +182,8 @@ export function pullPlan(raw: unknown) {
 
 /** The limit of a pull request body that the publish request accepts (docs/cli/task/publish.mdx). */
 export const BodyLimit = 65536;
-// One waiver line, in the form the docs-impact gate reads (docs/contributor-guide.md).
+// One waiver line, in the form the docs-impact gate reads. The rule's owner is DocsImpact::WAIVER_LINE in
+// apps/docs/app/Documentation/DocsImpact.php; this copy must match it, and apps/docs/tests/Unit/WaiverLinePatternTest.php checks that.
 const WaiverLine = /^Docs-unaffected: docs\/[^\s:*?]+\.mdx?:[ \t]*\S[^\r\n]*$/;
 
 /**

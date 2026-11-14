@@ -25,6 +25,12 @@ final readonly class DocsImpact
         'internal' => 'docs/reference/tasks.md',
     ];
 
+    /**
+     * One waiver line of a PR body: the page and its reason. This is the owner of the rule; a task copy's publish keeps a copy of it
+     * (swamp/extensions/behaviors/operations/tasks/publish.ts), which tests/Unit/WaiverLinePatternTest.php holds equal.
+     */
+    public const string WAIVER_LINE = '/^Docs-unaffected: (docs\/[^\s:*?]+\.mdx?):[ \t]*(\S[^\r\n]*)$/';
+
     private const array NON_CLI_COMMAND_OWNERS = [
         'project-documents:cleanup:work' => 'docs/reference/project-documents.md',
         'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
@@ -255,7 +261,7 @@ final readonly class DocsImpact
         $changed = array_fill_keys($report['paths'], true);
         $exceptions = [];
         foreach (explode("\n", $prBody) as $note) {
-            if (preg_match('/^Docs-unaffected: (docs\/[^\s:*?]+\.mdx?):[ \t]*(\S[^\r\n]*)$/', rtrim($note, "\r"), $match) === 1) {
+            if (preg_match(self::WAIVER_LINE, rtrim($note, "\r"), $match) === 1) {
                 $exceptions[$match[1]] = $match[2];
             }
         }
