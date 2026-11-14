@@ -427,7 +427,7 @@ The body stays within its 65,536-character limit: when the path list does not fi
 
 A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
-The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the four base fields for a copy. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
+The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the five base fields for a copy: `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
 #### Prepare a command
 
