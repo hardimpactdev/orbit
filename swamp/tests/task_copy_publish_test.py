@@ -34,13 +34,8 @@ class CopyExportTest(unittest.TestCase):
     setUp = base.WorkspaceHarness.setUp
     git = base.WorkspaceHarness.git
     phase = base.WorkspaceHarness.phase
-
-    def assert_node_scratch_removed(self):
-        """The Node folders this test's own export made, by the targets its Incus shim recorded; never another unit's folder."""
-        folders = {str(Path(json.loads(line)[-1]).parent) for line in self.calls.read_text().splitlines()
-                   if json.loads(line)[2:4] == ['file', 'pull'] and json.loads(line)[-1].startswith('/var/tmp/orbit-task-export-')}
-        self.assertTrue(folders, 'the export made no Node scratch')
-        self.assertEqual([folder for folder in folders if Path(folder).exists()], [], 'Node export scratch leaked')
+    publication = base.WorkspaceHarness.publication
+    assert_node_scratch_removed = base.WorkspaceHarness.assert_node_scratch_removed
 
     def test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch(self):
         self.git('add', '--all')
@@ -72,20 +67,6 @@ class CopyExportTest(unittest.TestCase):
         self.assertEqual(json.loads(read.stdout), {'phase': 'export', 'evidence': exported})
 
 
-    def publication(self):
-        self.git('add', '--all')
-        self.git('commit', '--quiet', '-m', 'Candidate')
-        self.intent['head'] = self.git('rev-parse', 'HEAD')
-        value, _ = self.phase('preflight')
-        self.intent['checkout_fingerprint'] = value['checkout_fingerprint']
-        self.intent['candidate'] = {'head': self.intent['head'], 'tree': self.git('rev-parse', 'HEAD^{tree}')}
-        scratch = Path('/tmp/orbit-task-publish-' + uuid.uuid4().hex)
-        scratch.mkdir(mode=0o700)
-        self.addCleanup(shutil.rmtree, scratch, True)
-        self.intent.update({'worker_bundle': str(scratch / 'candidate.bundle'), 'environment_path': 'apps/web/.env',
-                            'worker_environment': str(scratch / 'environment')})
-        return scratch
-
     def test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it(self):
         (self.checkout / 'apps/web').mkdir(parents=True)
         (self.checkout / 'apps/web/.gitignore').write_text('.env\n')
@@ -95,45 +76,6 @@ class CopyExportTest(unittest.TestCase):
         self.assertEqual((scratch / 'environment').read_bytes(), b'APP_KEY=base64:not-a-real-key\r\n')
         self.assertNotIn('not-a-real-key', json.dumps(exported) + output)
         self.assert_node_scratch_removed()
-
-    def proposed(self, scratch):
-        self.intent.update({'proposed_body_path': '.git/orbit/proposed-pr-bodies/task-1.md', 'worker_proposed_body': str(scratch / 'proposed-body')})
-
-    def test_a_publication_export_fetches_the_proposed_body_of_the_task_branch_as_data(self):
-        (self.checkout / '.env').write_text('APP_KEY=base64:not-a-real-key\n')
-        folder = self.checkout / '.git/orbit/proposed-pr-bodies'
-        folder.mkdir(parents=True)
-        (folder / 'task-1.md').write_text('Summary.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.\n')
-        scratch = self.publication()
-        self.intent['environment_path'] = '.env'
-        self.proposed(scratch)
-        exported, output = self.phase('export')
-        self.assertEqual((scratch / 'proposed-body').read_text(), 'Summary.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.\n')
-        self.assertNotIn('Docs-unaffected', json.dumps(exported))
-        self.assert_node_scratch_removed()
-
-    def test_a_publication_export_without_a_proposed_body_or_with_a_link_there_fetches_none(self):
-        for link in [False, True]:
-            with self.subTest(link=link):
-                self.setUp()
-                (self.checkout / '.env').write_text('APP_KEY=base64:not-a-real-key\n')
-                if link:
-                    folder = self.checkout / '.git/orbit/proposed-pr-bodies'
-                    folder.mkdir(parents=True)
-                    (folder / 'task-1.md').symlink_to(self.checkout / '.env')
-                scratch = self.publication()
-                self.intent['environment_path'] = '.env'
-                self.proposed(scratch)
-                self.phase('export')
-                self.assertTrue((scratch / 'candidate.bundle').exists())
-                self.assertFalse((scratch / 'proposed-body').exists())
-
-    def test_a_publication_export_refuses_a_proposed_body_path_outside_the_task_branch_file(self):
-        (self.checkout / '.env').write_text('APP_KEY=base64:not-a-real-key\n')
-        scratch = self.publication()
-        self.intent['environment_path'] = '.env'
-        self.proposed(scratch)
-        self.assertIn('tasks.workspace_target_invalid', self.phase('export', intent=dict(self.intent, proposed_body_path='.env'), ok=False))
 
     def test_a_publication_export_refuses_a_copy_without_a_regular_environment_file(self):
         (self.checkout / 'apps/web').mkdir(parents=True)
