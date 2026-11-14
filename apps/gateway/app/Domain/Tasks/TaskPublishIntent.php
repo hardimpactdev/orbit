@@ -97,6 +97,8 @@ final readonly class TaskPublishIntent
                 'execution_secrets' => ['github_token' => $token, 'git_authorization' => $authorization],
                 ...($workspace === null ? [] : ['workspace' => $workspace]),
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
+            // A publish that is admitted ends a refused automatic publish (docs/reference/tasks.md#a-refused-automatic-publish).
+            Task::topLevel()->whereKey($group->id)->whereNotNull('publish_refusal')->update(['publish_refusal' => null]);
 
             return $operation;
         });

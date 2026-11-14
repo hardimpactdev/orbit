@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Providers;
 
 use App\Console\Commands\FileProblemsCommand;
+use App\Console\Commands\TaskPublishWhenDoneCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
 use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\BriefCoverageLabeler;
@@ -123,6 +124,7 @@ final class TasksServiceProvider extends ExtensionServiceProvider
         $this->commands([
             FileProblemsCommand::class,
             TaskPullRequestGateCommand::class,
+            TaskPublishWhenDoneCommand::class,
         ]);
 
         // A canonical member selects either level. Internal Task queries keep their child scope.
