@@ -11,6 +11,7 @@ use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCopyTurn;
+use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
 use App\Models\Instance;
@@ -41,6 +42,11 @@ final readonly class StopTaskSubtaskAction
         ], JSON_THROW_ON_ERROR);
     }
 
+    /**
+     * Interrupts the subtask's acting thread and cancels its running checks. A thread of a copy turn (driver `t3`) has no interrupt: its
+     * turn is a `tasks.copy_turn` Operation, so the caller must first end the group's open Operations ({@see TaskOperations::cancelOpen()}),
+     * as task:complete does. The copy's destroy ends a T3 run that outlived its Operation.
+     */
     public function execute(Task $group, Task $task): void
     {
         if (! in_array($task->status, [TaskStatus::Running, TaskStatus::Reviewing], true)) {
@@ -49,8 +55,6 @@ final readonly class StopTaskSubtaskAction
 
         $group = $group->fresh() ?? $group;
         $thread = $this->actingThread($group, $task);
-        // A copy turn's thread has no interrupt: its turn is a tasks.copy_turn Operation, which the caller stopped with the group's
-        // running Operations, and the copy's destroy ends a T3 run that outlived it.
         if ($thread instanceof AgentThread && $thread->driver !== TaskCopyTurn::Driver) {
             try {
                 $this->drivers->get($thread->driver)->interrupt($thread);
