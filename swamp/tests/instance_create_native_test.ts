@@ -25,7 +25,7 @@ const commit = "b".repeat(40);
 const server = JSON.parse(JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-create-16210-t3-register.json", import.meta.url))).step.outputs.stdout);
 
 async function fixture(mode: Mode) {
-    const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
+    const folder = Deno.makeTempDirSync({ dir: "/tmp", prefix: "orbit-ansible-" });
     const auth = await nativeAuth(folder);
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, { args: [...args, "--json"], cwd: folder, ...auth }).output();

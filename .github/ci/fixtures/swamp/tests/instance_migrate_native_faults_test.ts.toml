@@ -1,5 +1,5 @@
 order = 840
-source_sha256 = "ab1d1b4d7a8e8ed8d5f157fc7c627055fbdc7a49780dae104b845bdc70ce36f3"
+source_sha256 = "48f2e360825e4346d77f8d21412713942b600d65e9ddb80b0b010ba131944272"
 cases = [
   "pinned migrate failure: real native finish proves restoration, including the restore Route child after a lost root",
   "pinned migrate timeout: real native finish proves restoration, including the restore Route child after a lost root",

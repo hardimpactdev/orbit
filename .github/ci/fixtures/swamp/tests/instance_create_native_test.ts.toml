@@ -1,5 +1,5 @@
 order = 860
-source_sha256 = "2f424e58bd60d565206d5b8d95bb87574cf2251a40a9d38782af307bf3ade7bb"
+source_sha256 = "c5ebaedff5152f49a64c34bc68233052a2dd2fcea750f53153250b98a7bb0d77"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
   "pinned create: a failed workspace registers nothing, stops the container and removes the private folder",

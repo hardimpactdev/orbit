@@ -23,7 +23,7 @@ const exists = (path: string) => {
 };
 
 async function nativeFixture(mode: Mode, clone = false) {
-    const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
+    const folder = Deno.makeTempDirSync({ dir: "/tmp", prefix: "orbit-ansible-" });
     const auth = await nativeAuth(folder);
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, {
