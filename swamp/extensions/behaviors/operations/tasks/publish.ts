@@ -188,12 +188,47 @@ export function baseFacts(
     };
 }
 
-/** One open PR lookup decides one update or one creation, with caller prose unchanged. */
+/** Marks Orbit's own section, so a body that carries an earlier one gets it replaced, never twice. */
+export const BASE_MARK = "<!-- orbit:base -->";
+
+/** The caller's body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. */
+export function withBase(body: string, facts: BaseFacts | null): string {
+    if (facts === null) return body;
+    const at = body.indexOf(BASE_MARK);
+    const kept = (at === -1 ? body : body.slice(0, at)).trimEnd();
+    const code = (text: string) => "`" + text.replaceAll("`", "'") + "`";
+    const paths = facts.overlapping_paths.length === 0
+        ? ["- Overlapping paths: none"]
+        : [
+            "- Overlapping paths:",
+            ...facts.overlapping_paths.map((path) => `  - ${code(path)}`),
+            ...(facts.overlapping_more > 0
+                ? [`  - and ${facts.overlapping_more} more`]
+                : []),
+        ];
+    const section = [
+        BASE_MARK,
+        "## Base",
+        "",
+        `- Checked base: ${code(facts.base_commit)}`,
+        `- Default branch head: ${code(facts.default_commit)}`,
+        `- Behind by: ${facts.behind_by} ${
+            facts.behind_by === 1 ? "commit" : "commits"
+        }`,
+        ...paths,
+    ].join("\n");
+    return (kept === "" ? "" : kept + "\n\n") + section + "\n";
+}
+
+/** One open PR lookup decides one update or one creation, with caller prose unchanged but for the base section. */
 export function pullPlan(raw: unknown) {
-    const { input, steps } = z.object({
+    const { input, steps, base } = z.object({
         input: PublishInput,
         steps: ObjectValue,
+        // The JSON statement of "Check the base", or "" for a task VM or a run before that step.
+        base: z.string().optional(),
     }).parse(raw);
+    const facts = base ? BaseFacts.parse(JSON.parse(base)) : null;
     const none = { method: "", path: "", body: "", number: 0 };
     const item = run(steps, "read_pull");
     if (input.pull_request === null || !ran(item)) {
@@ -218,6 +253,7 @@ export function pullPlan(raw: unknown) {
             path,
             body: JSON.stringify({
                 ...input.pull_request,
+                body: withBase(input.pull_request.body, facts),
                 head: input.branch,
                 base: input.base,
             }),
@@ -234,7 +270,7 @@ export function pullPlan(raw: unknown) {
         path: `${path}/${row.number}`,
         body: JSON.stringify({
             title: input.pull_request.title,
-            body: input.pull_request.body,
+            body: withBase(input.pull_request.body, facts),
         }),
         number: row.number,
         error_code: "",

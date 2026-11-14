@@ -112,16 +112,19 @@ export const behavior = {
                 "Plan one PR write and materialize its unchanged JSON input",
             arguments: PrivateReply.extend({
                 input: PublishInput,
+                base: z.string().optional(),
             }),
             execute: async (
                 args: z.infer<typeof PrivateReply> & {
                     input: z.infer<typeof PublishInput>;
+                    base?: string;
                 },
                 ctx: Context,
             ) => {
                 const plan = requireResult(
                     pullPlan({
                         input: args.input,
+                        base: args.base,
                         steps: {
                             read_pull: {
                                 outputs: {

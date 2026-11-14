@@ -931,6 +931,8 @@ jobs:
         input: ${{ inputs.intent }}
         directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
         exit_code: ${{ steps["Read open PRs"].outputs.exitCode }}
+        # A task copy's base statement becomes the body's fixed ## Base section; a task VM publish has none.
+        base: '${{ "Check the base" in steps && steps["Check the base"].status == "succeeded" ? steps["Check the base"].outputs.stdout : "" }}'
     dependsOn:
     - step: Read open PRs
       condition:
