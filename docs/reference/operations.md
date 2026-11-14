@@ -418,7 +418,7 @@ The Gateway checks the form of `kind` and `target_type`, not whether a kind exis
 
 `GET /api/v1/operations` returns at most `limit` records, newest first. `limit` is 1 to 100; the default is 20. `meta.next_cursor` names the next page, or is null on the last page. Send it back as `cursor` with the same filters to read the next page. A cursor is an opaque string; one in another form answers `422` with `validation.failed`. A page is not a snapshot: an Operation created after the first page appears on no later page.
 
-A list row has every field of [the record](#the-record) except `input`, `result` and `steps`. A stored input holds the whole admitted intent and a result can hold up to 256 KiB, so a page of full records can pass what an MCP client accepts in one reply. Read one Operation with `operation:show` to get its input summary, result and steps.
+A list row has every field of [the record](#the-record) except `input`, `result` and `steps`. A stored input holds the whole admitted intent and a result can hold up to 256 KiB, so a page of full records can pass what an MCP client accepts in one reply. The list does not read the stored input or result either: it reads only the caller Node and the capacity request from the input. Read one Operation with `operation:show` to get its input summary, result and steps.
 
 ### Follow an operation by polling
 

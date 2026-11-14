@@ -32,11 +32,28 @@ function setup() {
                     },
                 });
             }
-            if (
-                method === "GET" &&
-                path === "/api/v1/tasks?project_id=123"
-            ) {
-                return Promise.resolve({ status: 200, body: { data: groups } });
+            // The Gateway pages the list newest first; this one serves two groups a page.
+            const listed = path.match(
+                /^\/api\/v1\/tasks\?project_id=123&limit=100(?:&cursor=(\d+))?$/,
+            );
+            if (method === "GET" && listed) {
+                const rows = [...groups].sort((a, b) =>
+                    Number(b.id) - Number(a.id)
+                ).filter((g) =>
+                    listed[1] === undefined || Number(g.id) < Number(listed[1])
+                );
+                const page = rows.slice(0, 2);
+                return Promise.resolve({
+                    status: 200,
+                    body: {
+                        data: page,
+                        meta: {
+                            next_cursor: rows.length > 2
+                                ? String(page[page.length - 1].id)
+                                : null,
+                        },
+                    },
+                });
             }
             assertEquals(method, "POST");
             assertEquals(path, "/api/v1/tasks");
@@ -103,6 +120,21 @@ Deno.test("lost create reply is adopted by exact brief and never posted twice", 
         Error,
         "lost reply",
     );
+    assertEquals(
+        (await enqueue(plan, 123, project.repository, s.deps))?.groupId,
+        456,
+    );
+    assertEquals(s.posts.length, 1);
+});
+Deno.test("a lost create reply is adopted from a later page of the task list", async () => {
+    const s = setup(), plan = taskPlan(detection, project);
+    s.state.loseReply = true;
+    await assertRejects(
+        () => enqueue(plan, 123, project.repository, s.deps),
+        Error,
+        "lost reply",
+    );
+    s.groups.unshift({ id: 900 }, { id: 901 }, { id: 902 });
     assertEquals(
         (await enqueue(plan, 123, project.repository, s.deps))?.groupId,
         456,

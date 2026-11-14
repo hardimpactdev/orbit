@@ -26,6 +26,8 @@ The generated clone response types include required `data.warnings: string[]` fo
 
 The generated API schema includes `PATCH /api/v1/nodes/{node}/wireguard-key`, with a `wireguard_public_key` input and the standard Node response. These types describe the [unmanaged peer key contract](/cli/node/wireguard-key); they do not add a web key editor. Regenerate them with `bun run types` when the operation changes.
 
+The task board, the navigation task count and an Instance's Tasks tab read every task group: `taskGroupsQuery` follows `meta.next_cursor` at 100 groups a page, because the Gateway [pages the list](/reference/tasks#list-tasks). The demo Gateway answers the paged path with every group.
+
 The generated API schema includes `GET /api/v1/tasks/{task}/agents/{session}` and its `TaskAgentSnapshot` response, the [thread read](/reference/tasks#read-a-thread). The task page's Agents section reads the agent stream, not this operation.
 
 The generated Node settings schema includes nullable `task_vms` alongside `apps`. The Node settings PATCH input accepts the typed host object or null, and Node responses expose its stored host configuration. These types describe [operator-owned task VM hosts](/reference/node-settings#configure-a-task-vm-host); they add no web settings editor and do not make an `app-dev` Node a host.

@@ -22,13 +22,25 @@ use App\Models\Instance;
 use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskVm;
+use Illuminate\Database\Eloquent\Collection;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
+use Spatie\LaravelData\Lazy;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 
 #[MapOutputName(SnakeCaseMapper::class)]
 final class TaskGroupData extends Data
 {
+    /** The columns a list row reads (docs/reference/tasks.md#list-tasks). */
+    public const array ListColumns = [
+        'id', 'parent_id', 'project_id', 'taskable_type', 'taskable_id', 'title', 'brief', 'status', 'orchestration', 'review_mode', 'preview',
+        'current_recipe', 'reviewer_agent_thread_id', 'pr_url', 'watched_pr_url', 'watched_pr_number', 'watched_pr_state', 'pr_branch', 'merge_status',
+        'merge_reason', 'merged_sha', 'assistance_requested', 'assistance_kind', 'assistance_question', 'assistance_reason', 'capacity_wait_reason',
+        'implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort', 'reviewer_agent_provider', 'reviewer_agent_model',
+        'reviewer_agent_effort', 'pr_mode', 'tokens', 'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations',
+        'started_at', 'settled_at', 'ended_at',
+    ];
+
     /**
      * @param  list<TaskData>  $subtasks
      * @param  array<string, array<string, array{value: string, source: string}>>  $resolvedAgents  each role's copy turn agent and where each value comes from (TaskCopyAgent)
@@ -80,8 +92,22 @@ final class TaskGroupData extends Data
         public array $resolvedAgents = [],
         public ?TaskPrMode $prMode = null,
         public ?string $prModeSource = null,
-        public ?TaskPublicationData $publication = null,
+        /** Show only: a list row leaves it out, so its reads never run for a list (docs/reference/tasks.md#publication-state). */
+        public Lazy|TaskPublicationData|null $publication = null,
     ) {}
+
+    /** @return array<string, mixed> */
+    public function toListArray(bool $compact = false): array
+    {
+        $this->exclude('publication');
+        if ($compact) {
+            return $this->toCompactArray();
+        }
+        $data = $this->toArray();
+        $data['subtasks'] = array_map(static fn (TaskData $task): array => $task->toListArray(), $this->subtasks);
+
+        return $data;
+    }
 
     /** @return array<string, mixed> */
     public function toCompactArray(): array
@@ -93,10 +119,35 @@ final class TaskGroupData extends Data
         return $data;
     }
 
-    /** @param  array{last_activity_at: string|null, active_operation_id: int|null}|null  $activity  read for many groups at once by a list */
-    public static function fromModel(Task $group, ?array $activity = null): self
+    /** What a group's data reads beyond its own columns. A list loads these first, with the columns a row shows. */
+    public const array Relations = ['project', 'tasks.latestCheck', 'latestVm', 'reviewedCommits', 'taskable'];
+
+    public static function fromModel(Task $group): self
     {
-        $group->loadMissing(['project', 'tasks']);
+        return self::fromModels(new Collection([$group]))[0];
+    }
+
+    /**
+     * The data of many groups, with every read they share done once for all of them: show reads one group, a list a page.
+     *
+     * @param  Collection<int, Task>  $groups
+     * @return list<self>
+     */
+    public static function fromModels(Collection $groups): array
+    {
+        $groups->loadMissing(self::Relations);
+        $activity = TaskGroupActivity::of(array_values($groups->modelKeys()));
+        $waits = app(TaskPlaces::class)->waitsOfGroups(array_values($groups->whereNotNull('capacity_wait_reason')->modelKeys()));
+
+        return array_values($groups->map(static fn (Task $group): self => self::fromLoaded($group, $activity[$group->id], $waits))->all());
+    }
+
+    /**
+     * @param  array{last_activity_at: string|null, active_operation_id: int|null}  $activity
+     * @param  array<int, TaskPlaceWaitData>  $waits  group id => its capacity wait
+     */
+    private static function fromLoaded(Task $group, array $activity, array $waits): self
+    {
         $taskable = $group->taskable;
         $status = $group->groupStatus();
         // Only a task copy's group has a mode (docs/reference/tasks.md#task-group-modes).
@@ -107,9 +158,9 @@ final class TaskGroupData extends Data
         }
 
         return new self(
-            lastActivityAt: ($activity ?? TaskGroupActivity::ofGroup($group->id))['last_activity_at'],
+            lastActivityAt: $activity['last_activity_at'],
             previewUrl: self::previewUrl($group, $taskable),
-            capacityWait: $group->capacity_wait_reason === null ? null : app(TaskPlaces::class)->waitOfGroup($group),
+            capacityWait: $waits[$group->id] ?? null,
             orchestration: $group->groupOrchestration(),
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
@@ -119,7 +170,7 @@ final class TaskGroupData extends Data
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
             prMode: $mode?->mode,
             prModeSource: $mode?->source,
-            publication: TaskPublicationData::fromModel($group),
+            publication: Lazy::create(static fn (): ?TaskPublicationData => TaskPublicationData::fromModel($group))->defaultIncluded(),
 
             id: $group->id,
             parentId: null,
@@ -158,9 +209,7 @@ final class TaskGroupData extends Data
             durationMs: $group->duration_ms,
             questions: (int) ($group->questions ?? 0),
             escalations: (int) ($group->escalations ?? 0),
-            subtasks: array_values($group->tasks
-                ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
-                ->all()),
+            subtasks: TaskData::fromModels($group->tasks),
         );
     }
 
@@ -181,7 +230,7 @@ final class TaskGroupData extends Data
             return null;
         }
         // A task VM reports running while ready and destroyed once gone. The capacity wait reason names other states.
-        $vm = TaskVm::query()->where('group_id', $group->id)->orderByDesc('id')->first();
+        $vm = $group->latestVm;
         if ($vm instanceof TaskVm) {
             return match ($vm->state) {
                 TaskVmState::Ready => VmPower::Running,

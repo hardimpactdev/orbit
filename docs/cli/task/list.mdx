@@ -1,11 +1,11 @@
 ---
 title: "orbit task:list"
 sidebarTitle: "task:list"
-description: "List tasks with their title, Project, status, and number of completed subtasks. The list shows each task's assistance kind. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. A task that is not asking shows an em dash for both, even when an old value is still stored. JSON includes `assistance_kind` and `assistance_question` on each task."
+description: "List task groups, newest first, one page at a time, with their title, Project, status, and number of completed subtasks. The list shows each task's assistance kind. A task that asks for direction shows its question. A task that asks because of a failure shows its reason. A task that is not asking shows an em dash for both, even when an old value is still stored. JSON includes `assistance_kind` and `assistance_question` on each task."
 ---
 
 ```bash
-orbit task:list [--parent=ID] [--project=ID] [--status=STATUS] [--json]
+orbit task:list [--parent=ID] [--project=ID] [--status=STATUS] [--limit=N] [--cursor=CURSOR] [--json]
 ```
 
 | Option | Meaning |
@@ -13,7 +13,17 @@ orbit task:list [--parent=ID] [--project=ID] [--status=STATUS] [--json]
 | `--parent=ID` | List the ordered subtasks of this parent instead of the board. |
 | `--project=ID` | Only tasks of this numeric Project ID. |
 | `--status=STATUS` | Only tasks in this status: `backlog`, `todo`, `reserved`, `running`, `reviewing`, `settling`, `waiting_for_review`, `completed`, `failed`, or `cancelled`. |
+| `--limit=N` | Groups per page, 1 to 100. Default 20. |
+| `--cursor=CURSOR` | Read the page after the one that returned this cursor. |
 
-An invalid filter fails with `task.project_invalid` or `task.status_invalid` before the request. The CLI does not prompt for a filter.
+An invalid filter fails with `task.project_invalid` or `task.status_invalid` before the request. An invalid `--limit` or `--cursor` fails with `input.invalid`. The CLI does not prompt for a filter.
 
-With `--parent=ID`, `--project=ID` filters by the parent's Project. A different Project returns an empty list.
+The list shows the newest groups first. When there are more groups, a line names the cursor of the next page. Send it back with the same filters. JSON returns `task_groups` and `next_cursor`, null on the last page. A group in the list leaves out its `publication`, and a subtask its completion summary, fixup problem and check output; [`task:show`](/cli/task/show) returns them. [List tasks](/reference/tasks#list-tasks) gives the rules.
+
+With `--parent=ID`, `--project=ID` filters by the parent's Project. A different Project returns an empty list. The subtasks of a parent come whole, so `--parent` refuses `--limit` and `--cursor`.
+
+A command that asks you to pick a group reads every page.
+
+```bash
+orbit task:list --status=running
+```
