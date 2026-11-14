@@ -40,6 +40,7 @@ sequenceDiagram
   %%> - the code and the detail name the failed phase, such as `instance.container_fleet_start_failed`, or the code is the phase's own refusal; nothing is restored
   %%> Phase start:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
+  %%> - a default frozen by a sleep resumes with its fleet, `wg-nested` and the Club key; swap closes on each cgroup the sleep recorded, and the asleep marker goes once FrankenPHP answers; a stopped default boots as before
   %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - grows the default's root disk to the intent's size (`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`) before the start guard, online; never shrinks it
   %%> Phase fleet_start:

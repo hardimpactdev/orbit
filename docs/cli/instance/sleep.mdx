@@ -13,7 +13,9 @@ covers:
 
 Put one development container Instance to sleep now. Orbit freezes the whole container and moves its memory to swap, so it holds almost no RAM. Its processes, disk, databases, Route, T3 threads and sessions stay. [Sleep and wake](/reference/development-containers#sleep-and-wake) explains the lifecycle.
 
-**This command does not check T3.** If an agent turn runs in the Instance, the freeze holds it, and a model provider may drop its connection during a long sleep. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. The [idle sleep](/reference/development-containers#sleep-and-wake) after an idle hour does check T3 first, never cuts a turn, and admits the same Operation; its result says `t3_turn: idle`. It never puts an Instance to sleep before it has watched it for one idle window, and never one that uses a Node service.
+Every development container sleeps the same way: a clone, its Project's default, and an Instance of a nested-fleet Project. What keeps an Instance awake is data, never its name: a keep-alive Process, a Node service, an open Operation, a task, the never-sleep list, or recent traffic.
+
+**This command does not check T3.** If an agent turn runs in the Instance, the freeze holds it, and a model provider may drop its connection during a long sleep. T3 continues the turn when the Instance wakes. The result says `t3_turn: not_checked`. The [idle sleep](/reference/development-containers#sleep-and-wake) after an idle hour does check T3 first, never cuts a turn, and admits the same Operation; its result says `t3_turn: idle`, or `t3_turn: no_server` for an Instance without a T3 server, such as a default. It never puts an Instance to sleep before it has watched it for one idle window, and never one that uses a Node service.
 
 ## Usage
 
@@ -28,11 +30,11 @@ orbit instance:sleep 42 --json
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 | `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
 
-Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit lets the container's memory go to swap, freezes the container (`incus pause`) and reclaims its memory. When swap cannot take it, Orbit stops the container instead. The result says which: `sleep: frozen` or `sleep: stopped`. A visit to the Route, or [`instance:wake`](/cli/instance/wake), resumes or starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
+Orbit first writes the asleep marker on the Node. From then on, each request to the Route gets the wake page. Then Orbit lets the container's memory go to swap, freezes the container (`incus pause`) and reclaims its memory. In a nested-fleet Instance, swap opens for the inner fleet's containers too. When swap cannot take it, Orbit stops the container instead. The result says which: `sleep: frozen` or `sleep: stopped`. A nested-fleet Instance is never stopped: a stop would lose the inner fleet's Club key and its tunnel. Orbit resumes it instead, and the sleep fails with `instance.container_freeze_failed`. A visit to the Route, or [`instance:wake`](/cli/instance/wake), resumes or starts it again. The wake removes the marker as soon as the app answers, before it waits for T3.
 
-Before Orbit admits the sleep, the [Conn thread index](/reference/conn#thread-index) reads the container's T3 threads one last time, while its switch is on. It reads after the refusals, so a refused or repeated request does not wait, and it waits at most 3 seconds. A device then still lists the asleep Instance's threads. A failed read does not stop the sleep.
+Before Orbit admits the sleep of an Instance with a T3 server, the [Conn thread index](/reference/conn#thread-index) reads the container's T3 threads one last time, while its switch is on. It reads after the refusals, so a refused or repeated request does not wait, and it waits at most 3 seconds. A device then still lists the asleep Instance's threads. A failed read does not stop the sleep.
 
-The Instance must be a development container that is not its Project's default and not a nested-fleet Instance. No other lifecycle work and no task may run in it.
+The Instance must be a development container. No other lifecycle work and no task may run in it.
 
 Sleeping an Instance that already sleeps runs again and changes nothing. A freeze that fails removes the marker, and the container runs as before. Run the command again to retry.
 
@@ -48,8 +50,8 @@ The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sle
 | --- | --- |
 | `instance.id_invalid` | The Instance ID is not a positive number. |
 | `operation.kind_unavailable` | The Instance has no container. |
-| `instance.sleep_unsupported` | The Instance is not a development Instance, is its Project's default, or runs a nested fleet. |
+| `instance.sleep_unsupported` | The Instance is not a development Instance. |
 | `instance.lifecycle_busy`, `operation.target_busy` | Lifecycle work, Process work or a task runs on the Instance. |
 | `instance.sleep_route_unready` | Caddy's loaded site of the Instance has no asleep rule yet. Nothing changed. Publish the Node's Caddy sites and retry. |
 | `instance.container_asleep_failed` | The asleep marker could not be written. The container still runs. |
-| `instance.container_freeze_failed` | The container could not be frozen, or the stop after a full swap failed. The marker is gone when the container still runs. |
+| `instance.container_freeze_failed` | The container could not be frozen, the stop after a full swap failed, or swap could not take a nested-fleet Instance's memory. The marker is gone when the container still runs. |

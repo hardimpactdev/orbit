@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts): `instance:wake` of a clone of a nested-fleet default starts the stopped copy and its inner fleet. A nested-fleet clone never sleeps, so this is its only Orbit start after its create.
+  %% Container runtime (docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts): `instance:wake` of a clone of a nested-fleet default starts the stopped copy and its inner fleet. A nested-fleet clone sleeps frozen and its wake resumes it (instance/wake.mmd); this start is for a copy that a host reboot, an OOM kill or a stop left stopped.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.start
@@ -17,18 +17,18 @@ sequenceDiagram
   %%> - `orbit instance:wake INSTANCE`
   %%> Callers:
   %%> - the command, after a host reboot, an OOM kill or a stop by hand left the copy stopped
-  %%> - never a Route visit: the runtime activation endpoint admits only a wake, and a nested-fleet clone has no asleep marker
+  %%> - a Route visit to such a copy that slept: the runtime activation endpoint calls the same wake admission
   %%> - planned: the task flow before it uses a task's copy
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
   Note over GW: Start or join the start<br/>one per Instance
   %%> When:
-  %%> - an active development clone of a nested-fleet default, on a Node with the nested-fleet switch on
+  %%> - an active development clone of a nested-fleet default, on a Node with the nested-fleet switch on, whose last sleep did not freeze it or whose wake since found it stopped
   %%> Result:
   %%> - the wake admits `instance.start` instead of `instance.wake`; an Idempotency-Key keys the start
   %%> - an open start of the Instance is joined; any other Operation on the Instance refuses it with `operation.target_busy`
   %%> On failure:
-  %%> - a nested-fleet default: `instance.sleep_unsupported`; it starts only through its deployment
+  %%> - a stopped nested-fleet default: `instance.sleep_unsupported`; it starts only through its deployment
   %%> - other lifecycle work: `instance.lifecycle_busy`; no run starts
   GW->>SW: Start run, full intent<br/>operation-instance-start
   %%> What it does:
@@ -41,6 +41,7 @@ sequenceDiagram
   %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - `incus start`, then the Club key into the container's /run (tmpfs) on stdin, the same script as the create's `clone-club-key`
   %%> - waits until each desired-running unit is active; T3 starts with the container, and the start does not wait for it
+  %%> - a container frozen by a sleep resumes, and swap closes on each cgroup the sleep opened; a start that left the container running removes the asleep marker
   %%> Why:
   %%> - no seed or snapshot holds the key, so every start delivers it before the fleet checks
   SW->>N: Start the inner fleet<br/>Ansible · fleet check, resume

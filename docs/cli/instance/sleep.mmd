@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): freeze a development container with its memory in swap and leave its Route on the wake page. The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): freeze a development container with its memory in swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
@@ -18,20 +18,23 @@ sequenceDiagram
   %%> - syntax: `<instance-id> [--json]`
   %%> Callers:
   %%> - the command, at once
-  %%> - the idle sleep of the runtime hibernator, every 10 min, after it read no HTTP, wake or T3 activity for an hour and no running turn (docs/reference/development-containers.md#sleep-and-wake)
-  Note over GW: Last read of T3 threads<br/>Conn thread index
-  %%> When:
-  %%> - after the refusals and the replay of a repeated request, before the Instance lock; within 3 seconds
-  %%> - only while Conn and its index switch `ORBIT_CONN_THREAD_INDEX_POLL` are on; the sleep switch does not matter
-  %%> What it does:
-  %%> - reads the container T3 server's threads once more, so the index keeps them while the Instance sleeps (docs/reference/conn.md#thread-index)
-  %%> On failure:
-  %%> - the index keeps its earlier rows; the sleep goes on
+  %%> - the idle sleep of the runtime hibernator, every 10 min, after it read no HTTP or wake activity for an hour and, for an Instance with a T3 server, no T3 activity and no running turn (docs/reference/development-containers.md#sleep-and-wake)
+  opt the Instance has a T3 server
+    Note over GW: Last read of T3 threads<br/>Conn thread index
+    %%> When:
+    %%> - after the refusals and the replay of a repeated request, before the Instance lock; within 3 seconds
+    %%> - only while Conn and its index switch `ORBIT_CONN_THREAD_INDEX_POLL` are on; the sleep setting does not matter
+    %%> - a default has no T3 server: nothing to read
+    %%> What it does:
+    %%> - reads the container T3 server's threads once more, so the index keeps them while the Instance sleeps (docs/reference/conn.md#thread-index)
+    %%> On failure:
+    %%> - the index keeps its earlier rows; the sleep goes on
+  end
   Note over GW: Admit the sleep
   %%> When:
-  %%> - an active development container that is not a default and not a nested-fleet Instance; take the Instance lock
+  %%> - an active development container, a default and a nested-fleet Instance included; take the Instance lock
   %%> On failure:
-  %%> - no container, a default, a nested-fleet Instance, an active task or lifecycle work starts no run
+  %%> - no container, a non-development Instance, an active task or lifecycle work starts no run
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   GW-->>CLI: 202 Accepted<br/>Operation ID
   SW->>N: Mark the Route asleep<br/>Ansible · tags asleep
@@ -42,22 +45,34 @@ sequenceDiagram
   %%> - the marker comes before the freeze: a request during the freeze gets the wake page, not a hang
   SW->>N: Freeze the container<br/>Ansible · tags freeze
   %%> What it does:
-  %%> - writes `max` to the container cgroup's `memory.swap.max` (Incus writes 0), `incus pause`, then a reclaim of its memory
-  %%> - the processes and their state stay; their memory goes to swap, about 13 MiB stays in RAM
+  %%> - writes `max` to `memory.swap.max` of every cgroup in the container's subtree that holds 0: the container's own (Incus writes 0) and, in a nested-fleet Instance, the inner payload cgroups (the inner Incus writes 0 too)
+  %%> - records the inner cgroups it opened on the Node, `/dev/shm/orbit/hibernation/app-instance-<id>.swap`; a cgroup with its own limit, such as 32 MiB, stays as it is
+  %%> - `incus pause`, then a reclaim of the container's memory
+  %%> - the processes and their state stay; their memory goes to swap, about 13 MiB stays in RAM for a clone, 78 MiB for a nested-fleet default
   %%> - a frozen or stopped container stays as it is
   %%> Why:
   %%> - the reclaim follows the pause, so no running process pulls a page back
-  %%> - swap opens for this cgroup only and only while it sleeps: a running container never swaps
+  %%> - with only the outer cgroup open, 1,531 MiB of a nested default stayed in RAM: a cgroup with 0 keeps its pages
+  %%> - swap opens only while the Instance sleeps: a running container never swaps
   %%> On failure:
-  %%> - a failed swap write or pause writes 0 back and removes the marker, `instance.container_freeze_failed`; the container serves as before
+  %%> - a failed swap write or pause writes 0 back to each cgroup it opened and removes the marker, `instance.container_freeze_failed`; the container serves as before
   opt more than 32 MiB of anonymous memory stays in RAM
-    SW->>N: Stop the container<br/>Ansible · resume, incus stop
-    %%> Why:
-    %%> - swap is full; a frozen container would hold RAM, which a sleep exists to free
-    %%> Result:
-    %%> - `sleep: stopped`; the next wake boots it behind the same marker
-    %%> On failure:
-    %%> - the resumed container runs: swap closes again, the marker goes, `instance.container_freeze_failed`
+    alt a nested-fleet Instance
+      SW->>N: Resume, never stop<br/>Ansible · resume, close swap
+      %%> Why:
+      %%> - a stop loses the Club key in /run and the tunnel `wg-nested`; only a deployment or a start gives them back
+      %%> Result:
+      %%> - the container runs again, swap closes on each cgroup the freeze opened, the marker goes; the run fails `instance.container_freeze_failed`
+      %%> - the Instance serves as before; free swap and run the command again
+    else any other Instance
+      SW->>N: Stop the container<br/>Ansible · resume, incus stop
+      %%> Why:
+      %%> - swap is full; a frozen container would hold RAM, which a sleep exists to free
+      %%> Result:
+      %%> - `sleep: stopped`; the next wake boots it behind the same marker
+      %%> On failure:
+      %%> - the resumed container runs: swap closes again, the marker goes, `instance.container_freeze_failed`
+    end
   end
   alt the run passes
     %% path: main
@@ -65,7 +80,7 @@ sequenceDiagram
     Note over GW: Record asleep
     %%> Result:
     %%> - the runtime's `power_state` is `stopped` for a frozen and a stopped container; the result says `sleep: frozen` or `sleep: stopped`
-    %%> - `t3_turn` is `idle` when the idle sleep started it, which read T3 first, and `not_checked` for the command
+    %%> - `t3_turn` is `idle` when the idle sleep read T3 first, `no_server` for an Instance without a T3 server, and `not_checked` for the command
     %%> - the Conn layer shows its T3 server asleep; the hourly renewal skips it
   else a step fails
     %% path: failed

@@ -19,7 +19,7 @@ Orbit refuses the start at once and records nothing in these cases:
 
 | Code | When |
 | --- | --- |
-| `tasks.copy_source_unavailable` (409) | The default Instance is missing, not active, stopped, or has no seed snapshot. One read of its container, at most about 6 s, confirms that it runs, whatever its record says: a stopped, asleep or unreachable container refuses |
+| `tasks.copy_source_unavailable` (409) | The default Instance is missing, not active, stopped by hand, or has no seed snapshot. One read of its container, at most about 6 s, confirms that it runs or sleeps, whatever its record says: a container that does not run and has no asleep marker, or that cannot be read, refuses. An asleep default is a valid source and stays asleep |
 | `tasks.copy_name_taken` (409) | An Instance named `task-<id>` exists |
 | `tasks.copy_capacity_full` (409) | Nested-fleet Project only: the default's Node holds as many nested-fleet task copies as the Gateway allows. There is no wait |
 | `tasks.copy_id_range_full` (409) | With the copy placed, the default's Node would keep no free [isolated ID range](/reference/development-containers#isolated-id-ranges) for the next seed of a default on it. The details name `free`, `size` and `seed_sizes_short`. There is no wait |

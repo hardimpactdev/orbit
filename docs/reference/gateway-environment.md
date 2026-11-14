@@ -164,7 +164,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_HIBERNATION_IDLE_SECONDS`, `ORBIT_HIBERNATION_SWEEP_SECONDS`, `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` | Development runtime hibernation timing. See [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation). |
 | `ORBIT_CONN_HELD_SESSION_PREMINT` | The pre-mint of held Conn sessions when a container Instance's T3 server is recorded. Off by default; a Node's first read makes its session. See [Held sessions](/reference/conn#how-the-gateway-makes-one). |
 | `ORBIT_CONN_THREAD_INDEX_POLL` | The reads of the Conn thread index: the minute poll, the list's read-through and the last read before a sleep. Off by default. See [Thread index](/reference/conn#thread-index). |
-| `ORBIT_HIBERNATION_CONTAINER_SLEEP`, `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP` | The idle sleep of development containers, off by default, and the Instance ids it never puts to sleep. See [Sleep and wake](/reference/development-containers#sleep-and-wake). |
+| `ORBIT_HIBERNATION_CONTAINER_SLEEP`, `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP` | Which development containers the idle sleep acts on, `false` (the default), `without_t3` or `true`, and the Instance ids it never puts to sleep. See [Sleep and wake](/reference/development-containers#sleep-and-wake). |
 | `PHP_CLI_SERVER_WORKERS` | Number of workers for `php artisan serve` in local development. |
 | `BCRYPT_ROUNDS` | Laravel password hashing cost. |
 | `LOG_CHANNEL`, `LOG_STACK`, `LOG_DAILY_DAYS`, `LOG_DEPRECATIONS_CHANNEL`, `LOG_LEVEL` | Laravel logging. [Gateway request logs](/reference/gateway-recovery#gateway-request-logs) describes the files. |

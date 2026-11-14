@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): resume a sleeping development container, or start one that was stopped. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
+  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): resume a sleeping development container, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -20,25 +20,26 @@ sequenceDiagram
   %%> - the command
   %%> - Caddy on the Instance's Node, when a request finds the asleep marker: `GET runtime-activations/app-instance/ID`
   %%> - planned: a Conn device that opens the T3 server, and the task flow before a turn on an attached Instance
-  %%> - a deployment of a sleeping default starts it in its own run instead
+  %%> - not needed by a copy: a clone or task copy of an asleep default copies its seed snapshot
+  %%> - a deployment of a sleeping Instance resumes or starts it in its own run, and removes the marker there
   %%> Requirements:
   %%> - the caller is the Instance's Node or has node access to it
   Note over GW: Start or join the wake<br/>one per Instance
   %%> When:
-  %%> - an active development container that is not a nested-fleet Instance
-  %%> - a clone of a nested-fleet default takes its start instead: see instance/start.mmd
+  %%> - an active development container, a default and a nested-fleet Instance included
+  %%> - a nested-fleet Instance takes the wake only when its last sleep froze it and no wake since found it stopped; otherwise a nested-fleet clone takes its start (instance/start.mmd) and a nested-fleet default refuses: only its deployment starts it
   %%> Result:
   %%> - an open wake of the Instance is joined: a second caller gets the same Operation, Caddy the same progress page
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
-  %%> - no container, a nested-fleet Instance or other lifecycle work starts no run
+  %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
   opt the last sleep froze the container
     %% path: resume
     GW->>N: Write the wake request<br/>agent · hibernation.marker
     %%> What it does:
     %%> - the Operation is recorded without its run; the Node calls run after its commit
     %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>.wake`; only root writes in that folder
-    %%> - the app-dev role's script, started by a systemd path unit, acts only on `instance-<id>` of `orbit-instances` found Frozen with its asleep marker and a request under 1 s old: `incus resume`, `memory.swap.max` 0, one request to FrankenPHP for an answer below 500 (1.5 s at most), then it removes the marker, writes `app-instance-<id>.resumed`, and rebuilds a stale library cache and CA bundle as the run does
+    %%> - the app-dev role's script, started by a systemd path unit, acts only on `instance-<id>` of `orbit-instances` or `orbit-instances-nested` found Frozen with its asleep marker and a request under 1 s old: `incus resume`, `memory.swap.max` 0 on the container's cgroup and on each cgroup the sleep recorded in `app-instance-<id>.swap`, one request to FrankenPHP for an answer below 500 (1.5 s at most), then it removes the marker, writes `app-instance-<id>.resumed`, and rebuilds a stale library cache and CA bundle as the run does
     %%> - the Gateway reads the request folder and the marker with `hibernation.times` until the resume shows, within 3 s
     %%> Why:
     %%> - measured on a frozen clone: the resume takes 0.02 s and the web probe 0.4 s, but the run's start-up and playbook took 8-13 s of the 9-19 s a visitor waited
@@ -57,9 +58,10 @@ sequenceDiagram
   GW-->>CL: 202 Accepted<br/>Operation ID · progress page
   SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
-  %%> - Frozen: `incus resume`, `memory.swap.max` back to 0, FrankenPHP gets 10 tries 1 s apart; nothing boots and nothing converges, `wake: resumed`
-  %%> - Frozen and FrankenPHP silent: `incus stop --force`, then the boot below, `wake: restarted_after_resume`
-  %%> - Stopped (after a host reboot or a sleep that fell back to a stop): the boot below, `wake: started`
+  %%> - Frozen: `incus resume`, `memory.swap.max` back to 0 on the container's cgroup and on each cgroup the sleep recorded, FrankenPHP gets 10 tries 1 s apart; nothing boots and nothing converges, `wake: resumed`
+  %%> - a nested-fleet Instance resumes with its inner fleet, `wg-nested` and the Club key in /run: a freeze keeps them, so the wake starts and checks no fleet
+  %%> - Frozen and FrankenPHP silent: `incus stop --force`, then the boot below, `wake: restarted_after_resume`; a nested-fleet Instance is never stopped: the wake fails `instance.web_unready`
+  %%> - Stopped (after a host reboot or a sleep that fell back to a stop): the boot below, `wake: started`; a nested-fleet Instance is never booted here: see the branch below
   %%> - Running (after a reboot with `boot.autostart`): no start and no resume, `wake: already_running`
   %%> - a Frozen container without the marker is resumed; the result says `marker_found: false`
   %%> - before the boot, the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
@@ -69,7 +71,7 @@ sequenceDiagram
   %%> - removes the asleep marker, so Caddy sends the next request to the app
   %%> - then rebuilds the container's library cache with `ldconfig -X` when it lacks a soname of the runtime folder (a converge cannot exec in a frozen container); a failed check fails nothing
   %%> - then runs `update-ca-certificates` when the CA bundle lacks the container's Orbit root (the converge writes the root's file, but a frozen container refuses the exec); a container without the file skips it
-  %%> - then waits up to 30 s for T3's environment endpoint in a clone, else `instance.t3_unready`
+  %%> - then waits up to 30 s for T3's environment endpoint in an Instance with a T3 server, else `instance.t3_unready`; a default has none and ends with the app
   %%> Why:
   %%> - one playbook: a second Ansible start costs about 4 s on the visitor's path
   %%> - the visitor waits for the app, not for T3; T3 gates only the Operation's end
@@ -107,6 +109,14 @@ sequenceDiagram
     %%> - the runtime's `power_state` is `running`, because the container runs
     %%> Retry:
     %%> - the same command; a start of a running container changes nothing
+  else a nested-fleet container is stopped
+    %% path: nested-stopped
+    SW--xGW: Run failed<br/>instance.nested_fleet_stopped
+    %%> Why:
+    %%> - a host reboot or a stop ended the freeze; a boot without the Club key and `wg-nested` gives a fleet that cannot pass Doctor
+    %%> Result:
+    %%> - nothing boots; the marker stays and `power_state` stays `stopped`
+    %%> - the sleep no longer counts as frozen: the next wake of a clone takes its start, which removes the marker; a default starts only by its deployment
   else a step fails before the app answers
     %% path: failed
     SW--xGW: Run failed<br/>failed step, error_code
