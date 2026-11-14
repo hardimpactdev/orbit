@@ -9,6 +9,7 @@ import stat
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
@@ -21,6 +22,9 @@ CHECKOUT_MARK = "/var/lib/orbit/workspace-checkout"
 CLEANED_NAMES = 20
 # The most clean rounds of a task copy: one per untracked `.gitignore` nested in another untracked folder that it hides.
 CLEAN_ROUNDS = 64
+
+# The two T3 sessions a clone registers, in the order the registration reads them (conn/environment-renew.mmd).
+SESSIONS = (("gateway", "Orbit Gateway"), ("swamp", "Orbit Swamp"))
 
 # The agent's own ignore file: the task check runs Git as `agent` with no global configuration, so Git reads this file by default.
 AGENT_IGNORE = "/home/agent/.config/git/ignore"
@@ -566,45 +570,54 @@ def phase_main(phase, raw):
         if not active:
             run(["systemctl", "start", t["unit"]])
             changes.append("start:t3")
-        ready = run(
-            [
-                "curl",
-                "--fail",
-                "--silent",
-                "--show-error",
-                "--max-time",
-                "2",
-                "--retry",
-                "30",
-                "--retry-delay",
-                "1",
-                "--retry-connrefused",
-                "--retry-max-time",
-                "30",
-                "http://127.0.0.1:"
-                + str(t["internal_port"])
-                + "/.well-known/t3/environment",
-            ],
-            agent=True,
-        )
-        answered = time.time()
+        # While T3 starts, its own CLI issues the two sessions and adds the project: stock T3's CLI writes its store before and during
+        # the server's first start (docs/reference/development-containers.md#create). The tokens leave only as the private reply.
+        mark = root(t["project_mark"])
+        cli = [(name, [t["t3"], "auth", "session", "issue", "--label", label, "--token-only"]) for name, label in SESSIONS]
+        if not mark.exists():
+            cli.append(("project", [t["t3"], "project", "add", ws, "--title", t["title"]]))
+        with ThreadPoolExecutor(max_workers=len(cli)) as pool:
+            started = {name: pool.submit(run, argv, agent=True) for name, argv in cli}
+            ready = run(
+                [
+                    "curl",
+                    "--fail",
+                    "--silent",
+                    "--show-error",
+                    "--max-time",
+                    "2",
+                    "--retry",
+                    "30",
+                    "--retry-delay",
+                    "1",
+                    "--retry-connrefused",
+                    "--retry-max-time",
+                    "30",
+                    "http://127.0.0.1:"
+                    + str(t["internal_port"])
+                    + "/.well-known/t3/environment",
+                ],
+                agent=True,
+            )
+            answered = time.time()
+            issued = {name: future.result().stdout.strip() for name, future in started.items()}
         environment = json.loads(ready.stdout)
         assert environment["environmentId"] and environment["serverVersion"]
-        mark = root(t["project_mark"])
-        if not mark.exists():
-            r = run([t["t3"], "project", "add", ws, "--title", t["title"]], agent=True)
-            write(str(mark), r.stdout.strip() + "\n", 2750, 2750, "0600")
+        assert all(issued[name] for name, _ in SESSIONS) and issued["gateway"] != issued["swamp"]
+        if "project" in issued:
+            write(str(mark), issued["project"] + "\n", 2750, 2750, "0600")
         print(
             json.dumps(
                 {
                     "phase": phase,
-                    "changes": changes,
+                    "changes": changes + ["sessions-issued"],
                     "ready_at": __import__("datetime")
                     .datetime.fromtimestamp(
                         answered, __import__("datetime").timezone.utc
                     )
                     .isoformat(),
                     "environment_id": environment["environmentId"],
+                    "private_reply": {name: {"token": issued[name]} for name, _ in SESSIONS},
                 }
             )
         )
@@ -620,23 +633,11 @@ def phase_main(phase, raw):
                 agent=True,
             ).stdout
         )
-        for label in ["Orbit Gateway", "Orbit Swamp"]:
-            token = (
-                existing["gateway" if label == "Orbit Gateway" else "swamp"]["token"]
-                if existing
-                else run(
-                    [
-                        t["t3"],
-                        "auth",
-                        "session",
-                        "issue",
-                        "--label",
-                        label,
-                        "--token-only",
-                    ],
-                    agent=True,
-                ).stdout.strip()
-            )
+        # The T3 step issued both sessions while T3 started; this step only checks them against the running server.
+        if not existing:
+            raise RuntimeError("instance.t3_sessions_missing")
+        for name, _ in SESSIONS:
+            token = existing[name]["token"]
             # This is the clone's T3 server, reached directly over loopback without a proxy.
             with closing(
                 http.client.HTTPConnection("127.0.0.1", t["internal_port"], timeout=5)
@@ -679,7 +680,7 @@ def phase_main(phase, raw):
             json.dumps(
                 {
                     "phase": phase,
-                    "changes": [] if existing else ["sessions-issued"],
+                    "changes": [],
                     "checked_at": __import__("datetime")
                     .datetime.now(__import__("datetime").timezone.utc)
                     .isoformat(),

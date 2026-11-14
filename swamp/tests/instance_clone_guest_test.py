@@ -924,8 +924,8 @@ class CloneGuestTest(unittest.TestCase):
             self.assertTrue(output.getvalue().startswith("orbit-commit=first-checkout\n"))
             self.assertNotIn('"commit"', output.getvalue())
 
-    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
-                  branch="proof", mark=None):
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=True, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
+                  branch="proof", mark=None, t3=None):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
@@ -936,7 +936,7 @@ class CloneGuestTest(unittest.TestCase):
             "processes": [{"name": "orbit-process-vp-dev.service", "id": 19, "desired": desired}] if inactive else [],
             "clone": {
                 "seed_commit": "abc123",
-                "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"},
+                "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3", **(t3 or {})},
             },
         }
         commands = []
@@ -962,7 +962,7 @@ class CloneGuestTest(unittest.TestCase):
             if actual[0] == "git":
                 stdout = branch + "\n" if "symbolic-ref" in actual else "abc123\n"
             if actual[0] == "/opt/agent/bin/t3":
-                stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
+                stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n" if "--label" in actual else "project-proof\n"
             return subprocess.CompletedProcess(argv, code, stdout, "token=ghp_SUPER_PRIVATE_TOKEN_12345678901234567890")
 
         sessions = {
@@ -991,6 +991,7 @@ class CloneGuestTest(unittest.TestCase):
                 io.StringIO(json.dumps(sessions) if existing else ""),
             ),
             patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
+            patch.object(GUEST.os, "chown"),
             checkout_mark((mark or {}).get("instance_id", 9)),
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(error),
@@ -1079,17 +1080,41 @@ class CloneGuestTest(unittest.TestCase):
         self.assertEqual(error, 'instance.container_process_inactive\n')
 
     def test_non_php_sessions_keep_both_authenticated_sessions_without_php(self):
-        for existing in [False, True]:
-            with self.subTest(existing=existing):
-                commands, output, _ = self.readiness("sessions", existing=existing)
-                result = json.loads(output)
-                self.assertEqual(result["phase"], "sessions")
-                self.assertEqual(result["private_reply"]["gateway"]["status"], 200)
-                self.assertEqual(result["private_reply"]["swamp"]["status"], 200)
-                self.assertEqual(
-                    result["changes"], [] if existing else ["sessions-issued"]
-                )
-                self.assertFalse(any(argv[0] == "php" for argv in commands))
+        commands, output, _ = self.readiness("sessions")
+        result = json.loads(output)
+        self.assertEqual(result["phase"], "sessions")
+        self.assertEqual(result["private_reply"]["gateway"]["status"], 200)
+        self.assertEqual(result["private_reply"]["swamp"]["status"], 200)
+        self.assertEqual(result["changes"], [])
+        self.assertFalse(any(argv[0] == "php" for argv in commands))
+        # The sessions step checks the T3 step's sessions and issues none: no T3 CLI start on its path.
+        self.assertFalse(any(argv[0] == "/opt/agent/bin/t3" for argv in commands))
+
+    def test_sessions_without_the_t3_steps_sessions_fail_and_issue_none(self):
+        commands, output, error = self.readiness("sessions", existing=False, entrypoint=True)
+        self.assertEqual((output, error), ("", "instance.container_sessions_failed\n"))
+        self.assertFalse(any(argv[0] == "/opt/agent/bin/t3" for argv in commands))
+
+    def test_the_t3_step_issues_both_sessions_and_adds_the_project_while_t3_starts(self):
+        mark = "/home/agent/.config/orbit/t3-project"
+        commands, output, error = self.readiness("t3", existing=False, expected_exit=0,
+                                                 t3={"unit": "t3.service", "title": "Proof", "project_mark": mark})
+        result = json.loads(output)
+        cli = [argv for argv in commands if argv[0] == "/opt/agent/bin/t3"]
+        self.assertEqual(sorted(argv[1:3] for argv in cli), [["auth", "session"], ["auth", "session"], ["project", "add"]])
+        self.assertEqual(sorted(argv[argv.index("--label") + 1] for argv in cli if "--label" in argv), ["Orbit Gateway", "Orbit Swamp"])
+        # Every T3 CLI call starts before the step waits for T3's answer is read: they run beside the server's first start.
+        started = commands.index(next(argv for argv in commands if argv[0] == "curl"))
+        self.assertTrue(all(commands.index(argv) <= started + 3 for argv in cli))
+        # The tokens leave only as the private reply, which the Node keeps in the run's private file; never in the public receipt.
+        self.assertEqual(result["private_reply"], {"gateway": {"token": "Orbit Gateway-PRIVATE-TOKEN"}, "swamp": {"token": "Orbit Swamp-PRIVATE-TOKEN"}})
+        public = {key: value for key, value in result.items() if key != "private_reply"}
+        self.assertNotIn("PRIVATE", json.dumps(public) + error)
+        # The project's mark is written; a retry that finds a mark (here: a file the copy holds) adds no second project.
+        self.assertTrue(any(change.endswith(mark) for change in result["changes"]))
+        commands, _, _ = self.readiness("t3", existing=False, expected_exit=0,
+                                        t3={"unit": "t3.service", "title": "Proof", "project_mark": GUEST.CHECKOUT_MARK})
+        self.assertFalse(any(argv[:3] == ["/opt/agent/bin/t3", "project", "add"] for argv in commands))
 
     def test_non_php_check_has_no_php_probe(self):
         commands, _, _ = self.readiness("check")
