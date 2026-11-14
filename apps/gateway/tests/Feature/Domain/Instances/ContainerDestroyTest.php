@@ -249,6 +249,20 @@ it('removes container Processes and disabled Conn records and frees the port onl
         ->not->toContain('instance-create-model-'.Operation::query()->where('target_id', $default->id)->value('id'));
 })->with(['clone' => false, 'migrated checkout' => true]);
 
+it('deletes the clone stdin copy of a failed and of a cancelled create, which keep their Instance, at its destroy', function (string $status): void {
+    $default = destroyDefault();
+    $clone = destroyClone($default);
+    // A failed or cancelled create keeps its reserved Instance (retained_for_retry); its execution copies stay until this destroy.
+    $create = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id,
+        'node_id' => $clone->node_id, 'status' => $status, 'input' => [], 'state' => []]);
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'succeeded'));
+
+    $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
+    expect($clone->fresh())->toBeNull()
+        ->and($deleted)->toContain('instance-create-clone-'.$create->id, 'instance-git-credential-'.$create->id, 'instance-create-model-'.$create->id);
+})->with(['failed', 'cancelled']);
+
 it('keeps retained Git findable in the destroy result after deleting a migrated Instance', function (): void {
     $clone = destroyClone(destroyDefault(), true);
     $path = '/home/orbit/apps/tool/feature.orbit-retired-git';

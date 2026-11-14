@@ -175,7 +175,7 @@ INNER_CONFIG = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mo
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None, stdin="PRIVATE-INPUT"):
         calls = []
         self.inputs = {}
         self.decoding = {}
@@ -370,7 +370,7 @@ class CloneTest(unittest.TestCase):
                         "container",
                     ],
                 ),
-                patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
+                patch("sys.stdin", io.StringIO(stdin)),
                 patch("subprocess.run", command),
                 patch("os.chown"),
                 contextlib.redirect_stdout(output),
@@ -466,7 +466,7 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(error, "")
         printed = json.loads(transcript[0].strip().splitlines()[-1])
         self.assertEqual(set(printed["timings"]), {"acl", "copy", "units", "boot_files", "firewall", "network_check", "start", "private_names",
-                                                   "node_services", "mail", "branch"})
+                                                   "node_services", "mail", "branch", "t3_files"})
         self.assertTrue(all(isinstance(value, (int, float)) and value >= 0 for value in printed["timings"].values()))
 
     BOOT_FILES = [
@@ -500,6 +500,109 @@ class CloneTest(unittest.TestCase):
         apply = next(i for i, c in enumerate(calls) if c[:2] == ["python3", "-c"] and c[2] == 'print(\'{"status":"unchanged"}\')'
                      and c[-1] not in RENDERS)
         self.assertTrue(all(copy < calls.index(call) < start < apply for call in pushes))
+
+    FRAME = "#orbit-model-environment"
+    MODEL = "ANTHROPIC_BASE_URL=http://10.253.0.1:8317\nANTHROPIC_AUTH_TOKEN=PLACEHOLDER\n"
+    T3_FILES = {
+        "t3": {"device": "t3", "condition": "/etc/orbit/instance"},
+        "model_environment": {"path": "/home/agent/.config/orbit/model.env", "uid": 2750, "gid": 2750, "mode": "0600",
+                              "frame": "#orbit-model-environment"},
+        "files": [
+            {"path": "/etc/orbit/instance", "before_start": True, "uid": 0, "gid": 0, "mode": "0644", "content": "ORBIT_INSTANCE_ID=7\n"},
+            {"path": "/home/agent/.codex/config.toml", "before_start": True, "uid": 2750, "gid": 2750, "mode": "0600", "content": "codex\n"},
+            {"path": "/home/agent/.claude.json", "before_start": True, "uid": 2750, "gid": 2750, "mode": "0600",
+             "json": {"hasCompletedOnboarding": True}},
+            {"path": "/home/agent/.claude/CLAUDE.md.note", "uid": 2750, "gid": 2750, "mode": "0600", "content": "not before the start\n"},
+            {"path": "/home/agent/.t3/userdata/settings.json", "before_start": True, "uid": 2750, "gid": 2750, "mode": "0600",
+             "json": {"linkedEnvironmentsEnabled": True}},
+        ],
+    }
+    # The seed's agent home: the folders a default holds, without T3's state folder (a default never runs T3).
+    T3_ROOT = {"home/agent/.config/orbit/.keep": "", "home/agent/.codex/.keep": "", "etc/orbit/.keep": ""}
+    T3_TARGETS = ["/etc/orbit/instance", "/home/agent/.config/orbit/model.env", "/home/agent/.codex/config.toml", "/home/agent/.claude.json",
+                  "/home/agent/.claude/CLAUDE.md.note", "/home/agent/.t3", "/home/agent/.t3/userdata",
+                  "/home/agent/.t3/userdata/settings.json"]
+
+    def t3_writes(self, calls):
+        return [call for call in calls if call[3:5] in (["file", "push"], ["file", "create"])
+                and any(call[-1] == "instance-7" + path for path in self.T3_TARGETS)]
+
+    def test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last(self):
+        # A Gateway that frames the model environment after the credential line: the copy's boot starts T3.
+        transcript = []
+        calls, _, error = self.clone_with(self.T3_FILES, rootfs=self.T3_ROOT, transcript=transcript,
+                                               stdin="https://x-access-token:PRIVATE@github.com\n" + self.FRAME + "\n" + self.MODEL)
+        self.assertEqual(error, "")
+        writes = self.t3_writes(calls)
+        self.assertEqual([call[-1] for call in writes], ["instance-7/home/agent/.config/orbit/model.env", "instance-7/home/agent/.codex/config.toml",
+                                                          "instance-7/home/agent/.claude.json", "instance-7/home/agent/.t3", "instance-7/home/agent/.t3/userdata",
+                                                          "instance-7/home/agent/.t3/userdata/settings.json", "instance-7/etc/orbit/instance"])
+        self.assertEqual(self.inputs[id(writes[0])], self.MODEL)
+        self.assertEqual(writes[0][5:11], ["--uid", "2750", "--gid", "2750", "--mode", "0600"])
+        self.assertEqual(self.inputs[id(writes[1])], "codex\n")
+        self.assertEqual(writes[1][5:11], ["--uid", "2750", "--gid", "2750", "--mode", "0600"])
+        self.assertEqual(json.loads(self.inputs[id(writes[2])]), {"hasCompletedOnboarding": True})
+        self.assertEqual(writes[3][3:12], ["file", "create", "--type=directory", "--uid", "2750", "--gid", "2750", "--mode", "0700"])
+        self.assertEqual(json.loads(self.inputs[id(writes[5])]), {"linkedEnvironmentsEnabled": True})
+        self.assertEqual(self.inputs[id(writes[6])], "ORBIT_INSTANCE_ID=7\n")
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(all(calls.index(call) < start for call in writes))
+        # The model environment goes only into its file: never onto a command line or into another input.
+        self.assertFalse(any("PLACEHOLDER" in " ".join(call) for call in calls))
+        self.assertEqual([call for call in calls if "PLACEHOLDER" in str(self.inputs.get(id(call)))], [writes[0]])
+        self.assertEqual(json.loads(transcript[0].strip().splitlines()[-1])["timings"]["t3_files"], 1)
+
+    def test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line(self):
+        held = {"content": '{"projectSettingsFolded":true}\n', "uid": "2750", "gid": "2750", "mode": "0600"}
+        # A seed `.claude.json` that already holds the key with the agent part's owner and mode stays; one with another owner is
+        # written again, so T3 never boots with a file the agent part would still change.
+        merged = {"content": '{"hasCompletedOnboarding":true,"theme":"dark"}\n', "uid": "2750", "gid": "2750", "mode": "0600"}
+        for claude, written in [(merged, False), ({**merged, "uid": "0", "gid": "0", "mode": "0644"}, True)]:
+            calls, _, error = self.clone_with(self.T3_FILES, rootfs={**self.T3_ROOT, "home/agent/.t3/userdata/.keep": ""},
+                                              overrides={"fixture_files": {"/home/agent/.t3/userdata/settings.json": held,
+                                                                           "/home/agent/.claude.json": claude}},
+                                              stdin=self.FRAME + "\n" + self.MODEL)
+            self.assertEqual(error, "")
+            self.assertEqual(any(call[-1] == "instance-7/home/agent/.claude.json" for call in self.t3_writes(calls)), written)
+            if written:
+                push = next(call for call in self.t3_writes(calls) if call[-1] == "instance-7/home/agent/.claude.json")
+                self.assertEqual(json.loads(self.inputs[id(push)]), {"hasCompletedOnboarding": True, "theme": "dark"})
+                self.assertEqual(push[5:11], ["--uid", "2750", "--gid", "2750", "--mode", "0600"])
+        writes = [call for call in self.t3_writes(calls) if call[-1] != "instance-7/home/agent/.claude.json"]
+        self.assertEqual([call[-1] for call in writes], ["instance-7/home/agent/.config/orbit/model.env", "instance-7/home/agent/.codex/config.toml",
+                                                          "instance-7/home/agent/.t3/userdata/settings.json", "instance-7/etc/orbit/instance"])
+        self.assertEqual(json.loads(self.inputs[id(writes[2])]), {"projectSettingsFolded": True, "linkedEnvironmentsEnabled": True})
+
+    def test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start(self):
+        for rootfs, files in [({**self.T3_ROOT, "home/agent/.t3": "->/tmp"}, {}),
+                              ({**self.T3_ROOT, "home/agent/.t3/userdata/.keep": ""},
+                               {"/home/agent/.t3/userdata/settings.json": {"content": "", "type": "symlink"}})]:
+            with self.subTest(link=next(iter(files), "/home/agent/.t3")):
+                calls, _, error = self.clone_with(self.T3_FILES, rootfs=rootfs, overrides={"fixture_files": files},
+                                                  stdin=self.FRAME + "\n" + self.MODEL)
+                self.assertEqual(error, "instance.clone_t3_files_refused\n")
+                self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+                self.assertFalse(any(call[-1] == "instance-7/etc/orbit/instance" for call in calls))
+
+    def test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files(self):
+        # An older Gateway's run: its stdin is the credential line alone, with or without a frame in the intent; or a copy that already
+        # runs. The T3 step starts T3, as before.
+        bare = {**self.T3_FILES, "model_environment": {k: v for k, v in self.T3_FILES["model_environment"].items() if k != "frame"}}
+        running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
+               "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                                             "security.acls": "orbitinst0-proxy,instance-7",
+                                             "security.acls.default.egress.action": "reject",
+                                             "security.acls.default.ingress.action": "reject",
+                                             "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}}
+        for clone, stdin, existing in [(bare, "https://x-access-token:PRIVATE@github.com\n", None),
+                                       (self.T3_FILES, "https://x-access-token:PRIVATE@github.com\n", None),
+                                       (self.T3_FILES, self.FRAME + "\n" + self.MODEL, running)]:
+            with self.subTest(running=existing is not None, frame="frame" in clone["model_environment"]):
+                transcript = []
+                calls, _, error = self.clone_with(clone, rootfs=self.T3_ROOT, stdin=stdin, existing=existing, transcript=transcript)
+                self.assertEqual(error, "")
+                self.assertEqual(self.t3_writes(calls), [])
+                self.assertEqual(json.loads(transcript[0].strip().splitlines()[-1])["timings"]["t3_files"], 0)
 
     def test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start(self):
         # A seed taken before the runtime folder had its browser libraries lacks these files. The copy gets them, and an empty
@@ -1397,7 +1500,7 @@ class T3PhaseTest(unittest.TestCase):
             if member == "t3":
                 # The guest's T3 part issues both sessions while T3 starts; their tokens come back only as its private reply.
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00",
-                                                                        "private_reply": self.SESSIONS}), "")
+                                                                        "at_boot": True, "private_reply": self.SESSIONS}), "")
             if member is not None:
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
@@ -1454,6 +1557,9 @@ console.log(created.stdout);
         # the run's private t3.json, which the sessions step reads; no token reaches the output.
         self.assertEqual(json.loads(output)["phase"], "t3")
         self.assertNotIn("private_reply", json.loads(output))
+        # Whether the copy's boot had started T3 is a part of `timings`, 1 or 0; the guest's own key does not cross.
+        self.assertEqual(json.loads(output)["timings"]["at_boot"], 1)
+        self.assertNotIn("at_boot", {key for key in json.loads(output) if key != "timings"})
         self.assertEqual(error, "")
         self.assertEqual(json.loads(self.left), self.SESSIONS)
         for session in self.SESSIONS.values():

@@ -934,7 +934,15 @@ On a container Instance, `env:sync` writes only the keys of the attached connect
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
-Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+
+#### T3 starts with the copy
+
+The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`. The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
+
+The model environment reaches the copy step on its one SSH stdin. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
+
+The T3 step does not start a T3 that runs. It starts T3 when the copy was not started by this run, or when the run carried no model environment, as a run of an older Gateway does. A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
 
 Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy and the Club key, so both start when the Club key step ends or skips.
 
@@ -994,7 +1002,7 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
-The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
+The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -1043,7 +1051,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | ACL | The Node's Caddy reaches port 8080 and ports 1024 to 65535, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
 | T3 port | The proxy device `t3` in NAT mode, from the Node's WireGuard address and the T3 port to port 3773 |
 | UFW | Under the comment prefix `orbit:instance-<id>-`: a route deny from the task VM range, then a route allow to port 3773; and the rule to the database server |
-| Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance` |
+| Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance`. ([T3 starts with the copy](#t3-starts-with-the-copy)) |
 | Processes | In the [completion](#complete-a-clone): FrankenPHP's unit, rewritten for the clone's own address, and the Project's Process units |
 | T3 | Its first start, a check of `/.well-known/t3/environment` within 30 seconds, and the T3 project `/srv/workspace` |
 | Registration | [T3 registration](#t3-registration-and-pairing), from the run's result |
@@ -1410,11 +1418,12 @@ The Instance's create flow registers its T3 server with the [Conn layer](/refere
 
 In the container, as `agent`:
 
-1. The T3 step starts T3. T3's own CLI issues the `Orbit Gateway` session beside that start, as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
-2. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
-3. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
-4. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
-5. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+1. T3 runs: the copy's boot started it ([T3 starts with the copy](#t3-starts-with-the-copy)), else the T3 step starts it.
+2. T3's own CLI issues the `Orbit Gateway` session as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
+3. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
+4. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
+5. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
+6. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
 
 Stock T3's CLI writes its sessions before and during the server's first start. So the two issues run while T3 starts and add no time of their own.
 
@@ -2376,6 +2385,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
+| `instance.clone_t3_files_refused` | 502 | A folder or JSON file of [T3's files](#t3-starts-with-the-copy) in a clone's copy is a link or of another type. The create stops before the copy starts |
 | `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
