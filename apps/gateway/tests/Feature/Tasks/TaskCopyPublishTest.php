@@ -241,4 +241,6 @@ it('names a refused environment file, its content and an unchecked content with 
     'check error' => ['Check the .env content', "fatal: bad revision\n", 'tasks.publish_secret_unchecked'],
     'no detail' => ['Check the .env content', null, 'tasks.publish_secret_unchecked'],
     'refusal line only mid-line' => ['Check the .env content', 'x tasks.publish_secret_content: y', 'tasks.publish_secret_unchecked'],
+    'typed read of a refusal' => ['Read the .env check', "tasks.publish_secret_content: a value of the .env is in the file 'notes/a.txt' (".str_repeat('c', 40).') in commit '.str_repeat('d', 40), 'tasks.publish_secret_content'],
+    'typed read of an error' => ['Read the .env check', 'tasks.publish_secret_unchecked', 'tasks.publish_secret_unchecked'],
 ]);

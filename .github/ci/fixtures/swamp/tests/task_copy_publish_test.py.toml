@@ -1,4 +1,4 @@
-source_sha256 = "352fc02e3e315d8b040951017f6e1076d867e23d487a8eda960090b78561f2e5"
+source_sha256 = "65cec06095493ae5456adacf24f3b2119a59633c7a5bdd626131002b0277c68f"
 cases = [
   "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
   "test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it",
@@ -7,7 +7,7 @@ cases = [
   "test_the_native_end_check_runs_after_a_success_on_either_path",
   "test_a_copy_runs_its_export_and_only_a_succeeded_bundle_step_starts_the_import",
   "test_the_environment_file_never_leaves_a_copy_in_any_commit_of_the_range",
-  "test_a_copy_mints_only_after_its_content_check_succeeded",
+  "test_a_copy_mints_only_after_its_content_check_passed",
   "test_the_content_check_passes_a_clean_range_and_public_or_short_values",
   "test_the_content_check_refuses_the_whole_file_under_another_name_also_when_removed_later",
   "test_the_content_check_refuses_one_value_in_another_file_a_message_or_a_file_name",

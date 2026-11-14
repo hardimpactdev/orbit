@@ -105,7 +105,11 @@ sequenceDiagram
     Note over SW: Check the .env content
     %%> How:
     %%> - every object new in the range (file contents, file names, commit messages) and the pull request title and body are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
-    %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`; a copy mints only after this step succeeded
+    %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`
+    Note over SW: Read the .env check
+    %%> How:
+    %%> - typed data reads the check's exit code and its one refusal line from the private scratch, because Swamp keeps no stderr of a failed command step
+    %%> - exit 0 passes; a refusal fails the step with that line as its detail; anything else fails with `tasks.publish_secret_unchecked`; a copy mints only after this step succeeded
   end
   SW->>GW: Mint the push token<br/>operation:direct:github-token
   %%> How:
