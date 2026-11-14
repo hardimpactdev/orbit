@@ -107,22 +107,35 @@ final readonly class ConnProfileSections
     }
 
     /**
-     * Refuses a document that grew past a limit that only the whole document shows.
+     * Refuses a document that grew past a limit that only the whole document shows. A write that does not grow past
+     * what the document held before passes, so a write that only shrinks a document already over a limit, such as
+     * Orbit's drop of a removed Instance's threads, never fails.
      *
      * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $before
      *
      * @throws ValidationException
      */
-    public static function assertWithinLimits(array $settings): void
+    public static function assertWithinLimits(array $settings, array $before): void
     {
-        $devices = $settings['devices'] ?? [];
+        $types = self::deviceTypeCount($settings);
 
-        if (is_array($devices) && count($devices) > self::MaxDeviceTypes) {
+        if ($types > self::MaxDeviceTypes && $types > self::deviceTypeCount($before)) {
             throw ValidationException::withMessages(['settings' => ['A profile holds at most '.self::MaxDeviceTypes.' device types.']]);
         }
 
-        if (self::encodedSize($settings) > self::MaxDocumentBytes) {
+        $size = self::encodedSize($settings);
+
+        if ($size > self::MaxDocumentBytes && $size > self::encodedSize($before)) {
             throw ValidationException::withMessages(['settings' => ['The settings document is larger than '.(self::MaxDocumentBytes / 1024 / 1024).' MB.']]);
         }
+    }
+
+    /** @param  array<string, mixed>  $settings */
+    private static function deviceTypeCount(array $settings): int
+    {
+        $devices = $settings['devices'] ?? [];
+
+        return is_array($devices) ? count($devices) : 0;
     }
 }

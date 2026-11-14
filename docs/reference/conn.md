@@ -126,7 +126,9 @@ A color map has at most 80 entries. A key is a color role: a letter, then letter
 
 A device `values` map has camelCase keys of at most 64 characters. A value is a boolean, a number, `null`, a string of at most 512 characters, or a list of at most 32 of those scalars. The Gateway checks the envelope and the value types. Each client checks its own keys and keeps the ones it does not know.
 
-An empty object is refused wherever a map is expected, such as `colors`, `values`, or the `devices` map of a `PUT`. PHP cannot tell `{}` from `[]`, so the Gateway would hand it back as a list. Leave the key out. The whole document is at most 4 MB. The request stack trims every string and turns an empty string into `null`. A patch section `value` is the exception: an empty string there is refused, as [Versions](#versions) says.
+An empty object is refused wherever a map is expected, such as `colors`, `values`, or the `devices` map of a `PUT`. PHP cannot tell `{}` from `[]`, so the Gateway would hand it back as a list. Leave the key out.
+
+The whole document is at most 4 MB. These two document limits, 4 MB and 8 device types, refuse only a write that grows the document past them. A write that does not grow past what the document held still passes when the document is already over a limit. The request stack trims every string and turns an empty string into `null`. A patch section `value` is the exception: an empty string there is refused, as [Versions](#versions) says.
 
 A workspace covers its `projectRefs` and every project whose logical key is in `projectKeys`, as Conn combines them. T3 derives a logical key from the git remote by default, so devices that keep T3's default repository grouping agree on it.
 
@@ -151,20 +153,25 @@ To attach a thread, send the set with the thread added. To detach one, send the 
 
 The Gateway checks each entry on the locked profile, after the version check:
 
-- **Carried environment.** An environment already in the stored set may stay, whoever writes.
+- **Carried entry.** An entry already in the stored set, with the same `environmentId` and `threadId`, may stay, whoever writes.
 - **Merge safety.** A device may carry an entry it cannot see itself. A merge never fails on another device's access.
-- **New environment.** An environment that is not in the stored set must exist. The writing Node must also have node access to its Node, as for `GET /environments`.
-- **Refusal.** A new environment that fails this check refuses the request with `validation.failed` (422). The error names the field, such as `…threads.1.environmentId`.
+- **New entry.** Any other entry is new, also a new thread of an environment that is already attached.
+- **New entry check.** Its environment must exist, and the writing Node must have node access to that environment's Node, as for `GET /environments`.
+- **Refusal.** A new entry that fails this check refuses the whole request with `validation.failed` (422). The error names the field, such as `…threads.1.environmentId`.
+- **Own patch.** A refusal also refuses every other section in the same request. Today's Conn profile sync sends its sections in one patch, so send the attached set in a patch of its own.
 - **Recovery.** The client removes the named entries from its set and retries. A refusal like this follows the removal of a server whose thread the client had just attached.
 - **Gone environment.** The Gateway drops an entry whose environment was deleted from what it stores.
 
-The check uses the writer's access, not the access of the profile's other Nodes. The writer is the only identity a request carries, and a write needs no binding to the profile. So a Node attaches only servers it may reach, which are also the only ones it can pick.
+The check uses the writer's access, not the access of the profile's other Nodes. The writer is the only identity a request carries, and a write needs no binding to the profile. So a Node attaches only threads of servers it may reach, which are also the only ones it can pick.
+
+A host environment whose Node is removed keeps its record without a Node ([Registration stays with its Node](#registration-stays-with-its-node)). Its entries stay in the set, because the environment still exists. Only a Node with Gateway access still sees it in `GET /environments`, so it leaves the derived set of every other device. Such a device may still carry those entries, but it cannot add new ones.
 
 Two devices that change the set at the same time are handled by the section version, as for every section ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways: the remote set, plus the threads it added since its base, minus the threads it removed since its base. Then it retries with the new version. So an attach on one device and a detach on another both land. The Gateway needs nothing more for a set.
 
 Orbit drops the entries of an environment that is gone:
 
-- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from every profile that holds one.
+- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from the profiles that hold one, and reads no other profile.
+- **Never refused.** The drop only shrinks a document, so no document limit refuses it. A document that is already over a limit cannot stop a destroy.
 - **Versions.** This drop adds 1 to the section version and to the document version, with `updated_by` `null`.
 - **Merge.** A device sees the new `settings_version` in `GET /me`. It reads the section and merges the drop as a remote change.
 - **No write-back.** A device that writes from its older version gets a conflict. It cannot write the threads back.

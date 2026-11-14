@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Domain;
 
 use App\Models\Node;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 use Orbit\Extensions\Conn\Actions\ApplyConnProfileSectionsAction;
@@ -15,9 +16,10 @@ use Orbit\Extensions\Conn\Models\ConnProfile;
  * The `attachedThreads` section of a profile ([Attached threads](/reference/conn#attached-threads)): the threads on the
  * profile's list, as environment and thread id. A device connects to the environments of this set that it may see.
  *
- * An environment that is already in the stored set stays admitted, so a device can carry an entry it cannot see itself
- * through a merge. A new environment must exist and be one the writing Node may see. An entry whose environment is gone
- * is dropped: when its Instance is destroyed, with a new section version, and from every read and write before that.
+ * An entry that is already in the stored set (the same environment and thread) may stay, so a device can carry an entry
+ * it cannot see itself through a merge. A new entry must name an environment that exists and that the writing Node may
+ * see. An entry whose environment is gone is dropped: when its Instance is destroyed, with a new section version, and
+ * from every read and write before that.
  */
 final readonly class ConnAttachedThreads
 {
@@ -49,14 +51,14 @@ final readonly class ConnAttachedThreads
      * @param  array<mixed>  $value
      * @return array<mixed>
      *
-     * @throws ValidationException when a new environment is gone or the caller may not see it
+     * @throws ValidationException when a new entry names an environment that is gone or that the caller may not see
      */
     public function admit(array $value, mixed $stored, ?Node $caller): array
     {
         $entries = self::entries($value);
         $existing = $this->existing(array_column($entries, 'environmentId'));
-        $carried = array_column(self::entries($stored), 'environmentId');
-        $new = array_values(array_diff($existing, $carried));
+        $carried = array_map(self::key(...), self::entries($stored));
+        $new = array_values(array_intersect($existing, array_column(array_filter($entries, static fn (array $entry): bool => ! in_array(self::key($entry), $carried, true)), 'environmentId')));
         $visible = $new === [] || ! $caller instanceof Node ? [] : $this->access
             ->visible($caller, ConnEnvironment::query()->whereIn('environment_id', $new))
             ->get(['environment_id'])->map(static fn (ConnEnvironment $environment): string => $environment->environment_id)->all();
@@ -66,7 +68,7 @@ final readonly class ConnAttachedThreads
         foreach ($entries as $index => $entry) {
             $environment = $entry['environmentId'];
 
-            if (in_array($environment, $carried, true)) {
+            if (in_array(self::key($entry), $carried, true)) {
                 if (in_array($environment, $existing, true)) {
                     $kept[] = $entry;
                 }
@@ -82,6 +84,13 @@ final readonly class ConnAttachedThreads
         }
 
         return [...$value, 'threads' => $kept];
+    }
+
+    /** @param array{environmentId: string, threadId: string} $entry */
+    private static function key(array $entry): string
+    {
+        // An environment id holds no colon, so the key names one entry.
+        return $entry['environmentId'].':'.$entry['threadId'];
     }
 
     /**
@@ -108,8 +117,9 @@ final readonly class ConnAttachedThreads
     }
 
     /**
-     * Removes the entries of environments that are gone from every profile that holds one. Each changed profile gets a
-     * new section and document version, written by Orbit, so a device rereads and merges the removal.
+     * Removes the entries of environments that are gone from every profile that holds one. Only those profiles are read.
+     * Each changed profile gets a new section and document version, written by Orbit, so a device rereads and merges the
+     * removal. The write only shrinks the document, so no limit refuses it ({@see ConnProfileSections::assertWithinLimits()}).
      *
      * @param  list<string>  $environmentIds
      */
@@ -120,7 +130,11 @@ final readonly class ConnAttachedThreads
         }
 
         DB::transaction(function () use ($environmentIds): void {
-            foreach (ConnProfile::query()->lockForUpdate()->get() as $profile) {
+            $holders = ConnProfile::query()->whereExists(static fn (Builder $query) => $query->selectRaw('1')
+                ->fromRaw("json_each(conn_profiles.settings, '$.attachedThreads.threads')")
+                ->whereIn(DB::raw("json_extract(value, '$.environmentId')"), $environmentIds));
+
+            foreach ($holders->lockForUpdate()->get() as $profile) {
                 $section = $profile->settings[ConnProfileSections::AttachedThreads] ?? null;
                 $entries = self::entries($section);
                 $kept = array_values(array_filter($entries, static fn (array $entry): bool => ! in_array($entry['environmentId'], $environmentIds, true)));

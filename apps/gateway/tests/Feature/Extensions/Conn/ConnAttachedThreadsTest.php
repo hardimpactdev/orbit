@@ -169,8 +169,11 @@ it('lands an add on one device and a remove on another made at the same time', f
     expect(attached_read($this->desktop)['threads'])->toBe([['env-mini', 'thread-2'], ['env-mini', 'thread-3']]);
 });
 
-it('lets a device carry an attached environment it cannot see and refuses one it adds', function (): void {
+it('lets a device carry an attached thread it cannot see and refuses one it adds', function (): void {
     attached_patch($this->desktop, 0, [['env-mini', 'thread-2']])->assertOk();
+
+    $sameEnvironment = attached_patch($this->phone, 1, [['env-mini', 'thread-2'], ['env-mini', 'thread-9']])->assertStatus(422);
+    expect($sameEnvironment->json('error.details'))->toBe(['sections.attachedThreads.value.threads.1.environmentId' => ['The environment env-mini is not a Conn environment you may see.']]);
 
     attached_patch($this->phone, 1, [['env-mini', 'thread-2'], ['env-beast', 'thread-1']])->assertOk();
     attached_patch($this->phone, 2, [['env-beast', 'thread-1']])->assertOk();
@@ -197,6 +200,61 @@ it('drops a destroyed Instance\'s threads with a new section version written by 
         ->and($other->fresh()?->settings_version)->toBe(1)
         ->and(attached_servers($this->desktop))->toBe(['env-mini']);
     attached_patch($this->desktop, 1, [['env-beast', 'thread-1'], ['env-mini', 'thread-2'], ['env-mini', 'thread-3']])->assertStatus(409);
+});
+
+it('reads and locks only the profiles that hold a removed environment', function (): void {
+    attached_patch($this->desktop, 0, [['env-beast', 'thread-1']])->assertOk();
+    ConnProfile::query()->create(['name' => 'mini only', 'settings' => ['workspaces' => [], 'attachedThreads' => attached_value([['env-mini', 'thread-2']])]]);
+    ConnProfile::query()->create(['name' => 'plain', 'settings' => ['workspaces' => []]]);
+    $read = [];
+    ConnProfile::retrieved(static function (ConnProfile $profile) use (&$read): void {
+        $read[] = $profile->name;
+    });
+
+    DB::transaction(fn () => app(ConnInstanceLifecycle::class)->projectDestroy($this->onBeast));
+
+    expect(array_values(array_unique($read)))->toBe(['conn-lane-test'])
+        ->and(attached_read($this->phone)['threads'])->toBe([]);
+});
+
+it('drops a removed Instance\'s threads from a document that is already over a limit', function (array $settings): void {
+    $this->profile->forceFill(['settings' => [...$settings, 'attachedThreads' => attached_value([['env-beast', 'thread-1'], ['env-mini', 'thread-2']])]])->save();
+
+    DB::transaction(fn () => app(ConnInstanceLifecycle::class)->projectDestroy($this->onBeast));
+
+    expect($this->profile->fresh()?->settings['attachedThreads']['threads'])->toBe([['environmentId' => 'env-mini', 'threadId' => 'thread-2']])
+        ->and($this->profile->fresh()?->settings_version)->toBe(2);
+})->with([
+    'more device types than the bound' => [['workspaces' => [], 'devices' => array_combine(
+        array_map(static fn (int $i): string => "type-{$i}", range(1, ConnProfileSections::MaxDeviceTypes + 1)),
+        array_fill(0, ConnProfileSections::MaxDeviceTypes + 1, ['schema' => 1, 'values' => ['a' => 1]]),
+    )]],
+    'more bytes than the bound' => [['workspaces' => [], 'appearance' => ['schema' => 1, 'mode' => 'dark', 'contrast' => 100, 'pad' => str_repeat('x', ConnProfileSections::MaxDocumentBytes)]]],
+]);
+
+it('refuses a write that grows a document past a limit', function (): void {
+    $this->profile->forceFill(['settings' => ['workspaces' => [], 'appearance' => ['schema' => 1, 'mode' => 'dark', 'contrast' => 100, 'pad' => str_repeat('x', ConnProfileSections::MaxDocumentBytes)]]])->save();
+
+    attached_patch($this->desktop, 0, [['env-beast', 'thread-1']])->assertStatus(422)
+        ->assertJsonPath('error.details.settings.0', 'The settings document is larger than 4 MB.');
+});
+
+it('refuses an environment or thread id that breaks its pattern even when the environment exists', function (string $environment, string $thread): void {
+    attached_server($environment, $this->beast);
+
+    $refused = attached_patch($this->phone, 0, [[$environment, $thread]])->assertStatus(422);
+    expect(array_merge(...array_values($refused->json('error.details'))))->each->toContain('format is invalid');
+})->with([
+    'a colon in the environment id' => ['env:beast', 'thread-1'],
+    'an environment id of 256 characters' => [str_repeat('e', 256), 'thread-1'],
+    'a space in the thread id' => ['env-other', 'thread 1'],
+    'a thread id of 256 characters' => ['env-other', str_repeat('t', 256)],
+]);
+
+it('accepts ids of 255 characters', function (): void {
+    attached_server(str_repeat('e', 255), $this->beast);
+
+    attached_patch($this->phone, 0, [[str_repeat('e', 255), str_repeat('t', 253).':x']])->assertOk();
 });
 
 it('leaves out the threads of an environment that is gone on read and on the next write, without a new version', function (): void {
@@ -247,7 +305,6 @@ it('refuses an attached set that breaks a rule', function (array $value): void {
     'no threads' => [['schema' => 1]],
     'an unknown key' => [['schema' => 1, 'threads' => [], 'openedAt' => '2026-11-14']],
     'an entry with an unknown key' => [['schema' => 1, 'threads' => [['environmentId' => 'env-beast', 'threadId' => 't', 'title' => 'x']]]],
-    'a colon in the environment id' => [attached_value([['env:beast', 'thread-1']])],
     'a thread twice' => [attached_value([['env-beast', 'thread-1'], ['env-beast', 'thread-1']])],
     'more entries than the bound' => [attached_value(array_map(static fn (int $i): array => ['env-beast', "thread-{$i}"], range(1, ConnProfileSections::MaxAttachedThreads + 1)))],
     'more bytes than the bound' => [attached_value(array_map(static fn (int $i): array => ['env-beast', str_pad((string) $i, 200, 'x')], range(1, 400)))],

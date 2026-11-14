@@ -78,7 +78,7 @@ final readonly class ApplyConnProfileSectionsAction
                 ];
             }
 
-            ConnProfileSections::assertWithinLimits($settings);
+            ConnProfileSections::assertWithinLimits($settings, $locked->settings);
 
             ConnProfile::query()->whereKey($locked->id)->update([
                 'settings' => json_encode($settings, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),
