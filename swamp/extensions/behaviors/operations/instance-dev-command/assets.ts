@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { CompletePhases, completeResult } from "./complete_result.ts";
 import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
-import { containerFailure, createResult, fleetFailure, Step } from "./result.ts";
+import { containerFailure, createResult, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -29,7 +29,7 @@ async function resultFile(folder: string): Promise<unknown> {
 
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.14.1",
+    version: "2026.11.14.2",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -60,7 +60,6 @@ export const behavior = {
                     register: z.string().default("skipped"),
                     server: z.string().nullable().default(null),
                     club_key: Step.nullable().default(null),
-                    fleet: z.string().default("skipped"),
                 }).nullable().default(null),
             }),
             execute: async (
@@ -87,7 +86,6 @@ export const behavior = {
                         register?: string;
                         server?: string | null;
                         club_key?: z.infer<typeof Step> | null;
-                        fleet?: string;
                     } | null;
                 },
                 ctx: Context,
@@ -103,22 +101,6 @@ export const behavior = {
                     // The phase owns redaction; preserve its public evidence in the Operation.
                     const failure = containerFailure(file ?? await resultFile(args.folder));
                     if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
-                }
-                if (!value.ready && result.failed_step === "fleet") {
-                    // A clone's fleet phase writes its code and why into the run's result file; a failed step keeps no output.
-                    const failure = fleetFailure(await resultFile(args.folder));
-                    if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
-                }
-                if (!value.ready && result.failed_step === "register") {
-                    try {
-                        const failure = z.object({
-                            error_code: z.literal("instance.container_process_inactive"),
-                            process_failure: ObjectValue,
-                        }).safeParse(JSON.parse(await Deno.readTextFile(args.folder + "/t3.json")));
-                        if (failure.success) value.stdout = JSON.stringify({...result, ...failure.data});
-                    } catch (error) {
-                        if (!(error instanceof Deno.errors.NotFound || error instanceof SyntaxError)) throw error;
-                    }
                 }
                 await ctx.writeResource("result", "create", value);
                 return value;

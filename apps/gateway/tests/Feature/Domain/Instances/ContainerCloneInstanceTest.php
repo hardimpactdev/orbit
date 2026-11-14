@@ -16,6 +16,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceLifecycleContributions;
@@ -35,7 +36,6 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\NativeStepFailure;
-use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Activity;
 use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
@@ -91,6 +91,8 @@ beforeEach(function (): void {
             return 'placeholder-model-key';
         }
     });
+    // A clone's create reads its workspace baseline at its end (CloneCreateHandoverTest).
+    workspaceReader();
 });
 
 /** The Project's container default on the Node, active with its seed snapshot, as its finished create leaves it. */
@@ -314,7 +316,11 @@ it('starts the run with the placeholder model key in the vault and the template 
     $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
 
     $put = collect($vault->puts)->firstWhere('key', 'instance-create-model-'.$operation->id);
-    $fill = ValidatedData::stringList(ValidatedData::object(ValidatedData::object($run['intent'])['server_database'])['fill']);
+    // The create's run copies no database: the completion's run does, with the template copy of the default's.
+    expect($run['intent']['server_database'])->toBeNull()
+        ->and(collect($vault->puts)->pluck('key')->filter(fn (string $key): bool => str_starts_with($key, 'database-create-'))->all())->toBe([]);
+    [, $complete] = completionRunOf($operation);
+    $fill = ValidatedData::stringList(ValidatedData::object(ValidatedData::object($complete['intent'])['server_database'])['fill']);
     expect($run['execution_secrets']['model_environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-model-'.$operation->id])
         ->and($put['value'])->toContain("ANTHROPIC_BASE_URL=http://10.253.0.1:8319\n")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
@@ -330,12 +336,12 @@ describe('a clone of a default with a Valkey target', function (): void {
         $shared = defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
         $operation = containerCreate($default->project->fresh(), $node, 'feature');
         $clone = Instance::query()->findOrFail($operation->target_id);
-        $vault = vaultReadingSocket([]);
 
         $own = DatabaseConnection::query()->where('owner_instance_id', $clone->id)->sole();
         $privileges = $own->users()->sole()->privileges;
         $values = app(InstanceEnvironmentStore::class)->values($clone);
-        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        // The clone's Valkey user is created by its completion's run.
+        [$vault, $run] = completionRunOf($operation);
         $create = collect($vault->puts)->firstWhere('key', $run['execution_secrets']['server_valkey_create']['key'])['value'];
         $prefix = 'orbit_instance_'.$clone->id.'_';
 
@@ -364,8 +370,7 @@ describe('a clone of a default with a Valkey target', function (): void {
         $shared = defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
         $shared->users()->update(['privileges' => 'on ~tool_* resetchannels -@all +@read +@write +flushdb +FLUSHDB -@admin -@dangerous -function -script +flushdb']);
         $operation = containerCreate($default->project, $node, 'feature');
-        $vault = vaultReadingSocket([]);
-        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        [$vault, $run] = completionRunOf($operation);
         $create = collect($vault->puts)->firstWhere('key', $run['execution_secrets']['server_valkey_create']['key'])['value'];
 
         expect(DatabaseConnection::query()->where('owner_instance_id', $operation->target_id)->sole()->users()->sole()->privileges)
@@ -391,8 +396,7 @@ describe('a clone of a default with a Valkey target', function (): void {
         InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('c', 40)]);
         defaultValkeyTarget($default, databaseServerOn($node, 'kv', DatabaseDriver::Redis, 6379));
         $operation = containerCreate($default->project, $node, 'feature');
-        vaultReadingSocket([]);
-        $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+        [, $run] = completionRunOf($operation);
 
         expect(DatabaseConnection::query()->where('owner_instance_id', $operation->target_id)->orderBy('id')->pluck('slug')->all())->toBe(['tool-feature', 'tool-feature-valkey'])
             ->and(array_column(containerIntentOf($operation)['firewall'], 'to_port'))->toContain('5432', '6379')
@@ -558,10 +562,11 @@ describe('the clone\'s create result', function (): void {
             ->and($environment->admin_session)->toBe('gateway-session-value')
             ->and($environment->cleanup_version)->toBe($environment->cleanup_completed_version)
             ->and($vault->reads)->toBe(['nckrtl-instance-t3-model-register-session-gateway-1-token'])
-            ->and(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::Active)
+            // The thread is usable; only the clone's completion makes it active.
+            ->and(Instance::query()->findOrFail($operation->target_id)->status)->toBe(InstanceState::SourceResolved)
             ->and(InstanceRuntime::query()->where('instance_id', $operation->target_id)->firstOrFail()->only(['power_state', 'seed_commit']))
-            ->toBe(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => null]);
-        Queue::assertPushed(RecordWorkspaceBaseline::class, static fn (RecordWorkspaceBaseline $job): bool => $job->instanceId === $operation->target_id);
+            ->toBe(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => null])
+            ->and(Operation::query()->findOrFail($operation->refresh()->result['completion_operation_id'])->kind)->toBe('instance.complete');
     });
 
     it('refuses a result that names no registered server, and a server that belongs to another Instance', function (): void {
@@ -592,6 +597,21 @@ it('wires Conn into the create flow of a container Instance', function (): void 
 
     expect(collect($contributions)->map(fn (object $contribution): string => $contribution::class)->all())->toBe([ConnInstanceLifecycle::class]);
 });
+
+/**
+ * The run of the clone's completion, as the success of its create admits it: the database and the Valkey user are the completion's.
+ *
+ * @return array{0: object, 1: array<string, mixed>}
+ */
+function completionRunOf(Operation $create): array
+{
+    $vault = vaultReadingSocket(['nckrtl-instance-t3-model-register-session-gateway-1-token' => 'gateway-session-value']);
+    $create->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), cloneSucceeded($create));
+    $completion = Operation::query()->findOrFail($create->refresh()->result['completion_operation_id']);
+
+    return [$vault, app(InstanceCompleteProjection::class)->input($completion)];
+}
 
 /** @return array<string, mixed> */
 function cloneSucceeded(Operation $operation): array
@@ -1201,12 +1221,13 @@ it('rederives retained create Processes at retry admission from current definiti
         unset($receipt['result']['t3']);
     }
     $projection->apply($retry, $receipt);
+    // A default is active at its create's end; a clone's completion makes it, and its Route, active.
     expect($retry->fresh()->status)->toBe(OperationStatus::Succeeded)
-        ->and($instance->fresh()->status)->toBe(InstanceState::Active)
-        ->and(Route::query()->findOrFail($retry->input['route_id'])->status->value)->toBe('active');
+        ->and($instance->fresh()->status)->toBe($clone ? InstanceState::SourceResolved : InstanceState::Active)
+        ->and(Route::query()->findOrFail($retry->input['route_id'])->status->value)->toBe($clone ? 'pending' : 'active');
 })->with([true, false])->with(['fixed', 'removed', 'production-only', 'unchanged']);
 
-it('marks retry as needing a definition change only for an admitted Project Process failure', function (string $failure): void {
+it('never asks a create retry for a definition change: a dead Process fails the clone\'s completion, not its create', function (string $failure): void {
     $node = containerDefaultNode();
     $default = seededDefault($node);
     $definition = ProcessDefinition::query()->create(['project_id' => $default->project_id, 'name' => 'worker', 'environments' => ['development'],
@@ -1222,12 +1243,7 @@ it('marks retry as needing a definition change only for an admitted Project Proc
     app(DevelopmentInstanceCreateProjection::class)->apply($operation, ['status' => $failure === 'cancelled' ? 'cancelled' : 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'error_code' => $failure === 'cancelled' ? null : ($failure === 'infrastructure' ? 'instance.create_clone_failed' : 'instance.container_process_inactive'),
         'result' => ['instance_id' => $operation->target_id, 'failed_step' => 'register', 'process_failure' => $facts, 'error_code' => 'instance.container_process_inactive']]);
-    $retry = $operation->fresh()->result['recovery']['retry'];
-    if ($failure === 'project') {
-        expect($retry['requires'] ?? null)->toBe('project_process_definition');
-    } else {
-        expect($retry)->not->toHaveKey('requires');
-    }
+    expect($operation->fresh()->result['recovery']['retry'])->not->toHaveKey('requires');
 })->with(['project', 'builtin', 'foreign', 'infrastructure', 'cancelled']);
 
 it('rolls back a refused retry Process set and admits new definitions on a reserved retry', function (): void {
@@ -1531,9 +1547,10 @@ describe('a Process that is stopped on the default', function (): void {
 
         app(DevelopmentInstanceCreateProjection::class)->apply($operation->refresh(), cloneSucceeded($operation));
 
+        // The completion installs the Processes and records them active; the create names the stopped ones it leaves to it.
         expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded)
             ->and($operation->result['processes_stopped'])->toBe($expected)
-            ->and(Process::query()->where('owner_id', $operation->target_id)->pluck('status')->map->value->unique()->all())->toBe(['active']);
+            ->and(Process::query()->where('owner_id', $operation->target_id)->pluck('status')->map->value->unique()->all())->toBe(['provisioning']);
     })->with([
         'one stopped on the default' => ['stopped', ['worker']],
         'all running on the default' => ['running', []],

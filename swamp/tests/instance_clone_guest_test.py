@@ -675,7 +675,8 @@ class CloneGuestTest(unittest.TestCase):
             self.assertTrue(output.getvalue().startswith("orbit-commit=first-checkout\n"))
             self.assertNotIn('"commit"', output.getvalue())
 
-    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1):
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
+                  branch="proof", mark=None):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
@@ -710,7 +711,7 @@ class CloneGuestTest(unittest.TestCase):
                 observed = state if state is not None else {'ActiveState': 'failed', 'SubState': 'failed', 'Result': 'exit-code', 'ExecMainStatus': '1', 'NRestarts': '5'}
                 stdout = '\n'.join(key + '=' + str(value) for key, value in observed.items())
             if actual[0] == "git":
-                stdout = "proof\n" if "symbolic-ref" in actual else "abc123\n"
+                stdout = branch + "\n" if "symbolic-ref" in actual else "abc123\n"
             if actual[0] == "/opt/agent/bin/t3":
                 stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
             return subprocess.CompletedProcess(argv, code, stdout, "token=ghp_SUPER_PRIVATE_TOKEN_12345678901234567890")
@@ -741,7 +742,7 @@ class CloneGuestTest(unittest.TestCase):
                 io.StringIO(json.dumps(sessions) if existing else ""),
             ),
             patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
-            checkout_mark(),
+            checkout_mark((mark or {}).get("instance_id", 9)),
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(error),
         ):
@@ -758,8 +759,21 @@ class CloneGuestTest(unittest.TestCase):
         self.assertNotIn("PRIVATE", error.getvalue())
         return commands, output.getvalue(), error.getvalue()
 
-    def test_inactive_process_names_unit_states_and_exit_without_private_log(self):
-        commands, output, error = self.readiness('sessions', entrypoint=True, inactive=True)
+    def test_sessions_never_check_units_but_keep_the_branch_and_mark_checks(self):
+        # The Processes start in the completion: a dead or absent unit no longer fails the create's sessions check.
+        commands, output, error = self.readiness('sessions', entrypoint=True, inactive=True, expected_exit=0)
+        self.assertEqual((json.loads(output)['phase'], error), ('sessions', ''))
+        self.assertNotIn('process_failure', output)
+        self.assertFalse(any(argv[:1] == ['systemctl'] for argv in commands))
+        self.assertTrue(any('symbolic-ref' in argv for argv in commands))
+        # Another branch, or a mark that names another Instance, still fails it.
+        _, output, error = self.readiness('sessions', entrypoint=True, branch='other')
+        self.assertEqual((output, error), ('', 'instance.container_sessions_failed\n'))
+        _, output, error = self.readiness('sessions', entrypoint=True, mark={'instance_id': 8, 'commit': 'abc123'})
+        self.assertEqual((output, error), ('', 'instance.container_sessions_failed\n'))
+
+    def test_the_check_names_unit_states_of_a_dead_process_and_exits_without_private_log(self):
+        commands, output, error = self.readiness('check', entrypoint=True, inactive=True)
         receipt = json.loads(output)
         self.assertEqual(receipt, {'error_code': 'instance.container_process_inactive', 'process_failure': {
             'unit': 'orbit-process-vp-dev.service', 'process_id': 19, 'ActiveState': 'failed',
@@ -775,9 +789,9 @@ class CloneGuestTest(unittest.TestCase):
             ('desired stopped', {'desired': 'stopped'}),
         ]:
             with self.subTest(label=label):
-                calls, output, error = self.readiness('sessions', entrypoint=True, inactive=True,
+                calls, output, error = self.readiness('check', entrypoint=True, inactive=True,
                                                      expected_exit=0, **options)
-                self.assertEqual(json.loads(output)['phase'], 'sessions')
+                self.assertEqual(json.loads(output)['phase'], 'check')
                 self.assertNotIn('process_failure', output)
                 self.assertEqual(error, '')
                 if label == 'desired stopped':
@@ -785,13 +799,13 @@ class CloneGuestTest(unittest.TestCase):
 
         stopped = {'ActiveState': 'inactive', 'SubState': 'dead', 'Result': 'success',
                    'ExecMainStatus': '0', 'NRestarts': '0'}
-        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=stopped)
+        _, output, _ = self.readiness('check', entrypoint=True, inactive=True, state=stopped)
         self.assertEqual(json.loads(output)['process_failure']['ActiveState'], 'inactive')
         self.assertEqual(json.loads(output)['process_failure']['ExecMainStatus'], 0)
 
         transitional = {'ActiveState': 'activating', 'SubState': 'auto-restart', 'Result': 'exit-code',
                         'ExecMainStatus': '1', 'NRestarts': '5'}
-        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=transitional)
+        _, output, _ = self.readiness('check', entrypoint=True, inactive=True, state=transitional)
         reported = json.loads(output)['process_failure']
         self.assertEqual(reported['ActiveState'], 'activating')
         self.assertEqual(reported['SubState'], 'auto-restart')
@@ -799,7 +813,7 @@ class CloneGuestTest(unittest.TestCase):
 
         private = {key: 'PRIVATE_TOKEN_ghp_12345678901234567890' for key in ('ActiveState', 'SubState', 'Result')}
         private.update(ExecMainStatus='-1', NRestarts='999999999999999999999')
-        _, output, _ = self.readiness('sessions', entrypoint=True, inactive=True, state=private)
+        _, output, _ = self.readiness('check', entrypoint=True, inactive=True, state=private)
         reported = json.loads(output)['process_failure']
         self.assertEqual({key: reported[key] for key in ('ActiveState', 'SubState', 'Result')},
                          dict.fromkeys(('ActiveState', 'SubState', 'Result'), 'unknown'))

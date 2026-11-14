@@ -90,8 +90,6 @@ type Container = {
     server?: string | null;
     /** A nested-fleet clone's `club-key` step. */
     club_key?: Phase;
-    /** A nested-fleet clone's fleet start and readiness wait; skipped for every other clone. */
-    fleet?: string;
 };
 
 /** The checkout phase prints the commit it left checked out as one `orbit-commit=<sha>` line. */
@@ -101,7 +99,7 @@ const COMMIT = /orbit-commit=([0-9a-f]{40}|[0-9a-f]{64})\b/;
 const KEY = /^[A-Za-z0-9_.]+$/;
 
 /**
- * A clone's workspace phase prints its JSON line with the NAMES of the keys it copied from its default's .env and the keys it
+ * A clone's checkout part of the workspace phase prints its JSON line with the NAMES of the keys it copied from its default's .env and the keys it
  * dropped (docs/reference/development-containers.md#the-environment-of-a-clone), the names it rewrote to the clone's own
  * host, and the names of the connections it shares with its default. Only names that are environment keys pass.
  */
@@ -111,7 +109,7 @@ export function cloneEnvironment(phase: Phase): {copied: string[]; dropped: stri
         let parsed: unknown;
         try { parsed = JSON.parse(line); } catch { continue; }
         const printed = parsed as {phase?: unknown; environment?: unknown} | null;
-        if (printed?.phase !== "workspace" || printed.environment == null) continue;
+        if (printed?.phase !== "checkout" || printed.environment == null) continue;
         const names = (raw: unknown) => Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string" && KEY.test(name)) : [];
         const value = printed.environment as {copied?: unknown; dropped?: unknown; rewritten?: unknown; shared?: unknown};
         // `rewritten`: the copied keys whose value pointed at the default's own site and now points at the clone's.
@@ -248,9 +246,9 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
 
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
- * Processes, the Route and the seed snapshot. A clone has no deploy step and no seed: after the copy (and a nested-fleet clone's
- * fleet) and the workspace come the Processes, the T3 step (the agent's files, then T3), the Route and the registration, whose receipt must
- * name the server.
+ * Processes, the Route and the seed snapshot. A clone's create ends when its thread is usable: the copy, the checkout with its commit,
+ * the T3 step (the agent's files, then T3) and the registration, whose receipt must name the server. Its database, a nested fleet,
+ * the Processes and the Route are its completion's (complete_result.ts).
  */
 function containerOutcomes(
     intent: Record<string, unknown>,
@@ -269,13 +267,8 @@ function containerOutcomes(
     if (clone !== null) {
         return [
             ["clone", container.launch === "succeeded", container.launch === "failed"],
-            // Only a clone of a nested-fleet default has `fleet` in its intent and runs this phase.
-            ["fleet", intent.fleet == null || container.fleet === "succeeded", container.fleet === "failed"],
-            ["database", (intent.database == null && intent.server_database == null && intent.server_valkey == null) || phases.database === "succeeded", phases.database === "failed"],
             ["workspace", commit !== null, container.workspace?.status === "failed"],
-            ["processes", container.processes === "succeeded", container.processes === "failed"],
             ["t3", container.t3 === "succeeded", container.t3 === "failed"],
-            route,
             [
                 "register",
                 container.register === "succeeded" && typeof container.server === "string",
@@ -292,12 +285,7 @@ function containerOutcomes(
             container.deploy.includes("failed"),
         ],
         ["processes", container.processes === "succeeded", container.processes === "failed"],
-        [
-            "route",
-            intent.route == null || (phases.route === "succeeded" &&
-                certificates.every((status) => status === "succeeded")),
-            phases.route === "failed" || certificates.includes("failed"),
-        ],
+        route,
         ["seed", container.seed === "succeeded", container.seed === "failed"],
     ];
 }

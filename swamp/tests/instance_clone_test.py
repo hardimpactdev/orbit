@@ -699,48 +699,45 @@ class CloneTest(unittest.TestCase):
             ):
                 runpy.run_path(str(SCRIPT), run_name="__main__")
             self.assertEqual(exit_status.exception.code, 1)
+            self.assertNotIn("PRIVATE", output.getvalue() + error.getvalue())
+            # Only the T3 step leaves its part's name in the private folder; no phase leaves a unit receipt there.
+            if phase != 't3':
+                self.assertFalse((Path(folder) / 't3.json').exists())
+            if evidence and phase == 'check':
+                # The check keeps no private folder: its public receipt is its own output.
+                printed = json.loads(output.getvalue())
+                self.assertEqual(printed, evidence)
+                return printed
             self.assertEqual(output.getvalue(), "")
-            self.assertNotIn("PRIVATE", error.getvalue())
-            if evidence:
-                ownership.assert_any_call(Path(folder) / 't3.json', account.pw_uid, account.pw_gid)
-                recorded = json.loads((Path(folder) / 't3.json').read_text())
-                self.assertEqual(recorded, evidence)
-                self.assertEqual((Path(folder) / 't3.json').stat().st_mode & 0o777, 0o600)
-                return recorded
             return error.getvalue()
 
-    def assert_structured_process_failure_reaches_create_terminal_receipt(self):
+    def assert_structured_process_failure_reaches_the_completion_receipt(self):
         import importlib.util
         spec = importlib.util.spec_from_file_location('guest_fixture', SCRIPT.parents[1] / 'tests/instance_clone_guest_test.py')
         fixture = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(fixture)
         # Execute the production guest entry point; only its system boundaries are faked.
-        _, output, _ = fixture.CloneGuestTest().readiness('sessions', entrypoint=True, inactive=True)
+        _, output, _ = fixture.CloneGuestTest().readiness('check', entrypoint=True, inactive=True)
         evidence = json.loads(output)
-        self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence)
-        with tempfile.TemporaryDirectory() as temporary:
-            folder = Path(temporary)
-            (folder / 't3.json').write_text(json.dumps(evidence))
-            script = """
-import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-command/assets.ts';
-const folder = Deno.args[0];
-const ctx = {writeResource: async () => {}};
-const created = await behavior.methods.create_result.execute({
-    folder, intent: {instance_id: 7, setup_steps: [], container: {clone: {}}},
-    checkout: null, database: 'succeeded', setup: 'skipped', processes: [], route: 'skipped',
-    container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
-        deploy: [], processes: 'succeeded', seed: 'skipped', t3: 'succeeded', register: 'failed'},
-}, ctx);
-console.log(JSON.stringify(JSON.parse(created.stdout)));
+        printed = self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', phase='check', evidence=evidence)
+        # A sessions failure is a plain phase failure now: no receipt crosses, and none reaches the create's result.
+        self.assertEqual(self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence),
+                         "instance.container_sessions_failed: command incus exited 7\n")
+        script = """
+import { completeResult } from './swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts';
+const stdout = Deno.args[0];
+const result = completeResult({instance_id: 7, route: null}, {stage: 'succeeded', database: 'skipped', fleet: 'skipped', services: 'succeeded',
+    check: {status: 'succeeded', outputs: {stdout, exitCode: 1}}, route: 'skipped', certificates: [], route_observation: {}});
+console.log(JSON.stringify(JSON.parse(result.stdout)));
 """
-            result = subprocess.run(['deno', 'eval', '--no-check', script, str(folder)],
-                                    cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=20)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-            receipt = json.loads(result.stdout)
-            self.assertEqual(receipt['error_code'], evidence['error_code'])
-            self.assertEqual(receipt['process_failure'], evidence['process_failure'])
-            self.assertFalse(receipt['ready'])
-            self.assertNotIn('PRIVATE', json.dumps(receipt))
+        result = subprocess.run(['deno', 'eval', '--no-check', script, json.dumps(printed)],
+                                cwd=SCRIPT.parents[2], text=True, capture_output=True, check=False, timeout=20)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        receipt = json.loads(result.stdout)
+        self.assertEqual([receipt['failed_step'], receipt['error_code']], ['check', evidence['error_code']])
+        self.assertEqual(receipt['process_failure'], evidence['process_failure'])
+        self.assertFalse(receipt['ready'])
+        self.assertNotIn('PRIVATE', json.dumps(receipt))
 
     def test_preserves_only_the_guest_command_and_exit_code(self):
         for command in ["curl", "git", "mkdir", "php", "systemctl", "t3"]:
@@ -751,7 +748,7 @@ console.log(JSON.stringify(JSON.parse(created.stdout)));
                     + " exited 17\n"
                 )
                 self.assertEqual(self.invoke(diagnostic), diagnostic)
-        self.assert_structured_process_failure_reaches_create_terminal_receipt()
+        self.assert_structured_process_failure_reaches_the_completion_receipt()
 
     def test_rejects_private_or_mismatched_guest_diagnostics(self):
         for stderr in [
