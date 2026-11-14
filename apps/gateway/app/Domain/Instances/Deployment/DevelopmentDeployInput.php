@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Deployment;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Instances\NestedFleetClubKey;
+use App\Domain\Instances\Power\InstancePower;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
@@ -65,6 +66,9 @@ final readonly class DevelopmentDeployInput
         }
 
         return ['intent' => [...$input, ...$runtime, 'container' => $container,
+            // A deployment that starts or resumes a sleeping container removes its asleep marker once the app answers, so the Route
+            // serves the app again (docs/reference/development-containers.md#sleep-and-wake).
+            ...($container !== null ? ['asleep_marker' => InstancePower::markerPath($instance)] : []),
             ...(isset($intent['fleet']) ? ['fleet' => ValidatedData::object($intent['fleet'])] : []),
             'application' => ValidatedData::object($input['deployment'])['home'],
             'account_home' => $user === 'root' ? '/root' : '/home/'.$user],

@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Power;
 
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Domain\Instances\InstanceRuntimePowerState;
-use App\Domain\Operations\OperationStatus;
+use App\Domain\Instances\InstancePlacement;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -55,20 +54,21 @@ final readonly class ContainerResume
     }
 
     /**
-     * Whether a wake tries the Node's resume first: the Instance's last sleep froze it and its site has a web unit to answer.
+     * Whether a wake tries the Node's resume first: the Instance's last sleep froze it and its site has a web unit to answer. The Node's
+     * script closes only the container's own swap, so a nested-fleet Instance and a sleep that opened inner cgroups (`swap_subtree`)
+     * take the run, which closes each of them.
      *
      * @param  array<string, mixed>  $input
      */
     public function applies(Instance $instance, InstanceRuntime $runtime, array $input): bool
     {
-        if ($runtime->power_state !== InstanceRuntimePowerState::Stopped || (ValidatedData::object($input['container'])['web_config'] ?? null) === null
+        if ($runtime->incus_project === InstancePlacement::NestedProject || (ValidatedData::object($input['container'])['web_config'] ?? null) === null
             || Cache::has(self::missingScriptKey($instance->node_id))) {
             return false;
         }
-        $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->orderByDesc('id')->first();
+        $sleep = InstanceSleep::frozen($instance, $runtime);
 
-        return $sleep?->status === OperationStatus::Succeeded && ($sleep->result['sleep'] ?? null) === 'frozen';
+        return $sleep !== null && ($sleep->result['swap_subtree'] ?? 0) === 0;
     }
 
     /**

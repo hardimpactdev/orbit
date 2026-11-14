@@ -13,6 +13,7 @@ use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\IsolatedIdRanges;
+use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
@@ -56,20 +57,21 @@ final readonly class TaskCopyStart
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
-        $this->assertDefaultRuns($project);
+        $asleep = $this->assertDefaultRuns($project);
         $host = $this->readIds($project);
 
-        return DB::transaction(function () use ($group, $caller, $request, $host): Operation {
+        return DB::transaction(function () use ($group, $caller, $request, $host, $asleep): Operation {
             $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
             app(TaskProvisionIntent::class)->assertProvisionable($group);
             $project = $group->project;
             $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->lockForUpdate()->first();
             $runtime = $default?->runtime;
-            // A copy starts only from a running default with a seed: a stopped or unfinished default fails here, before any record.
+            // A copy starts from a default with a seed that runs or sleeps: the clone copies the seed snapshot and never wakes it. A
+            // default stopped by hand or unfinished fails here, before any record.
             if ($default === null || $runtime === null || $default->status !== InstanceState::Active || $runtime->seed_commit === null
-                || $runtime->power_state !== InstanceRuntimePowerState::Running) {
+                || ($runtime->power_state !== InstanceRuntimePowerState::Running && ! ($asleep && InstanceSleep::asleep($default, $runtime) !== null))) {
                 throw new ResourceOperationException('tasks.copy_source_unavailable',
-                    "Project [{$project->slug}] has no running default Instance with a seed snapshot to copy.", 409);
+                    "Project [{$project->slug}] has no running or sleeping default Instance with a seed snapshot to copy.", 409);
             }
             $name = TaskWorkspaceName::for($group);
             if (Instance::query()->where('project_id', $project->id)->where('name', $name)->exists()) {
@@ -94,22 +96,25 @@ final readonly class TaskCopyStart
     }
 
     /**
-     * The default's container must run now. Its power record can be stale, for example after a stop by hand, so one bounded read of the
-     * container (ContainerWorkspaceRead, at most about 6 s) decides before the transaction. A stopped, asleep or unreachable container
-     * refuses. A timeout does not: the reader first sees the container run, then may run out of time on its Git work. A missing default
-     * or runtime is refused inside the transaction.
+     * The default's container must run or sleep now. Its power record can be stale, for example after a stop by hand, so one bounded
+     * read of the container (ContainerWorkspaceRead, at most about 6 s) decides before the transaction. A container that does not run
+     * and has no asleep marker (`stopped`), or that cannot be read, refuses. A timeout does not: the reader first sees the container
+     * run, then may run out of time on its Git work. Returns whether the read found it asleep, which the transaction checks against
+     * the default's last sleep. A missing default or runtime is refused inside the transaction.
      */
-    private function assertDefaultRuns(Project $project): void
+    private function assertDefaultRuns(Project $project): bool
     {
         $default = Instance::query()->with('node')->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->first();
         if ($default === null || ! $default->runtime()->exists()) {
-            return;
+            return false;
         }
         $read = $this->read->read($default);
-        if ($read['state'] === 'unknown' && in_array($read['reason'], ['stopped', 'asleep', 'unreachable'], true)) {
+        if ($read['state'] === 'unknown' && in_array($read['reason'], ['stopped', 'unreachable'], true)) {
             throw new ResourceOperationException('tasks.copy_source_unavailable',
-                "Project [{$project->slug}] has no running default Instance with a seed snapshot to copy.", 409, details: ['default' => $read['reason']]);
+                "Project [{$project->slug}] has no running or sleeping default Instance with a seed snapshot to copy.", 409, details: ['default' => $read['reason']]);
         }
+
+        return $read['state'] === 'unknown' && $read['reason'] === 'asleep';
     }
 
     /**

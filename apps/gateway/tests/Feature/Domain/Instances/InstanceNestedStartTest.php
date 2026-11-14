@@ -108,13 +108,14 @@ it('takes the wake for a normal clone and the start only for a clone of a nested
     'nested-fleet clone' => [true, true, InstanceStart::Kind],
 ]);
 
-it('gives the start the container with its Club key part and the clone\'s fleet, and no asleep marker', function (): void {
+it('gives the start the container with its Club key part, the clone\'s fleet and the asleep marker it removes', function (): void {
     [$default, $clone] = startPair(true);
     $runtime = $clone->runtime()->firstOrFail();
 
     $operation = app(InstanceWake::class)->start($clone, null, null);
 
-    expect(array_keys($operation->input))->toBe(['container', 'fleet'])
+    expect(array_keys($operation->input))->toBe(['container', 'fleet', 'asleep_marker'])
+        ->and($operation->input['asleep_marker'])->toBe('/data/caddy/orbit/hibernation/app-instance-'.$clone->id.'.asleep')
         ->and($operation->input['container']['project'])->toBe(InstancePlacement::NestedProject)
         ->and($operation->input['container']['club_key']['directory'])->toBe('/run/orbit-club')
         ->and($operation->input['container']['config']['boot.autostart'])->toBe('false')
@@ -124,20 +125,52 @@ it('gives the start the container with its Club key part and the clone\'s fleet,
         ->and(OperationRunBudgets::seconds($operation->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(1200);
 });
 
-it('refuses a wake of a nested-fleet default by name and never starts it', function (): void {
+it('refuses a wake of a nested-fleet default that no sleep froze by name, and never starts it', function (): void {
     [$default] = startPair(true);
 
     expect(fn () => app(InstanceWake::class)->start($default, null, null))->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->getMessage()])
-        ->toBe(['instance.sleep_unsupported', 'A nested-fleet default starts through its deployment; it does not sleep or wake.']));
+        ->toBe(['instance.sleep_unsupported', 'A nested-fleet Instance that no sleep froze starts only through its deployment, or a clone through its start.']));
     expect(fn () => app(InstanceStart::class)->start($default, null, null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)
         ->toBe('instance.start_unsupported'));
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('still refuses to put a nested-fleet clone to sleep', function (): void {
-    [, $clone] = startPair(true);
+it('puts a nested-fleet default and a nested-fleet clone to sleep', function (): void {
+    [$default, $clone] = startPair(true);
 
-    expect(fn () => app(InstanceSleep::class)->start($clone, null, null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)
+    expect(app(InstanceSleep::class)->start($default, null, null)->kind)->toBe(InstanceSleep::Kind)
+        ->and(app(InstanceSleep::class)->start($clone, null, null)->kind)->toBe(InstanceSleep::Kind);
+});
+
+/** The last sleep froze the Instance: `power_state` stopped, as the sleep's projection records it. */
+function frozenNested(Instance $instance, int $swapSubtree = 3): void
+{
+    startRun(app(InstanceSleep::class)->start($instance, null, null), 'succeeded', ['sleep' => 'frozen', 'swap_subtree' => $swapSubtree]);
+}
+
+it('wakes a frozen nested-fleet default or clone by resume, through the run and never the Node\'s resume', function (string $which): void {
+    [$default, $clone] = startPair(true);
+    $instance = $which === 'default' ? $default : $clone;
+    frozenNested($instance, swapSubtree: 0);
+
+    $wake = app(InstanceWake::class)->start($instance->refresh(), null, null);
+
+    expect($wake->kind)->toBe(InstanceWake::Kind)
+        ->and(array_keys($wake->input))->toBe(['container', 'marker', 'web'])
+        ->and($wake->input['container']['project'])->toBe(InstancePlacement::NestedProject)
+        ->and($wake->state[InstanceWake::ResumeState] ?? null)->toBeNull()
+        ->and(Operation::query()->where('kind', InstanceStart::Kind)->count())->toBe(0);
+})->with(['default', 'clone']);
+
+it('takes the start of a clone and refuses a default once a wake found the nested-fleet container stopped', function (): void {
+    [$default, $clone] = startPair(true);
+    foreach ([$default, $clone] as $instance) {
+        frozenNested($instance);
+        startRun(app(InstanceWake::class)->start($instance->refresh(), null, null), 'failed', ['error_code' => InstanceWake::NestedStopped], InstanceWake::NestedStopped);
+    }
+
+    expect(app(InstanceWake::class)->start($clone->refresh(), null, null)->kind)->toBe(InstanceStart::Kind);
+    expect(fn () => app(InstanceWake::class)->start($default->refresh(), null, null))->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)
         ->toBe('instance.sleep_unsupported'));
 });
 
@@ -233,9 +266,10 @@ it('takes the wake\'s own refusal for a clone of a nested-fleet Project on a Nod
     expect(Operation::query()->count())->toBe(0);
 });
 
-it('never starts a nested-fleet clone\'s fleet from a Route visit', function (): void {
+it('takes the start of a nested-fleet clone that no sleep froze from a Route visit, as the command does', function (): void {
     [, $clone] = startPair(true);
 
-    expect(app(InstanceWake::class)->activate($clone, false, 'node:1'))->toBe('Only a development container that runs no nested fleet sleeps and wakes.')
-        ->and(Operation::query()->count())->toBe(0);
+    expect(app(InstanceWake::class)->activate($clone, false, 'node:1'))->toBeNull()
+        ->and(Operation::query()->where('kind', InstanceStart::Kind)->sole()->target_id)->toBe($clone->id)
+        ->and(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(0);
 });

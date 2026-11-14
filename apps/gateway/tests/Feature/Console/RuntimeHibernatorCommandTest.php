@@ -80,20 +80,42 @@ it('runs both sweeps once the operator turned the container idle sleep on', func
     expect(sleepsAdmitted())->toBe(1);
 });
 
-it('lists every decision in a dry run, changes nothing, and skips the checkout sweep, whatever the switch', function (bool $on): void {
-    config(['orbit.hibernation.container_sleep' => $on]);
+it('prints the value in force and each row\'s decision under every value in a dry run, changes nothing, and skips the checkout sweep', function (mixed $value, string $setting, int $sleeps): void {
+    config(['orbit.hibernation.container_sleep' => $value]);
     $default = Instance::query()->where('name', 'default')->sole();
 
     $this->artisan('orbit:runtime-hibernator --dry-run')->assertSuccessful()
-        ->expectsTable(['Instance', 'Name', 'Decision', 'Reason', 'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Operation'], [
-            [$default->id, 'default', 'skip', 'default', '-', '-', '-', '-', ''],
-            [$this->clone->id, 'clone', 'sleep', 'idle', '2026-11-14T10:00:00Z', '2026-11-14T11:56:40Z', '-', '-', ''],
+        ->expectsOutputToContain("ORBIT_HIBERNATION_CONTAINER_SLEEP is [{$setting}].")
+        ->expectsTable(['Instance', 'Name', 'false', 'without_t3', 'true', 'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Last deploy'], [
+            [$default->id, 'default', 'skip: off', 'skip: watch_starting', 'skip: watch_starting', '-', '-', 'no T3 server', '-', '-'],
+            [$this->clone->id, 'clone', 'skip: off', 'skip: t3_server', 'sleep', '2026-11-14T10:00:00Z', '2026-11-14T11:56:40Z', '-', '-', '-'],
         ])
-        ->expectsOutputToContain('Would put [1] idle development containers to sleep.')
+        ->expectsOutputToContain("Would put [{$sleeps}] idle development containers to sleep.")
         ->doesntExpectOutputToContain('Halted');
 
-    expect(sleepsAdmitted())->toBe(0);
-})->with([false, true]);
+    expect(sleepsAdmitted())->toBe(0)
+        ->and(Instance::query()->where('name', 'default')->sole()->runtime()->firstOrFail()->idle_watch_started_at)->toBeNull();
+})->with([[false, 'false', 0], ['without_t3', 'without_t3', 0], [true, 'true', 1]]);
+
+it('puts only Instances without a T3 server to sleep under without_t3', function (): void {
+    config(['orbit.hibernation.container_sleep' => 'without_t3']);
+    $default = Instance::query()->where('name', 'default')->sole();
+    $default->runtime()->update(['idle_watch_started_at' => now()->subHours(2)]);
+
+    $this->artisan('orbit:runtime-hibernator')->assertSuccessful()
+        ->expectsOutputToContain('Put [1] idle development containers to sleep.');
+
+    expect(Operation::query()->where('kind', InstanceSleep::Kind)->sole()->target_id)->toBe($default->id);
+});
+
+it('fails each run on a value outside the setting, names it, and puts nothing to sleep', function (bool $dryRun): void {
+    config(['orbit.hibernation.container_sleep' => 'sometimes']);
+
+    $this->artisan('orbit:runtime-hibernator'.($dryRun ? ' --dry-run' : ''))->assertFailed()
+        ->expectsOutputToContain('ORBIT_HIBERNATION_CONTAINER_SLEEP must be false, without_t3 or true, not [sometimes].');
+
+    expect($this->reads)->toBe(0)->and(sleepsAdmitted())->toBe(0);
+})->with(['acting' => [false], 'dry run' => [true]]);
 
 it('acts on named Instances with the window of the run while the switch is off, and leaves the checkout sweep alone', function (?string $idle, int $sleeps): void {
     config(['orbit.hibernation.container_sleep' => false]);

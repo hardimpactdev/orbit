@@ -6,11 +6,11 @@ namespace App\Console\Commands;
 
 use App\Actions\Hibernation\SweepIdleAppDevRuntimesAction;
 use App\Domain\Hibernation\HibernationException;
-use App\Domain\Instances\Power\AgentActivity;
 use App\Domain\Instances\Power\ContainerIdleDecision;
 use App\Domain\Instances\Power\ContainerIdleSweep;
+use App\Domain\Instances\Power\ContainerSleepScope;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Config;
+use InvalidArgumentException;
 use Throwable;
 
 final class RuntimeHibernatorCommand extends Command
@@ -19,8 +19,8 @@ final class RuntimeHibernatorCommand extends Command
 
     #[\Override]
     protected $signature = 'orbit:runtime-hibernator
-        {--dry-run : List what the container idle sleep would do; change nothing and skip the checkout sweep}
-        {--instance=* : Only these container Instances, also while the container idle sleep is off}
+        {--dry-run : List what the container idle sleep would do under each value of its setting; change nothing and skip the checkout sweep}
+        {--instance=* : Only these container Instances, as under the value true, whatever the setting}
         {--idle-seconds= : The idle window for this run, at least 60; only with --instance}';
 
     #[\Override]
@@ -54,26 +54,69 @@ final class RuntimeHibernatorCommand extends Command
             }
         }
 
-        // The container idle sleep acts only while the operator turned it on, or for the Instances a run names.
-        $acts = ! $dryRun && ($only !== null || Config::boolean('orbit.hibernation.container_sleep'));
-        if ($dryRun || $acts) {
+        // The setting names which containers the idle sleep acts on; a named run acts on its Instances as under `true`.
+        try {
+            $scope = ContainerSleepScope::configured();
+        } catch (InvalidArgumentException $exception) {
+            $this->error($exception->getMessage());
+
+            return self::FAILURE;
+        }
+        if ($dryRun) {
+            // A dry run never runs the checkout sweep.
+            return $this->preview($containers, $scope, $only, $idle === null ? null : (int) $idle) ? self::SUCCESS : self::FAILURE;
+        }
+        $scope = $only === null ? $scope : ContainerSleepScope::All;
+        if ($scope !== ContainerSleepScope::Off) {
             try {
-                $decisions = $containers->run(! $acts, $only, $idle === null ? null : (int) $idle);
+                $decisions = $containers->run(false, $only, $idle === null ? null : (int) $idle, scope: $scope);
             } catch (Throwable) {
                 $this->error('Container idle sleep failed.');
 
                 return self::FAILURE;
             }
-            $this->table(['Instance', 'Name', 'Decision', 'Reason', 'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Operation'],
+            $this->table(['Instance', 'Name', 'Decision', 'Reason', 'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Last deploy', 'Operation'],
                 array_map(static fn (ContainerIdleDecision $decision): array => [
                     $decision->instanceId, $decision->name, $decision->decision, $decision->reason, self::time($decision->watchStartedAt),
-                    self::time($decision->lastHttpAt), self::agent($decision->t3), self::time($decision->lastWakeAt), $decision->operationId ?? '',
+                    self::time($decision->lastHttpAt), self::agent($decision), self::time($decision->lastWakeAt), self::time($decision->lastDeployAt),
+                    $decision->operationId ?? '',
                 ], $decisions));
             $sleeps = count(array_filter($decisions, static fn ($decision): bool => $decision->decision === 'sleep'));
-            $this->info(($acts ? 'Put' : 'Would put')." [{$sleeps}] idle development containers to sleep.");
+            $this->info("Put [{$sleeps}] idle development containers to sleep.");
         }
 
         return $failed ? self::FAILURE : self::SUCCESS;
+    }
+
+    /**
+     * The dry run: each row's decision under each value of the setting, and the evidence read once for all of them.
+     *
+     * @param  list<int>|null  $only
+     */
+    private function preview(ContainerIdleSweep $containers, ContainerSleepScope $scope, ?array $only, ?int $idle): bool
+    {
+        try {
+            $preview = $containers->preview($only, $idle);
+        } catch (Throwable) {
+            $this->error('Container idle sleep failed.');
+
+            return false;
+        }
+        $this->info("ORBIT_HIBERNATION_CONTAINER_SLEEP is [{$scope->setting()}].");
+        $cell = static fn (ContainerIdleDecision $decision): string => $decision->decision === 'sleep' ? 'sleep' : 'skip: '.$decision->reason;
+        $rows = [];
+        foreach ($preview[ContainerSleepScope::All->value] as $index => $decision) {
+            $rows[] = [$decision->instanceId, $decision->name,
+                ...array_map(static fn (ContainerSleepScope $value): string => $cell($preview[$value->value][$index]), ContainerSleepScope::cases()),
+                self::time($decision->watchStartedAt), self::time($decision->lastHttpAt), self::agent($decision),
+                self::time($decision->lastWakeAt), self::time($decision->lastDeployAt)];
+        }
+        $this->table(['Instance', 'Name', ...array_map(static fn (ContainerSleepScope $value): string => $value->setting(), ContainerSleepScope::cases()),
+            'Watched since', 'Last HTTP', 'Last T3', 'Last wake', 'Last deploy'], $rows);
+        $sleeps = count(array_filter($preview[$scope->value], static fn (ContainerIdleDecision $decision): bool => $decision->decision === 'sleep'));
+        $this->info("Would put [{$sleeps}] idle development containers to sleep.");
+
+        return true;
     }
 
     /** A time of the evidence in UTC to the second, or `-` when the sweep did not read one or found none. */
@@ -82,9 +125,12 @@ final class RuntimeHibernatorCommand extends Command
         return $unix === null ? '-' : gmdate('Y-m-d\\TH:i:s\\Z', $unix);
     }
 
-    private static function agent(?AgentActivity $t3): string
+    private static function agent(ContainerIdleDecision $decision): string
     {
+        $t3 = $decision->t3;
+
         return match (true) {
+            ! $decision->t3Server => 'no T3 server',
             $t3 === null => '-',
             ! $t3->readable => 'unreadable',
             $t3->turnRuns => 'turn running',

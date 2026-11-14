@@ -10,6 +10,7 @@ use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceThreadContribution;
 use App\Domain\Instances\InstanceThreadContributions;
+use App\Domain\Instances\Power\ContainerIdleSweep;
 use App\Domain\Instances\Power\ContainerResume;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
@@ -63,14 +64,18 @@ function sleepingClone(bool $taskOwned = false): Instance
     return $clone->refresh();
 }
 
-/** A default does not sleep in this part of the plan. */
-it('refuses to put a default Instance to sleep', function (): void {
+/** A default sleeps as every development container does; it has no T3 server, so its result says so. */
+it('puts a default Instance to sleep, says it has no T3 server, and keeps the swap subtree count', function (string $trigger): void {
     sleepingClone();
     $default = Instance::query()->where('name', 'default')->firstOrFail();
 
-    expect(fn () => app(InstanceSleep::class)->start($default, null, null))->toThrow(
-        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.sleep_unsupported'));
-});
+    $sleep = app(InstanceSleep::class)->start($default, $trigger === 'sweep' ? ContainerIdleSweep::TriggeredBy : null, null);
+    $done = powerRun($sleep, 'succeeded', ['sleep' => 'frozen', 'swap_subtree' => 0]);
+
+    expect($sleep->kind)->toBe(InstanceSleep::Kind)
+        ->and($done->result)->toBe(['power_state' => 'stopped', 't3_turn' => 'no_server', 'sleep' => 'frozen', 'swap_subtree' => 0])
+        ->and($default->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Stopped);
+})->with(['command', 'sweep']);
 
 function powerRun(Operation $operation, string $status, array $result = []): Operation
 {
@@ -131,19 +136,15 @@ it('lets no extension read a refused Instance before its refusal', function (): 
     $contribution->shouldNotReceive('beforeSleep');
     app()->instance(InstanceThreadContributions::class, new InstanceThreadContributions([$contribution]));
     $clone = Instance::query()->where('name', 'clone')->firstOrFail();
-    $default = Instance::query()->where('name', 'default')->firstOrFail();
 
-    foreach ([[$default, 'instance.sleep_unsupported'], [$clone, 'instance.lifecycle_busy']] as [$instance, $code]) {
-        expect(fn () => app(InstanceSleep::class)->start($instance, null, null))->toThrow(
-            fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
-    }
+    expect(fn () => app(InstanceSleep::class)->start($clone, null, null))->toThrow(
+        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.lifecycle_busy'));
 });
 
 it('refuses a sleep that the Instance does not allow, before any run', function (string $case, string $code): void {
     $clone = sleepingClone(taskOwned: $case === 'task');
     match ($case) {
         'checkout' => $clone->runtime()->delete(),
-        'nested' => $clone->project->forceFill(['nested_fleet' => true])->save(),
         'production' => $clone->node->roles()->update(['role' => RoleName::AppProd]),
         'lifecycle' => $clone->update(['status' => 'checkout_prepared']),
         'task' => null,
@@ -155,7 +156,7 @@ it('refuses a sleep that the Instance does not allow, before any run', function 
         fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
     expect(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(0);
 })->with([
-    ['checkout', 'operation.kind_unavailable'], ['nested', 'instance.sleep_unsupported'],
+    ['checkout', 'operation.kind_unavailable'],
     ['production', 'instance.sleep_unsupported'], ['lifecycle', 'instance.lifecycle_busy'],
     ['task', 'instance.lifecycle_busy'], ['instance.deploy', 'operation.target_busy'], ['instance.wake', 'operation.target_busy'],
 ]);
@@ -225,15 +226,11 @@ it('admits one wake per Instance, which a second caller joins, and records it aw
         ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
 });
 
-it('wakes a default too, but never a nested-fleet Instance', function (): void {
-    $clone = sleepingClone();
+it('wakes a default too', function (): void {
+    sleepingClone();
     $default = Instance::query()->where('name', 'default')->firstOrFail();
 
     expect(app(InstanceWake::class)->start($default, null, null)->kind)->toBe('instance.wake');
-
-    $clone->project->forceFill(['nested_fleet' => true])->save();
-    expect(fn () => app(InstanceWake::class)->start($clone->refresh(), null, null))->toThrow(
-        fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.sleep_unsupported'));
 });
 
 it('starts one wake from Route visits behind the asleep marker, shows the failure page after a failed wake, and retries on request', function (): void {
@@ -384,6 +381,21 @@ function frozenClone(string $sleep = 'frozen'): Instance
 
     return $clone->refresh();
 }
+
+it('takes the run, not the Node\'s resume, when the last sleep opened swap for inner cgroups', function (): void {
+    Sleep::fake(syncWithCarbon: true);
+    $clone = sleepingClone();
+    powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded', ['sleep' => 'frozen', 'swap_subtree' => 3]);
+    Queue::fake();
+    $state = wakeNode($clone->refresh());
+
+    $wake = app(InstanceWake::class)->start($clone, null, null);
+
+    expect($wake->status->value)->toBe('queued')
+        ->and($wake->state[InstanceWake::ResumeState] ?? null)->toBeNull()
+        ->and($state->calls)->toBe([]);
+    Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $wake->id && $job->delay === null);
+});
 
 it('wakes a frozen container through the Node in the same Operation and sends the visitor back to the same request', function (): void {
     $clone = frozenClone();

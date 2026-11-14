@@ -7,7 +7,6 @@ namespace App\Domain\Instances\Power;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
@@ -108,12 +107,9 @@ abstract readonly class InstancePower implements DirectOperationProjection
         if ($runtime === null) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Sleep and wake require a container Instance.', 409);
         }
-        if ($runtime->incus_project === InstancePlacement::NestedProject && $runtime->t3_port === null) {
-            throw new ResourceOperationException('instance.sleep_unsupported', 'A nested-fleet default starts through its deployment; it does not sleep or wake.', 409);
-        }
-        if ($instance->placementEnvironment() !== 'development' || $runtime->incus_project === InstancePlacement::NestedProject
-            || $instance->project->nested_fleet) {
-            throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container that runs no nested fleet sleeps and wakes.', 409);
+        // A default and a nested-fleet Instance sleep and wake as every development container does (docs/reference/development-containers.md#sleep-and-wake).
+        if ($instance->placementEnvironment() !== 'development') {
+            throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container sleeps and wakes.', 409);
         }
         if (($open = $this->open($instance)) !== null) {
             return ['runtime' => $runtime, 'open' => $open];
