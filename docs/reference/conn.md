@@ -134,7 +134,9 @@ A workspace covers its `projectRefs` and every project whose logical key is in `
 
 `attachedThreads` is the profile's list of threads: the sidebar of every device on the profile. A thread is attached when it is on this list. Detaching a thread removes it from the list. It never touches the T3 server or the thread, which stays as it is on its Instance.
 
-A device connects to a container T3 server only while the profile has a thread of it attached. The servers a device connects to are the environments in `attachedThreads.threads` that `GET /environments` lists for that device, so each device keeps to its own [node access](#access). The Gateway adds no field for this set: the device derives it from the two reads it already makes. When the last thread of an environment is detached, the environment leaves the set, and every device on the profile disconnects from it at its next read. Host servers are not in this set: a device keeps them connected as before.
+A device connects to a container T3 server only while the profile has a thread of it attached. The servers a device connects to are the environments in `attachedThreads.threads` that `GET /environments` lists for that device. So each device keeps to its own [node access](#access). The Gateway adds no field for this set: the device derives it from the two reads it already makes.
+
+When the last thread of an environment is detached, the environment leaves the set. Every device on the profile then disconnects from it at its next read. Host servers are not in this set: a device keeps them connected as before.
 
 Write the section with `PATCH`, as the whole set, with the section version the client read:
 
@@ -149,16 +151,23 @@ To attach a thread, send the set with the thread added. To detach one, send the 
 
 The Gateway checks each entry on the locked profile, after the version check:
 
-- An environment that is already in the stored set may stay, whoever writes. A device may carry an entry it cannot see itself, so the merge below never fails because of another device's access.
-- An environment that is not yet in the stored set must exist, and the writing Node must have node access to its Node, as for `GET /environments`. The writer is the only identity a request carries, and a write needs no binding to the profile, so the check cannot rest on the profile's other Nodes. A Node attaches only servers it may reach, which is also all that it can pick. Otherwise the request is refused with `validation.failed` (422), and the error names the field, such as `sections.attachedThreads.value.threads.1.environmentId`.
-- An entry whose environment no longer exists is dropped from what the Gateway stores.
+- **Carried environment.** An environment already in the stored set may stay, whoever writes.
+- **Merge safety.** A device may carry an entry it cannot see itself. A merge never fails on another device's access.
+- **New environment.** An environment that is not in the stored set must exist. The writing Node must also have node access to its Node, as for `GET /environments`.
+- **Refusal.** A new environment that fails this check refuses the request with `validation.failed` (422). The error names the field, such as `…threads.1.environmentId`.
+- **Gone environment.** The Gateway drops an entry whose environment was deleted from what it stores.
+
+The check uses the writer's access, not the access of the profile's other Nodes. The writer is the only identity a request carries, and a write needs no binding to the profile. So a Node attaches only servers it may reach, which are also the only ones it can pick.
 
 Two devices that change the set at the same time are handled by the section version, as for every section ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways: the remote set, plus the threads it added since its base, minus the threads it removed since its base. Then it retries with the new version. So an attach on one device and a detach on another both land. The Gateway needs nothing more for a set.
 
 Orbit drops the entries of an environment that is gone:
 
-- When an Instance is removed, the destroy's terminal projection deletes its environment and removes that environment's threads from every profile that holds one. This write adds 1 to the section version and to the document version, with `updated_by` `null`. A device sees the new `settings_version` in `GET /me`, reads the section, and merges the drop as a remote change. A device that writes from its older version gets a conflict instead of writing the threads back.
-- A read leaves out the threads of an environment that no longer exists, without a write and without a new version. The next write of the section drops them from the store.
+- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from every profile that holds one.
+- **Versions.** This drop adds 1 to the section version and to the document version, with `updated_by` `null`.
+- **Merge.** A device sees the new `settings_version` in `GET /me`. It reads the section and merges the drop as a remote change.
+- **No write-back.** A device that writes from its older version gets a conflict. It cannot write the threads back.
+- **On read.** A read leaves out the threads of an environment that was deleted. It writes nothing and adds no version. The next write of the section drops them from the store.
 
 A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
 
