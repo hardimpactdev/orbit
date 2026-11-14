@@ -1,0 +1,21 @@
+order = 1481
+source_sha256 = "704d361c29808255e32e32230c98968a26c633361e347e3346c24586beca20a6"
+cases = [
+  "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
+  "test_a_file_that_differs_from_the_shipped_one_is_never_replaced",
+  "test_without_duperemove_only_the_relink_runs_and_the_shrink_stays_due",
+  "test_a_changed_package_makes_it_due_and_a_directory_pool_skips_the_dedupe",
+  "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
+]
+file = "swamp/tests/instance_fleet_shrink_test.py"
+cost = 5
+# The file it reads: the shrink of the nested root disks, run as shipped.
+inputs = [
+  "swamp/ansible/instance_fleet_shrink.py",
+]
+[case_costs]
+"test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing" = 1
+"test_a_file_that_differs_from_the_shipped_one_is_never_replaced" = 1
+"test_without_duperemove_only_the_relink_runs_and_the_shrink_stays_due" = 1
+"test_a_changed_package_makes_it_due_and_a_directory_pool_skips_the_dedupe" = 1
+"test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record" = 1

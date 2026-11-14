@@ -50,6 +50,10 @@
     # The refresh record (instance-fleet-refresh.yml): the digests of the parts the last passed refresh did, on the container's own
     # disk, so a seed holds the record of the fleet it holds. Absent while a refresh runs. Root-owned, in a root-owned folder.
     fleet_record: /var/lib/orbit/fleet-refresh.json
+    # The shrink record (instance_fleet_shrink.py): the dpkg status digest of each nested container when the refresh last relinked and
+    # deduplicated their root disks, on the container's own disk beside the refresh record; and the inner Incus's storage folder.
+    fleet_shrink_record: /var/lib/orbit/fleet-shrink.json
+    fleet_inner_pools: /var/lib/incus/storage-pools
     fleet_tunnel: wg-nested
     # The inner bridge of the nested containers (TaskVmNestedFleet::Network). The seed holds it; no fleet step creates it.
     fleet_network: oe-nested

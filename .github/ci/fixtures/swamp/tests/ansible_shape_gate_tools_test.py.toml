@@ -1,5 +1,5 @@
 order = 450
-source_sha256 = "d9328858fd50dcc4c3b56f9237c63413cc47dcdf926f8b83988f985a42db9690"
+source_sha256 = "c248a232126096e5ab629e9d3bd016bec7412e9d9e34a067b81365fb6ca9e451"
 cases = [
   "test_uses_the_system_tools_only_when_built_for_these_pins",
   "test_a_built_venv_needs_no_write_access_and_no_install",
@@ -15,6 +15,7 @@ cases = [
   "test_complete_collections_are_kept_when_only_the_venv_is_new",
   "test_a_missing_python3_venv_is_installed_through_apt",
   "test_host_programs_missing_beside_ready_tools_are_installed_once_then_only_read",
+  "test_a_default_without_duperemove_gets_it_once_beside_ready_tools",
   "test_a_default_made_before_the_image_carried_btrfs_progs_gets_it_once_beside_ready_tools",
   "test_a_failed_package_read_is_the_package_step",
   "test_a_failed_host_program_install_is_reported_and_keeps_ready_tools",
@@ -22,7 +23,7 @@ cases = [
   "test_the_names_are_the_gates_own",
 ]
 file = "swamp/tests/ansible_shape_gate_tools_test.py"
-cost = 3
+cost = 4
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",

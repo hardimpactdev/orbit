@@ -101,7 +101,8 @@ final readonly class ContainerDeployOutcome
             'converge_reason' => ['changed', 'record', 'digest_unreadable', 'stale', 'unchanged'],
             'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'recorded', 'no_key'], 'base' => ['retaken', 'kept'],
             'record' => ['present', 'missing', 'unreadable'], 'tools' => ['present', 'built', 'failed'],
-            'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable']];
+            'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable'],
+            'shrink' => ['ran', 'relinked', 'failed', 'skipped'], 'shrink_reason' => ['record', 'packages', 'current', 'unreadable']];
         $refresh = [];
         foreach ($words as $part => $allowed) {
             if (! in_array($raw[$part] ?? null, $allowed, true)) {
@@ -125,7 +126,7 @@ final readonly class ContainerDeployOutcome
         $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
             'converge_reason' => $refresh['converge_reason'], 'converge_nodes' => $nodes, 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
             'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
-            'tools_reason' => $refresh['tools_reason']];
+            'tools_reason' => $refresh['tools_reason'], 'shrink' => $refresh['shrink'], 'shrink_reason' => $refresh['shrink_reason']];
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
         $refresh['seconds'] = [];
         foreach (['gateway', 'converge', 'ready', 'base', 'tools'] as $part) {
