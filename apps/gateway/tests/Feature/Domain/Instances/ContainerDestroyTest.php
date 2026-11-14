@@ -243,6 +243,22 @@ it('deletes every execution copy of a removed Instance over one connection', fun
         ->and($this->socket->connects)->toBe(1)->and($clone->fresh())->toBeNull();
 });
 
+it('deletes the rendered .env copies of the task copy\'s publishes, and no other Instance\'s', function (): void {
+    $clone = destroyClone(destroyDefault());
+    $mine = Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => $clone->node_id,
+        'status' => 'failed', 'input' => ['instance_id' => $clone->id, 'workspace' => []], 'state' => []]);
+    $other = Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => 2, 'node_id' => $clone->node_id,
+        'status' => 'failed', 'input' => ['instance_id' => $clone->id + 1000, 'workspace' => []], 'state' => []]);
+    $operation = app(StartInstanceDestroyAction::class)->execute($clone, true);
+    $this->socket->messages = [];
+
+    app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'succeeded'));
+
+    $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key');
+    expect($deleted)->toContain('task-publish-environment-'.$mine->id)
+        ->and($deleted)->not->toContain('task-publish-environment-'.$other->id);
+});
+
 it('leaves a destroy whose start failed for good as a failed removal that a new destroy starts again', function (): void {
     $default = destroyDefault();
     $clone = destroyClone($default);

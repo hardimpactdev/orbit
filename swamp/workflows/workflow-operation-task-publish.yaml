@@ -167,41 +167,18 @@ inputs:
       - pull_request
       - ssh_execution
       additionalProperties: false
+    # Vault references only. A task copy's run also names the .env Orbit renders for the Instance (docs/reference/tasks.md#task-copy).
     execution_secrets:
       type: object
-      properties:
-        github_token:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^task-publish-token-[a-f0-9-]{36}$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-        git_authorization:
-          type: object
-          properties:
-            vault:
-              type: string
-              enum:
-              - orbit-control-inputs
-            key:
-              type: string
-              pattern: ^task-publish-token-[a-f0-9-]{36}$
-          required:
-          - vault
-          - key
-          additionalProperties: false
-      required:
-      - github_token
-      - git_authorization
-      additionalProperties: false
+      propertyNames: {enum: [github_token, git_authorization, environment]}
+      maxProperties: 3
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^task-publish-(?:token-[a-f0-9-]{36}|environment-[1-9][0-9]*)$'}
+        required: [vault, key]
+        additionalProperties: false
   required:
   - operation_id
   - node_id

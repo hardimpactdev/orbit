@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Data\Tasks\StartTaskPublishData;
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,8 +14,11 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
@@ -89,6 +94,65 @@ it('publishes a task copy through its container, with its start commit and the p
     'root .env' => ['public', '.env'],
     'application folder' => ['apps/web/public', 'apps/web/.env'],
 ]);
+
+/** A native vault that records each put, as the Swamp serve socket answers it. */
+function publishEnvironmentVault(): object
+{
+    return new class implements WebSocketClient
+    {
+        /** @var list<array{key: string, value: string}> */
+        public array $puts = [];
+
+        /** @var list<array<string, mixed>> */
+        private array $frames = [];
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+            $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) $frame['payload']['value']];
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+}
+
+it('gives the run of a copy publish the .env Orbit renders for the Instance as a vault copy, and a task VM publish none', function (): void {
+    [$group, $check, $instance] = copyPublishWorld();
+    InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'APP_KEY', 'env_value' => 'base64:not-a-real-key']);
+    app()->instance(WebSocketClient::class, $vault = publishEnvironmentVault());
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+
+    $key = 'task-publish-environment-'.$operation->id;
+    $rendered = app(DevelopmentCreateEnvironment::class)->content($instance->refresh());
+    expect($inputs['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and($vault->puts)->toBe([['key' => $key, 'value' => $rendered]])
+        ->and($rendered)->toContain('base64:not-a-real-key')
+        ->and(json_encode($inputs))->not->toContain('not-a-real-key')
+        ->and($operation->refresh()->input)->not->toHaveKey('execution_secrets.environment');
+
+    $vm = $operation->replicate();
+    $vm->input = array_diff_key($operation->input, ['workspace' => true]);
+    expect(app(DirectOperation::class)->workflowInputs($vm)['execution_secrets'])->not->toHaveKey('environment')
+        ->and($vault->puts)->toHaveCount(1);
+});
 
 it('refuses a copy publish without a start commit or a running container, before any Operation', function (Closure $arrange, string $code): void {
     [$group, $check, $instance, $runtime] = copyPublishWorld();
