@@ -36,7 +36,8 @@ The command answers one of these:
 | `restarted` | | T3 restarted and answers inside the container with the name. |
 | `current` | | T3 already shows the name. Nothing restarted. |
 | `busy` | `t3_working` | A turn works, or a request waits for an answer or a tool, in one of T3's threads. Run the command again later. |
-| `busy` | `processes` | Found by the run right before the restart: a T3 terminal is open, or a terminal or a turn runs a command. The line names the counts. Nothing restarted. |
+| `busy` | `processes` | Found by the run right before the restart: a T3 terminal is open, or a terminal, a turn or a left-behind process runs in T3's service. The line, and `terminals` and `commands` in `--json`, name the counts. Nothing restarted. |
+| `busy` | `processes_unreadable` | The run could not read the processes of T3's service, so it did not restart. |
 | `busy` | `conn_operation` | Another Conn Operation, such as a session renewal or a pairing, runs on the server. |
 | `busy` | an error code | Other work holds the Instance, such as `operation.target_busy`, or the Instance is not active (`instance.lifecycle_not_active`). |
 | `skipped` | `frozen`, `stopped` | The container sleeps or is stopped. T3 reads the name at the container's next start. |
@@ -50,7 +51,7 @@ The Gateway answers with HTTP 200 and one answer per Instance. For a restart it 
 
 Running the command again on a restarted Instance answers `current`.
 
-**What a user sees.** A restart would stop every process of T3's service, so the run reads them first and restarts nothing while a T3 terminal is open or anything runs in one, such as a development server or a long command. An open terminal counts even when it is idle: T3 brings back only its scrollback, not the shell's directory, variables or history. Orbit Processes run in their own units and do not restart. A turn that starts between the thread read and the restart and runs a tool is caught by the same read; one that has not run a tool yet is cut. T3 records it as cancelled and, by default, continues it after its start. A Conn or T3 client that is connected shows *Reconnecting…* and reconnects by itself. A draft that was not sent stays: the client keeps it in the browser. [Restart for the machine name](/reference/conn#restart-for-the-machine-name) has the details.
+**What a user sees.** A restart would stop every process of T3's service, so the run reads them first and restarts nothing while a T3 terminal is open, anything runs in one, or any process other than T3's own and an idle provider session's is in its service. An open terminal counts even when it is idle: T3 brings back only its scrollback, not the shell's directory, variables or history. Orbit Processes run in their own units and do not restart. A turn that starts between the thread read and the restart and runs a tool is caught by the same read; one that has not run a tool yet is cut. T3 records it as cancelled and, by default, continues it after its start. A Conn or T3 client that is connected shows *Reconnecting…* and reconnects by itself. A draft that was not sent stays: the client keeps it in the browser. [Restart for the machine name](/reference/conn#restart-for-the-machine-name) has the details.
 
 The API is `POST /api/v1/conn/instances/{instance}/t3-restart`. The Conn extension must be on.
 

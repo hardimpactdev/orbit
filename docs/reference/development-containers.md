@@ -533,16 +533,25 @@ Only an idle T3 restarts. The Gateway reads T3's threads with its admin session,
 
 Only T3's service restarts. The run first checks that `/etc/machine-info` holds the name; without it, it answers `skipped` with `name_not_written`. Then it runs `systemctl try-restart t3.service` in the container and reads T3's label inside the container until it is the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
 
-`t3.service` sets no `KillMode`, so a restart would end every process of the service. So right before the restart the run reads them with one `ps` in the container, and answers `busy` with `processes` when it finds a user's process:
+`t3.service` sets no `KillMode`, so a restart ends every process in the service's cgroup. So right before the restart the run reads systemd's `MainPID` of `t3.service` and the exact members of its `cgroup.procs`, with the parent, age and name of each, in one call. It restarts only when every member may go; any other member answers `busy` with `processes` and the counts, and nothing restarts.
 
-- **A terminal shell**, which node-pty forks from T3. An open idle shell counts too: a restart loses its state.
+| Member of `t3.service` | Answer |
+| --- | --- |
+| T3 itself: the `MainPID`, and no other process | may go |
+| T3's resource monitor (`t3-resource-mon`), a direct child of T3 | may go |
+| T3's own short `git` call, a direct child of T3 | may go |
+| A provider, `claude` or `codex`, a direct child of T3; the names are the binaries the recipe ships | may go |
+| A provider's descendant that started within 10 seconds of it: its session's `sh`, or a stdio MCP server such as Laravel Boost's `php`, or `npm` and `node` | may go |
+| Any other direct child of T3: a terminal shell that node-pty forked, open idle or running something | `busy`, counted in `terminals` |
+| What a terminal runs, such as a development server or a long command | `busy`, counted in `commands` |
+| A provider's descendant that started later: a turn's tool, or a server an earlier turn left running | `busy`, counted in `commands` |
+| A process whose parent left the service, such as a backgrounded `nohup` server that PID 1 adopted | `busy`, counted in `commands` |
 
-After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
+An open idle shell counts because a restart loses its state. After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
 
-- **What a terminal runs**, such as a development server or a long command.
-- **A turn's tool process**: a shell or command under a provider, from a turn that started after the Gateway's read.
+The read fails closed. When it cannot be read, or `MainPID` is 0 or not a member, the answer is `busy` with `processes_unreadable`, and nothing restarts.
 
-T3 itself, its resource monitor and an idle provider may go. A provider (`claude`, `codex`) stays between turns, with the `sh` it started with. A turn that has not run a tool yet shows only that idle provider. Orbit Processes run in their own `orbit-*` units and do not restart.
+So the restart ends only T3, its monitor and git calls, and an idle provider session with the processes it started with. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here. A turn that has not run a tool yet shows only its provider, so it is cut, and T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
 
 A frozen or stopped container is skipped. T3 reads the name at its next start.
 
@@ -551,6 +560,8 @@ A frozen or stopped container is skipped. T3 reads the name at its next start.
 The thread read and the restart are two steps. The read stays in the Gateway so the busy rule has one place. A read inside the run would need the admin session as a vault execution copy, as `conn.session_hold` has, and a second copy of the busy rule outside PHP. So the Gateway admits the Operation right after the read. The Node form reads every label at once and each container's threads right before its own admission.
 
 An estimate, until the proof of the command measures it: about 5 to 15 seconds pass from the Gateway's read to the restart, for the dispatch, the run's input step, the start of its Ansible phase and its reads.
+
+The `conn_operation` check and the admission are two queries in one request, milliseconds apart. A Conn Operation admitted in that gap can overlap the restart; it then fails on its own T3 call and is run again.
 
 The run's process read narrows the window for a turn that runs a tool, and for every terminal, to about a second: the time from that read to `try-restart`. One call of the Node form admits at most four restarts, so the Swamp queue does not widen it. The intent carries `read_at`, the end of the Gateway's read. The run notes `restart_at` just before the restart. A restarted Operation's result keeps both and `window_ms`, the time between them.
 
