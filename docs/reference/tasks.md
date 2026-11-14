@@ -1060,7 +1060,9 @@ Each role of a copy turn, implementer and reviewer, runs with a provider, a mode
 | `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT` | `medium` |
 | `ORBIT_TASKS_COPY_REVIEWER_EFFORT` | `high` |
 
-The thread stores the resolved model and effort and the T3 provider instance it started on. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project` or `gateway`. A role's values change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409).
+The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project` or `gateway`.
+
+A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
 
 Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its provider and effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
 
@@ -1396,7 +1398,9 @@ The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
 - `daily`: merged and not merged tasks for each day of the period.
-- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery). A task's model is the model its first implementer thread ran; a task without an implementer thread counts as `Unknown`. A task belongs to the last verified release that began before the task's `started_at`.
+- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery).
+- A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
+- A task's release is the last verified release that began before its `started_at`.
 
 ### On the board
 
