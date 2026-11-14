@@ -40,7 +40,7 @@ sequenceDiagram
   %%> - before `incus init`: the custom volume `inner-<id>` on `orbit-instances` in the nested project, if absent: `zfs.block_mode=true`, `block.filesystem=btrfs`, `block.mount_options=user_subvol_rm_allowed,discard`, `security.shifted=true`, size 30GiB; Incus makes a sparse zvol and formats it btrfs
   %%> - before the first start: the disk device `inner-pool` at `/srv/inner-pool`; the start guard checks the device and the volume's keys
   %%> - after the start: the inner Incus gets the pool `inner`, `btrfs source=/srv/inner-pool/pool`, if absent
-  %%> - a nested-fleet default without the record (Instance 2454) keeps its directory pool; nothing here runs for it
+  %%> - a nested-fleet default without the record (the first one, made before the volume) keeps its directory pool; nothing here runs for it
   %%> - a nested-fleet default then gets its nested Gateway's Club key into /run by pipelined stdin, never on disk or in its seed
   %%> - the result's `nested_fleet_club_key` is what that write did (`written`, `written_serve_not_restarted`, `unchanged`, `refused`, `missing`), never what admission read
   %%> - fetches the default branch into the Node's mirror with the read token; the token stays on the Node

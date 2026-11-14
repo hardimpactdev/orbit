@@ -1537,7 +1537,7 @@ After a host reboot, Incus restores the containers that were running, without th
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
 
-- the inner Incus, its bridge and its pool on the [inner volume](#the-inner-volume); the older Instance 2454 keeps a directory pool;
+- the inner Incus, its bridge and its pool on the [inner volume](#the-inner-volume); the first nested-fleet default, made before the volume, keeps a directory pool;
 - the operator end of the fleet's WireGuard network, which the [start phase](#the-fleet-step) brings up with `ip` and `wg` at each fleet start;
 - the nested Gateway's root CA and a CLI profile `nested`, so the candidate CLI in `/srv/workspace` talks to the nested Gateway.
 
@@ -1590,7 +1590,7 @@ While that record exists, the create of a nested-fleet default refuses with `ins
 The fleet runs under the inner Incus:
 
 - three nested containers, `nested-gateway`, `nested-app-dev` and `nested-app-prod`;
-- the inner storage pool: the directory pool `topology-seed` of Instance 2454. A new nested-fleet default has an empty btrfs pool `inner` on its [inner volume](#the-inner-volume);
+- the inner storage pool: the directory pool `topology-seed` of the first nested-fleet default. A new nested-fleet default has an empty btrfs pool `inner` on its [inner volume](#the-inner-volume);
 - the inner bridge `oe-nested` and the fleet's WireGuard network, which the nested Gateway leads; the outer container joins it as the operator.
 
 A delegated ZFS dataset is not used: a copy would need one host clone per child dataset, and the inner Incus records the dataset's host name, which a copy changes. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) has the decision.
@@ -1611,7 +1611,7 @@ A new nested-fleet default gets its own volume for the inner fleet, as the task 
 
 On the host this is one volume and one device on one container: no pool, profile or project key, no kernel module setting and no host package. Incus formats the volume with the host's `mkfs.btrfs`. The container does not see the block device; it reaches the host's btrfs code only through file operations and the subvolume calls of its own file system, and the volume's size caps its space.
 
-A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots. Instance 2454 and every Instance without `inner_volume` keep today's shape; no step makes or checks a volume for them. Until the clone copies the volume too, a clone of a default with an inner volume refuses with `instance.inner_volume_clone_unavailable` (409) before any record.
+A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots. The first nested-fleet default and every Instance without `inner_volume` keep today's shape; no step makes or checks a volume for them. Until the clone copies the volume too, a clone of a default with an inner volume refuses with `instance.inner_volume_clone_unavailable` (409) before any record.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
