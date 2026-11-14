@@ -39,6 +39,8 @@ Worker input and result files are private and removed after the phase settles, i
 
 [`task:publish`](/reference/tasks#publish-an-external-group) of a task copy names `worker_bundle`, a path in its own publication scratch on the worker: the export fetches the bundle there, checks its checksum, and leaves no Node scratch. It also names `environment_path` and `worker_environment`: the Node pulls the copy's `.env` from `/srv/workspace/<environment_path>`, requires a regular file, and fetches it to that worker path for the publish content check. Its bytes enter no phase result or log. A missing file or a link fails the export.
 
+The publish also names `proposed_body_path`, the task branch's proposed pull request body `.git/orbit/proposed-pr-bodies/task-<id>.md`, and `worker_proposed_body`. The Node pulls that file and fetches it to the worker only when it is a regular file of at most 64 KiB. A missing file or a link fetches nothing and does not fail the export. The file is data: the publish reads only its waiver lines ([Docs-impact waivers in a copy](/reference/tasks#docs-impact-waivers-in-a-copy)).
+
 Transfer or guest-cleanup failure removes Node scratch before returning failure. Export removes its guest bundle after transfer, including failure. The parent calls `discard` after all guest evidence users stop, on success or failure. Interrupted cleanup can leave scratch for explicit recovery; it never justifies deleting user files.
 
 ## Check phases

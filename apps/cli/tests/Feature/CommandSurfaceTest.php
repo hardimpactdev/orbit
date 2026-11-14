@@ -597,7 +597,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
             ['name' => null, 'type' => null, 'slug' => null, 'repository' => null, 'source-access' => null, 'default-branch' => null, 'root' => null, 'task-check' => null, 'clear-task-check' => false, 'task-workspace-routed' => null,
                 'merge-check' => null, 'clear-merge-check' => false, 'task-implementer-provider' => null, 'task-implementer-model' => null, 'task-implementer-effort' => null,
                 'task-reviewer-provider' => null, 'task-reviewer-model' => null, 'task-reviewer-effort' => null, 'clear-task-implementer-agent' => false,
-                'clear-task-reviewer-agent' => false, 'json' => false],
+                'clear-task-reviewer-agent' => false, 'task-pr-mode' => null, 'clear-task-pr-mode' => false, 'json' => false],
         ],
         'project:maintenance:enable' => [['project'], ['json' => false]],
         'project:maintenance:disable' => [['project'], ['json' => false]],

@@ -268,6 +268,8 @@ final readonly class InstanceContainer
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+            // The Incus name above is the machine key; the machine presents this name as its hostname and as T3's label.
+            'machine_name' => InstanceMachineName::intent($instance),
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
                 ...InstancePlacement::config($runtime->incus_project, $runtime->idmap_size),
                 ...(! $ownProxy && ! isset($clone['proxy_environment']) ? []
@@ -441,7 +443,8 @@ final readonly class InstanceContainer
             ...($ownProxy || $resetProxy ? ['proxy_environment' => $proxy] : []),
             // The container phase writes these before a copy's first start, so its first boot, T3 included, reads them: the files every
             // container needs, which a seed taken before them lacks. A container that a migrate builds from the image has the files already.
-            ...($source === null ? [] : ['boot_files' => self::bootFiles()]),
+            // The machine-info file is one of them: T3's first start reads its label from it (InstanceMachineName).
+            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), InstanceMachineName::bootFile($instance)]]),
             // `before_start`: the files T3 and its providers read at its start. The container phase writes them before the copy's first start, with the
             // model environment, and the file T3's unit waits for last; the agent part finds them in place.
             'files' => [

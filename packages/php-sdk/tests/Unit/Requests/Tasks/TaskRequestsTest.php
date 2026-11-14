@@ -787,3 +787,50 @@ it('transports keyed native cancellation and parses the accepted Operation', fun
         ->and($request->headers()->get('Idempotency-Key'))->toBe('cancel.13')
         ->and($request->body()->all())->toBe('{}');
 });
+
+it('sends a publish check, or the empty object for the release of a task copy\'s done check', function (?int $check, ?array $pullRequest, string $body): void {
+    expect((string) (new PublishTaskGroupRequest(13, $check, $pullRequest))->body())->toBe($body);
+})->with([
+    'a check' => [17, null, '{"check":17}'],
+    'a check with a pull request' => [17, ['title' => 'T', 'body' => 'B'], '{"check":17,"pull_request":{"title":"T","body":"B"}}'],
+    'the release' => [null, null, '{}'],
+]);
+
+it('sends pr_mode on create and update only when it is named', function (): void {
+    expect(json_decode((string) (new CreateTaskRequest(1, 'Group', 'Brief', prMode: 'pr_when_done'))->body(), true))->toMatchArray(['pr_mode' => 'pr_when_done'])
+        ->and(json_decode((string) (new CreateTaskRequest(1, 'Group', 'Brief'))->body(), true))->not->toHaveKey('pr_mode')
+        ->and(json_decode((string) (new UpdateTaskRequest(4, prMode: 'review_before_pr'))->body(), true))->toBe(['pr_mode' => 'review_before_pr']);
+});
+
+/** @return array<string, mixed> the `data` of a recorded Gateway reply */
+function task_mode_fixture_data(string $name): array
+{
+    $fixture = json_decode((string) file_get_contents(__DIR__.'/../../../../fixtures/tasks/'.$name.'.json'), true, flags: JSON_THROW_ON_ERROR);
+
+    return $fixture['body']['data'];
+}
+
+it('maps the mode, its source and the publication of a task copy\'s group, and leaves them out for any other group', function (): void {
+    $publication = ['mode' => 'review_before_pr', 'mode_source' => 'project', 'state' => 'waiting_for_release', 'check_id' => 17,
+        'commit' => str_repeat('b', 40), 'operation_id' => null, 'error_code' => null];
+    $group = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-show/default'), 'pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication], 'request-id');
+    $plain = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-show/default'), 'pr_mode' => null, 'pr_mode_source' => null, 'publication' => null], 'request-id');
+
+    expect($group->prMode)->toBe('review_before_pr')
+        ->and($group->prModeSource)->toBe('project')
+        ->and($group->publication?->state)->toBe('waiting_for_release')
+        ->and($group->toArray())->toMatchArray(['pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication])
+        ->and($plain->publication)->toBeNull()
+        ->and($plain->toArray())->not->toHaveKey('publication');
+});
+
+it('maps the releases of task:status', function (): void {
+    $release = ['id' => 42, 'project_id' => 7, 'project' => '<project>', 'project_code' => 'ORB', 'title' => 'Add the export', 'state' => 'refused',
+        'check_id' => 17, 'commit' => str_repeat('b', 40), 'error_code' => 'tasks.copy_publish_held'];
+    $status = TasksStatusResponse::fromGatewayData([...task_mode_fixture_data('task-status/enabled'), 'releases' => [$release]], 'request-id');
+
+    expect($status->releases[0]->reference())->toBe('ORB-42')
+        ->and($status->releases[0]->errorCode)->toBe('tasks.copy_publish_held')
+        ->and($status->toArray()['releases'])->toBe([$release])
+        ->and(TasksStatusResponse::fromGatewayData(task_mode_fixture_data('task-status/enabled'), 'request-id')->releases)->toBe([]);
+});

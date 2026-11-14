@@ -8,6 +8,10 @@ use Spatie\LaravelData\Data;
 
 final class StartTaskPublishData extends Data
 {
-    /** @param array{title: string, body: string, draft?: bool}|null $pull_request */
-    public function __construct(public int $check, public ?array $pull_request = null) {}
+    /**
+     * Without a check, a task copy's group publishes its done check with Orbit's title and body (docs/reference/tasks.md#release-a-waiting-group).
+     *
+     * @param  array{title: string, body: string, draft?: bool}|null  $pull_request
+     */
+    public function __construct(public ?int $check = null, public ?array $pull_request = null) {}
 }

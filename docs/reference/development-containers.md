@@ -480,6 +480,24 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
 
+### The machine name
+
+A container Instance has a presented name, `<instance name>.<project slug>`, such as `task-5003.dlf-leden` or `default.shop`. It is the name a person sees for the machine, never `instance-<id>`. A new clone's T3 server shows it from its first start.
+
+`instance-<id>` stays the Incus name. It is the machine key: the ACL, the UFW comments, the mail state folder, the Node mirror `<id>.git` and the certificate scopes `app-instance-<id>` keep it. An Operation's `input` keeps it too, as `container.name`; it is the Incus name, not the presented name.
+
+`InstanceMachineName` holds the rule.
+
+**The presented name.** It is `<instance name>.<project slug>`, exactly as stored. It goes into `PRETTY_HOSTNAME` in `/etc/machine-info`. Stock T3 0.1.7 reads that line for its environment label before the kernel hostname. It reads it once, at its start.
+
+**The kernel hostname.** It is the same text when the slug is a lowercase hostname label and the name has at most 63 characters. Otherwise it is exactly 64 characters, the kernel's limit. A valid name of exactly 64 characters takes that form too, so the two forms never meet. The long form holds the start of the Instance name, a hyphen and the Instance ID padded with zeros. A dot and at most 31 characters of the slug's label follow. The label is the slug in lower case, with `_` as `-` and no hyphen at either end.
+
+**Unique on every Node.** An Instance name is unique in its Project, and a slug is unique, so a short name is unique. A 64-character name can equal no short one. It carries the Instance ID, so it can equal no other Instance's.
+
+For a slug such as `My_App`, a person sees `default.My_App` as T3's label; the kernel hostname is the mapped 64-character form.
+
+**What the Gateway sends.** Every container intent carries `machine_name`, with `hostname` and `pretty`. The host intent of an app-dev Node carries `machine_names`: the project, container and both names of each runtime on the Node. A clone's boot files include `/etc/machine-info`, so a new clone's T3 shows the name from its first start.
+
 ### Trust
 
 Every container trusts the Orbit root CA, so curl, PHP and OpenSSL verify an Orbit-signed site with no extra option. The source is the root that every Node's base converge writes for its agent, `/etc/orbit/agent/ca.pem`. The Gateway never puts the certificate in an intent.
@@ -1079,6 +1097,7 @@ The clone script writes these, so a new clone works with no converge or `env:syn
 | Trust | Before the first start | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
 | `NO_PROXY` | Before the first start | The composed value in the `environment.*` keys and in both drop-ins, with the private names. See [proxy settings](#proxy-settings-in-a-container) |
 | Private names | Right after the first start | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
+| Machine name | Before the first start | `/etc/machine-info` with `PRETTY_HOSTNAME`, which T3's first start reads. See [the machine name](#the-machine-name) |
 
 The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
 

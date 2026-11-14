@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
@@ -80,6 +81,9 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
             if ($projected->status->terminal() || $pending) {
                 self::record(TaskCheck::query()->findOrFail(ValidatedData::integer($operation->input['check_id'])),
                     $pending ? 'running' : ($projected->status->value === 'cancelled' ? 'cancelled' : ($projected->status->value === 'failed' ? 'failed' : ($result['outcome'] ?? 'failed'))), $result, $pending);
+                if ($projected->status === OperationStatus::Succeeded && ($result['outcome'] ?? null) === 'passed' && ($operation->input['phase'] ?? null) === TaskCheckKind::Handoff->value) {
+                    self::recordMode(ValidatedData::integer($operation->input['check_id']), $operation->target_id);
+                }
                 if (is_string($result['subtask_start_commit'] ?? null)) {
                     Task::query()->whereKey($operation->input['subtask'])->whereNull('subtask_start_commit')->update(['subtask_start_commit' => $result['subtask_start_commit']]);
                 }
@@ -89,6 +93,25 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /**
+     * A passed handoff check of a task copy's group records the mode in effect now (docs/reference/tasks.md#where-the-mode-comes-from):
+     * only a check that recorded `pr_when_done` lets Orbit publish by itself, so a later change of the Project or the Gateway setting
+     * never publishes work that was done before it. An invalid Gateway setting records no mode rather than failing the check.
+     */
+    private static function recordMode(int $check, int $group): void
+    {
+        $owner = Task::topLevel()->with('project', 'taskable')->find($group);
+        if (! $owner instanceof Task || TaskInstanceWorkspace::forGroup($owner) === null) {
+            return;
+        }
+        try {
+            $mode = TaskPrModeChoice::of($owner)->mode;
+        } catch (ResourceOperationException) {
+            return;
+        }
+        TaskCheck::query()->whereKey($check)->update(['pr_mode' => $mode->value]);
     }
 
     /** True while a check whose root succeeded stays running for hosted CI: a wait, not a missed settlement. */

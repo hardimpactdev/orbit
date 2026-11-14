@@ -6,6 +6,7 @@ namespace App\Data\Projects;
 
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Tasks\TaskPrMode;
 
 final readonly class UpdateProjectData
 {
@@ -36,6 +37,9 @@ final readonly class UpdateProjectData
         public bool $nestedFleet = false,
         /** @var array<string, string|null> the copy turn agent defaults to change, keyed by Project column; null clears one (TaskCopyAgent) */
         public array $taskAgents = [],
+        public bool $taskPrModeProvided = false,
+        /** The mode of the Project's task copy groups that set none; null clears it, so the Gateway's default applies. */
+        public ?TaskPrMode $taskPrMode = null,
     ) {}
 
     public function hasChanges(): bool
@@ -51,7 +55,7 @@ final readonly class UpdateProjectData
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
             || $this->reviewAndMergeProvided
-            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [];
+            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided;
     }
 
     /** The nested-fleet flag travels alone, so its refusal has no other write to undo. */
@@ -59,14 +63,14 @@ final readonly class UpdateProjectData
     {
         return $this->code !== null || $this->name !== null || $this->typeProvided || $this->sourceAccessProvided
             || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->reviewAndMergeProvided || $this->mergeCheckProvided
-            || $this->taskAgents !== [] || $this->hasReconcilableChanges();
+            || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->hasReconcilableChanges();
     }
 
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {
         return $this->name !== null || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided
-            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [];
+            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided;
     }
 
     public function hasReconcilableChanges(): bool

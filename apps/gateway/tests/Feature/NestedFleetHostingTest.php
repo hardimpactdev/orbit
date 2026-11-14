@@ -11,6 +11,7 @@ use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -276,8 +277,12 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             'name' => 'default', 'checkout_path' => '/test/default']), $node->refresh());
         $expected = app(BaselineNormalInstanceHostIntent::class)->for($node);
         $actual = app(InstanceHostIntent::class)->for($node);
-        // `own_site` came after the frozen copy: every Node gets it alike, and ContainerDevPortsTest pins it.
-        expect(json_encode(array_diff_key($actual ?? [], ['own_site' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+        // `own_site` came after the frozen copy: every Node gets it alike, and ContainerDevPortsTest pins it. So did `machine_names`,
+        // the presented name of each container for the converge's files; ContainerCloneInstanceTest pins it.
+        $default = Instance::query()->where('name', 'default')->sole();
+        expect($actual['machine_names'] ?? null)->toBe([['project' => 'orbit-instances', 'container' => 'instance-'.$default->id,
+            ...InstanceMachineName::intent($default)]])
+            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 
@@ -313,7 +318,9 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
                 '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
                 ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-                    '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh']);
+                    '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh',
+                    // The presented machine name that T3's first start reads (InstanceMachineName::bootFile).
+                    '/etc/machine-info']);
         }
         expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
     })->with([false, true]);
@@ -372,6 +379,9 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
 {
     $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
     $expected['environment'][] = 'PLAYWRIGHT_BROWSERS_PATH=0';
+    // The presented machine name came after main, right after the Incus name (InstanceMachineName).
+    $name = array_search('name', array_keys($expected), true) + 1;
+    $expected = [...array_slice($expected, 0, $name, true), 'machine_name' => InstanceMachineName::intent($instance), ...array_slice($expected, $name, null, true)];
 
     return $expected;
 }

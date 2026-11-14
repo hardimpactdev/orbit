@@ -6,6 +6,7 @@ namespace App\Data\Projects;
 
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Tasks\TaskPrMode;
 use App\Models\Project;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -38,6 +39,7 @@ final class ProjectData extends Data
         public ?string $taskReviewerProvider = null,
         public ?string $taskReviewerModel = null,
         public ?string $taskReviewerEffort = null,
+        public ?TaskPrMode $taskPrMode = null,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -66,6 +68,7 @@ final class ProjectData extends Data
             taskReviewerProvider: $project->task_reviewer_provider,
             taskReviewerModel: $project->task_reviewer_model,
             taskReviewerEffort: $project->task_reviewer_effort,
+            taskPrMode: $project->task_pr_mode,
         );
     }
 }

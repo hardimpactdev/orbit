@@ -26,6 +26,10 @@ final readonly class ProjectResponse
         public ?bool $maintenance = null,
         /** @var array<string, string|null> the copy turn agent defaults, keyed `implementer_provider` … without the `task_` prefix; empty from a Gateway that sends none */
         public array $taskAgents = [],
+        /** The mode of the Project's task copy groups that set none; null for the Gateway's default (docs/reference/tasks.md#task-group-modes). */
+        public ?string $taskPrMode = null,
+        /** Whether the Gateway sent `task_pr_mode`, so a null mode is told from an older Gateway that sends none. */
+        public bool $hasTaskPrMode = false,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -55,6 +59,8 @@ final readonly class ProjectResponse
             mergeCheck: is_string($data['merge_check'] ?? null) ? $data['merge_check'] : null,
             maintenance: is_bool($data['maintenance'] ?? null) ? $data['maintenance'] : null,
             taskAgents: self::taskAgents($data),
+            taskPrMode: is_string($data['task_pr_mode'] ?? null) ? $data['task_pr_mode'] : null,
+            hasTaskPrMode: array_key_exists('task_pr_mode', $data),
         );
     }
 
@@ -75,6 +81,7 @@ final readonly class ProjectResponse
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge, 'merge_check' => $this->mergeCheck]),
             ...($this->maintenance === null ? [] : ['maintenance' => $this->maintenance]),
             ...array_combine(array_map(static fn (string $key): string => 'task_'.$key, array_keys($this->taskAgents)), $this->taskAgents),
+            ...($this->hasTaskPrMode ? ['task_pr_mode' => $this->taskPrMode] : []),
             'request_id' => $this->requestId,
         ];
     }

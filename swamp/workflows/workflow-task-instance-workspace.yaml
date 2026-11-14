@@ -44,6 +44,9 @@ inputs:
         # Its content check: the copy's .env, by its path under the workspace, fetched beside the bundle.
         environment_path: {type: string, pattern: '^[^/]'}
         worker_environment: {type: string, pattern: '^/tmp/orbit-task-publish-[A-Za-z0-9]+/environment$'}
+        # The copy's proposed pull request body, if it holds one for the task branch: data whose waiver lines the PR body gets.
+        proposed_body_path: {type: string, pattern: '^\.git/orbit/proposed-pr-bodies/task-[1-9][0-9]*\.md$'}
+        worker_proposed_body: {type: string, pattern: '^/tmp/orbit-task-publish-[A-Za-z0-9]+/proposed-body$'}
         # The shared address-node tasks own the pinned SSH descriptor contract.
         ssh_execution: {type: object}
       required: [runtime, branch, head, snapshot_id, ssh_execution]

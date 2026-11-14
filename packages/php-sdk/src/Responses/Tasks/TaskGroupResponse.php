@@ -56,6 +56,10 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
         public ?string $reviewerEffort = null,
         public ?TaskCopyAgentResponse $implementerAgent = null,
         public ?TaskCopyAgentResponse $reviewerAgent = null,
+        /** The mode and its source; null for a group without a task copy (docs/reference/tasks.md#task-group-modes). */
+        public ?string $prMode = null,
+        public ?string $prModeSource = null,
+        public ?TaskPublicationResponse $publication = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -107,6 +111,9 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             reviewerEffort: TaskFields::nullableText($data, 'reviewer_effort'),
             implementerAgent: TaskCopyAgentResponse::fromGatewayData(is_array($data['resolved_agents'] ?? null) ? ($data['resolved_agents']['implementer'] ?? null) : null),
             reviewerAgent: TaskCopyAgentResponse::fromGatewayData(is_array($data['resolved_agents'] ?? null) ? ($data['resolved_agents']['reviewer'] ?? null) : null),
+            prMode: TaskFields::nullableText($data, 'pr_mode'),
+            prModeSource: TaskFields::nullableText($data, 'pr_mode_source'),
+            publication: TaskPublicationResponse::fromGatewayData($data['publication'] ?? null, $requestId),
         );
     }
 
@@ -170,6 +177,7 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             'preview' => $this->preview,
             'current_recipe' => $this->currentRecipe,
             'review' => $this->review,
+            ...($this->publication === null ? [] : ['pr_mode' => $this->prMode, 'pr_mode_source' => $this->prModeSource, 'publication' => $this->publication->toArray()]),
             'last_activity_at' => $this->lastActivityAt,
             'preview_url' => $this->previewUrl,
             'capacity_wait' => $this->capacityWait?->toArray(),

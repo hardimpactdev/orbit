@@ -18,6 +18,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\PullRequestGate;
 use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskCheckedCandidate;
+use App\Domain\Tasks\TaskCopyPullRequest;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPrepOwnerReview;
@@ -83,6 +84,10 @@ final readonly class RunTaskPullRequestGateAction
     private function check(Task $group): array
     {
         $number = $group->watched_pr_number;
+        // A task copy's pull request gets no ready step, no review round and no merge (docs/reference/tasks.md#no-merge).
+        if (TaskCopyPullRequest::group($group)) {
+            return $this->result($group, $number, null, 'skipped', TaskCopyPullRequest::Code);
+        }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         if (! is_int($number) || ! $repository instanceof GitHubRepository) {
             return $this->result($group, $number, null, 'skipped', 'tasks_pr.no_pull_request');

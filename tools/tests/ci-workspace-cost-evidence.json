@@ -41,6 +41,14 @@
         "test_task_vm_intents_keep_the_task_vm_steps": 0.198,
         "test_check_phases_need_their_check_and_candidate": 0.977
       }
+    },
+    "swamp/tests/task_copy_publish_proposed_body_test.py": {
+      "source_sha256": "76c7fe15645835519a4956596425da59af02af30ce8b06f9ad658004f888ec69",
+      "case_seconds": {
+        "test_a_publication_export_fetches_the_proposed_body_of_the_task_branch_as_data": 4.91,
+        "test_a_publication_export_without_a_proposed_body_or_with_a_link_there_fetches_none": 10.68,
+        "test_a_publication_export_refuses_a_proposed_body_path_outside_the_task_branch_file": 1.61
+      }
     }
   }
 }

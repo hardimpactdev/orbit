@@ -7,7 +7,6 @@ namespace App\Commands\Tasks;
 use App\Commands\Concerns\FollowsOperations;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Tasks\PublishTaskGroupRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
@@ -18,7 +17,7 @@ final class PublishTaskGroupCommand extends TaskCommand
     #[\Override]
     protected $signature = 'task:publish
         {task? : Numeric Task ID}
-        {--check= : Passed handoff check ID}
+        {--check= : Passed handoff check ID; omit it with --title and --body to release a task copy\'s done check}
         {--title= : Pull request title (requires --body)}
         {--body= : Pull request body (requires --title)}
         {--draft : Open the pull request as a draft (requires --title and --body)}
@@ -26,7 +25,7 @@ final class PublishTaskGroupCommand extends TaskCommand
         {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Push a checked commit and optionally open or update its pull request.';
+    protected $description = 'Push a checked commit and optionally open or update its pull request, or release a task copy\'s done check.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -34,7 +33,8 @@ final class PublishTaskGroupCommand extends TaskCommand
         if ($groupId === false) {
             return self::FAILURE;
         }
-        $check = $this->idOption('check', 'Check', 'check');
+        // Without --check, the call releases a task copy's done check, so it never asks for one.
+        $check = $this->option('check') === null ? null : $this->idOption('check', 'Check', 'check');
         if ($check === false) {
             return self::FAILURE;
         }
@@ -42,6 +42,11 @@ final class PublishTaskGroupCommand extends TaskCommand
         $body = $this->option('body');
         if (($title === null) !== ($body === null) || $title === '' || $body === '') {
             $this->renderGatewayFailure('task.pull_request_invalid', 'Supply --title and --body together.');
+
+            return self::FAILURE;
+        }
+        if ($check === null && $title !== null) {
+            $this->renderGatewayFailure('task.pull_request_invalid', 'Supply --title and --body with --check; without --check Orbit writes them.');
 
             return self::FAILURE;
         }
@@ -58,16 +63,6 @@ final class PublishTaskGroupCommand extends TaskCommand
         $groupId ??= $this->selectGroup($connector, ['running', 'reviewing', 'settling', 'waiting_for_review']);
         if ($groupId === null) {
             return self::FAILURE;
-        }
-        if ($check === null) {
-            $answer = $this->commandPrompts()->run(static fn (): TextPrompt => new TextPrompt(
-                'Passed handoff check ID', required: true,
-                validate: static fn (string $value): ?string => filter_var($value, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]) === false ? 'Check ID must be a positive integer.' : null,
-            ));
-            $check = is_string($answer) ? (int) $answer : null;
-            if ($check === null) {
-                return self::FAILURE;
-            }
         }
         $key = $this->option('idempotency-key');
         $pullRequest = is_string($title) && is_string($body) ? ['title' => $title, 'body' => $body, ...($this->option('draft') === true ? ['draft' => true] : [])] : null;

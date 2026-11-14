@@ -27,6 +27,7 @@ final readonly class GitHubPullRequest
         public bool $draft = false,
         public ?string $authorLogin = null,
         public bool $fromFork = false,
+        public ?string $headRef = null,
     ) {}
 
     /** Whether GitHub reports that the pull request conflicts with its base branch. */

@@ -311,6 +311,25 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 .($holder->activeOperationId === null ? '' : ", operation {$holder->activeOperationId} open"), $holders));
     }
 
+    /** The values of a task group's pull request mode (docs/reference/tasks.md#task-group-modes). */
+    public const array PR_MODES = ['review_before_pr', 'pr_when_done'];
+
+    /** A `--pr-mode`-style option: null when omitted, false after the refusal. */
+    protected function prModeOption(string $option): string|false|null
+    {
+        $mode = $this->option($option);
+        if ($mode === null) {
+            return null;
+        }
+        if (! is_string($mode) || ! in_array($mode, self::PR_MODES, true)) {
+            $this->renderGatewayFailure('task.pr_mode_invalid', 'The pull request mode must be review_before_pr or pr_when_done.');
+
+            return false;
+        }
+
+        return $mode;
+    }
+
     protected function renderGroup(TaskGroupResponse $group): int
     {
         if ($this->option('json') === true) {
@@ -339,6 +358,10 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
             'Reason' => self::askingText($group->assistanceRequested, $group->assistanceReason),
             'Instance' => $group->taskableId,
             'Pull request' => $group->prUrl,
+            ...($group->publication === null ? [] : [
+                'Pull request mode' => $group->prMode === null ? null : "{$group->prMode} ({$group->prModeSource})",
+                'Publication' => $group->publication->state.($group->publication->errorCode === null ? '' : ': '.$group->publication->errorCode),
+            ]),
             ...($group->reviewAndMerge === null ? [] : [
                 'Review and merge' => $group->reviewAndMerge->enabled,
                 ...($group->reviewAndMerge->prBranch === null ? [] : ['Pull request branch' => $group->reviewAndMerge->prBranch]),

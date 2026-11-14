@@ -21,3 +21,11 @@ it('keeps the draft flag in the payload the operation records', function (): voi
 
     expect($payload->toArray()['pull_request'])->toBe(['title' => 'Spec', 'body' => 'Body', 'draft' => true]);
 });
+
+it('takes an empty body as the release of a done check, and refuses a pull request without a check', function (): void {
+    $rules = (new StartTaskPublishRequest)->rules();
+
+    expect(Validator::make([], $rules)->passes())->toBeTrue()
+        ->and(StartTaskPublishData::from([])->check)->toBeNull()
+        ->and(Validator::make(['pull_request' => ['title' => 'Spec', 'body' => 'Body']], $rules)->errors()->keys())->toBe(['check']);
+});

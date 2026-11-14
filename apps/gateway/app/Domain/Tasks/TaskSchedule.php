@@ -19,6 +19,8 @@ final readonly class TaskSchedule
         GatewaySchedule::job($schedule, new ObserveParkedTaskVms)->everyMinute()->when($enabled);
         // The gate check of stage 4 only reads and admits; its bound covers the GitHub reads of one tick.
         GatewaySchedule::command($schedule, 'task:pr-gate', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
+        // A task copy in pr_when_done publishes its done check by itself; the tick only reads records and admits the publish.
+        GatewaySchedule::command($schedule, 'task:pr-when-done', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
         $hours = config()->integer('retention.job_batch_hours');
         GatewaySchedule::command($schedule, 'queue:prune-batches', uniqueFor: 3600, overlapMinutes: 60, queue: GatewayQueue::Problems, arguments: ["--hours={$hours}", "--unfinished={$hours}", "--cancelled={$hours}"])
             ->daily()->when($enabled);

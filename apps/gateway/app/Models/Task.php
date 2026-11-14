@@ -17,6 +17,7 @@ use App\Domain\Tasks\TaskHierarchyException;
 use App\Domain\Tasks\TaskLevelStatusCast;
 use App\Domain\Tasks\TaskMergeStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskStatus;
@@ -104,6 +105,8 @@ use LogicException;
  * @property bool|null $preview
  * @property bool|null $current_recipe
  * @property TaskReviewMode $review_mode
+ * @property TaskPrMode|null $pr_mode
+ * @property array{code: string, check_id: int, at: string}|null $publish_refusal
  * @property string $implementer_model the task VM path's model; a task copy reads implementer_agent_model
  * @property string $reviewer_model
  * @property string|null $implementer_agent_provider the copy turn agent values the group names (TaskCopyAgent); null takes the Project's or the Gateway's
@@ -168,6 +171,8 @@ final class Task extends Model
         'preview',
         'current_recipe',
         'review_mode',
+        'pr_mode',
+        'publish_refusal',
         'implementer_model',
         'reviewer_model',
         'implementer_agent_provider',
@@ -309,6 +314,8 @@ final class Task extends Model
         'preview',
         'current_recipe',
         'review_mode',
+        'pr_mode',
+        'publish_refusal',
         'implementer_model',
         'reviewer_model',
         'implementer_agent_provider',
@@ -624,6 +631,8 @@ final class Task extends Model
             'preview' => 'boolean',
             'current_recipe' => 'boolean',
             'review_mode' => TaskReviewMode::class,
+            'pr_mode' => TaskPrMode::class,
+            'publish_refusal' => 'array',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',
             'agent_unavailable_notified_at' => 'datetime',
