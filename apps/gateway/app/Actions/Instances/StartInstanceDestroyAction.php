@@ -42,7 +42,6 @@ use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /** Record stored removal intent. The placed native run inspects source and account facts. */
@@ -96,16 +95,10 @@ final readonly class StartInstanceDestroyAction
                     // records the request; the start's bind forwards it with the run's id (StartSwampRun::bind).
                     app(CancelOperationAction::class)->execute($running);
                 } elseif (! $running->status->terminal()) {
-                    // The cancel is recorded with the removal; Swamp is asked to stop the run after the commit, never inside it.
+                    // The cancel is recorded with the removal. After the commit the cancel action records the request for Swamp, which is
+                    // asked after the response, never inside a transaction; the reconciler asks again on each pass.
                     app(OperationStore::class)->change($running, ['cancel_requested_at' => $running->cancel_requested_at ?? now()]);
-                    // The reconciler asks again on each pass.
-                    DB::afterCommit(static function () use ($running): void {
-                        try {
-                            app(CancelOperationAction::class)->execute($running);
-                        } catch (ResourceOperationException $exception) {
-                            Log::warning('instance.complete_cancel_deferred', ['operation_id' => $running->id, 'error_code' => $exception->errorCode]);
-                        }
-                    });
+                    DB::afterCommit(static fn () => app(CancelOperationAction::class)->execute($running));
                 }
             }
             $input['run_budget_seconds'] = $this->budget($input);
