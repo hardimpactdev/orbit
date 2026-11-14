@@ -65,9 +65,8 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
     private static function base(mixed $captured): array
     {
         $evidence = is_array($captured) && is_array($captured['evidence'] ?? null) ? $captured['evidence'] : [];
-        $fields = ['default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start'];
 
-        return array_intersect_key($evidence, array_flip($fields)) + array_fill_keys($fields, null);
+        return array_intersect_key($evidence, array_flip(['default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start']));
     }
 
     /**

@@ -230,3 +230,15 @@ it('refuses a copy sync while the copy is not ready, or after its completion fai
     'a create or completion that still runs' => [false, 'tasks.copy_not_ready'],
     'a failed completion' => [true, 'tasks.copy_completion_failed'],
 ]);
+
+it('records no base field for a copy run whose base phase left no evidence', function (): void {
+    $operation = syncOperation();
+    $operation->update(['input' => [...$operation->input, 'copy' => ['branch' => 'task-1']]]);
+
+    $projected = app(TaskSyncProjection::class)->apply($operation->refresh(), [
+        'run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['steps' => [], 'summary' => ['status' => 'succeeded', 'failed_steps' => []]],
+    ]);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)->and($projected->result)->toBe([]);
+});

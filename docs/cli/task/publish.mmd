@@ -135,7 +135,7 @@ sequenceDiagram
     %%> - `git merge-base` of the candidate and that head is the checked base; `git rev-list --count candidate..<default>` is `behind_by`
     %%> - the overlapping paths are the paths that both the candidate and the default branch changed since the base
     %%> - `git merge-tree --write-tree` merges the two in the repository alone; no checkout and no workspace is touched
-    %%> - it reads only the commit, the default branch name and the repository of the intent
+    %%> - of the intent it reads only `remote`, `base` and `node_id`, which the publish intent already had; the candidate is the bundle it imported
     %%> - it writes its statement and exit code to the private scratch; Swamp keeps no stderr of a failed command step
     Note over SW: Check the base
     %%> How:

@@ -407,7 +407,7 @@ A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write ch
 
 ##### The base of a copy publish
 
-A copy's publish states the base it publishes against. After the token is minted and before the push, the run fetches the default branch head into its own scratch repository on the worker. That head is the one at publish time. The step reads only the commit, the default branch name and the repository of the intent. The run computes:
+A copy's publish states the base it publishes against. After the token is minted and before the push, the run fetches the default branch head into its own scratch repository on the worker. That head is the one at publish time. Of the intent, the step reads only `remote`, `base` and `node_id`, which the publish intent already had. The run computes:
 
 | Field | Meaning |
 | --- | --- |
