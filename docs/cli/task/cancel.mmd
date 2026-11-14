@@ -1,6 +1,6 @@
 sequenceDiagram
   %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees its place. Orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it.
-  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission.
+  %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission, after the destroy's reads. A commit a publish pushed counts as on origin.
   %% status: draft
   %% command: task:cancel
   %% kind: tasks.cancel
@@ -34,18 +34,19 @@ sequenceDiagram
     Note over GW: Read the copy's workspace<br/>one bounded read
     %%> What it does:
     %%> - one SSH call to the copy's Node, bounded at 4 s, reads what the copy holds beyond its seed: commits that origin lacks, uncommitted, untracked and stashed files
+    %%> - a copy never fetches, so the commits that the group's publishes pushed are named to the read as on origin, with their history
     %%> - a stopped or unreachable copy reads `unknown` with its reason
     %%> Result:
-    %%> - a copy that holds work (`dirty`: unpushed commits, uncommitted or untracked files, stashes) refuses the cancel with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts and the head
-    %%> - a copy that cannot be read (`unknown`) refuses with HTTP 409 `tasks.copy_workspace_unknown`, naming the reason
-    %%> - `--discard` (API and MCP `discard: true`) lets the cancel destroy that work; `--yes` only confirms and never discards
+    %%> - unless the caller discards the work, a copy that holds work (`dirty`: unpushed commits, uncommitted or untracked files, stashes) refuses the cancel with HTTP 409 `tasks.copy_unpublished_work`; its details carry the counts and the head
+    %%> - unless the caller discards it, a copy that cannot be read (`unknown`) refuses with HTTP 409 `tasks.copy_workspace_unknown`, naming the reason
     %%> - a `clean` copy goes on; both refusals come before the cancel stops running work, so they change nothing
     Note over GW: Record, then admit destroy<br/>one transaction · group lock
     %%> Requirements:
     %%> - no Operation holds the copy, such as its create or an earlier destroy; otherwise HTTP 409 `operation.target_busy`, naming it
     %%> - after the group's running work was asked to stop, no Operation still holds the group, such as a timed-out one whose run nothing has proven ended; otherwise HTTP 409 `operation.target_busy`, naming it, and no destroy is admitted
     %%> What it does:
-    %%> - in one transaction, records the cancel under the group's lock key first, then admits the normal `instance.destroy` of the copy with force
+    %%> - the destroy's reads come first, outside any transaction: its replication slot check over SSH and the stop of the copy's Schedules in Swamp
+    %%> - then, in the destroy's one transaction, records the cancel under the group's lock key first and admits the normal `instance.destroy` of the copy with force
     %%> - an Operation that takes the group lock first makes the record refuse with HTTP 409 `operation.target_busy`; the transaction rolls back, so a refused cancel never admits the destroy
     %%> Result:
     %%> - the cancel is recorded as succeeded at once (R1); its result names the destroy Operation and holds the workspace read

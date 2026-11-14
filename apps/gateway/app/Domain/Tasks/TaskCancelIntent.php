@@ -45,7 +45,7 @@ final readonly class TaskCancelIntent
         }
         // A group that owns a task copy ends through the copy's destroy (TaskCopyEnd); the read of its workspace runs before any lock.
         $copy = $kind === 'tasks.cancel' && ! TaskVm::forGroup($group) instanceof TaskVm ? TaskInstanceWorkspace::forGroup($group) : null;
-        $workspace = $copy === null ? null : app(TaskCopyEnd::class)->workspace($copy->instance);
+        $workspace = $copy === null ? null : app(TaskCopyEnd::class)->workspace($group, $copy->instance);
 
         return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $workspace, $discard): Operation {
             if (($replay = $this->keys->replay($kind)) !== null) {
@@ -79,7 +79,7 @@ final readonly class TaskCancelIntent
                 if ($held !== null) {
                     throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
                 }
-                if ($copy !== null && $workspace !== null) {
+                if ($copy !== null) {
                     return app(TaskCopyEnd::class)->cancel($group, $copy->instance, $workspace, $caller, $request);
                 }
             } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)

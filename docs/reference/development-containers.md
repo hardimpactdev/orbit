@@ -1082,7 +1082,7 @@ Work is what lies beyond the Instance's baseline:
 
 - `modified`: tracked files that are changed, staged or deleted. They always count.
 - `untracked`: files that are not ignored and not in the baseline. Orbit writes `.env` and `.env.testing` at the workspace root, so an untracked copy there is left out. A nested `.env` and a change to a tracked one count.
-- `commits`: commits on local branches that no remote-tracking ref and no baseline head reaches. The read compares with the remote refs as last fetched. A branch without an upstream gets no special case.
+- `commits`: commits on local branches that no remote-tracking ref, no baseline head and no published commit reaches. The read compares with the remote refs as last fetched. A task copy never fetches, so its read names the commits that the task's publishes pushed. A branch without an upstream gets no special case.
 - `stashes`: stash entries that are not in the baseline.
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.

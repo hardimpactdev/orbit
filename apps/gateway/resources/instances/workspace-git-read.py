@@ -1,6 +1,6 @@
 """Fixed, read-only Git state of a container workspace (docs/reference/development-containers.md#workspace-work-state).
 
-The Gateway prepends INSTANCE_PROJECTS, BASELINE and BUDGET (seconds) and runs `python3 - <mode> ...` on the Node over SSH. Every Git call
+The Gateway prepends INSTANCE_PROJECTS, BASELINE, PUBLISHED (commits origin is known to hold) and BUDGET (seconds) and runs `python3 - <mode> ...` on the Node over SSH. Every Git call
 runs inside the container as `agent` with fixed arguments; only validated hex object ids join them. Names from the
 workspace leave only as JSON text. No Git write, no config change, no fetch.
 """
@@ -190,7 +190,8 @@ def read(target, marker, default):
         untracked = [entry for entry in untracked if entry.decode("utf-8", "replace") not in known]
     seen = set(oids(baseline.get("stashes") or []))
     stashes = [label for oid, label in stashes if oid not in seen]
-    negative = sorted(set(oids(baseline.get("heads") or [])))
+    # A commit that a publish pushed is on origin, and so is its history: a copy never fetches, so no remote ref names it.
+    negative = sorted(set(oids(baseline.get("heads") or [])) | set(oids(PUBLISHED or [])))
     tips = sorted({oid for _, oid in heads})
     lost = unreachable(target, tips, negative) if tips else set()
     inherited = held(default, sorted(oid.decode() for oid in lost), default_heads) if kind == "default_now" and lost else set()

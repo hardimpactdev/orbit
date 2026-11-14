@@ -42,11 +42,15 @@ final readonly class ContainerWorkspaceRead
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
 
     /**
+     * `$published`: commits origin holds that no remote ref in the workspace names, such as the commit a task copy's publish pushed.
+     * They and their history do not count as unpushed.
+     *
+     * @param  list<string>  $published
      * @return array{instance_id: int, state: string, reason: ?string, read_at: string, duration_ms: int, baseline: ?string,
      *     head: ?string, uncommitted: ?int, unpushed: ?int, modified: ?array<string, mixed>, untracked: ?array<string, mixed>,
      *     commits: ?array<string, mixed>, stashes: ?array<string, mixed>}
      */
-    public function read(Instance $instance): array
+    public function read(Instance $instance, array $published = []): array
     {
         $started = hrtime(true);
         $runtime = $this->runtime($instance);
@@ -57,7 +61,7 @@ final readonly class ContainerWorkspaceRead
             if ($baseline === null && $instance->name !== DefaultInstanceName::Name && ($default = $this->defaultRuntime($instance)) !== null) {
                 array_push($arguments, $default->incus_project, $default->container_name);
             }
-            $answer = $this->decode($this->execute($instance, $arguments, $instance->name === DefaultInstanceName::Name ? null : $baseline));
+            $answer = $this->decode($this->execute($instance, $arguments, $instance->name === DefaultInstanceName::Name ? null : $baseline, published: $published));
         }
 
         return self::shape($instance->id, $answer, intdiv(hrtime(true) - $started, 1_000_000));
@@ -111,8 +115,9 @@ final readonly class ContainerWorkspaceRead
     /**
      * @param  list<string>  $arguments
      * @param  array<string, mixed>|null  $baseline
+     * @param  list<string>  $published
      */
-    private function execute(Instance $instance, array $arguments, ?array $baseline, int $bytes = self::ReadBytes): CommandResult|string|null
+    private function execute(Instance $instance, array $arguments, ?array $baseline, int $bytes = self::ReadBytes, array $published = []): CommandResult|string|null
     {
         $node = $instance->node;
         if (! is_string($node->wireguard_ip) || $node->wireguard_ip === '') {
@@ -121,7 +126,7 @@ final readonly class ContainerWorkspaceRead
         // Base64 keeps every byte of a stored name intact on its way into the reader's Python source.
         $literal = static fn (mixed $value): string => 'json.loads(base64.b64decode("'.base64_encode(json_encode($value, JSON_THROW_ON_ERROR)).'"))';
         $prelude = "import base64\nimport json\nINSTANCE_PROJECTS = ".$literal(InstancePlacement::projects())."\nBASELINE = ".$literal($baseline)
-            ."\nBUDGET = ".self::BudgetSeconds."\n";
+            ."\nPUBLISHED = ".$literal($published)."\nBUDGET = ".self::BudgetSeconds."\n";
         try {
             return $this->ssh->execute(new SshConnection(
                 host: $node->wireguard_ip, user: $node->user, port: 22,

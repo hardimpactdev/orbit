@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Actions\Instances\StartInstanceDestroyAction;
-use App\Domain\Operations\DirectOperation;
+use App\Actions\Operations\StartOperationAction;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -14,7 +14,7 @@ use App\Infrastructure\Instances\ContainerWorkspaceRead;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
-use Illuminate\Support\Facades\DB;
+use Closure;
 
 /**
  * The cancel of a task group that owns a copy (docs/cli/task/cancel.mmd). It reads what the copy holds that origin does not, records
@@ -24,17 +24,21 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class TaskCopyEnd
 {
-    public function __construct(private OperationStore $store, private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read) {}
+    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private ContainerWorkspaceRead $read) {}
 
     /**
-     * What the copy's workspace holds beyond the seed: commits that origin lacks, uncommitted and untracked files. A stopped or unreachable
-     * copy reads `unknown` with its reason. One bounded SSH read; call it outside any transaction.
+     * What the copy's workspace holds beyond the seed: commits that origin lacks, uncommitted and untracked files. A copy never fetches,
+     * so the commits that the group's publishes pushed are named to the read: they and their history are on origin. A stopped or
+     * unreachable copy reads `unknown` with its reason. One bounded SSH read; call it outside any transaction.
      *
      * @return array<string, mixed>
      */
-    public function workspace(Instance $copy): array
+    public function workspace(Task $group, Instance $copy): array
     {
-        $read = $this->read->read($copy);
+        $published = array_values(Operation::query()->where('kind', 'tasks.publish')->where('target_type', 'task_group')->where('target_id', $group->id)
+            ->where('status', OperationStatus::Succeeded)->pluck('result')
+            ->map(static fn (mixed $result): mixed => is_array($result) ? ($result['commit'] ?? null) : null)->filter(static fn (mixed $commit): bool => is_string($commit))->unique()->all());
+        $read = $this->read->read($copy, $published);
         $count = static fn (mixed $class): ?int => is_array($class) && is_int($class['count'] ?? null) ? $class['count'] : null;
 
         return ['state' => $read['state'], 'reason' => $read['reason'], 'read_at' => $read['read_at'], 'head' => $read['head'],
@@ -74,29 +78,21 @@ final readonly class TaskCopyEnd
     }
 
     /**
-     * Records the cancel and admits the destroy of the copy, in one transaction. The record comes first and takes the group's lock key,
-     * so an Operation that holds or takes the group lock refuses the record and the transaction admits no destroy. Refused while an
-     * Operation holds the copy: its create still runs, or an earlier destroy has not ended.
+     * Records the cancel and admits the destroy of the copy, in the destroy's one transaction after every read of its admission. The
+     * record comes first and takes the group's lock key, so an Operation that holds or takes the group lock refuses the record and the
+     * transaction admits no destroy. Refused while an Operation holds the copy: its create still runs, or an earlier destroy has not ended.
      *
      * @param  array<string, mixed>  $workspace
      */
     public function cancel(Task $group, Instance $copy, array $workspace, string $caller, ?string $request): Operation
     {
         self::assertFree($copy);
-        $key = $this->idempotency->key;
-        $admit = static fn (): Operation => app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true, $caller, $request);
-        $input = ['group_id' => $group->id, 'instance_id' => $copy->id, 'task_vm_id' => null];
+        // The destroy is admitted with the cancel and takes no request key of its own: the cancel's key replays both.
+        $record = fn (Closure $destroy): Operation => $this->start->record('tasks.cancel', 'task_group', $group->id, $copy->node_id,
+            ['group_id' => $group->id, 'instance_id' => $copy->id, 'task_vm_id' => null],
+            ['group_id' => $group->id, 'instance_id' => $copy->id, 'workspace' => $workspace], $caller, $request,
+            OperationStore::lockKey('task_group', $group->id), fn (): array => ['destroy_operation_id' => $this->idempotency->suspended(static fn (): Operation => $destroy())->id]);
 
-        return DB::transaction(function () use ($group, $copy, $workspace, $caller, $request, $key, $admit, $input): Operation {
-            app(DirectOperation::class)->writer('tasks.cancel');
-            $cancel = $this->store->create('tasks.cancel', 'task_group', $group->id, $copy->node_id, $input, $caller, $request,
-                OperationStore::lockKey('task_group', $group->id));
-            $destroy = $key === null ? $admit() : $this->idempotency->under('instance.destroy', $key, (string) $this->idempotency->fingerprint, $admit);
-            $this->store->change($cancel, ['status' => OperationStatus::Succeeded, 'input' => [...$input, 'destroy_operation_id' => $destroy->id],
-                'result' => ['group_id' => $group->id, 'instance_id' => $copy->id, 'destroy_operation_id' => $destroy->id, 'workspace' => $workspace],
-                'started_at' => now(), 'finished_at' => now(), 'lock_key' => null]);
-
-            return $cancel;
-        });
+        return app(StartInstanceDestroyAction::class)->execute($copy->refresh(), true, $caller, $request, within: $record);
     }
 }
