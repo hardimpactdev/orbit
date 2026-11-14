@@ -8,7 +8,7 @@ covers:
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -121,7 +121,9 @@ A task VM host on the build list, such as Beast, gets the container branch besid
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
-The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
+The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
+
+T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. The Node records the last T3 port it gave. A new runtime takes the first free port after it and wraps from 3999 to 3800, so a port freed by a destroy is given again only after the Node has used every other free port. A client that saved the destroyed server under its address therefore does not meet a new server there at once. When every port is held, the reservation fails with `instance.host_unavailable` (409).
 
 ### The build list
 
@@ -680,7 +682,7 @@ Who writes the names:
 | --- | --- |
 | Create, migrate and start phases | Deploy and wake run the start phase |
 | `env:sync` | In a running container |
-| A clone's create | In the copy before its first start. It replaces the seed's block with its own, or removes it when the clone has no name, and resets the seed's proxy bypass |
+| A clone's create | Right after the copy's first start, after its hosts template ran. It replaces any block with its own, or removes it when the clone has no name |
 
 A clone holds no app of its default, so its names are its [own site](#the-own-site-from-inside) names.
 
@@ -986,7 +988,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | --- | --- |
 | Default | The Project's `default` runs in a container on the same Node, is active and has a seed snapshot. Otherwise `instance.default_missing` |
 | Conn and models | Conn is on, else `operation.kind_unavailable`. The model router has its guard, else the router's own code |
-| Runtime row | The next free bridge address, the lowest free T3 port from 3800, and the default as clone source |
+| Runtime row | The next free bridge address, the next free T3 port after the Node's last one ([rule](#prepare-a-node)), and the default as clone source |
 | Copy | `incus copy` of `seed-<commit>` with the clone's own address and ACL. A stopped default needs no start |
 | First start | Before it, the copy loses its `orbit-*` boot links and the default's Process units and folders. It gets its own machine-id and the [shared files](#existing-containers) |
 | ACL | The Node's Caddy reaches port 8080 and ports 1024 to 65535, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
@@ -1013,13 +1015,21 @@ A deployment of the default can replace the admitted seed before the copy. The c
 
 #### What a clone has at its first start
 
-The clone script writes these into the copy before it starts, so its first boot reads them with no converge or `env:sync`:
+The clone script writes these, so a new clone works with no converge or `env:sync`:
 
-| Part | What the copy has |
-| --- | --- |
-| Trust | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
-| Private names | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
-| `NO_PROXY` | The composed value in the `environment.*` keys and in both drop-ins, with those names. See [proxy settings](#proxy-settings-in-a-container) |
+| Part | When | What the copy has |
+| --- | --- | --- |
+| Trust | Before the first start | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
+| `NO_PROXY` | Before the first start | The composed value in the `environment.*` keys and in both drop-ins, with the private names. See [proxy settings](#proxy-settings-in-a-container) |
+| Private names | Right after the first start | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
+
+The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
+
+Right after the start, the clone script reads `/etc/hosts` with `incus exec … cat`, as `env:sync` does. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
+
+Orbit does not change the template instead. The template lives in each container's own metadata, copied from its default. A new image would not reach existing defaults, and editing each default's metadata would add hidden state.
+
+To check a new clone, run `getent hosts <its Route name>` inside it right after the create. It answers with the bridge's gateway address.
 
 A task copy is a clone like any other, so it gets the same. So does a clone in the nested-fleet project, and a clone that an inner Gateway makes in its own fleet.
 
@@ -1294,7 +1304,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Non-default | The Project default is on the same Node; source identity, T3 and model-router prerequisites still apply. No migrated default or seed is needed |
 | Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
-| Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
+| Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the next free T3 port after the Node's last one. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
 | Retirement check | Checks identity before downtime and retention. Carries local branches, stash history, staging and all copied file bytes. Active clean/smudge filters, intent-to-add, submodule changes, owner dependencies and registered descendants still block |
 | Branch | The mirror fetches the recorded branch locally; the files phase imports every local branch tip and complete stash history into independent Git metadata |
@@ -1436,15 +1446,26 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
-| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the [turn model](#turn-model), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
-| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title, also when the bound cut the wait before T3 printed the thread id |
-| Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages |
+| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the provider instance of the effort and the [turn model](#turn-model-and-effort), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
+| Continue a thread and wait for its run | `t3 thread send --wait --json T3THREAD -` | The composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance, so its model and effort. |
+| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
+| Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
+| Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch and its tip, then the checked candidate, detached. Each Git command is bounded at 20 seconds |
+| Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a failed or cut one: what the reviewer changed is discarded and the task branch is checked out again, at its earlier tip |
 
-The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`. That `t3 thread send` answers a thread whose run waits for input is an assumption read from T3 0.1.7's CLI, proven only against a stand-in for T3.
 
-### Turn model
+A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
-The Gateway's `ORBIT_TASKS_COPY_TURN_MODEL` names the provider and model of every turn, as `PROVIDER/MODEL`. The default is `claudeAgent/claude-opus-5-5`: a container reaches only the Claude model forwarder. T3 picks the effort.
+A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
+
+### Turn model and effort
+
+The Gateway's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWER_MODEL` name the Claude model of a new thread of each role. Both default to `claude-opus-5-5`: a container reaches only the Claude model forwarder. The effort is the role's [effort setting](/reference/tasks#drivers): `ORBIT_TASKS_IMPLEMENTER_EFFORT`, default `medium`, and `ORBIT_TASKS_REVIEWER_EFFORT`, default `high`.
+
+Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
+
+A new thread starts with `--provider` set to the instance of its effort. Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
 
 ### Gaps of the CLI path
 
@@ -1453,14 +1474,13 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 - **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
-- **No effort setting.** T3 runs the model at its own default effort.
-- **One new implementer thread per turn.** A reviewer turn, a continued thread and a caller's model are refused with `tasks.copy_turn_unsupported`.
+- **No consult and no caller's model.** Both are refused with `tasks.copy_turn_unsupported`.
 
 ### Hold after a turn that may still run
 
 A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A turn cancelled before its run step reports holds the group the same way.
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A reviewer turn whose checkout is not restored is never over. A turn cancelled before its run step reports holds the group the same way.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
@@ -2131,7 +2151,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
-| `instance.clone_private_names_refused` | 502 | A clone's copy has `/etc/hosts` as a link or another type than a file, or the file API could not read it. The create stops before the copy starts |
+| `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | The direct container Process journal read failed |

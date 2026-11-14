@@ -243,11 +243,11 @@ describe('orbit proof admission', function (): void {
         'a copy that is not active yet' => [fn (Task $group, Instance $instance) => $instance->forceFill(['status' => InstanceState::SourceResolved])->save(), 'tasks.copy_not_ready'],
         'a stopped container' => [fn (Task $group, Instance $instance, InstanceRuntime $runtime) => $runtime->update(['power_state' => 'stopped']), 'tasks.instance_not_running'],
         'a copy turn that may still run' => [fn (Task $group) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id,
-            'status' => OperationStatus::Failed, 'input' => [], 'state' => ['swamp_run_id' => 'run-1'], 'result' => []]), 'tasks.copy_turn_unended'],
+            'status' => OperationStatus::Failed, 'input' => ['thread_id' => 1], 'state' => ['swamp_run_id' => 'run-1'], 'result' => []]), 'tasks.copy_turn_unended'],
         'a copy where a proof already ran' => [fn (Task $group) => Operation::query()->create(['kind' => 'proof.verify', 'target_type' => 'task_group', 'target_id' => $group->id,
             'status' => OperationStatus::Succeeded, 'input' => []]), 'proof.copy_fleet_used'],
         'a copy where an agent turn ended' => [fn (Task $group) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id,
-            'status' => OperationStatus::Succeeded, 'input' => [], 'result' => ['ended' => true]]), 'proof.copy_fleet_used'],
+            'status' => OperationStatus::Succeeded, 'input' => ['thread_id' => 1], 'result' => ['ended' => true]]), 'proof.copy_fleet_used'],
         'a copy turn that runs' => [fn (Task $group, Instance $instance) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group',
             'target_id' => $group->id, 'node_id' => $instance->node_id, 'status' => OperationStatus::Running, 'input' => []]), 'operation.target_busy'],
     ]);

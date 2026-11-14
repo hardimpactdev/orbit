@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - a nested-fleet Project: the Node has the nested-fleet switch, else the placement rule refuses
   %%> - a nested-fleet default whose runtime records an inner volume refuses `instance.inner_volume_clone_unavailable` (409) before any record: the clone of the volume follows separately
   %%> Result:
-  %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
+  %%> - the Instance is reserved with its runtime record: container name, bridge address, the next free T3 port after the Node's last one, wrapping from 3999 to 3800, and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
   %%> - each attachment of the default marked shared is attached to the clone as it is (same connection, prefix and network, still shared) before `.env` renders, so `.env` holds its keys and the container intent its network path
   %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys, of its credential keys and of the shared connections' keys, and the default's Route host with the clone's; SSH stdin takes the whole value
@@ -52,9 +52,10 @@ sequenceDiagram
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
     %%> - before the first start, the stopped copy gets the Orbit root in its CA bundle when the seed's bundle lacks it, so Chromium trusts Orbit's sites; a copy without a bundle refuses
-    %%> - before the first start, the stopped copy gets the plan's private names in `/etc/hosts` and the composed `NO_PROXY` drop-ins, the bytes `env:sync` writes, so the clone resolves its own Route names at first boot
+    %%> - before the first start, the stopped copy gets the composed `NO_PROXY` drop-ins, the bytes `env:sync` writes
     %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, and a root volume without `zfs.delegate`
     %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
+    %%> - right after the start, after the copy's own hosts template rewrote `/etc/hosts`: writes the plan's private names block with the renderer `env:sync` uses, so the clone resolves its own Route names; a failure is `instance.clone_private_names_failed`
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
     %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process

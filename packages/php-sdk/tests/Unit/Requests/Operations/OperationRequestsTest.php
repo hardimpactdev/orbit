@@ -95,6 +95,8 @@ describe('operation requests', function (): void {
         $new = new TurnTaskRequest(18, 'implementer', '', 'new', model: '');
         expect(json_decode((string) $new->body(), true))->toBe(['role' => 'implementer', 'prompt' => '', 'thread' => 'new', 'model' => '']);
         expect($new->headers()->get('Idempotency-Key'))->toBeNull();
+        // No thread: a task copy continues the role's thread.
+        expect(json_decode((string) (new TurnTaskRequest(18, 'implementer', 'Go on.', null))->body(), true))->toBe(['role' => 'implementer', 'prompt' => 'Go on.']);
         $mock->assertSentCount(1);
     });
 

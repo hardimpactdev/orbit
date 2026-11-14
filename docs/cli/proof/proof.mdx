@@ -79,7 +79,7 @@ Each case ends `passed`, `failed` or `unrun`, as in [`proof:run`](/cli/proof/run
 | `tasks.copy_not_ready` | The task copy is not `active` yet. |
 | `tasks.instance_not_running` | The container of the task copy is not running. |
 | `proof.copy_fleet_used` | A proof or an agent turn has already run in the task copy, and a copy cannot restore its fleet yet. Start a new task copy. |
-| `tasks.copy_turn_unended` | An earlier turn may still run in the task copy. Run `task:cancel` to end it with the copy. |
+| `tasks.copy_turn_unended` | An earlier turn may still run in the task copy or left its checkout unrestored. Run `task:cancel` to end it with the copy. |
 | `tasks.group_closed` | The task group has ended. |
 | `operation.target_busy` | Another operation holds the task group. The details name it. |
 | `proof.cases_failed` | A case failed or did not run. The result holds each verdict. |

@@ -96,3 +96,15 @@ it('records the subtask and the prompt of the caller as the one prompt the run s
         ->and($frames[1]['payload']['workflowIdOrName'])->toBe('operation-task-turn')
         ->and($frames[1]['payload']['inputs']['intent']['prompt'])->toBe($operation->input['prompt']);
 })->with(['implementer', 'consult']);
+
+it('starts a new thread for a task VM turn that names no thread, as --thread=new does', function (): void {
+    [$group, $subtask] = turnWorld();
+    Queue::fake([StartAdmittedSwampRun::class]);
+
+    app(TaskTurnIntent::class)->start($group, new TaskTurnData($subtask->id, 'implementer', 'Only this turn.'), 'test', null);
+
+    $operation = Operation::query()->where('kind', 'tasks.turn')->sole();
+    expect($operation->input['thread'])->toBe('new')
+        ->and($operation->input['new_session'])->toBeTrue()
+        ->and($subtask->refresh()->implementer_agent_thread_id)->toBe($operation->input['thread_id']);
+});
