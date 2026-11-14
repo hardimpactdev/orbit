@@ -1040,7 +1040,9 @@ A clone refuses with `instance.database_clone_unsupported` when the default has 
 
 ### Destroy
 
-`orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal and container default destruction follow separately. A call without force refuses with `instance.container_destroy_force_required`; a container default still refuses with `operation.kind_unavailable`.
+`orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal follows separately. A call without force refuses with `instance.container_destroy_force_required`.
+
+A container default refuses with `operation.kind_unavailable`, except a default that has an [inner volume](#the-inner-volume), whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS`, and that no Instance copies (else `instance.default_has_copies`). Such a default is a trial default of a nested fleet; the same removal deletes its container, its seed snapshots and its inner volume. The first nested-fleet default has no inner volume, and the operator never lists its Project, so it cannot be removed this way.
 
 A removal from Conn without acknowledgement reads the [workspace work state](#workspace-work-state) first and removes only a `clean` workspace. The CLI's rules do not change.
 

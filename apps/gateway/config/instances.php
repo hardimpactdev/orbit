@@ -17,6 +17,10 @@ return [
     // A JSON object, even {} or {"0":123}, stays an object and malformed JSON stays null; both refuse.
     'nested_fleet_projects' => json_decode((string) (env('ORBIT_INSTANCES_NESTED_FLEET_PROJECTS') ?: '[]')),
 
+    // The trial Projects whose container default instance:destroy may remove, if it has an inner volume and no copy
+    // (docs/reference/development-containers.md#destroy): a JSON list of positive integer Project ids, like the list above.
+    'default_destroy_projects' => json_decode((string) (env('ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS') ?: '[]')),
+
     // The release refresh of nested-fleet defaults (docs/reference/development-containers.md#refresh-after-a-release). Off by default:
     // an operator turns it on once the Club key lives off the default's disk and a safety snapshot exists.
     'nested_fleet_refresh' => filter_var(env('ORBIT_INSTANCES_NESTED_FLEET_REFRESH', false), FILTER_VALIDATE_BOOL),
