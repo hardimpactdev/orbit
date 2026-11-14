@@ -68,6 +68,7 @@ sequenceDiagram
     SW->>SW: Bundle the refs<br/>git bundle create
     %%> What it does:
     %%> - one bundle of the default branch and `task-42`
+    %%> - the clone and the bundle run as the behaviors `task-sync-clone-42` and `task-sync-bundle-42`, up to 180 s and 60 s, so a sync of another group never waits for their lock
     SW->>N: Prepare the VM directory<br/>mkdir -m 0700
     %%> What it does:
     %%> - a private directory of the run on the VM

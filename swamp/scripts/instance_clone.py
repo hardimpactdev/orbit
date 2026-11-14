@@ -293,19 +293,26 @@ def main():
             change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/" + path], content)
 
     def private_names_hosts():
-        """The access plan's private names in the running copy's /etc/hosts, as env:sync writes them (tasks/instance-private-names.yml):
-        read with `cat`, rendered by instance_node_services.py `hosts`, pushed as root with 0644 only when its lines change. It runs
-        after the start, because the copy's own Incus template (`/etc/hosts: when: [create, copy]`, copied from its default) rewrites
-        the file at the first start. A seed's block goes when the plan has no name. Any failure fails the create by its own name
-        (docs/reference/development-containers.md#what-a-clone-has-at-its-first-start)."""
+        """The access plan's private names and the presented machine name in the running copy, as env:sync and the container phase
+        write them (tasks/instance-private-names.yml, tasks/instance-machine-name.yml). One exec writes /etc/hostname, sets the kernel
+        hostname and reads /etc/hosts; instance_node_services.py `hosts` renders the private names block and instance_machine_name.py
+        `hosts` the `127.0.1.1` line, each keeping the other's lines; /etc/hosts is pushed as root with 0644 only when it changes. It runs
+        after the start, because the copy's own Incus templates (`/etc/hosts` and `/etc/hostname`: `when: [create, copy]`, copied from
+        its default) rewrite both files at the first start. T3 starts with the copy's boot, so it has started by then: its label comes
+        from `/etc/machine-info`, a boot file written before the start, so it is right from T3's first start. A seed's block goes when the plan has no name. Any failure, the
+        hostname's among them, fails the create by its own name (docs/reference/development-containers.md#what-a-clone-has-at-its-first-start)."""
         try:
-            read = run(project + ["exec", name, "--", "cat", "--", "/etc/hosts"], check=False)
+            hostname = container["machine_name"]["hostname"]
+            read = run(project + ["exec", name, "--", "sh", "-c", 'printf "%s\\n" "$1" > /etc/hostname && hostname "$1" && cat -- /etc/hosts',
+                                  "sh", hostname], check=False)
             if read.returncode and "No such file or directory" not in read.stderr:
                 raise RuntimeError("instance.clone_private_names_failed")
             hosts = read.stdout if read.returncode == 0 else ""
             composed = json.loads(run(renderer("hosts"), json.dumps({"hosts": hosts, "private_names": container.get("private_names", [])})).stdout)
-            if composed["content"].splitlines() != hosts.splitlines():
-                change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], composed["content"])
+            named = json.loads(run(["python3", "-c", json.loads(sys.argv[6])["machine_name"], "hosts"],
+                                   json.dumps({"hosts": composed["content"], "hostname": hostname, "container": name})).stdout)
+            if named["content"].splitlines() != hosts.splitlines():
+                change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], named["content"])
         except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError):
             raise RuntimeError("instance.clone_private_names_failed") from None
 

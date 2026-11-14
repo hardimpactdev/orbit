@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "converge-node", "reset", "resume", ""];
+const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "migrate", "converge-node", "reset", "resume", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -614,6 +614,12 @@ Deno.test({
         "wg show wg-nested",
         "ip -j addr show dev wg-nested",
         ...reachCalls,
+        // base may hold an older schema than the checkout: the reset waits for the state mounts (no Club key here, so no Swamp state)
+        // and migrates forward; nothing was due here, so no restart.
+        `test -s ${clubKey}`,
+        "incus exec nested-gateway -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
+        "incus exec nested-app-dev -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
+        "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
         ...readyCalls,
       ]);
       assertKeyUntouched(calls, reset.output);
@@ -1056,10 +1062,11 @@ Deno.test({
 const inputCases: [string, (state: Record<string, any>) => void, string[], string, string][] = [
   // A package's migration (the Composer lock in `apps/gateway`) moves the code digest only; the migrate applies it.
   // The Gateway's code moved but the base intent of each Node did not: no converge.
-  ["the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway", (state) => {
+  // A migration does not retake base: a reset migrates after its restore (instance-fleet-migrate.yml).
+  ["the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates", (state) => {
     state.digests = { "apps/gateway": "a9" };
     state.pendingMigration = true;
-  }, ["migrate", "restart", "stop", "base"], "retaken", "code"],
+  }, ["migrate", "restart"], "kept", "code"],
   ["the code without a pending migration migrates and restarts, converges nothing and keeps base",
     (state) => state.digests = { "apps/gateway": "a9" }, ["migrate", "restart"], "kept", "code"],
   ["a swamp file the base converge reads converges",
@@ -1593,7 +1600,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
+  name: "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -1601,24 +1608,40 @@ Deno.test({
       const before = structuredClone(f.state().containers);
       f.change((state) => {
         state.digests = { "apps/gateway": "a9" };
-        state.pendingMigration = true;
+        state.checkoutSchema = 1;
       });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      assertEquals(calls.filter((call) => /^incus (stop|snapshot create) /.test(call)),
-        ["incus stop nested-gateway --timeout 90", "incus snapshot create nested-gateway base"]);
+      // No stop and no snapshot: base keeps the older schema, and every nested container keeps running.
+      assertEquals(calls.filter((call) => /^incus (stop|snapshot create) /.test(call)), []);
       const state = f.state();
-      assertEquals(state.containers["nested-gateway"].snapshots.base.files["/home/orbit/.orbit/schema"], "1");
-      for (const name of ["nested-app-dev", "nested-app-prod"]) {
+      assertEquals(state.containers["nested-gateway"].files["/home/orbit/.orbit/schema"], "1");
+      for (const name of names) {
         assertEquals(state.containers[name].status, "Running");
         assertEquals(state.containers[name].snapshots.base, before[name].snapshots.base);
       }
-      assertEquals(f.refreshed()?.base_containers, ["nested-gateway"]);
-      // A proof's reset restores base of all three and comes up on the new schema.
-      f.change((value) => value.containers["nested-gateway"].files["/home/orbit/.orbit/schema"] = "0");
+      const result = f.refreshed()!;
+      assertEquals([result.migrate, result.restart, result.base, result.base_containers], ["applied", "yes", "kept", []]);
+      // A reset restores base, with the older schema, waits for the state mounts (still activating right after the restore), then
+      // migrates forward and restarts before its readiness wait.
+      f.change((value) => value.activating = 1);
       const reset = f.run("reset");
       assert(reset.ok, reset.output);
+      const resetCalls = f.calls();
+      const migrate = resetCalls.findIndex((call) => call.endsWith("php artisan migrate --force"));
+      const mounts = resetCalls.map((call, index) => call.includes("systemctl is-active home-orbit") ? index : -1).filter((index) => index >= 0);
+      // The first read finds the mounts activating and is read again; every read comes before the migrate.
+      assert(mounts.length >= 3 && mounts.every((index) => index < migrate), resetCalls.join("\n"));
+      const restart = resetCalls.findIndex((call) => call.includes("systemctl restart orbit-gateway-horizon.service"));
+      const doctor = resetCalls.findIndex((call) => call.includes("/doctor"));
+      assert(migrate >= 0 && migrate < restart && restart < doctor, resetCalls.join("\n"));
+      assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/schema"], "1");
+      // Every reset restores the same base, with its older schema, and migrates forward again; a refresh retakes base only for another
+      // change of the nested Gateway's disk.
+      const again = f.run("reset");
+      assert(again.ok, again.output);
+      assert(f.calls().some((call) => call.includes("systemctl restart orbit-gateway-horizon.service")));
       assertEquals(f.state().containers["nested-gateway"].files["/home/orbit/.orbit/schema"], "1");
     } finally {
       f.cleanup();

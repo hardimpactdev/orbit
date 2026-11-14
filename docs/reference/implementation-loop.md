@@ -221,6 +221,8 @@ Direct input matches take priority when work exceeds that limit, then the metada
 
 A fixture can declare `mandatory_cases`, mapping an input pattern from its `inputs` to exact retained case names. A matching change reserves the units containing those cases before other work; changing the fixture, its registry entry, shared budgets or admission order, the planner, registry loader or slice preload reserves them too. If the required units cannot fit, the plan emits a capacity error and Required fails. Only the remaining units may be deferred as a group. The plan names required cases, deferred units and unmapped Swamp paths in its summary.
 
+The Instance host probe has a small required caller-contract fixture. It renders the shipped host profile, creates a probe through a local Incus stand-in, and runs the shipped nested guard before the probe starts. Changes to the guard or its host callers reserve this proof in the existing hosted shards. The guard's own unit tests cover accepted sizes and refusals; the caller proof checks that the profile and the guard agree. The long host-converge case remains in the deferred receiver.
+
 A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
 Migration remains after-merge-only: its declared work needs twelve shards, above the eight-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
@@ -915,7 +917,9 @@ The `instance:restore` workflow fixture evaluates every expression of `operation
 
 The destroy release fixture evaluates the guard and environment of `Release the Route Nodes` and the retry guard of `Withdraw the Route`, then runs the release command with a stand-in `curl` for a granted, a refused and an unreachable call. It needs no Node or Gateway.
 
-The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture gives each retained case its own slice: 70 since the four cases of a wake that resumes a frozen container, which carry estimates like the four cases of a wake's start before them. A new case there raises the slice count with it.
+The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture gives each retained case its own slice: 71 since the four cases of a wake that resumes a frozen container, which carry estimates like the four cases of a wake's start before them. A new case there raises the slice count with it.
+
+At 71 retained cases the file nearly fills the eight pull request shards. With the table of 2026-11-14, a 72nd case of more than about 15 declared seconds needs a ninth shard; a 1-second case still fits. So the presented machine name's checks joined existing cases: its create and running-start checks the private names case, which writes the same `/etc/hosts`, and its stopped-start checks the `boot.autostart` start case. Both costs are new estimates.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 

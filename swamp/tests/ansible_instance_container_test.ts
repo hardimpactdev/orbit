@@ -90,7 +90,7 @@ function fixture() {
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
-    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml",
+    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
@@ -111,6 +111,7 @@ function fixture() {
     instance_id: 7,
     project: "orbit-instances",
     name: "instance-7",
+    machine_name: { hostname: "default.shop", pretty: "default.shop" },
     image: "orbit-instance",
     config: { "limits.cpu": "4", "limits.memory": "8GiB", "limits.processes": "4096" },
     root_disk_pool: "orbit-instances",
@@ -1702,7 +1703,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
+  name: "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1713,6 +1714,11 @@ Deno.test({
       const plain = f.run("container");
       assert(plain.ok, plain.output);
       assert(!/Write the changed hosts file\]\s*\n\s*changed/.test(plain.output), plain.output);
+      // The create also wrote the presented machine name and set the kernel hostname at once; a missing hosts file stays missing.
+      const etc = `${f.folder}/containers/instance-7/etc`;
+      assertEquals(Deno.readTextFileSync(`${etc}/hostname`), "default.shop\n");
+      assertEquals(Deno.readTextFileSync(`${etc}/machine-info`), "PRETTY_HOSTNAME=default.shop\n");
+      assertEquals(f.state().containers["instance-7"].hostname, "default.shop");
       Deno.writeTextFileSync(hosts, "127.0.0.1 localhost\n");
       const again = f.run("start");
       assert(again.ok, again.output);
@@ -1740,9 +1746,20 @@ Deno.test({
       delete (f.container as Record<string, unknown>).private_names;
       delete (f.container as Record<string, unknown>).proxy_environment;
       f.write();
+      // The presented machine name changes too (frozen resumes write no file: the wake cases above). Each Incus call without its
+      // leading `--project <name>`.
+      Object.assign(f.container, { machine_name: { hostname: "default.store", pretty: "default.Store" } });
+      f.write();
+      const calls = () => Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[])
+        .map((call) => call[0] === "--project" ? call.slice(2) : call);
+      const nameFiles = (list: string[][]) => list.filter((call) => call[0] === "file" && /instance-7\/etc\/(hostname|machine-info|hosts)$/.test(call.at(-1)!));
+      const before = calls().length;
       const removed = f.run("start");
       assert(removed.ok, removed.output);
       assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n10.1.1.1 operator\n");
+      // That start of the running container read none of the name files and wrote only the private names' /etc/hosts, even for the
+      // new name: the converge owns the name files.
+      assertEquals(nameFiles(calls().slice(before)).filter((call) => call[1] === "pull" || !call.at(-1)!.endsWith("/etc/hosts")), []);
     } finally {
       f.cleanup();
     }
@@ -2089,16 +2106,42 @@ function rootSizeShapes(f: ReturnType<typeof fixture>) {
 }
 
 Deno.test({
-  name: "a normal container start never writes boot.autostart",
+  name: "a normal container start never writes boot.autostart; a stopped one gets the presented machine name before its boot, unless its Incus templates are pending",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
-    try {
-      assert(f.run("container").ok);
+    const etc = `${f.folder}/containers/instance-7/etc`;
+    // Each Incus call without its leading `--project <name>`, and the calls on the machine name's files.
+    const calls = () => incusCalls(f).map((call) => call[0] === "--project" ? call.slice(2) : call);
+    const nameFiles = (list: string[][]) => list.filter((call) => call[0] === "file" && /instance-7\/etc\/(hostname|machine-info|hosts)$/.test(call.at(-1)!));
+    const stopped = (volatile?: Record<string, string>) => {
       const state = f.state();
       state.containers["instance-7"].status = "Stopped";
+      if (volatile) state.containers["instance-7"].volatile = volatile;
+      else delete state.containers["instance-7"].volatile;
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+    };
+    try {
+      assert(f.run("container").ok);
+      Object.assign(f.container, { machine_name: { hostname: "default.store", pretty: "default.Store" } });
+      f.write();
+      // A stopped container whose Incus templates are still pending gets nothing: its first start would write over the files.
+      stopped({ "volatile.apply_template": "copy" });
+      let before = calls().length;
       assert(f.run("start").ok);
+      assertEquals(nameFiles(calls().slice(before)), []);
+      // A stopped container gets the files before its boot, through the file API; no exec sets the hostname and T3 does not restart.
+      stopped();
+      before = calls().length;
+      assert(f.run("start").ok);
+      const since = calls().slice(before);
+      const start = since.findIndex((call) => call[0] === "start");
+      assert(start > 0, JSON.stringify(since));
+      assert(nameFiles(since).every((call) => since.indexOf(call) < start));
+      assertEquals(nameFiles(since).filter((call) => call[1] === "push").map((call) => call.at(-1)), ["instance-7/etc/hostname", "instance-7/etc/machine-info"]);
+      assertEquals(Deno.readTextFileSync(`${etc}/machine-info`), "PRETTY_HOSTNAME=default.Store\n");
+      assert(!since.some((call) => call[0] === "exec" && call.includes("hostname")));
+      assert(!(f.state().systemctl ?? []).some((call: string[]) => call.includes("t3.service") && call[0] !== "start"));
       assert(!incusCalls(f).some((args) => args.includes("config") && args.includes("set")), JSON.stringify(incusCalls(f)));
       assert(!f.state().containers["instance-7"].config.some((value: string) => value.startsWith("boot.")));
     } finally { f.cleanup(); }
@@ -2842,7 +2885,7 @@ Deno.test({
       // A deployment at a new commit takes the new pair, then deletes both halves of the older one.
       git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
       const second = git(f.source, "rev-parse", "HEAD");
-      f.intent.deployment = { variant: "container" };
+      f.intent.deployment = { variant: "container", steps: [] };
       f.write();
       for (const phase of ["start", "fetch", "checkout", "seed"]) {
         const result = f.run(phase);
@@ -2916,7 +2959,7 @@ Deno.test({
       for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
       const first = git(f.source, "rev-parse", "HEAD");
       git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
-      f.intent.deployment = { variant: "container" };
+      f.intent.deployment = { variant: "container", steps: [] };
       f.write();
       for (const phase of ["start", "fetch", "checkout"]) assert(f.run(phase).ok);
       const state = f.state();
@@ -3084,7 +3127,8 @@ Deno.test({
       assertEquals(f.result(), {error_code: "instance.fleet_seed_missing"});
       assertEquals(f.state().containers["instance-7"].restored, undefined);
       delete f.intent.fleet;
-      f.intent.deployment = {variant: "container"};
+      // The Gateway always captures a steps list, including when this deployment has no commands.
+      f.intent.deployment = {variant: "container", steps: []};
       f.write();
       for (const phase of ["start", "fetch", "checkout", "seed"]) {
         result = f.run(phase);

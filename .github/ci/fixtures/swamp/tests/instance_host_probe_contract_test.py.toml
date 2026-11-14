@@ -1,0 +1,22 @@
+source_sha256 = "8bdf3378280cb09dc1f215a63562a443e8005ba45e6a25a1210bfd4777d2b5fb"
+cases = ["test_the_shipped_host_profile_passes_the_probe_guard_before_start"]
+file = "swamp/tests/instance_host_probe_contract_test.py"
+slices = false
+# ESTIMATE: supervised local run 5.519s; confirm the 15s allowance on hosted CI.
+cost = 15
+inputs = [
+  "swamp/ansible/instance_nested.py",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/tests/fixtures/instance-host-probe-incus.py",
+  "swamp/tests/_support/fixture_supervisor.py",
+]
+
+[mandatory_cases]
+"swamp/ansible/instance_nested.py" = ["test_the_shipped_host_profile_passes_the_probe_guard_before_start"]
+"swamp/ansible/tasks/instance-network-nic-check.yml" = ["test_the_shipped_host_profile_passes_the_probe_guard_before_start"]
+"swamp/ansible/tasks/instance-host.yml" = ["test_the_shipped_host_profile_passes_the_probe_guard_before_start"]
+"swamp/ansible/tasks/task-container-host-prepare.yml" = ["test_the_shipped_host_profile_passes_the_probe_guard_before_start"]

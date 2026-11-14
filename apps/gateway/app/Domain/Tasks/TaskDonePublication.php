@@ -10,6 +10,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The publish of a task copy's done check, for the tick and for the release call alike (docs/reference/tasks.md#publish-by-itself):
@@ -18,8 +19,14 @@ use App\Models\TaskCheck;
  */
 final class TaskDonePublication
 {
+    /** A publish whose step waited too long for a Swamp behavior lock: no refusal, the tick starts the same check again. */
+    public const string LockTimeoutCode = 'tasks.publish_lock_timeout';
+
     /** The limit of a pull request body that the publish request accepts. */
     public const int BodyLimit = 65536;
+
+    /** How many publishes of one done check may time out on a lock, the first and its retries, before the check shows as refused. */
+    public const int LockTimeoutAttempts = 3;
 
     public static function for(Task $group, TaskCheck $check): StartTaskPublishData
     {
@@ -39,14 +46,42 @@ final class TaskDonePublication
     }
 
     /**
-     * The newest publish of this done check, by any caller, that ended without success: Orbit does not start that check again by itself,
-     * and the group shows it as refused (docs/reference/tasks.md#a-refused-automatic-publish).
+     * The publish of this done check, by any caller, that ended without success and keeps the check refused: Orbit does not start the check
+     * again by itself, and the group shows it as refused (docs/reference/tasks.md#a-refused-automatic-publish). The newest publish that
+     * failed with another code than {@see self::LockTimeoutCode}, or was cancelled or interrupted without one, refuses the check whatever
+     * came after. Lock timeouts alone refuse it once {@see self::LockTimeoutAttempts} publishes of the check timed out on a lock, and at once
+     * for a group the tick does not publish: its mode, or the mode its done check recorded, is not `pr_when_done`.
      */
-    public static function unsuccessful(Task $group, TaskCheck $check): ?Operation
+    public static function unsuccessful(Task $group, TaskCheck $check, ?TaskPrMode $mode): ?Operation
+    {
+        $ended = self::publishes($group, $check)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value]);
+        $refused = (clone $ended)->where(static fn (Builder $query): Builder => $query->whereNull('error_code')->orWhere('error_code', '!=', self::LockTimeoutCode))
+            ->orderByDesc('id')->first();
+        $retried = $mode === TaskPrMode::PrWhenDone && $check->pr_mode === TaskPrMode::PrWhenDone;
+        if ($refused instanceof Operation || ($retried && self::lockTimeouts($group, $check) < self::LockTimeoutAttempts)) {
+            return $refused;
+        }
+
+        return $ended->orderByDesc('id')->first();
+    }
+
+    /** The attempt of the tick's next publish of this check: one more than its publishes that timed out on a lock, by any caller. */
+    public static function attempt(Task $group, TaskCheck $check): int
+    {
+        return self::lockTimeouts($group, $check) + 1;
+    }
+
+    private static function lockTimeouts(Task $group, TaskCheck $check): int
+    {
+        return self::publishes($group, $check)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Interrupted->value])
+            ->where('error_code', self::LockTimeoutCode)->count();
+    }
+
+    /** @return Builder<Operation> */
+    private static function publishes(Task $group, TaskCheck $check): Builder
     {
         return Operation::query()->where('kind', OperationKinds::TasksPublish)->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-            ->where('input->check', $check->id)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value])
-            ->orderByDesc('id')->first();
+            ->where('input->check', $check->id);
     }
 
     /** The code a refused publish shows: its own, or `operation.cancelled` and the like when it ended without one. */

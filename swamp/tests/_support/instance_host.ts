@@ -114,6 +114,7 @@ function writeTasks(folder: string) {
     Deno.copyFileSync(new URL("instance_folder_debs.py", root), `${folder}/instance_folder_debs.py`);
     Deno.copyFileSync(new URL("instance_folder_same.py", root), `${folder}/instance_folder_same.py`);
     Deno.copyFileSync(new URL("instance_container_files.py", root), `${folder}/instance_container_files.py`);
+    Deno.copyFileSync(new URL("instance_machine_name.py", root), `${folder}/instance_machine_name.py`);
     Deno.mkdirSync(`${folder}/files`, { recursive: true });
     Deno.copyFileSync(new URL("files/instance-container-wake.sh", root), `${folder}/files/instance-container-wake.sh`);
     Deno.copyFileSync(new URL("files/instance-browser-trust.sh", root), `${folder}/files/instance-browser-trust.sh`);
@@ -466,6 +467,8 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
         dhcp_range: "10.253.0.2-10.253.0.253",
         stock: "ubuntu-26.04-instance-stock",
         forwarder_port: 8319,
+        // The presented machine name of each container the Node's runtimes record (InstanceMachineName::forNode).
+        machine_names: [] as Record<string, string>[],
         ingress: [{
             action: "allow",
             source: "10.253.0.1/32",

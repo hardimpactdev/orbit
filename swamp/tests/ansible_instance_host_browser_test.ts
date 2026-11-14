@@ -139,18 +139,26 @@ function containers(rows: { name: string; status: string }[], extra: Record<stri
         cleanup: () => Deno.removeSync(folder, { recursive: true }) };
 }
 
-/** The container step's own script against the fixture's Incus, without a whole converge; `root` is the Node's CA file. */
-function pass(folder: string, root = `${folder}/orbit-root-ca.crt`) {
-    const out = new Deno.Command("python3", {
-        args: ["-I", new URL("../ansible/instance_container_files.py", import.meta.url).pathname, JSON.stringify({
+/**
+ * The container step's own script against the fixture's Incus, without a whole converge; `root` is the Node's CA file. Its stdin is the
+ * task's: the script.
+ */
+function pass(folder: string, root = `${folder}/orbit-root-ca.crt`, machineNames: Record<string, string>[] = []) {
+    const source = Deno.readTextFileSync(new URL("../ansible/instance_container_files.py", import.meta.url));
+    const child = new Deno.Command("python3", {
+        stdin: "piped", stdout: "piped",
+        args: ["-I", "-", JSON.stringify({
             projects: ["orbit-instances", "orbit-instances-nested"], files: shared.map(({ path, content, mode }) => ({ path, content, mode })),
             trust: { source: root, path: "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt", directory: "/etc/ssl/certs" },
             browser_trust: { ...browserTrust, script: Deno.readTextFileSync(new URL("../ansible/files/instance-browser-trust.sh", import.meta.url)) },
-            libraries: `${folder}/opt/orbit-runtime/current/lib`, state: `${folder}/container-libraries`,
+            libraries: `${folder}/opt/orbit-runtime/current/lib`, state: `${folder}/container-libraries`, machine_names: machineNames,
+            machine_name_code: Deno.readTextFileSync(new URL("../ansible/instance_machine_name.py", import.meta.url)),
         })],
         env: { HOST_FIXTURE: folder, PATH: `${folder}/bin:${Deno.env.get("PATH")}` },
-    }).outputSync();
-    return { ok: out.success, summary: JSON.parse(new TextDecoder().decode(out.stdout)) };
+    }).spawn();
+    const writer = child.stdin.getWriter();
+    void writer.write(new TextEncoder().encode(source)).then(() => writer.close());
+    return child.output().then((out) => ({ ok: out.success, summary: JSON.parse(new TextDecoder().decode(out.stdout)) }));
 }
 
 Deno.test({
@@ -169,7 +177,7 @@ Deno.test({
                 { name: "fleet-trial", project: "orbit-instances-nested", status: "Running" },
             );
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-            let run = pass(f.folder);
+            let run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             // The nested-fleet project's containers mount the same runtime folder, so they get the same files: 3 shared files, the
             // Node's root CA and its two links (`<name>.pem` and the hashed name), in each of the 3 containers.
@@ -179,13 +187,13 @@ Deno.test({
             assertEquals(run.summary.ldconfig, ["orbit-instances/app-default", "orbit-instances-nested/fleet-trial"]);
             assertEquals(run.summary.cache_dropped, ["orbit-instances/app-asleep"]);
 
-            run = pass(f.folder);
+            run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             assertEquals([run.summary.written, run.summary.ldconfig, run.summary.cache_dropped, run.summary.ca_bundle], [[], [], [], []]);
 
             // A new library in the folder: the running cache lacks it, and the stopped container builds its cache again at start.
             Deno.writeTextFileSync(`${lib}/libtwo.so.2`, "two");
-            run = pass(f.folder);
+            run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             assertEquals([run.summary.written, run.summary.ldconfig, run.summary.cache_dropped],
                 [[], ["orbit-instances/app-default", "orbit-instances-nested/fleet-trial"], ["orbit-instances/app-asleep"]]);
@@ -205,7 +213,7 @@ function same(old: string, next: string) {
 
 Deno.test({
     name: "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not",
-    fn() {
+    async fn() {
         const root = Deno.makeTempDirSync();
         try {
             const version = (name: string) => {
@@ -303,7 +311,7 @@ Deno.test({
                 { name: "app-frozen", project: "orbit-instances", status: "Frozen" },
             );
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-            let run = pass(f.folder, old.path);
+            let run = await pass(f.folder, old.path);
             assert(run.ok, JSON.stringify(run.summary));
             assertEquals(run.summary.frozen, ["orbit-instances/app-frozen"]);
             const linked = (name: string, hash: string) =>
@@ -314,7 +322,7 @@ Deno.test({
             }
 
             const before = f.calls().length;
-            run = pass(f.folder, next.path);
+            run = await pass(f.folder, next.path);
             assert(run.ok, JSON.stringify(run.summary));
             const files = f.state().files;
             for (const name of ["app-default", "app-asleep", "app-frozen"]) {
@@ -336,6 +344,108 @@ Deno.test({
 });
 
 Deno.test({
+    name: "the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            const state = f.state();
+            state.instances.push(
+                { name: "instance-7", project: "orbit-instances", status: "Running" },
+                { name: "instance-8", project: "orbit-instances", status: "Stopped" },
+                { name: "instance-9", project: "orbit-instances", status: "Frozen" },
+                { name: "instance-10", project: "orbit-instances", status: "Running" },
+            );
+            const block = "# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n";
+            state.files = { ...(state.files ?? {}),
+                "instance-7/etc/hosts": { content: "127.0.1.1\tinstance-7\n127.0.0.1\tlocalhost\n" + block, mode: "0644", uid: "0", gid: "0" },
+                "instance-7/etc/machine-info": { content: "CHASSIS=container\n", mode: "0644", uid: "0", gid: "0" } };
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const names = [
+                { project: "orbit-instances", container: "instance-7", hostname: "task-5003.dlf-leden", pretty: "task-5003.dlf-leden" },
+                { project: "orbit-instances", container: "instance-8", hostname: "default.dlf-leden", pretty: "default.dlf-leden" },
+                // An uppercase and underscore slug: the label as stored, the hostname mapped.
+                { project: "orbit-instances", container: "instance-9", hostname: "default-" + "0".repeat(48) + "9.my-app", pretty: "default.My_App" },
+            ];
+            Deno.writeTextFileSync(`${f.folder}/calls`, "");
+            const before = 0;
+            const run = await pass(f.folder, undefined, names);
+            assert(run.ok, JSON.stringify(run.summary));
+            const files = f.state().files;
+            assertEquals(files["instance-7/etc/hostname"].content, "task-5003.dlf-leden\n");
+            // Orbit owns the whole machine-info file, as the clone's boot file writes it.
+            assertEquals(files["instance-7/etc/machine-info"].content, "PRETTY_HOSTNAME=task-5003.dlf-leden\n");
+            // The running kernel hostname (here still the Incus name) and the Incus name stay aliases until the container's next start.
+            assertEquals(files["instance-7/etc/hosts"].content, "127.0.1.1\ttask-5003.dlf-leden task-5003 instance-7\n127.0.0.1\tlocalhost\n" + block);
+            // A container without /etc/hosts keeps it missing: the line alone would drop localhost.
+            assertEquals(files["instance-8/etc/hosts"], undefined);
+            assertEquals(files["instance-8/etc/machine-info"].content, "PRETTY_HOSTNAME=default.dlf-leden\n");
+            assertEquals(files["instance-9/etc/machine-info"].content, "PRETTY_HOSTNAME=default.My_App\n");
+            assertEquals(files["instance-9/etc/hostname"].content, names[2].hostname + "\n");
+            assertEquals([files["instance-7/etc/hostname"].uid, files["instance-7/etc/hostname"].mode], ["0", "0644"]);
+            // A container the Gateway does not name keeps its files.
+            assertEquals(files["instance-10/etc/hostname"], undefined);
+            // No restart and no live hostname: T3 and the kernel take the name at the container's next start.
+            assert(f.calls().some((call) => call[0] === "file" && call[1] === "push" && call.at(-1) === "instance-9/etc/machine-info"));
+            // A running container's kernel hostname is only read (`hostname` alone), never set.
+            const execs = f.calls().slice(before).filter((call) => call[0] === "exec").map((call) => call.slice(call.indexOf("--") + 1));
+            assert(!execs.some((command) => (command[0] === "hostname" && command.length > 1) || command[0] === "systemctl"), JSON.stringify(execs));
+            assert(!f.calls().slice(before).some((call) => call[0] === "exec" && call.includes("instance-9")));
+            // A second pass writes none of them again.
+            const again = await pass(f.folder, undefined, names);
+            assertEquals(again.summary.written.filter((path: string) => /\/etc\/(hostname|machine-info|hosts)$/.test(path)), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias, an unreadable one is none",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            const state = f.state();
+            state.instances.push(
+                { name: "instance-7", project: "orbit-instances", status: "Running" },
+                { name: "instance-8", project: "orbit-instances", status: "Running" },
+            );
+            const hosts = "127.0.1.1\ttask-5003.dlf-leden task-5003 instance-7\n127.0.0.1\tlocalhost\n";
+            state.files = { ...(state.files ?? {}),
+                "instance-7/etc/hosts": { content: hosts, mode: "0644", uid: "0", gid: "0" },
+                "instance-8/etc/hosts": { content: "127.0.1.1\tdefault.dlf-leden default instance-8\n127.0.0.1\tlocalhost\n", mode: "0644", uid: "0", gid: "0" } };
+            // instance-7 changes its state mid-read; instance-8's kernel still runs the name of before the Project's rename.
+            state.pull_failures = ["instance-7/etc/hosts"];
+            state.kernel_hostnames = { "instance-8": "default.dlf-leden" };
+            // instance-10's kernel hostname cannot be read: it gets no such alias, and the converge does not fail for it.
+            state.instances.push({ name: "instance-10", project: "orbit-instances", status: "Running" });
+            state.files["instance-10/etc/hosts"] = { content: "127.0.0.1\tlocalhost\n", mode: "0644", uid: "0", gid: "0" };
+            state.kernel_failures = ["instance-10"];
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const run = await pass(f.folder, undefined, [
+                { project: "orbit-instances", container: "instance-7", hostname: "task-5003.leden", pretty: "task-5003.leden" },
+                { project: "orbit-instances", container: "instance-8", hostname: "default.leden", pretty: "default.leden" },
+                { project: "orbit-instances", container: "instance-10", hostname: "feature.leden", pretty: "feature.leden" },
+            ]);
+            assert(!run.ok);
+            assertEquals(run.summary.error_code, "instance.host_unavailable");
+            assert(run.summary.failed.some((line: string) => line.startsWith("orbit-instances/instance-7: incus file pull /etc/hosts")), JSON.stringify(run.summary));
+            const files = f.state().files;
+            // The failed container keeps its hosts file and got its trust files before the name part.
+            assertEquals(files["instance-7/etc/hosts"].content, hosts);
+            assert(files["instance-7/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"] !== undefined);
+            // The other container went on, with its running kernel hostname as an alias.
+            assertEquals(files["instance-8/etc/hosts"].content, "127.0.1.1\tdefault.leden default default.dlf-leden instance-8\n127.0.0.1\tlocalhost\n");
+            assertEquals(files["instance-10/etc/hosts"].content, "127.0.1.1\tfeature.leden feature instance-10\n127.0.0.1\tlocalhost\n");
+            assert(!run.summary.failed.some((line: string) => line.includes("instance-10")), JSON.stringify(run.summary));
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
     name: "a Node without a readable Orbit root CA fails the step by name and writes nothing",
     ignore: !hasAnsible,
     async fn() {
@@ -344,7 +454,7 @@ Deno.test({
             const state = f.state();
             state.instances.push({ name: "app-default", project: "orbit-instances", status: "Running" });
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-            const run = pass(f.folder, `${f.folder}/missing.crt`);
+            const run = await pass(f.folder, `${f.folder}/missing.crt`);
             assert(!run.ok);
             assertEquals(run.summary.error_code, "instance.host_unavailable");
             assertStringIncludes(run.summary.message, "no readable Orbit root CA");
@@ -363,7 +473,7 @@ const listed = (summary: { browser_trust: { container: string; reason: string }[
 Deno.test({
     name: "only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits",
     ignore: !hasAnsible,
-    fn() {
+    async fn() {
         // The second container's user had opened the store already; the third holds the entry from an earlier converge.
         const own = "library=\nname=NSS Internal PKCS #11 Module\nparameters=configdir='sql:/home/agent/.pki/nssdb'\nNSS=Flags=internal\n";
         const f = containers([
@@ -379,7 +489,7 @@ Deno.test({
             },
         });
         try {
-            let run = pass(f.folder);
+            let run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             // A stopped or frozen container can wake while the step runs, so it gets no store now: the next converge that finds it
             // running writes it.
@@ -409,12 +519,12 @@ Deno.test({
                 "orbit-instances/app-open/home/agent/.pki/nssdb/pkcs11.txt",
             ]);
             // A second pass writes nothing. Once the stopped container runs, the next converge writes its store.
-            run = pass(f.folder);
+            run = await pass(f.folder);
             assertEquals(run.summary.written, []);
             const woken = f.state();
             woken.instances.find((row: { name: string }) => row.name === "app-asleep").status = "Running";
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(woken));
-            run = pass(f.folder);
+            run = await pass(f.folder);
             assertEquals(listed(run.summary), { "app-frozen": "not running" });
             assertEquals(f.state().files[`app-asleep${browserTrust.path}`].content, browserTrust.entry);
         } finally {
@@ -426,7 +536,7 @@ Deno.test({
 Deno.test({
     name: "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs",
     ignore: !hasAnsible,
-    fn() {
+    async fn() {
         const planted = {
             "run-link": { dirs: [".pki", ".pki/nssdb"], links: { ".pki/nssdb/pkcs11.txt": "/etc/passwd" } },
             "run-file": { dirs: [".pki"], files: { ".pki/nssdb": "planted" } },
@@ -444,7 +554,7 @@ Deno.test({
         const f = containers([...Object.keys(planted).map((name) => ({ name, status: "Running" })), { name: "app-default", status: "Running" }],
             { dirs, files, links });
         try {
-            const run = pass(f.folder);
+            const run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             assertEquals(listed(run.summary), {
                 "run-dirlink": "path refused: /home/agent/.pki is symlink",
@@ -471,10 +581,10 @@ Deno.test({
 Deno.test({
     name: "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest",
     ignore: !hasAnsible,
-    fn() {
+    async fn() {
         const f = containers([{ name: "app-default", status: "Running" }, { name: "app-gone", status: "Running" }], { dirs: homes(["app-default"]) });
         try {
-            const run = pass(f.folder);
+            const run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             assertEquals(listed(run.summary), { "app-gone": "no agent home" });
             assertEquals(run.summary.skipped, []);
@@ -492,7 +602,7 @@ Deno.test({
 Deno.test({
     name: "a container whose libp11-kit0 is not the trust module's version is listed with both versions, and agent takes an Orbit entry out of its store; the step passes",
     ignore: !hasAnsible,
-    fn() {
+    async fn() {
         const own = "library=\nname=NSS Internal PKCS #11 Module\n";
         const f = containers([
             { name: "app-default", status: "Running" }, { name: "app-old", status: "Running" }, { name: "app-none", status: "Running" },
@@ -503,7 +613,7 @@ Deno.test({
             packages: { "app-old": { "libp11-kit0": "0.25.5-3" }, "app-none": { "libp11-kit0": null }, "app-later": { "libp11-kit0": "0.26.3-1" } },
         });
         try {
-            const run = pass(f.folder);
+            const run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             assertEquals(listed(run.summary), {
                 "app-later": "version mismatch: 0.26.3-1 != 0.26.2-2",
@@ -525,7 +635,7 @@ Deno.test({
 Deno.test({
     name: "a container whose dpkg status or user output is not UTF-8, or whose store step hangs, is listed and fails nothing",
     ignore: !hasAnsible,
-    fn() {
+    async fn() {
         const status = new TextEncoder().encode("Package: libp11-kit0\nStatus: install ok installed\nArchitecture: amd64\nVersion: 0.26.2-2\nDescription: ");
         const raw = btoa(String.fromCharCode(...status, 0xff, 0xfe, 0x0a));
         const f = containers([
@@ -534,7 +644,7 @@ Deno.test({
         ], { dirs: homes(["app-default", "app-bytes", "app-noisy", "app-hung"]), raw_status: { "app-bytes": raw },
             agent_bytes: ["app-noisy"], agent_hangs: ["app-hung"] });
         try {
-            const run = pass(f.folder);
+            const run = await pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
             // A status that is not UTF-8 still reads: its libp11-kit0 matches, so that container gets its store.
             assertEquals(listed(run.summary), { "app-hung": "store failed: timeout", "app-noisy": "store failed: exit 0" });

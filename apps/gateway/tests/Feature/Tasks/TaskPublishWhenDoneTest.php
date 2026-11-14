@@ -53,6 +53,15 @@ function whenDonePublishes(Task $group): int
     return Operation::query()->where('kind', OperationKinds::TasksPublish)->where('target_id', $group->id)->count();
 }
 
+/** Ends the group's open publish as its run would: failed with this code, and its group lock released. */
+function whenDoneEndPublish(Task $group, string $code = TaskDonePublication::LockTimeoutCode): Operation
+{
+    $operation = Operation::query()->where('kind', OperationKinds::TasksPublish)->where('target_id', $group->id)->whereNotIn('status', OperationStatus::terminalValues())->sole();
+    $operation->update(['status' => OperationStatus::Failed, 'error_code' => $code, 'result' => ['error_code' => $code], 'lock_key' => null, 'finished_at' => now()]);
+
+    return $operation;
+}
+
 it('publishes the done check of a pr_when_done group by itself, as a ready pull request with Orbit\'s title and body', function (): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
@@ -74,7 +83,7 @@ it('publishes the done check of a pr_when_done group by itself, as a ready pull 
         ->and(app(OperationIdempotency::class)->key)->toBeNull();
 });
 
-it('never starts the publish of the same done check twice, also after its run failed', function (): void {
+it('never starts the publish of the same done check twice, also after its run failed on anything but a lock timeout', function (): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     whenDoneTick();
@@ -203,7 +212,7 @@ it('stores a stopped copy as a refusal the group shows, and does not try that ch
         ->and(whenDonePublishes($group))->toBe(0);
 });
 
-it('shows a cancelled or failed publish of the done check as refused, whoever started it, and the tick does not start it again', function (string $caller, OperationStatus $status, ?string $code, string $shown): void {
+it('shows a cancelled publish of the done check, or one that failed on anything but a lock timeout, as refused, whoever started it, and the tick does not start it again', function (string $caller, OperationStatus $status, ?string $code, string $shown): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
     $publish = Operation::query()->create(['kind' => OperationKinds::TasksPublish, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $world->group->id, 'node_id' => null,
@@ -379,4 +388,118 @@ it('takes a raw empty JSON object over HTTP as the release, and keeps the 422 on
 
     $plain = Task::query()->create(['project_id' => $world->group->project_id, 'title' => 'VM group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
     $post($plain, 'release-2')->assertStatus(422)->assertJsonPath('error.code', 'validation.failed')->assertJsonStructure(['error' => ['details' => ['check']]]);
+});
+
+it('starts a done check again after its publish timed out on a lock, under the key of its attempt, and shows it publishing until the third', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    $base = 'pr-when-done:'.$world->group->id.':'.$world->check->id;
+    whenDoneTick();
+    $first = whenDoneEndPublish($world->group);
+
+    expect(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('publishing')
+        ->and(TaskPublicationData::fromModel($world->group)?->errorCode)->toBeNull();
+    foreach ([2, 3] as $attempt) {
+        $result = whenDoneTick()[0];
+        $operation = Operation::query()->findOrFail($result['operation']);
+        expect($result)->toMatchArray(['result' => 'admitted', 'code' => null])
+            ->and($operation->idempotency_key)->toBe($base.':'.$attempt)
+            ->and($operation->idempotency_fingerprint)->toBe(hash('sha256', "tasks.publish|{$world->group->id}|{$world->check->id}|{$attempt}"))
+            ->and($operation->input['check'])->toBe($world->check->id)
+            ->and($world->group->refresh()->publish_refusal)->toBeNull();
+        $last = whenDoneEndPublish($world->group);
+        expect(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe($attempt < 3 ? 'publishing' : 'refused');
+    }
+
+    $results = whenDoneTick();
+
+    $group = $world->group->refresh();
+    expect($first->idempotency_key)->toBe($base)
+        ->and($results)->toBe([['group' => $group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => 'tasks.publish_lock_timeout', 'operation' => $last->id]])
+        ->and(whenDonePublishes($group))->toBe(3)
+        ->and($group->publish_refusal)->toBeNull()
+        ->and(TaskPublicationData::fromModel($group)?->state)->toBe('refused')
+        ->and(TaskPublicationData::fromModel($group)?->errorCode)->toBe('tasks.publish_lock_timeout')
+        ->and(TaskPublicationData::fromModel($group)?->operationId)->toBe($last->id);
+});
+
+it('starts no retry while the earlier publish of the group still runs', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    $first = whenDoneEndPublish($world->group);
+    $second = whenDoneTick()[0];
+
+    // The retry still runs: a group with an open Operation is not done, so the tick passes it by and starts no third.
+    expect($second)->toMatchArray(['result' => 'admitted'])->and($second['operation'])->not->toBe($first->id)
+        ->and(whenDoneTick())->toBe([])
+        ->and(whenDonePublishes($world->group))->toBe(2);
+
+    // A hand publish that runs holds the retry the same way, and the tick stores nothing.
+    whenDoneEndPublish($world->group);
+    $hand = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    expect(whenDoneTick())->toBe([])
+        ->and(whenDonePublishes($world->group))->toBe(3)
+        ->and($world->group->refresh()->publish_refusal)->toBeNull()
+        ->and(TaskPublicationData::fromModel($world->group)?->state)->toBe('publishing')
+        ->and(TaskPublicationData::fromModel($world->group)?->operationId)->toBe($hand->id);
+});
+
+it('admits a hand publish of a done check whose publish timed out on a lock, before and after the last retry', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    whenDoneEndPublish($world->group);
+
+    $hand = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    expect($hand->triggered_by)->toBe('person')->and($hand->input['check'])->toBe($world->check->id);
+
+    whenDoneEndPublish($world->group);
+    whenDoneTick();
+    whenDoneEndPublish($world->group);
+    expect(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('refused');
+
+    $again = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    expect($again->status->terminal())->toBeFalse()->and(whenDonePublishes($world->group))->toBe(4);
+});
+
+it('keeps a refusal after a lock timeout a refusal: the tick does not start that check again', function (string $code): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    whenDoneEndPublish($world->group);
+    whenDoneTick();
+    $refused = whenDoneEndPublish($world->group, $code);
+
+    expect(whenDoneTick())->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => $code, 'operation' => $refused->id]])
+        ->and(whenDonePublishes($world->group))->toBe(2)
+        ->and(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('refused')
+        ->and(TaskPublicationData::fromModel($world->group)?->errorCode)->toBe($code);
+})->with(['tasks.publish_secret_content', 'tasks.push_failed', 'tasks.publish_failed']);
+
+it('keeps a refused check refused when a later publish of it timed out on a lock', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    $refused = whenDoneEndPublish($world->group, 'tasks.publish_secret_content');
+    app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    whenDoneEndPublish($world->group);
+
+    expect(whenDoneTick())->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => 'tasks.publish_secret_content', 'operation' => $refused->id]])
+        ->and(whenDonePublishes($world->group))->toBe(2)
+        ->and(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('refused')
+        ->and(TaskPublicationData::fromModel($world->group)?->errorCode)->toBe('tasks.publish_secret_content');
+});
+
+it('shows a lock timeout of a group that the tick does not publish as refused at once', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    $timedOut = whenDoneEndPublish($world->group);
+
+    $publication = TaskPublicationData::fromModel($world->group->refresh());
+    expect($publication?->state)->toBe('refused')
+        ->and($publication?->errorCode)->toBe('tasks.publish_lock_timeout')
+        ->and($publication?->operationId)->toBe($timedOut->id)
+        ->and(whenDoneTick()[0])->toMatchArray(['result' => 'waiting'])
+        ->and(whenDonePublishes($world->group))->toBe(1);
 });

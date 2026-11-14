@@ -1,0 +1,49 @@
+---
+# The presented machine name of the container (docs/reference/development-containers.md#the-machine-name): `/etc/hostname`, the
+# `/etc/machine-info` that stock T3 reads for its label, and the `127.0.1.1` line of `/etc/hosts`. The files go through the file API;
+# instance_machine_name.py `render`, run on the Node, is the one rule of their text. Nothing restarts.
+# Inputs: `machine_name_push` (the `incus --project` argv), `machine_name_container`, `machine_name` (hostname and pretty), and
+# `machine_name_live`: true only for a container this run made, after its first start, whose kernel hostname changes at once through
+# `machine_name_root` (the `incus exec ... --` argv as root). A stopped container takes the files before its start, so its boot gives
+# the kernel and T3 the name.
+# Whole bytes: the command keeps a file's last newline.
+- name: Read the files of the machine name
+  ansible.builtin.command:
+    argv: "{{ machine_name_push + ['file', 'pull', machine_name_container ~ item, '-'] }}"
+    strip_empty_ends: false
+  loop: [/etc/hostname, /etc/machine-info, /etc/hosts]
+  register: machine_name_held
+  changed_when: false
+  # Incus 7 answers a missing file with exactly this text (instance_container_files.py MISSING_FILE); any other failure fails.
+  failed_when: >-
+    machine_name_held.rc != 0 and machine_name_held.stderr | trim != 'Error: file does not exist'
+
+- name: Render the files of the machine name
+  ansible.builtin.command:
+    argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_machine_name.py') }}", render]
+    stdin: >-
+      {{ {'files': dict(machine_name_held.results | map(attribute='item')
+                        | zip(machine_name_held.results | map(attribute='rc') | map('ternary', none, '') | list)) | combine(
+                          dict(machine_name_held.results | selectattr('rc', 'equalto', 0) | map(attribute='item')
+                               | zip(machine_name_held.results | selectattr('rc', 'equalto', 0) | map(attribute='stdout')))),
+          'hostname': machine_name.hostname, 'pretty': machine_name.pretty, 'container': machine_name_container,
+          'kernel': none} | to_json }}
+  register: machine_name_rendered
+  changed_when: false
+
+# A container without /etc/hosts keeps it missing: the line alone would drop localhost.
+- name: Write the changed files of the machine name
+  when: item.key != '/etc/hosts' or machine_name_held.results[2].rc == 0
+  ansible.builtin.command:
+    argv: >-
+      {{ machine_name_push + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-', machine_name_container ~ item.key] }}
+    stdin: "{{ item.value }}"
+    stdin_add_newline: false
+  loop: "{{ (machine_name_rendered.stdout | from_json).files | dict2items }}"
+  loop_control: { label: "{{ item.key }}" }
+  changed_when: true
+
+- name: Give the new container its hostname now
+  when: machine_name_live | bool
+  ansible.builtin.command: { argv: "{{ machine_name_root + ['hostname', '-F', '/etc/hostname'] }}" }
+  changed_when: true

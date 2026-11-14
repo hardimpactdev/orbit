@@ -216,6 +216,7 @@ jobs:
       workflowIdOrName: task-instance-workspace
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: preflight
         intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} }}'
     dependsOn:
@@ -232,6 +233,7 @@ jobs:
       workflowIdOrName: task-instance-workspace
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: export
         intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle", "environment_path": inputs.intent.workspace.environment_path, "worker_environment": steps["Create publication scratch"].outputs.stdout.trim() + "/environment", "proposed_body_path": ".git/orbit/proposed-pr-bodies/" + inputs.intent.branch + ".md", "worker_proposed_body": steps["Create publication scratch"].outputs.stdout.trim() + "/proposed-body"} }}'
     dependsOn:
@@ -509,7 +511,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-import-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-import-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 60 git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" "$ORBIT_REF:refs/heads/candidate"
@@ -625,7 +627,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-content-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-content-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: |
@@ -873,7 +875,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-push-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-push-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 60 git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC" >"$ORBIT_DIRECTORY/push.stdout" 2>"$ORBIT_DIRECTORY/push.stderr"
@@ -1083,6 +1085,7 @@ jobs:
       workflowIdOrName: task-instance-workspace
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: discard
         intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint} }}'
     allowFailure: true

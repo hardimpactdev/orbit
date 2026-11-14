@@ -170,7 +170,7 @@ Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", a
         assertEquals(payload.script, await Deno.readTextFile(asset("scripts/instance_clone.py")));
         assertEquals(payload.guest, await Deno.readTextFile(asset("scripts/instance_clone_guest.py")));
         for (const [key, name] of Object.entries({ node_services: "instance_node_services", mail: "instance_mail",
-            bridge: "instance_bridge", node: "instance_node_runtime" })) {
+            bridge: "instance_bridge", node: "instance_node_runtime", machine_name: "instance_machine_name" })) {
             assertEquals(payload.bundle[key], await Deno.readTextFile(asset(`ansible/${name}.py`)));
         }
         const first = cloneSteps.find((step) => step.name === "clone-input")!;
@@ -273,7 +273,7 @@ Deno.test("nested clone input ships the composed pre-start policy and keeps the 
                 assert(manifest.additionalFiles.includes("ansible/instance_nested_club_key.sh"));
             } else {
                 assertEquals(payload.network, normal);
-                assertEquals(Object.keys(payload.bundle).sort(), ["bridge", "mail", "node", "node_services"]);
+                assertEquals(Object.keys(payload.bundle).sort(), ["bridge", "machine_name", "mail", "node", "node_services"]);
             }
         } finally { await Deno.remove(folder, {recursive: true}); }
     }

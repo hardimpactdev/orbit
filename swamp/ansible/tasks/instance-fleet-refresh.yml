@@ -6,8 +6,9 @@
 # `grants` reloads the nested Swamp's grants, `tokens` reads the nested Swamp's tokens when the oldest may be due, `rules` reads the fleet
 # files, and `converge` waits for the three agents and converges the base of the three nested Nodes one by one. The converge is also due 7
 # days after the last one that ran. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
-# retaken, with those containers stopped and started again, only for the containers whose disks changed: the migrate applied a
-# migration, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. The record is removed before the
+# retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants or a remint
+# changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
+# does not: a reset migrates after its restore (instance-fleet-migrate.yml). The record is removed before the
 # first write to a nested disk and written again last, so a run that stops in the middle leaves none. Input: instance-fleet.yml. The model
 # is the task VM refresh (task-vm-fleet.yml), from the Node through the Instance container.
 # The nested Gateway's Swamp runs only with the Club key file. Without it, the grants are not reloaded and the Swamp units are not checked.
@@ -157,21 +158,13 @@
   register: fleet_tokens
   changed_when: true
 # The migrate runs whenever the code changed: `apps/gateway` holds its migrations and the Composer lock of the packages that ship
-# migrations too. Only a migrate that applied one changed the nested Gateway's disk; any other output counts as applied.
-- name: Migrate the nested Gateway
-  when: fleet_due.code
-  ansible.builtin.command:
-    argv: >-
-      {{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd', intent.fleet.checkout.path ~ '/apps/gateway', '--']
-         + fleet_as_app_user + ['php', 'artisan', 'migrate', '--force'] }}
-  register: fleet_migrate
-  changed_when: "'Nothing to migrate' not in fleet_migrate.stdout"
-# The services also restart after a remint: Horizon keeps the run and read tokens of `.env` for its life.
-- name: Restart the services
-  when: fleet_due.code or fleet_tokens is changed
-  ansible.builtin.command:
-    argv: "{{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'systemctl', 'restart'] + fleet_gateway_services }}"
-  changed_when: true
+# migrations too. The services restart when the code changed or the tokens were reminted. A migration does not retake `base`: a reset
+# migrates after its restore (instance-fleet-migrate.yml).
+- name: Migrate and restart the nested Gateway
+  ansible.builtin.include_tasks: instance-fleet-migrate.yml
+  vars:
+    fleet_migrate_due: "{{ fleet_due.code }}"
+    fleet_restart_due: "{{ fleet_due.code or fleet_tokens is changed }}"
 # One read of all the services, every run: `systemctl is-active` prints one state per unit, in order, and its exit says only that one of
 # them is active, so each line is checked. With the Club key it covers Swamp serve and its three workers, which readiness does not.
 - name: Read the services
@@ -328,8 +321,9 @@
   register: fleet_snapshots
   changed_when: false
 # `base` is retaken only for the containers whose disk changed. A reset restores `base` of all three, so the set must stay consistent:
-# - a step that writes a nested container's own disk and reported a change (`fleet_disk_writers`: the migrate and the grants of the
-#   nested Gateway): that container's `base`;
+# - a step that writes a nested container's own disk and reported a change (`fleet_disk_writers`: the grants and a remint of the
+#   nested Gateway): that container's `base`. A migration is no such writer: a reset migrates after its restore
+#   (instance-fleet-migrate.yml), so `base` need not hold each schema;
 # - a converge that changed a Node: that Node's `base` and the nested Gateway's, whose database records the converge;
 # - a missing `base`: that container's;
 # - a missing or unreadable record, or a fleet rule or file that differed: all three, with the rules applied on a stopped fleet.
@@ -347,7 +341,7 @@
       {{ out }}
     # Every step that writes to a nested container's own disk, with that container's role. A step that reported a change marks its
     # container for `base`. A new writer joins this list. The remint writes the tokens, `.env` and the Swamp state of the nested Gateway. The converges mark their Node and the nested Gateway, which records them.
-    fleet_disk_writers: "{{ [['gateway', fleet_migrate], ['gateway', fleet_grants], ['gateway', fleet_tokens]] }}"
+    fleet_disk_writers: "{{ [['gateway', fleet_grants], ['gateway', fleet_tokens]] }}"
     fleet_changed_roles: >-
       {{ (fleet_disk_writers | selectattr('1', 'changed') | map('first') | list) + fleet_converge_changed_roles
          + (['gateway'] if fleet_converge_changed_roles | length > 0 else []) }}

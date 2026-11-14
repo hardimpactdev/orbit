@@ -96,6 +96,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-files.yml
   - ansible/tasks/instance-fleet-reset.yml
+  - ansible/tasks/instance-fleet-migrate.yml
   - ansible/tasks/instance-fleet-resume.yml
   - ansible/route-create-site.yml
   - ansible/route-withdraw.yml
@@ -178,6 +179,8 @@ additionalFiles:
   - ansible/instance-connection-environment.yml
   - ansible/instance_env_keys.py
   - ansible/instance_node_services.py
+  - ansible/instance_machine_name.py
+  - ansible/tasks/instance-machine-name.yml
   - ansible/instance_shape_tools.py
   - ansible/instance_mail.py
   - ansible/instance_mail_line.py

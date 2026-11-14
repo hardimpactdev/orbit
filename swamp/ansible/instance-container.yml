@@ -10,6 +10,9 @@
 #     `fleet_restore`, then `start` and `fleet_resume`. One run holds the phases that share their failure handling: `phases`, a
 #     comma-separated list in order with the same tags, such as `-e phases=start,fetch --tags start,fetch`.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
+#   `container` (a create, and a move's container phase) writes the presented machine name after the first start, and `start`
+#     before it boots a stopped container (tasks/instance-machine-name.yml); a clone gets `/etc/machine-info` as a
+#     boot file before its first start, so T3 shows the name from its first start, and the rest right after that start (instance_clone.py).
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
 # the Gateway's admitted intent in the run folder; `intent.container` names the container, its paths, its ACL and its units.

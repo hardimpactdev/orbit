@@ -78,7 +78,7 @@ final class TaskPublicationData extends Data
         if ($refusal !== null && $refusal['check_id'] === $check->id) {
             return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, null, $refusal['code']);
         }
-        $failed = TaskDonePublication::unsuccessful($group, $check);
+        $failed = TaskDonePublication::unsuccessful($group, $check, $mode);
         if ($failed instanceof Operation) {
             return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, $failed->id, TaskDonePublication::code($failed));
         }
