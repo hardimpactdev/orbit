@@ -263,7 +263,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "b7763bc04df102c73f43c19d5036fef25f76456d66b851b86f3fa67df09d7744",
+    "source_sha256": "4ca9f634c7d8c79fe693641f8d15f73e03db9da5a9371014ba01364ddcc3f003",
     "cases": [
       "the saved dir host system boundary matches the shipped tasks",
       "the saved dir host prepare boundary matches the shipped tasks",

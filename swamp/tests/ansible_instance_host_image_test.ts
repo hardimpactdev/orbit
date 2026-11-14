@@ -169,7 +169,7 @@ for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit
         name: `${temporary} refuses an inherited unguarded profile NIC before starting`,
         ignore: !hasAnsible,
         async fn() {
-            const f = pool === "zfs" ? await fixture({pool}, "system", ["prepare"]) : await fixture({pool});
+            const f = pool === "zfs" ? await fixture({pool}, "system", ["prepare"]) : await fixture({pool}, "system", ["prepare", "normal", "nested", "finish"]);
             try {
                 const state = f.state();
                 state.projects.push({name: "orbit-instances", config: {"features.networks": "false", "features.profiles": "true", "features.images": "true"}});
@@ -180,6 +180,8 @@ for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit
 
                 assert(!result.ok, result.output);
                 assertStringIncludes(result.output, "instance.container_network_unsafe");
+                assert(f.state().profiles["orbit-instances"].devices.eth0);
+                assert(f.state().profiles["orbit-instances"].devices.eth1);
                 assert(f.calls().some((call) => call.includes(temporary) && call.includes(temporary === "orbit-instance-build" ? "init" : "copy")));
                 assert(!f.calls().some((call) => call.includes("start") && call.includes(temporary)));
                 assert(!f.state().instances.some((row: {name: string}) => ["orbit-instance-build", "orbit-clone-probe", "orbit-clone-probe-copy"].includes(row.name)));
@@ -231,7 +233,7 @@ Deno.test({
     name: "a prepared-image replacement rechecks the local socket despite the default remote",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({}, "finish", ["identity", "normal", "finish"]);
+        const f = await fixture({}, "finish", ["prepare", "normal", "nested", "finish"]);
         try {
             const remote = f.state();
             Deno.writeTextFileSync(`${f.folder}/remote-state.json`, JSON.stringify(remote));
@@ -250,7 +252,7 @@ Deno.test({
     name: "a failed replacement cleans up through the rechecked local socket and leaves the default remote intact",
     ignore: !hasAnsible,
     async fn() {
-        const f = await fixture({}, "remote-replaced", ["identity", "normal", "finish"]);
+        const f = await fixture({}, "remote-replaced", ["prepare", "normal", "nested", "finish"]);
         try {
             const remote = JSON.parse(Deno.readTextFileSync(`${f.folder}/remote-state.json`));
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify({ ...f.state(), sudo_paths: "user:ubuntu" }));

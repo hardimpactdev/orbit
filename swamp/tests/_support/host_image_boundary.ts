@@ -83,7 +83,7 @@ export function restore(f: Fixture, boundary: Boundary) {
     assertEquals(capture(f), boundary);
 }
 
-export type Stage = "identity" | "system" | "prepare" | "normal" | "nested" | "finish";
+export type Stage = "system" | "prepare" | "normal" | "nested" | "finish";
 export function stages(f: Fixture) {
     const path = `${f.folder}/tasks/instance-host.yml`;
     const tasks = JSON.parse(Deno.readTextFileSync(path));
@@ -92,15 +92,11 @@ export function stages(f: Fixture) {
     const nested = tasks.findIndex((t: { name: string }) => t.name === "Build the nested-fleet Instance image");
     const finish = tasks.findIndex((t: { name: string }) => t.name === "Check every Instance bridge NIC at the end of the role");
     assertEquals([prepared > 0, normal > prepared, nested === normal + 1, finish === nested + 1], [true, true, true, true]);
-    const identityTasks = JSON.parse(Deno.readTextFileSync(`${f.folder}/tasks/task-container-host-prepare.yml`));
-    const identityStart = identityTasks.findIndex((t: { name: string }) => t.name === "Read the image daemon identity");
-    const identityEnd = identityTasks.findIndex((t: { name: string }) => t.name === "Reconcile the independent stock container image");
-    assertEquals(identityEnd - identityStart, 7);
-    const ranges = { identity: [0, 0], system: [0, prepared], prepare: [prepared, normal], normal: [normal, nested], nested: [nested, finish], finish: [finish, tasks.length] };
+    const ranges = { system: [0, prepared], prepare: [prepared, normal], normal: [normal, nested], nested: [nested, finish], finish: [finish, tasks.length] };
     return async (stage: Stage) => {
         const [start, end] = ranges[stage];
         const saved = f.has("boundary-facts.json") ? [{ "ansible.builtin.include_vars": `${f.folder}/boundary-facts.json` }] : [];
-        Deno.writeTextFileSync(path, JSON.stringify([...saved, ...(stage === "identity" ? [{ block: identityTasks.slice(identityStart, identityEnd), vars: { container_host: { fail: "instance.host_unavailable" } } }] : tasks.slice(start, end)), {
+        Deno.writeTextFileSync(path, JSON.stringify([...saved, ...tasks.slice(start, end), {
             name: "Save the image fixture boundary facts",
             "ansible.builtin.copy": { dest: `${f.folder}/boundary-facts.json`, content: "{{ dict(instance_pool_read=dict(rc=instance_pool_read.rc, stdout=instance_pool_read.stdout), container_arc_max=container_arc_max | default(0), container_image_directory=container_image_directory | default(''), container_image_socket=container_image_socket | default('')) | to_json }}", mode: "0600" },
             changed_when: false,
