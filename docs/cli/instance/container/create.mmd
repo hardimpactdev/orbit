@@ -26,6 +26,7 @@ sequenceDiagram
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
   %%> - a nested-fleet Project: the Node has the nested-fleet switch, else the placement rule refuses
+  %%> - a nested-fleet default whose runtime records an inner volume refuses `instance.inner_volume_clone_unavailable` (409) before any record: the clone of the volume follows separately
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
@@ -51,6 +52,7 @@ sequenceDiagram
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
     %%> - a default with a remote Node service target: writes the base `NO_PROXY` files into the stopped copy before its first start, so units start without the default's hosts
+    %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, and a root volume without `zfs.delegate`
     %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
