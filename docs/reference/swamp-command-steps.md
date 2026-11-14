@@ -95,6 +95,8 @@ Status and summary counts cover the full fan-out. Stderr is excluded. This lets 
 
 When one action runs as one of several guarded steps, such as one per placement, `alternatives` lists the other steps beside `step`. The step that ran is the end check: when the run succeeds, it must have succeeded. Only native declarations take `alternatives`. `database.read` uses it for its SSH read and its read on 209.
 
+A result-reporting declaration may name one `fallback` step of the same job. When `step` was skipped or did not run, the fallback's status and its stdout are the result. When `step` ran, the fallback is not read. `instance.create` reads `finish`, or `clone-register` when a ready clone skipped `finish`. A native declaration takes no `fallback`.
+
 The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
 
 A successful run must show the named step succeeded. When it shows the step skipped or failed, the reconciler fails the Operation with `operation.result_unreadable` and frees its target at once ([How an operation runs](/reference/operations#how-an-operation-runs)). An absent or unfinished step reads again in the next pass. A child run, a scheduled read and `instance.migrate` keep treating the state as unavailable. `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it.

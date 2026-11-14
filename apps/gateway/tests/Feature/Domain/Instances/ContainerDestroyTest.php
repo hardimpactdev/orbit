@@ -249,7 +249,7 @@ it('removes container Processes and disabled Conn records and frees the port onl
         ->not->toContain('instance-create-model-'.Operation::query()->where('target_id', $default->id)->value('id'));
 })->with(['clone' => false, 'migrated checkout' => true]);
 
-it('deletes the clone stdin copy of a failed and of a cancelled create, which keep their Instance, at its destroy', function (string $status): void {
+it('deletes the clone stdin and stage copies of a create, also a failed or cancelled one that keeps its Instance, at its destroy', function (string $status): void {
     $default = destroyDefault();
     $clone = destroyClone($default);
     // A failed or cancelled create keeps its reserved Instance (retained_for_retry); its execution copies stay until this destroy.
@@ -260,8 +260,8 @@ it('deletes the clone stdin copy of a failed and of a cancelled create, which ke
 
     $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
     expect($clone->fresh())->toBeNull()
-        ->and($deleted)->toContain('instance-create-clone-'.$create->id, 'instance-git-credential-'.$create->id, 'instance-create-model-'.$create->id);
-})->with(['failed', 'cancelled']);
+        ->and($deleted)->toContain('instance-create-clone-'.$create->id, 'instance-create-stage-'.$create->id, 'instance-git-credential-'.$create->id, 'instance-create-model-'.$create->id);
+})->with(['failed', 'cancelled', 'succeeded']);
 
 it('keeps retained Git findable in the destroy result after deleting a migrated Instance', function (): void {
     $clone = destroyClone(destroyDefault(), true);

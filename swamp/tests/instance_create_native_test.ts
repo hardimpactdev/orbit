@@ -91,9 +91,11 @@ async function fixture(mode: Mode) {
     const valid = await call("workflow", "validate", created.name);
     assert(valid.ok, valid.stderr + valid.stdout);
     const input = JSON.stringify({
-        operation_id: 1, node_id: 3, kind: "instance.create", execution_secrets: {},
+        // The stage copy and its launcher, as the Gateway sends them for every clone (CloneStage); the input must accept them.
+        operation_id: 1, node_id: 3, kind: "instance.create", execution_secrets: { clone_stage: { vault: "orbit-control-inputs", key: "instance-create-stage-1" } },
         // A normal clone as NativeDevelopmentInstanceInput hands it over: no database, Route or fleet in its create.
-        intent: { instance_id: 8, already_active: false, name_converted_from: null, container: { clone: { source: "instance-7" }, project: "orbit-instances", mail: null, steps: [], processes: [] },
+        intent: { instance_id: 8, already_active: false, name_converted_from: null, clone_launcher: "print('launcher')",
+            container: { clone: { source: "instance-7" }, project: "orbit-instances", mail: null, steps: [], processes: [] },
             // A Route only when the admission took the free Route Nodes (RoutePublicationHolds::admit).
             database: null, server_database: null, server_valkey: null, processes: [], setup_steps: [],
             route: mode.startsWith("route") ? { leaf_indexes: [0] } : null, route_mutations: mode.startsWith("route") ? { artifacts: {}, restore: {} } : null,

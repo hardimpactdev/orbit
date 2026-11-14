@@ -73,13 +73,18 @@ final readonly class NativeDevelopmentInstanceInput
         // its placeholder model key and model origin after the line, so the container phase writes T3's files before the copy's first
         // start and T3 starts with the copy (docs/reference/development-containers.md#t3-starts-with-the-copy).
         $model = $clone ? app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()) : null;
-        app(InstanceGitHubReadTokens::class)->start($operation, $model === null ? '' : InstanceContainer::ModelEnvironmentFrame."\n".$model);
-
         $club = NestedFleetClubKey::forRun($container === null ? null : ValidatedData::object($container));
+        // A clone's stage copy: the release scripts and this run's container intent, then the private text of its clone copy.
+        $stage = $clone ? new CloneStage : null;
+        app(InstanceGitHubReadTokens::class)->start($operation, $model === null ? '' : InstanceContainer::ModelEnvironmentFrame."\n".$model,
+            $stage === null || $club['container'] === null ? '' : $stage->payload($club['container'],
+                ValidatedData::string(ValidatedData::object(ValidatedData::object($input['ssh_execution'])['target'])['user'])));
 
         return ['intent' => [...$plan, 'container' => $club['container'], 'ssh_execution' => $input['ssh_execution'],
             ...($clone ? ['database' => null] : []),
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
+            // The program a clone's first step runs: it stages the stage copy's public line, then runs the container part.
+            ...($stage === null ? [] : ['clone_launcher' => $stage->launcher()]),
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
             // A clone's own Valkey user: the clone run's second `operation-database-create` child.
@@ -96,6 +101,7 @@ final readonly class NativeDevelopmentInstanceInput
                 ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
                     ValidatedData::string($processEnvironments))]),
                 'git_credential' => $clone ? InstanceGitHubReadTokens::cloneReference($operation) : InstanceGitHubReadTokens::credentialReference($operation),
+                ...($clone ? ['clone_stage' => CloneStage::reference($operation)] : []),
                 // A nested-fleet container's Club key, delivered into its /run at its start.
                 ...$club['copies'],
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
