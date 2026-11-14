@@ -136,8 +136,8 @@ final readonly class InstanceContainer
 
     /**
      * Reserves the container's runtime row: the lowest free guest address of the Node's bridge (the bridge keeps the first usable
-     * address and the image build the last) and the shared folder versions the Node installs now. A clone also gets the lowest free
-     * T3 port and names the default it copies; the default gets no T3 port.
+     * address and the image build the last) and the shared folder versions the Node installs now. A clone also gets the next free
+     * T3 port ({@see self::nextT3Port()}) and names the default it copies; the default gets no T3 port.
      */
     public function reserve(Instance $instance, Node $node, ?Instance $source = null): InstanceRuntime
     {
@@ -168,9 +168,7 @@ final readonly class InstanceContainer
         $port = null;
         // Every Instance but the default runs T3: a clone, and a checkout Instance that moved into a container.
         if ($instance->name !== 'default') {
-            $ports = array_map(ValidatedData::integer(...), InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->pluck('t3_port')->all());
-            $port = array_first(array_diff(range(self::T3PortFirst, self::T3PortLast), $ports))
-                ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node has no free T3 port.', 409);
+            $port = self::nextT3Port($node);
         }
         $plan = InstanceFolderPlan::for($folders);
 
@@ -183,6 +181,26 @@ final readonly class InstanceContainer
             'inner_volume' => $source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject
                 ? NestedFleetInnerVolume::name(self::name($instance)) : null,
         ]);
+    }
+
+    /**
+     * The first free T3 port after the last one the Node gave, wrapping from 3999 to 3800, recorded as the Node's last. A port that a
+     * destroy freed comes back only after every other free port, so a client that saved the old server under that address does not
+     * meet a new server there at once (development-containers.md#prepare-a-node).
+     */
+    private static function nextT3Port(Node $node): int
+    {
+        $taken = array_map(ValidatedData::integer(...), InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->pluck('t3_port')->all());
+        $last = Node::query()->whereKey($node->id)->value('t3_port_last');
+        $last = is_numeric($last) ? (int) $last : null;
+        $after = $last !== null && $last >= self::T3PortFirst && $last < self::T3PortLast ? $last + 1 : self::T3PortFirst;
+        // `range()` counts down when its end is below its start, so the wrapped part is empty when the order starts at 3800.
+        $order = [...range($after, self::T3PortLast), ...($after > self::T3PortFirst ? range(self::T3PortFirst, $after - 1) : [])];
+        $port = array_first(array_diff($order, $taken))
+            ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node has no free T3 port.', 409);
+        Node::query()->whereKey($node->id)->update(['t3_port_last' => $port]);
+
+        return $port;
     }
 
     /** A web-serving Project needs its PHP version, and the runtime folder its static build: FrankenPHP serves it. */
