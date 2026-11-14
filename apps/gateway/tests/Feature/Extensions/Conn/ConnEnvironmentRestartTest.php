@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
@@ -153,7 +154,7 @@ it('admits one restart on the Instance lock with an intent that holds no session
         ->and($operation->lock_key)->toBe('instance:'.$clone->id)
         ->and($operation->triggered_by)->toBe('node:1')
         ->and($operation->input)->toBe(['instance_id' => $clone->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $clone->id, 't3_port' => App\Domain\Instances\InstanceHostIntent::T3Port, 'name' => 'clone.shop', 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
+            'intent' => ['instance_id' => $clone->id, 't3_port' => InstanceHostIntent::T3Port, 'name' => 'clone.shop', 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]]])
         ->and(json_encode($operation->input))->not->toContain('gateway-session');
 });
