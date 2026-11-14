@@ -271,7 +271,7 @@ class InstanceShapeToolsTest(unittest.TestCase):
         self.assertEqual(result['tools'], 'built')
         apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
         self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update',
-                               '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv zip unzip jq'])
+                               '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv zip unzip jq btrfs-progs'])
 
     def test_host_programs_missing_beside_ready_tools_are_installed_once_then_only_read(self):
         self.keep()
@@ -288,6 +288,18 @@ class InstanceShapeToolsTest(unittest.TestCase):
         result, calls = self.keep(STUB_VENV_FAIL='1')
         self.assertEqual((result['tools'], result['reason']), ('present', 'current'))
         self.assertFalse([call for call in calls if 'apt-get' in call])
+
+    def test_a_default_made_before_the_image_carried_btrfs_progs_gets_it_once_beside_ready_tools(self):
+        # Instance 2454's shape: its image had no btrfs-progs, so the inner Incus cannot make its btrfs pool on the inner volume
+        # (docs/reference/development-containers.md#convert-a-default). Every other package and the tools are in place.
+        self.keep()
+        self.stub('dpkg-query', 'case "${@: -1}" in btrfs-progs) exit 1;; esac\nprintf \'install ok installed\'\n')
+        self.log.write_text('')
+        result, calls = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('built', 'missing'))
+        apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
+        self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update', '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- btrfs-progs'])
+        self.assertFalse([call for call in calls if call.startswith(str(self.tools))], 'ready tools are not built again')
 
     def test_a_failed_package_read_is_the_package_step(self):
         # dpkg-query prints bytes that are not UTF-8: the read raises, and the step still names itself in the one result line.

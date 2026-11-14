@@ -36,7 +36,7 @@ final readonly class NestedFleetIntent
         if ($runtime->t3_port !== null || ! InstancePlacement::keepsFleet($instance->project, $instance->node, $runtime->incus_project)) {
             return null;
         }
-        $this->assertNoCopyInFlight($instance);
+        self::assertNoCopyInFlight($instance);
 
         return $this->fleet($instance);
     }
@@ -88,16 +88,17 @@ final readonly class NestedFleetIntent
 
     /**
      * A refresh replaces the seed that a clone copies, so it is not admitted while the create of a clone of this default is open
-     * (docs/reference/development-containers.md#refresh-after-a-release).
+     * (docs/reference/development-containers.md#refresh-after-a-release); neither is a change of the default's inner volume record
+     * (InstanceInnerVolumeCommand).
      */
-    private function assertNoCopyInFlight(Instance $instance): void
+    public static function assertNoCopyInFlight(Instance $instance): void
     {
         $open = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')
             ->whereNotIn('status', OperationStatus::terminalValues())
             ->whereIn('target_id', InstanceRuntime::query()->where('clone_source_instance_id', $instance->id)->select('instance_id'))
             ->exists();
         if ($open) {
-            throw new ResourceOperationException('instance.clone_in_flight', 'A clone of the nested-fleet default is being created; the refresh waits until it ends.', 409);
+            throw new ResourceOperationException('instance.clone_in_flight', 'A clone of the nested-fleet default is being created; try again when it has ended.', 409);
         }
     }
 }

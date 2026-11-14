@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "108945f060588af2f6d2c1d60931cc0e67470667d66f1a1a54bb6a3b2ec2e1ff"
+source_sha256 = "ae97f27291fc53e9017ed3e677fb194976b3b930bdbde43b12ab533bd1222e71"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -87,6 +87,7 @@ cases = [
   "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
   "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
   "a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half",
+  "a default converted in place starts only with both records, its next deployment takes the seed pair, and a failure before it restores nothing",
   "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
@@ -117,6 +118,9 @@ after_merge_cases = [
   "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
   "a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half",
   "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
+  # The conversion of Instance 2454's shape in place (37s locally, run in full before the PR): like the seed pair cases. The PR keeps the
+  # guard over the Gateway's converted intent in NestedFleetHostingTest ("the inner volume of a converted default").
+  "a default converted in place starts only with both records, its next deployment takes the seed pair, and a failure before it restores nothing",
   # The inner volume cases, 20 to 31s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard PR limit.
   # The PR keeps the guard's volume keys in instance_clone_test.py (InnerVolumeGuardTest).
   "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",

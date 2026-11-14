@@ -2949,6 +2949,61 @@ Deno.test({
   },
 });
 
+// docs/reference/development-containers.md#convert-a-default: a nested-fleet default made without an inner volume (Instance 2454) gets
+// the small map, the volume and its disk by hand, and both records by the two Gateway commands. Its seed is one container snapshot.
+Deno.test({
+  name: "a default converted in place starts only with both records, its next deployment takes the seed pair, and a failure before it restores nothing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      nestedCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      const head = git(f.source, "rev-parse", "HEAD");
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: []});
+      // The hand steps on the stopped container.
+      const converted = f.state();
+      const row = converted.containers["instance-7"];
+      row.status = "Stopped";
+      row.config = row.config.map((setting: string) => setting.startsWith("security.idmap.size=") ? "security.idmap.size=1165536" : setting);
+      converted.volumes = {"inner-7": {pool: "orbit-instances", project: "orbit-instances-nested", config: {"volatile.uuid": "v", ...INNER_CONFIG, size: "30GiB"}}};
+      row.added = {...row.added, "inner-pool": {type: "disk", settings: ["pool=orbit-instances", "source=inner-7", "path=/srv/inner-pool"]}};
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(converted));
+      // Only the ID map record: the guard refuses the disk that no record names, and the container stays stopped.
+      const container = f.container as unknown as Record<string, unknown> & {config: Record<string, string>};
+      container.config = {...NESTED_CONFIG, "security.idmap.size": "1165536"};
+      f.write();
+      let result = f.run("start");
+      assert(!result.ok && result.output.includes("instance.container_network_unsafe: inner-pool"), result.output);
+      assertEquals(f.state().containers["instance-7"].status, "Stopped");
+      // Both records: the intent a new nested default's create has, with the small map.
+      innerVolumeCreate(f);
+      container.config = {...NESTED_CONFIG, "security.idmap.size": "1165536"};
+      f.intent.fleet = fleetIntent();
+      f.write();
+      // A deployment that fails before its seed finds only the one-snapshot seed, which has no volume half: it restores nothing.
+      assert(!f.run("fleet_restore").ok);
+      assertEquals(f.result(), {error_code: "instance.fleet_seed_missing"});
+      assertEquals(f.state().containers["instance-7"].restored, undefined);
+      delete f.intent.fleet;
+      f.intent.deployment = {variant: "container"};
+      f.write();
+      for (const phase of ["start", "fetch", "checkout", "seed"]) {
+        result = f.run(phase);
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+      // The new pair takes the seed's name beside the old one-snapshot seed, at the same commit; the old half goes only after it.
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      const calls = incusCalls(f).map((call) => call.join(" "));
+      const take = calls.findIndex((call) => call.includes(`snapshot create instance-7 next-${head}`));
+      const volume = calls.findIndex((call) => call.includes(`storage volume snapshot create orbit-instances inner-7 next-${head}`));
+      const drop = calls.findIndex((call) => call.includes(`snapshot delete instance-7 seed-${head}`));
+      assert(take >= 0 && take < volume && volume < drop, JSON.stringify(calls));
+    } finally { f.cleanup(); }
+  },
+});
+
 Deno.test({
   name: "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
   ignore: !hasAnsible,
