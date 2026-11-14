@@ -43,4 +43,28 @@ final class ConnThreadData extends Data
             seenAt: $thread->seen_at->toIso8601String(),
         );
     }
+
+    /**
+     * The same row, built as an array straight from the table, for the list: a list of thousands of rows would spend most of its time
+     * casting and serializing models. The stored times are UTC in `Y-m-d H:i:s`, so each becomes ISO 8601 by its separator and offset.
+     *
+     * @return array<string, mixed>
+     */
+    public static function fromRow(\stdClass $row, string $environmentId, int $projectId): array
+    {
+        $time = static fn (mixed $value): ?string => is_string($value) ? str_replace(' ', 'T', $value).'+00:00' : null;
+
+        return [
+            'environment_id' => $environmentId,
+            'instance_id' => (int) $row->instance_id,
+            'project_id' => $projectId,
+            'thread_id' => (string) $row->thread_id,
+            'title' => (string) $row->title,
+            'state' => is_string($row->state) ? $row->state : null,
+            'needs_input' => (bool) $row->needs_input,
+            'last_user_message_at' => $time($row->last_user_message_at),
+            'last_run_completed_at' => $time($row->last_run_completed_at),
+            'seen_at' => (string) $time($row->seen_at),
+        ];
+    }
 }

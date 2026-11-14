@@ -16,7 +16,6 @@ use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
 use Orbit\Extensions\Conn\Http\Requests\ListConnThreadsRequest;
 use Orbit\Extensions\Conn\Http\Requests\RecordConnThreadRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
-use Orbit\Extensions\Conn\Models\ConnThread;
 
 /** The thread index of container T3 servers (docs/reference/conn.md#thread-index). */
 final class ConnThreadsController extends Controller
@@ -29,7 +28,7 @@ final class ConnThreadsController extends Controller
         ['environments' => $environments, 'threads' => $threads] = $index->list($caller, $request->projectId(), $request->instanceId());
 
         return response()->json([
-            'data' => $threads->map(static fn (ConnThread $thread): array => ConnThreadData::fromModel($thread)->toArray())->values()->all(),
+            'data' => $threads,
             'meta' => [
                 'request_id' => $request->attributes->getString('orbit.request_id'),
                 // Every server the list covers, also one without threads: when the Gateway last read it, and why that read failed.
@@ -54,11 +53,11 @@ final class ConnThreadsController extends Controller
         if ($environment->instance_id === null) {
             throw new ResourceOperationException('conn.thread_index_unsupported', 'Only the T3 server of a container Instance has a thread index.', 409);
         }
-        $thread = $index->record($environment, $request->threadId(), $request->title());
+        ['thread' => $thread, 'created' => $created] = $index->record($environment, $request->threadId(), $request->title());
 
         return response()->json([
             'data' => ConnThreadData::fromModel($thread)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ], $thread->wasRecentlyCreated ? 201 : 200);
+        ], $created ? 201 : 200);
     }
 }

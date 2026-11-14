@@ -14,14 +14,22 @@ use App\Models\Operation;
 use App\Models\Project;
 use Carbon\CarbonImmutable;
 use Illuminate\Console\Scheduling\Schedule;
+use Illuminate\Database\DeadlockException;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Exceptions;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Testing\TestResponse;
+use Orbit\Extensions\Conn\Data\ConnThreadData;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnThreadIndex;
+use Orbit\Extensions\Conn\Domain\T3AdminSession;
+use Orbit\Extensions\Conn\Domain\T3EnvironmentDescriptor;
+use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnThread;
 
@@ -185,6 +193,49 @@ describe('the poll', function (): void {
         Http::assertNothingSent();
     });
 
+    it('drops a read that began before the server\'s last recorded read, so it never brings back a removed thread', function (): void {
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        Http::fake(['*' => function () use ($tool): mixed {
+            // While this read is on its way, a newer read ends: it removed `gone` and keeps `kept`.
+            $tool->forceFill(['threads_read_at' => now()->addSeconds(5)])->save();
+            ConnThread::query()->create(['conn_environment_id' => $tool->id, 'instance_id' => $tool->instance_id, 'thread_id' => 'kept', 'title' => 'Kept',
+                'seen_at' => now()->addSeconds(5)]);
+
+            return Http::response(stockShell([stockThread('gone'), stockThread('kept')]));
+        }]);
+
+        $results = app(ConnThreadIndex::class)->pass();
+
+        expect($results[0]['outcome'])->toBe('superseded')->and(ConnThread::query()->pluck('thread_id')->all())->toBe(['kept']);
+    });
+
+    it('skips a server whose write fails, reports it, and still writes the others', function (): void {
+        Exceptions::fake();
+        $broken = indexedClone($this->beast, $this->project, 'broken', 'http://10.44.0.7:3841');
+        indexedClone($this->beast, $this->project, 'fine', 'http://10.44.0.7:3842');
+        ConnEnvironment::updating(function (ConnEnvironment $environment) use ($broken): void {
+            if ($environment->id === $broken->id) {
+                throw new RuntimeException('database is locked');
+            }
+        });
+        Http::fake(['*' => Http::response(stockShell([stockThread('t1')]))]);
+
+        $results = collect(app(ConnThreadIndex::class)->pass())->keyBy('environment_id');
+
+        expect($results['env-broken'])->toMatchArray(['outcome' => 'skipped', 'reason' => 'conn.index_write_failed'])
+            ->and($results['env-fine']['outcome'])->toBe('read')
+            ->and(ConnThread::query()->where('conn_environment_id', $broken->id)->count())->toBe(0);
+        // A busy SQLite says "database is locked"; the transaction reports it as a deadlock.
+        Exceptions::assertReported(DeadlockException::class);
+    });
+
+    it('writes a shell of 3,000 threads, more than one statement may bind', function (): void {
+        indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        Http::fake(['*' => Http::response(stockShell(array_map(fn (int $i): array => stockThread('t'.$i), range(1, 3000))))]);
+
+        expect(app(ConnThreadIndex::class)->pass()[0]['outcome'])->toBe('read')->and(ConnThread::query()->count())->toBe(3000);
+    });
+
     it('is scheduled every minute on the problems queue only while the switch is on and Conn is enabled', function (bool $switch, bool $conn, bool $due): void {
         config(['orbit.conn.thread_index_poll' => $switch]);
         app(ExtensionStore::class)->set('conn', $conn);
@@ -222,20 +273,38 @@ describe('the list', function (): void {
         Http::assertNothingSent();
     });
 
-    it('reads a running server through when its last read is older than ten seconds, and not an asleep one', function (): void {
+    it('reads through only the one Instance it names, when its last read is older than ten seconds and it runs', function (): void {
         $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
         $asleep = indexedClone($this->beast, $this->project, 'asleep', 'http://10.44.0.7:3841');
         $asleep->instance->runtime()->update(['power_state' => 'stopped']);
         $tool->forceFill(['threads_read_at' => now()->subSeconds(11)])->save();
         Http::fake(['http://10.44.0.7:3840/*' => Http::response(stockShell([stockThread('fresh')]))]);
 
-        $response = threadsCall($this->phone, 'GET', 'threads')->assertOk();
+        // A Project's list and the full list read only the index, however old its rows are.
+        threadsCall($this->phone, 'GET', 'threads')->assertOk()->assertJsonPath('data', [])
+            ->assertJsonPath('meta.environments.0.read_at', '2026-11-14T11:59:49+00:00');
+        threadsCall($this->phone, 'GET', 'threads?project='.$this->project->id)->assertOk()->assertJsonPath('data', []);
+        threadsCall($this->phone, 'GET', 'threads?instance='.$asleep->instance_id)->assertOk();
+        Http::assertNothingSent();
+
+        $response = threadsCall($this->phone, 'GET', 'threads?instance='.$tool->instance_id)->assertOk();
 
         Http::assertSentCount(1);
         expect($response->json('data.0.thread_id'))->toBe('fresh')->and($response->json('meta.environments.0.read_at'))->toBe('2026-11-14T12:00:00+00:00');
         CarbonImmutable::setTestNow(CarbonImmutable::parse('2026-11-14 12:00:09'));
-        threadsCall($this->phone, 'GET', 'threads')->assertOk();
+        threadsCall($this->phone, 'GET', 'threads?instance='.$tool->instance_id)->assertOk();
         Http::assertSentCount(1);
+    });
+
+    it('lists rows built from the table exactly as the thread record shapes them', function (): void {
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        ConnThread::query()->create(['conn_environment_id' => $tool->id, 'instance_id' => $tool->instance_id, 'thread_id' => 't1', 'title' => 'One',
+            'state' => 'waiting', 'needs_input' => true, 'last_user_message_at' => now()->subMinute(), 'seen_at' => now()]);
+        ConnThread::query()->create(['conn_environment_id' => $tool->id, 'instance_id' => $tool->instance_id, 'thread_id' => 't2', 'title' => 'Two', 'seen_at' => now()]);
+
+        $listed = threadsCall($this->phone, 'GET', 'threads')->assertOk()->json('data');
+
+        expect($listed)->toBe(ConnThread::query()->orderBy('id')->get()->map(fn (ConnThread $thread): array => ConnThreadData::fromModel($thread)->toArray())->all());
     });
 });
 
@@ -251,6 +320,25 @@ describe('the write-through', function (): void {
         expect(threadsCall($this->phone, 'GET', 'threads')->json('data.*.title'))->toBe(['Fix the login form'])
             ->and(json_encode(Activity::query()->where('description', 'conn:thread:record')->pluck('properties')->all()))->toContain('conn-1')->not->toContain('Fix the login');
         Http::assertNothingSent();
+    });
+
+    it('cuts a long title to 255 characters and keeps the state a read wrote', function (): void {
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        ConnThread::query()->create(['conn_environment_id' => $tool->id, 'instance_id' => $tool->instance_id, 'thread_id' => 'conn-1', 'title' => 'Old',
+            'state' => 'running', 'seen_at' => now()->subMinute()]);
+
+        threadsCall($this->phone, 'POST', 'environments/env-clone/threads', ['thread_id' => 'conn-1', 'title' => str_repeat('x', 5000)])->assertOk()
+            ->assertJsonPath('data.state', 'running')->assertJsonPath('data.title', str_repeat('x', 255));
+    });
+
+    it('reports a failed write of a task copy\'s thread and never fails the turn', function (): void {
+        Exceptions::fake();
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        Schema::drop('conn_threads');
+
+        app(ConnThreadIndex::class)->recordThread($tool->instance, 'mcp:1', 'Orbit task 5 thread 9');
+
+        Exceptions::assertReported(QueryException::class);
     });
 
     it('refuses a caller without node access, a host server and a missing body', function (): void {
@@ -293,6 +381,42 @@ describe('sleep and destroy', function (): void {
         Http::assertSentCount(1);
         expect(ConnThread::query()->sole()->thread_id)->toBe('last')
             ->and(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(1);
+    });
+
+    it('bounds the last read to three seconds, and a failed read never stops the sleep', function (): void {
+        Exceptions::fake();
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        $client = new class implements T3ServerClient
+        {
+            public ?float $timeout = null;
+
+            public function describe(string $baseUrl): T3EnvironmentDescriptor
+            {
+                throw new LogicException('unused');
+            }
+
+            public function session(string $baseUrl, string $adminSession): T3AdminSession
+            {
+                throw new LogicException('unused');
+            }
+
+            public function shell(string $baseUrl, string $adminSession): array
+            {
+                throw new LogicException('unused');
+            }
+
+            public function shells(array $servers, float $timeoutSeconds): array
+            {
+                $this->timeout = $timeoutSeconds;
+
+                throw new RuntimeException('the pool broke');
+            }
+        };
+        app()->instance(T3ServerClient::class, $client);
+
+        expect(app(InstanceSleep::class)->start($tool->instance, null, null)->kind)->toBe(InstanceSleep::Kind)
+            ->and($client->timeout)->toBe(3.0);
+        Exceptions::assertReported(RuntimeException::class);
     });
 
     it('drops the rows with the Instance\'s server when the Instance is destroyed', function (): void {

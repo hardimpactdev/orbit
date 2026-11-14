@@ -92,8 +92,9 @@ final readonly class HttpT3ServerClient implements T3ServerClient
         foreach ($servers as $key => $server) {
             $response = $responses[(string) $key] ?? null;
             try {
-                $shells[$key] = $this->json($server['url'], 'shell', static fn (): Response => $response instanceof Throwable ? throw $response
-                    : ($response instanceof Response ? $response : throw new ConnectionException('No response.')));
+                // Any failure of one request in the pool is that server's: it did not answer.
+                $shells[$key] = $response instanceof Response ? $this->json($server['url'], 'shell', static fn (): Response => $response)
+                    : T3ServerException::unreachable($server['url'], $response instanceof Throwable ? $response : null);
             } catch (T3ServerException $exception) {
                 $shells[$key] = $exception;
             }

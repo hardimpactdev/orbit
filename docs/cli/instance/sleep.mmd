@@ -21,7 +21,8 @@ sequenceDiagram
   %%> - the idle sleep of the runtime hibernator, every 10 min, after it read no HTTP, wake or T3 activity for an hour and no running turn (docs/reference/development-containers.md#sleep-and-wake)
   Note over GW: Last read of T3 threads<br/>Conn thread index
   %%> When:
-  %%> - before the admission and outside the Instance lock, only while Conn and its index switch `ORBIT_CONN_THREAD_INDEX_POLL` are on; the sleep switch does not matter
+  %%> - after the refusals and the replay of a repeated request, before the Instance lock; within 3 seconds
+  %%> - only while Conn and its index switch `ORBIT_CONN_THREAD_INDEX_POLL` are on; the sleep switch does not matter
   %%> What it does:
   %%> - reads the container T3 server's threads once more, so the index keeps them while the Instance sleeps (docs/reference/conn.md#thread-index)
   %%> On failure:

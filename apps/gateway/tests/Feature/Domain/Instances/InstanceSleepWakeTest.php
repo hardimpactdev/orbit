@@ -111,6 +111,20 @@ it('lets the extensions read the threads one last time before the sleep is admit
     expect(app(InstanceSleep::class)->start($clone, null, null)->kind)->toBe(InstanceSleep::Kind);
 });
 
+it('lets no extension read a refused Instance before its refusal', function (): void {
+    sleepingClone(taskOwned: true);
+    $contribution = Mockery::mock(InstanceThreadContribution::class);
+    $contribution->shouldNotReceive('beforeSleep');
+    app()->instance(InstanceThreadContributions::class, new InstanceThreadContributions([$contribution]));
+    $clone = Instance::query()->where('name', 'clone')->firstOrFail();
+    $default = Instance::query()->where('name', 'default')->firstOrFail();
+
+    foreach ([[$default, 'instance.sleep_unsupported'], [$clone, 'instance.lifecycle_busy']] as [$instance, $code]) {
+        expect(fn () => app(InstanceSleep::class)->start($instance, null, null))->toThrow(
+            fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code));
+    }
+});
+
 it('refuses a sleep that the Instance does not allow, before any run', function (string $case, string $code): void {
     $clone = sleepingClone(taskOwned: $case === 'task');
     match ($case) {

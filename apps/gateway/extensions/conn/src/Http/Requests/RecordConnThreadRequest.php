@@ -14,7 +14,7 @@ final class RecordConnThreadRequest extends FormRequest
     {
         return [
             'thread_id' => ['required', 'string', 'max:255'],
-            'title' => ['required', 'string', 'max:2000'],
+            'title' => ['required', 'string'],
         ];
     }
 

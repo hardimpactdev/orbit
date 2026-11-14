@@ -29,13 +29,11 @@ final readonly class InstanceSleep extends InstancePower
         return InstanceRuntimePowerState::Stopped;
     }
 
-    /** The extensions read the server's threads one last time first, outside the Instance lock: a sleeping server cannot be read. */
+    /** The extensions read the server's threads one last time, after the refusals and outside the Instance lock: a sleeping server cannot be read. */
     #[\Override]
-    public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
+    protected function beforeAdmission(Instance $instance): void
     {
         app(InstanceThreadContributions::class)->beforeSleep($instance);
-
-        return parent::start($instance, $caller, $requestId);
     }
 
     protected function refuse(Instance $instance, InstanceRuntime $runtime): void

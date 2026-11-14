@@ -254,7 +254,7 @@ The index stores no message text. The title is the only text, and it can still l
 
 Every minute, one pass reads the shell of every container server whose Instance runs: `GET /api/orchestration/shell` with the admin session the Gateway holds and renews, and `x-t3-orchestration-protocol: 2`, the read of the [idle sleep](#the-idle-sleeps-read). It writes nothing in the container. All servers are read at once; each has 3 seconds to connect and 10 seconds in total, so one server never holds the pass. The pass is the command `conn:threads:read`, a unique job on the `problems` queue of the [Gateway queue](/reference/gateway-queue#scheduled-work). It waits behind task work and never runs on `operations`; it ends within seconds, so a release's Horizon hand-over waits at most one pass.
 
-A server's read replaces its rows: each listed thread is written, and a thread that left the shell leaves the index. A row that a write-through recorded after the read began stays. A server that is not read keeps its rows and their `seen_at`, and its record says why in `threads_read_error`:
+A server's read replaces its rows: each listed thread is written, and a thread that left the shell leaves the index. A row that a write-through recorded after the read began stays. A read that began before the server's last recorded read is dropped, so a slow read never brings back a thread that a newer read removed. A server that is not read keeps its rows and their `seen_at`, and its record says why in `threads_read_error`:
 
 | Reason | Meaning |
 | --- | --- |
@@ -263,18 +263,29 @@ A server's read replaces its rows: each listed thread is written, and a thread t
 | `conn.server_unreachable` | The server did not answer within its bounds. |
 | `conn.session_rejected`, `conn.request_refused` | T3 refused the read. |
 | `conn.response_invalid` | The shell did not have the shape the index reads. |
+| `conn.index_write_failed` | The Gateway could not write the server's rows, for example while SQLite stayed busy. The error is reported; the next pass tries again. |
+
+A failure of one server never ends the pass, and a failed read or write never fails its caller: the sleep, the task turn or the list.
 
 ### The switch
 
-Every read of a server by the index waits for the operator's switch `ORBIT_CONN_THREAD_INDEX_POLL` (`orbit.conn.thread_index_poll`): the minute poll, the list's read-through and the last read before a sleep. It is off by default. Turn it on in `/home/orbit/shared/gateway.env` and [apply the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed, and the next scheduler tick sees it. While it is off, the routes and the write-through still run: the list shows only written-through rows and reads no server.
+Every read of a server by the index waits for the operator's switch `ORBIT_CONN_THREAD_INDEX_POLL` (`orbit.conn.thread_index_poll`): the minute poll, the read-through of one Instance's list and the last read before a sleep. It is off by default. Turn it on in `/home/orbit/shared/gateway.env` and [apply the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed, and the next scheduler tick sees it. While it is off, the routes and the write-through still run: the list shows only written-through rows and reads no server.
+
+While the switch is off, nothing prunes the index: a thread that leaves its server stays in the index as the write-through recorded it. A thread leaves the index only through a read, so that rule holds only while the switch is on. Destroying the Instance still removes its rows.
 
 ### Write-through
 
 A thread is in the index at once when Orbit or Conn starts it. Conn records a thread it started with `POST /environments/{environment_id}/threads`, after it launched the thread on the server. A task copy's turn records the thread that `t3 thread start` made, with the turn's title, when the turn's projection commits. Both go through one rule: the row is written with `seen_at` now and keeps the state of the last read, null for a new row. A thread that an agent or a user starts on the server by other means appears with the next read.
 
+The write is one upsert on the row's key, so a read that writes the same thread at the same moment does not collide with it. A title longer than 255 characters is cut; a longer one is not refused.
+
 ### The list
 
-`GET /threads` returns the rows of the covered servers, the newest user message first, and `meta.environments`: every covered server with its `power_state`, `read_at` and `read_error`, also a server without threads. `project` and `instance`, both optional positive ids, narrow it. While the switch is on, the list first reads through each running server whose last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds.
+`GET /threads` returns the rows of the covered servers, the newest user message first, and `meta.environments`: every covered server with its `power_state`, `read_at` and `read_error`, also a server without threads. `project` and `instance`, both optional positive ids, narrow it.
+
+Browsing is one Gateway read. A list of every server, or of a Project, reads only the index and never a server; a device judges how fresh a server's rows are from its `read_at`.
+
+Only a list that names one `instance`, the server a device opens a thread on, reads that server through first: while the switch is on, the server runs and its last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds.
 
 ### Cost
 
@@ -287,11 +298,13 @@ Measured on 2026-11-14 on a nested test fleet, against stock T3 0.1.7 shells of 
 | 200 | 0.6 s, 2 s when it first writes 2,000 rows | 3.8 MB | +30.5 MB |
 | 200, 2 of them hanging | 10.6 s: the hanging ones end at their 10-second bound | 3.7 MB | +30.5 MB |
 
-A list of one Project or Instance answers in 30 to 130 ms, read-through included. An unfiltered list returns every covered server's rows, the asleep ones included: 2,000 rows (650 KB) take about 0.3 s. Its read-through of 43 servers adds about 0.2 s, and more while it waits for the poll's writes.
+A list reads only the index unless it names one Instance. Measured on the nested test fleet's Gateway over HTTPS, with 200 servers and 2,000 rows: the full list (630 KB) answers in 78 ms (median of 20; at most 139 ms), a Project's list in 86 ms, and one Instance's list in 30 to 150 ms. `GET /environments` for the same 200 servers took 123 ms. The list builds its rows straight from the table, without models. With real servers, one Instance's read-through added 70 to 130 ms on the test fleet.
 
 ### Sleep and removal
 
-Before a sleep is admitted, from the idle sleep or from [`instance:sleep`](/cli/instance/sleep), the index reads the server one last time, outside the Instance lock, with the poll's bounds. The sleep switch does not matter: the index's switch does. A failed read keeps the rows and does not stop the sleep. An asleep or stopped Instance keeps its last rows with their `seen_at` until it wakes and the next read runs. Destroying the Instance removes its server record, and the rows go with it.
+Before a sleep is admitted, from the idle sleep or from [`instance:sleep`](/cli/instance/sleep), the index reads the server one last time. It reads after the sleep's refusals and replay, so a refused or repeated request waits for no read, and outside the Instance lock. It waits at most 3 seconds.
+
+The sleep switch does not matter: the index's switch does. A failed read keeps the rows and does not stop the sleep. An asleep or stopped Instance keeps its last rows with their `seen_at` until it wakes and the next read runs. Destroying the Instance removes its server record, and the rows go with it.
 
 ## Threads in an Orbit Project
 

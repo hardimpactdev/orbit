@@ -25,6 +25,7 @@ sequenceDiagram
   %%> - all servers in one pool; each has 3 seconds to connect and 10 in total
   %%> On failure:
   %%> - a server that does not answer, refuses or answers nonsense is skipped with `conn.server_unreachable`, `conn.session_rejected`, `conn.request_refused` or `conn.response_invalid`; it keeps its rows and never holds the others
+  %%> - a failed write of one server's rows is reported and skipped with `conn.index_write_failed`; the pass goes on
   T3-->>GW: Threads and run state<br/>title · status · pending request
   Note over GW: Write the server's rows<br/>conn_threads
   %%> What it does:
@@ -47,12 +48,17 @@ sequenceDiagram
   %%> - node access, as for the server list: only servers whose Node the caller reaches
   %%> Narrows by:
   %%> - `project` or `instance`, both optional
-  opt rows older than 10 s
-    GW->>T3: Read through<br/>at most 0.5 s · switch on
+  %%> Reads:
+  %%> - the index only: browsing never reads a server; `meta.environments[].read_at` says how fresh each server's rows are
+  opt --instance, rows older than 10 s
+    GW->>T3: Read one server through<br/>at most 0.5 s · switch on
     %%> When:
-    %%> - only while the switch is on, for a running server whose last read is older than 10 seconds
+    %%> - only for a list that names one Instance, the server a device opens a thread on
+    %%> - only while the switch is on, the server runs and its last read is older than 10 seconds
     %%> On failure:
     %%> - the server keeps its rows and records the reason; the list does not try it again within 10 seconds
+    %%> Order:
+    %%> - a read that began before the server's last recorded read is dropped, so it never brings back a removed thread
     T3-->>GW: Threads and run state
   end
   GW-->>C: Rows with seen_at<br/>meta.environments
@@ -62,6 +68,6 @@ sequenceDiagram
   Note over GW: Last read before a sleep<br/>instance.sleep admission
   %%> When:
   %%> - before every sleep is admitted, from the idle sweep and from `instance:sleep`; the sleep switch does not matter, the index switch does
-  %%> - outside the Instance lock, with the poll's bounds; a failed read keeps the rows and does not stop the sleep
+  %%> - after the sleep's refusals and replay, outside the Instance lock, within 3 seconds; a failed read keeps the rows, is reported and does not stop the sleep
   %%> Result:
   %%> - the asleep Instance keeps these rows until it wakes; destroying it removes them with its server
