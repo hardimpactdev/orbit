@@ -21,9 +21,13 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
+use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Testing\TestResponse;
 use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
@@ -242,9 +246,14 @@ function reconcileSocket(?Operation $operation, string $status, string $cancel =
             $this->open = true;
         }
 
+        public ?Closure $onSend = null;
+
         public function send(array $message): void
         {
             $this->frames[] = $message;
+            if ($this->onSend !== null) {
+                ($this->onSend)($message);
+            }
         }
 
         public function receive(float $timeoutSeconds): array
@@ -514,8 +523,7 @@ describe('a cancel while a database copy runs', function (): void {
 
         // One pass: the read loop's check, then the send, which checks again.
         expect(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
-        (new ReflectionMethod(ReconcileSwampOperations::class, 'forwardCancel'))
-            ->invoke(new ReconcileSwampOperations, $operation, app(CancelSwampRun::class), app(OperationStore::class));
+        app(NativeRunCancellation::class)->forward($operation);
 
         expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'operation.cancel_copy_bound_passed'
@@ -529,8 +537,10 @@ describe('a cancel while a database copy runs', function (): void {
         $socket = reconcileSocket($operation, 'running');
 
         app(CancelOperationAction::class)->execute($operation);
+        expect(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel');
+        app(DeferredCallbackCollection::class)->invoke();
 
-        expect(array_column($socket->frames, 'type'))->toContain('workflow.cancel');
+        expect(array_count_values(array_column($socket->frames, 'type'))['workflow.cancel'] ?? 0)->toBe(1);
         Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'operation.cancel_copy_bound_passed'
             && $context['operation_id'] === $operation->id)->once();
     });
@@ -615,9 +625,7 @@ describe('a cancel while a database copy runs', function (): void {
         expect(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
         app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_started', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
         $socket = reconcileSocket($operation, 'running');
-        $forward = new ReflectionMethod(ReconcileSwampOperations::class, 'forwardCancel');
-
-        $forward->invoke(new ReconcileSwampOperations, $operation, app(CancelSwampRun::class), app(OperationStore::class));
+        app(NativeRunCancellation::class)->forward($operation);
 
         expect(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel')
             ->and($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
@@ -631,5 +639,88 @@ describe('a cancel while a database copy runs', function (): void {
         app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_completed', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
 
         expect(app(NativeRunCancellation::class)->awaitsForwarding($operation->refresh()))->toBeTrue();
+    });
+});
+
+describe('a cancel request answers before Swamp is asked', function (): void {
+    /** A caller that the Operation's Node grants access to, and the cancel call it makes. */
+    function cancelCall(Operation $operation): TestResponse
+    {
+        $caller = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'caller-'.uniqid(), 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.2.'.(Node::query()->count() + 10), 'wireguard_ip' => '10.44.2.'.(Node::query()->count() + 10), 'user' => 'orbit']));
+        $caller->accessibleNodes()->attach($operation->node_id);
+
+        return test()->withServerVariables(['REMOTE_ADDR' => $caller->wireguard_ip])->call('POST', '/api/v1/operations/'.$operation->id.'/cancel', [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}');
+    }
+
+    it('answers with the request recorded and asks Swamp once, after the response', function (): void {
+        Queue::fake();
+        $operation = copyingRun(step: 'clone-services');
+        $socket = reconcileSocket($operation, 'running');
+        $answered = false;
+        $sentAnswered = [];
+        Event::listen(RequestHandled::class, function () use (&$answered): void {
+            $answered = true;
+        });
+        $socket->onSend = function (array $frame) use (&$answered, &$sentAnswered): void {
+            if ($frame['type'] === 'workflow.cancel') {
+                $sentAnswered[] = $answered;
+            }
+        };
+
+        cancelCall($operation)->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.cancel_requested', true);
+
+        expect($sentAnswered)->toBe([true])
+            ->and($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->not->toBeNull();
+        Queue::assertNotPushed(ReconcileSwampOperations::class);
+    });
+
+    it('asks Swamp nothing for a held cancel, as before', function (): void {
+        $operation = copyingRun();
+        $socket = reconcileSocket($operation, 'running');
+
+        cancelCall($operation)->assertOk()->assertJsonPath('data.cancel_requested', true);
+
+        expect(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel')
+            ->and($operation->refresh()->state['native_cancel_requested_at'] ?? null)->not->toBeNull();
+    });
+
+    it('asks Swamp again after the response for an operator\'s cancel of a timed-out run', function (): void {
+        Queue::fake();
+        $expired = app(ExpireOperationAction::class)->execute(runningScript());
+        $expired->update(['state' => [...$expired->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+        $socket = reconcileSocket($expired, 'running');
+
+        app(CancelOperationAction::class)->execute($expired->refresh());
+        expect(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel');
+        app(DeferredCallbackCollection::class)->invoke();
+
+        expect(array_count_values(array_column($socket->frames, 'type'))['workflow.cancel'] ?? 0)->toBe(1);
+    });
+
+    it('sends nothing when the run ended before the forward ran', function (): void {
+        $operation = copyingRun(step: 'clone-services');
+        $socket = reconcileSocket($operation, 'running');
+        app(CancelOperationAction::class)->execute($operation);
+        $operation->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(), 'lock_key' => null]);
+
+        app(DeferredCallbackCollection::class)->invoke();
+
+        expect(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel');
+    });
+
+    it('keeps the request recorded for the reconciler when the forward fails', function (): void {
+        Log::spy();
+        $operation = copyingRun(step: 'clone-services');
+        reconcileSocket($operation, 'running', cancel: 'error');
+
+        app(CancelOperationAction::class)->execute($operation);
+        app(DeferredCallbackCollection::class)->invoke();
+
+        $operation->refresh();
+        expect($operation->state['native_cancel_requested_at'] ?? null)->not->toBeNull()
+            ->and($operation->state['native_cancel_confirmed_at'] ?? null)->toBeNull()
+            ->and(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message): bool => $message === 'operation.cancel_forward_deferred')->once();
     });
 });

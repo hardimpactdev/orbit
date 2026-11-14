@@ -412,7 +412,9 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 ## Cancel an operation
 
-`operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway asks Swamp to cancel that run. The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
+`operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway records the request and answers; it asks Swamp to cancel that run right after the answer, through the same send path as the reconciler, which stays the retry. So the caller reads the Operation still `running`, with `cancel_requested: true`.
+
+The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
 
 A cancelled container create with its original Instance still retained for retry reports `recovery.state=retained_for_retry`, even before work starts. Its result names the [retry and destroy paths](/cli/instance/create#on-a-container-node); destroy remains unavailable for a container default.
 

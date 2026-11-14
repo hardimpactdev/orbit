@@ -46,9 +46,11 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Models\Schedule;
+use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -83,9 +85,14 @@ beforeEach(function (): void {
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
 
+        public ?Closure $onSend = null;
+
         public function send(array $message): void
         {
             $this->messages[] = $this->last = $message;
+            if ($this->onSend !== null) {
+                ($this->onSend)($message);
+            }
             if ($message['type'] === 'workflow.trigger.remove' && $this->onTriggerRemoval !== null) {
                 $callback = $this->onTriggerRemoval;
                 $this->onTriggerRemoval = null;
@@ -825,6 +832,27 @@ describe('a removal while the clone\'s completion runs', function (): void {
         connRemovalCall($waiting->id, ['acknowledge_unsaved' => true], 'remove-slow')->assertAccepted()->assertJsonPath('data.status', 'waiting');
 
         connRemovalCall($failed->id, ['acknowledge_unsaved' => true], 'remove-broken')->assertAccepted()->assertJsonPath('data.status', 'queued');
+    });
+
+    it('asks Swamp once, after the answer, to stop a completion that no copy holds', function (): void {
+        [$instance, $completion] = connCompletingClone();
+        $run = $completion->state['swamp_run_id'];
+        app(NativeRunProgress::class)->apply($completion->id, $run, ['kind' => 'step_started', 'stepId' => 'clone-services', 'jobId' => 'complete', 'seq' => 1]);
+        $answered = false;
+        $sentAnswered = [];
+        Event::listen(RequestHandled::class, function () use (&$answered): void {
+            $answered = true;
+        });
+        $this->socket->onSend = function (array $message) use (&$answered, &$sentAnswered): void {
+            if ($message['type'] === 'workflow.cancel') {
+                $sentAnswered[] = $answered;
+            }
+        };
+
+        connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->assertJsonPath('data.status', 'waiting');
+
+        expect($sentAnswered)->toBe([true])
+            ->and($completion->refresh()->state['native_cancel_requested_at'] ?? null)->not->toBeNull();
     });
 
     it('holds the completion\'s cancel while its database fill runs, then cancels it and runs the removal', function (): void {

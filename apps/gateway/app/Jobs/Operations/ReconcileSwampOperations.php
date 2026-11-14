@@ -13,12 +13,10 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationReconcileHealth;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Tasks\TaskVmAdmission;
-use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\ReadNativeRunFailure;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampTerminalOutputUnavailable;
@@ -30,7 +28,6 @@ use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Throwable;
@@ -59,15 +56,15 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
     }
 
-    public function handle(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store): void
+    public function handle(SwampCommandStep $step, ExpireOperationAction $expire): void
     {
         $started = hrtime(true);
         $health = new OperationReconcileHealth;
-        $operations = $this->pass($step, $expire, $cancel, $store, $health);
+        $operations = $this->pass($step, $expire, $health);
         $health->record($started, $operations);
     }
 
-    private function pass(SwampCommandStep $step, ExpireOperationAction $expire, CancelSwampRun $cancel, OperationStore $store, OperationReconcileHealth $health): int
+    private function pass(SwampCommandStep $step, ExpireOperationAction $expire, OperationReconcileHealth $health): int
     {
         $kinds = array_keys(app(DirectOperation::class)->definitions());
         if ($kinds === []) {
@@ -76,7 +73,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         $operations = 0;
         $started = microtime(true);
         $cancellation = app(NativeRunCancellation::class);
-        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancel, $store, $cancellation, $started, $health, &$operations): void {
+        OperationRunBudgets::duringTick(function () use ($kinds, $step, $expire, $cancellation, $started, $health, &$operations): void {
             $forward = [];
             foreach (self::open($kinds)->lazyById() as $operation) {
                 $operations++;
@@ -112,7 +109,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
                     break;
                 }
                 try {
-                    $this->forwardCancel($operation, $cancel, $store);
+                    $cancellation->forward($operation);
                 } catch (Throwable $exception) {
                     $this->warn($operation, $exception);
                 }
@@ -237,25 +234,5 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
         if ($atDeadline) {
             $expire->execute($operation->refresh());
         }
-    }
-
-    /** Asks Swamp to cancel the run and records the confirmation, unless the request was recorded again while Swamp answered. */
-    private function forwardCancel(Operation $operation, CancelSwampRun $cancel, OperationStore $store): void
-    {
-        // The reads of this pass can take a while: a database copy that started since then holds the cancel again.
-        $operation->refresh();
-        if (! app(NativeRunCancellation::class)->awaitsForwarding($operation)) {
-            return;
-        }
-        $requested = $operation->state['native_cancel_requested_at'] ?? null;
-        app(NativeRunCancellation::class)->logBoundPassed($operation);
-        $cancel->execute($operation);
-        DB::transaction(function () use ($operation, $store, $requested): void {
-            $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
-            $state = $current->state ?? [];
-            if (($state['native_cancel_requested_at'] ?? null) === $requested) {
-                $store->change($current, ['state' => [...$state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
-            }
-        });
     }
 }
