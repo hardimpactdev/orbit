@@ -4,8 +4,8 @@
 CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
-are left to CI and named as skipped. A changed test file, fixture toml or CI file adds CI's own policy tests,
-tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops or
+are left to CI and named as skipped. A change to what CI's own policy tests read (the CI registry and its
+fixture tomls, workflows, CI scripts, Swamp test files) adds those tests, tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops or
 leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
 outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
@@ -19,7 +19,7 @@ from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import json
 import os
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 import re
 import runpy
 import shutil
@@ -54,10 +54,12 @@ STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-
                'e2e-static': 'apps/e2e'}
 # The suites small enough to run whole. Each other suite runs only its changed and contract-mapped test files.
 FULL_SUITES = ('packages/php-sdk',)
-# The CI policy tests that CI's changes job runs on every PR, and the changed paths that select them here.
+# The CI policy tests that CI's changes job runs on every PR, and the changed paths that select them here: what those tests read.
+# They check the CI registry and its fixture tomls, the workflows, the CI scripts and this check, their own evidence files, and
+# the Swamp test files whose cases and sources the registry pins. Other test files they do not read.
 CI_POLICY = ['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py']
-TEST_NAMES = ('test_*.py', '*_test.py', '*_test.ts', '*Test.php')
-CI_FILES = ('.github/*', 'tools/ci*', 'bin/ci-*', 'bin/task-check')
+CI_POLICY_INPUTS = ('.github/ci/*', '.github/workflows/*', 'tools/test_ci_*.py', 'tools/tests/*', 'tools/ci*', 'bin/ci-*',
+                    'bin/task-check', 'swamp/tests/*_test.py', 'swamp/tests/*_test.ts')
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -372,15 +374,14 @@ def fixtures(plan, deadline, table):
 
 
 def ci_policy_path(path):
-    """A test file, a fixture toml or a CI file: a change the CI policy tests read."""
-    folders, name = PurePosixPath(path).parts[:-1], PurePosixPath(path).name
-    return ('tests' in folders or any(fnmatch(name, pattern) for pattern in TEST_NAMES)
-            or (name.endswith('.toml') and 'fixtures' in folders) or any(fnmatch(path, pattern) for pattern in CI_FILES))
+    """A path the CI policy tests read: the CI registry and its fixture tomls, a workflow, a CI script, their own evidence, or a
+    Swamp test file whose cases the registry pins."""
+    return any(fnmatch(path, pattern) for pattern in CI_POLICY_INPUTS)
 
 
 def ci_policy(paths, deadline):
     if not any(ci_policy_path(path) for path in paths):
-        return Part('ci-policy', 'not selected', 0, 'no changed test file, fixture toml or CI file')
+        return Part('ci-policy', 'not selected', 0, 'no changed path that the CI policy tests read')
     return timed('ci-policy', [CI_POLICY], deadline)
 
 

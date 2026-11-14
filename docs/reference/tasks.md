@@ -1289,7 +1289,7 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches a test file, a fixture toml or a CI file. It runs before Pest and the fixtures and prints the same summary line as every part.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file. It runs before Pest and the fixtures and prints the same summary line as every part.
 
 #### Stored result
 

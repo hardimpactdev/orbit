@@ -367,18 +367,21 @@ class CiPolicyTest(unittest.TestCase):
         with patch.dict(check['ci_policy'].__globals__, {'CI_POLICY': command}):
             return check['ci_policy'](paths, time.monotonic() + seconds)
 
-    def test_test_files_fixture_tomls_and_ci_files_select_it(self):
-        for path in ('tools/test_ci_units.py', 'swamp/tests/task_copy_publish_test.py', 'swamp/extensions/behaviors/operations/tasks/publish_test.ts',
-                     GATEWAY_TEST, '.github/ci/fixtures/swamp/tests/task_copy_publish_test.py.toml', 'tools/tests/ci-workspace-cost-evidence.json',
-                     '.github/workflows/ci.yml', 'tools/ci-runners/README.md', 'bin/ci-units', 'bin/task-check'):
+    def test_what_the_ci_policy_tests_read_selects_it(self):
+        for path in ('tools/test_ci_units.py', 'swamp/tests/task_copy_publish_test.py', 'swamp/tests/ansible_instance_container_test.ts',
+                     '.github/ci/fixtures/swamp/tests/task_copy_publish_test.py.toml', '.github/ci/checks.toml',
+                     'tools/tests/ci-workspace-cost-evidence.json', '.github/workflows/ci.yml', 'tools/ci-runners/README.md',
+                     'bin/ci-units', 'bin/task-check'):
             self.assertTrue(check['ci_policy_path'](path), path)
 
     def test_other_changes_do_not_select_it(self):
-        for path in ('apps/gateway/app/Domain/Tasks/TaskCopyTurn.php', 'docs/reference/tasks.md', 'apps/web/Cargo.toml',
-                     'bin/review-check', 'tools/phpstan/NoInlineVarOverrideRule.php'):
+        # Test files the CI policy tests do not read: Pest files, an extension's own Deno test, a Swamp test helper.
+        for path in (GATEWAY_TEST, 'swamp/extensions/behaviors/operations/tasks/publish_test.ts', 'swamp/tests/_support/task_instance_workspace.py',
+                     'apps/gateway/app/Domain/Tasks/TaskCopyTurn.php', 'docs/reference/tasks.md', 'apps/web/Cargo.toml',
+                     'bin/review-check', 'tools/phpstan/NoInlineVarOverrideRule.php', 'apps/cli/tests/Feature/fixture.toml'):
             self.assertFalse(check['ci_policy_path'](path), path)
         self.assertEqual(self.policy(['false'], ['docs/reference/tasks.md']).status, 'not selected')
-        self.assertEqual(self.policy(['false'], []).detail, 'no changed test file, fixture toml or CI file')
+        self.assertEqual(self.policy(['false'], []).detail, 'no changed path that the CI policy tests read')
 
     def test_the_part_runs_ci_policy_tests_as_ci_runs_them(self):
         self.assertEqual(check['CI_POLICY'], ['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py'])
@@ -395,10 +398,10 @@ class CiPolicyTest(unittest.TestCase):
         self.assertEqual((part.status, part.detail), ('skipped', 'budget: stopped after 1s'))
 
     def test_its_summary_line_is_the_line_of_every_part(self):
-        lines = check['report']([Part('ci-policy', 'passed', 38.0), Part('ci-policy', 'not selected', 0, 'no changed test file, fixture toml or CI file')],
+        lines = check['report']([Part('ci-policy', 'passed', 38.0), Part('ci-policy', 'not selected', 0, 'no changed path that the CI policy tests read')],
                                 'a' * 40, 40.0)
         self.assertIn('  passed       ci-policy (38.0s)', lines)
-        self.assertIn('  not selected ci-policy (0.0s; no changed test file, fixture toml or CI file)', lines)
+        self.assertIn('  not selected ci-policy (0.0s; no changed path that the CI policy tests read)', lines)
 
     def test_it_runs_before_pest_and_the_fixtures(self):
         order = []
