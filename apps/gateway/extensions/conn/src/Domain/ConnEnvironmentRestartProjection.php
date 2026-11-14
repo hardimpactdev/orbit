@@ -41,8 +41,7 @@ final readonly class ConnEnvironmentRestartProjection implements DirectOperation
             $result = match (true) {
                 $answer === 'restarted' => ['answer' => 'restarted', ...self::window($operation, $raw['restart_at'] ?? null)],
                 $answer === 'skipped' && in_array($reason, ['frozen', 'stopped', 'name_not_written'], true) => ['answer' => 'skipped', 'reason' => $reason],
-                $answer === 'busy' && $reason === 'processes' && is_int($raw['terminals'] ?? null) && is_int($raw['commands'] ?? null)
-                    => ['answer' => 'busy', 'reason' => 'processes', 'terminals' => $raw['terminals'], 'commands' => $raw['commands']],
+                $answer === 'busy' && $reason === 'processes' && is_int($raw['terminals'] ?? null) && is_int($raw['commands'] ?? null) => ['answer' => 'busy', 'reason' => 'processes', 'terminals' => $raw['terminals'], 'commands' => $raw['commands']],
                 default => throw new ResourceOperationException('operation.result_invalid', 'The restart report names no answer.', 422),
             };
         } elseif (in_array($status, ['failed', 'interrupted'], true)) {
