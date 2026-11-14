@@ -43,6 +43,7 @@ final readonly class TaskInstanceWorkspace
      */
     public function intent(): array
     {
+        $this->refuseFailedCompletion();
         if ($this->runtime->power_state !== InstanceRuntimePowerState::Running) {
             throw new ResourceOperationException('tasks.instance_not_running', 'The container of the task workspace is not running.', 409);
         }
@@ -52,6 +53,19 @@ final readonly class TaskInstanceWorkspace
         }
 
         return ['runtime' => ['project' => $this->runtime->incus_project, 'name' => $this->runtime->container_name], 'branch' => $branch, 'snapshot_id' => (string) Str::uuid()];
+    }
+
+    /**
+     * Refuses a turn, a check and a publish of a task copy whose completion failed (TaskCopyLifecycle::completionFailure): the completion
+     * did not start the copy's Processes or a nested copy's inner fleet, and its retry may run at the same time
+     * (docs/reference/tasks.md#a-failed-completion).
+     */
+    public function refuseFailedCompletion(): void
+    {
+        $failure = TaskCopyLifecycle::completionFailure($this->instance);
+        if ($failure !== null) {
+            throw new ResourceOperationException('tasks.copy_completion_failed', "The completion of the task copy failed. Retry it with `{$failure['retry']}`.", 409, details: $failure);
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Data\Tasks\StartTaskCheckData;
+use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
@@ -47,6 +48,7 @@ use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
+use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskRuntime;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTurnIntent;
@@ -1383,6 +1385,41 @@ describe('a turn of a group that owns a copy', function (): void {
         'a reviewer turn on no checked candidate' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.commit_not_checked 422'],
         'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'gpt-5.6-luna'], 'tasks.copy_turn_unsupported 422'],
     ]);
+
+    it('refuses a turn, a check and a publish while the copy\'s completion failed, and a turn is only not ready while a retry runs', function (): void {
+        $group = copyGroup(copySource()->project);
+        [$copy, $completion] = copyCompleting($group);
+        $copy->runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
+        $subtask = $group->tasks()->firstOrFail();
+        $refusal = static function (Closure $start): array {
+            try {
+                $start();
+            } catch (ResourceOperationException $error) {
+                return [$error->errorCode, $error->status, $error->details];
+            }
+
+            return ['admitted'];
+        };
+        $check = fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
+        $publish = fn () => app(TaskPublishIntent::class)->start($group->refresh(), StartTaskPublishData::from(['check' => 1]), 'test', null);
+        expect($refusal(fn () => copyTurn($group))[0])->toBe('tasks.copy_not_ready');
+
+        app(OperationStore::class)->change($completion, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => 'instance.container_fleet_drift', 'failed_step' => 'clone-fleet']);
+        $before = Operation::query()->count();
+
+        $failed = ['tasks.copy_completion_failed', 409, ['operation_id' => $completion->id, 'failed_step' => 'clone-fleet',
+            'error_code' => 'instance.container_fleet_drift', 'retry' => 'orbit instance:complete '.$copy->id]];
+        expect($refusal(fn () => copyTurn($group)))->toBe($failed)
+            ->and($refusal($check))->toBe($failed)
+            ->and($refusal($publish))->toBe($failed)
+            ->and(Operation::query()->count())->toBe($before)
+            ->and(TaskCheck::query()->count())->toBe(0)
+            ->and(AgentThread::query()->count())->toBe(0);
+
+        // The retry runs: the copy is only not ready for a turn.
+        copyCompletion($copy);
+        expect($refusal(fn () => copyTurn($group))[0])->toBe('tasks.copy_not_ready');
+    });
 
     it('refuses a nested-fleet group without a copy instead of reaching for a task VM', function (): void {
         $group = copyGroup(copySource()->project);

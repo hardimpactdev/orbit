@@ -58,6 +58,7 @@ final readonly class TaskCopyTurn
         $group->load('taskable', 'project');
         $workspace = TaskInstanceWorkspace::forGroup($group)
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
+        $workspace->refuseFailedCompletion();
         if ($workspace->instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
         }
