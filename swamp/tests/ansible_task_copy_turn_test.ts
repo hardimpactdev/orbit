@@ -89,6 +89,10 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
         sys.stderr.write('No such file or directory')
         sys.exit(1)
     models = [{'slug': 'claude-opus-5-5', 'aliases': ['opus']}, {'slug': 'claude-sonnet-5-5', 'aliases': ['sonnet']}, {'slug': 'claude-haiku-5-5'}]
+    if catalog == 'noslug':
+        models = [{'name': 'No slug'}, 'claude-fable-5-2', {'slug': 7}] + models
+    if catalog == 'notlist':
+        models = {'claude-opus-5-5': {}}
     print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}]}}}}))
     sys.exit(0)
 if rest == ['/usr/bin/true']:
@@ -104,6 +108,12 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     if mode == 'refused':
         sys.stderr.write('Provider instance "claudeMedium" is disabled for project p.')
         sys.exit(1)
+    if mode == 'refusedlong':
+        sys.stderr.write('x' * 10000 + 'the end')
+        sys.exit(1)
+    if mode == 'chatty':
+        sys.stderr.write('progress\\n' * 2000)
+        mode = 'completed'
     print(json.dumps({'threadId': thread, 'runId': 'run:1', 'status': mode, 'reply': 'done', 'error': None}))
     sys.exit(0 if mode == 'completed' else 1)
 assert rest[0] == '/usr/bin/timeout' and rest[1] == '60' and rest[2] == '/opt/orbit-agent/current/agent/bin/t3', rest
@@ -297,4 +307,25 @@ Deno.test({ name: "a continued thread keeps its model: the catalog is not read",
     const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-9" });
     assert(done.ok, done.output);
     assertEquals([reads(done.calls), done.model], [[], null]);
+} });
+
+Deno.test({ name: "a catalog entry without a slug is left out, and a model list that is no list skips the check", ignore: !available, async fn() {
+    const offered = await phase("completed", { model: "claude-opus-5-5" }, "clean", "noslug");
+    assert(offered.ok, offered.output);
+    assertEquals(offered.model, { model: "claude-opus-5-5", offered: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], accepted: true });
+    const refused = await phase("completed", { model: "claude-fable-5-2" }, "clean", "noslug");
+    assert(!refused.ok && refused.output.includes("tasks.copy_turn_model_unoffered"), refused.output);
+    const skipped = await phase("completed", { model: "claude-opus-9" }, "clean", "notlist");
+    assert(skipped.ok, skipped.output);
+    assertEquals([skipped.model, skipped.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true]);
+} });
+
+Deno.test({ name: "the start evidence keeps stderr only when the start failed, and only its last 4 KB", ignore: !available, async fn() {
+    const chatty = await phase("chatty");
+    assert(chatty.ok, chatty.output);
+    assertEquals([chatty.start!.start_exit, chatty.start!.error], [0, ""]);
+    const refused = await phase("refusedlong");
+    assert(refused.ok, refused.output);
+    const error = refused.start!.error as string;
+    assertEquals([refused.start!.start_exit, error.length, error.endsWith("the end")], [1, 4096, true]);
 } });
