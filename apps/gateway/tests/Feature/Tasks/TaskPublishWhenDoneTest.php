@@ -249,7 +249,7 @@ it('reads done again under the group lock and refuses tasks.not_done when it cha
     expect(whenDonePublishes($world->group))->toBe(0);
 });
 
-it('reports a fault of one group and goes on with the next', function (): void {
+it('reports a fault of one group, shows it as refused, and goes on with the next', function (): void {
     Exceptions::fake();
     $broken = TaskCopyDoneFixture::make();
     $healthy = TaskCopyDoneFixture::make();
@@ -262,8 +262,11 @@ it('reports a fault of one group and goes on with the next', function (): void {
 
     $results = whenDoneTick();
 
-    expect($results[0])->toMatchArray(['group' => $broken->group->id, 'result' => 'failed'])
-        ->and($results[1])->toMatchArray(['group' => $healthy->group->id, 'result' => 'admitted']);
+    expect($results[0])->toMatchArray(['group' => $broken->group->id, 'result' => 'failed', 'code' => 'tasks.publish_failed'])
+        ->and($results[1])->toMatchArray(['group' => $healthy->group->id, 'result' => 'admitted'])
+        ->and($broken->group->refresh()->publish_refusal)->toMatchArray(['code' => 'tasks.publish_failed', 'check_id' => $broken->check->id])
+        ->and(TaskPublicationData::fromModel($broken->group)?->state)->toBe('refused')
+        ->and(TaskPublicationData::fromModel($broken->group)?->errorCode)->toBe('tasks.publish_failed');
     Exceptions::assertReported(RuntimeException::class);
 });
 
@@ -287,4 +290,74 @@ it('cuts a long brief so the pull request body stays within the publish limit', 
         ->and($body)->toContain('…')
         ->and($body)->toEndWith('Checked commit `'.TaskCopyDoneFixture::Commit.'`, handoff check '.$world->check->id.'.')
         ->and(Validator::make(['check' => $world->check->id, 'pull_request' => ['title' => 'Add the export', 'body' => $body]], (new StartTaskPublishRequest)->rules())->passes())->toBeTrue();
+});
+
+/** A lock that runs `$between` first, as another request would just before the admission takes the lock. */
+function whenDoneLockWith(Closure $between): void
+{
+    app()->instance(TaskExecutionLock::class, new class($between) implements TaskExecutionLock
+    {
+        public function __construct(private Closure $between) {}
+
+        public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
+        {
+            ($this->between)($groupId);
+
+            return $operation();
+        }
+    });
+}
+
+it('re-reads the mode under the row lock for the tick and refuses tasks.not_done when the group left pr_when_done', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::ReviewBeforePr]);
+
+    expect(fn () => app(TaskPublishIntent::class)->start($world->group->refresh(), TaskDonePublication::for($world->group, $world->check), RunTaskPublishWhenDoneAction::Caller, null, $world->check->id, byItself: true))
+        ->toThrow(ResourceOperationException::class, 'The task group no longer publishes by itself.');
+    expect(whenDonePublishes($world->group))->toBe(0);
+});
+
+it('skips a group quietly when the re-check under the lock finds it no longer done, and publishes once the extra subtask is cancelled', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    $extra = null;
+    whenDoneLockWith(function (int $group) use (&$extra): void {
+        $extra ??= Task::query()->create(['parent_id' => $group, 'position' => 2, 'title' => 'More', 'brief' => 'More.', 'status' => 'todo']);
+    });
+
+    expect(whenDoneTick()[0])->toMatchArray(['result' => 'skipped', 'code' => 'tasks.not_done'])
+        ->and($world->group->refresh()->publish_refusal)->toBeNull();
+
+    Task::query()->whereKey($extra?->id)->update(['status' => 'cancelled']);
+    expect(whenDoneTick()[0]['result'])->toBe('admitted');
+});
+
+it('does not store a refusal over a publish that was admitted in between', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    app()->instance(TaskExecutionLock::class, new class implements TaskExecutionLock
+    {
+        public function synchronized(int $groupId, Closure $operation, bool $wait = true): mixed
+        {
+            Operation::query()->create(['kind' => OperationKinds::TasksPublish, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $groupId, 'node_id' => null,
+                'input' => ['check' => 1], 'status' => OperationStatus::Queued, 'triggered_by' => 'person', 'sequence' => 1, 'attempts' => 1]);
+
+            throw new ResourceOperationException('tasks.copy_publish_held', 'Held.', 409);
+        }
+    });
+
+    expect(whenDoneTick()[0])->toMatchArray(['result' => 'skipped', 'code' => 'tasks.copy_publish_held'])
+        ->and($world->group->refresh()->publish_refusal)->toBeNull();
+});
+
+it('reads an empty ORBIT_TASKS_PR_MODE as the default', function (): void {
+    $saved = [$_ENV['ORBIT_TASKS_PR_MODE'] ?? null, $_SERVER['ORBIT_TASKS_PR_MODE'] ?? null];
+    $_ENV['ORBIT_TASKS_PR_MODE'] = $_SERVER['ORBIT_TASKS_PR_MODE'] = '';
+    try {
+        $config = require config_path('orbit.php');
+    } finally {
+        [$_ENV['ORBIT_TASKS_PR_MODE'], $_SERVER['ORBIT_TASKS_PR_MODE']] = $saved;
+    }
+
+    expect(data_get($config, 'tasks.pr_mode'))->toBe('review_before_pr');
 });

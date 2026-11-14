@@ -120,7 +120,7 @@ return [
         'copy_publish_projects' => json_decode((string) (env('ORBIT_TASKS_COPY_PUBLISH_PROJECTS') ?: '[]')),
         // The mode of a task copy's group when neither the group nor its Project sets one: review_before_pr or pr_when_done
         // (docs/reference/tasks.md#task-group-modes). TaskPrMode::gateway() refuses any other value.
-        'pr_mode' => (string) env('ORBIT_TASKS_PR_MODE', 'review_before_pr'),
+        'pr_mode' => (string) (env('ORBIT_TASKS_PR_MODE') ?: 'review_before_pr'),
     ],
     // Release alerts always write Activity and a problem. The signed webhook is skipped unless both values are set.
     'releases' => [
