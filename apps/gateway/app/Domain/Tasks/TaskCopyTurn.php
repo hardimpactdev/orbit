@@ -131,6 +131,24 @@ final readonly class TaskCopyTurn
     }
 
     /**
+     * Refuses to complete a subtask of a task copy's group while a copy turn of the group has not ended its Operation. A turn is admitted
+     * only on the current subtask, so a subtask completed after this check was completed after every turn on it ended: the done rule
+     * (docs/reference/tasks.md#when-the-work-is-done) needs no clock for "reviewed before completed".
+     */
+    public static function refuseCompletionWhileRunning(Task $group): void
+    {
+        if (TaskInstanceWorkspace::forGroup($group) === null) {
+            return;
+        }
+        $running = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first();
+        if ($running instanceof Operation) {
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'A turn still runs in the task copy; complete the subtask once it has ended.', 409,
+                details: ['operation_id' => $running->id]);
+        }
+    }
+
+    /**
      * The model and effort of a new copy thread of the role: the model from `orbit.tasks.copy_turn_models`, the effort from the role's
      * effort setting, which a task VM thread reads too. The effort must be one the copy's T3 has a provider instance for.
      *

@@ -102,7 +102,7 @@ it('leaves a group waiting while its mode or the mode its done check recorded is
 it('ignores a group whose work is not done', function (): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
-    $world->turn->update(['finished_at' => now()->addMinute()]);
+    $world->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]);
 
     expect(whenDoneTick())->toBe([])->and(whenDonePublishes($world->group))->toBe(0);
 });
@@ -165,7 +165,7 @@ it('releases a waiting group\'s done check without --check, with the same title 
 
 it('refuses the release while the work is not done', function (): void {
     $world = TaskCopyDoneFixture::make();
-    $world->turn->update(['finished_at' => now()->addMinute()]);
+    $world->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]);
 
     expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null))
         ->toThrow(function (ResourceOperationException $exception): void {

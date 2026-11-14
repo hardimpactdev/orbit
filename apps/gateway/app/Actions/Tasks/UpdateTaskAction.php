@@ -14,6 +14,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskStatusMoves;
 use App\Domain\Tasks\TaskTopology;
 use App\Models\Activity;
@@ -76,6 +77,9 @@ final readonly class UpdateTaskAction
             $task->setRelation('parent', $locked);
             if ($data->status !== null) {
                 TaskStatusMoves::subtask($locked, $task, $data->status);
+                if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
+                    TaskCopyTurn::refuseCompletionWhileRunning($locked);
+                }
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
                     TaskAssistance::resolveExternalSubtask($task, $locked);
                 }

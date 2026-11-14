@@ -39,7 +39,7 @@ it('reports each publication state of a task copy from its records', function (C
         ->and($publication?->operationId)->toBe($operation instanceof Operation ? $operation->id : null);
 })->with([
     'waiting for release' => [fn (TaskCopyDoneFixture $w) => null, 'waiting_for_release', null, true],
-    'working' => [fn (TaskCopyDoneFixture $w) => $w->turn->update(['finished_at' => now()->addMinute()]) && false, 'working', null, false],
+    'working' => [fn (TaskCopyDoneFixture $w) => $w->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]) && false, 'working', null, false],
     'refused at admission' => [fn (TaskCopyDoneFixture $w) => $w->group->update(['publish_refusal' => ['code' => 'tasks.copy_publish_held', 'check_id' => $w->check->id, 'at' => now()->toIso8601String()]]) && false,
         'refused', 'tasks.copy_publish_held', true],
     'refused run' => [fn (TaskCopyDoneFixture $w) => publicationPublish($w, OperationStatus::Failed, 'tasks.publish_secret_content'), 'refused', 'tasks.publish_secret_content', true],
@@ -83,6 +83,6 @@ it('lists the waiting and the refused task copies under releases in task:status'
     publicationPublish($world, OperationStatus::Failed, 'tasks.push_failed');
     expect(data_get(app(ShowTasksStatusAction::class)->execute()->toArray(), 'releases.0'))->toMatchArray(['state' => 'refused', 'error_code' => 'tasks.push_failed']);
 
-    $world->turn->update(['finished_at' => now()->addMinute()]);
+    $world->turn->update(['result' => ['state' => 'asking_for_input', 'ended' => true]]);
     expect(app(ShowTasksStatusAction::class)->execute()->toArray()['releases'])->toBe([]);
 });

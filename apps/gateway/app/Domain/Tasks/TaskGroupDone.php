@@ -10,7 +10,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use Illuminate\Support\Carbon;
 
 /**
  * Whether a task copy's work is done, from Orbit's own records alone (docs/reference/tasks.md#when-the-work-is-done). A copy reviewer
@@ -46,9 +45,9 @@ final readonly class TaskGroupDone
     }
 
     /**
-     * The newest turn of the group's reviewer thread reviewed exactly the done check's commit, for the last subtask, and ended done.
-     * A copy turn is admitted only on the current subtask, so its subtask was open then; the subtask's last change, its completion,
-     * is not earlier than the turn's end.
+     * The newest turn of the group's reviewer thread reviewed exactly the done check's commit, for the last subtask, and ended done. A copy
+     * turn is admitted only on the current subtask, and a subtask of a task copy cannot be completed while a turn of the group runs
+     * ({@see TaskCopyTurn::refuseCompletionWhileRunning()}), so this turn ended before the subtask was completed.
      */
     private function reviewed(Task $group, Task $last, TaskCheck $check): bool
     {
@@ -57,12 +56,10 @@ final readonly class TaskGroupDone
         }
         $turn = Operation::query()->where('kind', OperationKinds::TasksCopyTurn)->where('target_type', OperationKinds::TaskGroupTarget)
             ->where('target_id', $group->id)->where('input->thread_id', $group->reviewer_agent_thread_id)->orderByDesc('id')->first();
-        $finished = $turn?->finished_at;
-        $completed = $last->updated_at;
 
         return $turn instanceof Operation && $turn->status === OperationStatus::Succeeded && ($turn->input['subtask'] ?? null) === $last->id
             && ($turn->input['candidate'] ?? null) === $check->commit_sha && ($turn->result['state'] ?? null) === AgentThreadState::Done->value
-            && ($turn->result['ended'] ?? null) === true && $finished instanceof Carbon && $completed instanceof Carbon && $finished->lessThanOrEqualTo($completed);
+            && ($turn->result['ended'] ?? null) === true;
     }
 
     /** No earlier copy turn may still run, and no Operation of the group runs. */
