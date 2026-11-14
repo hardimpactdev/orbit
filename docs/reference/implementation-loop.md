@@ -328,7 +328,7 @@ Tests of bin scripts live beside their script. The shape job names the liveness 
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 
-Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
+Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. On a pull request it also installs the CLI dev dependencies, from the CLI Pest suite's cache, because `bin/cli-contract --changed` in the PR gate runs the CLI tests that replay the changed fixtures. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
 
 Every pull request selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes.
 

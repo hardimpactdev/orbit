@@ -171,7 +171,7 @@ describe('tasks contract', function (): void {
     it('renders comments and agent threads', function (): void {
         run_task_contract('task-comment-create/created', 'task:comment:create', ['task' => '1', '--type' => 'resolution', '--body' => 'Use the existing request base.', '--author' => 'nick'], 0);
         run_task_contract('task-comment-list/default', 'task:comment:list', ['task' => '1'], 0);
-        run_task_contract('task-agent-list/default', 'task:agent:list', ['task' => '1'], 0);
+        run_task_contract('tasks/task-agent-list/default', 'task:agent:list', ['task' => '1'], 0);
         run_task_contract('task-egress/default', 'task:egress', ['task' => '1'], 0);
         run_task_contract('task-egress/empty', 'task:egress', ['task' => '1'], 0);
     });

@@ -3,8 +3,10 @@
 # the role's thread to continue it, waits for its run and reads the thread back. The CLI issues its T3 session inside the container
 # and revokes it at exit, so no credential reaches the Node, Swamp or the Gateway. The title names the Orbit thread, so a run cut by
 # its bound is still found, and a continued turn finds its thread. A reviewer works on the checked candidate, detached, and the task
-# branch is checked out again at its tip after its turn. Ansible keeps the raw replies out of its log and writes them to the run folder only;
-# `@nckrtl/task-copy-turn` bounds and redacts them. Each T3 read is bounded at 60 s and each Git command at 20 s.
+# branch is checked out again at its tip after its turn. A run that waits for an answer has its question stored, and only then is it
+# stopped, by `t3_copy_rpc.mjs` through the stock T3 server's own RPC: the answer comes as the next turn. Ansible keeps the raw replies out
+# of its log and writes them to the run folder only; `@nckrtl/task-copy-turn` bounds and redacts them. Each T3 read and each helper call
+# is bounded at 60 s, each Git command at 20 s.
 - name: Address the recorded copy Node
   hosts: localhost
   connection: local
@@ -40,6 +42,7 @@
           - intent.runtime.project | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
           - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
           - intent.turn.t3 | default('') is match('^/opt/orbit-agent/current/agent/bin/t3$')
+          - intent.turn.node | default('') is match('^/opt/orbit-runtime/current/bin/node$')
           - intent.turn.thread | default('') in ['new', 'continue']
           - intent.turn.thread != 'new' or intent.turn.provider | default('', true) is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
           - intent.turn.thread != 'new' or intent.turn.model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
@@ -47,12 +50,126 @@
           - intent.turn.title | default('') is match('^Orbit task [1-9][0-9]* thread [1-9][0-9]*$')
           - intent.turn.seconds | default(0) | int >= 60 and intent.turn.seconds | int <= 3600
           - intent.turn.prompt | default('') | length > 0
+          - intent.turn.settle is defined and intent.turn.settle is sequence and intent.turn.settle is not string
+          - intent.turn.settle | rejectattr('operation_id', 'integer') | list | length == 0
+          - intent.turn.settle | map(attribute='title') | reject('match', '^Orbit task [1-9][0-9]* thread [1-9][0-9]*$') | list | length == 0
+          - intent.turn.settle | map(attribute='branch') | select('string') | reject('match', '^task-[1-9][0-9]*$') | list | length == 0
         fail_msg: tasks.copy_turn_invalid
     # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
     - name: Reach the copy as agent
       ansible.builtin.command:
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
+    # An earlier turn that may still run is settled first by one rule: T3 lists its thread in no active state, or none of its title, and
+    # a reviewer's detach is undone. The copy's ref `refs/orbit/review-detach` marks a detach in effect, at the tip the branch had: only
+    # with it, and once no earlier run can still write, is the checkout restored as after a reviewer's turn. Without it nothing in the
+    # tree is touched. While a run goes on, nothing is touched or launched, and the work in the copy stays.
+    - name: Settle the earlier turns
+      when: intent.turn.settle | length > 0
+      vars:
+        settle_listed: "{{ settle_threads.stdout | from_json if settle_threads.rc | default(1) == 0 else none }}"
+        settle_active: ['preparing', 'queued', 'starting', 'running', 'waiting']
+        settle_reviewer: "{{ intent.turn.settle | selectattr('branch', 'string') | list }}"
+      block:
+        - name: List the threads to settle
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.t3, 'thread', 'list', '--project', '/srv/workspace', '--json'] }}"
+          register: settle_threads
+          failed_when: false
+          changed_when: false
+          no_log: true
+        - name: Name the turns whose run is over
+          ansible.builtin.set_fact:
+            settle_over: >-
+              {% set over = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
+              | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 0 or (mine | length == 1
+              and mine[0].status not in settle_active) %}{% set _ = over.append(entry.operation_id) %}{% endif %}{% endfor %}{{ over }}
+          no_log: true
+        - name: Undo a reviewer's detach
+          when: settle_reviewer | length > 0 and settle_over | length == intent.turn.settle | length
+          block:
+            - name: Read the detach mark
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['rev-parse', '--verify', '--quiet', 'refs/orbit/review-detach'] }}"
+              register: settle_mark
+              failed_when: false
+              changed_when: false
+            - name: Read whether the checkout is on a branch
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
+              register: settle_head
+              failed_when: false
+              changed_when: false
+            - name: Restore the checkout the reviewer left detached
+              when: settle_mark.rc == 0 and settle_head.rc != 0
+              block:
+                - name: Discard what the reviewer changed
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['reset', '--quiet', '--hard'] }}"
+                  changed_when: true
+                - name: Remove the reviewer's new files
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['clean', '--quiet', '-fd'] }}"
+                  changed_when: true
+                - name: Check the task branch out again
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['checkout', '--quiet', (settle_reviewer | first).branch] }}"
+                  changed_when: true
+            - name: Verify the restore and clear the mark
+              when: settle_mark.rc == 0
+              block:
+                - name: Read the restored changes
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['status', '--porcelain'] }}"
+                  register: settle_status
+                  changed_when: false
+                - name: Read the restored branch
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
+                  register: settle_branch
+                  failed_when: false
+                  changed_when: false
+                - name: Read the restored tip
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
+                  register: settle_tip
+                  changed_when: false
+                - name: Clear the detach mark
+                  when: settle_status.stdout == '' and settle_branch.stdout == (settle_reviewer | first).branch and settle_tip.stdout == settle_mark.stdout
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['update-ref', '-d', 'refs/orbit/review-detach'] }}"
+                  register: settle_cleared
+                  changed_when: true
+        - name: Name the settled turns
+          ansible.builtin.set_fact:
+            settle_done: >-
+              {% set undone = settle_mark.rc is defined and (settle_mark.rc != 0 or settle_cleared.rc | default(1) == 0) %}{% set done = [] %}{%
+              for entry in intent.turn.settle if entry.operation_id in settle_over %}{% if entry.branch is none or undone %}{%
+              set _ = done.append(entry.operation_id) %}{% endif %}{% endfor %}{{ done }}
+          no_log: true
+      rescue:
+        # A list that is not JSON, or a checkout Git cannot restore, settles nothing.
+        - name: Settle nothing
+          ansible.builtin.set_fact:
+            settle_done: []
+      always:
+        - name: Write the settle evidence
+          ansible.builtin.copy:
+            content: >-
+              {{ {'list_exit': settle_threads.rc | default(none), 'settled': settle_done | default([]),
+                  'open': intent.turn.settle | map(attribute='operation_id') | reject('in', settle_done | default([])) | list} | to_json }}
+            dest: "{{ run }}/settle.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Require every earlier turn settled
+          ansible.builtin.assert:
+            that: intent.turn.settle | map(attribute='operation_id') | reject('in', settle_done | default([])) | list | length == 0
+            fail_msg: tasks.copy_turn_unended
     # A continued turn sends to the T3 thread whose title names the Orbit thread. Without exactly one, nothing is launched. A list that
     # fails or is not JSON names no exit code: that is T3 failing, not a missing thread.
     - name: Find the thread to continue
@@ -124,13 +241,19 @@
             argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
           register: review_tip
           changed_when: false
+        # Named before the mark, so a set mark is always followed by the restore that clears it.
+        - name: Name the branch to restore
+          ansible.builtin.set_fact:
+            review_restore: "{{ review_branch.stdout }}"
+        # The copy keeps the mark until a verified restore clears it: a later turn restores the checkout only while it is set.
+        - name: Mark the detach in the copy
+          ansible.builtin.command:
+            argv: "{{ copy_git + ['update-ref', 'refs/orbit/review-detach', review_tip.stdout] }}"
+          changed_when: true
         - name: Check the candidate out
           ansible.builtin.command:
             argv: "{{ copy_git + ['checkout', '--quiet', '--detach', intent.turn.candidate] }}"
           changed_when: true
-        - name: Name the branch to restore
-          ansible.builtin.set_fact:
-            review_restore: "{{ review_branch.stdout }}"
         # From here the checkout is the reviewer's until `restore.json` says it is restored: a phase cut before that holds the group.
         - name: Mark the checkout as detached
           ansible.builtin.copy:
@@ -202,6 +325,65 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        # `--wait` exits 2 when the run waits for an answer. The question is stored first; the run is stopped only after its evidence is
+        # written, so a stopped run's question is never lost. The helper reads its session from `t3 auth session issue` itself and keeps it
+        # in its memory only; the phase passes it nothing.
+        - name: End the turn at its question
+          when: turn_start.rc == 2
+          block:
+            - name: Name the waiting run
+              ansible.builtin.set_fact:
+                turn_waiting: "{{ turn_start.stdout | from_json }}"
+              no_log: true
+            - name: Read the question
+              ansible.builtin.command:
+                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'read', turn_waiting.threadId] }}"
+                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+              register: turn_ask
+              failed_when: false
+              changed_when: false
+              no_log: true
+            - name: Write the question evidence
+              ansible.builtin.copy:
+                content: "{{ {'ask_exit': turn_ask.rc, 'ask': turn_ask.stdout | default('')} | to_json }}"
+                dest: "{{ run }}/ask.json"
+                mode: "0600"
+              delegate_to: localhost
+              become: false
+              no_log: true
+              vars:
+                ansible_connection: local
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
+            - name: Stop the run that asks
+              # Only on a read the result step stores whole: questions only, no approval. The helper stops the run only while it waits
+              # for exactly these requests.
+              when: turn_ask.rc == 0 and (turn_ask.stdout | from_json).stoppable
+              ansible.builtin.command:
+                argv: >-
+                  {{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'interrupt', turn_waiting.threadId, turn_waiting.runId,
+                     (turn_ask.stdout | from_json).requests | map(attribute='request_id') | join('\n')] }}
+                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+              register: turn_interrupt
+              failed_when: false
+              changed_when: true
+              no_log: true
+          rescue:
+            # A start or a question that is not JSON stops nothing: the result reads the question as unread.
+            - name: Stop nothing
+              ansible.builtin.meta: noop
+          always:
+            - name: Write the interrupt evidence
+              when: turn_interrupt.rc is defined
+              ansible.builtin.copy:
+                content: "{{ {'interrupt_exit': turn_interrupt.rc, 'interrupt': turn_interrupt.stdout | default('')} | to_json }}"
+                dest: "{{ run }}/interrupt.json"
+                mode: "0600"
+              delegate_to: localhost
+              become: false
+              no_log: true
+              vars:
+                ansible_connection: local
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
         - name: Read the thread back
           block:
             - name: Find the thread by its title
@@ -281,6 +463,12 @@
                 argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
               register: restored_tip
               changed_when: false
+            - name: Clear the detach mark of a verified restore
+              when: restored_status.stdout == '' and restored_branch.stdout == review_restore and restored_tip.stdout == review_tip.stdout
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['update-ref', '-d', 'refs/orbit/review-detach'] }}"
+              register: restored_cleared
+              changed_when: true
           rescue:
             - name: Name the failed restore
               ansible.builtin.set_fact:
@@ -289,9 +477,7 @@
             - name: Write the restore evidence
               ansible.builtin.copy:
                 content: >-
-                  {{ {'restored': not review_unrestored | default(false) and restored_status.stdout | default('x') == ''
-                      and restored_branch.stdout | default('') == review_restore
-                      and restored_tip.stdout | default('') == review_tip.stdout} | to_json }}
+                  {{ {'restored': not review_unrestored | default(false) and restored_cleared.rc | default(1) == 0} | to_json }}
                 dest: "{{ run }}/restore.json"
                 mode: "0600"
               delegate_to: localhost
