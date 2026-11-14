@@ -2142,7 +2142,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
-| Base converge of the three nested Nodes | The `swamp` files a base converge reads, the nested Gateway's digest of each Node's base intent, and the fleet intent | The digest differs, a digest cannot be read, or the last converge that ran is more than 7 days old |
+| Base converge of each nested Node | One digest per Node: the `swamp` files a base converge reads, the nested Gateway's digest of that Node's base intent, and the fleet intent | For that Node: its digest differs, or its last converge is more than 7 days old. For all three: a digest cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2153,11 +2153,11 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
-The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. It has three inputs:
+The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. Each Node has its own digest, so a moved base intent converges only that Node. A digest has three inputs:
 
 | Input | What it holds |
 | --- | --- |
-| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and its imports, the playbook and the task files it reaches, and the play's configuration and modules |
+| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and the imports a converge runs, the playbook and its task files, and the play's configuration and modules |
 | The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target, the CLI plan and the [units of the Node's roles](/reference/node-provisioning#role-units-at-a-converge) |
 | The fleet intent | The fleet's names, layout, checkout and proxy |
 
@@ -2169,9 +2169,19 @@ A file list cannot follow the Gateway code that builds an intent: through its mo
 
 The list leaves out four include groups of the playbook: roles, software, Tools and the network. Each runs only when the intent selects roles, Tools or a network, and a base intent never does. The cover test fails when the guard of such an include changes.
 
-A digest that cannot be read makes the converge run and is not recorded, so the next refresh runs it too. The record also holds `converged`, the time of the last converge that ran. When that is more than 7 days old, the converge runs whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+The list also leaves out three imports of the behavior file, `write.ts`. A converge never runs their code:
 
-When the converge runs, the three Nodes converge one by one. They cannot run side by side: every step of the converge workflow has a fixed behavior name. Swamp locks each behavior, so a second run would wait for the first one's lock and fail after 60 s. A failed converge fails the refresh, and the run restores the old seed, as for any failed step.
+| Import | Why a converge never runs it |
+| --- | --- |
+| `fleet_reboot_result.ts`, with `_lib/public_output.ts` | Only the `fleetRebootResult` method uses it, and the converge workflow does not call that method |
+| `role_add_plans.ts`, with the route and Tool setup plans it imports | Only the `composeRole` method uses it, and the converge workflow does not call that method |
+| `clone_payload.ts` | Only a clone intent runs it (`container?.clone`); a base intent has no `container` |
+
+The cover test fails when the converge workflow calls such a method, when an imported name is used outside its method, or when a use of `clone_payload.ts` leaves its guard. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
+
+The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+
+The `swamp` files are the same for the three Nodes. When the converge runs, the due Nodes converge one by one. They cannot run side by side: every step of the converge workflow has a fixed behavior name. Swamp locks each behavior, so a second run would wait for the first one's lock and fail after 60 s. A failed converge fails the refresh, and the run restores the old seed, as for any failed step.
 
 A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 
@@ -2260,7 +2270,14 @@ A failed build or package install never fails the refresh. The refresh goes on a
 
 The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
 
-The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `tokens` (`reminted`, `young` or `skipped`), `tokens_reason` (`age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`), `tools` (`present`, `built` or `failed`), `tools_reason` (see [The pinned shape tools](#the-pinned-shape-tools)), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+The Operation's result has `fleet_refresh`. It holds these fields:
+
+- `migrate`: `applied`, `nothing` or `skipped`. `restart`: `yes` or `no`.
+- `converge`: `ran` or `skipped`. `converge_reason`: `changed`, `record`, `digest_unreadable`, `stale` or `unchanged`. `converge_nodes`: the Nodes the converge ran for. `changed`: the tasks the converges changed.
+- `tokens`: `reminted`, `young` or `skipped`. `tokens_reason`: `age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`.
+- `tools`: `present`, `built` or `failed`. `tools_reason`: see [The pinned shape tools](#the-pinned-shape-tools).
+- `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
+- `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.
 
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 

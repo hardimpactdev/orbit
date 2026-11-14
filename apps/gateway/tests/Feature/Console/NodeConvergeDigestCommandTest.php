@@ -83,7 +83,7 @@ it('prints one digest per named Node and writes nothing: no Operation, no execut
 });
 
 it('gives the same digest twice, seconds apart, and the intent is the base intent of a converge', function (): void {
-    // A Node with roles still has a base intent without roles, Tools or a network: the refresh's cut includes stay unreached.
+    // A Node with roles still has a base intent without roles, Tools, a network or a container: the refresh's cuts stay unreached.
     $this->node->roles()->create(['role' => RoleName::AppDev, 'status' => 'active']);
     $this->node->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
     $first = convergeDigests($this, 'app-dev');
@@ -93,6 +93,9 @@ it('gives the same digest twice, seconds apart, and the intent is the base inten
     expect(convergeDigests($this, 'app-dev'))->toBe($first)
         ->and($intent['roles'])->toBe([])->and($intent['selected_roles'])->toBe([])
         ->and($intent['tools'])->toBe([])->and($intent['network'])->toBeNull()
+        // No `container`: the refresh's converge digest leaves out the clone part of the ansible-input behavior, which only a
+        // `container.clone` intent runs (swamp/ansible/fleet-converge-inputs.json, `cut_imports`).
+        ->and($intent)->not->toHaveKey('container')
         ->and($intent['agent'])->toMatchArray(['sha256' => str_repeat('b', 64), 'url' => 'https://artifacts.example/agent']);
 });
 

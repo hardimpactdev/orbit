@@ -90,7 +90,7 @@ final readonly class ContainerDeployOutcome
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
@@ -112,13 +112,18 @@ final readonly class ContainerDeployOutcome
         if (! is_int($raw['changed'] ?? null) || $raw['changed'] < 0) {
             return null;
         }
+        $nodes = $raw['converge_nodes'] ?? null;
+        if (! is_array($nodes) || ! array_is_list($nodes) || array_filter($nodes, static fn (mixed $name): bool => ! in_array($name, ['gateway', 'app-dev', 'app-prod'], true)) !== []
+            || count(array_unique($nodes)) !== count($nodes) || ($refresh['converge'] === 'skipped') !== ($nodes === [])) {
+            return null;
+        }
         $containers = $raw['base_containers'] ?? [];
         if (! is_array($containers) || ! array_is_list($containers) || count($containers) > 3
             || array_filter($containers, static fn (mixed $name): bool => ! is_string($name) || preg_match('/\A[a-z0-9-]{1,63}\z/', $name) !== 1) !== []) {
             return null;
         }
         $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
-            'converge_reason' => $refresh['converge_reason'], 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
+            'converge_reason' => $refresh['converge_reason'], 'converge_nodes' => $nodes, 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
             'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
             'tools_reason' => $refresh['tools_reason']];
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];

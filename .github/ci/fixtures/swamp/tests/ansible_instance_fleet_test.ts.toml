@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "dcc1cb10d98740274bc3fb643a97ae2d610d6175eba689d20542b6bad08c2371"
+source_sha256 = "a0985103f78a94d36fd344f75efa1a2e06b210e88f19876a576e5b735bb19477"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -45,8 +45,8 @@ cases = [
   "a malformed record runs every part and never fails the refresh",
   "an unreadable record runs every part and never fails the refresh",
   "a failed digest read runs every part and never fails the refresh",
-  "a moved base intent of one Node converges the three Nodes one by one, and the result names why",
-  "a converge older than seven days runs although no input changed, and the result names it stale",
+  "a moved base intent of one Node converges that Node only, and the result names it and why",
+  "a Node whose converge is older than seven days converges alone although no input changed, and the result names it stale",
   "an unreadable base intent digest converges, names why, and records no converge digest",
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a fleet without worker c remints at once and names it incomplete",
@@ -127,8 +127,8 @@ inputs = [
   "a malformed record runs every part and never fails the refresh" = 45
   "an unreadable record runs every part and never fails the refresh" = 42
   "a failed digest read runs every part and never fails the refresh" = 31
-  "a moved base intent of one Node converges the three Nodes one by one, and the result names why" = 40
-  "a converge older than seven days runs although no input changed, and the result names it stale" = 45
+  "a moved base intent of one Node converges that Node only, and the result names it and why" = 40
+  "a Node whose converge is older than seven days converges alone although no input changed, and the result names it stale" = 45
   "an unreadable base intent digest converges, names why, and records no converge digest" = 43
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
