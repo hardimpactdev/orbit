@@ -1,11 +1,12 @@
 order = 40
-source_sha256 = "21a1b4b0f7716e1d269d4b35a22324512da41967cc0130db68af338a7443b190"
+source_sha256 = "09685086a900cb23cc526bfe2f5bebd4ce442246f8a2e2632b38eee585a3edec"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it",
   "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
   "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
+  "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -89,9 +90,12 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3989
+cost = 4029
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The bundle's edge cases (44s locally, run in full before the PR): with it the file needs a 72nd slice and defers whole. The PR keeps
+  # the fast-forward prerequisite of a normal default's deploy in "a deployment checks out the branch's new commit".
+  "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   # The inner volume's flush before its half of the seed (89s locally, 33s to fail without the flush): like the seed pair cases.
   "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
   # The seed-retake cases of slice-seed-safe, 30 to 60s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard
@@ -201,7 +205,7 @@ inputs = [
   "nested fleet start gate: changed-host-path" = 25 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.5-29.4s
   "nested fleet start gate: writable-share" = 25 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.4-27.5s
   "nested fleet start gate: privileged" = 30 # p90 of 16 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.9-29.1s
-  "nested fleet start gate: clean" = 41 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.5-40.4s
+  "nested fleet start gate: clean" = 81 # p90 41s of 14 hosted PR runs on 2026-11-13, plus 40s for the four root-size starts added 2026-11-14 (local 16s to 33s)
   "nested fleet start gate: kernel-modules" = 30 # p90 of 11 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.1-29.4s
   "nested fleet start gate: mount-intercept" = 29 # p90 of 10 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.5-28.8s
   "nested fleet start gate: bpf-intercept" = 31 # p90 of 10 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.1-29.3s

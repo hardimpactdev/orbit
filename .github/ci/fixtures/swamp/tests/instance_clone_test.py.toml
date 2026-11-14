@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "1f7e6671bb795ad526471ca9f565ff5aca47d35b05ed9217bc38bc90a016ea04"
+source_sha256 = "3421f4fca0dd1ecd97b6d4bc261a7d94dc3393fa6c3ab79f9ea8c397763fd33e"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -87,9 +87,13 @@ cases = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
   "test_names_a_failed_delivery_without_its_output",
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
+  "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last",
+  "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line",
+  "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start",
+  "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 144
+cost = 148
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -195,3 +199,7 @@ inputs = [
 "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last" = 1
+"test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line" = 1
+"test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start" = 1
+"test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files" = 1

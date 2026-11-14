@@ -5,7 +5,7 @@ description: "Create a task. It starts in `backlog` unless you ask for `todo`."
 ---
 
 ```bash
-orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--topology=JSON] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--review=MODE] [--json]
+orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--topology=JSON] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--review=MODE] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -18,6 +18,12 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--orchestration=MODE` | `external` | Swamp executes task groups. The only supported mode is `external`; any other value returns `task.orchestration_invalid`. Children can declare workload topology. |
 | `--preview` | off | Keep the task's sandbox running during review. See [Request a preview](/reference/compute-drivers#request-a-preview). |
 | `--review=MODE` | `manual` | How the gate of the task pull request is passed. `manual`: Nick approves the exact head. `automatic`: a fresh reviewer passes the head in review rounds ([stage 4](/reference/command-development-pipeline#4-pr-and-ci)). Any other value returns `tasks.review_invalid`. `task:show` returns the mode as `review`. |
+| `--implementer-provider=NAME` | Project's, else Gateway's | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents), such as `claude`. |
+| `--implementer-model=MODEL` | Project's, else Gateway's | The implementer's model in a task copy, such as `claude-opus-5-5`. |
+| `--implementer-effort=LEVEL` | Project's, else Gateway's | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--reviewer-provider=NAME` | Project's, else Gateway's | The reviewer's provider in a task copy. |
+| `--reviewer-model=MODEL` | Project's, else Gateway's | The reviewer's model in a task copy. |
+| `--reviewer-effort=LEVEL` | Project's, else Gateway's | The reviewer's effort in a task copy. |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
 
 ```bash
@@ -37,7 +43,11 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
 | `tasks.agent_driver_unavailable` | The Gateway's configured agent driver is unknown. The Gateway stores no task. |
+| `task.agent_invalid` | An agent option is empty. |
+| `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |
 
 Use `--parent=ID` in place of `--project=ID` to append a subtask. Its Project and workspace are inherited. A contradictory Project, a child parent, or a deeper hierarchy is refused. `--deliverables=FILE` and `--topology=JSON` apply to child creation. Creating in Todo changes board state only. Use `task:start` to start the parent VM.
 
-Parent creation refuses `--deliverables` and `--topology`. Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--preview` and `--current-recipe`.
+Parent creation refuses `--deliverables` and `--topology`. Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--preview`, `--current-recipe` and the agent options.
+
+A task that names no agent value takes each one from its Project's default, then from the Gateway; [copy turn agents](/reference/tasks#copy-turn-agents) describes the order and how a turn checks the values against the copy.

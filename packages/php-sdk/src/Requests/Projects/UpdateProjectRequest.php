@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Sdk\Requests\Projects;
 
 use Orbit\Sdk\GatewayRequest;
+use Orbit\Sdk\Requests\Tasks\TaskAgentsInput;
 use Orbit\Sdk\Responses\Projects\ProjectResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
@@ -33,6 +34,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly ?string $mergeCheck = null,
         private readonly bool $mergeCheckProvided = false,
         private readonly ?string $name = null,
+        private readonly ?TaskAgentsInput $taskAgents = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -63,6 +65,6 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
             ],
             static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'task_workspace_routed', 'merge_check'], true) || $value !== null,
             ARRAY_FILTER_USE_BOTH,
-        );
+        ) + ($this->taskAgents?->toArray('task_') ?? []);
     }
 }

@@ -98,6 +98,7 @@ sequenceDiagram
     SW->>N: Start the container<br/>Ansible · tags start
     %%> What it does:
     %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
+    %%> - a nested-fleet default's root disk grows to the intent's size first, online; it never shrinks
     %%> - waits only for FrankenPHP and the enabled Process units, which the container's boot starts
     opt nested-fleet default
       SW->>N: Check the inner fleet<br/>Ansible · tags fleet_start
@@ -109,7 +110,7 @@ sequenceDiagram
     end
     SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
     %%> What it does:
-    %%> - fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle
+    %%> - fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle that holds only what the workspace lacks
     %%> - a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
     SW->>N: Check out in the container<br/>Ansible · tags checkout
     %%> What it does:

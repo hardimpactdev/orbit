@@ -438,6 +438,54 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const sent = () => (f.state().bundles ?? []).at(-1);
+      const commit = (text: string) => {
+        Deno.writeTextFileSync(`${f.source}/index.php`, `<?php echo ${text};\n`);
+        git(f.source, "commit", "--quiet", "-am", text);
+        return git(f.source, "rev-parse", "HEAD");
+      };
+      // The first build has no workspace HEAD: the whole branch, no prerequisite.
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const first = git(f.source, "rev-parse", "HEAD");
+      assertEquals(sent(), { prerequisites: [], refs: [`refs/heads/${f.container.branch}`] });
+      // A fast-forward: the workspace's HEAD is the prerequisite, and the checkout moves to the new commit.
+      const second = commit("2");
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(sent()!.prerequisites, [first]);
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      // The same commit again: the bundle holds only the tip, on its parent, and the checkout changes nothing.
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(sent()!.prerequisites, [first]);
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      // A force-moved branch: the prerequisite is what both still share, and the checkout refuses as it does with the whole branch.
+      git(f.source, "reset", "--quiet", "--hard", first);
+      const moved = commit("3");
+      assert(f.run("fetch").ok);
+      assertEquals(sent()!.prerequisites, [first]);
+      assert(!f.run("checkout").ok);
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      assertEquals(f.workspace("rev-parse", `refs/remotes/origin/${f.container.branch}`), moved);
+      // A local commit that the mirror does not hold: the whole branch, and the same refusal.
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/local.txt`, "local\n");
+      f.workspace("add", "local.txt");
+      f.workspace("-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "-m", "local");
+      assert(f.run("fetch").ok);
+      assertEquals(sent()!.prerequisites, []);
+      assert(!f.run("checkout").ok);
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   ignore: !hasAnsible,
   fn() {
@@ -455,6 +503,8 @@ Deno.test({
       }
       assertEquals(f.result(), { commit: second });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      // Only what the workspace lacks travelled: the bundle's prerequisite is the workspace's HEAD before the fetch.
+      assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${second}`]);
 
       // A pinned commit that is not on the branch refuses at the fetch.
@@ -1853,6 +1903,7 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
           assertEquals(wrote, damage === "clean" ? 0 : 1);
           assert(f.run("start").ok);
           assertEquals(incusCalls(f).filter((args) => args.join(" ") === autostart.join(" ")).length, wrote);
+          if (damage === "clean") rootSizeShapes(f);
         } else {
           assert(!result.ok, result.output);
           assertEquals(f.result(), {error_code: "instance.container_network_unsafe"});
@@ -1863,6 +1914,39 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
       } finally { f.cleanup(); }
     },
   });
+}
+
+/**
+ * The root disk of a nested-fleet default (docs/reference/development-containers.md#the-root-disk), on the clean nested container of
+ * the start gate: a start grows a smaller `<n>GiB` to the intent's size before the guard, keeps a larger one, and the guard refuses
+ * any other form. The shapes share that case's container: the file's slices are full.
+ */
+function rootSizeShapes(f: ReturnType<typeof fixture>) {
+  const devices = (f.container as unknown as {allowed_devices: Record<string, Record<string, string>>}).allowed_devices;
+  for (const [shape, has, intent] of [["grows", "40GiB", "80GiB"], ["keeps-larger", "80GiB", "40GiB"], ["same", "40GiB", "40GiB"],
+    ["odd-form", "50GB", "40GiB"]] as const) {
+    const state = f.state();
+    const row = state.containers["instance-7"];
+    row.status = "Stopped";
+    row.devices = row.devices.map((value: string) => value.startsWith("root,size=") ? `root,size=${has}` : value);
+    Object.assign(f.container, {root_disk_size: intent, allowed_devices: {...devices, root: {...devices.root, size: intent}}});
+    Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+    Deno.writeTextFileSync(`${f.folder}/calls`, "");
+    f.write();
+    const result = f.run("start");
+    const grow = ["--project", "orbit-instances-nested", "config", "device", "set", "instance-7", "root", `size=${intent}`].join(" ");
+    const grew = incusCalls(f).filter((args) => args.join(" ") === grow).length;
+    const size = f.state().containers["instance-7"].devices.filter((value: string) => value.startsWith("root,size="));
+    if (shape === "odd-form") {
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, shape);
+      assertEquals([shape, f.state().containers["instance-7"].status, grew, size], [shape, "Stopped", 0, ["root,size=50GB"]]);
+      continue;
+    }
+    assert(result.ok, `${shape}: ${result.output}`);
+    assertEquals([shape, f.state().containers["instance-7"].status, grew, size],
+      [shape, "Running", shape === "grows" ? 1 : 0, [`root,size=${shape === "keeps-larger" ? "80GiB" : intent}`]]);
+  }
 }
 
 Deno.test({

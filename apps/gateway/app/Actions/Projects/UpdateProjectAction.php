@@ -230,6 +230,7 @@ final readonly class UpdateProjectAction
         if ($data->mergeCheckProvided) {
             $changes['merge_check'] = $data->mergeCheck;
         }
+        $changes = [...$changes, ...$data->taskAgents];
         if ($changes === []) {
             return $project;
         }

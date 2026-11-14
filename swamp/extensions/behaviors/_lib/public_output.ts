@@ -10,9 +10,10 @@
  * The text rule is task-turn's `public_output.py`; the bounded tail is the
  * setup rule of `run_project_step.py` (#2355, #2370): normalize invalid UTF-8
  * before matching, redact known values in one pass across the whole capture,
- * redact the tail again, drop a first line that may start mid-value and every
+ * drop a first line that may start mid-value after discarded bytes and every
  * line that still holds an 8-byte fragment of a known value, and keep only
- * whole lines.
+ * whole lines. A line longer than the room left is replaced by a marker that
+ * names its size, so one long line never hides the lines before it.
  */
 
 export const REDACTED = "[REDACTED]";
@@ -364,24 +365,27 @@ export function publicTail(
     const values = knownValues(options.values);
     const redact = (text: string) =>
         redactText(text, { values, credentialHex: options.credentialHex });
-    const whole = encoder.encode(redact(decoder.decode(bytes)));
-    const cut = whole.length > limit;
-    let lines = redact(
-        decoder.decode(whole.subarray(Math.max(0, whole.length - limit))),
-    )
-        .split("\n");
-    // The first line of a cut tail may start mid-value.
-    if (options.discarded || cut) lines = lines.slice(1);
+    // The whole capture is redacted at once and split into whole lines, so no kept line starts mid-value.
+    let lines = redact(decoder.decode(bytes)).split("\n");
+    // The first line after discarded older bytes may start mid-value.
+    if (options.discarded) lines = lines.slice(1);
     const fragments = values.map((value) => encoder.encode(value));
     const kept: string[] = [];
     let used = 0;
     for (const line of lines.reverse()) {
         const encoded = encoder.encode(line);
         if (holdsFragment(encoded, fragments)) continue; // dropped, not replaced
-        const size = encoded.length + (kept.length ? 1 : 0);
-        if (used + size > limit) break; // whole lines only
-        kept.push(line);
-        used += size;
+        const separator = kept.length ? 1 : 0;
+        if (used + separator + encoded.length <= limit) {
+            kept.push(line);
+            used += separator + encoded.length;
+            continue;
+        }
+        // A line longer than the room left is named, not cut, and older lines still fill the bound.
+        const marker = `[a line of ${encoded.length} bytes omitted]`;
+        if (used + separator + marker.length > limit) break; // whole lines only
+        kept.push(marker);
+        used += separator + marker.length;
     }
     return {
         output: kept.reverse().join("\n"),

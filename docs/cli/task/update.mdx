@@ -3,10 +3,10 @@ title: "orbit task:update"
 sidebarTitle: "task:update"
 ---
 
-Change a task's title, brief, or status. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
+Change a task's title, brief, status, or copy turn agent. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
-orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--topology=JSON] [--json]
+orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--topology=JSON] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--json]
 ```
 
 | Option | Meaning |
@@ -16,10 +16,21 @@ orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--prev
 | `--status=STATUS` | `backlog` or `todo`; an external group also accepts its current status or an allowed active status move. |
 | `--preview` | Keep the sandbox running during review. It can change while the task is in `backlog`, waiting, or active. |
 | `--no-preview` | Let the sandbox park during review. Do not combine it with `--preview`. |
+| `--implementer-provider=NAME` | The implementer's provider in a [task copy](/reference/tasks#copy-turn-agents), such as `claude`. |
+| `--implementer-model=MODEL` | The implementer's model in a task copy, such as `claude-opus-5-5`. |
+| `--implementer-effort=LEVEL` | The implementer's effort in a task copy: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--reviewer-provider=NAME` | The reviewer's provider in a task copy. |
+| `--reviewer-model=MODEL` | The reviewer's model in a task copy. |
+| `--reviewer-effort=LEVEL` | The reviewer's effort in a task copy. |
+| `--clear-implementer-agent` | Clear the implementer's three values, so the Project's default, then the Gateway's, apply. Do not combine it with an implementer value. |
+| `--clear-reviewer-agent` | The same for the reviewer. |
 
 ```bash
 orbit task:update 13 --status=todo
+orbit task:update 13 --reviewer-model=claude-sonnet-5-5 --clear-implementer-agent
 ```
+
+A role's agent values change until the role has its first thread in the task copy; after that, its thread keeps the values it started with.
 
 In a terminal, the task list includes active tasks for a status update. Title and brief selection still uses `backlog` and `todo`. Without a change option, the CLI prompts for a new title. A `--json` or `-n` call without a change option fails with `tasks.update_required`.
 
@@ -31,5 +42,9 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `tasks.no_subtasks` | A move to `todo` for a task without subtasks. |
 | `tasks.subtask_deliverables_missing` | A move to `todo` while a subtask has no deliverables. The error details name the subtasks. |
 | `tasks.already_claimed` | The scheduler claimed the task before the status change. |
+| `tasks.agent_settings_locked` (409) | An agent value of a role that already has a thread. `details.role` names the role. Nothing changes. |
+| `task.agent_conflict` | A role's clear option together with one of its values. |
+| `task.agent_invalid` | An agent option is empty. |
+| `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |
 
 The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--topology`; parents accept preview intent. Each level keeps its existing status rules. Updating a parent to Todo does not start work.

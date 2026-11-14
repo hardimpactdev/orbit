@@ -32,9 +32,10 @@
       }
     },
     "swamp/tests/task_instance_check_test.py": {
-      "source_sha256": "5672e374d64f77c65b62e5b307f120f527fc56a59447cdc835380270be577602",
+      "source_sha256": "cf2cc1174ca8f8b163079aa9810f1a938d1429974c853c6c148d5b8420200a73",
       "case_seconds": {
         "test_check_runs_in_the_guest_and_commits_the_exact_candidate": 10.987,
+        "test_only_a_clean_recorded_candidate_makes_no_commit": 15.888,
         "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing": 5.22,
         "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch": 1.676,
         "test_task_vm_intents_keep_the_task_vm_steps": 0.198,

@@ -19,6 +19,10 @@ Fetching Instances...
 │
 ├  Task check              —
 │
+├  Implementer agent       Gateway default
+│
+├  Reviewer agent          Gateway default
+│
 ├  Task workspace routed   yes
 │
 ├  Review and merge        no

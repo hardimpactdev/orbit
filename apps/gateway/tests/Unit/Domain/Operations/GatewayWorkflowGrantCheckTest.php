@@ -24,7 +24,7 @@ describe('Gateway workflow grant intent', function (): void {
         expect($matches($declared))->toBeTrue()
             ->and($matches($this->policy['vaults']))->toBeTrue();
     })->with([
-        'instance-create-environment-input-12', 'instance-create-processes-12', 'instance-create-model-12',
+        'instance-create-environment-input-12', 'instance-create-processes-12', 'instance-create-model-12', 'instance-create-clone-12',
         'nckrtl-instance-t3-00000000-0000-4000-8000-000000000001-register-session-gateway-1831-token',
         'nckrtl-instance-t3-00000000-0000-4000-8000-000000000001-register-session-swamp-1831-token',
     ]);

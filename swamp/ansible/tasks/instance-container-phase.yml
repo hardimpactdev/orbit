@@ -380,6 +380,20 @@
     argv: "{{ incus_project + ['config', 'set', container.name, 'boot.autostart=' ~ container.config['boot.autostart']] }}"
   changed_when: true
 
+# A nested-fleet default's root disk grows to its intent's size, which a Gateway setting names: its quota also counts the seeds that its
+# copies pin. Incus sets the ZFS quota on a running container. Only a smaller `<n>GiB` grows: a failed shrink below the used space
+# leaves the dataset without a quota, so no start shrinks one (docs/reference/development-containers.md#the-root-disk).
+- name: Grow the root disk to its intent
+  tags: [container, clone, start]
+  when: >-
+    phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container_read.rc == 0
+    and container.allowed_devices is defined
+    and (container_read.stdout | from_json).expanded_devices.root.size | default('') is match('^[1-9][0-9]*GiB$')
+    and ((container_read.stdout | from_json).expanded_devices.root.size[:-3] | int) < (container.root_disk_size[:-3] | int)
+  ansible.builtin.command:
+    argv: "{{ incus_project + ['config', 'device', 'set', container.name, 'root', 'size=' ~ container.root_disk_size] }}"
+  changed_when: true
+
 # Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
 - name: Check the container's effective egress gates before starting it
   tags: [container, clone, start]
@@ -652,8 +666,36 @@
   tags: [fetch, workspace]
   when: phase == 'fetch' or (phase == 'workspace' and workspace_behind | bool)
   block:
+    # Only what the workspace lacks travels. The bundle's prerequisite is the newest commit the branch shares with the workspace's HEAD
+    # (their merge base in the mirror), or the tip's parent when the workspace already holds the tip: a bundle cannot be empty, and the
+    # checkout fetches it to move `origin/<branch>`, so it sees the same refs as with the whole branch. A workspace whose HEAD the
+    # mirror does not hold (local commits) or that has none (a first build) gets the whole branch.
+    - name: Read the workspace's commit for the bundle
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'] }}" }
+      register: bundle_head
+      changed_when: false
+      failed_when: false
+    - name: Read what the branch shares with the workspace
+      when: bundle_head.rc == 0 and bundle_head.stdout | trim != ''
+      ansible.builtin.command: { argv: "{{ mirror_git + ['merge-base', 'refs/heads/' ~ container.branch, bundle_head.stdout | trim] }}" }
+      register: bundle_shared
+      changed_when: false
+      failed_when: false
+    - name: Read the branch tip and its parent
+      ansible.builtin.command: { argv: "{{ mirror_git + ['rev-list', '--first-parent', '--max-count=2', 'refs/heads/' ~ container.branch] }}" }
+      register: bundle_tip
+      changed_when: false
+    - name: Name the bundle's prerequisite
+      ansible.builtin.set_fact:
+        bundle_prerequisite: >-
+          {{ '' if bundle_shared is skipped or bundle_shared.rc != 0 or bundle_shared.stdout | trim == ''
+             else (bundle_tip.stdout_lines[1] | default('')) if bundle_shared.stdout | trim == bundle_tip.stdout_lines[0]
+             else bundle_shared.stdout | trim }}
     - name: Bundle the branch
-      ansible.builtin.command: { argv: "{{ mirror_git + ['bundle', 'create', '--quiet', node_bundle, 'refs/heads/' ~ container.branch] }}" }
+      ansible.builtin.command:
+        argv: >-
+          {{ mirror_git + ['bundle', 'create', '--quiet', node_bundle, 'refs/heads/' ~ container.branch]
+             + (['^' ~ bundle_prerequisite] if bundle_prerequisite != '' else []) }}
       changed_when: true
     - name: Push the bundle into the container
       ansible.builtin.command:

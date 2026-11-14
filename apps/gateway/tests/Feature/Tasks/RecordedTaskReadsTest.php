@@ -12,6 +12,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskInsights;
 use App\Domain\Tasks\TaskReviewRoundVerdict;
 use App\Domain\Tasks\TaskTurnProjection;
 use App\Infrastructure\AgentView\CacheAgentStateView;
@@ -32,9 +33,11 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -484,4 +487,24 @@ it('projects a terminal review parent with large verdict and checked fix artifac
     } finally {
         app(SwampConnection::class)->release();
     }
+});
+
+it('breaks insights down by the model of each task\'s first implementer thread, and counts a task without one as Unknown', function (): void {
+    $project = Project::query()->create(['name' => 'app', 'slug' => 'app', 'repository_url' => 'https://github.com/example/app.git', 'default_branch' => 'main', 'root' => 'public']);
+    $ended = static fn (string $title): Task => Task::topLevel()->create(['project_id' => $project->id, 'title' => $title, 'brief' => 'Brief', 'status' => TaskGroupStatus::Failed,
+        'ended_at' => now(), 'implementer_model' => 'task-vm-model', 'reviewer_model' => 'task-vm-model']);
+    $thread = static fn (Task $group, string $role, string $model): AgentThread => AgentThread::query()->create(['task_group_id' => $group->id, 'driver' => 't3',
+        'runtime_key' => 'instance:1', 'external_id' => (string) Str::uuid(), 'role' => $role, 'model' => $model, 'effort' => 'high']);
+    $replaced = $ended('Replaced implementer');
+    $thread($replaced, 'reviewer', 'claude-haiku-5-5');
+    $thread($replaced, 'implementer', 'claude-sonnet-5-5');
+    $thread($replaced, 'implementer', 'claude-opus-5-5');
+    $thread($ended('One implementer'), 'implementer', 'claude-sonnet-5-5');
+    $ended('No thread');
+
+    $model = app(TaskInsights::class)->report(7, $project->id, CarbonImmutable::now())->breakdowns->model;
+
+    // The task VM column never counts; a reviewer thread does not either.
+    expect(array_map(static fn ($row): array => [$row->key, $row->label, $row->tasks], $model))
+        ->toBe([['', 'Unknown', 1], ['claude-sonnet-5-5', 'claude-sonnet-5-5', 2]]);
 });

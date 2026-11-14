@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -18,7 +17,7 @@ use Illuminate\Support\Facades\DB;
 /**
  * Records a copy turn where a task VM turn is recorded: the thread's state and error, and its transcript in the Gateway's archive,
  * which outlives the copy. A turn that asked keeps its questions on the thread until the thread's next turn. The result names the
- * effort that the turn's provider instance carries. T3's CLI reports no token use, so the metrics stay null.
+ * provider instance, the model and the effort the thread started with. T3's CLI reports no token use, so the metrics stay null.
  */
 final readonly class TaskCopyTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
@@ -36,8 +35,11 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             $result = is_string($captured) ? json_decode($captured, true, flags: JSON_THROW_ON_ERROR) : $captured;
             $result = is_array($result) ? ValidatedData::object($result) : [];
             if ($result !== []) {
-                $instance = $result['provider_instance'] ?? null;
-                $result['effort'] = is_string($instance) ? InstanceContainer::claudeEffort($instance) : null;
+                // The agent the thread started with, as the admission resolved and recorded it (TaskCopyAgent).
+                $thread = AgentThread::query()->findOrFail(ValidatedData::integer($operation->input['thread_id']));
+                $result['provider_instance'] = $thread->provider_instance;
+                $result['model'] = $thread->model;
+                $result['effort'] = $thread->effort;
             }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];
