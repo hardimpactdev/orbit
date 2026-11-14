@@ -22,7 +22,7 @@ sequenceDiagram
   Note over GW: Find the done groups<br/>own records only
   %%> What it does:
   %%> - takes each open group whose workspace is a task copy and that has no pull request
-  %%> - keeps a group whose work is done: every subtask ended and one completed; the last completed one has an eligible passed handoff check, and no newer handoff check exists; the reviewer thread's newest turn reviewed exactly that commit and ended `done` before the subtask was completed; no turn may still run and no Operation of the group runs
+  %%> - keeps a group whose work is done: every subtask ended and one completed; the last completed one has an eligible passed handoff check, and no newer handoff check exists; the reviewer thread's newest turn reviewed exactly that commit and ended `done` (a subtask of a task copy cannot be completed while a turn runs); no turn may still run and no Operation of the group runs
   %%> - keeps a group whose mode now resolves to `pr_when_done` (group, then Project, then Gateway) and whose done check recorded `pr_when_done` when it passed
   %%> Result:
   %%> - a group in `review_before_pr`, or whose done check recorded it, stays `waiting_for_release`; nothing happens on GitHub
@@ -32,7 +32,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - every guard of a manual publish: the group lock, the copy publish allow list, the eligible candidate, the running container
   %%> - the key `pr-when-done:GROUP:CHECK` was not admitted before, and no publish of this check failed or was cancelled; a repeat tick starts nothing
-  %%> - the group is still done under the group lock, else `tasks.not_done`
+  %%> - inside the admission's transaction, after the group's row lock, the group is still done with this check and still in `pr_when_done`, else `tasks.not_done`
   %%> Result:
   %%> - task #TASK recorded, kind `tasks.publish`, caller `gateway:pr-when-done`
   GW->>SW: Start run, full intent<br/>operation-task-publish
@@ -60,7 +60,8 @@ sequenceDiagram
     %%> - a step failed, such as `tasks.publish_secret_content` or `tasks.push_failed`
     %%> - an admission refusal, such as `tasks.copy_publish_held` or `tasks.commit_not_checked`, starts no run and ends here too
     %%> - a stopped task copy refuses at admission with `tasks.instance_not_running` and is stored too
-    %%> - only `operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again and stores nothing
+    %%> - only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal: the next tick reads the group again and stores nothing
+    %%> - a fault that is no refusal is stored as `tasks.publish_failed`; a refusal is never stored over a publish admitted in between
     Note over GW: Show the refusal<br/>state refused · error_code
     %%> Result:
     %%> - an admission refusal is stored on the group; a failed, interrupted or cancelled publish of the done check, by any caller, keeps its code on its Operation (`operation.cancelled` when it has none); `task:show` and `task:status` show `refused` with the code

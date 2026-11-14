@@ -1201,10 +1201,10 @@ Orbit decides from its own records that a group's work is done. All of these mus
 - The group is open, its workspace is a task copy, and it has no pull request.
 - Every subtask has ended, and at least one is `completed`.
 - The last completed subtask has a passed handoff check that is an [eligible candidate](#check-an-external-group), and no handoff check of the group is newer. This is the done check.
-- The newest turn of the group's reviewer thread reviewed exactly the done check's commit, ended `done`, and finished before the caller completed that subtask.
+- The newest turn of the group's reviewer thread reviewed exactly the done check's commit for that subtask and ended `done`.
 - No earlier copy turn may still run, and no other Operation of the group runs.
 
-A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval.
+A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.
 
 For a Project without a task check, a passed handoff check only records the commit: nothing ran on it. The automatic publish still runs. What stands in front of it is the reviewer turn on exactly that commit and the guards of every publish: the [copy publish allow list](#task-copy) and the `.env` content and Club key checks.
 
@@ -1231,20 +1231,22 @@ The title is the group title. The body holds the group brief, the completed subt
 | `working` | The work is not done yet |
 | `waiting_for_release` | The work is done, and Orbit does not publish by itself: the mode is `review_before_pr`, or the done check recorded `review_before_pr` |
 | `publishing` | A publish of the done check runs, or the tick starts one within a minute because the group and its done check are in `pr_when_done` |
-| `refused` | The automatic publish of the done check was refused |
+| `refused` | A publish of the done check failed, was cancelled or was refused, by any caller |
 | `published` | The group has its pull request |
 
 [`task:status`](/cli/task/status) lists every group in `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
 
 ### Release a waiting group
 
-`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the same title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`. The admission reads done again under the group lock, so a subtask added in between refuses with `tasks.not_done`.
+`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the same title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
+
+The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 
 ### A refused automatic publish
 
 A refusal at admission, such as `tasks.copy_publish_held`, `tasks.commit_not_checked` or `tasks.instance_not_running` for a stopped task copy, starts no Operation. Orbit stores its code on the group, and `publication` shows `refused` with that code. A publish of the done check that failed, was interrupted or was cancelled, whoever started it, keeps its code on its Operation, such as `tasks.push_failed`, or `operation.cancelled` and `operation.interrupted` when it has none; `publication` shows it the same way. Orbit does not start that done check again by itself. A new handoff check or `task:publish <group>` tries again; start a stopped copy first.
 
-Only `operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again and stores nothing. A fault of one group is reported and the tick goes on with the next.
+Only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal: the next tick reads the group again and stores nothing. Any other refusal is stored, also a 503 such as `swamp.ssh_identity_unavailable`, because Orbit marks no admission code as passing; release the group once its cause is fixed. A fault that is no refusal is reported, stored as `tasks.publish_failed`, and the tick goes on with the next group. A refusal is never stored over a publish of the group that was admitted in between.
 
 A refused publish changes nothing else. The group keeps its status, and the task copy and its checked commit stay until `task:cancel` or `task:complete`.
 
