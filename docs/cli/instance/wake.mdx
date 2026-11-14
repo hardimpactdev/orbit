@@ -33,7 +33,7 @@ Orbit resumes a frozen container: its processes continue where they stopped, and
 
 There is one wake per Instance at a time. A second caller joins the open wake and gets the same Operation.
 
-Waking an Instance that is awake changes nothing and also succeeds. A failed wake keeps the asleep marker: the Route shows a failure page with Try again. Try again, or this command, starts a new wake.
+Waking an Instance that is awake changes nothing and also succeeds, except a nested-fleet default: one that no sleep froze, running or stopped, is refused with `instance.sleep_unsupported`. A running nested-fleet clone takes its start, which checks it and changes nothing that runs. A failed wake keeps the asleep marker: the Route shows a failure page with Try again. Try again, or this command, starts a new wake.
 
 The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake` Operation, or an `instance.start` Operation for a stopped clone of a nested-fleet default. The MCP tool is `instance-wake`.
 

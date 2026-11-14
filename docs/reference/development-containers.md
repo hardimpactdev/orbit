@@ -1382,7 +1382,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 
 | Value | The idle sleep acts on |
 | --- | --- |
-| `false`, the default, or any value not in this table | No Instance. A value not in this table is logged once as an error |
+| `false`, the default, or any value not in this table | No Instance. A value not in this table is logged as an error once, and again after a cache clear |
 | `without_t3` | Only Instances without a T3 server: the runtime records no T3 port. Today these are the defaults |
 | `true` | Every development container |
 
