@@ -7,21 +7,26 @@ Run one turn on the current subtask of an external group. Orbit records the rece
 
 ```bash
 orbit task:turn <task> --role=implementer --prompt="Implement the brief." --thread=new --idempotency-key=feature.implement.c1
+orbit task:turn <task> --role=implementer --prompt="Fix the failing test."
 orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --json
 ```
 
 The VM receives the title, brief and deliverables of the subtask, then your prompt, for every role. Send only what this turn adds; do not paste the brief.
 
-`--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
+`--thread=new` starts a new thread and `--thread=ID` continues one. On a task VM a turn without `--thread` starts a new thread; in a [task copy](#a-task-that-runs-in-a-copy) it continues the role's thread. `--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
 
 ### A task that runs in a copy
 
 A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it. `task:start` makes one for a Project whose default Instance is a container or that has a nested fleet; a nested-fleet task without a copy refuses with `tasks.no_workspace`. Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
 
-- Only a new implementer thread runs. A reviewer turn, `--thread=ID` and `--model` answer `tasks.copy_turn_unsupported`.
-- The model is the Gateway's `ORBIT_TASKS_COPY_TURN_MODEL`, `claudeAgent/claude-opus-5-5` by default. T3 picks the effort.
+- The implementer and the reviewer each keep one ongoing T3 thread, so the agent keeps the whole earlier conversation. A turn without `--thread` continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread. The first turn of a role starts it. `--thread=new` starts a new thread, which later turns then continue. `--thread=ID` must name the thread the turn would continue. A thread continues only in the copy that started it.
+- A reviewer turn names the subtask's checked candidate with `--check`, as on a task VM, and its prompt names that commit. The reviewer works on the candidate: Orbit checks it out, detached, before the turn, and checks the task branch out again after it, at the commit it had, so nothing the reviewer changed stays. A checkout that is not clean on that branch and commit afterwards, also after a failed or cut turn, holds the group like a turn that may still run. A checkout with uncommitted changes refuses the reviewer turn with `tasks.copy_tree_dirty`. The group records the reviewer's thread.
+- A consult and `--model` answer `tasks.copy_turn_unsupported`.
+- A new thread takes its role's model and effort from the Gateway. The model is `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL`, each `claude-opus-5-5` by default. The effort is `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `medium` by default, or `ORBIT_TASKS_REVIEWER_EFFORT`, `high` by default. An operator changes them in the Gateway's `.env`; a change applies to the next new thread. A continued thread keeps its model and effort.
+- T3 applies the effort through its own settings: the copy's create gives T3 one Claude provider instance per effort level, and the thread starts on the instance of its effort. That Claude Code takes the instance's `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` T3 passes was verified with Claude Code 2.1.311 and T3 0.1.7. A copy made before this lacks those instances, so T3 refuses its new threads. Cancel it and start the task again.
+- The transcript is the whole thread's message text, the newest kept within its bound.
 - The turn ends after one hour with `tasks.turn_timeout`. T3's CLI cannot stop a run, so the run may go on in the copy.
-- While an earlier turn may still run, a turn or a check of the group answers `tasks.copy_turn_unended`. `task:cancel` ends the run with the copy.
+- While an earlier turn may still run, a turn or a check of the group answers `tasks.copy_turn_unended`. `task:cancel` ends the run with the copy. A turn that ended asking for input does not hold the next turn of its own thread: send the answer as that thread's next turn. That `t3 thread send` answers a waiting run is an assumption read from T3 0.1.7's CLI; the tests prove it only against a stand-in for T3.
 - The transcript holds message text only, and the thread has no token metrics.
 
 
@@ -43,10 +48,16 @@ A turn in a task copy adds these answers and Operation errors:
 | --- | --- |
 | `tasks.no_workspace` (409) | The group owns no task copy. |
 | `tasks.copy_not_ready` (409) | The task copy is not `active` yet: its create or its completion still runs. |
-| `tasks.copy_turn_unsupported` (422) | The turn is a reviewer turn, continues a thread or names a model. |
-| `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
-| `tasks.copy_turn_model_invalid` (503) | `ORBIT_TASKS_COPY_TURN_MODEL` does not read `PROVIDER/MODEL`. |
+| `tasks.copy_turn_unsupported` (422) | The turn is a consult or names a model. |
+| `tasks.thread_role_mismatch` (422) | `--thread=ID` is not the role's thread that the turn would continue in this copy. |
+| `tasks.commit_not_checked` (422) | A reviewer turn's `--check` is not the subtask's checked candidate. |
+| `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy, or a reviewer turn left the checkout unrestored; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
+| `tasks.copy_turn_model_invalid` (503) | The role's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` is not a model name. |
+| `tasks.copy_turn_effort_invalid` (503) | The role's `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT` is not `low`, `medium`, `high`, `xhigh` or `max`. |
+| `tasks.copy_thread_missing` | The Operation's error: T3 in the copy holds no single thread of the title to continue. Nothing was launched. A first turn that T3 refused leaves such a thread recorded: `--thread=new` starts a new one. |
+| `tasks.copy_tree_dirty` | The Operation's error: the copy's checkout had uncommitted changes or no branch before a reviewer turn. Nothing was launched. |
+| `tasks.copy_review_unrestored` | The Operation's error: after a reviewer turn, the checkout is not clean on its branch at the commit it had before. The group holds until `task:cancel`. |
 | `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. |
 | `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
-| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down. |
+| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down, or could not list its threads to find the one to continue. |
 

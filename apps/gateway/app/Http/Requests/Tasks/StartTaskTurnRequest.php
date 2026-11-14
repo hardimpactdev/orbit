@@ -20,7 +20,7 @@ final class StartTaskTurnRequest extends FormRequest
 
             'role' => ['required', 'string', 'in:implementer,reviewer,consult'],
             'prompt' => ['required', 'string', 'max:100000'],
-            'thread' => ['required', 'string', 'regex:/\A(?:new|[1-9][0-9]*)\z/D'],
+            'thread' => ['sometimes', 'string', 'regex:/\A(?:new|[1-9][0-9]*)\z/D'],
             'model' => ['sometimes', 'string', 'max:255'],
             'check' => ['required_if:role,reviewer', 'prohibited_unless:role,reviewer', 'integer:strict', 'min:1'],
         ];

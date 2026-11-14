@@ -68,6 +68,9 @@ final readonly class InstanceContainer
     /** T3's command in a container, from the agent release its image holds. */
     public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
+    /** The Claude Code efforts of a task copy's T3: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
+    public const array ClaudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
      * (docs/reference/development-containers.md#playwright-browsers). The default's deploy steps run as `orbit` and a task
@@ -133,8 +136,8 @@ final readonly class InstanceContainer
 
     /**
      * Reserves the container's runtime row: the lowest free guest address of the Node's bridge (the bridge keeps the first usable
-     * address and the image build the last) and the shared folder versions the Node installs now. A clone also gets the lowest free
-     * T3 port and names the default it copies; the default gets no T3 port.
+     * address and the image build the last) and the shared folder versions the Node installs now. A clone also gets the next free
+     * T3 port ({@see self::nextT3Port()}) and names the default it copies; the default gets no T3 port.
      */
     public function reserve(Instance $instance, Node $node, ?Instance $source = null): InstanceRuntime
     {
@@ -166,9 +169,7 @@ final readonly class InstanceContainer
         $port = null;
         // Every Instance but the default runs T3: a clone, and a checkout Instance that moved into a container.
         if ($instance->name !== 'default') {
-            $ports = array_map(ValidatedData::integer(...), InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->pluck('t3_port')->all());
-            $port = array_first(array_diff(range(self::T3PortFirst, self::T3PortLast), $ports))
-                ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node has no free T3 port.', 409);
+            $port = self::nextT3Port($node);
         }
         $plan = InstanceFolderPlan::for($folders);
 
@@ -182,6 +183,26 @@ final readonly class InstanceContainer
             'inner_volume' => ($source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject)
                 || $sourceRuntime?->inner_volume !== null ? NestedFleetInnerVolume::name(self::name($instance)) : null,
         ]);
+    }
+
+    /**
+     * The first free T3 port after the last one the Node gave, wrapping from 3999 to 3800, recorded as the Node's last. A port that a
+     * destroy freed comes back only after every other free port, so a client that saved the old server under that address does not
+     * meet a new server there at once (development-containers.md#prepare-a-node).
+     */
+    private static function nextT3Port(Node $node): int
+    {
+        $taken = array_map(ValidatedData::integer(...), InstanceRuntime::query()->where('node_id', $node->id)->whereNotNull('t3_port')->pluck('t3_port')->all());
+        $last = Node::query()->whereKey($node->id)->value('t3_port_last');
+        $last = is_numeric($last) ? (int) $last : null;
+        $after = $last !== null && $last >= self::T3PortFirst && $last < self::T3PortLast ? $last + 1 : self::T3PortFirst;
+        // `range()` counts down when its end is below its start, so the wrapped part is empty when the order starts at 3800.
+        $order = [...range($after, self::T3PortLast), ...($after > self::T3PortFirst ? range(self::T3PortFirst, $after - 1) : [])];
+        $port = array_first(array_diff($order, $taken))
+            ?? throw new ResourceOperationException('instance.host_unavailable', 'The Node has no free T3 port.', 409);
+        Node::query()->whereKey($node->id)->update(['t3_port_last' => $port]);
+
+        return $port;
     }
 
     /** A web-serving Project needs its PHP version, and the runtime folder its static build: FrankenPHP serves it. */
@@ -394,11 +415,32 @@ final readonly class InstanceContainer
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
                 ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
-                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]],
+                // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
+                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
+                    ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => self::claudeInstances()])]],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
         ];
+    }
+
+    /** The T3 provider instance of a Claude Code effort in a task copy: `claudeMedium` for `medium`. */
+    public static function claudeInstance(string $effort): string
+    {
+        return 'claude'.ucfirst($effort);
+    }
+
+    /**
+     * One `claudeAgent` provider instance per effort, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment. Claude Code takes that
+     * variable over the `--effort` T3 passes from its model catalog, so a thread runs at the effort of the instance it starts on.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function claudeInstances(): array
+    {
+        return array_combine(array_map(self::claudeInstance(...), self::ClaudeEfforts), array_map(static fn (string $effort): array => [
+            'driver' => 'claudeAgent', 'displayName' => 'Claude, '.$effort.' effort', 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => $effort]],
+        ], self::ClaudeEfforts));
     }
 
     /**

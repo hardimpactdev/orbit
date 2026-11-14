@@ -29,7 +29,7 @@ sequenceDiagram
   %%> - a nested-fleet default whose runtime records an inner volume, while a deployment of it is open: `instance.default_seed_in_flight` (409) before any record, since the deployment retakes the two halves of the seed one after the other
   %%> - a nested-fleet default whose runtime records an inner volume: the clone's runtime records its own `inner-<id>`, and `container.clone` names the default's volume; every other clone, a copy of the first nested-fleet default included, records none
   %%> Result:
-  %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
+  %%> - the Instance is reserved with its runtime record: container name, bridge address, the next free T3 port after the Node's last one, wrapping from 3999 to 3800, and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
   %%> - each attachment of the default marked shared is attached to the clone as it is (same connection, prefix and network, still shared) before `.env` renders, so `.env` holds its keys and the container intent its network path
   %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys, of its credential keys and of the shared connections' keys, and the default's Route host with the clone's; SSH stdin takes the whole value

@@ -37,7 +37,7 @@ sequenceDiagram
   %%> - the runtime reservation records its owning Operation; late receipts cannot change a newer owner
   %%> - the whole-run budget is 5,700 seconds: 4,830 seconds of declared phase and child timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement
   %%> - maps only known host command locations, preserving opaque env/shell strings, and records each Process/from/to translation in the terminal receipt
-  %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the lowest free T3 port
+  %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the next free T3 port after the Node's last one
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
   %%> - the Instance takes no deployment and no wake while the run lasts
   %%> - a non-default Instance's placeholder model key goes to the vault

@@ -16,7 +16,7 @@ sequenceDiagram
   CLI->>GW: task:turn 43<br/> --role=reviewer
   %%> Command:
   %%> - `orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --idempotency-key=review-1`
-  %%> - syntax: `<task> --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID [--check=ID] [--json]`
+  %%> - syntax: `<task> --role=implementer|reviewer|consult --prompt=TEXT [--thread=new|ID] [--check=ID] [--json]`
   Note over GW: Admit the turn<br/>owned VM · current child
   %%> Requirements:
   %%> - group 42 is external and open; child 43 is current and open
@@ -28,6 +28,7 @@ sequenceDiagram
   %%> What it does:
   %%> - composes the prompt the VM receives: the title, brief and deliverables of the subtask, then the prompt of the caller, for every role
   %%> - records the composed prompt as the admitted intent
+  %%> - a turn without `--thread` starts a new thread, as `--thread=new` does; a task copy continues the role's thread instead (`copy-turn.mmd`)
   %%> - refuses a composed prompt longer than the workflow accepts, 100000 characters, with `tasks.prompt_too_large`
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds reaches it from the Gateway, not from the driver
