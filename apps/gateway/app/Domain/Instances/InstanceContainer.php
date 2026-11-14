@@ -68,6 +68,9 @@ final readonly class InstanceContainer
     /** T3's command in a container, from the agent release its image holds. */
     public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
+    /** The Claude Code efforts of a task copy's T3: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
+    public const array ClaudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
+
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
      * (docs/reference/development-containers.md#playwright-browsers). The default's deploy steps run as `orbit` and a task
@@ -390,11 +393,32 @@ final readonly class InstanceContainer
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
                 ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
                 ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
-                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]],
+                // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
+                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
+                    ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => self::claudeInstances()])]],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
         ];
+    }
+
+    /** The T3 provider instance of a Claude Code effort in a task copy: `claudeMedium` for `medium`. */
+    public static function claudeInstance(string $effort): string
+    {
+        return 'claude'.ucfirst($effort);
+    }
+
+    /**
+     * One `claudeAgent` provider instance per effort, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment. Claude Code takes that
+     * variable over the `--effort` T3 passes from its model catalog, so a thread runs at the effort of the instance it starts on.
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    private static function claudeInstances(): array
+    {
+        return array_combine(array_map(self::claudeInstance(...), self::ClaudeEfforts), array_map(static fn (string $effort): array => [
+            'driver' => 'claudeAgent', 'displayName' => 'Claude, '.$effort.' effort', 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => $effort]],
+        ], self::ClaudeEfforts));
     }
 
     /**

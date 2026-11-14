@@ -196,6 +196,8 @@ describe('a clone of the container default', function (): void {
             ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             // Only a task copy drops the default's untracked and modified files; this clone keeps them.
             ->and($clone)->not->toHaveKey('clean_workspace')
+            // Only a task copy's T3 gets the Claude provider instances of its turns' efforts.
+            ->and(collect($clone['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true])
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
             ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])

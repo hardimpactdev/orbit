@@ -1,15 +1,20 @@
 order = 380
-source_sha256 = "3be9fc00e06f4afabd9095912008d96ff1b5b2fc62793962a67c315988e7fa58"
+source_sha256 = "723da952ad85d927a28c0f5e49efd3b4f21332f9f000a8567e7571b9855ae9ed"
 cases = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time",
   "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back",
+  "a continued turn finds its thread by title and sends the prompt to it, with no model and no title",
+  "a continued turn whose thread T3 does not hold launches nothing and says so",
+  "a continued turn whose thread list fails launches nothing and names T3's failure, not a missing thread",
+  "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn",
+  "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so",
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
   "an intent outside the admitted shape runs nothing in the copy",
   "a thread list that is not JSON reads as no thread, and the start's end is still written",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 19
+cost = 57
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -26,6 +31,11 @@ inputs = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 1
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time" = 1
   "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 3
+  "a continued turn finds its thread by title and sends the prompt to it, with no model and no title" = 4
+  "a continued turn whose thread T3 does not hold launches nothing and says so" = 2
+  "a continued turn whose thread list fails launches nothing and names T3's failure, not a missing thread" = 2
+  "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn" = 12
+  "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so" = 18
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 6
   "an intent outside the admitted shape runs nothing in the copy" = 4
   "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4
