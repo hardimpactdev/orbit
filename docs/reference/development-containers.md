@@ -2111,6 +2111,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
 | The same proxy settings as `environment.*` keys in the inner Incus. `NO_PROXY` is `localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24` | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy. PHP's HTTP clients may not match `10.45.0.1` to its range |
 | The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/90orbit-package-cache`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
+| The size files: `APT::Keep-Downloaded-Packages "false";` in `/etc/apt/apt.conf.d/91orbit-nested-package-files`, and `SystemMaxUse=64M` in `/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf` | All three | Every nested root disk is in every copy. See below the table |
 | `security.nesting=true` and a memory limit | All three | Docker runs in them |
 | `boot.autostart=true` | All three | They start with the outer container, also after a restore of its seed. With `false`, the start still starts them, and the refresh writes `true` |
 | `raw.dnsmasq` `no-resolv` on the inner bridge `oe-nested` | The inner Incus | A name the fleet does not know is refused at once, not after a silent wait of about 15 s. See below the table |
@@ -2122,6 +2123,8 @@ The cost: while `raw.dnsmasq` is set, the inner Incus runs the inner bridge's dn
 Incus restarts the bridge's dnsmasq when the key changes, so only the refresh writes it, with the fleet stopped. A start only compares. A copy whose seed lacks the key starts as before. A bridge that cannot be read is refused with `instance.container_fleet_drift`.
 
 The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The apt file replaces the task VM package cache that the image names. No Instance runs that cache. A role add through the nested Gateway still writes the cache back. The next refresh that reads the fleet files replaces it: one whose files moved, one that converges, or one that retakes `base`. The refresh writes both files before the converge.
+
+The size files keep the nested root disks small. `apt-get` keeps each package file by default, about 70 to 135 MiB per machine, and the egress proxy serves them again. The journal cap file sorts after `orbit-retention.conf` (256 MiB), which the nested Gateway's role writes, so its cap wins. journald applies it at the start after `base`. A real Node gets neither file and keeps its role's settings.
 
 A unit in the fleet reads its secret from `SetCredential` or a file, never `LoadCredential`: there systemd gives the unit no credential and no error. The fleet check fails on a unit that breaks this rule. The nested Nodes keep `wg-quick` from their own Node converge; the fleet build's cloud-init `bootcmd` turns off the `wg` and `wg-quick` profiles.
 
@@ -2387,11 +2390,13 @@ The gate and the runner take the tools as ready only when the venv holds `.compl
 
 The three nested containers hold their root disks on the inner pool. A refresh keeps them small in the window where it retakes `base`, with the three stopped, the old `base` deleted and the new one not yet taken. So the new `base` and the seed hold the small form. The step is `swamp/ansible/instance_fleet_shrink.py`, run as root in the outer container. It has two parts:
 
+Before them it empties the nested containers' apt archives: the `.deb` files in `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it.
+
 The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then a rename over it.
 
 The second part is the dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent. The kernel compares the bytes before it shares them, so no file changes. It needs a btrfs pool and `duperemove`. [The pinned shape tools](#the-pinned-shape-tools) step keeps `duperemove` in the container.
 
-The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due shrink makes `base` due for all three, so the dedupe shares blocks across them.
+The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. A record of an older rule of the step counts as no record, so a new rule runs once. The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due shrink makes `base` due for all three, so the dedupe shares blocks across them.
 
 | Case | What the step does | Result |
 | --- | --- | --- |
