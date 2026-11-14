@@ -11,12 +11,15 @@ use Orbit\Sdk\Responses\Tasks\TaskCancellationResponse;
 use Saloon\Contracts\Body\HasBody;
 use Saloon\Enums\Method;
 use Saloon\Http\Response;
-use Saloon\Traits\Body\HasJsonBody;
+use Saloon\Traits\Body\HasStringBody;
 
-/** `discard`: the cancel may destroy a task copy that holds work origin lacks, or that cannot be read. */
+/**
+ * `discard`: the cancel may destroy a task copy that holds work origin lacks, or that cannot be read.
+ * The body is always a JSON object: `{}` without discard, `{"discard":true}` with it.
+ */
 final class CancelTaskRequest extends GatewayRequest implements HasBody
 {
-    use HasJsonBody;
+    use HasStringBody;
 
     #[\Override]
     protected Method $method = Method::POST;
@@ -35,13 +38,12 @@ final class CancelTaskRequest extends GatewayRequest implements HasBody
     /** @return array<string, string> */
     protected function defaultHeaders(): array
     {
-        return ['Idempotency-Key' => $this->idempotencyKey];
+        return ['Content-Type' => 'application/json', 'Idempotency-Key' => $this->idempotencyKey];
     }
 
-    /** @return array{discard?: true} */
-    protected function defaultBody(): array
+    protected function defaultBody(): string
     {
-        return $this->discard ? ['discard' => true] : [];
+        return json_encode($this->discard ? ['discard' => true] : new \stdClass, JSON_THROW_ON_ERROR);
     }
 
     public function createDtoFromResponse(#[\SensitiveParameter] Response $response): TaskCancellationResponse
