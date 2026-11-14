@@ -706,7 +706,9 @@ One guest preflight checks the executable, unit ownership and contents, socket s
 
 Updated endpoint settings rewrite the proxy services and restart active proxies, leaving application Processes running. The runtime folder's existing `try-restart orbit-*.service` also leaves idle proxies inactive; an active proxy restart can close its current SMTP connections while its socket remains listening. Process cleanup matches `orbit-process-*` and does not remove these mail units.
 
-A clone keeps the seed's mail socket links. Its default's mail units are the Node's, the same for every copy, so the container launch finds them in place and reports `unchanged`. A seed taken before mail existed gets them as `applied`. The launch rewrites and restarts them only when the Node's endpoint changed after the seed.
+A clone keeps the seed's mail socket links. Its default's mail units are the Node's, the same for every copy, so the container launch finds them in place and reports `unchanged`. A seed taken before mail existed lacks them. The clone then writes the four units and their two socket links into the stopped copy before its first start, so its boot starts both sockets and the launch finds them in place too. The launch rewrites and restarts them only when the Node's endpoint changed after the seed.
+
+For a clone the exact SMTP rule is in its own ACL before the copy exists (`acl_rules`), and the bridge record of the Node's endpoint exists from the default. So the network is admitted before these unit files land, as the rule above asks. The bridge write still runs in the launch.
 
 A socket's link in `sockets.target.wants`, absolute or relative, is its enablement. The preflight reads it on disk, because a clone's mail part runs right after `incus start`, often before the copy's systemd answers. A missing link is a change: the install enables and starts the socket. A linked socket that does not listen is started, which is no change; `enable` would reload systemd in the middle of the boot.
 

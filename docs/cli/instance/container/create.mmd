@@ -94,6 +94,7 @@ sequenceDiagram
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
     %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process
     %%> - the seed's mail socket links stay: the units are the Node's, so a clone's launch reports `unchanged` unless the Node's endpoint changed
+    %%> - a seed without the mail units (a default made before mail): the stopped copy gets the four units and their two socket links before its first start, so its boot starts the sockets
     %%> On mail failure:
     %%> - keep a mail warning and continue workspace, T3 and registration; mail:update remains the repair command
     %%> ACL:
