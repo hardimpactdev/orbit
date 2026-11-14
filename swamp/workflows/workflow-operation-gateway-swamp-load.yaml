@@ -122,6 +122,14 @@ jobs:
                 | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
               timeout 90 /usr/local/bin/swamp access reload --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -e '.success == true' >/dev/null
+              # The production Swamp Node's own schedules read this checkout. This load sets them as serve.yaml trigger overrides,
+              # so their built-in triggers, which every serve registers, can go. A missing or empty file passes on purpose: a
+              # rollback runs this load against an older checkout without it, so no pipefail here.
+              jq -r 'to_entries[] | "\(.key) \(.value)"' swamp/config/swamp-node-schedules.json | while read -r name cron; do
+                timeout 60 /usr/local/bin/swamp workflow trigger set "$name" --schedule "$cron" --server ws://127.0.0.1:9418 \
+                  --token-file /home/orbit/.config/swamp/serve-driver-token --json \
+                  | jq -e --arg name "$name" --arg cron "$cron" '.workflowName == $name and .entry.schedule == $cron' >/dev/null
+              done
               # Schedules write their own schedule-<uuid> workflows into serve at any time; only the commit's are compared.
               tracked='[.results[] | select(.name | test("^schedule-[0-9a-f-]{36}$") | not) | [.id, .name]] | sort'
               disk=$(timeout 60 /usr/local/bin/swamp workflow list --repo-dir swamp --json | jq -ec "$tracked")

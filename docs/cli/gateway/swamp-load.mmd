@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design: swamp-load-git-checkout (Nick 2026-11-01), release-waits-for-swamp, single-swamp-node. docs/reference/gateway-recovery.md#load-swamp.
   %% Tightened: flow-tighten 2026-11-02, Nick approved Gateway grant rendering; official file actions run after checkout and before reload.
   %% Orchestrator 2026-11-08: the load reports collections drift and never installs; the swamp role converge stays the one install path.
+  %% Task 5037 2026-11-14: the load sets the Swamp Node's schedules as trigger overrides; a later change removes their built-in triggers, so a nested fleet's serve stops registering them.
   %% status: draft
   %% command: gateway:release:deploy · Load Swamp
   %% kind: gateway.swamp_load
@@ -57,6 +58,10 @@ sequenceDiagram
     %%> - `swamp serve reload`: serve picks up new and changed workflows and extensions
     %%> - extensions come with their manifest `additionalFiles`, so a newly shipped file needs no serve restart (Lab #4282, fixed in db3f6373)
     %%> - `swamp access reload`: serve creates, revokes or keeps grants to match the file
+    %%> - `swamp workflow trigger set` for each entry of `swamp/config/swamp-node-schedules.json`: serve keeps the schedules of the Swamp Node as trigger overrides; a schedule serve does not confirm fails the load
+    %%> Why the overrides:
+    %%> - those workflows read Node 209's checkout, and every serve, a nested fleet's too, registers a built-in trigger; the overrides come first, so Node 209 keeps both schedules when a later release removes the built-in triggers
+    %%> - a missing or empty file sets nothing and passes: a rollback runs this load against an older checkout without it
     %%> Why:
     %%> - a reload, not a restart: running work keeps going
     Note over SW: load checks commit<br/>swamp workflow list
