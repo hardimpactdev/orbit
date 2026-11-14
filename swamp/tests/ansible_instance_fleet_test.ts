@@ -825,7 +825,7 @@ Deno.test({
 });
 
 /** A fleet refreshed once, running again: the state after a passed refresh and the next release's start. */
-function refreshedOnce() {
+function refreshFromScratch() {
   const f = fixture(ruled(), { club: true, base: true });
   assert(f.run("start").ok);
   const first = f.run("refresh");
@@ -836,6 +836,51 @@ function refreshedOnce() {
   f.change((state) => state.doctorCalls = 0);
   return f;
 }
+/** Saved Incus boundary after one real refresh and start. The first test checks its full persistent state.
+ * Regenerate `state` from persistentState(f.state()) in that test after reviewing the playbook change;
+ * take each `records` value from its corresponding producer's written record, never from the digest algorithm.
+ */
+// Only the wall-clock timestamp is rebound; all digests and other persistent state must match exactly.
+function savedRecord(value: Record<string, string>) {
+  assert(/^\d+$/.test(value.converged), "the real refresh must write a numeric converge time");
+  return { ...value, converged: "@CONVERGED@" };
+}
+function currentRecord(value: Record<string, string>, converged = String(Math.floor(Date.now() / 1000))) {
+  assertEquals(value.converged, "@CONVERGED@");
+  return { ...value, converged };
+}
+const refreshedBoundary = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-refreshed.json", import.meta.url)));
+// deno-lint-ignore no-explicit-any
+function persistentState(state: Record<string, any>) {
+  const value = structuredClone(state);
+  for (const key of ["execs", "operations", "doctorCalls"]) delete value[key];
+  if (value.outer.files[record]) value.outer.files[record] = JSON.stringify(savedRecord(JSON.parse(value.outer.files[record])));
+  return value;
+}
+function refreshedOnce() {
+  const f = fixture(ruled(), { club: true, base: true });
+  f.change((state) => {
+    for (const key of Object.keys(state)) delete state[key];
+    Object.assign(state, structuredClone(refreshedBoundary.state));
+    state.outer.files[record] = JSON.stringify(currentRecord(JSON.parse(state.outer.files[record])));
+  });
+  return f;
+}
+Deno.test({
+  name: "the saved refreshed fleet boundary matches a real first refresh and start",
+  ignore: !hasAnsible,
+  fn() {
+    const before = Math.floor(Date.now() / 1000);
+    const f = refreshFromScratch();
+    try {
+      const converged = Number(JSON.parse(f.state().outer.files[record]).converged);
+      assert(converged >= before && converged <= Math.floor(Date.now() / 1000));
+      assertEquals(persistentState(f.state()), refreshedBoundary.state);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
 const ran = (calls: string[], part: string) => calls.some((call) => call.includes(part));
 const parts = {
   migrate: "php artisan migrate --force",
@@ -882,35 +927,57 @@ Deno.test({
 });
 
 // deno-lint-ignore no-explicit-any
-const inputCases: [string, (state: Record<string, any>) => void, string[], string][] = [
+const inputCases: [string, (state: Record<string, any>) => void, string[], string, string][] = [
   // A package's migration (the Composer lock in `apps/gateway`) moves the code digest only; the migrate applies it.
   // The Gateway's code moved but the base intent of each Node did not: no converge.
   ["the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway", (state) => {
     state.digests = { "apps/gateway": "a9" };
     state.pendingMigration = true;
-  }, ["migrate", "restart", "stop", "base"], "retaken"],
+  }, ["migrate", "restart", "stop", "base"], "retaken", "code"],
   ["the code without a pending migration migrates and restarts, converges nothing and keeps base",
-    (state) => state.digests = { "apps/gateway": "a9" }, ["migrate", "restart"], "kept"],
+    (state) => state.digests = { "apps/gateway": "a9" }, ["migrate", "restart"], "kept", "code"],
   ["a swamp file the base converge reads converges",
-    (state) => state.digests = { "apps/gateway": "a1", "swamp/ansible/tasks/node-converge-base.yml": "c9" }, ["converge"], "kept"],
+    (state) => state.digests = { "apps/gateway": "a1", "swamp/ansible/tasks/node-converge-base.yml": "c9" }, ["converge"], "kept", "swamp"],
   // The nested Gateway reads the agent contract from outside `apps/gateway`: it is part of the code.
   ["the agent contract migrates and restarts",
-    (state) => state.digests = { "apps/gateway": "a1", "apps/agent/contract": "d9" }, ["migrate", "restart"], "kept"],
+    (state) => state.digests = { "apps/gateway": "a1", "apps/agent/contract": "d9" }, ["migrate", "restart"], "kept", "agent"],
 ];
-for (const [input, change, due, base] of inputCases) {
+for (const [input, change, due, base, recorded] of inputCases) {
   Deno.test({
-    name: `a changed input alone runs its own part, once: ${input}`,
+    name: `a changed input runs only its due parts: ${input}`,
     ignore: !hasAnsible,
     fn() {
       const f = refreshedOnce();
       try {
+        const previous = JSON.parse(f.state().outer.files[record]).converged;
+        const before = Math.floor(Date.now() / 1000);
         f.change(change);
         const refreshed = f.run("refresh");
         assert(refreshed.ok, refreshed.output);
         const calls = f.calls();
         for (const [part, call] of Object.entries(parts)) assertEquals(ran(calls, call), due.includes(part), `${part}\n${calls.join("\n")}`);
         assertEquals(f.refreshed()?.base, base);
-        // The next refresh at the same inputs does nothing of it again.
+        // This exact record is the next case's boundary, not a digest calculated by the test.
+        const written = JSON.parse(f.state().outer.files[record]);
+        if (due.includes("converge")) assert(Number(written.converged) >= before && Number(written.converged) <= Math.floor(Date.now() / 1000));
+        else assertEquals(written.converged, previous);
+        assertEquals(savedRecord(written), refreshedBoundary.records[recorded]);
+      } finally {
+        f.cleanup();
+      }
+    },
+  });
+  Deno.test({
+    name: `the next refresh repeats no part: ${input}`,
+    ignore: !hasAnsible,
+    fn() {
+      const f = refreshedOnce();
+      try {
+        f.change((state) => {
+          change(state);
+          delete state.pendingMigration;
+          state.outer.files[record] = JSON.stringify(currentRecord(refreshedBoundary.records[recorded]));
+        });
         assert(f.run("start").ok);
         f.calls();
         assert(f.run("refresh").ok);
@@ -988,7 +1055,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too",
+  name: "a converge with changed tasks retakes base only for the changed Node and Gateway",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -1005,8 +1072,18 @@ Deno.test({
       assertEquals(f.state().containers["nested-app-prod"].status, "Running");
       const result = f.refreshed()!;
       assertEquals([result.converge, result.changed, result.base, result.base_containers], ["ran", 4, "retaken", ["nested-gateway", "nested-app-dev"]]);
-
-      // A converge result without a count counts as one change per Node.
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+Deno.test({
+  name: "a converge without change counts retakes all three bases",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
       assert(f.run("start").ok);
       f.change((state) => {
         state.digests = { "apps/gateway": "a1", "swamp/ansible/tasks/node-converge-base.yml": "c8" };
@@ -1018,7 +1095,18 @@ Deno.test({
       assertEquals(takes(f.calls()), names.map((name) => `incus snapshot create ${name} base`));
       const counted = f.refreshed()!;
       assertEquals([counted.changed, counted.base], [3, "retaken"]);
-
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+Deno.test({
+  name: "a missing base is retaken without another converge",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
       assert(f.run("start").ok);
       f.change((state) => delete state.containers["nested-app-prod"].snapshots.base);
       f.calls();
@@ -1032,8 +1120,15 @@ Deno.test({
   },
 });
 
+function failedRefreshBoundary() {
+  const state = structuredClone(refreshedBoundary.state);
+  state.digests = { "apps/gateway": "a1", "swamp/ansible/tasks/node-converge-base.yml": "c9" };
+  delete state.outer.files[record];
+  return state;
+}
+
 Deno.test({
-  name: "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three",
+  name: "a failed refresh that changed a Node removes its old record and writes none",
   ignore: !hasAnsible,
   fn() {
     const f = refreshedOnce();
@@ -1048,11 +1143,23 @@ Deno.test({
       const failed = f.calls();
       assert(failed.includes(recordRemove) && !failed.includes(recordWrite), failed.join("\n"));
       assertEquals(f.state().outer.files[record], undefined);
-      // Run 2: every converge now reports no change, yet app-dev's disk is ahead of its base. The missing record retakes all three.
-      f.change((state) => {
-        delete state.convergeStatus;
-        delete state.convergeChanged;
-      });
+      const recovery = persistentState(f.state());
+      delete recovery.convergeStatus;
+      delete recovery.convergeChanged;
+      assertEquals(recovery, failedRefreshBoundary());
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+Deno.test({
+  name: "a refresh after a failed run converges every part and retakes all three bases",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The failed-refresh case proves this boundary: no record survives a failed converge.
+      f.change((state) => Object.assign(state, failedRefreshBoundary()));
       assert(f.run("start").ok);
       f.calls();
       assert(f.run("refresh").ok);

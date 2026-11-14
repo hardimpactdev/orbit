@@ -58,6 +58,16 @@ class PlanningTest(unittest.TestCase):
         self.assertCountEqual(['swamp/migration.ts', 'swamp/host.py'], result['after_merge_files'])
         self.assertFalse(any(f.get('after_merge_cases') or f.get('after_merge') for f in result['fixtures'].values()))
 
+    def test_repository_python_costs_accept_the_full_sets_live_population(self):
+        _, configured, _ = self.api.configuration()
+        fixtures = [f for f in configured.values() if f['file'].endswith('.py') and f.get('case_costs')]
+        self.assertTrue(fixtures)
+        current = {f['file']: self.api.collect(f['file'])['cases'] for f in fixtures}
+        result = self.plan(fixtures, current)
+        for file, cases in current.items():
+            actual = [case for unit in result['units'] if unit['unit'] == file for case in unit['cases']]
+            self.assertCountEqual(actual, cases)
+
     def test_egress_budget_deferral_keeps_every_python_case_in_receiver(self):
         file = 'swamp/tests/ansible_task_vm_host_egress_test.py'
         _, configured, _ = self.api.configuration()
