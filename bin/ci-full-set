@@ -15,7 +15,6 @@ import sys
 import tarfile
 import tempfile
 import time
-import tomllib
 import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -377,8 +376,7 @@ def main():
         # A failed planner still leaves a range for the hosted reporter.
         save(args.output, {**covered, 'shards': [], 'units': [], 'fixtures': {}})
         fixture_api = api()
-        config = tomllib.loads((ROOT / '.github/ci/checks.toml').read_text())
-        inventory = json.loads(fixture_api.INVENTORY.read_text())
+        config, inventory = fixture_api.registry.load(ROOT)
         plan = {**covered, **build_plan(config, inventory, collect_current, fixture_api,
                                                      lambda initial: save(args.output, {**covered, **initial}))}
         save(args.output, plan)

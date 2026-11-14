@@ -1,0 +1,17 @@
+order = 1350
+source_sha256 = "d06c6512fd7d49290dff2320d2bce08633e7ae52ba80bb099db07fba1434b1cb"
+cases = [
+  "a normal Route removal releases the Route Nodes right after its withdraw step holds, with the run's own identity",
+  "no release while the Route is not withdrawn: a withdraw that did not hold, failed, or never ran keeps the hold to the end",
+  "a retry of a removal whose Route an earlier run withdrew skips the withdraw; an intent without the mark still runs it",
+  "the release says whether it happened, with the Gateway's status, and a refused or failed call never fails the run",
+]
+file = "swamp/tests/instance_destroy_route_release_test.ts"
+cost = 4
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
+[case_costs]
+"a normal Route removal releases the Route Nodes right after its withdraw step holds, with the run's own identity" = 1
+"no release while the Route is not withdrawn: a withdraw that did not hold, failed, or never ran keeps the hold to the end" = 1
+"a retry of a removal whose Route an earlier run withdrew skips the withdraw; an intent without the mark still runs it" = 1
+"the release says whether it happened, with the Gateway's status, and a refused or failed call never fails the run" = 1

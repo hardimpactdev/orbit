@@ -1,0 +1,15 @@
+order = 670
+source_sha256 = "47660b12ec2e8bd2b4b437cdbc0d3480085b4709e3bac32f4d7a92c688843761"
+cases = [
+  "Database workflows use exactly one Node 209 selector per job and step",
+]
+file = "swamp/tests/database_placement_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/*.yaml",
+]

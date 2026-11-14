@@ -1,0 +1,35 @@
+order = 690
+source_sha256 = "9730fa2ec68244d7c44b8e07750b1f603f2a0d72b09bae79e087358f30e1c891"
+cases = [
+  "native refresh uses supplied observations and refuses a superseded publication",
+]
+file = "swamp/tests/dependency_observations_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_retention.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/service_detection.ts",
+  "swamp/extensions/behaviors/_lib/worker_query.ts",
+  "swamp/extensions/behaviors/dependency_scanner.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+  "swamp/extensions/behaviors/orbit_gateway.ts",
+  "swamp/tests/_support/project_scheduler.ts",
+  "swamp/tests/_support/task_contract.ts",
+  "swamp/tests/fixtures/dependency-read-token-v1/failed-scan-index.json",
+  "swamp/tests/fixtures/project-extensions/detection.json",
+  "swamp/tests/fixtures/project-extensions/nckrtl-com.json",
+]

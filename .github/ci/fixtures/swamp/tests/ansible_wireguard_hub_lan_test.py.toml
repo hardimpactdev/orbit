@@ -1,0 +1,56 @@
+order = 630
+source_sha256 = "e5ed77ddcc1ffce5c16121fb3dffc724e0d205925108169be6c2714200ae8ba0"
+cases = [
+  "test_the_hubs_host_key_at_a_directly_routed_lan_address_proves_the_lan",
+  "test_a_foreign_host_that_answers_at_the_hubs_lan_address_is_refused",
+  "test_a_routed_foreign_source_tunnel_or_silent_address_is_unreachable",
+  "test_a_hub_with_the_old_suppress_rule_gets_the_private_range_rules_from_its_unit",
+  "test_a_hub_whose_unit_already_applies_the_rules_changes_nothing",
+  "test_rules_that_drifted_under_an_unchanged_unit_restart_it",
+  "test_an_endpoint_address_the_hub_does_not_hold_fails_before_any_unit_change",
+  "test_a_peer_in_the_hubs_public_prefix_routed_through_the_gateway_restarts_the_unit",
+  "test_a_default_gateway_that_changed_since_the_unit_ran_restarts_it",
+  "test_a_lan_ssh_rule_of_an_earlier_hub_lan_address_is_removed_and_the_current_one_kept",
+  "test_a_hub_whose_endpoint_is_no_longer_an_ipv4_address_removes_the_earlier_unit_rules_and_table",
+  "test_a_new_hub_endpoint_in_the_files_is_a_switch",
+  "test_an_unchanged_endpoint_is_no_switch_even_as_a_hostname_or_after_the_peer_roamed",
+  "test_a_move_that_was_cut_off_is_decided_from_the_file_it_replaced",
+  "test_the_endpoint_is_read_on_the_node_so_no_key_in_the_file_leaves_it",
+  "test_a_move_with_a_fresh_handshake_keeps_the_new_files",
+  "test_a_new_handshake_through_the_old_public_address_is_no_proof_of_the_lan",
+  "test_a_move_without_a_handshake_after_it_restores_the_files_and_the_live_configuration",
+  "test_a_move_without_a_previous_peer_file_still_goes_back_to_the_live_configuration",
+  "test_a_rerun_after_a_cut_off_move_keeps_the_files_that_move_replaced",
+  "test_a_failed_move_after_a_cut_off_one_loads_the_previous_files_not_the_live_state",
+  "test_the_node_takes_wireguard_only_from_the_new_endpoint_while_it_moves",
+  "test_a_pin_that_a_killed_move_left_is_removed_first",
+  "test_a_move_that_cannot_pin_changes_nothing",
+  "test_a_hostname_endpoint_pins_nothing",
+  "test_the_new_peers_are_loaded_without_the_interface_section_node_add_wrote",
+  "test_a_move_loads_a_key_file_without_a_final_newline",
+  "test_a_move_whose_new_configuration_does_not_load_goes_back_at_once_with_its_own_outcome",
+  "test_every_load_composed_from_the_key_file_ends_the_key_line_once_with_or_without_a_final_newline",
+  "test_a_refused_load_does_not_print_the_value_wg_refused",
+  "test_the_peer_phase_decides_from_the_previous_file_stages_the_files_and_moves_in_one_job",
+  "test_the_peer_phase_drops_the_copies_of_a_cut_off_move_when_it_no_longer_moves",
+  "test_node_add_refuses_to_move_any_live_tunnel_to_another_hub_endpoint",
+]
+file = "swamp/tests/ansible_wireguard_hub_lan_test.py"
+cost = 167
+after_merge = true
+reason = "Python file costs 167 seconds and cannot be sliced."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-add-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-hub-move.yml",
+  "swamp/ansible/tasks/node-converge-hub-switch.yml",
+  "swamp/ansible/tasks/node-converge-hub.yml",
+  "swamp/ansible/tasks/node-converge-network.yml",
+  "swamp/ansible/tasks/node-hub-lan-proof.yml",
+  "swamp/ansible/tasks/node-hub-source.yml",
+]

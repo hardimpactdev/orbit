@@ -1,0 +1,15 @@
+order = 1060
+source_sha256 = "fbbd774d444d1a0c95d87767cd043e4f71ac285778272d632d13da0f83ba75a3"
+cases = [
+  "the package result captures the token outcome from a step that runs the remove child",
+]
+file = "swamp/tests/revoke_report_test.ts"
+cost = 2
+inputs = [
+  "apps/gateway/app/Domain/Tasks/direct-operations.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]

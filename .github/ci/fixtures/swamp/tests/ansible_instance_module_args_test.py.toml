@@ -1,0 +1,14 @@
+order = 420
+source_sha256 = "f97bb2de4178f86d32d333eab5b592a16bd746f3d6e59f9d45ba80b4629e6fa7"
+cases = [
+  "test_every_command_argv_element_is_a_string_after_yaml_parsing",
+  "test_every_module_call_passes_the_real_argument_spec",
+  "test_migration_pause_runs_as_a_controller_action",
+  "test_the_check_refuses_what_the_real_module_refuses",
+]
+file = "swamp/tests/ansible_instance_module_args_test.py"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/**",
+]

@@ -1,0 +1,24 @@
+order = 780
+source_sha256 = "99a34bb8b8fc3748e2a11474460ec620cfe0953c4e4f1f2c64cf139f490bab86"
+cases = [
+  "the release load compares only the commit's workflows, never a Schedule's",
+  "the release load checks the Ansible collections without failing the release, and installs nothing",
+  "a pin equal to the release's requirements.yml passes",
+  "a pin from another requirements.yml fails the check with the converge that installs the collections",
+  "a forced rollback release moves the serve checkout back to an ancestor commit",
+  "an unforced load refuses an ancestor commit and leaves the checkout alone",
+  "an unforced load moves the serve checkout forward",
+  "the release passes its force flag to the load",
+  "the checkout reads the release commit and the force flag from the load intent",
+]
+file = "swamp/tests/gateway_swamp_load_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-gateway-release.yaml",
+  "swamp/workflows/workflow-operation-gateway-swamp-load.yaml",
+]

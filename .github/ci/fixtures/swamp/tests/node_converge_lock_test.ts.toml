@@ -1,0 +1,19 @@
+order = 920
+source_sha256 = "3ab5a94e6dc7db4c7370a3c0c38b5fd59015e1a6306995b07dfbafda55f82eba"
+cases = [
+  "agent replacement waits for the existing update lock, cleans failed staging and repeats without changes",
+  "CLI artifact replacement waits for the existing update lock, cleans failed staging and repeats without changes",
+  "CLI selection replacement waits for the existing update lock, cleans failed staging and repeats without changes",
+  "an agent replacement still restarts only for managed changes",
+]
+file = "swamp/tests/node_converge_lock_test.ts"
+cost = 50
+inputs = [
+  "apps/gateway/app/Infrastructure/Nodes/NodeAgentFootprint.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-replace.yml",
+]

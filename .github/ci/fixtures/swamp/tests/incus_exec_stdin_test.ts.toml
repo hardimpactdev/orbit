@@ -1,0 +1,12 @@
+order = 810
+source_sha256 = "1684b5664cefb12d8b8f25f560fe1dd5a95796f54511ef7b4dfe2921d6377d56"
+cases = [
+  "no command behind incus exec opens stdin by path",
+  "the check finds the record write of Operation 20393, through the variable that holds incus exec",
+]
+file = "swamp/tests/incus_exec_stdin_test.ts"
+cost = 1
+inputs = [
+  "swamp/ansible/**/*.yml",
+  "swamp/workflows/*.yaml",
+]

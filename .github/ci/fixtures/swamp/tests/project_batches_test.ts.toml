@@ -1,0 +1,23 @@
+order = 970
+source_sha256 = "1b128456ada74d77a1939fb6959a230cfa752733acce97afce26f7a13148041b"
+cases = [
+  "a project plan includes every compatible major and security target once, at exact versions",
+  "too-young, prerelease, missing-date and unsolved targets stay recorded; security cannot bypass policy",
+  "older eligible targets are tried when a latest stable target conflicts",
+  "joint solver can choose an older A for B and retain a coupled pair beside an unsatisfiable finding",
+]
+file = "swamp/tests/project_batches_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]

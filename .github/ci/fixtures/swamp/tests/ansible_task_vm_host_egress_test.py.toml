@@ -1,0 +1,39 @@
+order = 570
+source_sha256 = "d1cda9942a2e0299835a67733dd9c6b02af04c8a83a4c2c7e6645fe289b07d9b"
+cases = [
+  "test_the_part_is_one_tag_that_keeps_its_handlers_and_takes_the_bridge_only_from_the_intent",
+  "test_the_ranges_the_log_skips_are_the_ranges_the_bridge_acl_drops",
+  "test_it_changes_the_bridge_in_one_setting_and_nothing_else_of_incus",
+  "test_only_the_rules_fail_the_part_and_each_setup_item_is_a_block_of_its_own_that_warns",
+  "test_the_rsyslog_rule_is_checked_where_apparmor_lets_rsyslogd_read_it",
+  "test_the_rate_limit_is_per_source_and_the_log_comes_before_the_add",
+  "test_the_slow_tasks_have_a_timeout",
+  "test_the_files_render_for_the_bridge_of_the_intent_and_log_without_a_verdict",
+  "test_raw_dnsmasq_is_merged_never_overwritten_and_a_foreign_log_file_is_left_alone",
+  "test_the_checks_pass_on_the_expected_end_state_safety_damage_fails_and_the_rest_warns",
+  "test_a_failed_setup_action_is_recorded_and_the_part_goes_on",
+  "test_a_failed_bridge_setting_names_the_error_text_of_the_tool_in_its_warning",
+  "test_a_rsyslog_rule_that_fails_its_check_keeps_the_old_rule_and_skips_nothing_else",
+  "test_a_staged_file_that_a_crash_left_is_removed_even_when_the_rule_is_unchanged",
+  "test_a_second_run_of_the_file_tasks_changes_nothing_and_leaves_the_logs_world_readable",
+  "test_a_second_render_changes_nothing",
+  "test_the_rendered_rules_pass_nft_check_mode",
+  "test_the_playbook_passes_the_ansible_syntax_check_for_the_part",
+  "test_a_host_without_containers_renders_the_files_it_had_before",
+  "test_a_container_host_logs_both_bridges_with_one_table_and_one_rotation",
+  "test_the_bridge_tasks_loop_over_both_bridges",
+  "test_the_end_checks_cover_the_container_bridge",
+  "test_a_container_host_touches_a_world_readable_dns_log_per_bridge",
+]
+file = "swamp/tests/ansible_task_vm_host_egress_test.py"
+after_merge = true
+reason = "Whole Python unit repeatedly reached the 180s PR ceiling (#3399 and #3418, run 43102509039 job 130797663832); full-set run 43026453109 also cut it. All cases run after merge pending measured case splitting. 117s is the old estimate, not a completed hosted measurement."
+cost = 117
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+]

@@ -1,0 +1,26 @@
+order = 230
+source_sha256 = "2c14c1e48e268153f8a24b3a7836ba5cb09876601d75cd46da58c061d2660918"
+cases = [
+  "worker admission checks the current enrollment, package repo and merge policy without changing either",
+  "configuration and missing-ledger baseline writes conform to declared resource schemas",
+  "detection refreshes origin/main and rejects a stale checkout or failed fetch before writing a plan",
+  "Gateway HTML and empty bodies produce clear status-bearing errors",
+  "Horizon task admission defaults to package Project 57 and rejects the website Project",
+]
+file = "swamp/extensions/behaviors/projects/horizon-new-dawn/gateway_test.ts"
+cost = 4
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/detect.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/queue.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/surface.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/_lib/tasks.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/config.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/gateway.ts",
+  "swamp/extensions/behaviors/projects/horizon-new-dawn/mod.ts",
+]

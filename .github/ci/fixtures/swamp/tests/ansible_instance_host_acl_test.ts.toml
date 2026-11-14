@@ -1,0 +1,46 @@
+order = 100
+source_sha256 = "0920e41e9d405ab744b7bfab08c5d59da5de40b31417f89c4a02975e31597d73"
+cases = [
+  "bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL",
+  "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate",
+]
+file = "swamp/tests/ansible_instance_host_acl_test.ts"
+after_merge = true
+reason = "The remaining endpoint-union case measured 170.117 body seconds / 172.873 unit seconds in run 43011901748; with startup its 177-second declaration exceeds the 150-second lane. Both ACL cases run after merge."
+cost = 171
+# 180.026s, hosted four-worker run 43002948719 (unit cutoff; case unfinished).
+after_merge_cases = ["bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL"]
+slices = 1
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate" = 171 # completed body 170.117s, run 43011901748; above the PR lane budget, not excluded

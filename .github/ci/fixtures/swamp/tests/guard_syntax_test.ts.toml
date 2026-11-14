@@ -1,0 +1,15 @@
+order = 800
+source_sha256 = "2241a85c57c98bfba586524801101fc5f10970168a12bb03653a7e04663f5005"
+cases = [
+  "every step guard is one ${{ }} expression",
+]
+file = "swamp/tests/guard_syntax_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/*.yaml",
+]

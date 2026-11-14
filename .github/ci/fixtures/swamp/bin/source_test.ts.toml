@@ -1,0 +1,23 @@
+order = 140
+source_sha256 = "ca770011ed64b16d07e3d2508f155861a430040e614c6ccd9c87f96afd5b2b63"
+cases = [
+  "model IDs are unique",
+  "workflow queue bounds have measured per-kind budgets",
+  "every Ansible file ships with the ansible-input extension",
+  "runtime credentials and generated records are ignored",
+  "no workflow names a behavior by a literal and constant names are preserved",
+]
+file = "swamp/bin/source_test.ts"
+cost = 2
+inputs = [
+  "swamp/bin/constant-name.ts",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/**",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/manifest.yaml",
+  "swamp/models/**",
+  "swamp/workflows/**",
+]

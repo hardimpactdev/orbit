@@ -1,0 +1,290 @@
+order = 10
+source_sha256 = "034f0ae5d7887c9aac19efb9d8c7c18ace3c12109da3bbf72d5f2dbcc708abc1"
+cases = [
+  "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
+  "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
+  "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
+  "a link introduced after preparation refuses quiesce with zero downtime and removes only the prepared container",
+  "file targets with directory suffixes refuse before downtime and in the copied tree without repairing links",
+  "the exact archive tree handles absolute link changes after preflight and preserves rollback",
+  "the exact archive tree handles relative link changes after preflight and preserves rollback",
+  "the exact archive tree handles outside link changes after preflight and preserves rollback",
+  "the exact archive tree handles broken link changes after preflight and preserves rollback",
+  "migration counts 0 files that Git does not ignore beside a large ignored tree",
+  "migration counts 1 files that Git does not ignore beside a large ignored tree",
+  "untracked non-ignored files and nested repository leaves migrate with an exact archived file count",
+  "source status changes after export refuse retirement and preserve every later file",
+  "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it",
+  "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files",
+  "a linked worktree migrates before its active owner and preserves every file and sibling registration",
+  "linked worktree preflight handles unstaged without touching its active owner or sibling",
+  "linked worktree preflight handles staged without touching its active owner or sibling",
+  "linked worktree preflight handles unpushed without touching its active owner or sibling",
+  "linked worktree preflight handles identity without touching its active owner or sibling",
+  "linked worktree preflight handles nested without touching its active owner or sibling",
+  "linked retirement interrupted before unregister fails explicitly on repeat",
+  "linked worktree quiesce carries tracked changes made after the container preflight",
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch",
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch past a prunable entry whose folder is gone",
+  "the owner of the last worktree still refuses retirement for sibling",
+  "the owner of the last worktree still refuses retirement for locked-prunable",
+  "the owner of the last worktree still refuses retirement for sibling-before-retire",
+  "the owner of the last worktree still refuses retirement for owner-change",
+  "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact",
+  "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit",
+  "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays",
+  "a move removes only ignored files in cache folders that name the old path",
+  "a Git failure while listing ignored files removes no tool cache and warns, and the move goes on",
+  "a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was",
+  "a move starts with a new container: one that an earlier failed move left goes first",
+  "a checkout on another branch than the recorded one is refused before anything changes",
+  "a database server that the container cannot reach refuses the move, and the copy leaves nothing behind",
+  "a database server that listens is reached from the container",
+  "preflight names linked and detached worktrees and every tracked change before any Node change",
+  "retirement error lists stop at 20 entries with total counts",
+  "retirement rechecks changes created after preflight and leaves the container and source intact",
+  "retirement rechecks worktree created after preflight and leaves the container and source intact",
+  "retirement rechecks commits created after preflight and leaves the container and source intact",
+  "retirement rechecks stashes created after preflight and leaves the container and source intact",
+  "Schedule migration repoints a current timer with enabled intent only after successful cutover",
+  "Schedule migration repoints a agent timer with disabled intent only after successful cutover",
+  "Schedule migration repoints a direct timer with enabled intent only after successful cutover",
+  "Schedule rollback restores exact observed timer activation when its enabled intent differs",
+  "Schedule rollback restores exact observed timer activation when its disabled intent differs",
+  "Schedule cutover resumes the timer even when a late Git retirement check refuses",
+  "Schedule preflight refuses missing-service before stopping any timer or Process",
+  "Schedule preflight refuses missing-timer before stopping any timer or Process",
+  "Schedule preflight refuses foreign-service before stopping any timer or Process",
+  "Schedule preflight refuses changed-calendar before stopping any timer or Process",
+  "Schedule preflight refuses masked-timer before stopping any timer or Process",
+  "Schedule preflight refuses activating-service before stopping any timer or Process",
+  "Schedule preflight refuses service-dropin before stopping any timer or Process",
+  "Schedule preflight refuses timer-dropin before stopping any timer or Process",
+  "Schedule preflight refuses foreign-script before stopping any timer or Process",
+  "Schedule preflight refuses foreign-callback before stopping any timer or Process",
+  "Schedule preflight refuses legacy-script-drift before stopping any timer or Process",
+  "Schedule preflight refuses legacy-context-drift before stopping any timer or Process",
+  "Schedule preflight refuses legacy-missing-script before stopping any timer or Process",
+  "Schedule preflight refuses legacy-callback-drift before stopping any timer or Process",
+  "Schedule preflight checks every Schedule before stopping the first timer",
+  "Schedule preflight refuses a absolute-command-symlink that cannot move before downtime",
+  "Schedule preflight refuses a relative-command-symlink that cannot move before downtime",
+  "Schedule preflight refuses a directory-symlink that cannot move before downtime",
+  "Schedule preflight refuses a missing-directory that cannot move before downtime",
+  "Schedule preflight refuses a internal-command-symlink that cannot move before downtime",
+  "Schedule preflight refuses a internal-directory-symlink that cannot move before downtime",
+  "Schedule preflight refuses a extensionless-command-symlink that cannot move before downtime",
+  "Schedule rollback restores all timers after only some source timers stopped",
+  "Process migration carries a running vp-dev through the shared units and retires only moved host files",
+  "Process migration restores a running vp-dev only after removing its failed container",
+  "Process migration carries a stopped vp-dev through the shared units and retires only moved host files",
+  "Process migration restores a stopped vp-dev only after removing its failed container",
+  "a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state",
+  "migration carries every divergent unpushed local branch without changing the source",
+  "a checkout with no remote tracking refs carries every local commit",
+  "a detached selected HEAD still refuses as a changed branch",
+  "migration carries duplicate stash messages and every ordered stash entry and content",
+  "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes",
+  "a direct repository refuses a worktree created before its final preflight",
+  "a common_of repository refuses a worktree created before its final preflight",
+  "a worktree created after retirement listing refuses the source snapshot before retention",
+  "migration carries a surviving stash ref with an expired reflog without inventing entries",
+  "retention keeps real Git edge cases intact",
+  "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time",
+  "direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
+  "direct bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime",
+  "Docker bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime",
+  "Docker bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime",
+  "0 local Docker DNAT mappings refuse migration before a probe or downtime with the named error",
+  "2 local Docker DNAT mappings refuse migration before a probe or downtime with the named error",
+  "a forced quiesce failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced workspace failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced files failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced processes failure after quiesce restores host ownership and removes every container reservation effect",
+  "a forced seed failure after quiesce restores host ownership and removes every container reservation effect",
+  "migration refuses a moved Process with exit127 before cutover and restores its host ownership",
+  "migration refuses a moved Process with restart before cutover and restores its host ownership",
+  "migration refuses a moved Process with pid before cutover and restores its host ownership",
+  "migration refuses a moved Process with job before cutover and restores its host ownership",
+  "migration refuses a moved Process with inactive before cutover and restores its host ownership",
+  "migration refuses a moved Process with never-active before cutover and restores its host ownership",
+  "only migration settles desired-running Processes; a stable Process passes with its PID and restart count unchanged",
+  "an unavailable moved Process executable /opt/custom/tool refuses container preparation before stopping any host writer",
+  "an unavailable moved Process executable /opt/custom/vp refuses container preparation before stopping any host writer",
+  "an unavailable moved Process executable removed runtime refuses quiesce before stopping any host writer",
+  "the binary preflight names every unavailable Process and executable in one refusal",
+  "24 moved workers share one five-second settle window inside the 120-second process phase budget",
+  "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step",
+  "an unsafe copied app service refuses before downtime and restore changes nothing",
+  "an unreadable copied environment refuses before downtime and restore preserves the source",
+  "stock selector preflight: stock Laravel",
+  "stock selector preflight: real53",
+  "stock selector preflight: selected Redis",
+  "stock selector preflight: attached Redis",
+  "stock selector preflight: wrong Redis port",
+  "empty untracked storage and nested ignored directories migrate with exact modes and resolving links",
+  "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout",
+  "stock unused MySQL passes both real preflights and its warning survives the completed move",
+  "directory modes stay in the protected result and restore through the workspace owner",
+]
+file = "swamp/tests/ansible_instance_migrate_test.ts"
+after_merge = true
+reason = "122 retained cases need about 8697 declared seconds including startup, above the eight-shard PR limit. Earlier calibration required 12 hosted shards; existing hosted evidence: runs 43010311414 and 43013527963. Changed cases use individually measured local times rounded up plus one second. All migration cases run after merge until their work is reduced or selection is narrowed."
+cost = 8215
+# 159.019s, hosted four-worker run 43002948719 (completed unit).
+after_merge_cases = ["a failed move removes its container, its ACL, its firewall rule and its mirror, and the checkout serves as it was"]
+# Completed Deno case times rounded up by one second; startup is added per slice.
+# Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
+slices = 122
+inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/instance-migrate.yml",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_migrate_files.py",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/instance_migrate_git.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/instance-bridge-rules.yml",
+  "swamp/ansible/tasks/instance-container-*.yml",
+  "swamp/ansible/tasks/instance-migrate-*.yml",
+  "swamp/ansible/tasks/instance-network-nic-check.yml",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/instance-migrate*",
+]
+
+[case_costs]
+  "directory modes stay in the protected result and restore through the workspace owner" = 2 # local completed 4ms, rounded up plus one second
+  "stock unused MySQL passes both real preflights and its warning survives the completed move" = 120 # UNMEASURED conservative fixture estimate
+  "linked retirement interrupted before unregister fails explicitly on repeat" = 68 # completed local four-worker body; rounded up plus 1s
+  "a linked worktree migrates before its active owner and preserves every file and sibling registration" = 66 # completed local four-worker body; rounded up plus 1s
+  "migration counts 0 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
+  "migration counts 1 files that Git does not ignore beside a large ignored tree" = 80 # conservative estimate; unprivileged archive fixture
+  "stock selector preflight: stock Laravel" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: real53" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: selected Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: attached Redis" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "stock selector preflight: wrong Redis port" = 120 # UNMEASURED estimate; registration refreshed from current source
+  "untracked non-ignored files and nested repository leaves migrate with an exact archived file count" = 80 # local completed 36s; conservative runner allowance
+  "untracked files inside a tracked submodule retain the named retirement refusal even when Git config ignores it" = 7 # local completed 2s; conservative runner allowance
+  "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links" = 62 # completed, run 43002948719
+  "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 8 # completed, run 43002948719
+  "broken symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources" = 6 # completed, run 43005032403
+  "a link introduced after preparation refuses quiesce with zero downtime and removes only the prepared container" = 31 # completed, run 43002948719
+  "file targets with directory suffixes refuse before downtime and in the copied tree without repairing links" = 67 # completed, run 43005032403
+  "the exact archive tree handles absolute link changes after preflight and preserves rollback" = 66 # completed, run 43005032403
+  "the exact archive tree handles relative link changes after preflight and preserves rollback" = 66 # completed, run 43005032403
+  "the exact archive tree handles outside link changes after preflight and preserves rollback" = 74 # completed, run 43005032403
+  "the exact archive tree handles broken link changes after preflight and preserves rollback" = 74 # completed, run 43005032403
+  "a retained default copies its unpushed commit and changed, staged, untracked, deleted and ignored files" = 75 # completed, run 43005032403
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch" = 100 # local single run 49s; doubled for CI
+  "the last worktree moves into a standalone workspace and retires its owner checkout in the same batch past a prunable entry whose folder is gone" = 100 # local single run 46s; doubled for CI
+  "the owner of the last worktree still refuses retirement for sibling" = 9 # local single run 3s; doubled for CI
+  "the owner of the last worktree still refuses retirement for locked-prunable" = 9 # local single run 3s; doubled for CI
+  "the owner of the last worktree still refuses retirement for sibling-before-retire" = 95 # local single run 46s; doubled for CI
+  "the owner of the last worktree still refuses retirement for owner-change" = 9 # local single run 3s; doubled for CI
+  "a clean standalone non-default checkout moves with T3 and leaves an unrelated default repository intact" = 100 # completed, run 43002948719
+  "a move starts with a new container: one that an earlier failed move left goes first" = 120 # completed, run 43002948719
+  "a checkout on another branch than the recorded one is refused before anything changes" = 10 # completed, run 43002948719
+  "a database server that the container cannot reach refuses the move, and the copy leaves nothing behind" = 40 # completed, run 43002948719
+  "a database server that listens is reached from the container" = 63 # completed, run 43005032403
+  "preflight names linked and detached worktrees and every tracked change before any Node change" = 23 # completed, run 43005032403
+  "retirement error lists stop at 20 entries with total counts" = 7 # completed, run 43002948719
+  "retirement rechecks changes created after preflight and leaves the container and source intact" = 67 # completed, run 43005032403
+  "retirement rechecks worktree created after preflight and leaves the container and source intact" = 67 # completed, run 43005032403
+  "retirement rechecks commits created after preflight and leaves the container and source intact" = 68 # completed, run 43005032403
+  "retirement rechecks stashes created after preflight and leaves the container and source intact" = 68 # completed, run 43005032403
+  "Schedule migration repoints a current timer with enabled intent only after successful cutover" = 120 # UNMEASURED estimate
+  "Schedule migration repoints a agent timer with disabled intent only after successful cutover" = 120 # UNMEASURED estimate
+  "Schedule migration repoints a direct timer with enabled intent only after successful cutover" = 120 # UNMEASURED estimate
+  "Schedule rollback restores exact observed timer activation when its enabled intent differs" = 93 # completed, run 43005032403
+  "Schedule rollback restores exact observed timer activation when its disabled intent differs" = 94 # completed, run 43005032403
+  "Schedule cutover resumes the timer even when a late Git retirement check refuses" = 97 # completed, run 43005032403
+  "Schedule preflight refuses missing-service before stopping any timer or Process" = 18 # completed, run 43005032403
+  "Schedule preflight refuses missing-timer before stopping any timer or Process" = 18 # completed, run 43005032403
+  "Schedule preflight refuses foreign-service before stopping any timer or Process" = 120 # UNMEASURED estimate
+  "Schedule preflight refuses changed-calendar before stopping any timer or Process" = 120 # UNMEASURED estimate
+  "Schedule preflight refuses masked-timer before stopping any timer or Process" = 120 # UNMEASURED estimate
+  "Schedule preflight refuses activating-service before stopping any timer or Process" = 120 # UNMEASURED estimate
+  "Schedule preflight refuses service-dropin before stopping any timer or Process" = 120 # UNMEASURED estimate
+  "Schedule preflight refuses timer-dropin before stopping any timer or Process" = 120 # UNMEASURED estimate
+  "Schedule preflight refuses foreign-script before stopping any timer or Process" = 19 # completed, run 43005032403
+  "Schedule preflight refuses foreign-callback before stopping any timer or Process" = 19 # completed, run 43005032403
+  "Schedule preflight refuses legacy-script-drift before stopping any timer or Process" = 19 # completed, run 43005032403
+  "Schedule preflight refuses legacy-context-drift before stopping any timer or Process" = 19 # completed, run 43005032403
+  "Schedule preflight refuses legacy-missing-script before stopping any timer or Process" = 19 # completed, run 43005032403
+  "Schedule preflight refuses legacy-callback-drift before stopping any timer or Process" = 19 # completed, run 43005032403
+  "Schedule preflight checks every Schedule before stopping the first timer" = 16 # completed, run 43005032403
+  "Schedule preflight refuses a absolute-command-symlink that cannot move before downtime" = 16 # completed, run 43005032403
+  "Schedule preflight refuses a relative-command-symlink that cannot move before downtime" = 16 # completed, run 43005032403
+  "Schedule preflight refuses a directory-symlink that cannot move before downtime" = 15 # completed, run 43005032403
+  "Schedule preflight refuses a missing-directory that cannot move before downtime" = 17 # completed, run 43005032403
+  "Schedule preflight refuses a internal-command-symlink that cannot move before downtime" = 16 # completed, run 43005032403
+  "Schedule preflight refuses a internal-directory-symlink that cannot move before downtime" = 14 # completed, run 43005032403
+  "Schedule preflight refuses a extensionless-command-symlink that cannot move before downtime" = 15 # completed, run 43005032403
+  "Schedule rollback restores all timers after only some source timers stopped" = 27 # completed, run 43005032403
+  "Process migration carries a running vp-dev through the shared units and retires only moved host files" = 120 # UNMEASURED estimate
+  "Process migration restores a running vp-dev only after removing its failed container" = 68 # completed local four-worker body; rounded up plus 1s
+  "Process migration carries a stopped vp-dev through the shared units and retires only moved host files" = 120 # UNMEASURED estimate
+  "Process migration restores a stopped vp-dev only after removing its failed container" = 110 # completed, run 43005032403
+  "a clean default with pushed commits and no stash retains all Git metadata and repeats without changes" = 90 # completed, run 43002948719
+  "a direct repository refuses a worktree created before its final preflight" = 78 # completed, run 43002948719
+  "a common_of repository refuses a worktree created before its final preflight" = 78 # completed, run 43002948719
+  "retention keeps real Git edge cases intact" = 3 # completed local four-worker body; rounded up plus 1s
+  "a worker receipt failure leaves the source untouched and a retry reuses the prepared retention time" = 90 # completed, run 43005032403
+  "direct bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime" = 27 # completed, run 43002948719
+  "direct bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime" = 20 # completed, run 43002948719
+  "Docker bridge endpoint add with transient missing-veth failure stays before the migration probe and downtime" = 27 # completed, run 43002948719
+  "Docker bridge endpoint add with persistent missing-veth failure stays before the migration probe and downtime" = 22 # completed, run 43002948719
+  "0 local Docker DNAT mappings refuse migration before a probe or downtime with the named error" = 13 # completed, run 43002948719
+  "2 local Docker DNAT mappings refuse migration before a probe or downtime with the named error" = 13 # completed, run 43002948719
+  "a forced quiesce failure after quiesce restores host ownership and removes every container reservation effect" = 56 # completed, run 43002948719
+  "a forced workspace failure after quiesce restores host ownership and removes every container reservation effect" = 80 # completed, run 43005032403
+  "a forced files failure after quiesce restores host ownership and removes every container reservation effect" = 81 # completed, run 43002948719
+  "a forced processes failure after quiesce restores host ownership and removes every container reservation effect" = 98 # completed, run 43002948719
+  "a forced seed failure after quiesce restores host ownership and removes every container reservation effect" = 120 # completed, run 43005032403
+  "migration refuses a moved Process with exit127 before cutover and restores its host ownership" = 120 # UNMEASURED estimate
+  "migration refuses a moved Process with restart before cutover and restores its host ownership" = 120 # UNMEASURED estimate
+  "migration refuses a moved Process with pid before cutover and restores its host ownership" = 120 # UNMEASURED estimate
+  "migration refuses a moved Process with job before cutover and restores its host ownership" = 120 # UNMEASURED estimate
+  "migration refuses a moved Process with inactive before cutover and restores its host ownership" = 120 # UNMEASURED estimate
+  "migration refuses a moved Process with never-active before cutover and restores its host ownership" = 120 # UNMEASURED estimate
+  "only migration settles desired-running Processes; a stable Process passes with its PID and restart count unchanged" = 120 # UNMEASURED estimate
+  "an unavailable moved Process executable /opt/custom/tool refuses container preparation before stopping any host writer" = 120 # UNMEASURED estimate
+  "an unavailable moved Process executable /opt/custom/vp refuses container preparation before stopping any host writer" = 120 # UNMEASURED estimate
+  "an unavailable moved Process executable removed runtime refuses quiesce before stopping any host writer" = 120 # UNMEASURED estimate
+  "the binary preflight names every unavailable Process and executable in one refusal" = 120 # UNMEASURED estimate
+  "24 moved workers share one five-second settle window inside the 120-second process phase budget" = 121 # completed local four-worker body; rounded up plus 1s
+  "the environment guard shares the pre-quiesce preflight and precedes every probe and downtime step" = 2 # completed local four-worker body; rounded up plus 1s
+  "an unsafe copied app service refuses before downtime and restore changes nothing" = 59 # completed, run 43002948719
+  "an unreadable copied environment refuses before downtime and restore preserves the source" = 14 # completed, run 43002948719
+  "empty untracked storage and nested ignored directories migrate with exact modes and resolving links" = 50 # completed local four-worker body; rounded up plus 1s
+  "copy prediction refuses missing targets and omitted submodule content before quiesce without changing the checkout" = 8 # local completed 7s, plus one second
+  "source status changes after export refuse retirement and preserve every later file" = 74 # completed local four-worker body; rounded up plus 1s
+  "linked worktree preflight handles unstaged without touching its active owner or sibling" = 73 # completed local four-worker body; rounded up plus 1s
+  "linked worktree preflight handles staged without touching its active owner or sibling" = 67 # completed local four-worker body; rounded up plus 1s
+  "linked worktree preflight handles unpushed without touching its active owner or sibling" = 75 # completed local four-worker body; rounded up plus 1s
+  "linked worktree preflight handles identity without touching its active owner or sibling" = 4 # measured locally with four workers; rounded up plus 1s
+  "linked worktree preflight handles nested without touching its active owner or sibling" = 10 # completed local four-worker body; rounded up plus 1s
+  "linked worktree quiesce carries tracked changes made after the container preflight" = 52 # completed local four-worker body; rounded up plus 1s
+  "a copied tracked-file mismatch fails before cutover and rollback preserves the source Git state" = 44 # completed local four-worker body; rounded up plus 1s
+  "migration carries every divergent unpushed local branch without changing the source" = 51 # completed local four-worker body; rounded up plus 1s
+  "a checkout with no remote tracking refs carries every local commit" = 39 # completed local four-worker body; rounded up plus 1s
+  "a detached selected HEAD still refuses as a changed branch" = 6 # completed local four-worker body; rounded up plus 1s
+  "migration carries duplicate stash messages and every ordered stash entry and content" = 41 # completed local four-worker body; rounded up plus 1s
+  "a worktree created after retirement listing refuses the source snapshot before retention" = 53 # completed local four-worker body; rounded up plus 1s
+  "migration carries a surviving stash ref with an expired reflog without inventing entries" = 45 # completed local four-worker body; rounded up plus 1s
+  "a moved Laravel checkout clears its config, route, event, compiled and view caches and its file cache store as orbit" = 110 # ESTIMATE: local 42s; a full build like the standalone checkout case (100), rounded up
+  "a failed clear of the old path's caches warns and the move goes on; a store of another driver than file stays" = 110 # ESTIMATE: local 42s; a full build like the standalone checkout case (100), rounded up
+  "a move removes only ignored files in cache folders that name the old path" = 110 # ESTIMATE: local 32-42s; a full build like the Laravel clear cases, rounded up
+  "a Git failure while listing ignored files removes no tool cache and warns, and the move goes on" = 110 # ESTIMATE: local 37-41s; a full build like the Laravel clear cases, rounded up

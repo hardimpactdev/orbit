@@ -1,0 +1,29 @@
+order = 380
+source_sha256 = "5953b1c98c47e71586750f983caebf1bf08c0a33396cfb975d94f7d78224c458"
+cases = [
+  "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
+  "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back",
+  "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
+  "an intent outside the admitted shape runs nothing in the copy",
+  "a thread list that is not JSON reads as no thread, and the start's end is still written",
+]
+file = "swamp/tests/ansible_task_copy_turn_test.ts"
+cost = 18
+# Local Deno case times on Beast rounded up by one second; not CI measurements.
+slices = 1
+inputs = [
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/task-copy-turn.yml",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/manifest.yaml",
+  "swamp/workflows/workflow-operation-task-copy-turn.yaml",
+]
+
+[case_costs]
+  "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 1
+  "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 3
+  "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 6
+  "an intent outside the admitted shape runs nothing in the copy" = 4
+  "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4

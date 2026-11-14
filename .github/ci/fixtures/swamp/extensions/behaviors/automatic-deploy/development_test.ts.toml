@@ -1,0 +1,35 @@
+order = 180
+source_sha256 = "e6d7e729af53a5e90f7cb9ce70b4a587673553b06cf138c23babbc95fe759e1f"
+cases = [
+  "development policy admits only after Gateway ownership switches",
+  "development policy returns only the final checkpoint handle",
+  "native development policy saves the exact pinned intent before admission",
+  "an existing target hold starts no competing deployment",
+  "target_busy at admission clears only the unadmitted intent",
+  "a lost admission response follows its receipt without a second start",
+  "terminal work without history cannot authorize a new effect",
+  "interrupted development deploys settle, back off and re-admit the head",
+  "interrupted development deploy without evidence backs off once then admits the current head",
+  "a definite start failure releases pending intent for the next scheduled admission",
+  "credential failures stay terminal without repeated admissions",
+  "an uncertain or executed failure without history retains pending intent",
+  "development retries and backoff are owned by Swamp and reset after manual work",
+  "pending publication uses the normal Route root before dev deployment",
+  "only a proven zero-effect admission fence clears a pending development intent",
+  "unrelated production and non-default checkouts with null history cannot block dev discovery",
+  "a default with no authoritative Route deploys even when its display Route is unrelated",
+  "native-first deployment skips the old Gateway dev owner before reading new fields",
+  "canonical Gateway refusal skips ambiguous app-dev plus app-prod placement",
+]
+file = "swamp/extensions/behaviors/automatic-deploy/development_test.ts"
+cost = 4
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/automatic-deploy/development.ts",
+  "swamp/extensions/behaviors/automatic-deploy/gateway.ts",
+  "swamp/extensions/behaviors/automatic-deploy/policy.ts",
+]

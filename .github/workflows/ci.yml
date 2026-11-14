@@ -722,9 +722,10 @@ jobs:
           UNITS: ${{ toJSON(matrix.shard.units) }}
         run: |
           python3 - <<'PYTHON'
-          import json, os, tomllib
-          with open('.github/ci/checks.toml', 'rb') as source:
-              fixtures = {f['file']: f for f in tomllib.load(source)['fixture']}
+          import json, os, runpy
+          from pathlib import Path
+          config, _ = runpy.run_path('bin/ci-registry')['load'](Path('.'))
+          fixtures = {f['file']: f for f in config['fixture']}
           php = any(fixtures.get(unit.split('#')[0], {}).get('php', False) for unit in json.loads(os.environ['UNITS']))
           with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
               output.write(f'php={str(php).lower()}\n')

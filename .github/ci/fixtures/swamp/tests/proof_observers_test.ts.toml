@@ -1,0 +1,20 @@
+order = 1030
+source_sha256 = "715243eb5cbcf0e4b36e8a6539623019f84d917428b30751c3b34fbd9c5996e6"
+cases = [
+  "proof preparation installs the candidate artifact on every seed observer and repeats safely",
+  "proof preparation follows a changed candidate manifest without refreshing the seed",
+  "a bad candidate checksum preserves every old observer and refuses preparation",
+  "a download error preserves every old observer and refuses preparation",
+  "installed digests cannot pass preparation when no new report arrives",
+]
+file = "swamp/tests/proof_observers_test.ts"
+cost = 79
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/proof-observers.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-replace.yml",
+]

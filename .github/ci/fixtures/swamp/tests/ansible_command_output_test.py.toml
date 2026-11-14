@@ -1,0 +1,24 @@
+order = 270
+source_sha256 = "f10de64195b1b74768a7e56d851edde65035dfd6fff03be6d6ed69bb68e37ae7"
+cases = [
+  "test_every_regex_is_exercised_or_classified_without_command_output",
+  "test_unclassified_native_regex_tests_fail_coverage",
+  "test_recorded_output_through_production_expressions",
+  "test_dpkg_installed_held_removed_and_absent",
+  "test_every_reachable_converge_task_name_is_static",
+]
+file = "swamp/tests/ansible_command_output_test.py"
+cost = 3
+inputs = [
+  "apps/gateway/app/Domain/Nodes/NodeDesiredConvergeInput.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/**/*.yaml",
+  "swamp/ansible/**/*.yml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
+  "swamp/tests/fixtures/command-output/**",
+  "swamp/workflows/workflow-operation-node-converge-direct.yaml",
+]

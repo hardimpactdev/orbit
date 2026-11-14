@@ -1,0 +1,48 @@
+order = 560
+source_sha256 = "4e07c9f1a22195040881f4bd1502fe1fd07fff0028671c7120b823d8304ce5f7"
+cases = [
+  "base-start refuses absent authorization after cloud-init 0",
+  "base-start refuses empty authorization after cloud-init 0",
+  "base-start refuses wrong authorization after cloud-init 0",
+  "base-start refuses malformed authorization after cloud-init 0",
+  "base-start accepts the admitted fingerprint after cloud-init 0",
+  "base-start refuses absent authorization after cloud-init 2",
+  "base-start refuses empty authorization after cloud-init 2",
+  "base-start refuses wrong authorization after cloud-init 2",
+  "base-start refuses malformed authorization after cloud-init 2",
+  "base-start accepts the admitted fingerprint after cloud-init 2",
+  "host-clean removes only old images, retired prefixes, the retired projects whole and the images of the image projects",
+  "a project that cannot be emptied fails the phase after the other projects had their turn",
+  "host-clean refuses a task VM project that shares images or volumes with default",
+  "a profile that cannot be removed keeps its project and fails the phase after the other projects had their turn",
+  "a retired project that shares its profiles with default loses none of them",
+  "a rebuild deletes the base VM and its seed; a recorded-base refresh preserves them",
+]
+file = "swamp/tests/ansible_task_vm_host_clean_test.ts"
+cost = 231 # Per-case hosted maxima plus 25%, rounded up plus one second; four slices.
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+]
+
+[case_costs]
+  "base-start refuses absent authorization after cloud-init 0" = 8 # 4.97s completed, run 43321083193
+  "base-start refuses empty authorization after cloud-init 0" = 8 # 4.846s completed, run 43321083193
+  "base-start refuses wrong authorization after cloud-init 0" = 9 # 6.013s completed, run 43321083193
+  "base-start refuses malformed authorization after cloud-init 0" = 9 # 6.086s completed, run 43170734940
+  "base-start accepts the admitted fingerprint after cloud-init 0" = 18 # 13.178s completed, run 43321083193
+  "base-start refuses absent authorization after cloud-init 2" = 8 # 5.047s completed, run 43170734940
+  "base-start refuses empty authorization after cloud-init 2" = 8 # 5.238s completed, run 43321083193
+  "base-start refuses wrong authorization after cloud-init 2" = 10 # 6.536s completed, run 43170734940
+  "base-start refuses malformed authorization after cloud-init 2" = 9 # 6.096s completed, run 43321083193
+  "base-start accepts the admitted fingerprint after cloud-init 2" = 18 # 13.343s completed, run 43170734940
+  "host-clean removes only old images, retired prefixes, the retired projects whole and the images of the image projects" = 22 # 16.71s completed, run 43321083193
+  "a project that cannot be emptied fails the phase after the other projects had their turn" = 27 # 20.571s completed, run 43170734940
+  "host-clean refuses a task VM project that shares images or volumes with default" = 4 # 2.4s completed, run 43172025439
+  "a profile that cannot be removed keeps its project and fails the phase after the other projects had their turn" = 27 # 20.174s completed, run 43170734940
+  "a retired project that shares its profiles with default loses none of them" = 18 # 13.403s completed, run 43178956955
+  "a rebuild deletes the base VM and its seed; a recorded-base refresh preserves them" = 28 # 21.465s completed, run 43170734940

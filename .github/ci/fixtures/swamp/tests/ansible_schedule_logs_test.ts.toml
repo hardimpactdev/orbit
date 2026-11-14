@@ -1,0 +1,30 @@
+order = 1220
+source_sha256 = "9c19465180c4136985405ec46e404fcf4300416398a821d148a8bfdcc0fd9a85"
+cases = [
+  "migrated Schedule logs combine unit and command entries privately, in time order, with whole multiline messages",
+  "Schedule journal byte cap retains complete multibyte entries and excludes the first entry that cannot fit",
+  "Schedule journal keeps a complete entry at the exact UTF-8 byte bound",
+  "Schedule journal stops reading an oversized frame on the Node before transfer",
+  "Schedule journal reads long fields with --all and handles null and non-UTF-8 byte-array messages",
+  "Schedule journal bounds double JSON encoding and crosses the Gateway's real framed client",
+  "container Schedule inspection reads guest state and journal, and stopped inspection never execs or wakes",
+  "carried Schedule installs disabled and post-cutover activation failure stays advisory",
+  "carried fixed-time calendars preserve explicit zones and capture an unzoned source without changing the stored form",
+]
+file = "swamp/tests/ansible_schedule_logs_test.ts"
+cost = 30
+inputs = [
+  "swamp/ansible/schedule-logs.yml",
+  "swamp/ansible/tasks/instance-migrate-schedule-check.yml",
+  "swamp/ansible/templates/instance-migrate-schedule.j2",
+  "swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json",
+  "swamp/ansible/library/orbit_schedule_journal.py",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/tests/fixtures/schedule-inspection-frame.php",
+  "apps/gateway/app/Infrastructure/AgentView/WebSocketClient.php",
+  "apps/gateway/app/Infrastructure/AgentView/StreamWebSocketClient.php",
+  "apps/gateway/app/Support/ValidatedData.php",
+]

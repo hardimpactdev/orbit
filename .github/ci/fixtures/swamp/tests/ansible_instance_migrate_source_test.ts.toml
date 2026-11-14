@@ -1,0 +1,18 @@
+order = 1370
+source_sha256 = "7f5918eadba2429e29d967f35b04ded5ab7ce294a17279cb2b47d695ec000571"
+cases = [
+  "migration source preflight distinguishes failure and timeout before changing the checkout",
+  "a never-pushed branch at a pushed commit passes source and retirement checks and copies locally",
+]
+file = "swamp/tests/ansible_instance_migrate_source_test.ts"
+cost = 16
+inputs = [
+  "swamp/ansible/instance_migrate_git.py",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-migrate-phase.yml",
+  "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
+]

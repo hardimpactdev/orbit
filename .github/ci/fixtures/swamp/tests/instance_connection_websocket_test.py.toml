@@ -1,0 +1,17 @@
+order = 1250
+source_sha256 = "1ef44590ea970c4db01f03d20b061b18bc1a6738c60773691285ac258c11ad53"
+cases = [
+  "test_an_attached_app_adds_its_rule_once_and_keeps_the_other_rules",
+  "test_a_removed_app_closes_the_path_and_keeps_every_other_rule",
+  "test_a_moved_websocket_node_replaces_the_old_address",
+  "test_an_instance_without_an_app_changes_nothing",
+  "test_a_composed_value_goes_to_the_one_writer",
+  "test_the_base_value_writes_nothing",
+  "test_no_key_run_skips_the_writer_and_reports_unchanged",
+]
+file = "swamp/tests/instance_connection_websocket_test.py"
+cost = 6
+slices = false
+inputs = [
+  "swamp/ansible/instance-connection-environment.yml",
+]

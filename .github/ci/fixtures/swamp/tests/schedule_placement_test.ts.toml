@@ -1,0 +1,17 @@
+order = 1080
+source_sha256 = "2f2ebb5618aaaebfd5497f9e97a500d127bfaba80055d048ca9bc18700800389"
+cases = [
+  "Schedule create has exactly one 209 selector on every job and step",
+  "Schedule control has exactly one 209 selector on every job and step",
+  "Schedule destroy has exactly one 209 selector on every job and step",
+]
+file = "swamp/tests/schedule_placement_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-schedule-*.yaml",
+]

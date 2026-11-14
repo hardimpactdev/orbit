@@ -1,0 +1,42 @@
+order = 1000
+source_sha256 = "cc9545e17c6263c54c3da8e5487882a3a97693d2d8b2edc4a31e741fac27146c"
+cases = [
+  "launch-starter-kit preserves its current Project settings, configured paths and age policy",
+  "launch preserves its current Project settings, configured paths and age policy",
+  "treadmill-website preserves its current Project settings, configured paths and age policy",
+  "orbit-website preserves its current Project settings, configured paths and age policy",
+  "recall preserves its current Project settings, configured paths and age policy",
+  "ai-cli-proxy preserves its current Project settings, configured paths and age policy",
+  "laravel-toolbar-site preserves its current Project settings, configured paths and age policy",
+  "operator-website preserves its current Project settings, configured paths and age policy",
+  "operator preserves its current Project settings, configured paths and age policy",
+  "fitta preserves its current Project settings, configured paths and age policy",
+  "house-italy preserves its current Project settings, configured paths and age policy",
+  "lindaretel preserves its current Project settings, configured paths and age policy",
+  "srpm preserves its current Project settings, configured paths and age policy",
+  "tankwerk preserves its current Project settings, configured paths and age policy",
+  "ditis-hr preserves its current Project settings, configured paths and age policy",
+  "platform11 preserves its current Project settings, configured paths and age policy",
+  "hauzer preserves its current Project settings, configured paths and age policy",
+  "mealou preserves its current Project settings, configured paths and age policy",
+  "the fleet retains private project configuration in one data file without per-project workflows",
+  "private project config preserves every exception ledger found in the 20-repository inventory",
+  "the Project routine entrypoint accepts full Gateway inputs and runs on 209",
+]
+file = "swamp/tests/project_fleet_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/operations/project-maintenance/projects.json",
+  "swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml",
+  "swamp/tests/_support/projects.ts",
+  "swamp/tests/fixtures/project-extensions/exception-inventory.json",
+  "swamp/tests/fixtures/project-extensions/fleet.json",
+]

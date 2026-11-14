@@ -1,0 +1,19 @@
+order = 1380
+source_sha256 = "386cdf317e4d00bc170871e404d5f2b7190c51e9d6d8de8beac62a9632c9ce1b"
+cases = [
+  "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
+  "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",
+  "test_fleet_proxy_writes_the_same_drop_ins_and_manager_value_once_and_refuses_a_foreign_file",
+  "test_the_proxy_command_reads_its_value_from_stdin_and_prints_only_whether_it_changed",
+  "test_attached_remote_probe_failure_has_public_target_identity",
+  "test_detach_removes_acl_endpoint_forward_and_all_managed_proxy_hosts",
+  "test_multiple_hosts_on_one_port_keep_distinct_rules_without_sockets",
+  "test_same_host_keeps_proxy_bypass_until_its_last_port_is_detached",
+  "test_withdrawal_retains_other_instances_applied_endpoint_without_revalidating_it",
+  "test_other_container_retains_shared_bridge_endpoint_but_not_this_containers_forward_rule",
+  "test_remote_destroy_and_failed_migrate_restore_remove_only_their_owned_path",
+  "test_previous_gateway_local_intent_has_no_new_required_fields",
+]
+file = "swamp/tests/instance_node_service_access_test.py"
+cost = 20
+inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts", "swamp/tests/fixtures/instance-container-ufw.ts"]

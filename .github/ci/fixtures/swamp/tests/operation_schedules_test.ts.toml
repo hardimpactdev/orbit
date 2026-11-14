@@ -1,0 +1,20 @@
+order = 960
+source_sha256 = "cb1b4e38e516000985ad98d6501fa7ce6d7d7d3f3eb14a230d31a66fac7ae466"
+cases = [
+  "operation workflows never schedule Gateway claims",
+  "Gateway discovery and slot models cannot claim work",
+  "native retention keeps history and current data",
+]
+file = "swamp/tests/operation_schedules_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+]

@@ -5,6 +5,8 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
+from types import SimpleNamespace
 import subprocess
 import sys
 import tomllib
@@ -12,6 +14,7 @@ from functools import lru_cache
 
 JOBS = ('php', 'gateway-static', 'gateway-tests', 'cli', 'cli-static', 'cli-tests', 'sdk-static', 'sdk-tests', 'e2e-static', 'docs', 'api-reference', 'web', 'pi', 'agent', 'swamp', 'proof')
 ROOT = Path(__file__).resolve().parent.parent
+registry = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-registry')))
 SELECTION = 'swamp/proof/selection.txt'
 SELECTION_COMMAND = re.compile(r'[a-z][a-z0-9_-]*(?::[a-z][a-z0-9_-]*)+')
 
@@ -234,8 +237,7 @@ def matches(path, rules):
 
 @lru_cache(maxsize=1)
 def check_table():
-    with (ROOT / TABLE).open('rb') as source:
-        table = tomllib.load(source)
+    table, _ = registry.load(ROOT)
     checks = {name: input_rules(check['inputs']) for name, check in table['check'].items()}
     roots = [(name, input_rules(root['inputs']), root['default']) for name, root in table['roots'].items()]
     return table, checks, roots
@@ -250,15 +252,8 @@ def check_source_roots(paths):
 
 def registry_check_changes(base, head):
     """Compare fast-check definitions at the same merge base as changed paths."""
-    def read(revision):
-        # Revisions belong to the caller's repository, as in changed_inputs.
-        present = subprocess.check_output(['git', 'ls-tree', '--name-only', revision, '--', TABLE],
-                                          text=True, timeout=60).strip()
-        if not present:
-            return {}
-        return tomllib.loads(subprocess.check_output(
-            ['git', 'show', f'{revision}:{TABLE}'], text=True, timeout=60))
-    before, after = read(base), read(head)
+    before, _ = registry.read_revision(Path.cwd(), base)
+    after, _ = registry.read_revision(Path.cwd(), head)
     # Fixture bodies have their own semantic selector in ci-units. Everything
     # else outside an individual check is shared policy, including new sections.
     def shared(table):
@@ -292,7 +287,7 @@ def selected_checks(paths, registry_checks=None):
     return selected, unclaimed
 
 
-def select(paths, main=False, selection=None, registry_checks=None, pull_request=False):
+def select(paths, main=False, selection=None, registry_checks=None, pull_request=False, population_changed=False):
     """`selection` is the text of the proof list; omitted, read this checkout's list."""
     paths = [path for path in paths if path]
     check_source_roots(paths)
@@ -304,8 +299,10 @@ def select(paths, main=False, selection=None, registry_checks=None, pull_request
     jobs['docs'] |= pull_request
     docs_only = selected == {'docs'}
     scope_paths = [path for path in paths if path != TABLE or registry_checks is None or registry_checks]
-    swamp_only = bool(scope_paths) and all(path.startswith('swamp/') for path in scope_paths)
-    registry_only = bool(paths) and not scope_paths
+    # Population changes previously lived outside swamp/ in the inventory. Keep
+    # their release-input selection without inventing a deleted changed path.
+    swamp_only = not population_changed and bool(scope_paths) and all(path.startswith('swamp/') for path in scope_paths)
+    registry_only = not population_changed and bool(paths) and not scope_paths
     if selection is None and (ROOT / SELECTION).is_file():
         selection = (ROOT / SELECTION).read_text()
     return {'jobs': jobs, 'swamp_checks': swamp_checks, 'gateway_release': main or (not swamp_only and not docs_only and not registry_only),
@@ -346,8 +343,20 @@ def main():
     p.add_argument('--swamp-base', action='store_true', help='Resolve the retained source for the first history import')
     a = p.parse_args()
     base, paths = changed_inputs(a.base, a.head)
-    registry_checks = registry_check_changes(base, a.head) if TABLE in paths else None
-    result = select(paths, a.main, registry_checks=registry_checks, pull_request=a.pull_request)
+    population_changed = False
+    registry_checks = registry_check_changes(base, a.head) if registry.metadata_changed(paths) else None
+    if registry.metadata_changed(paths):
+        # One metadata file replaces policy and population edits. Preserve their
+        # old selection meanings without treating its physical move as code.
+        _, before = registry.read_revision(Path.cwd(), base)
+        _, after = registry.read_revision(Path.cwd(), a.head)
+        paths = [path for path in paths if not path.startswith(registry.DIRECTORY + '/')
+                 and path != registry.LEGACY_INVENTORY]
+        if TABLE not in paths:
+            paths.append(TABLE)
+        population_changed = before != after
+    result = select(paths, a.main, registry_checks=registry_checks, pull_request=a.pull_request,
+                    population_changed=population_changed)
     _, unclaimed = selected_checks(paths, registry_checks)
     if unclaimed:
         import sys

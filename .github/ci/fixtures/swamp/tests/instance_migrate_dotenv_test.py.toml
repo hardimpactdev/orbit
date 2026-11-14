@@ -1,0 +1,17 @@
+order = 1190
+source_sha256 = "66ba17ee487ffc2931268a7853d19310401c3db23e64a30ad96b8dae2194ab24"
+cases = [
+  "test_even_backslashes_before_a_closing_quote_do_not_swallow_the_next_host",
+  "test_odd_backslash_parity_preserves_an_escaped_double_quote",
+  "test_single_and_double_quoted_names_are_service_keys",
+  "test_double_quoted_escapes_match_phpdotenv_without_variable_expansion",
+  "test_backslashes_in_single_quotes_and_unquoted_values_are_literal",
+  "test_hash_starts_unquoted_comments_with_or_without_whitespace",
+  "test_trimmed_assignment_spacing_keeps_quoted_value_spacing",
+  "test_multiline_private_values_do_not_create_service_assignments",
+  "test_phpdotenv_literal_name_and_value_forms_are_retained",
+  "test_malformed_or_unsupported_syntax_raises_only_a_safe_line_number",
+]
+file = "swamp/tests/instance_migrate_dotenv_test.py"
+cost = 1
+inputs = ["swamp/ansible/library/orbit_migrate_env.py"]

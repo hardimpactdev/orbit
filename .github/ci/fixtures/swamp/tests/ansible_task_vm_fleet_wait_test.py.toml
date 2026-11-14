@@ -1,0 +1,28 @@
+order = 550
+source_sha256 = "bc2440968188d700100df3afb055d2dfcd333914d6ed4282b29109b287d0aa21"
+cases = [
+  "test_the_waits_use_the_tools_own_retry_and_no_shell",
+  "test_the_readiness_intent_is_reached_with_its_pinned_host_key",
+  "test_the_reason_query_reads_the_failed_step_and_error_code_of_the_operation",
+  "test_an_operation_that_ends_succeeded_passes_after_its_checks",
+  "test_a_nested_vm_that_is_not_running_ends_the_wait_at_once_and_is_named",
+  "test_an_operation_that_ends_failed_fails_the_wait",
+  "test_an_operation_that_does_not_end_fails_when_the_checks_run_out",
+  "test_an_operation_that_is_cancelled_or_interrupted_ends_the_wait_and_fails_it",
+  "test_doctor_passes_when_it_turns_healthy",
+  "test_doctor_stops_at_once_when_the_nested_gateway_is_not_running",
+  "test_doctor_does_not_pass_while_a_nested_app_vm_is_not_running",
+  "test_doctor_does_not_pass_on_a_healthy_node_while_the_fleet_is_not",
+]
+file = "swamp/tests/ansible_task_vm_fleet_wait_test.py"
+cost = 25
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-fleet-wait.yml",
+  "swamp/ansible/tasks/task-vm-nested-wait.yml",
+]

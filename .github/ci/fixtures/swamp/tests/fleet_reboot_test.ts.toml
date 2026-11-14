@@ -1,0 +1,52 @@
+order = 740
+source_sha256 = "b7ee7d733175315420e273544c38762abd93237fd0083bbaa88bb0cad38be6e3"
+cases = [
+  "the pass visits one Node at a time and the Gateway reads its report step",
+  "each Node runs drain, reboot and check in order, each phase bounded and the drain longer than its budget",
+  "a Node waits outside the window or when admission found its task work busy, and an operator's pass ignores the window",
+  "a Node after a failed one halts from the records in the run folder",
+  "a Node's play reads the clock and writes its record on the Swamp Node without SSH to localhost",
+  "the check waits for the boot to finish before it reads the failed units",
+  "the CI drain stops idle runners, keeps a busy one running and never leaves one frozen",
+  "a failed phase records the assert's error code or the phase's own code, keeps the earlier record, and fails",
+  "the report lists every Node record in pass order and reports a cut Node failed",
+  "only the swamp Node schedules its own reboot, behind a path unit that the pass's cleanup releases",
+  "a failed drain starts what it stopped, and each task guest is recorded as soon as it stops",
+  "the rerun picks only failed jobs still running on a stopped runner at its freeze, in runs still at that attempt",
+  "the rerun records each accepted call on its own and the refused ones apart",
+  "the waits and calls of the rerun never fail the phase, and the tokens are always revoked",
+  "a runner registers under its container name, which the rerun matches against job runner names",
+  "the rerun posts re-run-failed-jobs once per due run, records it, and never fails the Node",
+  "a held due Node is read but never drained or rebooted",
+  "a held not-due Node is read but never drained or rebooted",
+  "the drain rescue preserves main recovery after held observation fails",
+  "the drain rescue preserves main recovery after held record fails",
+  "the drain rescue preserves main recovery after marker record fails",
+  "the drain rescue preserves main recovery after Gateway partial stop fails",
+  "the drain rescue preserves main recovery after Gateway record after stop fails",
+  "the drain rescue preserves main recovery after CI partial stop fails",
+  "the drain rescue preserves main recovery after CI stop-list record fails",
+  "the drain rescue preserves main recovery after CI stop-list read fails",
+  "the drain rescue preserves main recovery after Gateway already stopped fails",
+  "the drain rescue preserves main recovery after Gateway Horizon already stopped fails",
+  "the drain rescue preserves main recovery after Gateway timeout fails",
+]
+file = "swamp/tests/fleet_reboot_test.ts"
+# ESTIMATE: slowest of six interleaved slices, local 21.674s x 2.1, rounded up, plus 1s.
+# Evidence: tools/tests/ci-reboot-cost-evidence.json; no case is deferred.
+cost = 282
+slices = 6
+inputs = [
+  "tools/tests/ci-reboot-cost-evidence.json",
+  "apps/gateway/app/Domain/Fleet/direct-operations.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/fleet-reboot-drain-gateway.yml",
+  "swamp/ansible/tasks/fleet-reboot-drain-undo.yml",
+  "swamp/ansible/tasks/fleet-reboot-failed.yml",
+  "swamp/ansible/tasks/fleet-reboot-record.yml",
+  "tools/ci-runners/setup.sh",
+]

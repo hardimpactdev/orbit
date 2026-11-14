@@ -1,0 +1,36 @@
+order = 1300
+source_sha256 = "1010ada43464b0c71382e3daa0a80ece2b1dca68618049083684592c0a1a83ed"
+cases = [
+  "test_confirmed_registered_and_moved_dependents_are_found_even_with_force",
+  "test_existing_owner_registration_refuses_without_reading_candidate_git",
+  "test_prunable_gone_registration_and_independent_checkouts_do_not_block",
+  "test_broken_gitdir_and_commondir_into_target_are_confirmed",
+  "test_unreadable_candidate_shapes_are_named_unknown_and_never_veto",
+  "test_unreadable_parent_in_mixed_inventory_warns_including_the_moved_worktree_limit",
+  "test_candidate_timeouts_share_one_allowance_and_warn",
+  "test_malformed_rows_cannot_poison_other_candidates_and_diagnostics_are_bounded",
+  "test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause",
+  "test_alternates_dependency_and_symlinked_candidate_are_confirmed",
+  "test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action",
+  "test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies",
+]
+file = "swamp/tests/instance_destroy_git_test.py"
+cost = 18
+slices = false
+inputs = [
+  "swamp/ansible/instance/destroy-git.py",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+[case_costs]
+"test_confirmed_registered_and_moved_dependents_are_found_even_with_force" = 1
+"test_existing_owner_registration_refuses_without_reading_candidate_git" = 1
+"test_prunable_gone_registration_and_independent_checkouts_do_not_block" = 1
+"test_broken_gitdir_and_commondir_into_target_are_confirmed" = 1
+"test_unreadable_candidate_shapes_are_named_unknown_and_never_veto" = 1
+"test_unreadable_parent_in_mixed_inventory_warns_including_the_moved_worktree_limit" = 1
+"test_candidate_timeouts_share_one_allowance_and_warn" = 4
+"test_malformed_rows_cannot_poison_other_candidates_and_diagnostics_are_bounded" = 1
+"test_target_directory_marker_resolve_and_git_failures_keep_path_and_cause" = 4
+"test_alternates_dependency_and_symlinked_candidate_are_confirmed" = 1
+"test_inspect_never_walks_checkout_contents_or_accepts_a_remove_action" = 1
+"test_source_removal_stays_unchanged_and_workflow_never_checks_dependencies" = 1

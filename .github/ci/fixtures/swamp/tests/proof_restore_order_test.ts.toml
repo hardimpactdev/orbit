@@ -1,0 +1,27 @@
+order = 1040
+source_sha256 = "07714a7ec175405fdcdb25aa996402ae107e6d51819472df363446346a9b0599"
+cases = [
+  "restored fleets require checkout migration before every nested Gateway API check",
+  "renewed base snapshots check readiness only after the apply that migrates",
+  "the first fleet build and image snapshots follow migration",
+  "initial restore calls the shared proof-fleet-restore workflow",
+  "batch restore calls the shared proof-fleet-restore workflow",
+  "replay restore calls the shared proof-fleet-restore workflow",
+  "final restore calls the shared proof-fleet-restore workflow",
+  "systemd boot and every required state mount gate apply",
+  "late gateway state mounts pass after the boot wait and fail without it",
+  "late app-dev state mounts pass after the boot wait and fail without it",
+  "boot wait refuses an unsettled boot, a timeout and an inactive required mount",
+]
+file = "swamp/tests/proof_restore_order_test.ts"
+cost = 30
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/ansible/tasks/task-vm-fleet-build.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+]

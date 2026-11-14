@@ -1,0 +1,29 @@
+order = 750
+source_sha256 = "45082ab15a8f9f2fc6885348e702063987fbc64c083805a4cf1c1576759e4f22"
+cases = [
+  "fleet reboot retries a first unreachable attempt and succeeds on the second without a failure record",
+  "fleet reboot records a persistently unreachable ordinary Node and later Nodes skip halted without SSH",
+  "fleet reboot records a persistently unreachable held Node and later Nodes skip halted without SSH",
+  "fleet reboot records unreachable check work on the controller after earlier phases connected",
+  "fleet reboot records a started cut phase as failed instead of not reached",
+  "collection can report a retained attempted-Node record when finalization was cut",
+  "unreachable diagnostics are redacted and bounded before recording and output",
+  "the controller records phase failures after succeeded, failed and skipped phases",
+  "the drain phase never replays a command that executed before SSH disconnected",
+  "the reboot phase never replays a command that executed before SSH disconnected",
+]
+file = "swamp/tests/fleet_reboot_unreachable_test.ts"
+cost = 30
+after_merge_cases = ["fleet reboot records a persistently unreachable ordinary Node and later Nodes skip halted without SSH"]
+reason = "The ordinary unreachable case was censored at the shard deadline (unit 72.3s, run 43020616292); its eight production attempts did not fit the selected shard. Defer this case to the full-set receiver pending a completed cost measurement; keep the existing PR ceilings."
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
+  "swamp/workflows/workflow-fleet-reboot-node.yaml",
+]

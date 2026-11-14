@@ -1,0 +1,36 @@
+order = 410
+source_sha256 = "bb7a5a6fb41f79cc4fa2297280c62543896b88fbeb233ac7469d973c228f1234"
+cases = [
+  "test_rewrites_absolute_storage_and_local_package_links_without_changing_source",
+  "test_keeps_relative_targets_exactly",
+  "test_refuses_every_external_path_and_target_including_relative_and_prefix_siblings",
+  "test_refuses_broken_links_and_cycles_including_missing_external_targets",
+  "test_checks_resolved_destination_and_does_not_follow_directory_links",
+  "test_refuses_file_targets_with_directory_suffixes_at_every_hop_in_source_and_copy",
+  "test_allows_directory_targets_with_directory_suffixes",
+  "test_does_not_inspect_installed_package_or_git_contents",
+  "test_checks_composer_and_npm_package_boundary_links_but_not_named_ordinary_directories",
+  "test_uses_the_copied_tree_without_reading_the_old_checkout_and_is_idempotent",
+  "test_refuses_missing_copied_data_even_if_the_source_target_still_exists_without_partial_rewrites",
+  "test_preserves_non_utf8_bytes_in_link_names_and_targets",
+  "test_reports_non_utf8_refusals_as_byte_escapes_without_json_surrogates",
+  "test_resolves_parent_components_after_following_directory_links",
+  "test_archive_carries_empty_untracked_and_nested_ignored_directories_with_exact_modes",
+  "test_prediction_keeps_existing_validation_for_links_into_generated_git_metadata",
+  "test_prediction_refuses_source_only_git_metadata_before_the_copy",
+  "test_restore_refuses_a_symlink_directory_component_and_leaves_outside_untouched",
+  "test_restore_rejects_absolute_and_parent_manifest_paths_without_touching_outside",
+  "test_added_unreadable_directory_can_be_inspected_before_exact_mode_restoration",
+  "test_prediction_refuses_source_valid_links_to_omitted_submodule_contents_and_missing_targets",
+]
+file = "swamp/tests/ansible_instance_migrate_links_test.py"
+cost = 3 # completed local file body; rounded up plus 1s
+inputs = [
+  "swamp/ansible/instance_migrate_git.py",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]

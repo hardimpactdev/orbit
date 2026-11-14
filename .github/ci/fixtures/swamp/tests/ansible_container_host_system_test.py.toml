@@ -1,0 +1,17 @@
+order = 280
+source_sha256 = "575b1cca09eb332a888efbe7f7bcbdd10a9ca5f707ed17dfa2ebbdb97e688104"
+cases = [
+  "test_held_and_unheld_installed_packages_are_not_reinstalled",
+  "test_config_files_left_after_removal_do_not_count_as_installed",
+  "test_an_absent_package_is_installed",
+]
+file = "swamp/tests/ansible_container_host_system_test.py"
+cost = 7
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+]

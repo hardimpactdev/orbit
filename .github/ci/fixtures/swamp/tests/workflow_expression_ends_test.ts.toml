@@ -1,0 +1,17 @@
+order = 1150
+source_sha256 = "8f3cacdd919020172cc0397d4815efea51f7e6d1314ac36250fa2f50398c1dae"
+cases = [
+  "no workflow expression holds a `}}` that ends it before its end",
+  "a map or string closed with `}}` inside an expression is found, and `} }}` passes",
+]
+file = "swamp/tests/workflow_expression_ends_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/workflows/**",
+]

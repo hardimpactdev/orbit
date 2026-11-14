@@ -1,0 +1,111 @@
+order = 480
+source_sha256 = "e945c4caef36728af235d06e490e7472da77b6a86814f2aca85f2d7888a78ced"
+cases = [
+  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing",
+  "the container bridge gets DHCP and DNS input rules under its own catalog names",
+  "a small host caps the ARC at 1 GiB",
+  "a host without Incus installs the recipe's pinned packages, fetched by digest",
+  "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge",
+  "a copy that Incus shifted fails the phase and leaves no probe",
+  "a prior clone probe refuses with its exact name and recipe instead of being deleted",
+  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go",
+  "the container rule never raises a cap the host already runs",
+  "an Incus package removed with its config files left counts as missing and is installed",
+  "fresh stock publication is independent and a healthy repeat retains all caches without changes",
+  "a prior builder refuses with exact resource and recipe even with copied stock properties",
+  "a prior candidate refuses with exact resource and recipe even with copied stock properties",
+  "a prior retirement refuses with exact resource and recipe even with copied stock properties",
+  "a prior unaliased publication refuses with exact resource and recipe even with copied stock properties",
+  "unmarked selected stock refuses with its full fingerprint and adoption recipe",
+  "replacement refuses an old selected record without a retention alias and never deletes it",
+  "a copied stock statement on a healthy selected image never licenses any deletion",
+  "a failed current publication removes only its current builder and leaves the exact interrupted image for operator cleanup",
+  "a missing current publication archive fails without deleting any image or cache",
+  "stock daemon identity refuses socket_server_pid mismatch before mutation",
+  "stock daemon identity refuses cli_server_pid mismatch before mutation",
+  "stock image commands use the approved local socket despite a same-PID default remote",
+  "the explicit fingerprint adoption recipe snapshots and retains legacy stock before one property set and ordinary convergence",
+  "the image fixture routes explicit remote prefixes ahead of the local environment",
+  "the adoption recipe refuses nonlocal retention \"other:retain-stock\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal alias \"other:stock\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal project \"other:project\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal fingerprint \"other:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal retention \"stock/retain\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal alias \"stock/alias\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal project \"stock/project\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal retention \"--retain\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal alias \"-stock\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal project \"-project\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal retention \"retain stock\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal alias \"stock\\n\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal project \"\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal fingerprint \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes",
+  "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes",
+  "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation",
+  "the adoption recipe refuses interrupted resources and preserves every unrelated alias",
+  "explicit adoption can restore its saved metadata before or after replacement while retaining both images",
+]
+file = "swamp/tests/ansible_task_container_host_prepare_test.ts"
+# Exact-head Beast receipt ede21ef9: /fast/scratch/stock-fix-container-green.log (44 cases passed).
+# Hosted forecasts are ceil(Beast seconds * 2.1) + 1; larger completed hosted costs stay.
+cost = 702
+slices = 44 # One registered case per unit, including the adoption refusals.
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+  "swamp/ansible/tasks/artifact-fetch.yml",
+  "swamp/ansible/tasks/task-container-*.yml",
+  "swamp/ansible/tasks/task-vm-host-prepare.yml",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "a container host gets its kernel side, bridge, project and clone check beside the VM side, then changes nothing" = 79 # completed body 77.221s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 26.0s gives 56s estimate
+  "the container bridge gets DHCP and DNS input rules under its own catalog names" = 47 # completed body 45.777s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 14.0s gives 31s estimate
+  "a small host caps the ARC at 1 GiB" = 48 # completed body 46.428s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 14.0s gives 31s estimate
+  "a host without Incus installs the recipe's pinned packages, fetched by digest" = 52 # completed body 50.154s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 15.0s gives 33s estimate
+  "a container host is refused before its container side changes: another Incus line, SCTP, subordinate IDs, a taken bridge" = 58 # completed body 56.209s, run 43011901748; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
+  "a copy that Incus shifted fails the phase and leaves no probe" = 50 # completed body 48.946s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
+  "a prior clone probe refuses with its exact name and recipe instead of being deleted" = 37 # ESTIMATE: ede21ef9 Beast 17.0s * 2.1, rounded up + 1s
+  "a container host on a native pool gets the ARC cap now and after reboot, and keeps it when containers go" = 104 # completed body 102.375s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 37.0s gives 79s estimate
+  "the container rule never raises a cap the host already runs" = 67 # ESTIMATE: ede21ef9 Beast 31.0s * 2.1, rounded up + 1s
+  "an Incus package removed with its config files left counts as missing and is installed" = 48 # completed body 46.508s, run 43017688111; maximum completed observation, rounded up plus 1s; ede21ef9 Beast 16.0s gives 35s estimate
+  "fresh stock publication is independent and a healthy repeat retains all caches without changes" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior builder refuses with exact resource and recipe even with copied stock properties" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior candidate refuses with exact resource and recipe even with copied stock properties" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior retirement refuses with exact resource and recipe even with copied stock properties" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a prior unaliased publication refuses with exact resource and recipe even with copied stock properties" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "unmarked selected stock refuses with its full fingerprint and adoption recipe" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "replacement refuses an old selected record without a retention alias and never deletes it" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "a copied stock statement on a healthy selected image never licenses any deletion" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "a failed current publication removes only its current builder and leaves the exact interrupted image for operator cleanup" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "a missing current publication archive fails without deleting any image or cache" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "stock daemon identity refuses socket_server_pid mismatch before mutation" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "stock daemon identity refuses cli_server_pid mismatch before mutation" = 3 # ESTIMATE: ede21ef9 Beast 0.722s * 2.1, rounded up + 1s
+  "stock image commands use the approved local socket despite a same-PID default remote" = 4 # ESTIMATE: ede21ef9 Beast 1.0s * 2.1, rounded up + 1s
+  "the explicit fingerprint adoption recipe snapshots and retains legacy stock before one property set and ordinary convergence" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s
+  "the image fixture routes explicit remote prefixes ahead of the local environment" = 2 # ESTIMATE: ede21ef9 Beast 0.037s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"other:retain-stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.075s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"other:stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"other:project\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"other:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.048s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"stock/retain\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.047s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"stock/alias\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"stock/project\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.048s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"--retain\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"-stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"-project\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal retention \"retain stock\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal alias \"stock\\n\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal project \"\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.049s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.047s * 2.1, rounded up + 1s
+  "the adoption recipe refuses nonlocal fingerprint \"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\" before snapshot or changes" = 2 # ESTIMATE: ede21ef9 Beast 0.046s * 2.1, rounded up + 1s
+  "the adoption recipe refuses mismatched approval tuples or existing metadata without mutation" = 3 # ESTIMATE: ede21ef9 Beast 0.767s * 2.1, rounded up + 1s
+  "the adoption recipe refuses interrupted resources and preserves every unrelated alias" = 2 # ESTIMATE: ede21ef9 Beast 0.304s * 2.1, rounded up + 1s
+  "explicit adoption can restore its saved metadata before or after replacement while retaining both images" = 6 # ESTIMATE: ede21ef9 Beast 2.0s * 2.1, rounded up + 1s

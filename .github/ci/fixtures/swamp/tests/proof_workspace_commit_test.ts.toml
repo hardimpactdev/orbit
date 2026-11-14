@@ -1,0 +1,26 @@
+order = 1050
+source_sha256 = "2e24b36ce1ff19a07789017d5c9e2a6ae7f3671e7aa24c312ad42d062b55779e"
+cases = [
+  "the check is an assert that holds for the commit under proof, with or without the newline that git prints",
+  "the check fails for a clone of main, for an unreadable workspace and for a partial commit",
+  "the read lets an unreadable workspace reach the assert, and it reads the HEAD of the checkout of the pinned intent",
+  "no case runs before the check: the proof of the command depends on it succeeding, and the check on the read",
+  "assigned batches use the old runner plan interface and filter its whole batch lines",
+  "merge-base replay fails a flagged case that passes on base and rejects missing or infrastructure verdicts",
+  "replay selection stays within the admitted batch and skips switching with no eligible cases",
+  "an old-runner head skips replay selection and base checkouts without calling its unsupported command",
+]
+file = "swamp/tests/proof_workspace_commit_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/proof/batches.yaml",
+  "swamp/proof/runner/runner.py",
+  "swamp/proof/runner/spec.py",
+  "swamp/workflows/workflow-operation-proof-run.yaml",
+  "swamp/workflows/workflow-proof-fleet-verify.yaml",
+]

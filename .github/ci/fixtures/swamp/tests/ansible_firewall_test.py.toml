@@ -1,0 +1,17 @@
+order = 290
+source_sha256 = "d73b9f1a8a83947270fd9c8dd99221a9dd9decdfc810dcc08b302fff26e09df6"
+cases = [
+  "test_changed_shapes_and_order_select_only_owned_indices",
+  "test_node_allows_move_with_their_pair_and_strays_go",
+  "test_removed_pair_takes_every_node_allow",
+]
+file = "swamp/tests/ansible_firewall_test.py"
+cost = 6
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/firewall.yml",
+]

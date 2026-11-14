@@ -61,7 +61,7 @@ class CheckTableTest(unittest.TestCase):
 
     def test_shared_inputs_select_every_check_once(self):
         for path in ('.github/workflows/ci.yml', '.github/actions/php/action.yml',
-                     '.github/ci/checks.toml', 'bin/ci-build-plan'):
+                     '.github/ci/checks.toml', 'bin/ci-build-plan', 'bin/ci-registry'):
             with self.subTest(path=path):
                 result = plan.select([path])
                 self.assertTrue(all(result['jobs'].values()))

@@ -1,0 +1,19 @@
+order = 700
+source_sha256 = "2810ed5e3f118341259d1e7e160517cdc0a08e9b089b519a5a8baef5dd7d2650"
+cases = [
+  "dependency project config requires worker paths and rejects the retired script field",
+  "worker configuration refuses escaping, duplicate and unconfigured policy paths",
+]
+file = "swamp/tests/dependency_projects_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/tests/_support/dependency_projects.ts",
+]

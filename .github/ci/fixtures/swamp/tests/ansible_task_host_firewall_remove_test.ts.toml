@@ -1,0 +1,15 @@
+order = 490
+source_sha256 = "9480bd8c0f057b39db3d658c77b9d8a5696e8774fc4f5d118974e9d1eba807a5"
+cases = [
+  "task host withdrawal removes every owned input row, preserves unrelated rules, and repeats unchanged",
+]
+file = "swamp/tests/ansible_task_host_firewall_remove_test.ts"
+cost = 11
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-host-firewall-remove.yml",
+]
