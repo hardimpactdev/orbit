@@ -441,9 +441,15 @@ Process lifecycle workflows use official cfgmgmt resources and SSH argv. Native 
 
 Admission records the intent, the idempotency key and the target hold in one transaction. After the commit, the Gateway pushes any execution copies and submits one native workflow for the kind ([Direct Swamp starts](#direct-swamp-starts)). Swamp runs the steps, retries and waits inside that workflow. The Gateway records the observed steps, then projects the workflow's terminal result into the operation and its domain record ([Recover a terminal native result](#recover-a-terminal-native-result)).
 
+When the root run of an operation ends, the event observer queues the projection of that one operation on its own worker, `operations-prompt` ([Gateway queue](/reference/gateway-queue#queues)). It reads the run's history and projects the end at once, with the same code as the minute pass, also while a pass runs.
+
+The minute pass stays the retry: it projects an end that the prompt projection could not read, or that ended while the Gateway was down. The row lock and the terminal check of each projection make sure that an end is projected once, whichever of the two reads it first. The observer still asks for a pass at that end, for the sweeps that only a pass runs. The end of a child run asks for a pass only, which records the child's evidence.
+
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 
-A run can succeed while the end check that the kind reads its result from was skipped or failed, for example because a guard skipped it. The run has ended, so no later read can change that. The first reconciler pass that reads the run then fails the operation with `operation.result_unreadable`, frees its target and names the end check as its failed step. It does not wait for the budget. An end check that is absent or still running reads again in the next pass, because Swamp may not have written it yet. `instance.migrate` keeps its own missing-output recovery instead.
+A run can succeed while the end check that the kind reads its result from was skipped or failed, for example because a guard skipped it. The run has ended, so no later read can change that. The first read of the run, by the prompt projection or a pass, then fails the operation with `operation.result_unreadable`, frees its target and names the end check as its failed step. It does not wait for the budget.
+
+An end check that is absent or still running reads again in the next pass, because Swamp may not have written it yet. `instance.migrate` keeps its own missing-output recovery instead.
 
 An operation that had already timed out with such a run, within its budget, gets the same end. Whether the work took effect is not known: the kind's records leave their in-progress state as they do at a timeout.
 

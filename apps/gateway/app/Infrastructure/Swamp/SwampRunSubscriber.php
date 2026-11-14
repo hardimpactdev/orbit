@@ -9,6 +9,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\ProjectEndedNativeRun;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Closure;
@@ -16,7 +17,7 @@ use Illuminate\Support\Str;
 use Psr\Log\LoggerInterface;
 use Throwable;
 
-/** Follows bound native roots for their progress and asks the reconciler to settle one when its run ends. It never submits, resumes or cancels native work. */
+/** Follows bound native roots for their progress and projects one at once when its run ends. It never submits, resumes or cancels native work. */
 final class SwampRunSubscriber
 {
     /** @var array<int,array{run:string,workflow:string,request:?string,attached:bool}> */
@@ -225,6 +226,9 @@ final class SwampRunSubscriber
             }
         }
         try {
+            // This Operation's end is projected at once, on its own worker. The pass is still asked for: it runs the sweeps that only a
+            // pass runs (proof closes, stale holds); a pass that already waits or runs drops this request, and the minute pass stays the retry.
+            ProjectEndedNativeRun::dispatch($operationId);
             ReconcileSwampOperations::dispatch();
             $this->queued[$operationId] = $entry['run'];
         } catch (Throwable $exception) {

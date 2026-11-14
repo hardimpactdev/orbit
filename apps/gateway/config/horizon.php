@@ -21,6 +21,7 @@ return [
         'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
         'gateway:operations' => 300,
+        'gateway:operations-prompt' => 60,
     ],
     'trim' => [
         'recent' => 60,
@@ -85,7 +86,8 @@ return [
             'nice' => 0,
         ],
         // Jobs that record a Swamp run in its Operation (docs/reference/operations.md). One worker: the Gateway's memory is
-        // better spent on PHP-FPM, and a second job waits in the queue until the first ends.
+        // better spent on PHP-FPM, and a second job waits in the queue until the first ends. Run starts and Route promotions keep
+        // this one worker and its order; the projection of a run that just ended has its own worker below.
         'operations' => [
             'connection' => 'gateway',
             'queue' => ['operations'],
@@ -99,6 +101,22 @@ return [
             'timeout' => 1700,
             'nice' => 0,
         ],
+        // The projection of one Operation whose native run ended (ProjectEndedNativeRun), at once: a minute pass that runs on the
+        // `operations` worker does not hold it back. One worker, the same 256 MB cap. Its job timeout stays below the longest one,
+        // so the Horizon unit's drain does not change.
+        'operations-prompt' => [
+            'connection' => 'gateway',
+            'queue' => ['operations-prompt'],
+            'balance' => false,
+            'minProcesses' => 1,
+            'maxProcesses' => 1,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 150,
+            'nice' => 0,
+        ],
     ],
     // The same supervisors in every environment.
     'environments' => [
@@ -107,6 +125,7 @@ return [
             'task-vms' => [],
             'builds' => [],
             'operations' => [],
+            'operations-prompt' => [],
         ],
     ],
     'watch' => [],
