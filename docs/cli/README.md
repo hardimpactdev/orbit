@@ -16,6 +16,8 @@ Only that approval sets it. A spec PR that changes a reviewed chart sets it to `
 
 A chart sits beside its command page, with the same name: `route/create.mmd` beside `route/create.mdx`. Its `%% kind: <kind>` line names the kind; the checks find a kind's chart by that line. The page places it under `## How it works` with `<div className="flow-at" data-chart="route/create"></div>`. A second kind of one command, or a kind that no command starts, gets a chart named after the kind's action, such as `database/write.mmd` or `instance/auto-deploy.mmd`. To add a chart, write it, place it, and remove its kind from `flows-pending.txt`.
 
+A page may also place a chart of its own kind from a sub-folder of its family, such as `instance/container/create` on `instance/create.mdx`. It places no other sub-folder chart. A placed sub-folder chart keeps the text limits. The check that each kind has one chart covers only `<family>/<name>` charts.
+
 To find a kind's chart, run `grep -rl '%% kind: route.create' docs/cli`.
 
 The [command development pipeline](/reference/command-development-pipeline) places its six stage charts, `docs/reference/pipeline/<n>-<stage>.mmd`, with `<div className="flow-at" data-chart="reference/pipeline/<n>-<stage>"></div>`. They follow the same rules and `bin/check-flows` checks them. Charts of internal kinds with no page, such as `tasks/vm-*.mmd`, are linked from the pages that use them.

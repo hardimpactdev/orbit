@@ -106,7 +106,7 @@ sequenceDiagram
   alt all steps pass in budget
     C-->>SW: T3 answers
     SW-->>GW: Run succeeded<br/>terminal event
-    Note over GW: Read the baseline, record T3<br/>admit instance.complete
+    Note over GW: Read baseline, record T3<br/>admit instance.complete
     %%> Before the transaction:
     %%> - reads the workspace baseline over SSH (`ContainerWorkspaceRead::baseline`, at most 4 s) and the T3 session from the vault; no lock waits on the network
     %%> In one transaction:

@@ -32,7 +32,7 @@ orbit instance:create 4 7 feature-one --branch=release --domain=feature.example.
 orbit instance:create 4 7 t3-1a2b3c4d --branch=t3code/1a2b3c4d
 ```
 
-In a terminal, the CLI shows the steps below as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. Create runs these steps on the Node, in order. Steps 1 and 2 run together as the `checkout` phase and step 5 runs as the `setup` phase. A failed setup step stops the run, and its name is in the failed step's log.
+In a terminal, the CLI shows the run's steps as a progress tree, then the result with the task and request IDs. It names the Project and the Node, not only their IDs. On a host checkout, create runs these steps on the Node, in order. Steps 1 and 2 run together as the `checkout` phase and step 5 runs as the `setup` phase. A failed setup step stops the run, and its name is in the failed step's log.
 
 1. Clone the repository and check out the branch. Orbit mints a read token for this one repository, valid one hour. The token is never part of a command line and is removed from the Node after the clone.
 2. Write `.env` from the Project's env template, with `APP_URL`, a new `APP_KEY` and the database keys. The file has mode 0640 and group `orbit-env`. An owned MySQL or PostgreSQL database also gets `.env.testing`.
@@ -42,7 +42,7 @@ In a terminal, the CLI shows the steps below as a progress tree, then the result
 6. Create and start the Processes from the Project's development Process definitions.
 7. For a web-serving Project, create its Route (its key, CSR and signature are made at the start, beside the checkout) as [`route:create`](/cli/route/create) does, and probe the site over TLS. When this run starts every Process of the Instance, the Instance also becomes awake, so the first request reaches the application and not the wake page.
 
-The run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy or a database on a server.
+A host checkout's run has 60 seconds, plus the setup step timeouts, 30 seconds for the Processes, 180 seconds for the Route, and 180 seconds for a database copy or a database on a server.
 
 A clone's create checks at its admission that its completion can capture the Route; a Route that cannot, such as a Cluster Route without a recorded Router (`cluster.router_required`), refuses the create before anything is recorded. A Project that serves no web pages has no Route and takes no `--domain` (`instance.route_unserved`). A domain that another Route owns, or a reserved name such as `gateway.orbit`, is refused with `route.domain_conflict`.
 
@@ -120,5 +120,15 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.nested_club_key_unsafe_transfer`, `instance.nested_club_key_not_tmpfs`, `instance.nested_club_key_delivery_failed` | A nested-fleet clone could not get its Club key into `/run`. The workspace phase did not run. See [the Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway). |
 
 ## How it works
+
+### Container clone
+
+This is what runs for every new Instance after the Project's first `default`: a clone of that `default` container.
+
+<div className="flow-at" data-chart="instance/container/create"></div>
+
+### Host checkout
+
+This applies on a Node off the build list, or when the Project's `default` is a host checkout.
 
 <div className="flow-at" data-chart="instance/create"></div>
