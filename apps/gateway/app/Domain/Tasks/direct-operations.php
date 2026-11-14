@@ -103,6 +103,9 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
             ], 'tasks.sync' => [
                 'workflow' => 'operation-task-sync', 'projection' => TaskSyncProjection::class,
                 'workflow_inputs' => true,
-                'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the sync', 'native' => true, 'captures' => ['refs' => ['job' => 'sync', 'step' => 'Read the refs', 'field' => 'stdout', 'artifact' => 'output']]],
-                'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
+                // A task copy's run captures the base phase's typed evidence instead of the refs.
+                'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the sync', 'native' => true, 'captures' => ['refs' => ['job' => 'sync', 'step' => 'Read the refs', 'field' => 'stdout', 'artifact' => 'output'],
+                    'base' => ['job' => 'sync', 'step' => 'Bring in the base', 'field' => 'evidence']]],
+                'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$'],
+                    ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-credential-[a-f0-9-]{36}$']],
             ]];

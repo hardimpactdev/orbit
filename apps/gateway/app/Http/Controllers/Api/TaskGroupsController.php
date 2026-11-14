@@ -105,7 +105,7 @@ final class TaskGroupsController extends Controller
         ], 202);
     }
 
-    /** Fetch the default branch and the task branch from origin into the VM workspace of an external group. */
+    /** Fetch the default branch from origin into the workspace of an external group: with the task branch into a task VM, or alone into a task copy as `origin/<default>`. */
     #[StartsOperation(OperationKinds::TasksSync, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function sync(EmptyTasksRequest $request, Task $task, StartTaskSyncAction $action): JsonResponse
