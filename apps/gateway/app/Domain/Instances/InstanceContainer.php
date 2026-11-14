@@ -39,6 +39,9 @@ final readonly class InstanceContainer
 
     public const string Image = 'orbit-instance';
 
+    /** The root disk size of every container but a nested-fleet default, and the smallest one that a default's setting may name. */
+    public const string RootSize = '40GiB';
+
     public const string FrankenPhpUnit = 'orbit-frankenphp.service';
 
     public const string FrankenPhpConfig = '/etc/orbit/frankenphp.Caddyfile';
@@ -263,7 +266,7 @@ final readonly class InstanceContainer
                 ...InstancePlacement::config($runtime->incus_project, $runtime->idmap_size),
                 ...(! $ownProxy && ! isset($clone['proxy_environment']) ? []
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']), array_values($proxy)))],
-            'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
+            'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => self::rootSize($instance, $runtime),
             // A runtime recorded in the nested-fleet project starts from the nested-fleet image; every other one from the normal image.
             'image' => $runtime->incus_project === InstancePlacement::NestedProject ? InstanceImage::NestedAlias : self::Image,
             'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
@@ -321,6 +324,24 @@ final readonly class InstanceContainer
     }
 
     /**
+     * The root disk size: the Gateway setting for a nested-fleet default, whose quota also counts the seeds its copies pin; 40GiB for
+     * every other container, a copy among them (docs/reference/development-containers.md#the-root-disk).
+     */
+    public static function rootSize(Instance $instance, InstanceRuntime $runtime): string
+    {
+        if ($instance->name !== DefaultInstanceName::Name || $runtime->incus_project !== InstancePlacement::NestedProject) {
+            return self::RootSize;
+        }
+        $size = config('instances.nested_default_root_size');
+        if (! is_string($size) || preg_match('/^[1-9][0-9]*GiB$/', $size) !== 1 || (int) $size < (int) self::RootSize) {
+            throw new ResourceOperationException('instance.nested_root_size_invalid',
+                'ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE must be a size in GiB of at least '.self::RootSize.', such as 80GiB.', 503);
+        }
+
+        return $size;
+    }
+
+    /**
      * The exact effective devices that the start guard of a nested-fleet container permits: its root disk, NIC, the two read-only
      * shared folders, a clone's T3 proxy and the disk of an inner volume (docs/reference/development-containers.md#the-container).
      *
@@ -329,7 +350,7 @@ final readonly class InstanceContainer
     private function allowedDevices(Instance $instance, InstanceRuntime $runtime): array
     {
         return [
-            'root' => ['type' => 'disk', 'path' => '/', 'pool' => InstanceHostIntent::Pool, 'size' => '40GiB'],
+            'root' => ['type' => 'disk', 'path' => '/', 'pool' => InstanceHostIntent::Pool, 'size' => self::rootSize($instance, $runtime)],
             'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => InstanceHostIntent::Network,
                 'ipv4.address' => $runtime->bridge_address, 'security.port_isolation' => 'true',
                 'security.acls' => InstanceHostIntent::NicAcl.','.$runtime->container_name,

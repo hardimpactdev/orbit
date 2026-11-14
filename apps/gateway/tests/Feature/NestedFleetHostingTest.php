@@ -175,8 +175,10 @@ describe('the recorded Incus project', function (): void {
             ->and($intent['config'])->not->toHaveKeys(['raw.lxc', 'raw.idmap', 'security.privileged'])
             // A nested runtime starts from the nested-fleet image; the normal intent below keeps `orbit-instance`.
             ->and($intent['image'])->toBe('orbit-instance-nested')
+            // The default's root size is the Gateway setting; a copy keeps 40GiB, whose quota counts only its own blocks.
+            ->and($intent['root_disk_size'])->toBe($clone ? '40GiB' : '80GiB')
             ->and($intent['allowed_devices'])->toBe([
-                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => '40GiB'],
+                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => $clone ? '40GiB' : '80GiB'],
                 'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => 'orbitinst0', 'ipv4.address' => $runtime->bridge_address,
                     'security.port_isolation' => 'true', 'security.acls' => 'orbitinst0-proxy,'.$runtime->container_name,
                     'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject',
@@ -187,6 +189,33 @@ describe('the recorded Incus project', function (): void {
                 ...($clone ? ['t3' => ['type' => 'proxy', 'listen' => 'tcp:10.44.0.7:'.$runtime->t3_port, 'connect' => 'tcp:'.$runtime->bridge_address.':3773', 'nat' => 'true']] : []),
             ]);
     })->with([false, true]);
+});
+
+describe('the root disk size', function (): void {
+    it('gives a nested-fleet default the setting\'s size, and a copy and a normal default 40GiB', function (): void {
+        config(['instances.nested_default_root_size' => '120GiB']);
+        $node = containerDefaultNode();
+        $default = recordedNestedInstance(containerDefaultProject(), $node);
+        $default->runtime()->firstOrFail()->update(['seed_commit' => str_repeat('a', 40)]);
+        $copy = recordedNestedInstance($default->project, $node, 'feature', $default);
+        $normal = Instance::query()->create(['project_id' => otherProject('normal')->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal/default']);
+        app(InstanceContainer::class)->reserve($normal, $node);
+        $sizes = array_map(static function (Instance $instance): array {
+            $intent = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail());
+
+            return [$intent['root_disk_size'], $intent['allowed_devices']['root']['size'] ?? null];
+        }, [$default, $copy, $normal]);
+
+        expect($sizes)->toBe([['120GiB', '120GiB'], ['40GiB', '40GiB'], ['40GiB', null]]);
+    });
+
+    it('refuses a setting that is not a GiB size of at least 40GiB', function (mixed $size): void {
+        config(['instances.nested_default_root_size' => $size]);
+        $instance = recordedNestedInstance(containerDefaultProject(), containerDefaultNode());
+
+        expect(fn () => app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.nested_root_size_invalid'));
+    })->with(['39GiB', '80GB', '080GiB', '80 GiB', '', null, 80]);
 });
 
 describe('the inner volume', function (): void {
