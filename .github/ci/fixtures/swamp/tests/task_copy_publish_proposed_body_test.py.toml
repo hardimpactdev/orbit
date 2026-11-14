@@ -1,0 +1,27 @@
+file = "swamp/tests/task_copy_publish_proposed_body_test.py"
+slices = false
+cost = 41
+source_sha256 = "76c7fe15645835519a4956596425da59af02af30ce8b06f9ad658004f888ec69"
+cases = [
+  "test_a_publication_export_fetches_the_proposed_body_of_the_task_branch_as_data",
+  "test_a_publication_export_without_a_proposed_body_or_with_a_link_there_fetches_none",
+  "test_a_publication_export_refuses_a_proposed_body_path_outside_the_task_branch_file"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/workflows/workflow-task-instance-workspace.yaml"
+]
+
+# ESTIMATE: driver run of 8eb9e97ec4 (pinned Ansible, load 5-8) seconds per case x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_publication_export_fetches_the_proposed_body_of_the_task_branch_as_data" = 12
+"test_a_publication_export_without_a_proposed_body_or_with_a_link_there_fetches_none" = 24
+"test_a_publication_export_refuses_a_proposed_body_path_outside_the_task_branch_file" = 5

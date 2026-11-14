@@ -51,9 +51,16 @@ final readonly class TaskCopyTurn
             : $start();
     }
 
-    /** @return array<string,mixed> */
+    /**
+     * Runs inside the admission's transaction. It first takes the group's row lock, which a subtask's completion takes too
+     * (UpdateTaskAction), so "a subtask completes only after its turns ended" holds on any database, not only through SQLite's
+     * BEGIN IMMEDIATE: a completion and a turn admission on one group never interleave.
+     *
+     * @return array<string,mixed>
+     */
     public function capture(Task $group, TaskTurnData $data): array
     {
+        Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
         $group->load('taskable', 'project');
         $workspace = TaskInstanceWorkspace::forGroup($group)
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
@@ -126,6 +133,22 @@ final readonly class TaskCopyTurn
         if ($unended instanceof Operation) {
             throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. '
                 .'The next task:turn settles it once its run ended; task:cancel ends it with the copy.', 409, details: ['operation_id' => $unended->id]);
+        }
+    }
+
+    /**
+     * Refuses to complete a subtask of a task copy's group while a copy turn of the group has not ended its Operation. A turn is admitted
+     * only on the current subtask, so a subtask completed after this check was completed after every turn on it ended: the done rule
+     * (docs/reference/tasks.md#when-the-work-is-done) needs no clock for "reviewed before completed".
+     */
+    public static function refuseCompletionWhileRunning(Task $group): void
+    {
+        // A group without a task copy has no copy turns, so the query alone is the rule.
+        $running = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first();
+        if ($running instanceof Operation) {
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'A turn still runs in the task copy; complete the subtask once it has ended.', 409,
+                details: ['operation_id' => $running->id]);
         }
     }
 

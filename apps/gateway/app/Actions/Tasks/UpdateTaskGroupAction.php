@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskStatusMoves;
 use App\Models\Task;
 use Illuminate\Support\Collection;
@@ -55,6 +56,10 @@ final readonly class UpdateTaskGroupAction
                     throw new ResourceOperationException('tasks.preview_closed', 'Preview cannot change after a task group has ended.', 409);
                 }
                 $locked->preview = $data->preview;
+            }
+            if ($data->prMode !== null && $data->prMode !== $locked->pr_mode) {
+                TaskPrModeChoice::refuseLocked($locked);
+                $locked->pr_mode = $data->prMode;
             }
             if ($data->agents !== []) {
                 TaskCopyAgent::assertChangeable($locked, $data->agents);

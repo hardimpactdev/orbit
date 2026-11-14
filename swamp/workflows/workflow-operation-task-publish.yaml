@@ -233,7 +233,7 @@ jobs:
       inputs:
         node_id: ${{ inputs.intent.node_id }}
         phase: export
-        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle", "environment_path": inputs.intent.workspace.environment_path, "worker_environment": steps["Create publication scratch"].outputs.stdout.trim() + "/environment"} }}'
+        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle", "environment_path": inputs.intent.workspace.environment_path, "worker_environment": steps["Create publication scratch"].outputs.stdout.trim() + "/environment", "proposed_body_path": ".git/orbit/proposed-pr-bodies/" + inputs.intent.branch + ".md", "worker_proposed_body": steps["Create publication scratch"].outputs.stdout.trim() + "/proposed-body"} }}'
     dependsOn:
     - step: Preflight the copy
       condition:
@@ -591,6 +591,27 @@ jobs:
     - step: Check imported commit
       condition:
         type: succeeded
+  - name: Add the waiver lines
+    # A copy's publish carries its proposed body's waiver lines (docs/reference/tasks.md#docs-impact-waivers-in-a-copy): the export
+    # fetched that file beside the bundle, as data. Typed data writes the title and body the PR gets, which the .env content check
+    # reads next, before any token exists. A copy without the file publishes the caller's text.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) || inputs.intent.pull_request == null }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-waivers-" + string(inputs.intent.node_id) }}
+      methodName: waivers
+      inputs:
+        input: ${{ inputs.intent }}
+        directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Check imported commit
+      condition:
+        type: succeeded
+    writes: true
   - name: Check the .env content
     # The .env content leaves a copy under no name: neither the whole file nor one of its values of 8 bytes or more that the start
     # tree does not already hold, in any object new in the range or in the pull request text. Both references count: the copy's file,
@@ -633,7 +654,12 @@ jobs:
           if [ ! -f "$ORBIT_FILE" ] || [ -L "$ORBIT_FILE" ]; then echo 'tasks.publish_secret_unchecked: the copy has no .env file' >&2; exit 1; fi
           printf '%s' "$ORBIT_ENVIRONMENT" >"$work/rendered"
           printf '%s\n' "$ORBIT_CLUB" >"$work/club"
-          printf '%s\n%s\n' "$ORBIT_PULL_TITLE" "$ORBIT_PULL_BODY" >"$work/pull"
+          # The pull request text is the one the PR gets: "Add the waiver lines" wrote it, with the proposed body's waiver lines.
+          : >"$work/pull"
+          if [ -n "$ORBIT_PULL" ]; then
+            if [ ! -f "$ORBIT_DIRECTORY/pull-title" ] || [ ! -f "$ORBIT_DIRECTORY/pull-body" ]; then echo 'tasks.publish_secret_unchecked: no pull request text' >&2; exit 1; fi
+            { cat "$ORBIT_DIRECTORY/pull-title"; printf '\n'; cat "$ORBIT_DIRECTORY/pull-body"; printf '\n'; } >"$work/pull"
+          fi
           # Each value as written and unescaped: KEY=VALUE also in a comment line, quotes and inline comments removed; other lines whole.
           awk -v quote="'" '
             function out(text, parts, count, i) { count = split(text, parts, /\\n/); for (i = 1; i <= count; i++) if (length(parts[i]) >= 8) print parts[i] }
@@ -705,13 +731,14 @@ jobs:
           # Without a Club key the step reads the render again and ORBIT_NESTED is empty, so it adds nothing.
           ORBIT_NESTED: '${{ has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
           ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.environment.vault, has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
-          ORBIT_PULL_TITLE: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.title }}'
-          ORBIT_PULL_BODY: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.body }}'
+          ORBIT_PULL: '${{ inputs.intent.pull_request == null ? "" : "1" }}'
         ignoreExitCode: true
     dependsOn:
     - step: Check the environment file
       condition:
         type: succeeded
+    - step: Add the waiver lines
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     writes: true
   - name: Read the .env check
     # Exit 0 passes; exit 3 fails with the refusal line, which names a file and a commit only when they hold no value; any other

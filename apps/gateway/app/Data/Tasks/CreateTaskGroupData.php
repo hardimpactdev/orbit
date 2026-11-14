@@ -6,6 +6,7 @@ namespace App\Data\Tasks;
 
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskReviewMode;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
@@ -29,5 +30,7 @@ final class CreateTaskGroupData extends Data
         public TaskOrchestration $orchestration = TaskOrchestration::External,
         public TaskReviewMode $review = TaskReviewMode::Manual,
         public array $agents = [],
+        /** The group's own mode; null inherits the Project's, then the Gateway's (docs/reference/tasks.md#where-the-mode-comes-from). */
+        public ?TaskPrMode $prMode = null,
     ) {}
 }

@@ -52,6 +52,8 @@ final readonly class TaskPullRequestEvidence
 
     public function merge(Task $group, string $head): TaskPullRequestTarget
     {
+        // Before any GitHub read: a task copy's pull request is never Orbit's to merge.
+        TaskCopyPullRequest::refuseGroup($group);
         $target = $this->target($group, $head);
         if ($target->pull->draft) {
             throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);

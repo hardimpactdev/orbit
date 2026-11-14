@@ -34,13 +34,8 @@ class CopyExportTest(unittest.TestCase):
     setUp = base.WorkspaceHarness.setUp
     git = base.WorkspaceHarness.git
     phase = base.WorkspaceHarness.phase
-
-    def assert_node_scratch_removed(self):
-        """The Node folders this test's own export made, by the targets its Incus shim recorded; never another unit's folder."""
-        folders = {str(Path(json.loads(line)[-1]).parent) for line in self.calls.read_text().splitlines()
-                   if json.loads(line)[2:4] == ['file', 'pull'] and json.loads(line)[-1].startswith('/var/tmp/orbit-task-export-')}
-        self.assertTrue(folders, 'the export made no Node scratch')
-        self.assertEqual([folder for folder in folders if Path(folder).exists()], [], 'Node export scratch leaked')
+    publication = base.WorkspaceHarness.publication
+    assert_node_scratch_removed = base.WorkspaceHarness.assert_node_scratch_removed
 
     def test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch(self):
         self.git('add', '--all')
@@ -71,20 +66,6 @@ class CopyExportTest(unittest.TestCase):
         read = subprocess.run(['deno', 'run', '-A', str(script), str(folder)], capture_output=True, text=True, check=True, timeout=60)
         self.assertEqual(json.loads(read.stdout), {'phase': 'export', 'evidence': exported})
 
-
-    def publication(self):
-        self.git('add', '--all')
-        self.git('commit', '--quiet', '-m', 'Candidate')
-        self.intent['head'] = self.git('rev-parse', 'HEAD')
-        value, _ = self.phase('preflight')
-        self.intent['checkout_fingerprint'] = value['checkout_fingerprint']
-        self.intent['candidate'] = {'head': self.intent['head'], 'tree': self.git('rev-parse', 'HEAD^{tree}')}
-        scratch = Path('/tmp/orbit-task-publish-' + uuid.uuid4().hex)
-        scratch.mkdir(mode=0o700)
-        self.addCleanup(shutil.rmtree, scratch, True)
-        self.intent.update({'worker_bundle': str(scratch / 'candidate.bundle'), 'environment_path': 'apps/web/.env',
-                            'worker_environment': str(scratch / 'environment')})
-        return scratch
 
     def test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it(self):
         (self.checkout / 'apps/web').mkdir(parents=True)
@@ -199,6 +180,18 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertTrue(self.cel('Discard the copy scratch', 'guard', self.copy, {'Preflight the copy': {'status': 'failed'}}))
         self.assertFalse(self.cel('Discard the copy scratch', 'guard', self.copy, {'Preflight the copy': {'status': 'succeeded'}}))
 
+    def test_the_export_names_the_task_branch_proposed_body_and_its_worker_path(self):
+        intent = {**self.copy, 'branch': 'task-42', 'ssh_execution': {'target': {'name': 'target'}}}
+        steps = {'Create publication scratch': {'status': 'succeeded', 'outputs': {'stdout': '/tmp/orbit-task-publish-abc\n'}},
+                 'Preflight the copy': {'status': 'succeeded', 'outputs': {'evidence': {'evidence': {'checkout_fingerprint': {}}}}}}
+        exported = self.cel('Export the copy', 'intent', intent, steps)
+        self.assertEqual(exported['proposed_body_path'], '.git/orbit/proposed-pr-bodies/task-42.md')
+        self.assertEqual(exported['worker_proposed_body'], '/tmp/orbit-task-publish-abc/proposed-body')
+        # Both values pass the phase's own input schema, so the export takes them.
+        schema = yaml.safe_load((ROOT / 'workflows/workflow-task-instance-workspace.yaml').read_text())['inputs']['properties']['intent']['properties']
+        for key in ['proposed_body_path', 'worker_proposed_body']:
+            self.assertRegex(exported[key], schema[key]['pattern'], key)
+
     def environment_check(self, repository, start, path='.env'):
         run = self.cel('Check the environment file', 'run', self.copy, {})
         return subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=60,
@@ -276,7 +269,14 @@ class TaskCopyPublishTest(unittest.TestCase):
         for name in [step, read]:
             self.assertIn({'step': name, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
                           steps[mint]['dependsOn'])
-        self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}}])
+        self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}},
+                                                    {'step': 'Add the waiver lines', 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}}])
+        # The waiver lines join the body after the import and before the content check; only a copy with a pull request runs the step.
+        waivers = steps['Add the waiver lines']
+        self.assertEqual((waivers['task']['behaviorType'], waivers['task']['methodName']), ('@nckrtl/task-publication-data', 'waivers'))
+        self.assertEqual(waivers['dependsOn'], [{'step': 'Check imported commit', 'condition': {'type': 'succeeded'}}])
+        self.assertIs(self.cel('Add the waiver lines', 'guard', {**self.copy, 'pull_request': {'title': 'Fix', 'body': 'Done.'}}, {}), False)
+        self.assertIs(self.cel('Add the waiver lines', 'guard', {**self.copy, 'pull_request': None}, {}), True)
         self.assertIs(steps[step]['task']['inputs']['ignoreExitCode'], True)
         self.assertEqual(steps[read]['dependsOn'], [{'step': step, 'condition': {'type': 'succeeded'}}])
         self.assertEqual((steps[read]['task']['behaviorType'], steps[read]['task']['methodName']), ('@nckrtl/task-publication-data', 'content'))
@@ -293,12 +293,16 @@ class TaskCopyPublishTest(unittest.TestCase):
         """The step's own script. `club` is a nested-fleet copy's Club key; without it the step's vault read gets the render again."""
         directory = directory or Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
         (directory / 'environment').write_text(self.ENV if copy is None else copy)
+        # "Add the waiver lines" writes the text the PR gets; the check reads those files, never the intent's text.
+        if pull_request is not None and not pull_request.get('missing'):
+            (directory / 'pull-title').write_text(pull_request['title'])
+            (directory / 'pull-body').write_text(pull_request.get('final_body', pull_request['body']))
         step = 'Check the .env content'
         workspace = {**self.copy['workspace'], **({} if club is None else {'club_key': True})}
-        intent = {**self.copy, 'workspace': workspace, 'pull_request': pull_request}
+        intent = {**self.copy, 'workspace': workspace, 'pull_request': None if pull_request is None else {k: v for k, v in pull_request.items() if k not in ('final_body', 'missing')}}
         run = self.cel(step, 'run', intent, {})
         # The pull request text and the Club key flag come through the step's own expressions, with the pinned CEL engine.
-        names = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL_TITLE', 'ORBIT_PULL_BODY', 'ORBIT_NESTED']}
+        names = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL', 'ORBIT_NESTED']}
         done = subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=120,
                               env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
                                    'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
@@ -406,6 +410,23 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertEqual(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'draft': True}).returncode, 0)
         for pull in [{'title': 'Use pa55-w0rd-xyz', 'body': 'Done.'}, {'title': 'Fix', 'body': 'Key base64:c2VjcmV0LWtleS1ub3QtcmVhbA== set'}]:
             self.refused(self.content_check(repository, start, pull_request=pull), 'pull request title or body')
+
+    def test_the_content_check_reads_the_final_body_with_the_waiver_lines(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        repository = self.candidate(work)
+        clean = 'Done.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.'
+        self.assertEqual(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'final_body': clean}).returncode, 0)
+        # A waiver line that holds a value of the .env is refused, though the caller's body is clean.
+        leaked = 'Done.\n\nDocs-unaffected: docs/reference/mcp.mdx: pa55-w0rd-xyz'
+        self.refused(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'final_body': leaked}), 'pull request title or body')
+
+    def test_the_content_check_refuses_as_unchecked_when_the_pull_request_text_is_missing(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        done = self.content_check(self.candidate(work), start, pull_request={'title': 'Fix', 'body': 'Done.', 'missing': True})
+        self.assertEqual(done.returncode, 1)
+        self.assertTrue(done.stderr.startswith('tasks.publish_secret_unchecked: '), done.stderr)
 
     CLUB = 'club-0123456789abcdef-not-a-real-key'
 

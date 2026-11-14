@@ -26,9 +26,13 @@ use Illuminate\Support\Str;
 /** Records the exact checked candidate. Swamp owns Git and GitHub effects. */
 final readonly class TaskPublishIntent
 {
-    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates) {}
+    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates, private TaskGroupDone $done) {}
 
-    public function start(Task $group, StartTaskPublishData $input, string $caller, ?string $request): Operation
+    /**
+     * @param  int|null  $doneCheck  the done check a release or the tick read before the lock; it must still be the done check under the row lock
+     * @param  bool  $byItself  the tick's admission, which also needs the group and that check in `pr_when_done` under the row lock
+     */
+    public function start(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck = null, bool $byItself = false): Operation
     {
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
@@ -38,10 +42,10 @@ final readonly class TaskPublishIntent
             TaskVmAwake::require($group);
         }
 
-        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request));
+        return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request, $doneCheck, $byItself));
     }
 
-    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request): Operation
+    private function admit(Task $group, StartTaskPublishData $input, string $caller, ?string $request, ?int $doneCheck, bool $byItself): Operation
     {
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
@@ -77,12 +81,15 @@ final readonly class TaskPublishIntent
         $token = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
         $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
-        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $authorization, $workspace, $input, $caller, $request): Operation {
+        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $authorization, $workspace, $input, $caller, $request, $doneCheck, $byItself): Operation {
             Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
             if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
                 return $existing;
             }
             $this->assertIdle($group);
+            if ($doneCheck !== null) {
+                $this->assertStillDone($group->id, $doneCheck, $byItself);
+            }
             $branch = 'task-'.$group->id;
             $commit = ValidatedData::string($check->commit_sha);
             $tree = ValidatedData::string($check->tree_after);
@@ -97,6 +104,8 @@ final readonly class TaskPublishIntent
                 'execution_secrets' => ['github_token' => $token, 'git_authorization' => $authorization],
                 ...($workspace === null ? [] : ['workspace' => $workspace]),
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
+            // A publish that is admitted ends a refused automatic publish (docs/reference/tasks.md#a-refused-automatic-publish).
+            Task::topLevel()->whereKey($group->id)->whereNotNull('publish_refusal')->update(['publish_refusal' => null]);
 
             return $operation;
         });
@@ -133,6 +142,22 @@ final readonly class TaskPublishIntent
             'base' => $group->project->default_branch, 'branch' => $branch, 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
             'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => $ssh,
         ];
+    }
+
+    /**
+     * Under the group's row lock, a subtask added or a turn started since the done read changes the answer, and for the tick so does a
+     * mode change: each refuses `tasks.not_done`, which the tick skips quietly.
+     */
+    private function assertStillDone(int $groupId, int $doneCheck, bool $byItself): void
+    {
+        $locked = Task::topLevel()->with('project', 'taskable', 'tasks')->findOrFail($groupId);
+        $check = $this->done->check($locked);
+        if ($check?->id !== $doneCheck) {
+            throw new ResourceOperationException('tasks.not_done', 'The task group\'s work is no longer done with this check.', 409);
+        }
+        if ($byItself && (TaskPrModeChoice::of($locked)->mode !== TaskPrMode::PrWhenDone || $check->pr_mode !== TaskPrMode::PrWhenDone)) {
+            throw new ResourceOperationException('tasks.not_done', 'The task group no longer publishes by itself.', 409);
+        }
     }
 
     private function assertIdle(Task $group): void

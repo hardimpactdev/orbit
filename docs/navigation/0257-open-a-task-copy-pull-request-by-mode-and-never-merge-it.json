@@ -1,0 +1,12 @@
+{
+  "navigation": [
+    {
+      "tab": "Decisions",
+      "group": "Records",
+      "order": 257,
+      "pages": [
+        "decisions/0257-open-a-task-copy-pull-request-by-mode-and-never-merge-it"
+      ]
+    }
+  ]
+}

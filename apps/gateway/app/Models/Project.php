@@ -8,6 +8,7 @@ use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\SourceControl\GitRepositoryIdentity;
+use App\Domain\Tasks\TaskPrMode;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Collection;
@@ -37,6 +38,7 @@ use SensitiveParameter;
  * @property bool $nested_fleet
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
+ * @property TaskPrMode|null $task_pr_mode
  * @property string|null $merge_check
  * @property bool $maintenance
  * @property string|null $php_version
@@ -60,7 +62,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'review_and_merge', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
@@ -172,6 +174,7 @@ final class Project extends Model
             'task_workspace_routed' => 'boolean',
             'nested_fleet' => 'boolean',
             'review_and_merge' => 'boolean',
+            'task_pr_mode' => TaskPrMode::class,
             'maintenance' => 'boolean',
             'is_laravel' => 'boolean',
             'source_facts_captured_at' => 'immutable_datetime',

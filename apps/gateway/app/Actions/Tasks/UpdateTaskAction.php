@@ -9,6 +9,7 @@ use App\Domain\Shared\StoredInteger;
 use App\Domain\Tasks\DeliverablePathChecker;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\TaskAssistance;
+use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPositions;
@@ -76,6 +77,9 @@ final readonly class UpdateTaskAction
             $task->setRelation('parent', $locked);
             if ($data->status !== null) {
                 TaskStatusMoves::subtask($locked, $task, $data->status);
+                if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
+                    TaskCopyTurn::refuseCompletionWhileRunning($locked);
+                }
                 if ($data->status === TaskStatus::Completed && $task->status !== TaskStatus::Completed) {
                     TaskAssistance::resolveExternalSubtask($task, $locked);
                 }

@@ -6,10 +6,13 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\TaskAssistanceData;
 use App\Data\Tasks\TaskMergeData;
+use App\Data\Tasks\TaskPublicationData;
+use App\Data\Tasks\TaskReleaseData;
 use App\Data\Tasks\TasksStatusData;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPlaces;
+use App\Models\Instance;
 use App\Models\Task;
 
 final readonly class ShowTasksStatusAction
@@ -36,12 +39,24 @@ final readonly class ShowTasksStatusAction
             ->map(static fn (Task $group): TaskMergeData => TaskMergeData::fromModel($group))
             ->all());
 
+        // Task copy groups whose work is done but whose pull request waits for a person: released by `task:publish <group>`.
+        $releases = [];
+        $copies = Task::topLevel()->with('project', 'taskable')->whereNull('pr_url')->where('taskable_type', (new Instance)->getMorphClass())
+            ->whereNotIn('status', TaskGroupStatus::endedStatuses())->orderBy('id')->get();
+        foreach ($copies as $group) {
+            $publication = TaskPublicationData::fromModel($group);
+            if ($publication !== null && in_array($publication->state, [TaskPublicationData::WaitingForRelease, TaskPublicationData::Refused], true)) {
+                $releases[] = TaskReleaseData::fromPublication($group, $publication);
+            }
+        }
+
         return new TasksStatusData(
             enabled: $this->extension->enabled(),
             assistance: $assistance,
             lastTickAt: null,
             merges: $merges,
             capacity: $this->places->capacity(),
+            releases: $releases,
         );
     }
 }

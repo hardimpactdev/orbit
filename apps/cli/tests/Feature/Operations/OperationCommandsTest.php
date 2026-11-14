@@ -540,12 +540,24 @@ describe('task:publish', function (): void {
     })->with([
         [[], 'task.task_required'],
         [['task' => 'bad'], 'task.task_invalid'],
-        [['task' => '17'], 'task.check_required'],
+        [['task' => '17', '--title' => 'Title', '--body' => 'Body'], 'task.pull_request_invalid'],
         [['task' => '17', '--check' => 'bad'], 'task.check_invalid'],
         [['task' => '17', '--check' => '31', '--title' => 'Title'], 'task.pull_request_invalid'],
         [['task' => '17', '--check' => '31', '--body' => 'Body'], 'task.pull_request_invalid'],
         [['task' => '17', '--check' => '31', '--draft' => true], 'task.pull_request_invalid'],
     ]);
+
+    it('releases a task copy\'s done check without --check, sending the empty object', function (): void {
+        $seen = [];
+        $identity = ['kind' => 'tasks.publish', 'target_type' => 'task_group'];
+        $result = ['branch' => 'task-17', 'commit' => str_repeat('a', 40), 'pull_request_number' => 12, 'pull_request_url' => 'https://github.com/acme/shop/pull/12'];
+        $mock = cli_deploy_gateway([cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null, 'result' => $result])], $seen, PublishTaskGroupRequest::class, $identity);
+
+        expect(Artisan::call('task:publish', ['task' => '17', '--json' => true, '--no-interaction' => true]))->toBe(0);
+
+        $pending = $mock->findResponseByRequest(PublishTaskGroupRequest::class)->getPendingRequest();
+        expect($pending->body()->all())->toBe([])->and((string) $pending->body())->toBe('{}');
+    });
 
     it('opens the pull request as a draft with --draft', function (): void {
         $seen = [];
