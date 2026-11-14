@@ -312,6 +312,9 @@ class RemoteAccessTest(unittest.TestCase):
                     # The rule that names a task copy's base scratch, which the destroy imports beside the playbook.
                     (folder / 'tasks').mkdir(exist_ok=True)
                     shutil.copyfile(ROOT / 'ansible/tasks/task-copy-base-names.yml', folder / 'tasks/task-copy-base-names.yml')
+                    # A sleep's swap record goes with the container, by the one rule that names it; the destroy intent names the Instance.
+                    shutil.copyfile(ROOT / 'ansible/tasks/instance-container-swap.yml', folder / 'tasks/instance-container-swap.yml')
+                    container = dict(container, instance_id=11)
                 else:
                     tasks = yaml.safe_load((ROOT / 'ansible/tasks/instance-migrate-discard.yml').read_text())
                     modules = folder / 'collections/ansible_collections/community/general/plugins/modules'
@@ -327,7 +330,7 @@ class RemoteAccessTest(unittest.TestCase):
                 proof = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
                           'vars': {'container': container, 'phase': 'remove', 'incus': ['incus', '--project', 'orbit-instances'],
                                    'run': str(folder / 'run'), 'ansible_python_interpreter': sys.executable,
-                                   'task_base_root': str(folder / 'task-base')},
+                                   'task_base_root': str(folder / 'task-base'), 'swap_record_directory': str(folder / 'shm')},
                           'tasks': tasks}]
                 (folder / 'proof.yml').write_text(yaml.safe_dump(proof))
                 environment = dict(os.environ, HOST_FIXTURE=str(folder), ANSIBLE_STDOUT_CALLBACK='default',
