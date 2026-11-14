@@ -648,6 +648,38 @@
     - name: Remove the .env on the Node
       ansible.builtin.file: { path: "{{ environment_path }}", state: absent }
 
+# The .env holds the Instance's secrets, so Git must never take it, also when the Project's .gitignore does not name it. One line in
+# the checkout's own info/exclude, written once; its other lines and the Project's files stay as they are.
+- name: Keep .env out of Git
+  tags: [workspace]
+  when: phase == 'workspace' and container.environment_file.startswith(container.workspace ~ '/')
+  block:
+    - name: Find the exclude file of the checkout
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--git-path', 'info/exclude'] }}" }
+      register: workspace_exclude
+      changed_when: false
+    - name: Name .env in the exclude file
+      ansible.builtin.command:
+        argv: "{{ as_orbit + ['python3', '-I', '-c', exclude_program, workspace_exclude.stdout | trim, container.environment_file[container.workspace | length + 1:]] }}"
+      vars:
+        exclude_program: |
+          import os, re, sys
+          path, entry = sys.argv[1], '/' + re.sub(r'([\\*?\[])', r'\\\1', sys.argv[2])
+          try:
+              with open(path, 'rb') as stream:
+                  data = stream.read()
+          except FileNotFoundError:
+              data = b''
+          if entry.encode() in data.splitlines():
+              print('unchanged')
+              sys.exit(0)
+          os.makedirs(os.path.dirname(path) or '.', exist_ok=True)
+          with open(path, 'ab') as stream:
+              stream.write((b'' if not data or data.endswith(b'\n') else b'\n') + entry.encode() + b'\n')
+          print('changed')
+      register: workspace_exclude_write
+      changed_when: workspace_exclude_write.stdout == 'changed'
+
 # A deployment checks out only a clean tree that the commit fast-forwards.
 - name: Check out the commit
   tags: [checkout]

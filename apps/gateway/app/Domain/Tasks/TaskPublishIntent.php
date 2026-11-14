@@ -32,7 +32,10 @@ final readonly class TaskPublishIntent
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
         }
-        TaskVmAwake::require($group);
+        // A task copy has no task VM to wake.
+        if (TaskInstanceWorkspace::forGroup($group) === null) {
+            TaskVmAwake::require($group);
+        }
 
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request));
     }
@@ -48,11 +51,16 @@ final readonly class TaskPublishIntent
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
         }
+        $copy = TaskInstanceWorkspace::forGroup($group);
         $instance = $group->taskable;
-        if (! $instance instanceof Instance || $instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
-            || TaskVm::forGroup($group)?->node_id !== $instance->node_id || $instance->checkout_path === '') {
+        if (! $instance instanceof Instance || ($copy === null && ($instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
+            || TaskVm::forGroup($group)?->node_id !== $instance->node_id || $instance->checkout_path === ''))) {
             throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
         }
+        if ($copy !== null) {
+            TaskCopyTurn::refuseUnended($group);
+        }
+        $workspace = $copy?->publication();
         $check = TaskCheck::query()->whereKey($input->check)->whereHas('task', fn ($tasks) => $tasks->where('parent_id', $group->id))->first();
         if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
             throw new ResourceOperationException('tasks.commit_not_checked', 'Publish requires this group\'s passed handoff candidate and required CI.', 422);
@@ -64,10 +72,10 @@ final readonly class TaskPublishIntent
         }
 
         // Only the vault key names are admitted. The publish step mints the token when it runs ({@see TaskGitHubTokens}).
-        $copy = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
+        $token = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
         $authorization = ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.Str::uuid()];
 
-        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $copy, $authorization, $input, $caller, $request): Operation {
+        return DB::transaction(function () use ($group, $instance, $check, $repository, $base, $token, $authorization, $workspace, $input, $caller, $request): Operation {
             Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
             if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
                 return $existing;
@@ -78,13 +86,14 @@ final readonly class TaskPublishIntent
             $tree = ValidatedData::string($check->tree_after);
             $operation = $this->start->execute('tasks.publish', 'task_group', $group->id, $instance->node_id, [
                 ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-                'checkout_path' => $instance->checkout_path, 'commit' => $commit, 'tree' => $tree,
+                'checkout_path' => $workspace === null ? $instance->checkout_path : TaskInstanceWorkspace::Root, 'commit' => $commit, 'tree' => $tree,
                 'repository' => $repository->owner.'/'.$repository->name, 'base' => $base, 'branch' => $branch,
                 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
                 'refspec' => $commit.':refs/heads/'.$branch,
                 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
                 'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
-                'execution_secrets' => ['github_token' => $copy, 'git_authorization' => $authorization],
+                'execution_secrets' => ['github_token' => $token, 'git_authorization' => $authorization],
+                ...($workspace === null ? [] : ['workspace' => $workspace]),
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
 
             return $operation;

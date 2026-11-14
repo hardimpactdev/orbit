@@ -571,6 +571,7 @@
    "Read the readiness": "read-only"
   },
   "operation-task-publish": {
+   "Check the environment file": "read-only",
    "Copy the bundle": "idempotent",
    "Read bundle contents": "read-only",
    "Read open PRs": "unreviewed",

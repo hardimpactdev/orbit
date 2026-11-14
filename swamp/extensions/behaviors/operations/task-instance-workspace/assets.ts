@@ -61,6 +61,15 @@ const Evidence = z.union([
         bundle: z.string().startsWith("/var/tmp/orbit-task-export-"),
         changed: z.literal(false),
     }),
+    // A publication's export: the bundle sits in the publication scratch on the worker, none on the Node.
+    z.object({
+        head: Hash,
+        tree: Hash,
+        guest_bundle: z.string(),
+        sha256: Digest,
+        bundle: z.string().regex(/^\/tmp\/orbit-task-publish-[A-Za-z0-9]+\/candidate\.bundle$/),
+        changed: z.literal(false),
+    }).strict(),
     z.object({
         check: z.object({
             steps: z.record(
@@ -90,7 +99,7 @@ type Context = {
 // All machine work stays in Ansible; this method only bounds and validates its result.
 export const behavior = {
     type: "@nckrtl/task-instance-workspace",
-    version: "2026.11.13.1",
+    version: "2026.11.14.1",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

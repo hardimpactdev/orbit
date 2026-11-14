@@ -372,7 +372,9 @@ A group whose workspace is a [task copy](#task-copy) publishes the same way, wit
 
 Instead of the VM reads, the [workspace phases](/reference/task-instance-workspace#contract) `preflight` and `export` read the checkout as `agent` and fetch the branch bundle to 209; the Node keeps no copy, and the copy receives no token.
 
-After the import, a step on 209 checks every commit from the copy's start to the candidate: each must hold the `.env` path exactly as the start does. A commit that adds or changes it fails with `tasks.publish_secret_path` before the token is minted, also when a later commit removes it again, because the key would stay in the pushed history. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status.
+After the import, a step on 209 checks every commit from the copy's start to the candidate: each must hold the `.env` path exactly as the start does. A commit that adds or changes it fails with `tasks.publish_secret_path` before the token is minted, also when a later commit removes it again, because the key would stay in the pushed history. The same code answers when the branch history lacks the start commit, for example after a rebase past it.
+
+The check reads that one path: a copy of the file's content under another name is not detected. A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 

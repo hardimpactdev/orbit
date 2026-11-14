@@ -144,7 +144,7 @@ final readonly class ContainerProcesses
         if (array_key_exists('preset', $config)) {
             $this->assertPreset($process, $instance, $port);
             $config['command'] = $process->isVite() ? VitePreset::command($instance) : VpDevPreset::command($port);
-            $config['environment_file'] ??= InstanceContainer::application($instance).'/.env';
+            $config['environment_file'] ??= InstanceContainer::environmentFile($instance);
         } elseif ($migrate) {
             $config['command'] = $this->migrateCommand($process, $instance);
         }

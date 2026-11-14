@@ -166,7 +166,7 @@ sequenceDiagram
     GH--xSW: refused or no reply
     %%> When:
     %%> - the workspace moved, the tip diverged, the push or PR write was refused, or a reply was lost
-    %%> - a commit of a task copy holds the `.env` Orbit wrote: `tasks.publish_secret_path`; remove that commit from the branch history, then check again
+    %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, such as `tasks.push_failed`
