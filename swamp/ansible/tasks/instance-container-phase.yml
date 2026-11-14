@@ -30,8 +30,9 @@
       {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
           '--', 'runuser', '-u', 'agent', '--'] }}
     # Orbit's own Git calls in the workspace start no automatic maintenance: after a fetch Git would repack in the background, and
-    # the repack removes pack files while later tasks run (the group mode pass, the deploy steps). The repository is repacked by the
-    # Git commands of the people and agents who work in it, as any repository is.
+    # the repack removes pack files while later tasks run (the group mode pass, the deploy steps). In the foreground a repack of a
+    # large repository would outlast the checkout's time limit. The Git commands of the people and agents who work in the workspace
+    # still repack it; a workspace that only deployments write gains one pack per deployment until a bounded repack is added.
     in_workspace: >-
       {{ ['incus', 'exec', '--project', container.project, '--cwd', container.workspace, '--env', 'HOME=/home/orbit', container.name,
           '--', 'runuser', '-u', 'orbit', '--', 'git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
@@ -999,10 +1000,13 @@
           mode = os.fstat(fd).st_mode
           if lacks(mode):
               os.fchmod(fd, stat.S_IMODE(mode) | (0o070 if stat.S_ISDIR(mode) else 0o060 | (0o010 if mode & 0o111 else 0)))
-              print(path)
+              sys.stdout.buffer.write(os.fsencode(path) + b'\n')
       def visit(fd, path):
           try:
               give(fd, path)
+          except OSError as error:
+              fault(path, error)
+          try:
               entries = list(os.scandir(fd))
           except OSError as error:
               return fault(path, error)

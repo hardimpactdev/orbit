@@ -58,7 +58,7 @@ class WorkspaceModesTest(unittest.TestCase):
         (self.workspace / '.git/objects/pack').mkdir(parents=True)
         for path in ['node_modules/react/index.js', 'run.sh', '.git/objects/pack/pack-1.pack', '.git/objects/pack/.tmp-1-pack-2.pack']:
             (self.workspace / path).write_text('x')
-        for path in ['node_modules', 'node_modules/react', '.git/objects/pack']:
+        for path in ['.', '.git', '.git/objects', 'node_modules', 'node_modules/react', '.git/objects/pack']:
             os.chmod(self.workspace / path, 0o755)
         for path in ['node_modules/react/index.js', '.git/objects/pack/pack-1.pack', '.git/objects/pack/.tmp-1-pack-2.pack']:
             os.chmod(self.workspace / path, 0o644)
@@ -151,7 +151,8 @@ class CheckoutFailureDetailTest(unittest.TestCase):
     def detail(self, phase, task, result):
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ['rm', '-rf', str(folder)])
-        names = ['failure_phase', 'failure_code', 'failure_message', 'failure_checkout_head', 'failure_checkout_stderr', 'failure_checkout_detail']
+        names = ['failure_phase', 'failure_code', 'failure_message', 'failure_checkout_head', 'failure_checkout_stderr',
+                 'failure_checkout_budget', 'failure_checkout_detail']
         play = [{'hosts': 'localhost', 'gather_facts': False, 'connection': 'local',
                  'vars': {'container_phase_running': phase, 'process_action': 'none', 'ansible_failed_task': {'name': task},
                           'ansible_failed_result': result, **{name: self.RESCUE[name] for name in names}},
@@ -170,6 +171,13 @@ class CheckoutFailureDetailTest(unittest.TestCase):
                          {'detail': f'{task}: non-zero return code: /srv/workspace/locked: Permission denied'})
         long = self.detail('checkout', task, {'msg': 'non-zero return code', 'stderr': 'x' * 9000 + 'the end'})['detail']
         self.assertEqual([len(long), long.startswith(f'{task}: non-zero return code: x'), long.endswith('the end')], [4096, True, True])
+        # Every length keeps the whole stderr up to the limit, and the end of a longer one.
+        for size in [2000, 3000, 4000, 4030]:
+            with self.subTest(size=size):
+                stderr = ''.join(chr(ord('a') + index % 26) for index in range(size))
+                detail = self.detail('checkout', task, {'msg': 'non-zero return code', 'stderr': stderr})['detail']
+                head = f'{task}: non-zero return code: '
+                self.assertEqual(detail, head + stderr[-(4096 - len(head)):])
         self.assertEqual(self.detail('checkout', task, {'msg': 'The task failed.'}), {'detail': f'{task}: The task failed.'})
 
     def test_a_refusal_and_other_phases_write_no_checkout_detail(self):

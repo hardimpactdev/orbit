@@ -134,10 +134,11 @@
             # with code 2".
             failure_checkout_head: "{{ ansible_failed_task.name | default('A checkout task') }}: {{ failure_message }}"
             failure_checkout_stderr: "{{ ansible_failed_result.stderr | default('') | string | trim }}"
+            failure_checkout_budget: "{{ 4094 - failure_checkout_head | length }}"
             failure_checkout_detail: >-
               {{ {} if failure_phase != 'checkout' or failure_code == failure_message
-                 else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[failure_checkout_stderr | length - [4094 - failure_checkout_head | length, 0] | max:])
-                                 if failure_checkout_stderr != '' else failure_checkout_head} }}
+                 else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[-(failure_checkout_budget | int):])
+                                 if failure_checkout_stderr != '' and failure_checkout_budget | int > 0 else failure_checkout_head} }}
         - name: Fail the phase
           tags: [always]
           ansible.builtin.fail:
