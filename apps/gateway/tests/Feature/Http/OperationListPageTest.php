@@ -9,6 +9,7 @@ use App\Domain\Operations\OperationStatus;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 uses(LazilyRefreshDatabase::class);
@@ -86,4 +87,28 @@ it('lists every field of the record except input, result and steps', function ()
 
     expect(array_keys(OperationListItemData::fromModel($operation, $operation->caller_node_name)->toArray()))
         ->toEqualCanonicalizing(array_values(array_diff($record, ['input', 'result', 'steps'])));
+});
+
+it('reads no stored input or result, and keeps the caller and the capacity wait of a row', function (): void {
+    $gateway = Node::query()->firstOrFail();
+    $waiting = Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => 9, 'node_id' => $gateway->id,
+        'input' => ['caller_node_id' => $gateway->id, 'capacity_request' => ['commit' => str_repeat('c', 40)], 'plan' => str_repeat('x', 4096)],
+        'result' => ['log' => str_repeat('y', 4096)], 'status' => OperationStatus::Waiting]);
+    $full = Operation::query()->withCallerNodeName()->findOrFail($waiting->id);
+    $selects = [];
+    DB::listen(static function ($event) use (&$selects): void {
+        // The list read is the one that names the caller Node.
+        if (str_contains($event->sql, '"caller_node_name"') && preg_match('/^select (.*?) from "operations"/s', $event->sql, $match) === 1) {
+            $selects[] = $match[1];
+        }
+    });
+
+    $row = operation_page('?limit=1')->assertOk()->json('data.0');
+
+    expect($row)->toBe(OperationListItemData::fromModel($full, $full->caller_node_name)->toArray())
+        ->and($row['caller_node_name'])->toBe('gateway')->and($row['capacity_wait'])->not->toBeNull()->and($row['poll_after_seconds'])->not->toBeNull()
+        ->and($selects)->toHaveCount(1);
+    foreach ($selects as $selected) {
+        expect($selected)->not->toMatch('/(^|, )("\w+"\.)?\*/')->not->toContain('"result"')->not->toMatch('/(^|, )("operations"\.)?"input"(,|$)/');
+    }
 });

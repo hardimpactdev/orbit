@@ -747,7 +747,7 @@ export function createDemoGateway() {
                         },
                     ),
             ],
-            ["GET", /^\/api\/v1\/tasks$/, () => ok(taskGroups)],
+            ["GET", /^\/api\/v1\/tasks(?:\?.*)?$/, () => ok(taskGroups)],
             [
                 "GET",
                 /^\/api\/v1\/task-insights(?:\?.*)?$/,

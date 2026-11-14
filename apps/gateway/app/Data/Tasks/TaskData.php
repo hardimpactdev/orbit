@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Database\Eloquent\Collection;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -17,6 +18,13 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class TaskData extends Data
 {
+    /** The columns a list row reads; no list reads the unbounded completion summary or fixup problem (docs/reference/tasks.md#list-tasks). */
+    public const array ListColumns = [
+        'id', 'parent_id', 'position', 'title', 'brief', 'deliverables', 'topology', 'status', 'type', 'implementer_agent_thread_id', 'tokens',
+        'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations', 'assistance_requested', 'assistance_kind',
+        'assistance_question', 'assistance_reason', 'started_at', 'settled_at',
+    ];
+
     public function __construct(
         public int $id,
         public int $parentId,
@@ -47,10 +55,13 @@ final class TaskData extends Data
     ) {}
 
     /** @return array<string, mixed> */
-    public function toCompactArray(): array
+    public function toListArray(bool $compact = false): array
     {
+        if ($compact) {
+            return $this->toCompactArray();
+        }
         $data = $this->toArray();
-        unset($data['brief'], $data['completion_summary'], $data['deliverables'], $data['assistance_question'], $data['assistance_reason'], $data['fixup_problem']);
+        unset($data['completion_summary'], $data['fixup_problem']);
         if (is_array($data['check'])) {
             unset($data['check']['output']);
         }
@@ -58,9 +69,36 @@ final class TaskData extends Data
         return $data;
     }
 
+    /** @return array<string, mixed> */
+    public function toCompactArray(): array
+    {
+        $data = $this->toListArray();
+        unset($data['brief'], $data['deliverables'], $data['assistance_question'], $data['assistance_reason']);
+
+        return $data;
+    }
+
     public static function fromModel(Task $task): self
     {
-        $check = $task->checks()->latest('id')->first();
+        return self::fromModels(new Collection([$task]))[0];
+    }
+
+    /**
+     * The data of many subtasks, with their latest checks read once for all of them.
+     *
+     * @param  Collection<int, Task>  $tasks
+     * @return list<self>
+     */
+    public static function fromModels(Collection $tasks): array
+    {
+        $tasks->loadMissing('latestCheck');
+
+        return array_values($tasks->map(self::fromLoaded(...))->all());
+    }
+
+    private static function fromLoaded(Task $task): self
+    {
+        $check = $task->latestCheck;
 
         return new self(
             type: $task->type,

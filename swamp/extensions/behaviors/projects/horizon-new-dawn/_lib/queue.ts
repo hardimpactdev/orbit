@@ -27,6 +27,34 @@ export function repository(value: unknown): string {
         ).replace(/\.git$/, "").replace(/\/$/, "")
         : "";
 }
+/** Every task group of the Project. The Gateway pages the list, so a group the first page misses is still found. */
+async function projectGroups(
+    projectId: number,
+    http: Http,
+): Promise<Record<string, unknown>[]> {
+    const groups: Record<string, unknown>[] = [];
+    let cursor: string | null = null;
+    do {
+        const page: string = cursor === null ? "" : `&cursor=${cursor}`;
+        const listed: Awaited<ReturnType<Http>> = await http(
+            "GET",
+            `/api/v1/tasks?project_id=${projectId}&limit=100${page}`,
+        );
+        const next: unknown = (listed.body?.meta as
+            | Record<string, unknown>
+            | undefined)?.next_cursor;
+        if (
+            listed.status !== 200 || !Array.isArray(listed.body?.data) ||
+            (next !== null && next !== undefined &&
+                (typeof next !== "string" || !/^[1-9][0-9]*$/.test(next)))
+        ) {
+            throw new Error("Cannot reconcile Horizon task groups");
+        }
+        groups.push(...listed.body.data as Record<string, unknown>[]);
+        cursor = typeof next === "string" ? next : null;
+    } while (cursor !== null);
+    return groups;
+}
 /** Creates backlog tasks only. An uncertain create is reconciled, never blindly repeated. */
 export async function enqueue(
     plan: TaskPlan,
@@ -66,14 +94,7 @@ export async function enqueue(
     }
     // A previously-created group's tasks can progress; do not recreate or rewrite them.
     if (old?.state === "created") return old;
-    const listed = await deps.http(
-        "GET",
-        `/api/v1/tasks?project_id=${projectId}`,
-    );
-    if (listed.status !== 200 || !Array.isArray(listed.body?.data)) {
-        throw new Error("Cannot reconcile Horizon task groups");
-    }
-    const found = (listed.body.data as Record<string, unknown>[]).filter((g) =>
+    const found = (await projectGroups(projectId, deps.http)).filter((g) =>
         g.brief === brief
     );
     if (found.length > 1) {
