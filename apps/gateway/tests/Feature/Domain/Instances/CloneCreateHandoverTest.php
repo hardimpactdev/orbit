@@ -92,6 +92,9 @@ function handoverDefault(Node $node, ProjectType $type = ProjectType::LaravelApp
     app(DevelopmentInstanceCreateProjection::class)->apply($seed->refresh(), ['status' => 'succeeded', 'run_id' => 'seed-run', 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['instance_id' => $seed->target_id, 'ready' => true, 'commit' => str_repeat('c', 40)]]);
 
+    // A nested-fleet default made before the inner volume records none, so its clone is admitted (docs/reference/development-containers.md#the-inner-volume).
+    InstanceRuntime::query()->where('instance_id', $seed->target_id)->update(['inner_volume' => null]);
+
     return Instance::query()->findOrFail($seed->target_id);
 }
 

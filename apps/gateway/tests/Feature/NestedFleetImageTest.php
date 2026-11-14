@@ -87,7 +87,7 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
     $files = array_column($nested['files'], null, 'path');
 
     expect($nested['alias'])->toStartWith('orbit-instance-nested-')->toHaveLength(strlen('orbit-instance-nested-') + 12)
-        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'wireguard-tools', 'sqlite3', 'sudo', 'zstd'])
+        ->and($nested['packages'])->toBe(['acl', 'git', 'nftables', 'wireguard-tools', 'sqlite3', 'sudo', 'zstd', 'btrfs-progs'])
         ->and(array_column($nested['incus'], 'name'))->toBe(['incus-base', 'incus-client'])
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
         ->and($nested['prepare'])->toBe($normal['prepare']."usermod --append --groups incus-admin agent\n")

@@ -1046,6 +1046,8 @@ A removal from Conn without acknowledgement reads the [workspace work state](#wo
 
 The run withdraws the clone's Route, drops its owned server databases, then stops and deletes its Incus container with its Processes, T3 history, snapshots, storage volume and published proxy device. It removes the `instance-<id>` ACL from Incus project `default`, its UFW rules and its Node repository mirror. Deleting T3 retires every session and unused pairing link. Terminal projection removes execution copies and Conn records, then deletes the runtime row to free its address and T3 port. The default and other clones stay.
 
+An Instance with an [inner volume](#the-inner-volume) loses that volume and its snapshots too, after the container. The run checks that the volume is gone.
+
 The run deletes each UFW rule by the rule itself, as `ufw show added` lists it under the Instance's comment. It never deletes by number: another removal on the Node can delete a rule at the same time and shift every number above it.
 
 A migrated Instance's retained Git directory survives destroy and is purged only by hand. Its successful destroy Operation result keeps `retained_git_path` and `retained_git_at` after the Instance record is deleted; [instance:destroy](/cli/instance/destroy) explains how to read them.
@@ -1519,7 +1521,16 @@ The config must be exactly the intent's own `config`, with the same values. That
 
 Any other key is refused, for example a `raw.*` key, `security.privileged`, `linux.kernel_modules`, another syscall intercept or a `user.*` key.
 
-The devices must be exactly the root disk, the NIC, the two read-only shared folders with their own sources, and the T3 proxy of a clone. So no other host path, and never the host's Incus socket, reaches it.
+The devices must be exactly the root disk, the NIC, the two read-only shared folders with their own sources, the T3 proxy of a clone, and the disk `inner-pool` of an Instance with an [inner volume](#the-inner-volume). So no other host path, no other volume, and never the host's Incus socket, reaches it.
+
+The guard also reads the storage volumes, whose keys the container's config does not show:
+
+- The inner volume has exactly the keys of [The inner volume](#the-inner-volume), with their values.
+- Incus's own `volatile.*` keys pass. Any other key is refused, such as `zfs.delegate`.
+- An Instance without an inner volume in its intent gets no `inner-pool` device: the device list above refuses it.
+- The root volume must not have `zfs.delegate=true`, which would hand the container the host's ZFS commands on its dataset.
+
+The refusal names the volume and its key, for example `volume inner-pool block.mount_options`.
 
 The clone probe writes only `security.idmap.isolated=true`, so its guard admits only that key. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
 
@@ -1527,7 +1538,7 @@ After a host reboot, Incus restores the containers that were running, without th
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
 
-- the inner Incus, its directory pool and its bridge;
+- the inner Incus, its bridge and its pool on the [inner volume](#the-inner-volume); the first nested-fleet default, made before the volume, keeps a directory pool;
 - the operator end of the fleet's WireGuard network, which the [start phase](#the-fleet-step) brings up with `ip` and `wg` at each fleet start;
 - the nested Gateway's root CA and a CLI profile `nested`, so the candidate CLI in `/srv/workspace` talks to the nested Gateway.
 
@@ -1554,7 +1565,7 @@ It is the normal image with these changes:
 | Part | Change |
 | --- | --- |
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
-| Packages | `wireguard-tools`, `sqlite3`, `sudo` and `zstd` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers |
+| Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
 | Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000` |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
@@ -1580,10 +1591,28 @@ While that record exists, the create of a nested-fleet default refuses with `ins
 The fleet runs under the inner Incus:
 
 - three nested containers, `nested-gateway`, `nested-app-dev` and `nested-app-prod`;
-- the directory pool `topology-seed` in the outer root disk. A ZFS clone of the outer container then carries the whole fleet;
+- the inner storage pool: the directory pool `topology-seed` of the first nested-fleet default. A new nested-fleet default has an empty btrfs pool `inner` on its [inner volume](#the-inner-volume);
 - the inner bridge `oe-nested` and the fleet's WireGuard network, which the nested Gateway leads; the outer container joins it as the operator.
 
-A delegated ZFS dataset is not used: `incus copy` does not copy its child datasets.
+A delegated ZFS dataset is not used: a copy would need one host clone per child dataset, and the inner Incus records the dataset's host name, which a copy changes. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) has the decision.
+
+### The inner volume
+
+A new nested-fleet default gets its own volume for the inner fleet, as the task VM had its seed disk. Its runtime records the volume's name in `inner_volume`, and the intent carries it as `container.inner_volume`. The [first default's create](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) makes it:
+
+| Part | Value |
+| --- | --- |
+| Volume | `inner-<id>` on the pool `orbit-instances`, in the Incus project `orbit-instances-nested`; a sparse 30 GiB zvol |
+| `zfs.block_mode` | `true`: a block volume that Incus formats with a file system |
+| `block.filesystem` | `btrfs`: snapshots, restores and clones of the inner containers take about a second |
+| `block.mount_options` | `user_subvol_rm_allowed,discard`: the inner Incus deletes its own subvolumes; freed blocks go back to the pool |
+| `security.shifted` | `true`: the volume mounts idmapped. Without it Incus shifts every file to a copy's new ID map at attach, 31 to 39 s per copy |
+| Device | the disk `inner-pool` at `/srv/inner-pool` |
+| Inner pool | `inner`, driver `btrfs`, `source=/srv/inner-pool/pool` |
+
+On the host this is one volume and one device on one container: no pool, profile or project key, no kernel module setting and no host package. Incus formats the volume with the host's `mkfs.btrfs`. The container does not see the block device; it reaches the host's btrfs code only through file operations and the subvolume calls of its own file system, and the volume's size caps its space.
+
+A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots. The first nested-fleet default and every Instance without `inner_volume` keep today's shape; no step makes or checks a volume for them. Until the clone copies the volume too, a clone of a default with an inner volume refuses with `instance.inner_volume_clone_unavailable` (409) before any record.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
@@ -1894,7 +1923,7 @@ Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-contai
 
 ### Reset
 
-A reset restores `base` of the three nested containers, then waits for the same Doctor check. `agent` runs it. A reset command is planned. Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds.
+A reset restores `base` of the three nested containers, then waits for the same Doctor check. `agent` runs it. A reset command is planned. Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds. On the [inner volume](#the-inner-volume) each restore is a btrfs snapshot restore: 1.9 to 3.1 s per container in the 2026-11-14 test, whatever changed. The reset on that volume follows separately.
 
 ### Rebuild from stock
 

@@ -28,10 +28,11 @@ final readonly class InstanceImage
     public const string NestedWaitOnline = '/etc/systemd/system/systemd-networkd-wait-online.service.d/90-orbit-no-dns.conf';
 
     /**
-     * The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client, sudo, and
-     * `zstd` for the `.tar.zst` archives of an inner fleet's containers.
+     * The nested-fleet variant's packages beyond the normal ones: the tunnel to its fleet, the fleet's database client, sudo,
+     * `zstd` for the `.tar.zst` archives of an inner fleet's containers, and `btrfs-progs` for the inner Incus's btrfs pool on the
+     * inner volume (NestedFleetInnerVolume).
      */
-    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'sudo', 'zstd'];
+    public const array NestedPackages = ['wireguard-tools', 'sqlite3', 'sudo', 'zstd', 'btrfs-progs'];
 
     /** OS packages beyond the stock image: the firewall, ACLs on the workspace, and Git for the workspace repository. */
     public const array Packages = ['acl', 'git', 'nftables'];

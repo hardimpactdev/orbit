@@ -34,6 +34,7 @@ use LogicException;
  * @property array{heads: list<string>, stashes: list<string>, untracked: list<string>|null}|null $workspace_baseline
  * @property Carbon|null $workspace_baseline_at
  * @property Carbon|null $idle_watch_started_at
+ * @property string|null $inner_volume
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -59,6 +60,7 @@ final class InstanceRuntime extends Model
         'workspace_baseline',
         'workspace_baseline_at',
         'idle_watch_started_at',
+        'inner_volume',
     ];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */

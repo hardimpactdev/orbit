@@ -39,6 +39,8 @@ final readonly class ContainerInstanceDestroy
             'acl' => $runtime->container_name, 'pool' => InstanceHostIntent::Pool,
             'mirror' => InstanceContainer::mirror($instance), 'firewall_prefix' => InstanceContainer::firewallPrefix($instance),
             // A sleeping Instance leaves its marker behind on the Node; no later Instance or domain may find it.
-            'asleep_marker' => InstancePower::markerPath($instance)];
+            'asleep_marker' => InstancePower::markerPath($instance),
+            // The removal deletes an inner volume with its snapshots, after the container.
+            ...($runtime->inner_volume === null ? [] : ['inner_volume' => $runtime->inner_volume])];
     }
 }

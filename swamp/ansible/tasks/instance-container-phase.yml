@@ -161,6 +161,30 @@
     fail_msg: instance.nested_fleet_image_unavailable
     quiet: true
 
+# A new nested-fleet default (only its intent has `inner_volume`) holds its inner fleet on its own btrfs volume
+# (docs/reference/development-containers.md#the-inner-volume). The create makes the volume before the container; a retry reuses it,
+# and the start guard checks its keys before every start. Every other Instance, Instance 2454 among them, skips these tasks.
+- name: Make the inner volume
+  tags: [container]
+  when: phase == 'container' and container.inner_volume is defined
+  vars:
+    inner: "{{ container.inner_volume }}"
+  block:
+    - name: Read the inner volume
+      ansible.builtin.command:
+        argv: [incus, query, --, "/1.0/storage-pools/{{ inner.pool }}/volumes/custom/{{ inner.name }}?project={{ container.project }}"]
+      register: inner_volume_read
+      changed_when: false
+      failed_when: false
+    - name: Create the inner volume
+      when: inner_volume_read.rc != 0
+      ansible.builtin.command:
+        argv: >-
+          {{ ['incus', 'storage', 'volume', 'create', inner.pool, inner.name, '--project', container.project]
+             + (inner.config | dict2items | map(attribute='key') | zip(inner.config.values()) | map('join', '=') | list)
+             + ['size=' ~ inner.size] }}
+      changed_when: true
+
 # The container's own ACL: the bridge's way to the model forwarder stays in the bridge ACL; this one lets the Node's Caddy reach
 # FrankenPHP, a clone's T3 clients reach T3, and the container reach its database server. Network ACLs live in the default project.
 - name: Converge the container's ACL
@@ -188,6 +212,25 @@
       ansible.builtin.command:
         argv: >-
           {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true'] + nic_args + resource_args }}
+      changed_when: true
+
+# The disk of the inner volume, on the stopped container before its first start; the start guard then admits it.
+- name: Attach the inner volume
+  tags: [container]
+  when: phase == 'container' and container.inner_volume is defined
+  vars:
+    inner: "{{ container.inner_volume }}"
+  block:
+    - name: Read the container's devices
+      ansible.builtin.command: { argv: [incus, query, --, "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
+      register: inner_device_read
+      changed_when: false
+    - name: Add the inner volume's disk
+      when: inner.device not in ((inner_device_read.stdout | from_json).devices | default({}))
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['config', 'device', 'add', container.name, inner.device, 'disk', 'pool=' ~ inner.pool,
+                              'source=' ~ inner.name, 'path=' ~ inner.path] }}
       changed_when: true
 
 # Lifecycle mutations only add; removal belongs to host reconciliation from current Gateway intent.
@@ -346,12 +389,37 @@
         expected_network_device: eth0
         network_allowed_devices: "{{ container.allowed_devices | default({}) }}"
         network_allowed_config: "{{ container.config }}"
+        # The only volume besides the root that the guard admits, with exactly these keys.
+        network_allowed_volumes: >-
+          {{ {container.inner_volume.device: container.inner_volume.config | combine({'size': container.inner_volume.size})}
+             if container.inner_volume is defined else {} }}
 
 - name: Start the container
   tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
   ansible.builtin.command: { argv: "{{ incus_project + ['start', container.name] }}" }
   changed_when: true
+
+# The inner Incus's pool on the inner volume, once. The inner Incus may still be starting with the container.
+- name: Create the inner pool
+  tags: [container]
+  when: phase == 'container' and container.inner_volume is defined
+  vars:
+    inner_pool: "{{ container.inner_volume.inner_pool }}"
+  block:
+    - name: Wait for the inner Incus
+      ansible.builtin.command: { argv: "{{ as_root + ['incus', 'admin', 'waitready', '--timeout', '60'] }}" }
+      changed_when: false
+    - name: Read the inner pool
+      ansible.builtin.command: { argv: "{{ as_root + ['incus', 'storage', 'show', inner_pool.name] }}" }
+      register: inner_pool_read
+      changed_when: false
+      failed_when: false
+    - name: Create the inner pool on the inner volume
+      when: inner_pool_read.rc != 0
+      ansible.builtin.command:
+        argv: "{{ as_root + ['incus', 'storage', 'create', inner_pool.name, 'btrfs', 'source=' ~ inner_pool.source] }}"
+      changed_when: true
 
 # A nested-fleet container (only its intent has `club_key`) gets its nested Gateway's Club key into its /run at each start, before
 # any check of its inner fleet (docs/reference/development-containers.md#the-club-key-of-the-nested-gateway).

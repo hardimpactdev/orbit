@@ -250,6 +250,8 @@ describe('a clone of the container default', function (): void {
         'the default on another Node' => [fn (Instance $default): Node => containerDefaultNode('shark', '10.44.0.8'), 'instance.default_missing'],
         'no seed snapshot yet' => [fn (Instance $default) => InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => null]) && false ?: null, 'instance.default_missing'],
         'a failed default' => [fn (Instance $default) => $default->update(['status' => InstanceState::Reserved]) && false ?: null, 'instance.default_missing'],
+        // The clone does not copy an inner volume yet (docs/reference/development-containers.md#the-inner-volume).
+        'a default with an inner volume' => [fn (Instance $default) => InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]) && false ?: null, 'instance.inner_volume_clone_unavailable'],
         'Conn off' => [fn () => app(ExtensionStore::class)->set('conn', false) ?: null, 'operation.kind_unavailable'],
         'no model router guard' => [function (): null {
             app(TaskVmModelRoute::class)->ready = false;

@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "dc0d791ded78646a5703ef2b062e2948b27586f4fadd7f0716c70b1be3ae8edd"
+source_sha256 = "cf212490d02194e5ef3340491b3d84e373a01e416e679c01d4f8d6494253492a"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -45,6 +45,9 @@ cases = [
   "test_preserves_only_the_guest_command_and_exit_code",
   "test_rejects_private_or_mismatched_guest_diagnostics",
   "test_node_command_failure_names_executable_and_exit_without_output",
+  "test_admits_exactly_the_keys_with_incus_own_and_empty_values",
+  "test_refuses_a_changed_missing_or_added_key_and_names_it",
+  "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name",
   "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent",
   "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
   "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
@@ -62,7 +65,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 113
+cost = 116
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -141,3 +144,6 @@ inputs = [
   "test_a_planted_path_of_another_type_refuses_the_create_before_any_store_write" = 2
   "test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create" = 2
   "test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure" = 2
+  "test_admits_exactly_the_keys_with_incus_own_and_empty_values" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_refuses_a_changed_missing_or_added_key_and_names_it" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name" = 1 # estimate: local run on Beast, not a CI measurement

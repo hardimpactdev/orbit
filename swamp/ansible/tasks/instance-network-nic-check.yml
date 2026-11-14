@@ -1,10 +1,11 @@
 ---
 # The native clone and Ansible use the same gate. Expanded devices include profile inheritance and local overrides. A nested-fleet
-# container also passes its allowed config: the intent's `container.config`, which create and clone write.
+# container also passes its allowed config: the intent's `container.config`, which create and clone write, and the volumes beside
+# the root that it may have (an inner volume), with their exact keys; the guard reads the volumes itself.
 - name: Check the effective NIC gates on the Instance bridge
   tags: [always]
   ansible.builtin.command:
-    argv: "{{ ['python3', '-c', network_check_source, network_name, expected_network_device | default('')] + ([network_allowed_devices | to_json, network_allowed_config | to_json] if network_nested else []) }}"
+    argv: "{{ ['python3', '-c', network_check_source, network_name, expected_network_device | default('')] + ([network_allowed_devices | to_json, network_allowed_config | to_json, network_allowed_volumes | default({}) | to_json] if network_nested else []) }}"
     stdin: "{{ network_container | to_json }}"
   vars:
     network_nested: "{{ network_allowed_devices is defined and network_allowed_devices | length > 0 }}"
