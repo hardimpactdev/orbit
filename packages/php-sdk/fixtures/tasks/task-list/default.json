@@ -93,13 +93,11 @@
                         "questions": 0,
                         "escalations": 0,
                         "type": "implementation",
-                        "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
                         "assistance_kind": null,
                         "assistance_question": null,
                         "assistance_reason": null,
-                        "fixup_problem": null,
                         "parent_id": 4
                     }
                 ]
@@ -207,13 +205,11 @@
                         "questions": 0,
                         "escalations": 0,
                         "type": "implementation",
-                        "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
                         "assistance_kind": null,
                         "assistance_question": null,
                         "assistance_reason": null,
-                        "fixup_problem": null,
                         "parent_id": 1
                     },
                     {
@@ -246,20 +242,19 @@
                         "questions": 0,
                         "escalations": 0,
                         "type": "implementation",
-                        "completion_summary": null,
                         "check": null,
                         "assistance_requested": false,
                         "assistance_kind": null,
                         "assistance_question": null,
                         "assistance_reason": null,
-                        "fixup_problem": null,
                         "parent_id": 1
                     }
                 ]
             }
         ],
         "meta": {
-            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844"
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844",
+            "next_cursor": "1"
         }
     }
 }

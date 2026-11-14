@@ -162,6 +162,7 @@ describe('task transport', function (): void {
     it('puts list filters in the query and omits absent ones', function (): void {
         expect(new ListTasksRequest()->query()->all())->toBe([])
             ->and(new ListTasksRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog'])
+            ->and(new ListTasksRequest(limit: 50, cursor: '120')->query()->all())->toBe(['limit' => 50, 'cursor' => '120'])
             ->and(new ListTaskQuestionsRequest()->query()->all())->toBe([])
             ->and(new ListTaskQuestionsRequest(4, 'contract_gap', 'answered', '2026-10-07T00:00:00Z')->query()->all())
             ->toBe(['project_id' => 4, 'cause' => 'contract_gap', 'status' => 'answered', 'since' => '2026-10-07T00:00:00Z']);
@@ -221,6 +222,16 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())->toBe('tasks.assistance_subtask_open');
         }
+    });
+
+    it('reads the next cursor of a page, and none on the last page', function (): void {
+        $page = task_fixture_send('task-list/default', new ListTasksRequest(limit: 2));
+        $last = task_fixture_send('task-list/empty', new ListTasksRequest(cursor: '1'));
+
+        expect($page)->toBeInstanceOf(TaskGroupsResponse::class)
+            ->and($page->nextCursor)->toBe('1')->and($page->toArray()['next_cursor'])->toBe('1')
+            ->and($last)->toBeInstanceOf(TaskGroupsResponse::class)
+            ->and($last->nextCursor)->toBeNull()->and($last->toArray())->toHaveKey('next_cursor', null);
     });
 
     it('maps each recorded success to its typed DTO', function (string $fixture, GatewayRequest $request, string $class): void {
