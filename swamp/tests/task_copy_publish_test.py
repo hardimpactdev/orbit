@@ -13,6 +13,8 @@ import unittest
 import uuid
 from pathlib import Path
 
+import yaml
+
 # The runner starts this file as `python3 -I`, which keeps its folder off the import path: load the harness by its path.
 _spec = importlib.util.spec_from_file_location('task_instance_workspace_harness', Path(__file__).parent / '_support/task_instance_workspace.py')
 base = importlib.util.module_from_spec(_spec)
@@ -117,6 +119,27 @@ class TaskCopyPublishTest(unittest.TestCase):
                               capture_output=True, text=True, check=False, timeout=60)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         return json.loads(done.stdout)['value']
+
+    def test_the_native_end_check_runs_after_a_success_on_either_path(self):
+        """The Gateway settles tasks.publish only from "Confirm publication" (its native terminal result). On a success, a step that a
+        path guards off is `skipped`, and Swamp's `completed` does not accept `skipped`: such a dependency must name it."""
+        steps = {step['name']: step for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for step in job['steps']}
+
+        def accepts(condition, status):
+            kind = condition['type']
+            if kind == 'or':
+                return any(accepts(item, status) for item in condition['conditions'])
+            return status in {'completed': {'succeeded', 'failed'}, 'succeeded': {'succeeded'}, 'skipped': {'skipped'},
+                              'failed': {'failed'}}[kind]
+
+        for intent in (self.copy, self.vm):
+            success = {'Mint the push token': {'status': 'succeeded'},
+                       'Preflight the copy': {'status': 'succeeded' if 'workspace' in intent else 'skipped'}}
+            for dependency in steps['Confirm publication']['dependsOn']:
+                name = dependency['step']
+                skipped = 'guard' in steps[name] and self.cel(name, 'guard', intent, success)
+                status = 'skipped' if skipped else 'succeeded'
+                self.assertTrue(accepts(dependency['condition'], status), (name, status, 'workspace' in intent))
 
     def test_a_copy_runs_its_export_and_only_a_succeeded_bundle_step_starts_the_import(self):
         for step in ['Preflight the copy', 'Export the copy', 'Check the environment file']:

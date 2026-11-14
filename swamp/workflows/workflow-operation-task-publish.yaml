@@ -869,15 +869,14 @@ jobs:
     - step: Revoke the token
       condition:
         type: completed
+    # Each path guards off the other path's scratch step; a skipped dependency must still let the end check run.
     - step: Remove remote scratch
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove local scratch
       condition:
         type: completed
     - step: Discard the copy scratch
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     task:
       type: assert
       expr: '"Read push result" in steps && steps["Read push result"].status == "succeeded" && (inputs.intent.pull_request == null || ("Read PR result" in steps && steps["Read PR result"].status
