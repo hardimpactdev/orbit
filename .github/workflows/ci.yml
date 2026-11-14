@@ -917,19 +917,8 @@ jobs:
           PROOF_RUN_URL_PREFIX: ${{ github.server_url }}/${{ github.repository }}/actions/runs/
         run: |
           python3 - <<'PYTHON'
-          import json, os, subprocess, sys, time
+          import json, os, runpy
           needs = json.loads(os.environ['NEEDS'])
-          if needs['changes']['result'] != 'success':
-              sys.exit('Build input selection failed')
-          capacity = json.loads(needs['changes']['outputs']['fixture_capacity'])
-          if capacity:
-              sys.exit(f'Required fixture capacity exceeded: {capacity}')
-          fixture_shards = json.loads(needs['changes']['outputs']['fixture_shards'])
-          fixture_result = needs.pop('fixtures')['result']
-          if fixture_result != 'success' and not (fixture_shards == [] and fixture_result == 'skipped'):
-              sys.exit(f'Required fixtures failed: {fixture_result}')
-          # Shared with main delivery; fixture checks above remain PR-only.
-          import runpy
           runpy.run_path('bin/ci-delivery')['validate'](needs)
           PYTHON
 
@@ -953,14 +942,14 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp, fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require the selected merged-tree fast jobs
+      - name: Require the selected merged-tree jobs and fixtures
         env:
           NEEDS: ${{ toJSON(needs) }}
           PROOF_REQUIRED: 'false'
@@ -968,17 +957,15 @@ jobs:
           SLOW_CHECKS_BLOCKING: 'false'
         run: |
           python3 - <<'PYTHON'
-          import json, os, runpy, sys
+          import json, os, runpy
           needs = json.loads(os.environ['NEEDS'])
-          if needs['changes']['result'] != 'success':
-              sys.exit('Build input selection failed')
           runpy.run_path('bin/ci-delivery')['validate'](needs)
           PYTHON
 
   main-required:
     name: ${{ github.ref == 'refs/heads/main' && 'Required checks' || 'Main required checks' }}
     needs: delivery
-    if: always() && needs.delivery.result == 'success' && github.ref == 'refs/heads/main'
+    if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     permissions:
@@ -988,6 +975,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Require successful main delivery
+        env:
+          DELIVERY_RESULT: ${{ needs.delivery.result }}
+        run: |
+          if [ "$DELIVERY_RESULT" != success ]; then
+            echo "::error::Main delivery checks did not pass: $DELIVERY_RESULT"
+            exit 1
+          fi
       - name: Verify main CI delivery for the Gateway and link fixture report
         env:
           GH_TOKEN: ${{ github.token }}

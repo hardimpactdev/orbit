@@ -4,7 +4,8 @@ A nested-fleet container starts only when its effective config and devices are e
 config is the intent's own `container.config`, the map that create and clone write with `--config`, so the two cannot drift.
 Incus writes `volatile.*` and `image.*` itself and Orbit writes none, so the guard does not judge them; `environment.*` keys only set the environment of processes in the container, and
 come from both the intent and the project's profile. Every other key must be in the allowed config with the same value, and
-every allowed key must be set: a missing `security.idmap.isolated` would fall back to the shared map.
+every allowed key must be set: a missing `security.idmap.isolated` would fall back to the shared map. The NIC filter keys
+(`FILTERS` of the shared functions) are left out of the device comparison: the shared report names a NIC without them.
 """
 
 import json
@@ -26,13 +27,17 @@ def nested_unsafe_config(config, allowed):
     return ""
 
 
+def without_filters(device):
+    return {key: value for key, value in device.items() if key not in globals()["FILTERS"]}
+
+
 def nested_unsafe_device(container, allowed, allowed_config):
     unsafe = nested_unsafe_config(container["expanded_config"], allowed_config)
     if unsafe:
         return unsafe
     devices = container["expanded_devices"]
     for name, device in devices.items():
-        if name not in allowed or device != allowed[name]:
+        if name not in allowed or without_filters(device) != without_filters(allowed[name]):
             return name
     for name in allowed:
         if name not in devices:
@@ -47,3 +52,4 @@ if __name__ == "__main__":
     if device:
         print(device)
         sys.exit(1)
+    print(globals()["unfiltered_report"](container, sys.argv[1]), end="")

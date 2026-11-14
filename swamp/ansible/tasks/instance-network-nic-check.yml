@@ -30,3 +30,10 @@
     fail_msg: >-
       {{ network_failure if expected_network_device is defined else network_failure ~ ': ' ~ network_nic_check.stdout }}
     quiet: true
+
+# A NIC without the filter keys passes until every existing NIC has them; the log names it (docs/reference/development-containers.md#network).
+- name: Report a NIC without the address filters
+  tags: [always]
+  when: network_nic_check.rc == 0 and network_nic_check.stdout != ''
+  ansible.builtin.debug:
+    msg: "instance.nic_unfiltered: {{ network_nic_check.stdout_lines | join('; ') }}"

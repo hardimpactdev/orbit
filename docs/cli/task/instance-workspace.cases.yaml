@@ -41,7 +41,7 @@ cases:
   - id: check-admission-container-target
     path: main
     fails_today: true
-    local: Admit tasks.check for a group that owns a running container Instance with no task VM. The intent names the recorded project, container, branch and Node; no VM wake or VM row is created. Refuse hosted handoff CI, an @orbit/ci-caches setup step and a stopped runtime before a check row exists. A task VM group keeps its exact intent keys.
+    local: Admit tasks.check for a group that owns a running container Instance with no task VM. The intent names the recorded project, container, branch and Node; no VM wake or VM row is created. Refuse hosted handoff CI and a stopped runtime before a check row exists. A container baseline gets an empty setup list, even with an @orbit/ci-caches step; a task VM baseline keeps every setup step. A task VM group keeps its exact intent keys.
 uncovered:
-  - Run the container check through Swamp against the supplied disposable normal Instance, with one file deliverable and one fails-on-base command. No public admission selects it yet.
+  - Run the container check through Swamp against the supplied disposable normal Instance, with one file deliverable and one fails-on-base command. A task copy from task:start selects it.
   - Run these phases through the real transport on the supplied disposable normal Instance, including alternate project and exported bundle head/tree verification. No live operation is authorized by this specification.

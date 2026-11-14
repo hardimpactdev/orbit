@@ -829,30 +829,28 @@ class WorkflowTest(unittest.TestCase):
         self.assertIn('bin/ci-units plan --base "$BASE" --head "$HEAD" --github-output "$GITHUB_OUTPUT"', source)
 
     def test_required_stays_red_when_whole_file_capacity_is_exceeded(self):
-        source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
-        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          # Shared', 1)[0])
-        needs = {'changes': {'result': 'success', 'outputs': {'fixture_capacity': '[{"file":"migration","shards":11}]',
-                                                           'fixture_shards': '[]'}}, 'fixtures': {'result': 'success'}}
-        with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
-            with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*migration'):
-                exec(code, {})
+        from test_ci_delivery import delivery, needs_for
+        needs = needs_for('required')
+        needs['changes']['outputs'].update(fixture_capacity='[{"file":"migration","shards":11}]', fixture_shards='[]')
+        with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*migration'):
+            delivery.validate(needs)
 
     def test_required_accepts_skipped_only_with_empty_shards_and_preserves_job_selection_rules(self):
-        # Exercise Required's actual inline rule before its unchanged build-selection checks.
+        from test_ci_delivery import delivery, needs_for
         source = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:\n', 1)[1]
         self.assertIn('changes, swamp, fixtures]', source)
-        code = textwrap.dedent(source.split("          python3 - <<'PYTHON'\n", 1)[1].split('          # Shared', 1)[0])
-        for shards in ([], [{'name': '01', 'units': ['a']} ]):
+        for shards in ([], [{'name': '01', 'units': ['a']}]):
             for result in ('success', 'skipped', 'failure', 'cancelled'):
-                needs = {'changes': {'result': 'success', 'outputs': {'fixture_shards': json.dumps(shards), 'fixture_capacity': '[]'}}, 'fixtures': {'result': result}}
-                with patch.dict(os.environ, {'NEEDS': json.dumps(needs)}):
+                needs = needs_for('required')
+                needs['changes']['outputs']['fixture_shards'] = json.dumps(shards)
+                needs['fixtures']['result'] = result
+                with self.subTest(shards=shards, result=result), patch.dict(os.environ, PROOF_REQUIRED='false',
+                        PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
                     if result == 'success' or (result == 'skipped' and not shards):
-                        scope = {}
-                        exec(code, scope)
-                        self.assertNotIn('fixtures', scope['needs'])
+                        delivery.validate(needs)
                     else:
                         with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
-                            exec(code, {})
+                            delivery.validate(needs)
         self.assertIn("runpy.run_path('bin/ci-delivery')['validate'](needs)", source)
 
 

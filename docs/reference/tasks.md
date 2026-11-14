@@ -1097,7 +1097,7 @@ When the requested handoff includes hosted CI, the operation sanitizes the check
 
 ### Baseline check
 
-Swamp requests a baseline before implementation when its workflow calls for one. The operation runs setup and check commands, records evidence and returns. A failure starts no agent.
+Swamp requests a baseline before implementation when its workflow calls for one. The operation runs setup and check commands, records evidence and returns. A failure starts no agent. In a task copy the baseline runs no setup steps, because the copied seed already ran them ([check phases](/reference/task-instance-workspace#check-phases)).
 
 ## Review a subtask
 

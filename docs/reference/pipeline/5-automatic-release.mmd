@@ -16,7 +16,7 @@ sequenceDiagram
   %%> Built:
   %%> - the Gateway looks every five minutes while automatic releases are on, and reads CI through its GitHub App; the merges of those five minutes go out in one release of the newest green commit
   %%> What it accepts:
-  %%> - a run of `ci.yml` on `main`, with `Main delivery checks`, its main `Required checks` result and `Gateway release inputs` green; duplicate main fixtures and Main full set report independently and never block delivery
+  %%> - a run of `ci.yml` on `main`, with `Main delivery checks`, its main `Required checks` result and `Gateway release inputs` green; selected fixtures gate a normal main run; a verified tree receipt reuses passed PR checks, and Main full set reports independently
   %%> - main CI may reuse a green PR merge tree after verifying repository, workflow, PR, checkout tree, Docs body and artifact digest; it republishes the web artifact under the main SHA and keeps the same check names
   %%> - the release reader still accepts only the main CI result and main artifact; a fork, PR or other workflow cannot directly authorize a release
   Note over GW: Admit the release<br/>one at a time

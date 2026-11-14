@@ -573,7 +573,8 @@ Deno.test({
                 c.includes("orbit-instances") &&
                 c.includes("orbit-instance-build")
             );
-            assertEquals(project_calls[1], [
+            // The first call that names the build container is its init.
+            assertEquals(project_calls[0], [
                 "--project",
                 "orbit-instances",
                 "init",
@@ -583,6 +584,11 @@ Deno.test({
                 "security.idmap.isolated=true",
                 "--device",
                 "eth0,ipv4.address=10.253.0.254",
+                // Its fixed address takes the address filters of an Instance NIC.
+                "--device",
+                "eth0,security.ipv4_filtering=true",
+                "--device",
+                "eth0,security.mac_filtering=true",
             ]);
             assert(
                 f.calls().some((c) =>

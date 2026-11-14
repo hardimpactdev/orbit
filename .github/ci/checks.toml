@@ -39,6 +39,7 @@ inputs = [
   "swamp/ansible/instance_migrate_links.py",
   "swamp/ansible/instance_migrate_git.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -268,6 +269,9 @@ after_merge_cases = [
   # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
   # switched-on host do not fit a 150-second lane. The Main full set runs it with its own ceiling.
   "only a switched-on host prepares the nested project, its profile and the nesting modules",
+  # 52s estimated: with it the file needs 9 hosted shards, above the 8-shard PR limit, and the whole file would defer. The PR
+  # keeps the same rule in the clone tests (the NIC check and the nested guard report a stock NIC, a real defect still refuses).
+  "start admits a stock NIC without the address filters and reports it; the rollout's device set keeps the status and ends the report",
 ]
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
@@ -287,6 +291,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -395,6 +400,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -444,6 +450,7 @@ inputs = [
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -516,6 +523,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -564,6 +572,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -609,6 +618,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -651,6 +661,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/**",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -1104,6 +1115,7 @@ inputs = [
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/tests/fixtures/instance-bridge-curl.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -1269,6 +1281,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/orbit_artifact.py",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
@@ -1965,11 +1978,12 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 91
+cost = 99
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/instance_nested.py",
   "swamp/ansible/instance_nested_club_key.sh",
   "swamp/ansible/instance_node_services.py",
@@ -2002,6 +2016,10 @@ inputs = [
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
   "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
+  "test_nic_check_reports_a_stock_nic_without_filters_and_still_refuses_a_real_defect" = 2
+  "test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it" = 2
+  "test_the_three_holders_of_the_nic_filters_are_equal" = 2
+  "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
@@ -2192,6 +2210,7 @@ inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/build_vars.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
@@ -3427,6 +3446,7 @@ cost = 8 # ESTIMATE: eight command-boundary cases completed in 0.33 s locally; o
 inputs = [
   "swamp/extensions/behaviors/operations/ansible-input/write.ts",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/instance_nested.py",
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",

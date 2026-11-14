@@ -103,7 +103,7 @@ it('admits a check in the recorded container Instance without a task VM', functi
         ->and(TaskCheck::query()->sole()->status->value)->toBe('running');
 });
 
-it('refuses container checks that need hosted CI, the CI cache setup or a stopped runtime before recording a check', function (Closure $arrange, TaskCheckKind $phase, string $code): void {
+it('refuses container checks that need hosted CI or a stopped runtime before recording a check', function (Closure $arrange, TaskCheckKind $phase, string $code): void {
     [$group, $subtask, $instance, $runtime] = instanceCheckWorld();
     $arrange($group, $runtime);
 
@@ -113,11 +113,56 @@ it('refuses container checks that need hosted CI, the CI cache setup or a stoppe
         ->and(Operation::query()->count())->toBe(0);
 })->with([
     'hosted handoff CI' => [fn (Task $group) => $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required', 'source_access' => ProjectSourceAccess::GitHubApp]), TaskCheckKind::Handoff, 'tasks.instance_hosted_check_unavailable'],
-    'CI cache setup' => [fn (Task $group) => ProjectLifecycleStep::query()->create(['project_id' => $group->project_id, 'phase' => LifecyclePhase::Setup->value, 'position' => 1,
-        'name' => 'caches', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60]), TaskCheckKind::Baseline, 'tasks.instance_setup_unavailable'],
     'stopped runtime' => [fn (Task $group, InstanceRuntime $runtime) => $runtime->update(['power_state' => 'stopped']), TaskCheckKind::Handoff, 'tasks.instance_not_running'],
     'no recorded branch' => [fn (Task $group) => Instance::query()->whereKey($group->taskable_id)->update(['branch' => null]), TaskCheckKind::Handoff, 'tasks.no_workspace'],
 ]);
+
+/** Two setup steps on the Project, the last one Gateway-owned, as on the Orbit Project. */
+function instanceCheckSetupSteps(Task $group): void
+{
+    foreach ([['install', 'composer install --no-interaction', 45], ['caches', '@orbit/ci-caches', 60]] as $position => [$name, $command, $seconds]) {
+        ProjectLifecycleStep::query()->create(['project_id' => $group->project_id, 'phase' => LifecyclePhase::Setup->value, 'position' => $position + 1,
+            'name' => $name, 'command' => $command, 'timeout_seconds' => $seconds]);
+    }
+}
+
+it('runs a container baseline without the setup steps, because the copied seed already ran them', function (): void {
+    [$group, $subtask] = instanceCheckWorld();
+    instanceCheckSetupSteps($group);
+
+    $operation = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
+
+    $intent = TaskCheckProjection::workflowInput($operation->input)['intent'];
+    expect($operation->kind)->toBe('tasks.check')
+        ->and($intent['phase'])->toBe('baseline')
+        ->and($intent['setup'])->toBe([])
+        ->and($intent['command'])->toBe($group->project->task_check)
+        ->and($intent['deliverables'])->toBe([])
+        ->and(array_keys($intent))->toEqualCanonicalizing(array_keys(instanceCheckIntent()))
+        ->and(TaskCheck::query()->sole()->kind)->toBe(TaskCheckKind::Baseline);
+});
+
+it('keeps every setup step in a task VM baseline', function (): void {
+    [$group, $subtask, $instance] = instanceCheckWorld();
+    instanceCheckSetupSteps($group);
+    $guest = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'tvm-599', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.138', 'public_ssh_port' => 22,
+        'wireguard_ip' => '10.44.0.138', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
+    ]));
+    TaskVm::query()->create(['host_node_id' => $guest->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-599',
+        'state' => TaskVmState::Ready, 'address' => '10.251.78.34', 'wireguard_ip' => '10.44.0.138', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('q', 40)]);
+    $instance->update(['task_workspace_owner_id' => null]);
+    $workspace = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
+        'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/proof/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
+    $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
+
+    $operation = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
+
+    expect($operation->input['setup'])->toBe([
+        ['name' => 'install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 45],
+        ['name' => 'caches', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60],
+    ])->and($operation->input)->not->toHaveKey('workspace');
+});
 
 it('keeps the task VM check intent unchanged', function (): void {
     [$group, $subtask, $instance] = instanceCheckWorld();

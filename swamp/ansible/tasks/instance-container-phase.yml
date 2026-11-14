@@ -4,8 +4,19 @@
 - name: Name the container commands
   tags: [always]
   when: phase != 'node-service'
+  vars:
+    nic_filters: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance-nic-filters.json') | from_json }}"
   ansible.builtin.set_fact:
     incus_project: [incus, --project, "{{ container.project }}"]
+    # The NIC of a new container, in the one call that makes it: its address, both ACLs with reject defaults, and the address filters
+    # of instance-nic-filters.json, so it accepts only its own IPv4 and MAC address. Create and migrate write these; the native clone
+    # writes the same filters from instance_network.py's FILTERS.
+    nic_args: >-
+      {{ ['--device', 'eth0,ipv4.address=' ~ container.address,
+          '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
+          '--device', 'eth0,security.acls.default.egress.action=reject',
+          '--device', 'eth0,security.acls.default.ingress.action=reject']
+         + (['--device'] | product(['eth0,'] | product(nic_filters.items() | map('join', '=')) | map('join')) | flatten) }}
     resource_args: >-
       {{ (['--config'] | product(container.config.items() | map('join', '=')) | list | flatten)
          + ['--device', 'root,type=disk', '--device', 'root,path=/',
@@ -176,11 +187,7 @@
       when: phase == 'container' and container_read.rc != 0
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true',
-              '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
-              '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
+          {{ incus_project + ['init', container.image, container.name, '--config', 'security.idmap.isolated=true'] + nic_args + resource_args }}
       changed_when: true
 
 # Lifecycle mutations only add; removal belongs to host reconciliation from current Gateway intent.
@@ -219,11 +226,7 @@
       when: container_read.rc != 0
       ansible.builtin.command:
         argv: >-
-          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name,
-              '--device', 'eth0,ipv4.address=' ~ container.address,
-              '--device', 'eth0,security.acls=' ~ container.nic_acl ~ ',' ~ container.acl,
-              '--device', 'eth0,security.acls.default.egress.action=reject',
-              '--device', 'eth0,security.acls.default.ingress.action=reject'] + resource_args }}
+          {{ incus_project + ['copy', container.clone.source ~ '/' ~ container.clone.snapshot, container.name] + nic_args + resource_args }}
       changed_when: true
     - name: Read the copy's devices
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }

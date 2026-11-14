@@ -1,9 +1,10 @@
-"""Main delivery remains strict on the merged tree; fixtures report independently."""
+"""Main delivery and PR Required share the selected-fixture gate."""
 import copy
 import importlib.machinery
 import importlib.util
 import json
 import os
+import subprocess
 from pathlib import Path
 import tempfile
 import textwrap
@@ -32,7 +33,8 @@ def needs_for(name='delivery'):
     needs = {name: {'result': 'success'} for name in JOBS[name]['needs']}
     selected = {name: True for name in needs if name not in ('changes', 'gateway-release', 'fixtures')}
     needs['changes']['outputs'] = dict(jobs=json.dumps(selected), gateway_release='true',
-                                      fixture_shards='[{"name":"01"}]', fixture_capacity='[{"file":"overfull"}]')
+                                      fixture_shards='[{"name":"01"}]',
+                                      fixture_capacity='[{"file":"overfull"}]' if name == 'fixture-report' else '[]')
     return needs
 
 
@@ -55,32 +57,70 @@ class DeliveryGateTest(unittest.TestCase):
                         PROOF_BLOCKING='false', SLOW_CHECKS_BLOCKING='false'):
             exec(code, {})
 
-    def test_main_has_no_fixture_or_required_or_fullset_dependency_and_accepts_capacity(self):
-        self.assertEqual(set(JOBS['delivery']['needs']), set(JOBS['required']['needs']) - {'fixtures'})
-        self.assertNotIn('fixtures', JOBS['delivery']['needs'])
+    def test_main_and_pr_require_the_same_jobs_without_waiting_for_report_or_fullset(self):
+        self.assertEqual(set(JOBS['delivery']['needs']), set(JOBS['required']['needs']))
+        self.assertIn('fixtures', JOBS['delivery']['needs'])
+        self.assertNotIn('fixture-report', JOBS['delivery']['needs'])
         self.assertNotIn('required', JOBS['delivery']['needs'])
         self.assertIn("github.ref == 'refs/heads/main'", JOBS['delivery']['if'])
         self.assertIn('workflow_dispatch', JOBS['delivery']['if'])
         self.assertEqual(JOBS['cli-release']['needs'], 'delivery')
         self.assertIn('workflow_dispatch', JOBS['cli-release']['if'])
         self.assertEqual(JOBS['main-required']['needs'], 'delivery')
-        self.assertIn("needs.delivery.result == 'success'", JOBS['main-required']['if'])
+        self.assertIn("always()", JOBS['main-required']['if'])
+        self.assertNotIn("needs.delivery.result", JOBS['main-required']['if'])
         gateway_verify = JOBS['main-required']['steps'][-1]
         self.assertEqual(gateway_verify['env']['SOURCE_RUN_ID'], '${{ github.run_id }}')
         self.assertEqual(gateway_verify['run'], 'python3 bin/ci-delivery verify --sha "$GITHUB_SHA"')
         self.assertIn("github.ref != 'refs/heads/main'", JOBS['required']['if'])
         self.assertEqual(JOBS['required']['name'], "${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}")
         self.assertEqual(JOBS['main-required']['name'], "${{ github.ref == 'refs/heads/main' && 'Required checks' || 'Main required checks' }}")
-        # Main has real fixture jobs, but no fixture result is passed to the delivery gate.
         self.run_gate(needs_for())
 
-    def test_every_selected_fast_job_must_pass_even_when_fixtures_are_red(self):
+    def test_every_selected_job_including_fixtures_must_pass(self):
         for job in JOBS['delivery']['needs']:
             for state in ('failure', 'cancelled', 'skipped', 'pending'):
                 needs = needs_for()
                 needs[job]['result'] = state
                 with self.subTest(job=job, state=state), self.assertRaises(SystemExit):
                     self.run_gate(needs)
+
+    def test_main_fails_on_fixture_capacity_and_skips_only_an_empty_matrix(self):
+        for reuse in ('false', 'true'):
+            for shards in ([], [{'name': '01'}]):
+                for result in ('success', 'skipped', 'failure', 'cancelled', 'pending'):
+                    needs = needs_for()
+                    needs['changes']['outputs'].update(reuse=reuse, fixture_shards=json.dumps(shards))
+                    needs['fixtures']['result'] = result
+                    with self.subTest(reuse=reuse, shards=shards, result=result):
+                        if result == 'success' or (not shards and result == 'skipped'):
+                            self.run_gate(needs)
+                        else:
+                            with self.assertRaisesRegex(SystemExit, 'Required fixtures failed'):
+                                self.run_gate(needs)
+        needs = needs_for()
+        needs['changes']['outputs'].update(fixture_capacity='[{"file":"overfull"}]', fixture_shards='[]')
+        with self.assertRaisesRegex(SystemExit, 'Required fixture capacity exceeded.*overfull'):
+            self.run_gate(needs)
+
+    def test_main_required_runs_and_is_red_when_delivery_did_not_pass(self):
+        job = JOBS['main-required']
+        self.assertEqual(job['needs'], 'delivery')
+        self.assertEqual(job['if'], "always() && github.ref == 'refs/heads/main' && "
+                                   "contains(fromJSON('[\"push\", \"workflow_dispatch\"]'), github.event_name)")
+        guard = next(step for step in job['steps'] if step.get('name') == 'Require successful main delivery')
+        self.assertEqual(guard['env']['DELIVERY_RESULT'], '${{ needs.delivery.result }}')
+        for result in ('success', 'failure', 'cancelled', 'skipped', 'pending', ''):
+            with self.subTest(result=result):
+                checked = subprocess.run(['bash', '-e', '-c', guard['run']],
+                                         env=os.environ | {'DELIVERY_RESULT': result}, capture_output=True, text=True)
+                self.assertEqual(checked.returncode == 0, result == 'success')
+                if result != 'success':
+                    self.assertIn('Main delivery checks did not pass:', checked.stdout)
+        self.assertLess(job['steps'].index(guard), len(job['steps']) - 1)
+        self.assertEqual(JOBS['fixtures']['timeout-minutes'], 4)
+        self.assertEqual(JOBS['delivery']['timeout-minutes'], 2)
+        self.assertEqual(job['timeout-minutes'], 2)
 
     def test_only_explicit_false_permits_skips_and_selections_are_complete_booleans(self):
         for job in ('cli', 'gateway-tests', 'cli-tests', 'sdk-tests', 'gateway-static', 'api-reference'):
@@ -110,9 +150,9 @@ class EvidenceTest(unittest.TestCase):
         github.jobs.return_value = {delivery.DELIVERY: JOB} if jobs is None else jobs
         return github
 
-    def test_failed_workflow_run_can_release_only_after_exact_main_delivery_passes(self):
-        github = self.github(jobs={delivery.DELIVERY: JOB, 'Fixtures (01)': JOB | dict(conclusion='failure'),
-                                   delivery.REPORT: JOB | dict(status='in_progress', conclusion=None)})
+    def test_report_publication_failure_does_not_invalidate_passed_delivery(self):
+        github = self.github(jobs={delivery.DELIVERY: JOB, 'Fixtures (01)': JOB | dict(conclusion='success'),
+                                   delivery.REPORT: JOB | dict(status='completed', conclusion='failure')})
         self.assertEqual(delivery.delivery_evidence(github, SHA, '42')[0], RUN)
         source = (ROOT / '.github/workflows/orbit-cli-release.yml').read_text()
         condition = source.split('    if: >-\n', 1)[1].split('    runs-on:', 1)[0]
