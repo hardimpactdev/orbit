@@ -1,5 +1,5 @@
 order = 390
-source_sha256 = "c7859026db93323e75fc395b138ea89e8398bd3c9bd933c6816bbd10905651c0"
+source_sha256 = "c57e9833c9217efa063a3dfe5101fb9d6b548319ca956b5549629d17d46eee5f"
 cases = [
   "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook",
   "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",
@@ -17,9 +17,13 @@ cases = [
   "a nested-fleet freeze whose memory stays in RAM never stops: it resumes, closes the whole swap, removes the marker and fails",
   "a failed pause closes the inner cgroups it opened as well, and a full swap's stop leaves no record",
   "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record",
+  "a sleep of an Instance without a published Route has no Caddy site to check and still writes the marker",
+  "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened",
+  "a freeze makes the record's folder that a Node's reboot emptied",
+  "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it",
 ]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
-cost = 51
+cost = 67
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -55,3 +59,7 @@ inputs = [
   "a failed resume after a full swap fails the sleep with the container frozen behind its marker" = 3
   "an unreadable memory count after the pause keeps the container frozen behind its marker, without a reclaim" = 3
   "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record" = 2
+  "a sleep of an Instance without a published Route has no Caddy site to check and still writes the marker" = 2
+  "a find that fails part way still records what it opened, and a failed freeze closes every inner cgroup it opened" = 8
+  "a freeze makes the record's folder that a Node's reboot emptied" = 4
+  "a sleep of a container an earlier sleep froze reports what that sleep opened, so its wake closes it" = 2
