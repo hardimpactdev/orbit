@@ -103,6 +103,8 @@ use App\Models\ProcessDefinition;
 use App\Models\Project;
 use App\Models\Route;
 use App\Models\Schedule;
+use App\Models\WebSocketApp;
+use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Events\QueryExecuted;
@@ -849,6 +851,65 @@ describe('the databases of a move', function (): void {
             ])
             // No second database: the Instance keeps the one it has.
             ->and(DatabaseConnection::query()->where('owner_instance_id', $default->id)->pluck('id')->all())->toEqualCanonicalizing([$valkey->id, $database->id, $catalog->id]);
+    });
+
+    it('admits exactly the private endpoint of an attached websocket app, by its name, and nothing for an Instance without one', function (bool $attached, bool $public): void {
+        $node = containerDefaultNode();
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        $services = containerDefaultNode('Services', '10.44.0.3', false);
+        $services->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        if ($attached) {
+            $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => 'reverb-secret-value', 'credential_generation' => 1]);
+            // A public choice names the public app Route; only whether it is set matters to the access plan.
+            $route = $public ? Route::query()->create(['kind' => 'app', 'project_id' => $default->project_id, 'node_id' => $node->id,
+                'domain' => 'tool.example.com', 'provenance' => 'explicit', 'publication' => 'public', 'status' => 'pending']) : null;
+            WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $default->id, 'route_id' => $route?->id]);
+        }
+
+        $operation = migrateStart($default);
+
+        $container = ValidatedData::object($operation->input['container']);
+        if (! $attached || $public) {
+            // An Instance without a private app gets no target, no name and no rule: its plan is as it was.
+            expect($container)->not->toHaveKey('private_names')
+                ->and($container['config'])->not->toHaveKey('environment.NO_PROXY')
+                ->and($container)->not->toHaveKey('proxy_environment')
+                ->and($container['bridge_endpoints'])->toBe([])
+                ->and($container['acl_rules']['egress'])->toBe([])
+                ->and($container['firewall'])->toBe([])
+                ->and($operation->input['migrate']['environment']['targets'])->toBe([]);
+
+            return;
+        }
+        expect($container['private_names'])->toBe([['name' => 'reverb.orbit', 'host' => '10.44.0.3', 'port' => 8443]])
+            // The one NO_PROXY composer takes the plan's names, so the publisher connects on the exact path, not through the proxy.
+            ->and(explode(',', $container['config']['environment.NO_PROXY']))->toContain('reverb.orbit')
+            ->and($container['config']['environment.no_proxy'])->toBe($container['config']['environment.NO_PROXY'])
+            // The one guest writer gets the same composed value for the units and login shells.
+            ->and($container['proxy_environment'])->toBe(['NO_PROXY' => $container['config']['environment.NO_PROXY'], 'no_proxy' => $container['config']['environment.NO_PROXY']])
+            ->and(collect($container['environment'])->first(fn (string $line): bool => str_starts_with($line, 'NO_PROXY=')))->toEndWith(',reverb.orbit')
+            ->and($container['bridge_endpoints'])->toBe([['host' => '10.44.0.3', 'port' => 8443, 'docker' => false]])
+            ->and($container['acl_rules']['egress'])->toBe([
+                ['action' => 'allow', 'destination' => '10.44.0.3/32', 'protocol' => 'tcp', 'destination_port' => '8443', 'state' => 'enabled',
+                    'description' => 'Orbit websocket app']])
+            ->and($container['firewall'])->toBe([['rule' => 'allow', 'interface_in' => 'orbitinst0', 'from_ip' => '10.253.0.2', 'to_ip' => '10.44.0.3',
+                'to_port' => '8443', 'proto' => 'tcp', 'comment' => "orbit:instance-{$default->id}-websocket", 'route' => 'yes', 'interface_out' => 'orbit']])
+            // The env check reads the same plan: the address, and the name at the same port. Nothing at 443.
+            ->and($operation->input['migrate']['environment']['targets'])->toBe([['host' => '10.44.0.3', 'port' => 8443], ['host' => 'reverb.orbit', 'port' => 8443]])
+            ->and(json_encode($operation->input))->not->toContain('reverb-secret-value');
+    })->with(['no app' => [false, false], 'private app' => [true, false], 'public app' => [true, true]]);
+
+    it('admits no websocket endpoint on the container\'s own Node, whose Reverb listener refuses the bridge address', function (): void {
+        $node = containerDefaultNode();
+        $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => 'reverb-secret-value', 'credential_generation' => 1]);
+        WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $default->id]);
+
+        $container = ValidatedData::object(migrateStart($default)->input['container']);
+
+        expect($container)->not->toHaveKey('private_names')->not->toHaveKey('proxy_environment')
+            ->and($container['bridge_endpoints'])->toBe([]);
     });
 
     it('uses the container access endpoints for the guard despite a different target projection without copying credentials', function (): void {

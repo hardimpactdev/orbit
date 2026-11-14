@@ -2,12 +2,12 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand}.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
-  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
+  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
@@ -522,6 +522,7 @@ A container reaches only what this table lists. Everything else is dropped by it
 | Development ports | Any port from 1024 of a private Route, redirected to the Node's Caddy and proxied to the same port in a clone. Only the Node's Caddy reaches them in the container |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
+| Realtime | For an Instance that holds a private [websocket app](/reference/websocket-apps#reach-from-a-container): `reverb.orbit` on port 8443 only, at the address private DNS gives the name, by its [private name](#private-names-of-the-access-plan) |
 | Internet | The [egress proxy](#egress-and-dns) at port 3128 of the bridge's gateway address: every public host and port, over HTTP and `CONNECT` |
 | DNS | None. The proxy resolves every name |
 | Everything else | Dropped, including the Gateway, WireGuard peers and other Nodes' private services |
@@ -535,6 +536,18 @@ For a target on another Node, Orbit also adds the exact route allowance from the
 With only its own NIC ACL, 8080 answered and 3773 and 5173 were refused. With the shipped common-plus-own ACLs and `security.port_isolation=true`, neither scratch container reached the other's 3773 or 8080. A follow-up must separate the common egress rules from broad bridge ingress in the host ACL layout and NIC ACL composition; a default's own ACL does not yet narrow the common ingress.
 
 A container cannot reach the Gateway: its traffic would leave as its Node's WireGuard address, with the Node's Gateway access. The proxy refuses that path too.
+
+### Private names of the access plan
+
+A target of the access plan can carry a fleet private name. Today only an attached private websocket app does: `reverb.orbit` at port 8443. The plan lists each one under `private_names`, with the exact address and port it admits; the key is absent for every other Instance, so their plans stay as they were.
+
+- **Hosts file.** The container has no DNS server, and the egress proxy refuses private names. So Orbit writes each name with its address into the container's `/etc/hosts`.
+- **When.** The create, migrate and start phases write the names; deploy and wake run the start phase. `env:sync` writes them in a running container.
+- **Clones.** A clone holds no app of its default, so its create writes no name.
+- **Seed leftovers.** A clone resets the seed's proxy bypass before its first start. Its first start phase removes a hosts block from the seed.
+- **Owned lines.** Orbit owns only the lines between `# BEGIN Orbit private names` and `# END Orbit private names`. With no name, it removes them.
+- **No proxy.** Each name goes into `NO_PROXY` through the one place that composes the container's proxy settings, so the client connects on the exact path and not through the proxy.
+- **Env check.** The migrate's env check admits a name only at the port the plan gives it. Every other private name stays refused.
 
 ## Egress and DNS
 
@@ -604,9 +617,9 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 
 - each attached [Node service](/reference/processes-and-schedules#node-service-target-records) host that is not on the bridge;
 - for a [nested-fleet](#nested-fleet) container, its inner fleet (`10.45.0.1`, `10.45.0.0/24` and `10.232.2.0/24`): the container's own CLI then reaches its inner Gateway;
-- each name of the container intent's `private_names` list. No intent has that list yet, so it adds nothing today.
+- each name of the container intent's [`private_names`](#private-names-of-the-access-plan) list, such as `reverb.orbit` for an attached private websocket app.
 
-A normal container without these keeps the image's value only. Every writer of the value takes it from this builder.
+A normal container without these keeps the image's value only. Every writer of the value takes it from this builder. When the value is not the image's base, the intent carries it as `proxy_environment`. The create, migrate and start phases then hand it to the one guest writer, and so does `env:sync`. Units read it at their next start. `env:sync` restarts the web unit and the running Process units only when `.env` changed, as for a database attach, and never T3.
 
 | Reader | Source | When it reads a new value |
 | --- | --- | --- |
@@ -620,7 +633,7 @@ A nested-fleet container made before these keys, such as the Orbit default, keep
 
 A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
 
-So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. An Instance's own HTTP services, such as a private Reverb host, are not in `NO_PROXY` yet: the `private_names` source above will carry them. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
+So Composer, npm, Bun, Vite+, Git over HTTPS, curl, apt, Guzzle and Node's `fetch` use the proxy without further settings. A tool that ignores the variables fails at its name lookup, such as PHP's `file_get_contents` on a URL or a headless browser. The [private names of the access plan](#private-names-of-the-access-plan), such as `reverb.orbit` for an attached websocket app, are in `NO_PROXY`; other private hosts are not. UDP, so also QUIC, and other protocols get no route out. Git over SSH does not work. The container holds no GitHub credentials, so [Git in and out](#git-in-and-out) still goes through the Node.
 
 ## Lifecycle
 
@@ -1194,7 +1207,7 @@ The agents use their own subagents only. MCP servers come from the project's own
 
 ## Tasks in an Instance container
 
-This section is the target. Built today, for a Project with `nested_fleet` on: the start, the check ([Task Instance workspace](/reference/task-instance-workspace)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
+This section is the target. Built today, for a Project with `nested_fleet` on: the start, the check ([Task Instance workspace](/reference/task-instance-workspace)), a new implementer turn ([`tasks.copy_turn`](/cli/task/turn#a-task-that-runs-in-a-copy)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
 
 A task group runs in one Instance container. Everything else about a group, its subtasks, checks, reviews and reads, stays as [Tasks](/reference/tasks) describes.
 
@@ -1203,7 +1216,7 @@ A task group runs in one Instance container. Everything else about a group, its 
 | Start | `task:start` clones the Project's default Instance into the Instance `task-{id}`, branch `task-{id}`, as [Create](#create) does. The task is the clone's [owner](/reference/tasks#workspace-ownership) |
 | No default | Without an active default Instance of the Project on an `app-dev` Node, the start fails with `instance.default_missing` |
 | Attach | A group may name an existing Instance of its Project instead. The task drives its T3 and works on its branch, but does not own it |
-| Turns | Swamp drives the container's T3, as [Swamp drives T3](#swamp-drives-t3) specifies |
+| Turns | Swamp runs T3's own CLI in the container, as [Swamp drives T3](#swamp-drives-t3) specifies |
 | Workspace actions | The receipt, the Git evidence, the reviewer's reset and the checks run from the Node, with `incus exec` as `agent` in `/srv/workspace`. A check sees what the agent saw |
 | Preview | The Instance's Route |
 | Publish | Orbit reads the branch out on the Node and pushes it with a minted token, as [Git in and out](#git-in-and-out) describes |
@@ -1214,40 +1227,53 @@ A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a
 
 ## Swamp drives T3
 
-Swamp drives a container's T3 server through T3's own API. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver, which replaces the [`pi` driver](/reference/tasks#drivers) for tasks in Instance containers. The `pi` driver stays for task VMs until they go.
+Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver, which replaces the [`pi` driver](/reference/tasks#drivers) for tasks in Instance containers. The `pi` driver stays for task VMs until they go.
 
 ### Reach and authentication
 
-Swamp reaches the container's T3 as a Conn device does, with its own session.
+Stock T3 0.1.7 serves its thread tools at `/mcp`, but accepts there only an MCP client session. A session that `t3 auth session issue` makes, as the create's `Orbit Swamp` session, is refused. A session issued with the MCP client subject is held to `approval-required`, because the CLI cannot give it a higher mode. Only T3 itself issues a full-access MCP session, through its OAuth approval or in its own process. So Swamp uses T3's own CLI:
 
-- **Address.** The Instance's published URL: the Node's WireGuard address and the runtime row's `t3_port`. Conn devices use the same path. The firewall admits WireGuard peers and refuses task VMs.
-- **Session.** A second T3 session, `Orbit Swamp`, from the create flow.
-- **Vault.** Swamp keeps that session in the vault and reads it in each step that calls T3.
-- **Session scope.** The session never enters a run or the Gateway's records. Destroy revokes it. Orbit does not renew it yet, because nothing uses it: it ends after 30 days.
-- **MCP.** `POST <url>/mcp` with `Authorization: Bearer <session>`.
-- **WebSocket.** `POST <url>/api/auth/websocket-ticket` with the same bearer gives a ticket. Swamp then opens `/ws?orchestrationProtocol=2&wsTicket=<ticket>` and sends Effect RPC requests.
-- **Workspace.** File and Git actions in the container go over SSH to the Node, then `incus exec` and `incus file pull`. No token enters the container.
+- **Path.** One Ansible phase on the container's Node runs `incus exec` into the container, then `runuser -u agent`. The shell is not a login shell.
+- **Groups.** `runuser` keeps the agent's groups. `incus exec --user` would drop the `work` group, which owns the checkout's Git folder.
+- **Session.** Each `t3 thread` command issues its own full-access session inside the container.
+- **Session end.** The command calls T3 on its loopback address. At its exit, it revokes the session.
+- **No credential outside.** No T3 session reaches the Node, Swamp, the vault or the Gateway.
+- **Orbit Swamp session.** The create still issues it and keeps it in the vault. The turn does not use it. Destroy revokes it. Orbit does not renew it, so it ends after 30 days.
+- **Workspace.** File and Git actions in the container go over SSH to the Node, then `incus exec`. No token enters the container.
 
 ### Calls
 
-Swamp uses these T3 calls and no others.
+The phase uses these commands, as `agent` in `/srv/workspace`.
 
-| Purpose | Call | Input that Orbit sets |
+| Purpose | Command | What Orbit sets |
 | --- | --- | --- |
-| Find the workspace project | MCP `t3_project_list` | The project at `/srv/workspace`, which the create flow adds |
-| Start a thread with its first turn | MCP `t3_thread_launch` | `projectId`, `title`, `message`, `modelSelection: {instanceId: codex or claudeAgent, model, options: {effort}}`, `runtimeMode: full-access`, `interactionMode: default`, `workspaceStrategy: {type: root}`, `clientRequestId` |
-| Send a later turn | MCP `t3_thread_send` | `threadId`, `message`, `mode: queue`, `clientRequestId` |
-| Wait for the turn | MCP `t3_thread_wait` | `threadId`, `runId`, `timeoutMs`. It returns when the run ends, with the run's latest `runId` |
-| Read a question | MCP `t3_pending_request` | `action: read`, for a `waiting` run |
-| Read the transcript | MCP `t3_thread_read` | `threadId`, `view: activity`, paged with `afterPosition` |
-| Read state and usage | WebSocket `orchestration.getThreadProjection` | `threadId`. Gives the run's status, failure, retry and provider turns with their token usage |
-| Interrupt | MCP `t3_thread_interrupt` | `threadId`, `runId`. If the run has not ended 30 seconds later, WebSocket `orchestration.forceStopThread` with `threadId` and `runId` |
+| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the [turn model](#turn-model), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
+| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title, also when the bound cut the wait before T3 printed the thread id |
+| Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages |
 
-`clientRequestId` is `operation-{id}`. A retried launch or send with the same id and the same session returns the same run and starts no second turn, as a repeated Pi send key does. T3 keeps these ids per session, so a future renewal of the `Orbit Swamp` session must not run while a turn operation of the Instance runs.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
 
-`runtimeMode: full-access` holds only while the session carries no mode limit and the server's managed policy sets no lower maximum. The image sets neither.
+### Turn model
 
-A wait that times out reads the run's status. While it is still running, Swamp waits again. A `waiting` run ends the turn as `blocked`: Swamp reads the question with `t3_pending_request` and records it as the receipt's question.
+The Gateway's `ORBIT_TASKS_COPY_TURN_MODEL` names the provider and model of every turn, as `PROVIDER/MODEL`. The default is `claudeAgent/claude-opus-5-5`: a container reaches only the Claude model forwarder. T3 picks the effort.
+
+### Gaps of the CLI path
+
+These hold until a T3 server gives Swamp a full-access MCP session:
+
+- **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
+- **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
+- **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
+- **No effort setting.** T3 runs the model at its own default effort.
+- **One new implementer thread per turn.** A reviewer turn, a continued thread and a caller's model are refused with `tasks.copy_turn_unsupported`.
+
+### Hold after a turn that may still run
+
+A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
+
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A turn cancelled before its run step reports holds the group the same way.
+
+The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
 ### Threads and roles
 
@@ -1531,23 +1557,41 @@ The run deploys the release commit itself. A commit missing from the Project's r
 
 A Swamp step that exits nonzero keeps no output. So a failed fleet phase writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body.
 
-The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway and waits for the three agents. Then it converges the Nodes, and only then waits for Doctor.
+The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 
 #### What a refresh skips
 
-A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest, made from Git object IDs of the checkout. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
+A refresh does only the parts whose inputs changed, as the task VM refresh did. Each part has a digest. The refresh compares them with its record, `/var/lib/orbit/fleet-refresh.json` in the outer container.
 
 | Part | Digest | When it runs |
 | --- | --- | --- |
-| Migrate the nested Gateway, restart its services | `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
-| Wait for the three agents | | The services restarted, or the converges run |
-| Base converge of the three nested Nodes | `apps/gateway`, `apps/agent/contract`, `swamp` and the fleet intent | The digest differs |
+| Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
+| Wait for the three agents | | The converges run |
+| Base converge of the three nested Nodes | The `swamp` files a base converge reads, the nested Gateway's digest of each Node's base intent, and the fleet intent | The digest differs, a digest cannot be read, or the last converge that ran is more than 7 days old |
 | Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
-The converge digest is coarse on purpose. The nested Gateway builds the converge intent from its code, and the converge runs `swamp`. A narrower digest could miss an input, and then a nested Node would keep old files.
+The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. It has three inputs:
+
+| Input | What it holds |
+| --- | --- |
+| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and its imports, the playbook and the task files it reaches, and the play's configuration and modules |
+| The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target and the CLI plan |
+| The fleet intent | The fleet's names, layout, checkout and proxy |
+
+A cover test, `swamp/tests/fleet_converge_inputs_test.ts`, walks the playbook and the imports. It fails on a file that the list does not hold.
+
+After the migrate, the refresh runs `php artisan orbit:node-converge-digest --base gateway app-dev app-prod` in the nested Gateway. The command builds each intent as `node.converge` with `base: true` does. It admits no Operation, makes no execution copy and writes nothing.
+
+A file list cannot follow the Gateway code that builds an intent: through its models, that code reaches much of the Gateway. So the nested Gateway hashes the intent itself. The intent holds no time, token, signed URL or random id. The Operation id and the agent verifier live in the execution copies, which are not part of it.
+
+The list leaves out four include groups of the playbook: roles, software, Tools and the network. Each runs only when the intent selects roles, Tools or a network, and a base intent never does. The cover test fails when the guard of such an include changes.
+
+A digest that cannot be read makes the converge run and is not recorded, so the next refresh runs it too. The record also holds `converged`, the time of the last converge that ran. When that is more than 7 days old, the converge runs whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+
+When the converge runs, the three Nodes converge one by one. They cannot run side by side: every step of the converge workflow has a fixed behavior name. Swamp locks each behavior, so a second run would wait for the first one's lock and fail after 60 s. A failed converge fails the refresh, and the run restores the old seed, as for any failed step.
 
 A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 
@@ -1578,7 +1622,7 @@ The record is owned by root, mode 0644, in a root-owned folder. The workspace us
 
 The write goes to a file beside the record, and a rename puts it in place. So a cut write leaves no record, never a partial one. The write reads stdin as a stream. The container has an isolated id map, so it refuses a command that opens `/dev/stdin` by path. A source check fails when an Ansible task or workflow step behind `incus exec` opens stdin by path. A task that runs in a virtual machine is exempt.
 
-The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `changed` (the tasks the converges changed), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
 
 When `base` stays, the seed is taken while the inner fleet runs. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 

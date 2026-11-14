@@ -1,0 +1,130 @@
+---
+# One agent turn in a task copy (docs/cli/task/turn.mmd). T3's own CLI starts a thread with the admitted prompt, waits for its
+# run and reads the thread back. The CLI issues its T3 session inside the container and revokes it at exit, so no credential
+# reaches the Node, Swamp or the Gateway. The title names the Orbit thread, so a run cut by its bound is still found. Ansible keeps the raw replies out of its log and writes them to the run folder only;
+# `@nckrtl/task-copy-turn` bounds and redacts them.
+- name: Address the recorded copy Node
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    address_target: "{{ intent.ssh_execution.target }}"
+    address_identity: "{{ intent.ssh_execution.identity_file }}"
+    address_group: task_copy_node
+  tasks:
+    - name: Address the Node
+      ansible.builtin.import_tasks: tasks/address-node.yml
+
+- name: Run the turn in the copy
+  hosts: task_copy_node
+  gather_facts: false
+  become: true
+  vars:
+    run: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}"
+    intent: "{{ lookup('ansible.builtin.file', run ~ '/intent.json') | from_json }}"
+    # Non-login, as agent with its groups: `incus exec --user` would drop the `work` group that owns the checkout's Git folder.
+    copy_exec: >-
+      {{ ['incus', '--project', intent.runtime.project, 'exec', '--cwd', '/srv/workspace', intent.runtime.name, '--',
+          '/usr/sbin/runuser', '-u', 'agent', '--', '/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/local/bin:/usr/bin:/bin'] }}
+  tasks:
+    - name: Validate the admitted turn
+      ansible.builtin.assert:
+        that:
+          - intent.runtime.project | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
+          - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
+          - intent.turn.t3 | default('') is match('^/opt/orbit-agent/current/agent/bin/t3$')
+          - intent.turn.provider | default('') is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
+          - intent.turn.model | default('') is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
+          - intent.turn.title | default('') is match('^Orbit task [1-9][0-9]* thread [1-9][0-9]*$')
+          - intent.turn.seconds | default(0) | int >= 60 and intent.turn.seconds | int <= 3600
+          - intent.turn.prompt | default('') | length > 0
+        fail_msg: tasks.copy_turn_invalid
+    # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
+    - name: Reach the copy as agent
+      ansible.builtin.command:
+        argv: "{{ copy_exec + ['/usr/bin/true'] }}"
+      changed_when: false
+    # Each evidence file is written as soon as its command ends, so a phase that the outer bound or a cancel cuts still tells
+    # whether a turn was launched and how far it came.
+    - name: Mark the turn as launched
+      ansible.builtin.copy:
+        content: "{}"
+        dest: "{{ run }}/launch.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    - name: Start the thread and wait for its run
+      ansible.builtin.command:
+        argv: >-
+          {{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread', 'start',
+              '--provider', intent.turn.provider, '--model', intent.turn.model, '--title', intent.turn.title, '--wait', '--json',
+              '/srv/workspace', '-'] }}
+        stdin: "{{ intent.turn.prompt }}"
+        stdin_add_newline: false
+      register: turn_start
+      failed_when: false
+      changed_when: true
+      no_log: true
+    - name: Write the start evidence
+      ansible.builtin.copy:
+        content: "{{ {'start_exit': turn_start.rc, 'start': turn_start.stdout | default('')} | to_json }}"
+        dest: "{{ run }}/start.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    - name: Read the thread back
+      block:
+        - name: Find the thread by its title
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '120', intent.turn.t3, 'thread', 'list', '--project', '/srv/workspace', '--json'] }}"
+          register: turn_list
+          failed_when: false
+          changed_when: false
+          no_log: true
+        - name: Name the thread of this turn
+          ansible.builtin.set_fact:
+            turn_found: >-
+              {{ ((turn_list.stdout | from_json) if turn_list.rc == 0 else [])
+                 | selectattr('title', 'equalto', intent.turn.title) | list }}
+          no_log: true
+        - name: Show the thread
+          when: turn_found | length == 1
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '120', intent.turn.t3, 'thread', 'show', '--messages', '200', '--json', (turn_found | first).threadId] }}"
+          register: turn_show
+          failed_when: false
+          changed_when: false
+          no_log: true
+      rescue:
+        # A list that is not JSON reads as no thread found: the start evidence above still decides the turn.
+        - name: Read no thread
+          ansible.builtin.set_fact:
+            turn_found: []
+            turn_list_unreadable: true
+      always:
+        - name: Write the read evidence
+          ansible.builtin.copy:
+            content: >-
+              {{ {'list_exit': none if turn_list_unreadable | default(false) else turn_list.rc | default(none),
+                  'found': turn_found | default([]) | length,
+                  'status': ((turn_found | first).status | default(none)) if turn_found | default([]) | length == 1 else none,
+                  'show_exit': turn_show.rc | default(none), 'show': turn_show.stdout | default('')} | to_json }}
+            dest: "{{ run }}/read.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"

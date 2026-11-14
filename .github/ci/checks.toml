@@ -194,9 +194,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 1804
-slices = 43
+cost = 1904
+slices = 46
 inputs = [
+  "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -206,59 +207,61 @@ inputs = [
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
-# One unit per case. Refreshed-boundary cases use the completed four-worker local
-# measurements in tools/tests/ci-fleet-cost-evidence.json: ceil(seconds * 2.1) + 1.
-# They are ESTIMATEs until hosted calibration; the planner adds 6s startup.
-# Earlier cases retain their prior estimates: hosted observations from runs
-# 43529816432 and 43530610727, or the marked local estimates below.
+# One unit per case. Refreshed-boundary and seeded-record cases use the completed
+# four-worker local measurements in tools/tests/ci-fleet-cost-evidence.json:
+# ESTIMATE: ceil(seconds * 2.1) + 1; the planner adds 6s startup.
+# Other cases retain their earlier hosted or explicitly marked local estimates.
 [fixture.case_costs]
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 40
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
-  "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: local 13s x 3, plus 1s
+  "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: prior local x 3, plus 1s
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
   "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 50
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79
-  "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 35
+  "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
   "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 44
   "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
   "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
   "a fleet built from the rules has the live shape, with boot.autostart true" = 31
   "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 54
-  "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: local 7s x 3, plus 1s
-  "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: local 25s x 3, plus 1s
+  "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: prior local x 3, plus 1s
+  "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: prior local x 3, plus 1s
   "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 77
   "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 85
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 20
-  "the saved refreshed fleet boundary matches a real first refresh and start" = 82
-  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 27
-  "a changed input runs only its due parts: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 47
-  "the next refresh repeats no part: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 37
-  "a changed input runs only its due parts: the code without a pending migration migrates, restarts and converges, and keeps base" = 36
-  "the next refresh repeats no part: the code without a pending migration migrates, restarts and converges, and keeps base" = 42
-  "a changed input runs only its due parts: swamp converges" = 35
-  "the next refresh repeats no part: swamp converges" = 39
-  "a changed input runs only its due parts: the agent contract migrates, restarts and converges" = 30
-  "the next refresh repeats no part: the agent contract migrates, restarts and converges" = 44
-  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 53
-  "a converge with changed tasks retakes base only for the changed Node and Gateway" = 47
-  "a converge without change counts retakes all three bases" = 50
-  "a missing base is retaken without another converge" = 48
-  "a failed refresh that changed a Node removes its old record and writes none" = 22
-  "a refresh after a failed run converges every part and retakes all three bases" = 63
-  "a deleted record runs every part and never fails the refresh" = 38
-  "a malformed record runs every part and never fails the refresh" = 42
-  "an unreadable record runs every part and never fails the refresh" = 40
-  "a failed digest read runs every part and never fails the refresh" = 32
-  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 46
-  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 31
-  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 24
+  "the saved refreshed fleet boundary matches a real first refresh and start" = 78
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 25
+  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 38
+  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 39
+  "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 28
+  "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 38
+  "a changed input runs only its due parts: a swamp file the base converge reads converges" = 31
+  "the next refresh repeats no part: a swamp file the base converge reads converges" = 38
+  "a changed input runs only its due parts: the agent contract migrates and restarts" = 25
+  "the next refresh repeats no part: the agent contract migrates and restarts" = 41
+  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 55
+  "a converge with changed tasks retakes base only for the changed Node and Gateway" = 45
+  "a converge without change counts retakes all three bases" = 54
+  "a missing base is retaken without another converge" = 46
+  "a failed refresh that changed a Node removes its old record and writes none" = 23
+  "a refresh after a failed run converges every part and retakes all three bases" = 58
+  "a deleted record runs every part and never fails the refresh" = 43
+  "a malformed record runs every part and never fails the refresh" = 45
+  "an unreadable record runs every part and never fails the refresh" = 42
+  "a failed digest read runs every part and never fails the refresh" = 31
+  "a moved base intent of one Node converges the three Nodes one by one, and the result names why" = 40
+  "a converge older than seven days runs although no input changed, and the result names it stale" = 45
+  "an unreadable base intent digest converges, names why, and records no converge digest" = 43
+  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 49
+  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
+  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 28
   "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3927
+cost = 3957
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -269,8 +272,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 70 slices give each of the 70 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 70
+# 71 slices give each of the 71 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 71
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -328,6 +331,7 @@ inputs = [
   "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 54 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 34.2-55.3s
   "the agent can commit with its default identity and keeps each configured identity value" = 67 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 32.7-67.1s
   "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes" = 41 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 24.5-41.1s
+  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none" = 30 # ESTIMATE: local 26s, one create and four starts
   "start refuses a NIC with missing ACL before starting the container" = 35 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 20.1-34.4s
   "start refuses a NIC with permissive default before starting the container" = 36 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.9-34.6s
   "start refuses a NIC with bridge union ACL before starting the container" = 35 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 16.3-33.9s
@@ -426,14 +430,10 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_image_test.ts"
-# Exact-head Beast receipt ede21ef9: /fast/scratch/stock-fix-image-green.log (9 cases passed).
-# Hosted forecasts are ceil(Beast seconds * 2.1) + 1; larger completed hosted costs stay.
-# The renamed first case retains its existing after-merge classification (158s hosted, run 43000765953).
-# The new full replacement case measured 70s on Beast: 148s estimated body + 6s startup exceeds the 150s lane.
-# The wrong-digest case ran 180.0s on a hosted PR shard (run 43515415287, the ceiling) and 81-92s on Beast on main and this branch.
-after_merge_cases = ["a new image definition takes the stable alias while retaining the old image", "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote", "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task, and a later good build clears it"]
-cost = 946
-slices = 12
+# ESTIMATE: completed Beast run, four workers, each case ceil(local seconds x 2.1) + 1.
+# Cases use verified boundaries; every case remains in Required. No timeout increase.
+cost = 712
+slices = 30
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -463,24 +463,43 @@ inputs = [
   "swamp/ansible/transport-exit-codes.json",
   "swamp/tests/_support/fixture_supervisor.py",
   "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/_support/host_image_boundary.ts",
+  "swamp/tests/fixtures/host-image-boundaries.json",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
 ]
 
 [fixture.case_costs]
-  "a Node without its Instance pool is refused before anything changes" = 3 # completed body 1.403s, run 43010311414; larger completed history retained; ede21ef9 Beast 0.607s gives 3s estimate
-  "a directory pool skips the clone probe: a copy there is a full copy" = 89 # completed unit 94.1s less 6s startup, run 43414301389; earlier: completed unit 93.9s less 6s startup, run 43391971168; earlier: completed body 62.340s, run 43010311414; larger completed history retained; ede21ef9 Beast 26.0s gives 56s estimate
-  "an image that keeps a sudo path is never published" = 91 # completed unit 96.7s less 6s startup, run 43391971168; earlier: completed body 64.008s, run 43010311414; larger completed history retained; ede21ef9 Beast 27.0s gives 58s estimate
-  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 77 # completed unit 82.1s less 6s startup, run 43414301389; earlier: completed body 45.934s, run 43010311414; larger completed history retained; ede21ef9 Beast 22.0s gives 48s estimate
-  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 56 # completed body 41.131s, run 43010311414; larger completed history retained; ede21ef9 Beast 17.0s gives 37s estimate
-  "prepared publication clears inherited stock build ownership" = 80 # stopped at the shard deadline after 85.3s, a lower bound, run 43414301389; earlier: ESTIMATE: ede21ef9 Beast 27.0s * 2.1, rounded up + 1s
-  "a prior prepared-image builder is refused by exact name and recipe without deletion" = 63 # completed unit 68.5s less 6s startup, run 43414301389; earlier: ESTIMATE: ede21ef9 Beast 23.0s * 2.1, rounded up + 1s
-  "a Node without the nested-fleet switch runs the exact command lines of the normal image" = 81 # completed unit 86.4s less 6s startup, run 43414301389; earlier: ESTIMATE: Beast 30s * 2.1, rounded up + 1s
-  "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages" = 132 # ESTIMATE: Beast 62s * 2.1, rounded up + 1s; with 6s startup within the 150s lane
-  "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task" = 79 # ESTIMATE: Beast 37s * 2.1, rounded up + 1s (one converge, no repair run)
-  "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image" = 91 # completed unit 96.5s less 6s startup, run 43414301389; earlier: ESTIMATE: Beast 30s * 2.1, rounded up + 1s
-  "a hosting intent without the nested-fleet image builds only the normal image" = 103 # completed unit 108.5s less 6s startup, run 43414301389; earlier: ESTIMATE: Beast 33s * 2.1, rounded up + 1s
-  "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 1 # ESTIMATE: Beast 0.02s, no Ansible; rounded up
+  "the saved dir host system boundary matches the shipped tasks" = 33
+  "the saved dir host prepare boundary matches the shipped tasks" = 34
+  "the saved zfs host system boundary matches the shipped tasks" = 34
+  "the saved zfs host prepare boundary matches the shipped tasks" = 40
+  "the saved nested host system boundary matches the shipped tasks" = 40
+  "the saved nested host prepare boundary matches the shipped tasks" = 49
+  "the normal image on a nested host reaches the verified nested-build boundary" = 17
+  "a passed nested-fleet image build repeats the host system stage without changes" = 24
+  "a passed nested-fleet image build repeats the host prepare stage without changes" = 39
+  "a passed nested-fleet image build repeats the host normal stage without changes" = 6
+  "a passed nested-fleet image build repeats the host nested stage without changes" = 7
+  "a passed nested-fleet image build repeats the host finish stage without changes" = 7
+  "a new image definition takes the stable alias while retaining the old image" = 21
+  "a Node without its Instance pool is refused before anything changes" = 4
+  "a directory pool skips the clone probe: a copy there is a full copy" = 42
+  "an image that keeps a sudo path is never published" = 14
+  "orbit-instance-build refuses an inherited unguarded profile NIC before starting" = 35
+  "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting" = 18
+  "prepared publication clears inherited stock build ownership" = 22
+  "a prepared-image replacement rechecks the local socket despite the default remote" = 53
+  "a failed replacement cleans up through the rechecked local socket and leaves the default remote intact" = 38
+  "a prior prepared-image builder is refused by exact name and recipe without deletion" = 4
+  "a Node without the nested-fleet switch runs the exact command lines of the normal image" = 20
+  "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages" = 22
+  "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task" = 14
+  "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task" = 22
+  "a good nested-fleet image build after a failed digest publishes the image and clears the record" = 22
+  "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image" = 11
+  "a hosting intent without the nested-fleet image builds only the normal image" = 18
+  "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 2
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
@@ -1112,6 +1131,37 @@ inputs = [
 [fixture.case_costs]
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
+
+[[fixture]]
+file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
+cost = 2
+# Local Deno case times on Beast rounded up; not CI measurements.
+inputs = [
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/task-copy-turn/mod.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_copy_turn_test.ts"
+cost = 18
+# Local Deno case times on Beast rounded up by one second; not CI measurements.
+slices = 1
+inputs = [
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/task-copy-turn.yml",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/manifest.yaml",
+  "swamp/workflows/workflow-operation-task-copy-turn.yaml",
+]
+
+[fixture.case_costs]
+  "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 1
+  "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 3
+  "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 6
+  "an intent outside the admitted shape runs nothing in the copy" = 4
+  "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
@@ -3073,6 +3123,14 @@ inputs = [
   "swamp/ansible/instance_env_keys.py",
   "swamp/ansible/instance-connection-environment.yml",
   "swamp/workflows/workflow-operation-instance-connection-environment.yaml",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_connection_websocket_test.py"
+cost = 6
+slices = false
+inputs = [
+  "swamp/ansible/instance-connection-environment.yml",
 ]
 
 [[fixture]]

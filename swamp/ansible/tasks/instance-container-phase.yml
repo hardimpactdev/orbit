@@ -419,6 +419,31 @@
     - name: Finish applying changed PHP settings
       ansible.builtin.meta: flush_handlers
 
+# The access plan's private names, such as `reverb.orbit` for an attached websocket app (docs/reference/development-containers.md#private-names-of-the-access-plan).
+- name: Write the private names of the access plan
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool
+  ansible.builtin.include_tasks:
+    file: instance-private-names.yml
+    apply:
+      tags: [container, clone, start]
+  vars:
+    private_names_root: "{{ as_root }}"
+    private_names_push: "{{ incus_project }}"
+    private_names_container: "{{ container.name }}"
+    private_names: "{{ container.private_names | default([]) }}"
+
+# The composed NO_PROXY, present only when it is not the image's base (InstanceNodeServiceTargets::proxyEnvironment, the one builder),
+# for the units and login shells. instance_node_services.py `proxy` is the one writer; a unit reads the value at its next start.
+- name: Write the composed proxy environment
+  tags: [container, clone, start]
+  when: phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container.proxy_environment is defined
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + as_root + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py'), 'proxy'] }}"
+    stdin: "{{ {'proxy_environment': container.proxy_environment} | to_json }}"
+  register: composed_proxy_write
+  changed_when: composed_proxy_write.rc == 0 and (composed_proxy_write.stdout | from_json).changed
+
 - name: Stop the container
   tags: [stop]
   when: phase == 'stop' and container_read.rc == 0 and (container_read.stdout | from_json).status == 'Running'

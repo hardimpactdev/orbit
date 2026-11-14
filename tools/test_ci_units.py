@@ -368,7 +368,7 @@ class TableTest(unittest.TestCase):
             path = Path(scratch) / 'checks.toml'
             source = (ROOT / '.github/ci/checks.toml').read_text()
             entry = next(f for f in tomllib.loads(source)['fixture']
-                         if f['file'] == 'swamp/tests/ansible_instance_host_image_test.ts')
+                         if f.get('after_merge_cases'))
             excluded = entry['after_merge_cases'][0]
             changed = source.replace(json.dumps(excluded), json.dumps('renamed case no longer in source'))
             self.assertNotEqual(source, changed)
@@ -743,6 +743,24 @@ class PopulationTest(unittest.TestCase):
                               if name in evidence['case_seconds'] else fixtures[file]['case_costs'][name] for name in cases)
                 heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
             self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
+        self.assertCountEqual(seen, fixtures[file]['cases'])
+
+    def test_image_cases_all_remain_required_and_have_ninety_second_planning_headroom(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_host_image_test.ts'
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(result['deferred'])
+        self.assertFalse(result.get('excluded'))
+        self.assertFalse(result.get('capacity'))
+        seen = []
+        for shard in result['shards']:
+            for unit in shard['units']:
+                if unit.split('#')[0] != file:
+                    continue
+                cases = units.case_names(unit, fixtures)
+                self.assertEqual(len(cases), 1)
+                self.assertLessEqual(fixtures[file]['case_costs'][cases[0]] + budget['slice_startup_seconds'], 90)
+                seen.extend(cases)
         self.assertCountEqual(seen, fixtures[file]['cases'])
 
     def test_container_host_prepare_packs_completed_case_costs_individually(self):

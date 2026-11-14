@@ -1,0 +1,69 @@
+sequenceDiagram
+  %% Target design (orchestrator, 2026-11-13, plan A): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container.
+  %% status: draft
+  %% command: task:turn
+  %% kind: tasks.copy_turn
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=amber
+  participant CLI as CLI / MCP<br/>orbit · MCP tools
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve
+  participant N as Task copy<br/>incus exec · T3
+  CLI->>GW: task:turn TASK<br/>--role=implementer
+  %%> Command:
+  %%> - `orbit task:turn SUBTASK --role=implementer --prompt="Run Doctor and commit a note." --thread=new`
+  Note over GW: Admit the turn<br/>owned copy · current subtask
+  %%> What it does:
+  %%> - `InstancePlacement::taskRuntime` reads the Project's `nested_fleet` flag once: on, the turn runs in the group's copy as `tasks.copy_turn`; off, it is the task VM turn (`turn.mmd`)
+  %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt
+  %%> - records a new implementer thread with the driver `t3`, the copy's Node and the model of `ORBIT_TASKS_COPY_TURN_MODEL` (default `claudeAgent/claude-opus-5-5`); T3 picks the effort
+  %%> - the intent names the copy's container, the T3 command, the model, the 3,600 s bound and a title that names the thread; no credential and no vault key
+  %%> Requirements:
+  %%> - the group owns its copy and the copy is `active`; otherwise `tasks.no_workspace` or `tasks.copy_not_ready`, and nothing is recorded
+  %%> - a new implementer thread with the copy's model; a reviewer turn, a continued thread or a caller's model answers `tasks.copy_turn_unsupported`
+  %%> - no other Operation of the group runs; otherwise `operation.target_busy`
+  %%> - no earlier turn of the group may still run in the copy: a turn whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`
+  GW->>SW: Start one run<br/>operation-task-copy-turn
+  GW-->>CLI: 202 Accepted<br/>Operation recorded
+  %%> Result:
+  %%> - follow the Operation while Swamp runs the turn
+  Note over SW: input
+  %%> What it does:
+  %%> - writes the copy's container, the SSH target and the turn into the private run folder
+  SW->>N: Run the turn
+  %%> What it does:
+  %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
+  %%> - first one `true` in the copy: a copy the phase cannot reach fails before anything is launched, so its group stays free
+  %%> - `t3 thread start --provider --model --title --wait --json /srv/workspace -` with the prompt on stdin, bounded by `timeout` at 3,600 s
+  %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back
+  %%> - writes each evidence file as soon as its command ends: the launch mark, the start's end, the read; a cut phase still tells whether a turn was launched
+  %%> - T3's CLI issues its own full-access session inside the copy and revokes it when it exits; the replies stay in the run folder, never in a log
+  Note over SW: result
+  %%> What it does:
+  %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`
+  %%> - keeps the message text of the thread, redacted and bounded to 256 KiB; T3's CLI gives no tool items and no token use
+  %%> - records whether T3's run is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state
+  Note over SW: cleanup
+  %%> What it does:
+  %%> - removes the private run folder
+  Note over SW: outcome
+  %%> What it does:
+  %%> - native assert: the turn is done
+  alt the turn is done
+    SW-->>GW: Native terminal result<br/>capture result
+    Note over GW: Record the thread<br/>state · T3 thread · transcript
+    %%> Result:
+    %%> - the thread's state and error, T3's thread id as its external id, and the transcript in the Gateway's archive: `task:agent:show` reads it after the copy is gone
+    %%> - token metrics stay null
+  else the turn failed or ran past its bound
+    SW--xGW: Native failed result<br/>error code
+    %%> Result:
+    %%> - the thread is `failed` with T3's status as its error, and the transcript T3 had
+    %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy: the stock CLI cannot stop a run. The group then refuses more turns and checks with `tasks.copy_turn_unended`; `task:cancel` destroys the copy, and the run ends with it
+  end
+  loop until terminal
+    CLI->>GW: operation:show<br/>Operation number
+  end

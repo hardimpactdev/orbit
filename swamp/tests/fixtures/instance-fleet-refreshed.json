@@ -6,7 +6,7 @@
       "files": {
         "/etc/wireguard/wg-nested.key": "operator-private-key",
         "/run/orbit-club/swamp-club-api-key": "club-key-value-that-never-leaves-the-file",
-        "/var/lib/orbit/fleet-refresh.json": "{\"code\": \"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\", \"converge\": \"1c7dd6e6ca1154afae3ffc34fd86ad176918b91299722aa2cc5eb9e6d3bcf48b\"}"
+        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge\":\"fc67d4e479eb45c252e67e5193438c49345e37e66610eeaaf48ba3731b5d2ac5\",\"converged\":\"@CONVERGED@\"}"
       },
       "modes": {
         "/var/lib/orbit/fleet-refresh.json": "root:root 0644"
@@ -386,17 +386,25 @@
     "restartedAfterMigrate": true
   },
   "records": {
+    "default": {
+      "code": "0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4",
+      "converge": "fc67d4e479eb45c252e67e5193438c49345e37e66610eeaaf48ba3731b5d2ac5",
+      "converged": "@CONVERGED@"
+    },
     "code": {
       "code": "7d8659a12b3665484999e2bec8e78ab05f8487edb8b5d1b29d49e2aef3776f1a",
-      "converge": "f9a4717bbdb16aae0f1a217d00fa373da6a72531d9dc77a7dc62a8241f308176"
+      "converge": "fc67d4e479eb45c252e67e5193438c49345e37e66610eeaaf48ba3731b5d2ac5",
+      "converged": "@CONVERGED@"
     },
     "swamp": {
       "code": "0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4",
-      "converge": "1f7437bc925aa5ed75b7119ed9fb238f7d92b15dd2ea1b2c35fb8a675714d910"
+      "converge": "a3e35c17fd8406bad5e77fa1c6f37d2f12911b6e9af5d7472a24ba3127479301",
+      "converged": "@CONVERGED@"
     },
     "agent": {
       "code": "85739e596b3f7e518947df628ef8e05d87f3191ad0f4154b67f5b91c8cea1533",
-      "converge": "d6d269ef2e7dbcb2e7524cbea0295f8a0ef4b331d19c766b200388c50a67ad9b"
+      "converge": "fc67d4e479eb45c252e67e5193438c49345e37e66610eeaaf48ba3731b5d2ac5",
+      "converged": "@CONVERGED@"
     }
   }
 }

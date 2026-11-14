@@ -14,7 +14,37 @@ The VM receives the title, brief and deliverables of the subtask, then your prom
 
 `--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
 
+### A task that runs in a copy
+
+A task of a Project with a nested fleet runs in a [task copy](/reference/tasks#task-copy). Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
+
+- Only a new implementer thread runs. A reviewer turn, `--thread=ID` and `--model` answer `tasks.copy_turn_unsupported`.
+- The model is the Gateway's `ORBIT_TASKS_COPY_TURN_MODEL`, `claudeAgent/claude-opus-5-5` by default. T3 picks the effort.
+- The turn ends after one hour with `tasks.turn_timeout`. T3's CLI cannot stop a run, so the run may go on in the copy.
+- While an earlier turn may still run, a turn or a check of the group answers `tasks.copy_turn_unended`. `task:cancel` ends the run with the copy.
+- The transcript holds message text only, and the thread has no token metrics.
+
 
 ## How it works
 
 <div className="flow-at" data-chart="task/turn"></div>
+
+### In a task copy
+
+<div className="flow-at" data-chart="task/copy-turn"></div>
+
+## Errors
+
+A turn in a task copy adds these answers and Operation errors:
+
+| Code | When |
+| --- | --- |
+| `tasks.no_workspace` (409) | The group owns no task copy. |
+| `tasks.copy_not_ready` (409) | The task copy is not `active` yet: its create or its completion still runs. |
+| `tasks.copy_turn_unsupported` (422) | The turn is a reviewer turn, continues a thread or names a model. |
+| `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
+| `tasks.copy_turn_model_invalid` (503) | `ORBIT_TASKS_COPY_TURN_MODEL` does not read `PROVIDER/MODEL`. |
+| `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. |
+| `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
+| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down. |
+

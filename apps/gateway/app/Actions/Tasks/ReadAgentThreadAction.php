@@ -25,10 +25,11 @@ final readonly class ReadAgentThreadAction
     {
         $this->requireExtension->execute();
         abort_unless($session->task_group_id === $group->id, 404);
-        if ($session->driver === 't3') {
-            throw new ResourceOperationException('tasks.agent_transcript_unavailable', 'Transcripts for retired T3 task threads are unavailable.', 409);
-        }
         $saved = $this->archive->read($session);
+        // A T3 thread is readable only from its archive: a task copy's turn records one, a retired host T3 thread has none.
+        if ($session->driver === 't3' && $saved === null) {
+            throw new ResourceOperationException('tasks.agent_transcript_unavailable', 'This T3 thread has no recorded transcript.', 409);
+        }
         $observation = [
             ...($saved ?? new AgentObservation(null)->toArray()),
             'state' => $session->activityState()?->value,

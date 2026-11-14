@@ -436,6 +436,9 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-task-copy-turn": {
+   "cleanup": "idempotent"
+  },
   "operation-instance-connection-environment": {
    "result": "read-only",
    "cleanup": "idempotent"

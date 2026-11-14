@@ -25,6 +25,12 @@ final readonly class WebSocketFootprint
     /** Replaced on the Gateway with the listener the Node Caddy build rule chooses for a shared site. */
     public const string CaddyBindPlaceholder = '__ORBIT_WEBSOCKET_BIND__';
 
+    /**
+     * The port of the listener that serves only `reverb.orbit`, for Instances that hold a private app. The shared 443 listener also
+     * serves other sites by Host, so a container's exact path admits this port only.
+     */
+    public const int InstancePort = 8443;
+
     public const string CertificateVersionsDirectory = '/etc/caddy/orbit-websocket-cert-versions';
 
     public const string CertificateCurrentDirectory = '/etc/caddy/orbit-websocket-cert-current';

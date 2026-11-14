@@ -28,6 +28,7 @@ additionalFiles:
   - ansible/operation-node-role-add-local-dns.yml
   - ansible/operation-node-converge-local-dns.yml
   - ansible/operation-node-converge.yml
+  - ansible/fleet-converge-inputs.json
   - ansible/tasks/node-role-runtime.yml
   - ansible/tasks/node-converge-cli-absent.yml
   - ansible/tasks/node-converge-base.yml
@@ -100,6 +101,7 @@ additionalFiles:
   - ansible/instance_migrate_links.py
   - ansible/instance_node_runtime.py
   - ansible/tasks/instance-node-runtime.yml
+  - ansible/tasks/instance-private-names.yml
   - ansible/tasks/instance-migrate-link-result.yml
   - ansible/tasks/instance-migrate-process-ready.yml
   - ansible/schedule-logs.yml
@@ -199,6 +201,7 @@ additionalFiles:
   - ansible/tasks/task-vm-stamp.yml
   - ansible/task-vm-fleet-wait.yml
   - ansible/task-instance-workspace.yml
+  - ansible/task-copy-turn.yml
   - ansible/tasks/task-instance-workspace-phase.yml
   - ansible/task-vm-idle-save.yml
   - ansible/shape-gate-requirements.txt

@@ -1,6 +1,8 @@
 ---
 # env:sync on a container Instance (docs/cli/env/sync.mdx): add the attached connections' network paths, write only their keys
-# into the container's .env in place, then restart what runs. Nothing is removed. The values come only from ORBIT_CONNECTION_ENVIRONMENT.
+# into the container's .env in place, then restart what runs. Database paths are only added. The path to an attached websocket app's
+# private endpoint, with its private name, is reconciled: a removed app's rule, firewall rule and hosts line go. The values come only
+# from ORBIT_CONNECTION_ENVIRONMENT.
 - name: Address the Instance Node
   hosts: localhost
   connection: local
@@ -54,13 +56,28 @@
           loop: "{{ plan.egress }}"
           loop_control: { label: "{{ item.destination }}:{{ item.destination_port }}" }
 
+        # The websocket rule is the one the plan names, or none: a rule of a removed app, or of the app's old address, goes.
+        - name: Reconcile the websocket egress rule
+          vars:
+            connection_websocket_rules: "{{ [] if plan.websocket is none else [plan.websocket.egress] }}"
+            connection_other_egress: >-
+              {{ connection_acl.egress | default([]) | rejectattr('description', 'defined') | list
+                 + (connection_acl.egress | default([]) | selectattr('description', 'defined')
+                    | rejectattr('description', 'equalto', 'Orbit websocket app') | list) }}
+            connection_held_websocket: >-
+              {{ connection_acl.egress | default([]) | selectattr('description', 'defined')
+                 | selectattr('description', 'equalto', 'Orbit websocket app') | list }}
+          ansible.builtin.set_fact:
+            connection_egress: "{{ connection_other_egress + connection_missing_egress + connection_websocket_rules }}"
+            connection_websocket_changed: "{{ connection_held_websocket != connection_websocket_rules }}"
+
         - name: Add the missing egress rules
-          when: connection_missing_egress | length > 0
+          when: connection_missing_egress | length > 0 or connection_websocket_changed | bool
           ansible.builtin.command:
             argv: [incus, network, acl, edit, "{{ container.acl }}", --project, default]
             stdin: >-
               {{ {'description': connection_acl.description | default(''), 'ingress': connection_acl.ingress | default([]),
-                  'egress': (connection_acl.egress | default([])) + connection_missing_egress} | to_json }}
+                  'egress': connection_egress} | to_json }}
           changed_when: true
 
         - name: Admit the connection endpoints at the bridge
@@ -68,7 +85,7 @@
           vars:
             bridge_network: "{{ container.network }}"
             bridge_cidr: "{{ container.bridge_cidr }}"
-            bridge_endpoints: "{{ plan.bridge_endpoints }}"
+            bridge_endpoints: "{{ plan.bridge_endpoints + ([] if plan.websocket is none else [plan.websocket.bridge_endpoint]) }}"
             bridge_admitted_at: "{{ container.bridge_admitted_at }}"
             bridge_reconcile: false
 
@@ -83,10 +100,56 @@
             to_port: "{{ item.to_port }}"
             proto: "{{ item.proto }}"
             comment: "{{ item.comment }}"
-          loop: "{{ plan.firewall }}"
+          loop: "{{ plan.firewall + ([] if plan.websocket is none else [plan.websocket.firewall]) }}"
           loop_control: { label: "{{ item.comment }}" }
 
+        - name: Read the added firewall rules
+          ansible.builtin.command: { argv: [ufw, show, added], stdin: "" }
+          register: connection_firewall
+          changed_when: false
+
+        - name: Find the websocket firewall rules the plan no longer names
+          vars:
+            connection_websocket_lines: >-
+              {{ connection_firewall.stdout_lines | select('search', " comment '" ~ (plan.websocket_comment | regex_escape) ~ "'$") | list }}
+            connection_websocket_kept: >-
+              {{ '' if plan.websocket is none else ' from ' ~ plan.websocket.firewall.from_ip ~ ' to ' ~ plan.websocket.firewall.to_ip
+                 ~ ' port ' ~ plan.websocket.firewall.to_port ~ ' ' }}
+          ansible.builtin.set_fact:
+            connection_stale_firewall: >-
+              {{ connection_websocket_lines if connection_websocket_kept == ''
+                 else connection_websocket_lines | reject('search', connection_websocket_kept | regex_escape) | list }}
+
+        # By the rule itself, as the destroy deletes it.
+        - name: Delete the websocket firewall rules the plan no longer names
+          ansible.builtin.command:
+            argv: "{{ ['ufw', '--force'] + ((['route', 'delete'] + rule[2:]) if rule[1] == 'route' else (['delete'] + rule[1:])) }}"
+            stdin: ""
+          vars:
+            rule: "{{ (item | regex_replace(\" comment '.*$\", '')).split() }}"
+          loop: "{{ connection_stale_firewall }}"
+          changed_when: true
+
+        - name: Write the private names of the access plan
+          ansible.builtin.include_tasks: tasks/instance-private-names.yml
+          vars:
+            private_names_root: "{{ as_root }}"
+            private_names_push: [incus, --project, "{{ container.project }}"]
+            private_names_container: "{{ container.name }}"
+            private_names: "{{ plan.private_names }}"
+
+        # The composed NO_PROXY with the plan's private names, before the keys whose change restarts the units that read it.
+        - name: Write the composed proxy environment
+          when: plan.proxy_environment is not none
+          ansible.builtin.command:
+            argv: "{{ ['timeout', '30'] + as_root + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py'), 'proxy'] }}"
+            stdin: "{{ {'proxy_environment': plan.proxy_environment} | to_json }}"
+          register: connection_proxy_write
+          changed_when: connection_proxy_write.rc == 0 and (connection_proxy_write.stdout | from_json).changed
+
+        # A run with no key to write, such as the sync after a websocket app's remove, only reconciles the path.
         - name: Write the connection keys
+          when: plan['keys'] | length > 0
           ansible.builtin.command:
             argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_env_keys.py') }}",
                    "{{ container.project }}", "{{ container.name }}", "{{ container.environment_file }}"]
@@ -98,6 +161,7 @@
           changed_when: connection_keys.rc == 0 and (connection_keys.stdout | from_json).status == 'changed'
 
         - name: Require a safe key result
+          when: plan['keys'] | length > 0
           ansible.builtin.assert:
             that: connection_keys.rc == 0
             fail_msg: >-
@@ -108,7 +172,9 @@
 
         - name: Keep only the public key result
           ansible.builtin.set_fact:
-            connection_result: "{{ connection_keys.stdout | from_json }}"
+            connection_result: >-
+              {{ connection_keys.stdout | from_json if plan['keys'] | length > 0
+                 else {'status': 'unchanged', 'written': [], 'added': [], 'kept': [], 'unchanged': []} }}
 
         - name: Refresh what runs only after the file changed
           when: connection_result.status == 'changed'

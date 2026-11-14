@@ -7,6 +7,7 @@ use App\Domain\Instances\InstanceDevPorts;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Projects\ProjectType;
 use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Caddy\Build\CaddyListenerRule;
@@ -168,6 +169,14 @@ describe('the Node\'s redirect of the development range', function (): void {
             ->toContain('iifname "orbit" ip daddr 10.44.0.7 tcp dport 1024-65535 ct state new jump development')
             ->toContain('elements = { 2222, 3000, 3128, 3800-3999, 5432, 8317-8319, 9100, 51820 }')
             ->toContain("tcp dport @excluded return\n\t\tsocket transparent 0 return\n\t\tmeta l4proto tcp counter redirect to :444");
+    });
+
+    it('keeps Reverb\'s own listener out of the development range on a websocket Node only', function (): void {
+        $world = devPortWorld();
+        expect(app(InstanceDevPorts::class)->excluded($world['node']))->not->toContain('8443');
+        $world['node']->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+
+        expect(app(InstanceDevPorts::class)->excluded($world['node']->refresh()))->toContain('8443');
     });
 
     it('is part of a build-list Node\'s Instance host converge', function (): void {

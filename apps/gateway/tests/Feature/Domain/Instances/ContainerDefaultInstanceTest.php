@@ -381,7 +381,8 @@ describe('the container PHP runtime development SSR origin', function (): void {
             $targetReads = array_filter(DB::getQueryLog(), static fn (array $query): bool => str_contains($query['query'], 'from "instance_node_service_targets"'));
             expect($targetReads)->toHaveCount(1);
             // A vp-dev Process path check reads the runtime's recorded Incus project once (InstanceContainer::workspaceOnNode).
-            expect(DB::getQueryLog())->toHaveCount(($production ? 16 : 19) + ($vpDev ? 1 : 0));
+            // The access plan asks once whether the Instance holds a private websocket app (InstanceWebSocketTarget).
+            expect(DB::getQueryLog())->toHaveCount(($production ? 17 : 20) + ($vpDev ? 1 : 0));
         } finally {
             DB::disableQueryLog();
             DB::flushQueryLog();

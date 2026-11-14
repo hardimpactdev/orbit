@@ -1,6 +1,6 @@
 {
   "swamp/tests/ansible_instance_migrate_test.ts": {
-    "source_sha256": "ccb683f83f3630014f6318bd0e9e263d5a05793125cc2c0cf40b0cba2f84cc00",
+    "source_sha256": "034f0ae5d7887c9aac19efb9d8c7c18ace3c12109da3bbf72d5f2dbcc708abc1",
     "cases": [
       "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
       "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -130,7 +130,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "362d3613a9516b4b386a6a8ec43597265345489ef6afbb6249154228b296339d",
+    "source_sha256": "f2cde755518e9d6f7271213a9f411adc50c9492c271ffca5bcb68419750c8125",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -139,7 +139,7 @@
       "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
       "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
       "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
-      "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units",
+      "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
       "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
       "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts",
       "a live fleet with a foreign difference is refused by the check and by the rules before any change",
@@ -152,14 +152,14 @@
       "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore",
       "the saved refreshed fleet boundary matches a real first refresh and start",
       "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
-      "a changed input runs only its due parts: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway",
-      "the next refresh repeats no part: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway",
-      "a changed input runs only its due parts: the code without a pending migration migrates, restarts and converges, and keeps base",
-      "the next refresh repeats no part: the code without a pending migration migrates, restarts and converges, and keeps base",
-      "a changed input runs only its due parts: swamp converges",
-      "the next refresh repeats no part: swamp converges",
-      "a changed input runs only its due parts: the agent contract migrates, restarts and converges",
-      "the next refresh repeats no part: the agent contract migrates, restarts and converges",
+      "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway",
+      "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway",
+      "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base",
+      "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base",
+      "a changed input runs only its due parts: a swamp file the base converge reads converges",
+      "the next refresh repeats no part: a swamp file the base converge reads converges",
+      "a changed input runs only its due parts: the agent contract migrates and restarts",
+      "the next refresh repeats no part: the agent contract migrates and restarts",
       "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base",
       "a converge with changed tasks retakes base only for the changed Node and Gateway",
       "a converge without change counts retakes all three bases",
@@ -170,6 +170,9 @@
       "a malformed record runs every part and never fails the refresh",
       "an unreadable record runs every part and never fails the refresh",
       "a failed digest read runs every part and never fails the refresh",
+      "a moved base intent of one Node converges the three Nodes one by one, and the result names why",
+      "a converge older than seven days runs although no input changed, and the result names it stale",
+      "an unreadable base intent digest converges, names why, and records no converge digest",
       "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
       "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
       "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
@@ -178,7 +181,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "3a50e8242780529230a7ae501a34da067bb0e8908dd8c61c7e8900b640e6afd4",
+    "source_sha256": "c7a48d1d131e331bf627ea5f84348ac0f6922a4a3fa25625ad5d499ca5e27dac",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -207,6 +210,7 @@
       "the agent phase trusts only its workspace and preserves other Git settings on reruns",
       "the agent can commit with its default identity and keeps each configured identity value",
       "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
+      "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
       "start refuses a NIC with missing ACL before starting the container",
       "start refuses a NIC with permissive default before starting the container",
       "start refuses a NIC with bridge union ACL before starting the container",
@@ -270,8 +274,20 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "bb45ddeded10e20b6be5a5b52cbb32da1730b18125020a872675e9ccf9a8f73e",
+    "source_sha256": "4ca9f634c7d8c79fe693641f8d15f73e03db9da5a9371014ba01364ddcc3f003",
     "cases": [
+      "the saved dir host system boundary matches the shipped tasks",
+      "the saved dir host prepare boundary matches the shipped tasks",
+      "the saved zfs host system boundary matches the shipped tasks",
+      "the saved zfs host prepare boundary matches the shipped tasks",
+      "the saved nested host system boundary matches the shipped tasks",
+      "the saved nested host prepare boundary matches the shipped tasks",
+      "the normal image on a nested host reaches the verified nested-build boundary",
+      "a passed nested-fleet image build repeats the host system stage without changes",
+      "a passed nested-fleet image build repeats the host prepare stage without changes",
+      "a passed nested-fleet image build repeats the host normal stage without changes",
+      "a passed nested-fleet image build repeats the host nested stage without changes",
+      "a passed nested-fleet image build repeats the host finish stage without changes",
       "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",
       "a directory pool skips the clone probe: a copy there is a full copy",
@@ -279,12 +295,14 @@
       "orbit-instance-build refuses an inherited unguarded profile NIC before starting",
       "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting",
       "prepared publication clears inherited stock build ownership",
-      "the full prepared-image replacement and failure cleanup use the verified local socket despite the default remote",
+      "a prepared-image replacement rechecks the local socket despite the default remote",
+      "a failed replacement cleans up through the rechecked local socket and leaves the default remote intact",
       "a prior prepared-image builder is refused by exact name and recipe without deletion",
       "a Node without the nested-fleet switch runs the exact command lines of the normal image",
       "a switched-on Node builds the nested-fleet image in its project from the verified pinned packages",
-      "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task, and a later good build clears it",
+      "a wrong pinned digest fails only the nested-fleet image: the role succeeds and records the failed task",
       "a sudo path in the nested-fleet image fails only the nested-fleet image: the role succeeds and records the failed task",
+      "a good nested-fleet image build after a failed digest publishes the image and clears the record",
       "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image",
       "a hosting intent without the nested-fleet image builds only the normal image",
       "the nested-fleet audit judges visudo by its exit code, not by what it prints"
@@ -2050,7 +2068,7 @@
     ]
   },
   "swamp/tests/instance_migrate_env_test.py": {
-    "source_sha256": "5f28f07f6475223a3e1b02b626886b79e067979efd3b9ab8a15fb44a79a87a5f",
+    "source_sha256": "32d376768810ab3fd7503d0f0109b53c38d459672242dc57cbfcf1accf258606",
     "cases": [
       "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
       "test_answering_unattached_loopback_service_retains_the_refusal",
@@ -2100,6 +2118,7 @@
       "test_named_env_redis_selectors_keep_the_endpoint_check",
       "test_only_selected_database_consumers_add_network_connection_requirements",
       "test_public_http_publishers_use_the_supplied_proxy_policy",
+      "test_the_private_websocket_endpoint_is_admitted_only_at_the_port_the_access_plan_names",
       "test_known_listeners_and_browser_settings_are_not_outbound_services",
       "test_active_mail_requires_explicit_port_instead_of_guessing_the_app_default",
       "test_quoted_keys_and_escape_parity_reach_the_endpoint_check",
@@ -2573,6 +2592,40 @@
     "cases": [
       "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
       "pinned create: a failed workspace registers nothing, stops the container and removes the private folder"
+    ]
+  },
+  "swamp/tests/ansible_task_copy_turn_test.ts": {
+    "source_sha256": "5953b1c98c47e71586750f983caebf1bf08c0a33396cfb975d94f7d78224c458",
+    "cases": [
+      "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
+      "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back",
+      "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
+      "an intent outside the admitted shape runs nothing in the copy",
+      "a thread list that is not JSON reads as no thread, and the start's end is still written"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts": {
+    "source_sha256": "5c87967b8076b9eb7bfca727477f142ca880b9b80c9f9d4bce1cf78243424eaa",
+    "cases": [
+      "a completed run is done and over, and records the message transcript and the T3 thread",
+      "a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status",
+      "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
+      "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
+      "a message without a run id keeps the transcript",
+      "transcript text is redacted and bounded to the newest entries",
+      "the method reads each evidence file on its own, so an oversized read keeps the start's end"
+    ]
+  },
+  "swamp/tests/instance_connection_websocket_test.py": {
+    "source_sha256": "1ef44590ea970c4db01f03d20b061b18bc1a6738c60773691285ac258c11ad53",
+    "cases": [
+      "test_an_attached_app_adds_its_rule_once_and_keeps_the_other_rules",
+      "test_a_removed_app_closes_the_path_and_keeps_every_other_rule",
+      "test_a_moved_websocket_node_replaces_the_old_address",
+      "test_an_instance_without_an_app_changes_nothing",
+      "test_a_composed_value_goes_to_the_one_writer",
+      "test_the_base_value_writes_nothing",
+      "test_no_key_run_skips_the_writer_and_reports_unchanged"
     ]
   }
 }

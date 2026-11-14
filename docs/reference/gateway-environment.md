@@ -174,6 +174,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role, with repository `https://github.com/hardimpactdev/orbit-reverb.git`. See [Realtime events with Reverb](/solutions/realtime-reverb). Each Gateway release pins a server commit for the [live registry](/reference/websocket-apps#the-reverb-server). |
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_COPIES_MAX` | How many [task copies](/reference/tasks#task-copy) one Node holds at once; default 1, minimum 0. `task:start` counts at admission. |
+| `ORBIT_TASKS_COPY_TURN_MODEL` | The T3 provider and model of a [turn in a task copy](/cli/task/turn#a-task-that-runs-in-a-copy), as `PROVIDER/MODEL`; default `claudeAgent/claude-opus-5-5`. A value of another form refuses each copy turn with `tasks.copy_turn_model_invalid`. |
 | `ORBIT_TASKS_PULL_REQUEST_AUTHORS` | Parsed Gateway configuration for repository/account IDs; Swamp owns merge decisions. |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Workspace claim lifetime for cleanup, in seconds; default 3600, minimum 60. |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | GitHub logins requested as reviewers on a task pull request. See [Tasks](/reference/tasks). |

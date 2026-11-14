@@ -33,8 +33,9 @@ final class ConnOperationsController extends Controller
 
     public function cancel(EmptyOperationRequest $request, Operation $operation, CancelOperationAction $cancel): JsonResponse
     {
-        // Instance lifecycle Operations are followed here; cancellation uses the core Instance tools.
-        abort_if(in_array($operation->kind, ['instance.create', 'instance.destroy'], true), 404);
+        // Instance lifecycle Operations are followed here; cancellation uses the core Instance tools. Conn offers no Cancel for a clone's
+        // completion: a removal cancels it (docs/reference/conn.md#remove-a-clone-whose-completion-runs).
+        abort_if(in_array($operation->kind, ['instance.create', 'instance.complete', 'instance.destroy'], true), 404);
         $this->assertOwner($request, $operation);
 
         return response()->json(['data' => OperationData::fromModel($cancel->execute($operation), $operation->caller_node_name)->toArray(),
@@ -46,14 +47,19 @@ final class ConnOperationsController extends Controller
         $caller = RequireActiveWireGuardPeer::activePeer($request);
         $target = match ($operation->kind) {
             'conn.pairing_create' => 'conn_pairing', 'conn.pairing_revoke' => 'conn_pairing_node', 'conn.gateway_sessions_revoke' => 'conn_environment', 'conn.environment_renew' => 'conn_environment',
-            'instance.create' => 'instance',
+            'instance.create', 'instance.complete' => 'instance',
             'instance.destroy' => ($operation->state['conn_destroy_caller_node_id'] ?? null) === $caller?->id ? 'instance' : null,
             default => null,
         };
-        // Instance lifecycle admission records its caller as node:<id>.
-        $owner = in_array($operation->kind, ['instance.create', 'instance.destroy'], true)
-            ? $caller instanceof Node && $operation->triggered_by === 'node:'.$caller->id
-            : $caller instanceof Node && $operation->callerNodeId() === $caller->id;
+        // Instance lifecycle admission records its caller as node:<id>. A clone's completion is read by the Node that started it (Conn's
+        // Retry) and by the Node that created the clone, whose create admitted the first completion: the create's reader follows it.
+        $node = $caller instanceof Node ? 'node:'.$caller->id : null;
+        $owner = match ($operation->kind) {
+            'instance.create', 'instance.destroy' => $node !== null && $operation->triggered_by === $node,
+            'instance.complete' => $node !== null && ($operation->triggered_by === $node || Operation::query()->where('kind', 'instance.create')
+                ->where('target_type', 'instance')->where('target_id', $operation->target_id)->where('triggered_by', $node)->exists()),
+            default => $caller instanceof Node && $operation->callerNodeId() === $caller->id,
+        };
         abort_unless($owner && $target !== null && $operation->target_type === $target, 404);
     }
 }

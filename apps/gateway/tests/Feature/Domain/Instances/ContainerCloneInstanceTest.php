@@ -462,6 +462,24 @@ it('never copies the default\'s Reverb app keys or a copy of its secret into a c
         ->and(json_encode($operation->input))->not->toContain('reverb-secret-value');
 });
 
+it('resets the default\'s proxy bypass for reverb.orbit before a clone\'s first start: the clone holds no app of the default', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $services = containerDefaultNode('Services', '10.44.0.3', false);
+    $services->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => 'reverb-secret-value', 'credential_generation' => 1]);
+    WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $default->id]);
+
+    $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
+    $intent = app(InstanceContainer::class)->intent($clone, $clone->runtime()->firstOrFail());
+
+    $files = collect($intent['clone']['boot_files'])->keyBy('path');
+    expect($intent)->not->toHaveKey('private_names')->not->toHaveKey('proxy_environment')
+        ->and($intent['config']['environment.NO_PROXY'])->not->toContain('reverb.orbit')
+        ->and($files['/etc/systemd/system.conf.d/99-orbit-node-services.conf']['content'])->not->toContain('reverb.orbit')
+        ->and($files['/etc/profile.d/99-orbit-node-services.sh']['content'])->not->toContain('reverb.orbit');
+});
+
 it('starts a clone that a Gateway admitted before the merge names existed, with no names: the clone writes the render', function (): void {
     $node = containerDefaultNode();
     $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
