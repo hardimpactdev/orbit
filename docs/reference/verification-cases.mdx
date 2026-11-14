@@ -38,7 +38,7 @@ On a task VM the user is `orbit` and the home is `/home/orbit`.
 
 The nested Nodes do not depend on the outer machine. On every nested Node the managed user is `orbit` with the home `/home/orbit`. The fleet start mounts the checkout at `/home/orbit/orbit` on the Gateway and on `app-dev`. A case can call the CLI from another Node. The runner then prepares that Node: it mounts the checkout there, copies the CA of the outer machine to `/home/orbit/.orbit/nested-ca.pem` and adds the CLI profile.
 
-Fleet preparation needs the pinned Ansible tools on the outer machine, and Swamp must run in the nested Gateway. The task image holds the tools in `/opt/orbit-shape-gate`. When they are not there, the runner builds them in the user's cache, which needs the internet. When that build fails with an error, preparation fails and its message names the pinned folder.
+Fleet preparation needs the pinned Ansible tools on the outer machine, and Swamp must run in the nested Gateway. A copy of a nested-fleet default holds the tools in `/opt/orbit-shape-gate`: the [refresh](/reference/development-containers#the-pinned-shape-tools) builds them in the default before its seed. The task image holds them there too. When they are not there, the runner builds them in the user's cache, which needs the internet. When that build fails with an error, preparation fails and its message names the pinned folder.
 
 ## The case file
 

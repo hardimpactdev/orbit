@@ -407,12 +407,41 @@
       loop: "{{ fleet_base_targets }}"
       changed_when: true
 
+# The pinned shape tools in the Instance container itself, so the seed that the phase after this one takes holds them for every copy
+# (docs/reference/development-containers.md#the-pinned-shape-tools). instance_shape_tools.py names them with the workspace's own
+# bin/swamp-shape-gate and only reads when they are complete. It never fails the refresh: a failed install is the result's
+# `tools: failed` with the step in `tools_reason`, and the seed is taken without the tools.
+- name: Time the base
+  ansible.builtin.set_fact:
+    fleet_base_at: "{{ now(utc=true).timestamp() }}"
+- name: Keep the pinned shape tools in the container
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '600'] + fleet_outer + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_shape_tools.py'),
+          intent.container.workspace] }}
+  register: fleet_tools_read
+  changed_when: fleet_tools_read.rc == 0 and '"built"' in fleet_tools_read.stdout
+  failed_when: false
+- name: Read what the tools step did
+  vars:
+    fleet_tools_line: "{{ fleet_tools_read.stdout_lines | default([]) | last | default('') }}"
+    fleet_tools_out: >-
+      {{ (fleet_tools_line | from_json) if fleet_tools_read.rc == 0 and fleet_tools_line is match('^\{"tools": ?"[a-z]+", ?"reason": ?"[a-z]+"(, ?"[a-z]+": ?"[a-z0-9-]+")*\}$') else {} }}
+  ansible.builtin.set_fact:
+    fleet_tools: >-
+      {{ {'tools': fleet_tools_out.tools, 'reason': fleet_tools_out.reason} if fleet_tools_out.tools | default('') in ['present', 'built', 'failed']
+         else {'tools': 'failed', 'reason': 'timeout' if fleet_tools_read.rc == 124 else 'unreadable'} }}
+    fleet_tools_at: "{{ now(utc=true).timestamp() }}"
+# The step's programs write to its standard error, which an ok task does not print: a failure shows its end here.
+- name: Report a failed tools step
+  when: fleet_tools.tools == 'failed'
+  ansible.builtin.debug:
+    msg: "The pinned shape tools failed at {{ fleet_tools.reason }}: {{ (fleet_tools_read.stderr | default('') | trim)[-800:] }}"
+
 # The record goes last; it was removed before the first write, so a run that failed before this leaves none, and the next run does every
 # part again and retakes all three. The result names what
 # ran and what was skipped, with the seconds of each part.
 - name: Name what the refresh did
-  vars:
-    fleet_done_at: "{{ now(utc=true).timestamp() }}"
   ansible.builtin.set_fact:
     fleet_refresh_result:
       migrate: "{{ 'skipped' if fleet_migrate is skipped else 'applied' if fleet_migrate is changed else 'nothing' }}"
@@ -427,11 +456,16 @@
       base: "{{ 'retaken' if fleet_base_targets | length > 0 else 'kept' }}"
       base_containers: "{{ fleet_base_targets }}"
       record: "{{ fleet_record_state }}"
+      tools: "{{ fleet_tools.tools }}"
+      # Why: `current` (present), `missing` (built), or the step that failed: `names`, `package`, `venv`, `collections`, `cleanup`,
+      # `timeout` (600 s), `unreadable` (no result line).
+      tools_reason: "{{ fleet_tools.reason }}"
       seconds:
         gateway: "{{ ((fleet_gateway_at | float) - (fleet_started_at | float)) | round | int }}"
         converge: "{{ ((fleet_converge_at | float) - (fleet_gateway_at | float)) | round | int }}"
         ready: "{{ ((fleet_ready_at | float) - (fleet_converge_at | float)) | round | int }}"
-        base: "{{ ((fleet_done_at | float) - (fleet_ready_at | float)) | round | int }}"
+        base: "{{ ((fleet_base_at | float) - (fleet_ready_at | float)) | round | int }}"
+        tools: "{{ ((fleet_tools_at | float) - (fleet_base_at | float)) | round | int }}"
 # The container's id map is isolated: the Node's stdin pipe shows there as owned by nobody, mode 0600, so a command that opens
 # /dev/stdin by path is refused. `cat` reads the open stream. It writes a file beside the record, and the rename makes the record
 # whole or absent, never partial.

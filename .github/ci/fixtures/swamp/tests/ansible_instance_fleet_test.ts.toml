@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "8916592521e11547482a100ebf53871eb5817b6c301b43bcfedcac0eb7eab393"
+source_sha256 = "2cd203ee1e1b395486193c5e7b591d34b2a5cde2f48ecee092d93437c1b242cd"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -47,6 +47,8 @@ cases = [
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a fleet without worker c remints at once and names it incomplete",
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints",
+  "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them",
+  "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line",
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
@@ -54,8 +56,8 @@ cases = [
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2030
-slices = 51
+cost = 2131
+slices = 53
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -64,6 +66,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-fleet*.yml",
   "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/instance_shape_tools.py",
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
@@ -123,3 +126,5 @@ inputs = [
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 28
   "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
+  "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them" = 41 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
+  "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line" = 60 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s

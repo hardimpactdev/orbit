@@ -30,7 +30,7 @@ These decisions were made on 2026-11-09. The PRs build on them without asking ag
 | Pause | An explicit pause and resume on the group. A paused group admits no Swamp turn, and the user drives from Conn |
 | Task capacity | Each Node has task and CI place counts, with the queue and two-hour wait of task places. The parity gate's peak memory sets the counts |
 | Inner Incus | `agent` joins the inner Incus admin group and has passwordless sudo: root inside its own container. `orbit` gets no access |
-| Proof runner tools | The nested-fleet image does not hold the task image's pinned Ansible tools (`/opt/orbit-shape-gate`) yet. The proof runner's tools are a later change |
+| Proof runner tools | The refresh of a nested-fleet default builds the pinned Ansible tools before its seed, so every copy holds them. See [The pinned shape tools](/reference/development-containers#the-pinned-shape-tools) |
 | Container egress | Changed by Nick, 2026-11-10. Every container and the nested test Nodes get full public internet access through the Node's [egress proxy](/reference/development-containers#egress-and-dns). Rollout step 2c built it |
 | Task Nodes before the switch | Task clones and container CI proofs run on Beast and Shark, as `app-dev` Nodes on the build list, beside their task VMs |
 | Models | Through the per-Node [forwarder](/reference/ai-router#container-model-forwarder) to the model router guard. A container holds only the placeholder key |
