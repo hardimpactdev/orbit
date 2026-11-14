@@ -1452,12 +1452,33 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
 | Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch and its tip, then the checked candidate, detached. Each Git command is bounded at 20 seconds |
 | Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a failed or cut one: what the reviewer changed is discarded and the task branch is checked out again, at its earlier tip |
+| Read the question of a run that asks | `node - read T3THREAD`, with `t3_copy_rpc.mjs` on stdin | When the start exits 2. Prints the runs that are not over and every pending request with its questions. Bounded at 60 seconds |
+| Stop the run that asks | `node - interrupt T3THREAD RUN`, with `t3_copy_rpc.mjs` on stdin | Only after the question's evidence is written. Stops that run and waits up to 30 seconds for it to end. Bounded at 60 seconds |
 
-The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`. That `t3 thread send` answers a thread whose run waits for input is an assumption read from T3 0.1.7's CLI, proven only against a stand-in for T3.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input` once [the question ends the turn](#a-question-ends-the-turn), and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
 
 A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
 A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
+
+### A question ends the turn
+
+Stock T3's CLI cannot answer a question or stop a run. `t3 thread send` to a run that waits queues a second run behind it, and the answer never reaches the agent. Stock T3's server can do both through its own WebSocket RPC, which T3's web client uses:
+
+- `POST /api/auth/websocket-ticket` with a bearer session gives a ticket.
+- `GET /ws?orchestrationProtocol=2&wsTicket=TICKET` opens the RPC.
+- `orchestration.getThreadProjection {threadId}` gives the thread's runs, its pending requests and each `user_input_request` with its questions.
+- `orchestration.dispatchCommand` with `run.interrupt {commandId, threadId, runId, reason}` stops a run; `runtime-request.respond` with `answers` would answer one.
+
+`t3 auth session issue` grants the session. Its MCP endpoint `/mcp` refuses that session, so the MCP tools are not a path.
+
+So the phase ends a turn at its question. When `--wait` exits 2, `t3_copy_rpc.mjs read` stores every pending request with its questions: the id, header, text, options and flags, as the agent asked them. Only after that evidence is written does `t3_copy_rpc.mjs interrupt` stop the run. It stops only the run whose question it stored, so a run that someone answered meanwhile goes on.
+
+The helper runs on the runtime's Node.js, `/opt/orbit-runtime/current/bin/node`, from stdin. It takes a session of one minute, read-only for the read, holds it only in its memory and revokes it before it exits. No session reaches an argument, a file, a log or the run folder. T3 stays stock.
+
+The turn is then `asking_for_input` and over, and its Operation succeeds. Its result and its thread keep the questions. The role's next turn quotes them before the caller's prompt and continues the thread with `t3 thread send`, as a normal follow-up. A question the helper could not read is `tasks.copy_question_unread`, and a run it could not stop is `tasks.copy_question_unstopped`. Neither is over, so the group holds.
+
+This was tried on a throwaway T3 0.1.7 server on 2026-11-14. A run that asked two questions was read, then stopped: its run became `interrupted` and its request `cancelled`. A `t3 thread send` with the answer then ran at once as the thread's next run. `runtime-request.respond` with `answers` let the same run continue instead; Orbit does not use it, so a turn's end stays the run's end.
 
 ### Turn model and effort
 
@@ -1465,13 +1486,13 @@ The Gateway's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWE
 
 Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
 
-A new thread starts with `--provider` set to the instance of its effort. Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
+A new thread starts with `--provider` set to the instance of its effort. A turn's result names the provider instance and the model that `t3 thread show` gives, and the effort that instance carries. Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
 
 ### Gaps of the CLI path
 
 These hold until a T3 server gives Swamp a full-access MCP session:
 
-- **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
+- **No stop of a cut turn.** Orbit stops only a run that asks, through T3's own RPC. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
 - **No consult and no caller's model.** Both are refused with `tasks.copy_turn_unsupported`.
@@ -1480,7 +1501,7 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 
 A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A reviewer turn whose checkout is not restored is never over. A turn cancelled before its run step reports holds the group the same way.
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A reviewer turn whose checkout is not restored is never over. A turn cancelled before its run step reports holds the group the same way.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
