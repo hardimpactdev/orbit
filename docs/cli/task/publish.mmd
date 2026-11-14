@@ -67,6 +67,7 @@ sequenceDiagram
     SW->>N: Export the copy
     %%> How:
     %%> - the workspace phase bundles the branch as `agent`, checks its head and tree against the candidate, and fetches it to this worker; the Node keeps no copy
+    %%> - the phase runs as the behavior `task-workspace-NODE-GROUP` for up to 1,800 s, so a publish of another group's copy on this Node never waits for its lock; the content check, import and push name their group too
     %%> - the Node also pulls the copy's `.env` as a regular file and fetches it beside the bundle; its bytes enter no result or log
     %%> - and the copy's proposed pull request body for the task branch, `.git/orbit/proposed-pr-bodies/task-GROUP.md`, when it is a regular file of at most 64 KiB: data, never run; without it the publish sends the caller's text
   else a task VM
@@ -192,6 +193,7 @@ sequenceDiagram
     %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
     %%> - a commit of a task copy holds the `.env` content or one of its values under any name: `tasks.publish_secret_content`; remove it from the branch history and check again
     %%> - the content check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
+    %%> - a step waited 60 s for a behavior lock that another run held: `tasks.publish_lock_timeout`; a step after the push can fail so too, so the branch may be pushed already
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, such as `tasks.push_failed`
@@ -199,6 +201,7 @@ sequenceDiagram
     %%> Result:
     %%> - task #5165 fails; group 42 and its workspace stay as they are
     %%> - a publish that the `task:pr-when-done` tick started shows the group's publication as `refused` with this code; the tick does not start the same done check again
+    %%> - except `tasks.publish_lock_timeout`: the publication stays `publishing` and the tick starts the done check again, at most 3 attempts in all; a retry is safe, because an identical tip pushes nothing and the PR plan updates an open PR
     %%> On GitHub:
     %%> - a push or PR that started stays; there is no rollback
     %%> Retry:

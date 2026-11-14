@@ -7,6 +7,8 @@ inputs:
   type: object
   properties:
     node_id: {type: integer, minimum: 1}
+    # The task group: its long phase locks a behavior of its own, so another group's copy on this Node never waits for it.
+    group_id: {type: integer, minimum: 1}
     phase: {type: string, enum: [preflight, before, after, receipt, export, discard]}
     intent:
       type: object
@@ -51,7 +53,7 @@ inputs:
         ssh_execution: {type: object}
       required: [runtime, branch, head, snapshot_id, ssh_execution]
       additionalProperties: false
-  required: [node_id, phase, intent]
+  required: [node_id, group_id, phase, intent]
   additionalProperties: false
 jobs:
   - name: workspace
@@ -74,7 +76,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-workspace-" + string(inputs.node_id) }}'
+          behaviorName: '${{ ("task-workspace-" + string(inputs.node_id) + "-" + string(inputs.group_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             # No native successful run exists yet: the owning budget rule uses 30 minutes.

@@ -12,6 +12,8 @@ inputs:
     intent:
       type: object
       properties:
+        # The task group: each long phase locks a behavior of its own, so another group's check on this Node never waits for it.
+        group_id: {type: integer, minimum: 1}
         # The recorded guest target; the Gateway admits it only for a container Instance workspace.
         workspace:
           type: object
@@ -27,7 +29,7 @@ inputs:
             snapshot_id: {type: string, format: uuid}
           required: [runtime, branch, snapshot_id]
           additionalProperties: false
-      required: [workspace]
+      required: [group_id, workspace]
     # A container check mints no token: hosted CI is refused at admission.
     execution_secrets: {type: object, additionalProperties: false}
     run_id: {type: string}
@@ -70,7 +72,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-instance-check-" + string(inputs.node_id) }}'
+          behaviorName: '${{ ("task-instance-check-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             # No native successful run exists yet. The guest bounds each command as the task VM steps do
@@ -121,7 +123,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-instance-check-" + string(inputs.node_id) }}'
+          behaviorName: '${{ ("task-instance-check-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags commit "$ORBIT_ANSIBLE/task-instance-workspace.yml"
@@ -179,7 +181,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-instance-check-" + string(inputs.node_id) }}'
+          behaviorName: '${{ ("task-instance-check-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags commit-ref "$ORBIT_ANSIBLE/task-instance-workspace.yml"
