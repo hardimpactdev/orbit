@@ -1167,16 +1167,16 @@ The check runs at the repository root, as every task check does.
 
 #### Start commit
 
-The start commit is the newer of two merge bases: HEAD's merge base with `origin/main` and HEAD's merge base with `main`. Newer means the other one is its ancestor. When the two are unrelated, the check fails, names both, and asks for `--base REF`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
+The start commit is HEAD's merge base with `origin/main` when that ref exists, else with `main`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
 
-A copy's branch starts at the seed commit, which is `origin/main` and `main` in the copy, so a branch at its start is checked against the seed. A copy never fetches. A driver that brings a newer main into the branch first moves `origin/main` to it, from a bundle made from the real `main`, then merges or rebases:
+A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches, so its `origin/main` is the driver's to move. A driver that brings a newer main into the branch first moves `origin/main` to it, from a bundle made from the real `main`, then merges or rebases:
 
 ```bash
 git fetch /tmp/main.bundle +main:refs/remotes/origin/main
 git merge origin/main        # or: git rebase origin/main
 ```
 
-The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths.
+The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths. Moving only `main` changes nothing, because `origin/main` comes first.
 
 #### Docs-impact waivers in a copy
 

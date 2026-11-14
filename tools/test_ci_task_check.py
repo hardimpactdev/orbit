@@ -279,25 +279,17 @@ class StartCommitTest(unittest.TestCase):
         self.git('rebase', '--quiet', 'origin/main')
         self.assertEqual(check['changes'](self.repo, None), (True, newer, 'origin/main', ['work']))
 
-    def test_a_newer_main_wins_over_a_stale_origin_main(self):
-        seed, newer = self.newer_main()
-        self.git('update-ref', 'refs/remotes/origin/main', seed)
-        self.git('update-ref', 'refs/heads/main', newer)
-        self.git('merge', '--quiet', '--no-edit', 'main')
-        self.assertEqual(check['changes'](self.repo, None), (True, newer, 'main', ['work']))
-
-    def test_unrelated_merge_bases_are_refused_and_named(self):
+    def test_head_on_a_main_ahead_of_origin_main_counts_its_own_commits(self):
         seed = self.commit('seed')
         self.git('update-ref', 'refs/remotes/origin/main', seed)
+        self.commit('unpushed')
+        self.assertEqual(check['changes'](self.repo, None), (True, seed, 'origin/main', ['unpushed']))
+
+    def test_without_origin_main_the_start_commit_is_the_merge_base_with_main(self):
+        seed = self.commit('seed')
         self.git('checkout', '--quiet', '-b', 'task')
         self.commit('work')
-        self.git('checkout', '--quiet', '--orphan', 'other')
-        other = self.commit('other')
-        self.git('checkout', '--quiet', 'task')
-        self.git('merge', '--quiet', '--no-edit', '--allow-unrelated-histories', 'other')
-        self.git('update-ref', 'refs/heads/main', other)
-        with self.assertRaisesRegex(RuntimeError, rf'origin/main \({seed[:12]}\) and main \({other[:12]}\) are unrelated; pass --base REF'):
-            check['changes'](self.repo, None)
+        self.assertEqual(check['changes'](self.repo, None), (True, seed, 'main', ['work']))
 
     def test_an_explicit_start_commit_is_used_as_given(self):
         first = self.commit('first')

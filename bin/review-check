@@ -113,29 +113,13 @@ def working_tree(root):
 def start_commit(root, head, base_override=None):
     """Return the candidate's start commit and the ref that gives it; (None, None) without a main branch.
 
-    The start commit is the newest of the merge bases of HEAD with origin/main and with main: the one the other is an
-    ancestor of. A branch that merged or rebased onto a newer main holds that main, so its start commit is that main once
-    either ref names it. Unrelated merge bases are refused: neither is the start commit."""
-    found = []
+    The start commit is the merge base of HEAD with origin/main when that ref exists, else with main. A branch that merged
+    or rebased onto a newer main starts at that main once origin/main names it."""
     for ref in ((base_override,) if base_override else BASES):
         merge_base = subprocess.run(['git', '-C', str(root), 'merge-base', ref, head], capture_output=True, text=True)
         if merge_base.returncode == 0:
-            found.append((merge_base.stdout.strip(), ref))
-    if not found:
-        return None, None
-    newest = found[0]
-    for sha, ref in found[1:]:
-        if sha == newest[0] or ancestor(root, sha, newest[0]):
-            continue
-        if not ancestor(root, newest[0], sha):
-            raise RuntimeError(f'The merge bases with {newest[1]} ({newest[0][:12]}) and {ref} ({sha[:12]}) are unrelated; '
-                               'pass --base REF.')
-        newest = (sha, ref)
-    return newest
-
-
-def ancestor(root, commit, descendant):
-    return subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', commit, descendant]).returncode == 0
+            return merge_base.stdout.strip(), ref
+    return None, None
 
 
 def changed_paths(root, base, head, committed):

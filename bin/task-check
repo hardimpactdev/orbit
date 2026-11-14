@@ -8,7 +8,7 @@ are left to CI and named as skipped. Every part gets the time left as its limit;
 leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
 outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
---base REF        the start commit (default: the newer of the merge bases with origin/main and main)
+--base REF        the start commit (default: the merge base with origin/main, else main)
 --budget SECONDS  wall time of the whole run (default 270)
 --only PARTS      comma-separated part names, such as pest,phpstan"""
 import argparse
