@@ -99,7 +99,7 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
 }
 
 /**
- * Starts the run in its own process group; a cancel sends SIGTERM once the slow stub runs, as the migrate fixture does, and the result
+ * Starts the run in its own process group; a cancel sends SIGTERM once the slow stub runs and the Route has ended, and the result
  * gives the seconds from that signal to the run's end.
  */
 async function execute(f: Awaited<ReturnType<typeof fixture>>, cancel: boolean): Promise<Deno.CommandOutput & { stopSeconds: number }> {
@@ -115,9 +115,21 @@ async function execute(f: Awaited<ReturnType<typeof fixture>>, cancel: boolean):
     });
     try {
         if (cancel) {
-            const until = Date.now() + 30000;
-            while (!exists(`${f.folder}/${f.slow}`) && !finished && Date.now() < until) await new Promise((resolve) => setTimeout(resolve, 20));
-            assert(exists(`${f.folder}/${f.slow}`), `The cancel must come while ${f.slow} runs.`);
+            // The Route job runs beside the completion steps. Under load it can still be in its child workflow when the slow stub
+            // starts; the cancel then cuts the Route too, and the result names the Route. So the cancel waits until the run's own
+            // history reads the slow step running and the Route succeeded. The slow stub sleeps 30 s, longer than this wait.
+            const until = Date.now() + 25000;
+            let steps: Record<string, RecordValue> = {};
+            while (!finished && Date.now() < until) {
+                if (exists(`${f.folder}/${f.slow}`)) {
+                    try {
+                        steps = await f.steps();
+                    } catch { /* The run may be writing its history; read it again. */ }
+                    if (stub(steps, f.slow) === "running" && stub(steps, "route") === "succeeded") break;
+                }
+                await new Promise((resolve) => setTimeout(resolve, 250));
+            }
+            assertEquals([stub(steps, f.slow), stub(steps, "route")], ["running", "succeeded"], `The cancel must come while ${f.slow} runs and after the Route.`);
             const signalled = Date.now();
             child.kill("SIGTERM");
             return { ...(await completion), stopSeconds: (Date.now() - signalled) / 1000 };
