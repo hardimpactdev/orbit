@@ -46,8 +46,9 @@ it('gives a MySQL server only its root password', function (): void {
 
 /*
  * The real image with the exact env file: no trust line; over the socket only the OS user postgres logs in, as
- * postgres; root and the loopback need the password; and Orbit's own admin login still works. It starts a throwaway postgres:18 container, so it runs only in the `privileged` group with
- * ORBIT_REAL_DATABASE_CLIENTS=1 on a host where that is allowed, and removes it afterwards:
+ * postgres; root and the loopback need the password; and Orbit's own admin login still works. It starts a throwaway
+ * postgres:18 container, so it runs only in the `privileged` group with ORBIT_REAL_DATABASE_CLIENTS=1 on a host where
+ * that is allowed, and removes it afterwards:
  * `ORBIT_REAL_DATABASE_CLIENTS=1 vendor/bin/pest --group privileged --default-time-limit=300 <this file>`. CI does not run it.
  */
 it('makes the real postgres:18 image ask every login but the socket peer for its password', function (): void {
@@ -61,9 +62,9 @@ it('makes the real postgres:18 image ask every login but the socket peer for its
         fwrite($pipes[0], $stdin);
         fclose($pipes[0]);
         $out = (string) stream_get_contents($pipes[1]);
-        stream_get_contents($pipes[2]);
+        $err = (string) stream_get_contents($pipes[2]);
 
-        return ['exit' => proc_close($process), 'out' => trim($out)];
+        return ['exit' => proc_close($process), 'out' => trim($out), 'err' => $err];
     };
     try {
         expect($run(['sudo', '-n', 'docker', 'run', '--detach', '--pull=never', '--name', $name, '--env-file', '/dev/stdin', 'postgres:18'],
@@ -80,9 +81,12 @@ it('makes the real postgres:18 image ask every login but the socket peer for its
 
         expect($trust['out'])->toBe('0')
             ->and($socket['exit'])->not->toBe(0)
-            ->and($peer)->toBe(['exit' => 0, 'out' => 'postgres'])
+            ->and($socket['err'])->toContain('Peer authentication failed for user "postgres"')
+            ->and($peer['exit'])->toBe(0)
+            ->and($peer['out'])->toBe('postgres')
             ->and($loopback['exit'])->not->toBe(0)
-            ->and($admin)->toBe(['exit' => 0, 'out' => 'postgres'])
+            ->and($admin['exit'])->toBe(0)
+            ->and($admin['out'])->toBe('postgres')
             ->and($wrong['exit'])->not->toBe(0);
     } finally {
         exec('sudo -n docker rm --force --volumes '.escapeshellarg($name).' >/dev/null 2>&1');
