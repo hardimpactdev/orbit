@@ -14,8 +14,9 @@ use App\Models\Task;
 use App\Support\ValidatedData;
 
 /**
- * Projects the terminal event of one `operation-task-sync` run: the two commits that the fetch stored, or for a task copy the
- * default head it imported and how far its branch is behind, or the step that failed.
+ * Projects the terminal event of one task:sync run: for a task VM's `operation-task-sync` run the two commits that the fetch stored,
+ * for a task copy's `operation-task-sync-copy` run the default head it imported and how far its branch is behind, or the step that
+ * failed. It also chooses which of the two workflows admission records for the intent.
  */
 final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
 {
