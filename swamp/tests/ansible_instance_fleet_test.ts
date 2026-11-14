@@ -1983,3 +1983,70 @@ Deno.test({
     }
   },
 });
+
+Deno.test({
+  name: "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base",
+  ignore: !hasAnsible,
+  fn() {
+    const old = ruled();
+    delete old["nested-app-prod"].devices.checkout;
+    delete old["nested-app-prod"].config["raw.idmap"];
+    const f = fixture(old, { base: true });
+    try {
+      const started = f.run("start", ["-e", "fleet_refresh_follows=true"]);
+      assert(started.ok, started.output);
+      assertEquals(writes(f.calls()), []);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const map = calls.indexOf(`incus config set nested-app-prod raw.idmap=${idmap}`);
+      assert(map >= 0, calls.join("\n"));
+      for (const name of names) {
+        const stopped = calls.indexOf(`incus stop ${name} --timeout 90`);
+        assert(stopped >= 0 && stopped < map);
+        assert(calls.indexOf(`incus snapshot create ${name} base`) > map);
+      }
+      const base = f.state().containers["nested-app-prod"].snapshots.base;
+      assertEquals(base.config["raw.idmap"], idmap);
+      assertEquals(base.devices.checkout, ruled()["nested-app-prod"].devices.checkout);
+      // The next proof uses a strict reset, with no deployment admission flag.
+      const reset = f.run("reset");
+      assert(reset.ok, reset.output);
+      assertEquals(f.state().containers["nested-app-prod"].devices.checkout, base.devices.checkout);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps",
+  ignore: !hasAnsible,
+  fn() {
+    for (const phase of ["check", "start", "reset"]) {
+      const old = ruled();
+      delete old["nested-app-prod"].config["raw.idmap"];
+      const f = fixture(old, { base: true });
+      try {
+        const refused = f.run(phase);
+        assert(!refused.ok, phase);
+        assertStringIncludes(refused.output, "instance.container_fleet_drift");
+        assertStringIncludes(refused.output, "nested-app-prod config raw.idmap");
+        assert(!f.calls().some((call) => call.startsWith("incus config set")));
+      } finally {
+        f.cleanup();
+      }
+    }
+    const wrong = ruled();
+    wrong["nested-app-prod"].config["raw.idmap"] = "both 1000 1000";
+    const f = fixture(wrong, { base: true });
+    try {
+      const refused = f.run("start", ["-e", "fleet_refresh_follows=true"]);
+      assert(!refused.ok);
+      assertStringIncludes(refused.output, "instance.container_fleet_drift");
+      assertEquals(writes(f.calls()), []);
+    } finally {
+      f.cleanup();
+    }
+  },
+});

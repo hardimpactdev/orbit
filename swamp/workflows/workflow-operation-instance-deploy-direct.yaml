@@ -1792,7 +1792,7 @@ jobs:
       behaviorName: ${{ "instance-deploy-container-prepare-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true "$ORBIT_ANSIBLE/instance-container.yml"
+        run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true -e fleet_refresh_follows=true "$ORBIT_ANSIBLE/instance-container.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}

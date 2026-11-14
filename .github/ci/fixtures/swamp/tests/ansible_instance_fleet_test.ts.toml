@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "2855673ba382577cec305ca8602a3ec46823967a1e8240919a4fb3da4ce926d0"
+source_sha256 = "b69661007068c4f27a42f496a6d89b168d9511971e16fb7a6fbef4b1e178da19"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -63,10 +63,12 @@ cases = [
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
   "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it",
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
+  "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base",
+  "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2346
-slices = 62
+cost = 2486
+slices = 64
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -146,3 +148,7 @@ inputs = [
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
   "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them" = 41 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line" = 60 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
+
+# ESTIMATE: rollout regressions; local upgrade 42s, with slow-runner allowance.
+  "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 100
+  "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 40

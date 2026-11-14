@@ -2453,7 +2453,9 @@ The fleet rules:
 
 The refresh writes an egress file that differs on the running fleet, before the converge of the nested Nodes. The rules then find it in place.
 
-Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs (a key or device while the fleet is stopped, a file before the converge), and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent. A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; the check and the start also refuse a fleet that lacks `raw.idmap`.
+Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs (a key or device while the fleet is stopped, a file before the converge), and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent.
+
+A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; a standalone check, start or proof reset also refuses a fleet that lacks `raw.idmap`. The deployment’s initial start permits an absent build rule because its later refresh writes it with the fleet stopped and retakes `base`. A conflicting value still refuses before any change. This lets an older fleet acquire a newly required map through its normal deployment.
 
 The Operation's result `fleet_drift` names each difference, as `<container> <kind> <name>`; for the inner bridge the first part is the bridge, as in `oe-nested network raw.dnsmasq`.
 

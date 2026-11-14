@@ -57,7 +57,7 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
     assertEquals(phases("Finish the container", nested), ["processes", "fleet_refresh", "seed", "check"]);
     // The same list selects the tags and orders the phases; only the fleet check reads the room a refresh needs.
     assertEquals(step("Prepare the container").task.inputs.run,
-        'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true "$ORBIT_ANSIBLE/instance-container.yml"');
+        'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true -e fleet_refresh_follows=true "$ORBIT_ANSIBLE/instance-container.yml"');
     assertEquals(step("Finish the container").task.inputs.run,
         'timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" "$ORBIT_ANSIBLE/instance-container.yml"');
     // Each bound is the sum of its phases' former bounds, so a normal default's phases hang no longer than before: start 120 + fetch
