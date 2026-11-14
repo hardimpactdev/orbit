@@ -1,11 +1,13 @@
 ---
 # The T3 restart of one running container for its machine name (docs/cli/conn/environment-restart.mmd). The Gateway read T3's threads
 # with its admin session just before it admitted the run, and found no working run and no pending request.
-#   restart: read the container; one that no longer runs, or whose /etc/machine-info lacks the name, is skipped. Else
+#   restart: read the container; one that no longer runs, or whose /etc/machine-info lacks the name, is skipped; one whose T3 service runs
+#   a terminal or a turn's process answers busy. Else
 #   `systemctl try-restart t3.service`, then a bounded wait until T3 answers inside the container with the name as its label. Nothing
 #   else restarts, and the restart itself is never repeated.
 # It writes `result.json` in the run folder: `{"answer": "restarted", "restart_at": …}`,
-# `{"answer": "skipped", "reason": "frozen"|"stopped"|"name_not_written"}`, or the public error code.
+# `{"answer": "skipped", "reason": "frozen"|"stopped"|"name_not_written"}`, `{"answer": "busy", "reason": "processes", "terminals": n,
+# "commands": n}`, or the public error code.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -64,6 +66,24 @@
           when: restart_result is not defined and restart_machine_info.stdout != 'PRETTY_HOSTNAME=' ~ intent.name
           ansible.builtin.set_fact:
             restart_result: { answer: skipped, reason: name_not_written }
+
+        # The last guard, one read before the restart: the processes of T3's own cgroup. T3 itself, its resource monitor and an idle
+        # provider (`claude`, `codex`, with the `sh` it started with) may go. A terminal shell, which node-pty forks from T3, or what
+        # it runs, and a provider's tool process of a turn that started after the Gateway's read, keep the container busy.
+        - name: Read the processes of T3's service
+          when: restart_result is not defined
+          ansible.builtin.command:
+            argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, ps, -e, -o, "pid=,ppid=,etimes=,cgroup=,comm="]
+          register: restart_ps
+          changed_when: false
+
+        - name: Keep a container busy whose T3 runs a terminal or a turn's process
+          when: restart_result is not defined and (restart_users.terminals + restart_users.commands) > 0
+          ansible.builtin.set_fact:
+            restart_result: { answer: busy, reason: processes, terminals: "{{ restart_users.terminals }}", commands: "{{ restart_users.commands }}" }
+          vars:
+            restart_users: >-
+              {{ lookup('ansible.builtin.template', 'templates/t3-service-processes.j2', template_vars={'lines': restart_ps.stdout_lines}) | from_json }}
 
         # The time the Gateway read is measured against (docs/reference/development-containers.md#the-restart-window).
         - name: Note the time of the restart

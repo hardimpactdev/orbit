@@ -517,6 +517,11 @@ if (family === "list") {
     for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
     Deno.exit(0);
   }
+  // The container's process list: the lines a test gives as `ps`, as `ps -e -o pid=,ppid=,etimes=,cgroup=,comm=` prints them.
+  if (command[0] === "ps") {
+    for (const line of state.containers[name].ps ?? []) console.log(line);
+    Deno.exit(0);
+  }
   // T3 in the container: its well-known document once started (its label `t3_label`, else `t3`), sessions it issues and knows, and the project it adds.
   if (command[0] === "curl") {
     const url = command.at(-1)!;

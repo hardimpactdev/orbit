@@ -15,7 +15,7 @@ use Carbon\CarbonImmutable;
 
 /**
  * Records a T3 restart for the machine name from the run's one report: `restarted`, `skipped` when the container stopped or froze after
- * the Gateway's read or holds no name yet, or `failed` with the `conn.*` code of a T3 that did not come back. Nothing is retried.
+ * the Gateway's read or holds no name yet, `busy` when T3's service runs a terminal or a turn's command (the run's last guard), or `failed` with the `conn.*` code of a T3 that did not come back. Nothing is retried.
  */
 final readonly class ConnEnvironmentRestartProjection implements DirectOperationProjection
 {
@@ -41,6 +41,8 @@ final readonly class ConnEnvironmentRestartProjection implements DirectOperation
             $result = match (true) {
                 $answer === 'restarted' => ['answer' => 'restarted', ...self::window($operation, $raw['restart_at'] ?? null)],
                 $answer === 'skipped' && in_array($reason, ['frozen', 'stopped', 'name_not_written'], true) => ['answer' => 'skipped', 'reason' => $reason],
+                $answer === 'busy' && $reason === 'processes' && is_int($raw['terminals'] ?? null) && is_int($raw['commands'] ?? null)
+                    => ['answer' => 'busy', 'reason' => 'processes', 'terminals' => $raw['terminals'], 'commands' => $raw['commands']],
                 default => throw new ResourceOperationException('operation.result_invalid', 'The restart report names no answer.', 422),
             };
         } elseif (in_array($status, ['failed', 'interrupted'], true)) {

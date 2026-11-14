@@ -214,6 +214,7 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
     'no code of its own' => ['failed', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
     'restarted, with its window from the read' => ['succeeded', ['answer' => 'restarted', 'restart_at' => '2026-11-14T12:00:07.500000Z'], 'window', null],
     'interrupted' => ['interrupted', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
+    'busy with a terminal' => ['succeeded', ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 2], ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 2], null],
     'stopped after the read' => ['succeeded', ['answer' => 'skipped', 'reason' => 'stopped'], ['answer' => 'skipped', 'reason' => 'stopped'], null],
 ]);
 
@@ -237,7 +238,7 @@ it('refuses a malformed restarted report as an invalid result', function (array 
     expect(fn () => app(ConnEnvironmentRestartProjection::class)->apply($operation, ['run_id' => RestartRun, 'status' => 'succeeded',
         'started_at' => now()->subSeconds(20)->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $report]))
         ->toThrow(ResourceOperationException::class, 'restart report');
-})->with(['no answer' => [[]], 'restarted without its time' => [['answer' => 'restarted']], 'skipped without a reason' => [['answer' => 'skipped']]]);
+})->with(['no answer' => [[]], 'restarted without its time' => [['answer' => 'restarted']], 'skipped without a reason' => [['answer' => 'skipped']], 'busy without its counts' => [['answer' => 'busy', 'reason' => 'processes']]]);
 
 it('answers busy with instance.lifecycle_not_active for an Instance that is not active', function (): void {
     $clone = restartServer($this->default, 'clone', 3840);

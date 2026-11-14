@@ -30,16 +30,22 @@ Deno.test("the restart runs one tagged phase of the shipped playbook between the
     assert(!JSON.stringify(workflow).includes("vault.get"));
 });
 
+/** `ps -e -o pid=,ppid=,etimes=,cgroup=,comm=` lines, as measured on a container's T3 (docs/reference/development-containers.md#the-restart-window). */
+const t3 = "0::/system.slice/t3.service";
+const base = ["    1     0  9000 0::/init.scope systemd", `  389     1  4217 ${t3} node-MainThread`, `  466   389  4216 ${t3} t3-resource-mon`,
+    "  700     1  4000 0::/system.slice/orbit-web.service frankenphp"];
+const idle = [...base, ` 3630   389  4091 ${t3} claude`, ` 3631  3630  4091 ${t3} sh`];
+
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
 /** One run of the phase against a container in `status`, whose /etc/machine-info holds `written`, and whose T3 (the fixture's) answers `label` or not at all. */
-async function restart(options: { status?: string; down?: boolean; label?: string; written?: string }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
+async function restart(options: { status?: string; down?: boolean; label?: string; written?: string; ps?: string[] }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
     const folder = Deno.makeTempDirSync();
     try {
         for (const dir of ["bin", "run", "containers/instance-7/etc"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
         Deno.writeTextFileSync(`${folder}/containers/instance-7/etc/machine-info`, options.written ?? "PRETTY_HOSTNAME=clone.shop\n");
         Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
-            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop" } } }));
+            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop", ps: options.ps ?? idle } } }));
         Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
@@ -101,4 +107,34 @@ Deno.test({ name: "a T3 that answers without the name fails with conn.t3_label_m
     const run = await restart({ label: "instance-7" });
     assert(!run.ok, run.output);
     assertEquals(run.result.error_code, "conn.t3_label_mismatch");
+} });
+
+Deno.test({ name: "an idle T3 with its resource monitor and idle providers restarts; Orbit Processes outside its service do not count", ignore: !available, async fn() {
+    for (const ps of [idle, [...base, ` 3700   389   600 ${t3} codex`], base]) {
+        const run = await restart({ ps });
+        assert(run.ok, run.output);
+        assertEquals(run.result.answer, "restarted");
+        assertEquals(run.systemctl, [["try-restart", "--", "t3.service"]]);
+    }
+} });
+
+Deno.test({ name: "a T3 terminal, open idle or running a command, keeps the container busy and nothing restarts", ignore: !available, async fn() {
+    for (const [ps, terminals, commands] of [
+        [[...idle, ` 4100   389    30 ${t3} bash`], 1, 0],
+        [[...idle, ` 4100   389   300 ${t3} bash`, ` 4120  4100   200 ${t3} node`, ` 4121  4120   200 ${t3} esbuild`], 1, 2],
+        [[...base, ` 4100   389   300 ${t3} zsh`, ` 4130  4100    40 ${t3} sleep`], 1, 1],
+    ] as const) {
+        const run = await restart({ ps: [...ps] });
+        assert(run.ok, run.output);
+        assertEquals(run.result, { answer: "busy", reason: "processes", terminals, commands });
+        assertEquals(run.systemctl, []);
+    }
+} });
+
+Deno.test({ name: "a provider's tool process of a turn that started after the read keeps the container busy", ignore: !available, async fn() {
+    // Measured mid-turn on a container's T3: the provider runs a tool shell with its commands.
+    const run = await restart({ ps: [...idle, `203790  3630     0 ${t3} bash`, `203791 203790     0 ${t3} ps`, `203792 203790     0 ${t3} bash`] });
+    assert(run.ok, run.output);
+    assertEquals(run.result, { answer: "busy", reason: "processes", terminals: 0, commands: 3 });
+    assertEquals(run.systemctl, []);
 } });

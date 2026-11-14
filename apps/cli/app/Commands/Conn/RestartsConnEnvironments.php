@@ -55,9 +55,13 @@ trait RestartsConnEnvironments
             }
             $operation = $this->restartEnd($connector, $restart->operationId);
             $result = $operation->result ?? [];
-            [$answer, $reason] = $operation->succeeded() && in_array($result['answer'] ?? null, ['restarted', 'skipped'], true)
+            [$answer, $reason] = $operation->succeeded() && in_array($result['answer'] ?? null, ['restarted', 'skipped', 'busy'], true)
                 ? [(string) $result['answer'], is_string($result['reason'] ?? null) ? $result['reason'] : null]
                 : ['failed', $operation->errorCode ?? $operation->status];
+            // The run's last guard names what T3's service runs: a restart would end it.
+            if ($reason === 'processes' && is_int($result['terminals'] ?? null) && is_int($result['commands'] ?? null)) {
+                $reason = "processes: {$result['terminals']} terminal(s), {$result['commands']} command(s)";
+            }
         }
         if ($this->option('json') !== true) {
             $this->writeHumanMessage("{$restart->instanceId} {$restart->instance}: {$answer}".($reason === null ? '' : " ({$reason})"));

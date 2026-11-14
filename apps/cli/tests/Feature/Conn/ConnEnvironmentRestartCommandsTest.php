@@ -61,6 +61,7 @@ it('walks a Node, follows each admitted restart to its end, and prints one answe
     $mock->assertSent(ShowOperationRequest::class);
 })->with([
     'restarted' => [restartOperation('succeeded', 4, ['answer' => 'restarted', 'window_ms' => 6100]), 'restarted', null, 0],
+    'busy in the run' => [restartOperation('succeeded', 4, ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 1]), 'busy', 'processes: 1 terminal(s), 1 command(s)', 0],
     'failed' => [restartOperation('failed', 4, ['answer' => 'failed', 'error_code' => 'conn.t3_unready'], 'conn.t3_unready'), 'failed', 'conn.t3_unready', 1],
 ]);
 

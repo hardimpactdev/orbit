@@ -1,0 +1,38 @@
+{#- The processes of a container's t3.service that a T3 restart would end and that are a user's: `lines` is `ps -e -o
+    pid=,ppid=,etimes=,cgroup=,comm=` run in the container (docs/reference/development-containers.md#the-restart-window).
+    T3's main process is the one whose parent is outside the service. It may go, as may these of its children: the resource monitor,
+    and an idle provider (`claude`, `codex`) with the one `sh` it started with that runs nothing. Every other child of T3 is a
+    terminal shell (node-pty forks it from T3), open or running something: a restart would lose its state. Every other process is a
+    turn's tool or command, or what a terminal runs. Prints JSON {"terminals": n, "commands": n}: shells, and the commands of a turn or a terminal. -#}
+{%- set procs = [] -%}
+{%- for line in lines -%}
+  {%- set f = line.split(None, 4) -%}
+  {%- if f | length == 5 and f[3].endswith('/system.slice/t3.service') -%}
+    {%- set _ = procs.append({'pid': f[0] | int, 'ppid': f[1] | int, 'age': f[2] | int, 'comm': f[4] | trim}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- set pids = procs | map(attribute='pid') | list -%}
+{%- set parents = procs | map(attribute='ppid') | list -%}
+{%- set main = procs | rejectattr('ppid', 'in', pids) | map(attribute='pid') | list -%}
+{%- set allowed = [] + main -%}
+{%- set providers = [] -%}
+{%- set counts = {'terminals': 0, 'commands': 0} -%}
+{%- for p in procs if p.ppid in main -%}
+  {%- if p.comm == 't3-resource-mon' -%}
+    {%- set _ = allowed.append(p.pid) -%}
+  {%- elif p.comm in ['claude', 'codex'] -%}
+    {%- set _ = allowed.append(p.pid) -%}
+    {%- set _ = providers.append(p) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- for provider in providers -%}
+  {%- for p in procs if p.ppid == provider.pid and p.comm == 'sh' and p.pid not in parents and (p.age - provider.age) | abs <= 5 -%}
+    {%- if loop.first -%}
+      {%- set _ = allowed.append(p.pid) -%}
+    {%- endif -%}
+  {%- endfor -%}
+{%- endfor -%}
+{%- for p in procs if p.pid not in allowed -%}
+  {%- set _ = counts.update({'terminals': counts.terminals + 1} if p.ppid in main else {'commands': counts.commands + 1}) -%}
+{%- endfor -%}
+{{ counts | to_json }}
