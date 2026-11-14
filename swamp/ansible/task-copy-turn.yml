@@ -53,6 +53,66 @@
       ansible.builtin.command:
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
+    # A new thread's model must be one the copy's T3 lists for the instance's driver: stock T3 checks no model at `thread start`, so
+    # a wrong one would fail only inside the run. `settings.json` names the driver; T3's cached `model-manifest.json` lists its model
+    # slugs and aliases. Without the cache file (T3 then uses the catalog it ships) or the driver in it, nothing is checked. Before
+    # any checkout and launch, so a refusal leaves the copy as it was.
+    - name: Check the model against T3's catalog
+      when: intent.turn.thread == 'new'
+      block:
+        - name: Read T3's provider instances
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '20', '/usr/bin/cat', '/home/agent/.t3/userdata/settings.json'] }}"
+          register: model_settings
+          failed_when: false
+          changed_when: false
+          no_log: true
+        - name: Read T3's model catalog
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '20', '/usr/bin/cat', '/home/agent/.t3/userdata/model-manifest.json'] }}"
+          register: model_catalog
+          failed_when: false
+          changed_when: false
+          no_log: true
+        - name: Name the instance's driver
+          ansible.builtin.set_fact:
+            model_driver: >-
+              {{ (model_settings.stdout | from_json).get('providerInstances', {}).get(intent.turn.provider, {}).get('driver', intent.turn.provider)
+                 if model_settings.rc == 0 else intent.turn.provider }}
+          no_log: true
+        - name: Name the models T3 lists for it
+          ansible.builtin.set_fact:
+            model_entries: >-
+              {{ (model_catalog.stdout | from_json).get('manifest', {}).get('providers', {}).get(model_driver, {}).get('models')
+                 if model_catalog.rc == 0 else none }}
+          no_log: true
+      rescue:
+        - name: List no models
+          ansible.builtin.set_fact:
+            model_entries: null
+      always:
+        - name: Write the model evidence
+          ansible.builtin.copy:
+            content: >-
+              {{ {'model': intent.turn.model,
+                  'offered': none if model_entries | default(none) is none else model_entries | map(attribute='slug') | list,
+                  'accepted': model_entries | default(none) is none
+                    or intent.turn.model in (model_entries | map(attribute='slug') | list)
+                    + (model_entries | map(attribute='aliases', default=[]) | flatten)} | to_json }}
+            dest: "{{ run }}/model.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Require a model T3 offers
+          ansible.builtin.assert:
+            that: >-
+              model_entries | default(none) is none
+              or intent.turn.model in (model_entries | map(attribute='slug') | list) + (model_entries | map(attribute='aliases', default=[]) | flatten)
+            fail_msg: tasks.copy_turn_model_unoffered
     # A continued turn sends to the T3 thread whose title names the Orbit thread. Without exactly one, nothing is launched. A list that
     # fails or is not JSON names no exit code: that is T3 failing, not a missing thread.
     - name: Find the thread to continue
@@ -193,7 +253,8 @@
           no_log: true
         - name: Write the start evidence
           ansible.builtin.copy:
-            content: "{{ {'start_exit': turn_start.rc, 'start': turn_start.stdout | default('')} | to_json }}"
+            # T3 prints a refused start, such as an instance it does not know, on stderr only.
+            content: "{{ {'start_exit': turn_start.rc, 'start': turn_start.stdout | default(''), 'error': turn_start.stderr | default('')} | to_json }}"
             dest: "{{ run }}/start.json"
             mode: "0600"
           delegate_to: localhost
