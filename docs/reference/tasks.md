@@ -1272,7 +1272,7 @@ Orbit decides from its own records that a group's work is done. All of these mus
 - The group is open, its workspace is a task copy, and it has no pull request.
 - Every subtask has ended, and at least one is `completed`.
 - The last completed subtask has a passed handoff check that is an [eligible candidate](#check-an-external-group), and no handoff check of the group is newer. This is the done check.
-- The newest turn of the group's reviewer thread reviewed exactly the done check's commit for that subtask and ended `done`.
+- The newest turn of the group's reviewer thread reviewed exactly the done check's commit for that subtask and ended `done`. The commit counts, not the check: a re-check of a clean recorded HEAD makes a new check with the same commit, and a reviewer turn on the earlier check of that commit still counts.
 - No earlier copy turn may still run, and no other Operation of the group runs.
 
 A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval. No clock decides "after": a turn is admitted only on the current subtask, and [`task:update`](/cli/task/update) refuses to complete a task copy's subtask with `tasks.copy_turn_unended` while a copy turn of the group runs. So a reviewer turn on the last subtask always ended before that subtask was completed.

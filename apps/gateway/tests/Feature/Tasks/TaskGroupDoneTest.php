@@ -90,3 +90,18 @@ it('is not made done by a later write to the subtask, such as a comment, while t
 
     expect(doneCheckOf($world->group))->toBeNull();
 });
+
+it('takes a re-check of the same commit as the done check, and counts the reviewer turn on the earlier check of that commit', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    // A handoff re-check of a clean recorded HEAD makes no new commit: a new check row with the same commit.
+    $recheck = TaskCopyDoneFixture::check($world->group, $world->subtask, TaskCopyDoneFixture::Commit);
+
+    expect(doneCheckOf($world->group))->toBe($recheck->id)->and($recheck->id)->not->toBe($world->check->id);
+});
+
+it('does not count a reviewer turn on another commit than the re-check\'s', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    TaskCopyDoneFixture::check($world->group, $world->subtask, str_repeat('c', 40));
+
+    expect(doneCheckOf($world->group))->toBeNull();
+});
