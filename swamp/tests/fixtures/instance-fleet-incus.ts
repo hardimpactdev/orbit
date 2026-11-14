@@ -165,6 +165,18 @@ if (command[0] === "incus") {
     for (const value of found) value.status = "Stopped";
     done();
   }
+  // `start` takes several names in one call (the reset): Incus starts each it can and fails naming the others.
+  if (inner[0] === "start" && inner.length > 2) {
+    const errors: string[] = [];
+    for (const name of inner.slice(1)) {
+      const found = container(name);
+      if (state.failStart?.[name]) errors.push(`${name}: ${state.failStart[name]}`);
+      else if (found.status === "Running") errors.push(`${name}: The instance is already running`);
+      else found.status = "Running";
+    }
+    if (errors.length > 0) fail(errors.join("; "));
+    done();
+  }
   if (inner[0] === "start" || inner[0] === "stop") {
     const found = container(inner[1]);
     if (inner[0] === "start") {

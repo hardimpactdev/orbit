@@ -5,9 +5,9 @@
 # The proof of a task copy runs it before each batch (docs/reference/development-containers.md#reset).
 # A restore of a running container stops it and boots it again, one by one: 9.6 s for the three on the inner volume. So the reset
 # stops the running ones in one call (1.75 s), restores each stopped container (0.9 s; nested-gateway 2.5 s; each has 45 s), and the
-# start boots them together. Its waits poll every second, not every 5 s as the refresh's do: the whole reset took 15.9 s against
-# 30.7 s (measured by hand in a task copy, 2026-11-14). Each wait is an include, so its `fleet_ready_delay` wins over the fact that
-# instance-fleet.yml sets.
+# start boots the three in one call after its rules check (`fleet_start_together`; 0.44 s in parallel). Its waits poll every second,
+# not every 5 s as the refresh's do: the whole reset took 15.9 s against 30.7 s (measured by hand in a task copy, 2026-11-14). Each
+# wait is an include, so its `fleet_ready_delay` wins over the fact that instance-fleet.yml sets.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
 # Only a clone's fleet is reset. A default's fleet is the seed of every copy, so the play refuses it before any command, also when someone
 # runs it by hand; the Gateway refuses it first with `proof.copy_fleet_missing`.
@@ -50,7 +50,7 @@
         quiet: true
     - name: Start the fleet
       ansible.builtin.include_tasks: instance-fleet-start.yml
-      vars: { fleet_ready_delay: 1 }
+      vars: { fleet_ready_delay: 1, fleet_start_together: true }
     # The migrate reads `.env` and writes `storage` of the nested Gateway: their state mounts come up at boot, after the start, so the reset
     # waits for them first, as the refresh does (instance-fleet-mounts.yml), with the Swamp state when the Club key is there.
     - name: Look for the Club key

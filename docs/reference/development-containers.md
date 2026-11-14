@@ -2358,6 +2358,7 @@ A restore of a running container stops it and boots it again, so the reset stops
 | --- | --- |
 | Stop the three at once | 1.75 |
 | Restore a stopped container | 0.9 each; `nested-gateway` 2.5 |
+| Start the three in one call, after the rules check | 0.44 |
 | The whole reset, with readiness | 15.9 |
 | The whole reset before these cuts: running restores one by one (9.6 s), polls every 5 s | 30.7 |
 

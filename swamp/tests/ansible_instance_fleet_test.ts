@@ -616,7 +616,8 @@ Deno.test({
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...startReads,
         "incus list --format csv --columns ns",
-        ...names.map((name) => `incus start ${name}`),
+        // One call starts the three after the rules check: Incus boots them in parallel.
+        `incus start ${names.join(" ")}`,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
@@ -674,9 +675,21 @@ Deno.test({
       // Each start is its own call after the failed restore, so one that fails stops none of the others.
       assertEquals(calls.slice(stop + 1).filter((call) => call.startsWith("incus start")), names.map((name) => `incus start ${name}`));
       assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      // The one start of the three fails for one of them: the check names the call's containers and the reason.
+      f.change((state) => {
+        state.containers["nested-app-prod"].snapshots.base = structuredClone(state.containers["nested-app-dev"].snapshots.base);
+        state.failStart = { "nested-app-dev": "Failed to start device" };
+      });
+      f.calls();
+      const unstarted = f.run("reset");
+      assert(!unstarted.ok);
+      assertStringIncludes(unstarted.output, `"msg": "${names.join(", ")} did not start: Error: nested-app-dev: Failed to start device"`);
+      f.change((state) => delete state.failStart);
+      assert(f.run("start").ok);
       // A fleet that was stopped before the reset stays stopped.
       f.change((state) => {
         for (const name of names) state.containers[name].status = "Stopped";
+        delete state.containers["nested-app-prod"].snapshots.base;
       });
       f.calls();
       assert(!f.run("reset").ok);
