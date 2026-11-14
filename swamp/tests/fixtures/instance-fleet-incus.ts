@@ -26,6 +26,9 @@ const done = (output?: unknown): never => {
 const pairs = (values: string[]) =>
   Object.fromEntries(values.map((value) => [value.slice(0, value.indexOf("=")), value.slice(value.indexOf("=") + 1)]));
 const copy = <T>(value: T): T => structuredClone(value);
+/** The nested Gateway's six Swamp tokens that the refresh keeps young (instance-fleet.yml `fleet_token_names`). */
+const tokenNames = ["serve-driver", "orbit-gateway-run", "orbit-gateway-read", "orbit-worker-a-access", "orbit-worker-b-access", "orbit-worker-c-access"];
+const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
 
 // The Node's own read of the Instance container (instance-fleet-proxy.yml): `lastUsedAt` is its last start.
 if (args[0] === "query" && args[1] === "--" && args[2] === `/1.0/instances/${state.outer.name}?project=${state.outer.project}`) {
@@ -245,6 +248,27 @@ if (command[0] === "incus") {
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
     if (rest[0] === "systemctl" && rest[1] === "show") done("inactive\ninactive");
+    // The nested Gateway's Swamp tokens, names and dates only, as `swamp access token list --json` prints them. `tokens` maps a name to its
+    // creation time; by default the six exist and are one day old. `tokensUnreadable` makes the list fail.
+    if (rest[0] === "env" && rest.includes("swamp") && rest.includes("list")) {
+      if (state.tokensUnreadable) fail("Error: the token store is locked");
+      const tokens: Record<string, string> = state.tokens ?? Object.fromEntries(tokenNames.map((token) => [token, iso(Date.now() - 86400_000)]));
+      done(JSON.stringify(Object.entries(tokens).map(([token, created]) => ({ name: token, createdAt: created, expiresAt: created })), null, 2));
+    }
+    // The remint play in the nested Gateway: it makes the worker set whole, renews the six tokens and starts serve and the three
+    // workers. `remintFail` makes it fail with a play error; its output holds no token, as the real play's.
+    if (rest[0] === "env" && rest.some((value) => value.endsWith("ansible-playbook")) && rest.includes("remint")) {
+      state.reminted = (state.reminted ?? 0) + 1;
+      if (state.remintFail) {
+        console.log("TASK [Rotate the serve driver token] ***\nfatal: [localhost]: FAILED! => {\"changed\": true, \"cmd\": \"umask 077 && swamp access token rotate serve-driver --duration 30d --json >/dev/null\", \"rc\": 1}");
+        fail("PLAY RECAP *********\nlocalhost                  : ok=12   changed=3    unreachable=0    failed=1    skipped=0");
+      }
+      state.tokens = Object.fromEntries(tokenNames.map((token) => [token, iso(Date.now())]));
+      const gateway = container(name);
+      gateway.files ??= {};
+      gateway.files["/etc/orbit/swamp-role-worker/c/server.token"] = "made";
+      done("PLAY RECAP *********\nlocalhost                  : ok=40   changed=21   unreachable=0    failed=0    skipped=0");
+    }
     // The grants play in the nested Gateway: its recap names how many files it changed (`grantsChanged`, 0 by default).
     if (rest[0] === "env" && rest.some((value) => value.endsWith("ansible-playbook"))) {
       const changed = state.grantsChanged ?? 0;

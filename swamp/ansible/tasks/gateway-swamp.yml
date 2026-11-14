@@ -25,20 +25,6 @@
   ansible.builtin.stat: { path: "{{ swamp_cli.SWAMP_API_KEY_FILE }}" }
   register: swamp_key
   failed_when: not swamp_key.stat.exists
-- name: Make the credential folders
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: directory
-    owner: root
-    group: "{{ item.group | default('root') }}"
-    mode: "{{ item.mode }}"
-  loop:
-    - { path: "{{ swamp_credentials }}", mode: "0755" }
-    # The workers run as the swamp account and read their tokens directly: systemd credentials do nothing in a system container.
-    - { path: "{{ swamp_credentials }}/a", mode: "0750", group: "{{ swamp_user }}" }
-    - { path: "{{ swamp_credentials }}/b", mode: "0750", group: "{{ swamp_user }}" }
-    - { path: "{{ swamp_credentials }}/c", mode: "0750", group: "{{ swamp_user }}" }
-  loop_control: { label: "{{ item.path }}" }
 - name: Write the units
   ansible.builtin.copy:
     dest: "/etc/systemd/system/{{ item.name }}"
@@ -88,14 +74,6 @@
 - name: Read the Gateway SSH key
   ansible.builtin.slurp: { src: "{{ swamp_home }}/.orbit/ssh/id_ed25519.pub" }
   register: gateway_public_key
-- name: Install the Swamp identity
-  ansible.builtin.copy:
-    src: "{{ swamp_home }}/.orbit/ssh/id_ed25519"
-    remote_src: true
-    dest: "{{ swamp_credentials }}/ssh-identity"
-    owner: root
-    group: "{{ swamp_user }}"
-    mode: "0440"
 - name: Let this machine accept the identity
   ansible.builtin.lineinfile:
     path: "{{ swamp_home }}/.ssh/authorized_keys"
@@ -131,48 +109,16 @@
   become_user: "{{ swamp_user }}"
   environment: "{{ swamp_cli }}"
   no_log: true
-- name: Look for the worker tokens
-  ansible.builtin.stat: { path: "{{ swamp_credentials }}/{{ item }}/server.token" }
-  loop: [a, b, c]
-  register: worker_tokens
-- name: Mint the worker tokens
-  ansible.builtin.shell:
-    cmd: |
-      set -eu
-      umask 077
-      stage={{ swamp_home }}/.config/swamp/worker-{{ item }}
-      swamp worker token create orbit-worker-{{ item }} --duration 30d --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.enrollment"
-      swamp access token mint orbit-worker-{{ item }}-access --principal worker:{{ item }} --duration 30d --json >/dev/null
-      swamp access token reveal orbit-worker-{{ item }}-access --json | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])' > "$stage.server"
-    chdir: "{{ swamp_repository }}"
-    executable: /bin/bash
-  become_user: "{{ swamp_user }}"
-  environment: "{{ swamp_cli }}"
-  loop: [a, b, c]
-  when: not (worker_tokens.results | selectattr('item', 'equalto', item) | map(attribute='stat.exists') | first)
-  no_log: true
-- name: Place the worker tokens
+- name: Make the worker set whole
+  ansible.builtin.import_tasks: gateway-swamp-workers.yml
+- name: Install the Swamp identity
   ansible.builtin.copy:
-    src: "{{ swamp_home }}/.config/swamp/worker-{{ item.worker }}.{{ item.kind }}"
+    src: "{{ swamp_home }}/.orbit/ssh/id_ed25519"
     remote_src: true
-    dest: "{{ swamp_credentials }}/{{ item.worker }}/{{ item.token }}.token"
+    dest: "{{ swamp_credentials }}/ssh-identity"
     owner: root
     group: "{{ swamp_user }}"
-    mode: "0640"
-    force: false
-  loop:
-    - { worker: a, kind: enrollment, token: enrollment }
-    - { worker: a, kind: server, token: server }
-    - { worker: b, kind: enrollment, token: enrollment }
-    - { worker: b, kind: server, token: server }
-    - { worker: c, kind: enrollment, token: enrollment }
-    - { worker: c, kind: server, token: server }
-  loop_control: { label: "{{ item.worker }} {{ item.kind }}" }
-  no_log: true
-- name: Remove the staged worker tokens
-  ansible.builtin.file: { path: "{{ swamp_home }}/.config/swamp/worker-{{ item.0 }}.{{ item.1 }}", state: absent }
-  loop: "{{ ['a', 'b', 'c'] | product(['enrollment', 'server']) | list }}"
-  loop_control: { label: "{{ item.0 }} {{ item.1 }}" }
+    mode: "0440"
 # What the Gateway needs to start runs: its run and read tokens, the front's address and the identity it gives Nodes.
 - name: Give the Gateway its Swamp settings
   ansible.builtin.shell:

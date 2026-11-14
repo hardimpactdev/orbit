@@ -1,6 +1,6 @@
 {
   "source_sha256": "d126188db662fcc5c6dfb151899f706ed7893556335b02a1bf9bc94f77945875",
-  "note": "Completed local Beast run with four concurrent fixture processes after merging #3661 and regenerating the saved state and records through the shipped refresh. These are local body seconds, not hosted times or a p90. Existing estimates outside the split are retained. The two DNS bridge cases were measured again after merging #3666 and regenerating the network boundary from a real refresh; their former main table estimates (130s and 7s) are replaced with these local body times.",
+  "note": "Completed local Beast run with four concurrent fixture processes after merging #3661 and regenerating the saved state and records through the shipped refresh. These are local body seconds, not hosted times or a p90. Existing estimates outside the split are retained. The two DNS bridge cases were measured again after merging #3666 and regenerating the network boundary from a real refresh; their former main table estimates (130s and 7s) are replaced with these local body times. The three token cases are local body seconds on Beast from saved state (one refresh each), measured with other fixture processes running.",
   "estimate_factor": 2.1,
   "single_refresh_cases": [
     "the saved refreshed fleet boundary matches a real first refresh and start",
@@ -30,7 +30,10 @@
     "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
     "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
     "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three",
-    "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read"
+    "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read",
+    "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
+    "a fleet without worker c remints at once and names it incomplete",
+    "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints"
   ],
   "case_seconds": {
     "the saved refreshed fleet boundary matches a real first refresh and start": 36.23,
@@ -60,6 +63,9 @@
     "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants": 12.041,
     "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing": 12.644,
     "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three": 25.953,
-    "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read": 6.578
+    "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read": 6.578,
+    "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken": 12.0,
+    "a fleet without worker c remints at once and names it incomplete": 10.0,
+    "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints": 2.0
   }
 }

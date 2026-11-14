@@ -117,6 +117,48 @@
           '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'grants',
           intent.fleet.checkout.path ~ '/swamp/ansible/gateway-bootstrap.yml'] }}
   changed_when: "fleet_grants.stdout is not search('changed=0 ')"
+# The nested Gateway's Swamp tokens live 30 days, and a fleet lives longer. Every run with the Club key reads their names and dates
+# (`swamp access token list`, which shows no secret). They are due when one of the six is missing or older than `fleet_token_max_age`
+# seconds (20 days); then the `remint` play makes the worker set whole and renews all six. The remint stops serve and the workers, and it
+# ends only when they are active again, so no other part of the refresh runs on them meanwhile. A list that cannot be read is due too:
+# the remint then fails or renews. Without the Club key the nested Gateway's Swamp does not run, and the tokens are skipped.
+- name: Read the Swamp tokens of the nested Gateway
+  when: fleet_club.rc == 0
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '60'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd', intent.fleet.checkout.path ~ '/swamp', '--']
+         + fleet_as_app_user + ['env', 'HOME=/home/orbit', 'SWAMP_HOME=/home/orbit/.swamp', 'SWAMP_CONFIG_DIR=/home/orbit/.config/swamp',
+           'SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key', 'SWAMP_NO_UPDATE_CHECK=1', 'SWAMP_NO_TELEMETRY=1',
+           'swamp', 'access', 'token', 'list', '--json'] }}
+  register: fleet_tokens_read
+  changed_when: false
+  failed_when: false
+- name: Work out whether the tokens are due
+  vars:
+    fleet_token_list: >-
+      {%- set read = fleet_tokens_read.stdout | default('') | trim -%}
+      {{ (read | from_json) if fleet_tokens_read.rc | default(1) == 0 and read is match('(?s)^\[.*\]$') else none }}
+    fleet_token_created: >-
+      {{ dict((fleet_token_list or []) | selectattr('name', 'defined') | selectattr('createdAt', 'defined')
+         | map(attribute='name') | zip((fleet_token_list or []) | selectattr('name', 'defined') | selectattr('createdAt', 'defined')
+         | map(attribute='createdAt') | map('string') | map('truncate', 19, true, '', 0))) }}
+    fleet_token_cutoff: "{{ '%Y-%m-%dT%H:%M:%S' | strftime((now().timestamp() | int) - (fleet_token_max_age | default(1728000) | int), utc=true) }}"
+  ansible.builtin.set_fact:
+    fleet_tokens_reason: >-
+      {{ 'no_key' if fleet_club.rc != 0 else 'unreadable' if fleet_token_list is none
+         else 'incomplete' if fleet_token_names | difference(fleet_token_created.keys() | list) | length > 0
+         else 'age' if fleet_token_names | map('extract', fleet_token_created) | select('lt', fleet_token_cutoff) | list | length > 0
+         else 'young' }}
+- name: Renew the inner Swamp tokens
+  when: fleet_tokens_reason not in ['no_key', 'young']
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '600'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'env',
+          'ANSIBLE_CONFIG=' ~ intent.fleet.checkout.path ~ '/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true',
+          '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint',
+          intent.fleet.checkout.path ~ '/swamp/ansible/gateway-bootstrap.yml'] }}
+  register: fleet_tokens
+  changed_when: true
 # The migrate runs whenever the code changed: `apps/gateway` holds its migrations and the Composer lock of the packages that ship
 # migrations too. Only a migrate that applied one changed the nested Gateway's disk; any other output counts as applied.
 - name: Migrate the nested Gateway
@@ -127,8 +169,9 @@
          + fleet_as_app_user + ['php', 'artisan', 'migrate', '--force'] }}
   register: fleet_migrate
   changed_when: "'Nothing to migrate' not in fleet_migrate.stdout"
+# The services also restart after a remint: Horizon keeps the run and read tokens of `.env` for its life.
 - name: Restart the services
-  when: fleet_due.code
+  when: fleet_due.code or fleet_tokens is changed
   ansible.builtin.command:
     argv: "{{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'systemctl', 'restart'] + fleet_gateway_services }}"
   changed_when: true
@@ -305,8 +348,8 @@
       {%- endfor -%}
       {{ out }}
     # Every step that writes to a nested container's own disk, with that container's role. A step that reported a change marks its
-    # container for `base`. A new writer joins this list. The converges mark their Node and the nested Gateway, which records them.
-    fleet_disk_writers: "{{ [['gateway', fleet_migrate], ['gateway', fleet_grants]] }}"
+    # container for `base`. A new writer joins this list. The remint writes the tokens, `.env` and the Swamp state of the nested Gateway. The converges mark their Node and the nested Gateway, which records them.
+    fleet_disk_writers: "{{ [['gateway', fleet_migrate], ['gateway', fleet_grants], ['gateway', fleet_tokens]] }}"
     fleet_changed_roles: >-
       {{ (fleet_disk_writers | selectattr('1', 'changed') | map('first') | list) + fleet_converge_changed_roles
          + (['gateway'] if fleet_converge_changed_roles | length > 0 else []) }}
@@ -373,11 +416,14 @@
   ansible.builtin.set_fact:
     fleet_refresh_result:
       migrate: "{{ 'skipped' if fleet_migrate is skipped else 'applied' if fleet_migrate is changed else 'nothing' }}"
-      restart: "{{ 'yes' if fleet_due.code else 'no' }}"
+      restart: "{{ 'yes' if fleet_due.code or fleet_tokens is changed else 'no' }}"
       converge: "{{ 'ran' if fleet_due.converge else 'skipped' }}"
       # Why: `changed` (a digest differs), `record` (the record is missing or unreadable), `digest_unreadable`, `stale` (7 days), `unchanged`.
       converge_reason: "{{ fleet_converge_reason }}"
       changed: "{{ fleet_converge_changed | int }}"
+      tokens: "{{ 'skipped' if fleet_tokens_reason == 'no_key' else 'young' if fleet_tokens_reason == 'young' else 'reminted' }}"
+      # Why: `age` (one is older than `fleet_token_max_age`), `incomplete` (one is missing, such as worker c's), `unreadable`, `young`, `no_key`.
+      tokens_reason: "{{ fleet_tokens_reason }}"
       base: "{{ 'retaken' if fleet_base_targets | length > 0 else 'kept' }}"
       base_containers: "{{ fleet_base_targets }}"
       record: "{{ fleet_record_state }}"
