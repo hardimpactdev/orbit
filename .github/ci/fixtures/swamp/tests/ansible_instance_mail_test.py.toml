@@ -1,8 +1,9 @@
 order = 1230
-source_sha256 = "b4e313471a8b830a46387ea5f00bd0d343693da2f37f433b431848161a14c53f"
+source_sha256 = "48bd3274e7588f23488f76c58a84453fd2fc65ac0a95adcce5502968079be996"
 cases = [
   "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes",
   "test_new_admission_metadata_and_incus_empty_fields_are_unchanged",
+  "test_each_admission_replaces_the_older_mail_record",
   "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it",
   "test_failure_after_one_successful_service_write_finishes_pending_activation",
   "test_failure_after_all_writes_before_reload_finishes_pending_activation",
@@ -29,6 +30,7 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-create.yaml",
 ]
 [case_costs]
+"test_each_admission_replaces_the_older_mail_record" = 1
 "test_two_private_listeners_exact_rule_additive_dnat_refresh_and_no_app_changes" = 1
 "test_new_admission_metadata_and_incus_empty_fields_are_unchanged" = 1
 "test_failed_unit_write_keeps_network_path_and_a_retry_completes_it" = 1
@@ -41,4 +43,4 @@ inputs = [
 "test_migrate_selected_smtp_passes_real_preflight_and_installs_forwarders" = 1
 "test_active_owned_socket_with_missing_enable_link_is_repaired" = 1
 "test_failed_guest_entry_preserves_only_exact_public_codes_at_subprocess_boundary" = 1
-"test_real_default_launch_continues_after_mail_failure" = 3
+"test_real_default_launch_continues_after_mail_failure" = 2

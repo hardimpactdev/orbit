@@ -1,5 +1,5 @@
 order = 350
-source_sha256 = "7aacc4b03ca1f8019410960f4600962ff2de40fff55f07aef979f6909b142773"
+source_sha256 = "3923ce66d6f617c94adda92d1104631292e47a858956b159c22ab7b45fb7465d"
 cases = [
   "test_stale_capture_keeps_later_admission_then_current_capture_prunes_it",
   "test_refresh_paused_after_read_cannot_resurrect_last_user_after_withdrawal",
@@ -20,6 +20,10 @@ cases = [
   "test_cli_reports_busy_without_a_second_acquire_or_health_mutation",
   "test_nat_and_incus_timeouts_release_the_lock_and_record_named_failure",
   "test_reconcile_compacts_old_records_deduplicates_and_never_deletes_newer_records",
+  "test_attach_replaces_older_records_of_its_host_and_port_and_keeps_other_keys",
+  "test_refresh_drops_records_an_older_helper_left",
+  "test_older_attach_run_after_a_newer_one_keeps_the_newest_record",
+  "test_unconfirmed_acl_write_keeps_the_older_record",
   "test_rechecks_newer_rule_without_a_record_before_removing_and_preserves_unknown_descriptions",
   "test_only_one_exact_published_mapping_is_accepted",
   "test_wildcard_and_explicit_bridge_publications_share_the_exact_resolver",
