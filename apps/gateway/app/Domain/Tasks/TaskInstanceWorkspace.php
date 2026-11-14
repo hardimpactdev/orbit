@@ -81,6 +81,8 @@ final readonly class TaskInstanceWorkspace
      */
     public function publication(): array
     {
+        // Readiness first: a copy whose create still runs has no start commit yet, and it is only not ready.
+        $this->requireReady();
         $start = $this->instance->starting_commit;
         $environment = InstanceContainer::environmentFile($this->instance);
         if (! is_string($start) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $start) !== 1 || ! str_starts_with($environment, self::Root.'/')) {

@@ -35,6 +35,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
@@ -1688,6 +1689,29 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($refusal($check)[0])->toBe('tasks.copy_not_ready')
             ->and($refusal($publish)[0])->toBe('tasks.copy_not_ready')
             ->and(TaskCheck::query()->count())->toBe(0);
+    });
+
+    it('answers tasks.copy_not_ready to a publish and a hosted handoff check while the copy\'s create still runs', function (): void {
+        $group = copyGroup(copySource()->project);
+        $create = runningOperation(startCopy($group));
+        $copy = Instance::query()->findOrFail($create->target_id);
+        // The create's copy has no start commit yet; a hosted handoff needs CI, which a copy cannot run yet.
+        expect($copy->starting_commit)->toBeNull();
+        $copy->runtime->update(['power_state' => InstanceRuntimePowerState::Running]);
+        $group->project->update(['review_and_merge' => true, 'merge_check' => 'Required', 'source_access' => ProjectSourceAccess::GitHubApp]);
+        $subtask = $group->tasks()->firstOrFail();
+        $code = static function (Closure $start): string {
+            try {
+                $start();
+            } catch (ResourceOperationException $error) {
+                return $error->errorCode;
+            }
+
+            return 'admitted';
+        };
+
+        expect($code(fn () => app(TaskPublishIntent::class)->start($group->refresh(), StartTaskPublishData::from(['check' => 1]), 'test', null)))->toBe('tasks.copy_not_ready')
+            ->and($code(fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null)))->toBe('tasks.copy_not_ready');
     });
 
     it('refuses a nested-fleet group without a copy instead of reaching for a task VM', function (): void {
