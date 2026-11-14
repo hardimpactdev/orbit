@@ -222,7 +222,7 @@ One official `@swamp/ssh copy` downloads the files into a private worker directo
 
 One module holds the rule: `swamp/extensions/behaviors/_lib/public_output.ts`. It reads at most the last 1 MiB of a file and replaces invalid UTF-8 before matching. It replaces known values of eight characters or more in one pass. Then it replaces credential-shaped text: PEM blocks, URL user info, `Authorization` headers, `Bearer` tokens, GitHub tokens, 64-character hex credentials and the values of secret-named assignments.
 
-It redacts the kept tail again. It drops a first line that may start mid-value and any line that still holds an 8-byte piece of a known value. It keeps only whole lines. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
+It splits the redacted capture into lines and keeps the newest whole lines that fit the bound. It drops a first line that may start mid-value when older bytes were discarded, and any line that still holds an 8-byte piece of a known value. A line longer than the room left is replaced by `[a line of N bytes omitted]`, and older lines still fill the bound, so one long line never hides the lines before it. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
 
 Repository files follow the same rule. Provision downloads `composer.json` instead of reading it through an exec. The profile step keeps only its facts, the PHP version and whether the source is Laravel, and deletes the file.
 
@@ -959,6 +959,8 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
+A handoff check in a copy makes no commit for a clean head that an earlier check recorded, so checking a published head again leaves nothing that blocks the cancel.
+
 The copy [starts clean](/reference/development-containers#a-task-copy-starts-clean): its tree is its start commit, the seed's commit, plus what Git ignores, so the default's modified and untracked files never reach a check or a pull request. The start's result names what the clean took as `workspace_cleaned`.
 
 [`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs an implementer or reviewer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. Each role keeps one ongoing T3 thread, and a turn without `--thread` continues it: the implementer's thread of the current subtask, recorded on the subtask, or the reviewer's thread, recorded on the group. The first turn of a role, or `--thread=new`, starts the thread with the role's copy model and effort.
@@ -1163,7 +1165,49 @@ Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's 
 
 Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
 
-The check runs at the repository root, as every task check does. The start commit is the merge base with `origin/main`, else with `main`. A copy's branch starts at the seed commit, which is `origin/main` in the copy, so the merge base is the start commit. [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
+The check runs at the repository root, as every task check does.
+
+#### Start commit
+
+The start commit is HEAD's merge base with `origin/main` when that ref exists, else with `main`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
+
+A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches, so its `origin/main` is the driver's to move. A driver that brings a newer main into the branch makes a bundle of the real `main` in a clone of the real repository, copies it into the copy's `/tmp`, and moves the copy's `origin/main` to it. Then the driver merges or rebases:
+
+```bash
+# In a clone of the real repository, at the newest main:
+git bundle create main.bundle main
+# Copy it into the copy, for example from its Node:
+incus file push main.bundle <container>/tmp/main.bundle
+# In the copy's /srv/workspace:
+git fetch /tmp/main.bundle +main:refs/remotes/origin/main
+git merge origin/main        # or: git rebase origin/main
+```
+
+The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths. Moving only `main` changes nothing, because `origin/main` comes first.
+
+#### Docs-impact waivers in a copy
+
+The `docs-impact` part reads waivers from the branch's proposed PR body in the copy, `.git/orbit/proposed-pr-bodies/task-<id>.md` under `/srv/workspace`. Nothing else puts that file there: the implementer writes it before the handoff check, with one line for each impacted page that needs no change:
+
+```text
+Docs-unaffected: docs/reference/tasks.md: <the specific reason>
+```
+
+When a page is neither changed nor waived, the part's output names the file and says whether it is absent or holds no valid line for the page. The reviewer confirms the reason.
+
+#### Parts
+
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check.
+
+#### Stored result
+
+Orbit stores the last 16 KiB of the check's output, redacted by [the one rule](#keep-command-output-out-of-run-history), as the check's `output`. `task:check`, `task:show` and the API's check `output` return it. `bin/task-check` ends its output with a summary of at most 12 KiB, so the stored output always holds the whole summary:
+
+- `Task check summary`, then one line per part with its outcome, its seconds and its detail.
+- For each failed part, `Last lines of <part>:` and the newest lines of its output. The failed parts share the bytes that the other summary lines leave.
+- The parts CI alone runs, then `Task check PASSED` or `FAILED`, the start commit and the seconds.
+
+Each line of the summary and of a part's output is at most 300 bytes. A longer line keeps its start and ends with `… (N bytes)`, such as a list of budget-skipped fixture units. The output before the summary, each part as it ends, fills the rest of the 16 KiB.
 
 ## Review a subtask
 
@@ -1524,6 +1568,8 @@ These reasons explain the design. Check them before you propose a change.
 ### External checks are their own operation and own their commit
 
 A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
+
+The one exception is a task copy whose clean `HEAD` an earlier check already recorded: that commit is the recorded commit, and the check makes no empty one ([check phases](/reference/task-instance-workspace#check-phases)).
 
 The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
 

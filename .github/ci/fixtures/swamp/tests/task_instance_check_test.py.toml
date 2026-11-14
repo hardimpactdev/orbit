@@ -1,9 +1,10 @@
 file = "swamp/tests/task_instance_check_test.py"
 slices = false
-cost = 48
-source_sha256 = "5672e374d64f77c65b62e5b307f120f527fc56a59447cdc835380270be577602"
+cost = 93
+source_sha256 = "cf2cc1174ca8f8b163079aa9810f1a938d1429974c853c6c148d5b8420200a73"
 cases = [
   "test_check_runs_in_the_guest_and_commits_the_exact_candidate",
+  "test_only_a_clean_recorded_candidate_makes_no_commit",
   "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing",
   "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch",
   "test_task_vm_intents_keep_the_task_vm_steps",
@@ -26,6 +27,7 @@ inputs = [
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
 "test_check_runs_in_the_guest_and_commits_the_exact_candidate" = 25
+"test_only_a_clean_recorded_candidate_makes_no_commit" = 45
 "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing" = 12
 "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch" = 5
 "test_task_vm_intents_keep_the_task_vm_steps" = 2

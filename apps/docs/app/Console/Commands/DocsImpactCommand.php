@@ -12,7 +12,7 @@ use RuntimeException;
 final class DocsImpactCommand extends Command
 {
     #[\Override]
-    protected $signature = 'orbit:docs-impact {--base=} {--paths=*} {--gate} {--pr-body-file=}';
+    protected $signature = 'orbit:docs-impact {--base=} {--paths=*} {--gate} {--pr-body-file=} {--waiver-file=}';
 
     #[\Override]
     protected $description = 'Report documentation pages and generators affected by repository changes.';
@@ -50,7 +50,16 @@ final class DocsImpactCommand extends Command
         }
         $prBody = '';
         $bodyFile = $this->input->getOption('pr-body-file');
-        if ($bodyFile === null && $this->option('gate')) {
+        // The branch's proposed PR body in its checkout, which a task's handoff check reads. A missing file waives nothing.
+        $waiverFile = $this->input->getOption('waiver-file');
+        if ($waiverFile !== null) {
+            if (! $this->option('gate') || ! is_string($waiverFile) || trim($waiverFile) === '' || $bodyFile !== null) {
+                $this->error('The --waiver-file option requires --gate and no --pr-body-file.');
+
+                return self::FAILURE;
+            }
+            $bodyFile = is_file($waiverFile) ? $waiverFile : null;
+        } elseif ($bodyFile === null && $this->option('gate')) {
             $bodyFile = getenv('ORBIT_DOCS_PR_BODY_FILE') ?: null;
         }
         if ($bodyFile !== null) {
@@ -78,15 +87,26 @@ final class DocsImpactCommand extends Command
                 $this->line(json_encode($gate, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT));
                 if ($gate['missing_pages'] !== []) {
                     $this->error('Impacted documentation pages were not changed: '.implode(', ', $gate['missing_pages']));
-                    $this->line('Update each page, or add a separate line to the PR body with its exact path and a specific reason:');
+                    if (is_string($waiverFile)) {
+                        $this->line(is_file($waiverFile)
+                            ? 'The waiver file '.$waiverFile.' holds no valid line for '.implode(', ', $gate['missing_pages']).'.'
+                            : 'The waiver file '.$waiverFile.' is absent.');
+                        $this->line('Update each page, or add a separate line to that file with its exact path and a specific reason:');
+                    } else {
+                        $this->line('Update each page, or add a separate line to the PR body with its exact path and a specific reason:');
+                    }
                     foreach ($gate['missing_pages'] as $page) {
                         $this->line('Docs-unaffected: '.$page.': <explain why no docs change is needed>');
                     }
-                    $this->line('Check before pushing: bin/docs-impact --gate --base origin/main --pr-body-file /path/to/pr-body.md');
-                    $runId = getenv('GITHUB_RUN_ID');
-                    $run = is_string($runId) && ctype_digit($runId) ? $runId : '<run-id>';
-                    $this->line('After editing the PR body, rerun failed jobs: gh run rerun '.$run.' --failed');
-                    $this->line('The Docs job reads the live PR body. Successful jobs are retained; Required checks is re-evaluated.');
+                    if (is_string($waiverFile)) {
+                        $this->line('Copy the same lines into the PR body; CI reads only the live PR body.');
+                    } else {
+                        $this->line('Check before pushing: bin/docs-impact --gate --base origin/main --pr-body-file /path/to/pr-body.md');
+                        $runId = getenv('GITHUB_RUN_ID');
+                        $run = is_string($runId) && ctype_digit($runId) ? $runId : '<run-id>';
+                        $this->line('After editing the PR body, rerun failed jobs: gh run rerun '.$run.' --failed');
+                        $this->line('The Docs job reads the live PR body. Successful jobs are retained; Required checks is re-evaluated.');
+                    }
                     $this->line('Private Git notes do not waive this gate.');
                 }
                 foreach ($gate['failures'] as $failure) {

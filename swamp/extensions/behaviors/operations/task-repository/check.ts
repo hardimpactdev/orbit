@@ -379,11 +379,15 @@ export async function localResult(
  * A passed handoff names the commit that `git commit` made, read back with
  * `git rev-parse HEAD HEAD^{tree} HEAD^`. Its tree and parent must be the
  * checked snapshot; otherwise the workspace moved and the check is `changed`.
+ * A container check (`container`) makes no commit for a clean head that an
+ * earlier check recorded, and reads no parent: that head, with the checked
+ * tree, is its own candidate. A task VM check always commits.
  */
 export function candidateResult(
     input: Input,
     local: Record<string, unknown>,
     read: Run,
+    container = false,
 ) {
     if (
         typeof local.error_code === "string" || local.outcome !== "passed" ||
@@ -393,7 +397,11 @@ export function candidateResult(
         return { ...local, error_code: "tasks.repository_execution_unknown" };
     }
     const [commit = "", tree, parent] = (read.stdout ?? "").trim().split("\n");
-    if (!Sha.test(commit) || tree !== local.tree || parent !== local.head) {
+    const recorded = container && commit === local.head;
+    if (
+        !Sha.test(commit) || tree !== local.tree ||
+        (!recorded && parent !== local.head)
+    ) {
         return { ...local, outcome: "changed" };
     }
     return { ...local, commit };
@@ -614,7 +622,7 @@ export function finish(args: Record<string, unknown>) {
 /** Public check data on Node 209; commands, Git and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.03.1",
+    version: "2026.11.14.2",
     resources: {
         public: {
             description: "Public check observations",
@@ -749,6 +757,8 @@ export const behavior = {
                     input,
                     ObjectValue.parse(args.local),
                     run(ObjectValue.parse(args.steps), "commit_read"),
+                    // Only a container Instance workspace names `workspace`.
+                    "workspace" in ObjectValue.parse(args.intent),
                 );
                 return output(ctx, {
                     result,

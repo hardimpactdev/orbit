@@ -385,3 +385,42 @@ it('a failed CI gate prints the exact failed-job rerun command', function (): vo
         putenv($previous === false ? 'GITHUB_RUN_ID' : 'GITHUB_RUN_ID='.$previous);
     }
 });
+
+it('a task handoff names its absent waiver file and no CI step', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $waiverFile = $root.'/.git/orbit/proposed-pr-bodies/task-1.md';
+    config(['librarian.path' => $root.'/docs']);
+
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--waiver-file' => $waiverFile]))->toBe(1);
+    $output = Artisan::output();
+    expect($output)->toContain('The waiver file '.$waiverFile.' is absent.', 'add a separate line to that file',
+        'Docs-unaffected: docs/reference/tasks.md: <explain why no docs change is needed>',
+        'Copy the same lines into the PR body; CI reads only the live PR body.')
+        ->and($output)->not->toContain('gh run rerun')->not->toContain('--pr-body-file');
+});
+
+it('a task handoff names the waiver file that holds no line for the page, and reads one that does', function (): void {
+    [$root, $base] = docsImpactGateFixture();
+    changeDocsImpactGateSource($root);
+    $waiverFile = $root.'/.git/orbit/proposed-pr-bodies/task-1.md';
+    mkdir(dirname($waiverFile), 0777, true);
+    file_put_contents($waiverFile, "Docs-unaffected: docs/reference/mcp.mdx: No MCP change.\n");
+    config(['librarian.path' => $root.'/docs']);
+
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--waiver-file' => $waiverFile]))->toBe(1)
+        ->and(Artisan::output())->toContain('The waiver file '.$waiverFile.' holds no valid line for docs/reference/tasks.md.');
+
+    file_put_contents($waiverFile, "Docs-unaffected: docs/reference/tasks.md: Internal refactor only.\n");
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--waiver-file' => $waiverFile]))->toBe(0);
+});
+
+it('the waiver file needs the gate and no explicit PR body', function (array $options): void {
+    [$root, $base] = docsImpactGateFixture();
+    config(['librarian.path' => $root.'/docs']);
+    expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--waiver-file' => $root.'/w.md', ...$options]))->toBe(1)
+        ->and(Artisan::output())->toContain('The --waiver-file option requires --gate and no --pr-body-file.');
+})->with([
+    'without the gate' => [[]],
+    'with a PR body' => [['--gate' => true, '--pr-body-file' => __FILE__]],
+]);

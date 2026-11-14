@@ -5,7 +5,8 @@ CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
 are left to CI and named as skipped. Every part gets the time left as its limit; a part the budget stops or
-leaves out is named as skipped. One line per part ends the output.
+leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
+outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
 --base REF        the start commit (default: the merge base with origin/main, else main)
 --budget SECONDS  wall time of the whole run (default 270)
@@ -54,12 +55,21 @@ FULL_SUITES = ('packages/php-sdk',)
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
+# Orbit stores the last 16 KiB of a check's output. The summary stays within 12 KiB, so it always fits.
+SUMMARY_BYTES = 12 * 1024
+# The most bytes of one output or summary line; a longer line keeps its start and names its size.
+LINE_BYTES = 300
+NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web and Pi '
+                'server checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
 DEFAULT_BUDGET = 270
 
 
 class Part:
+    """One part's result. Its output keeps the last OUTPUT_LINES lines, each within LINE_BYTES."""
+
     def __init__(self, name, status, seconds=0.0, detail='', output=''):
-        self.name, self.status, self.seconds, self.detail, self.output = name, status, seconds, detail, output
+        self.name, self.status, self.seconds, self.detail = name, status, seconds, detail
+        self.output = tail(output) if output.strip() else ''
 
 
 def run(argv, cwd=ROOT, env=None, timeout=None):
@@ -92,9 +102,23 @@ def stop(process):
     return output
 
 
+def clip(line, limit=LINE_BYTES):
+    """The line within `limit` UTF-8 bytes: a longer one keeps its start and names its size."""
+    data = line.encode()
+    if len(data) <= limit:
+        return line
+    note = f'… ({len(data)} bytes)'
+    return data[:limit - len(note.encode())].decode(errors='ignore') + note
+
+
 def tail(text, lines=OUTPUT_LINES):
-    rows = text.rstrip('\n').splitlines()
+    """The last lines of a part's output, each within LINE_BYTES."""
+    rows = [clip(row) for row in text.rstrip('\n').splitlines()]
     return '\n'.join((['…'] if len(rows) > lines else []) + rows[-lines:])
+
+
+def size(lines):
+    return sum(len(line.encode()) + 1 for line in lines)
 
 
 def timed(name, commands, deadline, cwd=ROOT, env=None):
@@ -110,15 +134,17 @@ def timed(name, commands, deadline, cwd=ROOT, env=None):
             seconds = time.monotonic() - started
             return Part(name, 'skipped', seconds, f'budget: stopped after {seconds:.0f}s')
         if code:
-            return Part(name, 'FAILED', time.monotonic() - started, f'exit {code}: {" ".join(argv)}', tail(output))
+            return Part(name, 'FAILED', time.monotonic() - started, f'exit {code}: {" ".join(argv)}', output)
     return Part(name, 'passed', time.monotonic() - started)
 
 
 def changes(root, base):
-    """Whether the tree is committed, the start commit, and the paths changed since it, as the candidate gate reads them."""
+    """Whether the tree is committed, the start commit, the ref that gives it, and the paths changed since it, as the
+    candidate gate reads them."""
     committed = not review['git'](root, 'status', '--porcelain')
-    start, paths = review['candidate_paths'](root, review['git'](root, 'rev-parse', 'HEAD'), committed, base)
-    return committed, start, paths
+    head = review['git'](root, 'rev-parse', 'HEAD')
+    start, ref = review['start_commit'](root, head, base)
+    return committed, start, ref, review['changed_paths'](root, start, head, committed) if start else []
 
 
 def candidate_head(committed):
@@ -291,7 +317,7 @@ def fixtures(plan, deadline, table):
         return Part('fixtures', 'not selected', 0, 'no planned unit' + ('; ' + ', '.join(deferred) if deferred else ''))
     lacking = missing_programs(planned, table)
     unrunnable = {unit for units_of in lacking.values() for unit in units_of}
-    lacks = '; '.join(f'{len(units_of)} skipped: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
+    lacks = '; '.join(f'{len(units_of)} not runnable here: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
     costs = {unit: plan['units'][unit]['declared_seconds'] for unit in planned}
     workers = fixture_workers()
     capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
@@ -335,7 +361,7 @@ def fixtures(plan, deadline, table):
         detail += '; budget skipped: ' + ', '.join(stopped + skipped + deferred)
     seconds = time.monotonic() - started
     if failed or not_run or (code not in (0, None) and not stopped):
-        return Part('fixtures', 'FAILED', seconds, detail, tail(output))
+        return Part('fixtures', 'FAILED', seconds, detail, output)
     return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
 
 
@@ -354,14 +380,25 @@ def ci_plan(base, head):
 
 
 def report(parts, base, seconds):
-    """The summary: one line per part, what CI alone runs, and the result."""
+    """The summary, within SUMMARY_BYTES: one line per part, the last lines of each failed part, what CI alone runs,
+    and the result. The failed parts share the bytes the other lines leave."""
     failed = any(part.status == 'FAILED' for part in parts)
     lines = ['', 'Task check summary']
-    lines += [f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})' for part in parts]
-    lines.append('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web and Pi '
-                 'server checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
-    lines.append(f'Task check {"FAILED" if failed else "PASSED"} against {base[:12]} in {seconds:.1f}s')
-    return lines
+    lines += [clip(f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})')
+              for part in parts]
+    end = [NOT_IN_CHECK, f'Task check {"FAILED" if failed else "PASSED"} against {base[:12]} in {seconds:.1f}s']
+    shown = [part for part in parts if part.status == 'FAILED' and part.output.strip()]
+    room = SUMMARY_BYTES - size(lines + end)
+    for part in shown:
+        block, rows = [f'Last lines of {part.name}:'], []
+        share = room // len(shown) - size(block)
+        for row in reversed([clip(row) for row in part.output.rstrip('\n').splitlines()]):
+            if size(rows) + size([row]) > share:
+                break
+            rows.insert(0, row)
+        if rows:
+            lines += block + rows
+    return lines + end
 
 
 def main(argv=None):
@@ -375,11 +412,12 @@ def main(argv=None):
     started = time.monotonic()
     deadline = started + args.budget
     selected = set(args.only or PARTS) | {'ci-plan'}
-    committed, base, paths = changes(ROOT, args.base)
+    committed, base, ref, paths = changes(ROOT, args.base)
     if base is None:
         print('Task check FAILED: no start commit. There is no merge base with origin/main or main; pass --base REF.')
         return 1
-    print(f'Task check against {base[:12]}: {len(paths)} changed paths; budget {args.budget:g}s', flush=True)
+    print(f'Task check against {base[:12]}, the merge base with {ref}: {len(paths)} changed paths; budget {args.budget:g}s',
+          flush=True)
     parts = []
 
     def record(part):
@@ -393,7 +431,7 @@ def main(argv=None):
     head = candidate_head(committed)
     jobs, plan, error = ci_plan(base, head)
     if jobs is None:
-        record(Part('ci-plan', 'FAILED', time.monotonic() - plan_started, 'CI cannot plan this change', tail(error)))
+        record(Part('ci-plan', 'FAILED', time.monotonic() - plan_started, 'CI cannot plan this change', error))
     else:
         chosen = sorted(name for name, on in jobs.items() if on)
         record(Part('ci-plan', 'passed', time.monotonic() - plan_started, 'jobs: ' + ', '.join(chosen)))

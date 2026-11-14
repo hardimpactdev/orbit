@@ -56,6 +56,27 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertEqual(json.loads(finish['result_json']), candidate)
         self.assertEqual(self.git('status', '--porcelain=v1'), '')
 
+    def test_only_a_clean_recorded_candidate_makes_no_commit(self):
+        # The implementer committed the work. Its head is clean but no check recorded it: it gets a fresh Orbit commit with the
+        # Gateway's cleaned message, so the implementer's skip directive never heads the candidate.
+        self.git('add', '--all')
+        self.git('commit', '--quiet', '-m', 'Implementer work [skip ci]')
+        head = self.git('rev-parse', 'HEAD')
+        _, local = self.checked()
+        self.assertEqual((local['outcome'], local['head']), ('passed', head), local)
+        first, _ = self.finished()
+        self.assertEqual(self.git('rev-parse', first['commit'] + '^'), head)
+        self.assertEqual(self.git('log', '-1', '--format=%B', first['commit']).strip(), self.check['message'].strip())
+
+        # A second check of that clean, recorded head, such as after a publish, makes no commit: a cancel then finds no work.
+        self.steps = {}
+        _, local = self.checked()
+        self.assertEqual(local['head'], first['commit'], local)
+        second, finish = self.finished(commits=False)
+        self.assertEqual(second['commit'], first['commit'], second)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), first['commit'])
+        self.assertEqual(json.loads(finish['result_json']), second)
+
     def test_failed_setup_keeps_output_skips_the_check_and_commits_nothing(self):
         self.check.update({'phase': 'baseline', 'base': '', 'deliverables': [], 'command_deliverables': [],
                            'setup': [{'name': 'install', 'command': "echo 'dependency missing'; exit 4", 'timeout_seconds': 60}]})
