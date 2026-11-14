@@ -628,7 +628,7 @@ Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for ever
 
 #### Output
 
-Each part prints its output when it fails. The run ends with one line per part: `passed`, `FAILED`, `skipped` with its reason, or `not selected`. The last line names the start commit and the total seconds. The command exits 1 when a part failed.
+Each part prints its output when it fails. The run ends with a summary of at most 12 KiB: one line per part, `passed`, `FAILED`, `skipped` with its reason, or `not selected`, then the last lines of each failed part. The last line names the start commit and the total seconds. The command exits 1 when a part failed. [Stored result](/reference/tasks#stored-result) states the bounds and why the summary always reaches the stored output.
 
 A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
 
@@ -645,7 +645,7 @@ Two files test the command:
 - `tools/test_ci_task_check.py` needs no vendor folder. CI's "Check CI scope and import fixtures" step runs it with the other `tools/test_ci_*.py` files.
 - `tools/test_task_check.py` needs a task copy or a seeded checkout. CI does not run it. Run it with `python3 tools/test_task_check.py`.
 
-The CI file covers Pest selection and the `skipped` and `not selected` labels. It also covers budget stops, a failed fixture tool setup, the fixture worker count, a capacity row, a collection timeout, a unit whose host program is missing, the worktree cleanup on SIGTERM, the default start commit and the summary format.
+The CI file covers Pest selection and the `skipped` and `not selected` labels. It also covers budget stops, a failed fixture tool setup, the fixture worker count, a capacity row, a collection timeout, a unit whose host program is missing and the worktree cleanup on SIGTERM. It covers the start commit after a merged or rebased main, the summary format, and the summary's byte bound with a very long line.
 
 The seeded file holds one change set for each real failure that CI caught after a task's own checks passed:
 

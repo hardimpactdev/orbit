@@ -222,7 +222,7 @@ One official `@swamp/ssh copy` downloads the files into a private worker directo
 
 One module holds the rule: `swamp/extensions/behaviors/_lib/public_output.ts`. It reads at most the last 1 MiB of a file and replaces invalid UTF-8 before matching. It replaces known values of eight characters or more in one pass. Then it replaces credential-shaped text: PEM blocks, URL user info, `Authorization` headers, `Bearer` tokens, GitHub tokens, 64-character hex credentials and the values of secret-named assignments.
 
-It redacts the kept tail again. It drops a first line that may start mid-value and any line that still holds an 8-byte piece of a known value. It keeps only whole lines. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
+It splits the redacted capture into lines and keeps the newest whole lines that fit the bound. It drops a first line that may start mid-value when older bytes were discarded, and any line that still holds an 8-byte piece of a known value. A line longer than the room left is replaced by `[a line of N bytes omitted]`, and older lines still fill the bound, so one long line never hides the lines before it. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
 
 Repository files follow the same rule. Provision downloads `composer.json` instead of reading it through an exec. The profile step keeps only its facts, the PHP version and whether the source is Laravel, and deletes the file.
 
@@ -1188,7 +1188,17 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check.
+
+#### Stored result
+
+Orbit stores the last 16 KiB of the check's output, redacted by [the one rule](#keep-command-output-out-of-run-history), as the check's `output`. `task:check`, `task:show` and the API's check `output` return it. `bin/task-check` ends its output with a summary of at most 12 KiB, so the stored output always holds the whole summary:
+
+- `Task check summary`, then one line per part with its outcome, its seconds and its detail.
+- For each failed part, `Last lines of <part>:` and the newest lines of its output. The failed parts share the bytes that the other summary lines leave.
+- The parts CI alone runs, then `Task check PASSED` or `FAILED`, the start commit and the seconds.
+
+Each line of the summary and of a part's output is at most 300 bytes. A longer line keeps its start and ends with `… (N bytes)`, such as a list of budget-skipped fixture units. The output before the summary, each part as it ends, fills the rest of the 16 KiB.
 
 ## Review a subtask
 

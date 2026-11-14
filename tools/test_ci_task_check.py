@@ -321,10 +321,41 @@ class ReportTest(unittest.TestCase):
                                      '  skipped      pest apps/gateway suite (0.0s; CI runs the full suite)',
                                      '  FAILED       pest packages/php-sdk (1.0s; exit 1: pest; the whole suite)',
                                      '  not selected pest apps/cli (0.0s; CI does not select the cli-tests job)'])
-        self.assertTrue(lines[7].startswith('Not in this check: '))
+        self.assertEqual(lines[7:9], ['Last lines of pest packages/php-sdk:', 'output'])
+        self.assertTrue(lines[9].startswith('Not in this check: '))
         self.assertEqual(lines[-1], 'Task check FAILED against 0123456789ab in 130.0s')
         self.assertEqual(check['report'](parts[:3], '0123456789abcdef', 1)[-1], 'Task check PASSED against 0123456789ab in 1.0s')
 
+
+    def test_the_summary_stays_within_its_bound_and_names_every_part(self):
+        # Check 21615: a fixtures line of every budget-skipped unit was longer than the stored 16 KiB tail.
+        skipped = 'budget skipped: ' + ', '.join(f'swamp/tests/unit_{index}_test.ts#0/2' for index in range(800))
+        failures = '\n'.join(f'FAILED case {index} ' + 'x' * 500 for index in range(400))
+        parts = [Part('ci-plan', 'passed', 1.0)]
+        parts += [Part(f'pest project-{index}', 'FAILED', 40.0, 'exit 1', failures) for index in range(6)]
+        parts.append(Part('fixtures', 'skipped', 200.0, skipped))
+        lines = check['report'](parts, '0123456789abcdef', 206.6)
+        self.assertLessEqual(len('\n'.join(lines).encode()) + 1, check['SUMMARY_BYTES'])
+        self.assertTrue(all(len(line.encode()) <= check['LINE_BYTES'] for line in lines))
+        summary = lines[2:2 + len(parts)]
+        self.assertEqual([line[15:].split(' (')[0] for line in summary], [part.name for part in parts])
+        self.assertTrue(summary[-1].startswith('  skipped      fixtures (200.0s; budget skipped: '))
+        self.assertTrue(summary[-1].endswith(f'… ({len(f"  skipped      fixtures (200.0s; {skipped})".encode())} bytes)'))
+        for index in range(6):
+            block = lines.index(f'Last lines of pest project-{index}:')
+            # Each failed part shows its newest lines, up to its share of the bound.
+            self.assertTrue(lines[block + 1].startswith('FAILED case '))
+        self.assertTrue(lines[lines.index('Last lines of pest project-1:') - 1].startswith('FAILED case 399 '))
+        self.assertEqual(lines[-2:], [check['NOT_IN_CHECK'], 'Task check FAILED against 0123456789ab in 206.6s'])
+
+    def test_a_very_long_output_line_keeps_its_start_and_names_its_size(self):
+        text = 'first\n' + 'é' * 10000 + '\nlast\n'
+        rows = check['tail'](text).splitlines()
+        self.assertEqual(rows[0], 'first')
+        self.assertEqual(rows[2], 'last')
+        self.assertTrue(rows[1].endswith('… (20000 bytes)'))
+        self.assertLessEqual(len(rows[1].encode()), check['LINE_BYTES'])
+        self.assertTrue(rows[1].startswith('é' * 100))
 
 if __name__ == '__main__':
     unittest.main()

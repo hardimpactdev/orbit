@@ -5,7 +5,8 @@ CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
 are left to CI and named as skipped. Every part gets the time left as its limit; a part the budget stops or
-leaves out is named as skipped. One line per part ends the output.
+leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
+outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
 --base REF        the start commit (default: the newer of the merge bases with origin/main and main)
 --budget SECONDS  wall time of the whole run (default 270)
@@ -54,6 +55,12 @@ FULL_SUITES = ('packages/php-sdk',)
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
+# Orbit stores the last 16 KiB of a check's output. The summary stays within 12 KiB, so it always fits.
+SUMMARY_BYTES = 12 * 1024
+# The most bytes of one output or summary line; a longer line keeps its start and names its size.
+LINE_BYTES = 300
+NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web and Pi '
+                'server checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
 DEFAULT_BUDGET = 270
 
 
@@ -92,9 +99,23 @@ def stop(process):
     return output
 
 
+def clip(line, limit=LINE_BYTES):
+    """The line within `limit` UTF-8 bytes: a longer one keeps its start and names its size."""
+    data = line.encode()
+    if len(data) <= limit:
+        return line
+    note = f'… ({len(data)} bytes)'
+    return data[:limit - len(note.encode())].decode(errors='ignore') + note
+
+
 def tail(text, lines=OUTPUT_LINES):
-    rows = text.rstrip('\n').splitlines()
+    """The last lines of a part's output, each within LINE_BYTES."""
+    rows = [clip(row) for row in text.rstrip('\n').splitlines()]
     return '\n'.join((['…'] if len(rows) > lines else []) + rows[-lines:])
+
+
+def size(lines):
+    return sum(len(line.encode()) + 1 for line in lines)
 
 
 def timed(name, commands, deadline, cwd=ROOT, env=None):
@@ -356,14 +377,25 @@ def ci_plan(base, head):
 
 
 def report(parts, base, seconds):
-    """The summary: one line per part, what CI alone runs, and the result."""
+    """The summary, within SUMMARY_BYTES: one line per part, the last lines of each failed part, what CI alone runs,
+    and the result. The failed parts share the bytes the other lines leave."""
     failed = any(part.status == 'FAILED' for part in parts)
     lines = ['', 'Task check summary']
-    lines += [f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})' for part in parts]
-    lines.append('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web and Pi '
-                 'server checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
-    lines.append(f'Task check {"FAILED" if failed else "PASSED"} against {base[:12]} in {seconds:.1f}s')
-    return lines
+    lines += [clip(f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})')
+              for part in parts]
+    end = [NOT_IN_CHECK, f'Task check {"FAILED" if failed else "PASSED"} against {base[:12]} in {seconds:.1f}s']
+    shown = [part for part in parts if part.status == 'FAILED' and part.output.strip()]
+    room = SUMMARY_BYTES - size(lines + end)
+    for part in shown:
+        block, rows = [f'Last lines of {part.name}:'], []
+        share = room // len(shown) - size(block)
+        for row in reversed([clip(row) for row in part.output.rstrip('\n').splitlines()]):
+            if size(rows) + size([row]) > share:
+                break
+            rows.insert(0, row)
+        if rows:
+            lines += block + rows
+    return lines + end
 
 
 def main(argv=None):
