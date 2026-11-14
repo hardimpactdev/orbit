@@ -52,7 +52,7 @@ final readonly class ProofVerifyProjection implements DirectOperationProjection
             }
 
             return app(DirectOperation::class)->project($operation, $data, ['command' => $input['command'], 'file' => $input['file'],
-                'outcome' => ($data['status'] ?? null) === 'succeeded' ? 'passed' : 'failed', 'cases' => $verdicts['cases']]);
+                'outcome' => ($data['status'] ?? null) === 'succeeded' ? 'passed' : 'failed', 'cases' => $verdicts['cases'], 'batches' => ProofVerdictLines::batches($report)]);
         });
     }
 }

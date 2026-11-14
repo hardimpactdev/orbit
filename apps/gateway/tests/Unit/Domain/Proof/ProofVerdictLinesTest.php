@@ -42,3 +42,20 @@ it('reads the lines of a new case that was proven on the merge base, named CASE@
 
     expect(array_column(ProofVerdictLines::parse($report), 'id'))->toBe(['new-case', 'new-case@merge-base', 'other@merge-base']);
 });
+
+it('keeps only measured nonnegative batch reset durations and never treats them as verdicts', function (): void {
+    $report = implode("\n", [
+        '{"batch":"fresh-fleet","reset":{"reset_seconds":70.2}}',
+        '{"batch":"dual-stack","reset":{"reset_seconds":0,"error_code":"reset.failed"}}',
+        '{"batch":"missing","reset":{}}',
+        '{"batch":"negative","reset":{"reset_seconds":-1}}',
+        '{"batch":"string","reset":{"reset_seconds":"70"}}',
+        '{"batch":"infinite","reset":{"reset_seconds":1e999}}',
+        '{"batch":"cut","reset":',
+    ]);
+
+    expect(ProofVerdictLines::batches($report))->toBe([
+        ['batch' => 'fresh-fleet', 'reset_seconds' => 70.2],
+        ['batch' => 'dual-stack', 'reset_seconds' => 0],
+    ])->and(ProofVerdictLines::parse($report))->toBe([]);
+});

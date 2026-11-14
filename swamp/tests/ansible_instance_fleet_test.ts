@@ -55,8 +55,9 @@ function ruled() {
   containers["nested-gateway"].devices["club-key"] = { path: "/home/orbit/.config/swamp/club", required: "false", shift: "false", source: "/run/orbit-club", type: "disk" };
   containers["nested-app-dev"].devices.checkout = checkout;
   containers["nested-app-dev"].devices["apparmor-off"] = apparmor;
+  containers["nested-app-prod"].devices.checkout = checkout;
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
-  for (const name of ["nested-gateway", "nested-app-dev"]) containers[name].config["raw.idmap"] = idmap;
+  for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = Object.fromEntries(units.map((unit) => [unit, dropIn]));
   for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...egress };
@@ -285,12 +286,13 @@ Deno.test({
       assertEquals(calls, [
         ...reads,
         "incus config device add nested-app-dev apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
+        "incus config device add nested-app-prod checkout disk source=/srv/workspace path=/home/orbit/orbit shift=false",
         "incus config device add nested-app-prod apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
         "incus config device set nested-gateway checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
-          [...(name === "nested-app-prod" ? [] : [`raw.idmap=${idmap}`]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
+          [`raw.idmap=${idmap}`, ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
         "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
         ...reads,
@@ -441,7 +443,7 @@ Deno.test({
     try {
       const refused = f.run("start");
       assert(!refused.ok);
-      assertStringIncludes(refused.output, "The nested fleet differs from its rules where Orbit does not write: nested-gateway config raw.idmap, nested-app-dev config raw.idmap\"");
+      assertStringIncludes(refused.output, "The nested fleet differs from its rules where Orbit does not write: nested-gateway config raw.idmap, nested-app-dev config raw.idmap, nested-app-prod config raw.idmap\"");
       assertStringIncludes(refused.output, '"msg": "instance.container_fleet_drift"');
       assertEquals(f.calls(), startReads);
       const one = ruled();

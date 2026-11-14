@@ -265,3 +265,26 @@ Deno.test("the intent of the reset holds what the play of the fleet reads", () =
     assert(fleet.includes("intent.container.project") && fleet.includes("intent.fleet.guests"));
     assertEquals(Object.keys(reset).sort(), ["container", "fleet", "ssh_execution"]);
 });
+
+Deno.test("batch reset seconds reach the parent report without becoming case verdicts", () => {
+    const inputs = childInputs(prefix, true, reset);
+    const env = step(child, "report").task.inputs!.env as unknown as Record<string, string>;
+    for (const status of ["succeeded", "failed"]) {
+        const steps = {
+            reset: { status, outputs: { result: { stdout: JSON.stringify({ reset_seconds: 70.2 }) + "\nreason=example" } } },
+            batch: { outputs: { stdout: '{"id": "new-restricted-allow", "verdict": "passed", "secs": 1}' } },
+        };
+        const timing = String(cel(env.RESET, { inputs, steps }));
+        assertEquals(JSON.parse(timing), { batch: "fresh-fleet", reset: { reset_seconds: 70.2 } });
+        const script = String(step(child, "report").task.inputs!.run);
+        const done = new Deno.Command("sh", { args: ["-c", script], env: { LINES: String(cel(env.LINES, { inputs, steps })), RESET: timing } }).outputSync();
+        assert(done.success);
+        const report = new TextDecoder().decode(done.stdout);
+        const parentEnv = step(parent, "report").task.inputs!.env as unknown as Record<string, string>;
+        const joined = String(cel(parentEnv.LINES, { steps: { "batch-0": { outputs: { report: { stdout: report } } }, plan: { outputs: { stdout: "fresh-fleet 0 new-restricted-allow already-applied" } } } }));
+        const rows = joined.split("\n").filter(Boolean).map((line) => JSON.parse(line));
+        assertEquals(rows.filter((row) => row.batch), [{ batch: "fresh-fleet", reset: { reset_seconds: 70.2 } }]);
+        assertEquals(rows.filter((row) => row.verdict).length, 2);
+    }
+    assertEquals(cel(env.RESET, { inputs, steps: {} }), "");
+});
