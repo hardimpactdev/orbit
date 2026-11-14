@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "e2ae127ffe903bd7823fcb99f40d7cb6504ce09f1d2fbf4977a8fab38bdc7e7e"
+source_sha256 = "155842027afc308088e79bdaf4f4a1d963b8874ede229ac6a9c21d849f4f0e6c"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -51,6 +51,7 @@ cases = [
   "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
   "test_sessions_without_the_t3_steps_sessions_fail_and_issue_none",
   "test_the_t3_step_issues_both_sessions_while_t3_starts_and_adds_the_project_after_its_answer",
+  "test_a_t3_the_boot_started_is_not_started_again_and_a_failed_one_is_restarted_once_by_name",
   "test_a_t3_that_does_not_answer_adds_no_project_so_a_retry_adds_it_once",
   "test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit",
   "test_non_php_check_has_no_php_probe",
@@ -67,7 +68,6 @@ cases = [
   "test_workspace_of_a_create_admitted_before_hosts_keeps_the_defaults_url",
   "test_php_workspace_writes_the_shared_php_settings_and_restarts_running_units",
   "test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys",
-  "test_a_t3_the_boot_started_is_not_started_again_and_a_failed_one_is_restarted_once_by_name",
 ]
 file = "swamp/tests/instance_clone_guest_test.py"
 cost = 40

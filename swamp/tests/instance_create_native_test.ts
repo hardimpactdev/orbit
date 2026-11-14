@@ -77,9 +77,10 @@ async function fixture(mode: Mode) {
                 continue;
             }
             let run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
-            if (name === "clone-workspace") run += mode === "workspace-failure" ? "; exit 3" : `; cat '${folder}/workspace.out'`;
+            // The T3 step runs the checkout: a failed checkout leaves its part's name in t3.json, which clone-session-copy brings to the run.
+            if (name === "clone-t3") run += mode === "workspace-failure" ? `; printf '{"t3_part":"checkout"}' > '${folder}-run/t3.json'; exit 3` : `; cat '${folder}/workspace.out'`;
             // A later clone step fails after the Route has published (Nick's question: what happens to the address).
-            if (name === "clone-t3" && mode === "route-then-t3-failure") run += "; sleep 3; exit 4";
+            if (name === "clone-t3" && mode === "route-then-t3-failure") run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'; sleep 3; exit 4`;
             if (name === "clone-register") run += `; cat '${folder}/register.out'`;
             // The publication runs beside the copy: a cancel while clone-route runs cuts the copy too.
             if (name === "clone-container" && mode === "route-cancel") run += "; sleep 30";
@@ -146,7 +147,7 @@ Deno.test({ name: "pinned create: a normal clone ends ready at its registration 
         const done = await execute(f);
         assert(done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        for (const name of ["input", "clone-input", "clone-container", "clone-workspace", "clone-t3", "clone-sessions", "clone-session-copy",
+        for (const name of ["input", "clone-input", "clone-container", "clone-t3", "clone-session-copy",
             "clone-register", "finish", "clone-private-cleanup", "accepted"]) {
             assertEquals(status(steps, name), "succeeded", name);
         }
@@ -165,14 +166,14 @@ Deno.test({ name: "pinned create: a normal clone ends ready at its registration 
     }
 } });
 
-Deno.test({ name: "pinned create: a failed workspace registers nothing, stops the container and removes the private folder", ignore: !binary, async fn() {
+Deno.test({ name: "pinned create: a failed checkout in the T3 step registers nothing, stops the container and removes the private folder", ignore: !binary, async fn() {
     const f = await fixture("workspace-failure");
     try {
         const done = await execute(f);
         assert(!done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        assertEquals([status(steps, "clone-workspace"), status(steps, "clone-t3"), status(steps, "clone-sessions"), status(steps, "clone-register")],
-            ["failed", "succeeded", "skipped", "skipped"]);
+        assertEquals([status(steps, "clone-t3"), status(steps, "clone-session-copy"), status(steps, "clone-register")],
+            ["failed", "succeeded", "skipped"]);
         assertEquals([status(steps, "stop-container"), status(steps, "withdraw-route"), status(steps, "clone-private-cleanup"), status(steps, "accepted")],
             ["succeeded", "skipped", "succeeded", "failed"]);
         // A failed create keeps its run folder for the container stop; the cleanup step removes it after.

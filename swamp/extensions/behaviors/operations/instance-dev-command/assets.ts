@@ -7,9 +7,9 @@ type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 /** The part a failed clone T3 step was running, from the run folder's `t3.json`, or null when the step left none. */
-async function t3Part(folder: string): Promise<"agent" | "t3" | null> {
+async function t3Part(folder: string): Promise<"agent" | "t3" | "checkout" | "sessions" | null> {
     try {
-        const parsed = z.object({t3_part: z.enum(["agent", "t3"])}).safeParse(JSON.parse(await Deno.readTextFile(folder + "/t3.json")));
+        const parsed = z.object({t3_part: z.enum(["agent", "t3", "checkout", "sessions"])}).safeParse(JSON.parse(await Deno.readTextFile(folder + "/t3.json")));
         return parsed.success ? parsed.data.t3_part : null;
     } catch (error) {
         if (error instanceof Deno.errors.NotFound || error instanceof SyntaxError) return null;
@@ -57,7 +57,6 @@ export const behavior = {
                 route: z.string(),
                 certificates: z.array(z.string()).default([]),
                 t3_observation: z.string().default(""),
-                sessions_observation: z.string().default(""),
                 route_observation: ObjectValue.default({}),
                 container: z.object({
                     mail: Step.nullable().default(null),
@@ -83,7 +82,6 @@ export const behavior = {
                     route: string;
                     certificates?: string[];
                     t3_observation?: string;
-                    sessions_observation?: string;
                     route_observation?: Record<string, unknown>;
                     container?: {
                         mail?: z.infer<typeof Step> | null;

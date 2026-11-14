@@ -1,8 +1,8 @@
 order = 860
-source_sha256 = "51e87a397d204bf9bd43096e5ef4556f77b3ae733482740199eed0a7e8f4350a"
+source_sha256 = "d4f547fa029574a6ff9fad01a17cd6dae80d6d88137823b7ff862cd7013f4af5"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
-  "pinned create: a failed workspace registers nothing, stops the container and removes the private folder",
+  "pinned create: a failed checkout in the T3 step registers nothing, stops the container and removes the private folder",
   "pinned create: a clone with a Route publishes it beside the copy and still ends at its registration",
   "pinned create: a failed publication (route-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
   "pinned create: a failed publication (route-csr-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",

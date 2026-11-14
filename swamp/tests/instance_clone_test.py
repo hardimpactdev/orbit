@@ -1362,7 +1362,7 @@ class CloneTest(unittest.TestCase):
             commands(SCRIPT), commands(SCRIPT.with_name("instance_clone_guest.py"))
         )
 
-    def invoke(self, stderr, phase="sessions", fail="incus", evidence=None):
+    def invoke(self, stderr, phase="check", fail="incus", evidence=None, stdin="PRIVATE-INPUT"):
         account = pwd.getpwuid(os.getuid())
         with tempfile.TemporaryDirectory() as folder:
             container = {
@@ -1396,7 +1396,7 @@ class CloneTest(unittest.TestCase):
                         phase,
                     ],
                 ),
-                patch("sys.stdin", io.StringIO("PRIVATE-INPUT")),
+                patch("sys.stdin", io.StringIO(stdin)),
                 patch("subprocess.run", command),
                 patch("os.chown") as ownership,
                 contextlib.redirect_stdout(output),
@@ -1426,10 +1426,6 @@ class CloneTest(unittest.TestCase):
         _, output, _ = fixture.CloneGuestTest().readiness('check', entrypoint=True, inactive=True)
         evidence = json.loads(output)
         printed = self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', phase='check', evidence=evidence)
-        # A sessions failure is a plain phase failure now: no receipt crosses, and none reaches the create's result.
-        self.assertEqual(self.invoke('token=ghp_PRIVATE_TOKEN_12345678901234567890', evidence=evidence),
-                         "instance.container_sessions_failed: command incus exited 7 (incus exec instance-proof python3 guest sessions):\n"
-                         "token=[REDACTED]\n")
         script = """
 import { completeResult } from './swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts';
 const stdout = Deno.args[0];
@@ -1450,7 +1446,7 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
         for command in ["curl", "git", "mkdir", "php", "systemctl", "t3"]:
             with self.subTest(command=command):
                 diagnostic = (
-                    "instance.container_sessions_failed: command "
+                    "instance.container_check_failed: command "
                     + command
                     + " exited 17\n"
                 )
@@ -1460,22 +1456,23 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
     def test_a_failed_command_names_what_ran_and_keeps_only_public_stderr(self):
         # Any first line that is not the guest's own diagnostic makes the code line "command incus exited N", with what ran; the
         # stderr follows only as its redacted end. The stdin's private text never appears (`invoke` asserts no PRIVATE).
-        head = "instance.container_sessions_failed: command incus exited 7 (incus exec instance-proof python3 guest sessions):\n"
+        head = "instance.container_check_failed: command incus exited 7 (incus exec instance-proof python3 guest check):\n"
         for stderr, kept in [
             ("Error: Instance is not running", "Error: Instance is not running"),
             ("instance.container_agent_failed: command php exited 17", "instance.container_agent_failed: command php exited 17"),
-            ("instance.container_sessions_failed: command php ARGV exited 17", "instance.container_sessions_failed: command php ARGV exited 17"),
+            ("instance.container_check_failed: command php ARGV exited 17", "instance.container_check_failed: command php ARGV exited 17"),
             ("echo PRIVATE-INPUT\ntoken=ghp_abcdefghijklmnopqrstuvwxyz0123", "echo [REDACTED]\ntoken=[REDACTED]"),
         ]:
             with self.subTest(stderr=stderr):
                 self.assertEqual(self.invoke(stderr), head + kept + "\n")
         # The guest's own line stays the code line; the lines after it are its command's redacted stderr.
-        self.assertEqual(self.invoke("instance.container_sessions_failed: command php exited 17\nPHP Fatal error: x\nPRIVATE-INPUT"),
-                         "instance.container_sessions_failed: command php exited 17:\nPHP Fatal error: x\n[REDACTED]\n")
+        self.assertEqual(self.invoke("instance.container_check_failed: command php exited 17\nPHP Fatal error: x\nPRIVATE-INPUT"),
+                         "instance.container_check_failed: command php exited 17:\nPHP Fatal error: x\n[REDACTED]\n")
         # A Node command names its executable and what ran, then the end of its words.
         self.assertRegex(
-            self.invoke("fatal: bad object\nPRIVATE-INPUT", phase="t3", fail="git"),
-            r"\Ainstance\.container_t3_failed: command git exited 7 \(git /\S+/mirror rev-parse refs/heads/proof\^\{commit\}\):\n"
+            # In the T3 step only the checkout runs Git on the Node, so the failure names the checkout.
+            self.invoke("fatal: bad object\nPRIVATE-INPUT", phase="t3", fail="git", stdin=json.dumps({"environment": "PRIVATE-INPUT", "processes": {}})),
+            r"\Ainstance\.container_checkout_failed: command git exited 7 \(git /\S+/mirror rev-parse refs/heads/proof\^\{commit\}\):\n"
             r"fatal: bad object\n\[REDACTED\]\n\Z",
         )
 
@@ -1650,9 +1647,11 @@ class RootSizeGuardTest(unittest.TestCase):
 
 
 class T3PhaseTest(unittest.TestCase):
-    """The `t3` phase runs the agent's guest phase with the model key on stdin, then T3's first start without it, in one call."""
+    """The `t3` phase, one step until the thread is usable: the checkout beside the agent part and T3's answer, then the sessions check.
+    Its stdin is the workspace's private JSON, which reaches only the checkout; the model environment is already in the copy."""
 
-    KEY = "fake-model-key-5c1e"
+    KEY = "fake-private-env-5c1e"
+    VALUE = {"environment": "KEY=" + KEY + "\n", "processes": {}, "merge": None}
     SESSIONS = {"gateway": {"token": "fake-gateway-session-1a"}, "swamp": {"token": "fake-swamp-session-2b"}}
 
     def phase(self, phase="t3", fail=None, timeout=None, cached=None):
@@ -1666,11 +1665,18 @@ class T3PhaseTest(unittest.TestCase):
             if member is not None and member == timeout:
                 # The outer `timeout 240` ends the step here: nothing after this line of the script runs.
                 raise KeyboardInterrupt
+            if fail == "bundle" and "bundle" in argv and member is None:
+                # The Node's own Git call of the checkout fails.
+                return subprocess.CompletedProcess(argv, 1, "", "PRIVATE-STDERR")
             if member is not None and member == fail:
                 return subprocess.CompletedProcess(argv, 1, "PRIVATE-STDOUT", "instance.container_" + member + "_failed: command php exited 17")
+            if member == "checkout":
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "changes": [], "environment": {"copied": ["KEY"]},
+                                                                        "commit": "f" * 40}), "")
             if member == "sessions":
                 # The guest checks the sessions it got on stdin and answers the whole registration reply.
-                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "private_reply": {"environment": "{}", **{
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "checked_at": "2026-11-13T21:00:01+00:00",
+                                                                        "private_reply": {"environment": "{}", **{
                     name: {"token": json.loads(kwargs.get("input"))[name]["token"], "status": 200, "body": "{}"} for name in self.SESSIONS}}}), "")
             if member == "t3":
                 # The guest's T3 part issues both sessions while T3 starts; their tokens come back only as its private reply.
@@ -1685,7 +1691,7 @@ class T3PhaseTest(unittest.TestCase):
         code = 0
         with tempfile.TemporaryDirectory() as folder, (
             patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", NETWORK_CHECK.read_text(), account.pw_name, folder, phase])
-        ), patch("sys.stdin", io.StringIO(self.KEY)), patch("subprocess.run", command), patch("os.chown"), \
+        ), patch("sys.stdin", io.StringIO(json.dumps(self.VALUE))), patch("subprocess.run", command), patch("os.chown"), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
             if cached is not None:
                 (Path(folder) / "t3.json").write_text(json.dumps(cached))
@@ -1697,8 +1703,11 @@ class T3PhaseTest(unittest.TestCase):
                 code = 124
             left = Path(folder) / "t3.json"
             self.left = left.read_text() if left.exists() else None
-        for argv, _ in calls:
+        for argv, content in calls:
             self.assertNotIn(self.KEY, json.dumps(argv))
+            # The private environment reaches only the checkout's guest call.
+            if self.KEY in str(content):
+                self.assertEqual(argv[argv.index("python3") + 3], "checkout")
         self.assertNotIn(self.KEY, output.getvalue() + error.getvalue() + (self.left or ""))
         guest = [(argv[argv.index("python3") + 3], content) for argv, content in calls if "python3" in argv]
         return code, guest, output.getvalue(), error.getvalue()
@@ -1713,7 +1722,7 @@ import { behavior } from './swamp/extensions/behaviors/operations/instance-dev-c
 const created = await behavior.methods.create_result.execute({
     folder: Deno.args[0], intent: {instance_id: 7, setup_steps: [], container: {clone: {}}},
     checkout: null, database: 'succeeded', setup: 'skipped', processes: [], route: 'skipped',
-    container: {launch: 'succeeded', workspace: {status: 'succeeded', outputs: {stdout: 'orbit-commit=' + 'a'.repeat(40)}},
+    container: {launch: 'succeeded', workspace: {status: 'failed'},
         deploy: [], processes: 'succeeded', seed: 'skipped', t3: 'failed', register: 'skipped'},
 }, {writeResource: async () => {}});
 console.log(created.stdout);
@@ -1724,27 +1733,31 @@ console.log(created.stdout);
             receipt = json.loads(result.stdout)
             return receipt["failed_step"], receipt["error_code"]
 
-    def test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent(self):
+    def test_runs_the_checkout_beside_the_agent_and_t3_then_checks_the_sessions(self):
         code, guest, output, error = self.phase()
-        self.assertEqual(code, 0)
-        self.assertEqual(guest, [("agent", self.KEY), ("t3", "")])
-        # The step prints T3's receipt alone, which the create result reads as the time T3 answered. The sessions it issued stay in
-        # the run's private t3.json, which the sessions step reads; no token reaches the output.
-        self.assertEqual(json.loads(output)["phase"], "t3")
-        self.assertNotIn("private_reply", json.loads(output))
-        # Whether the copy's boot had started T3 is a part of `timings`, 1 or 0; the guest's own key does not cross.
-        self.assertEqual(json.loads(output)["timings"]["at_boot"], 1)
-        self.assertNotIn("at_boot", {key for key in json.loads(output) if key != "timings"})
-        self.assertEqual(error, "")
-        self.assertEqual(json.loads(self.left), self.SESSIONS)
-        for session in self.SESSIONS.values():
-            self.assertNotIn(session["token"], output + error)
-
-    def test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them(self):
-        code, guest, output, error = self.phase("sessions", cached=self.SESSIONS)
         self.assertEqual((code, error), (0, ""))
-        # The guest gets the T3 step's sessions on stdin, and the registration reads the checked reply in their place.
-        self.assertEqual(json.loads(guest[0][1]), self.SESSIONS)
+        members = [member for member, _ in guest]
+        # The checkout runs beside the agent part and T3; the agent part comes before T3, and the sessions check comes last.
+        self.assertEqual(sorted(members), ["agent", "checkout", "sessions", "t3"])
+        self.assertLess(members.index("agent"), members.index("t3"))
+        self.assertEqual(members[-1], "sessions")
+        self.assertEqual(dict(guest)["agent"], "")
+        self.assertEqual(dict(guest)["t3"], "")
+        self.assertEqual(json.loads(dict(guest)["checkout"])["environment"], self.VALUE["environment"])
+        self.assertEqual(json.loads(dict(guest)["sessions"]), self.SESSIONS)
+        # The checkout's commit and JSON line, then T3's receipt with the time the sessions were checked; no token reaches the output.
+        lines = output.splitlines()
+        self.assertEqual(lines[0], "orbit-commit=" + "f" * 40)
+        self.assertEqual(json.loads(lines[1])["phase"], "checkout")
+        self.assertEqual(set(json.loads(lines[1])["timings"]), {"bundle", "guest"})
+        receipt = json.loads(lines[2])
+        self.assertEqual([receipt["phase"], receipt["ready_at"], receipt["checked_at"]], ["t3", "2026-11-13T21:00:00+00:00", "2026-11-13T21:00:01+00:00"])
+        self.assertNotIn("private_reply", receipt)
+        # Whether the copy's boot had started T3 is a part of `timings`, 1 or 0; the guest's own key does not cross.
+        self.assertEqual(receipt["timings"]["at_boot"], 1)
+        self.assertEqual(set(receipt["timings"]), {"agent", "t3", "at_boot", "sessions"})
+        self.assertNotIn("at_boot", {key for key in receipt if key != "timings"})
+        # The registration reads the checked reply from the private t3.json.
         registered = json.loads(self.left)
         self.assertEqual(set(registered), {"environment", "gateway", "swamp"})
         self.assertEqual(registered["gateway"]["status"], 200)
@@ -1754,7 +1767,7 @@ console.log(created.stdout);
     def test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code(self):
         code, guest, output, error = self.phase(fail="agent")
         self.assertEqual(code, 1)
-        self.assertEqual([member for member, _ in guest], ["agent"])
+        self.assertNotIn("t3", [member for member, _ in guest])
         self.assertEqual(output, "")
         # The Operation's failure detail is this stderr line; the code comes from the part the step left behind.
         self.assertEqual(error, "instance.container_agent_failed: command php exited 17\n")
@@ -1763,9 +1776,34 @@ console.log(created.stdout);
     def test_a_failed_t3_part_names_t3_and_keeps_the_t3_code(self):
         code, guest, output, error = self.phase(fail="t3")
         self.assertEqual(code, 1)
-        self.assertEqual([member for member, _ in guest], ["agent", "t3"])
+        self.assertNotIn("sessions", [member for member, _ in guest])
         self.assertEqual(error, "instance.container_t3_failed: command php exited 17\n")
         self.assertEqual(self.receipt(), ("t3", "instance.t3_unready"))
+
+    def test_a_failed_checkout_names_the_workspace(self):
+        code, guest, output, error = self.phase(fail="checkout")
+        self.assertEqual(code, 1)
+        # T3's part still ends; the sessions are never checked.
+        self.assertNotIn("sessions", [member for member, _ in guest])
+        self.assertEqual(json.loads(self.left), {"t3_part": "checkout"})
+        self.assertEqual(error, "instance.container_checkout_failed: command php exited 17\n")
+        self.assertEqual(self.receipt(), ("workspace", "instance.create_workspace_failed"))
+
+    def test_a_node_command_of_the_checkout_names_the_checkout(self):
+        code, guest, _, error = self.phase(fail="bundle")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(self.left), {"t3_part": "checkout"})
+        # The code line names the checkout and what ran; the stderr's redacted end follows it.
+        self.assertTrue(error.startswith("instance.container_checkout_failed: command git exited 1 (git "), error)
+        self.assertNotIn("sessions", [member for member, _ in guest])
+
+    def test_a_failed_sessions_check_names_the_registration(self):
+        code, _, output, error = self.phase(fail="sessions")
+        self.assertEqual(code, 1)
+        self.assertEqual(json.loads(self.left), {"t3_part": "sessions"})
+        self.assertEqual(self.receipt(), ("register", "instance.create_register_failed"))
+        for session in self.SESSIONS.values():
+            self.assertNotIn(session["token"], output + error)
 
     def test_a_timeout_names_the_part_that_was_running(self):
         for part, code in [("agent", "instance.create_agent_failed"), ("t3", "instance.t3_unready")]:
@@ -1774,9 +1812,11 @@ console.log(created.stdout);
                 self.assertEqual(json.loads(self.left), {"t3_part": part})
                 self.assertEqual(self.receipt(), ("t3", code))
 
-    def test_the_agent_phase_alone_is_no_longer_a_step(self):
-        code, guest, _, error = self.phase(phase="agent")
-        self.assertEqual((code, guest, error), (1, [], "instance.clone_phase_invalid\n"))
+    def test_the_agent_and_sessions_phases_alone_are_no_steps(self):
+        for phase in ("agent", "sessions"):
+            with self.subTest(phase=phase):
+                code, guest, _, error = self.phase(phase=phase)
+                self.assertEqual((code, guest, error), (1, [], "instance.clone_phase_invalid\n"))
 
 
 class WorkspacePartsPhaseTest(unittest.TestCase):
@@ -1847,7 +1887,7 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         self.assertEqual(set(printed["timings"]), {"guest"})
 
     def test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase(self):
-        for phase in ("checkout", "sessions"):
+        for phase in ("checkout",):
             with self.subTest(phase=phase):
                 code, _, pushed, _, _ = self.phase(phase, rev_parse=1)
                 self.assertEqual((code, pushed), (0, []))
