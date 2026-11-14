@@ -1,4 +1,4 @@
-import { assert } from "jsr:@std/assert@1.0.19";
+import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 
@@ -7,6 +7,7 @@ import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
  * can skip. A guard that holds makes the step `skipped`, and Swamp's `completed` accepts only `succeeded` and `failed`, so a plain
  * `completed` wait would skip the end check too (tasks.publish 20763, #3681). For every path of each workflow, these cases evaluate
  * each guard with the pinned CEL engine and assert that the end check's condition accepts the status that follows from it.
+ * (vault.setup's `Confirm the setup` meets the same rule in guard_syntax_test.ts; the Gateway reads that kind from another step.)
  */
 type Condition = { type: string; conditions?: Condition[] };
 type Step = { name: string; guard?: string; dependsOn?: { step: string; condition: Condition }[] };
@@ -39,6 +40,14 @@ Deno.test("conn.environment_renew reports on every path, also when the Node step
         "an unreachable Node": { steps: { "Issue the Gateway session": { status: "failed" } } },
         "a failed private folder": { steps: { "Create the private folder": { status: "failed" }, "Issue the Gateway session": { status: "skipped" } } },
     });
+    // The report that now runs on that path names the code the Gateway records for it.
+    const flow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-conn-environment-renew.yaml", import.meta.url))) as {
+        jobs: { steps: (Step & { task: { inputs: { env: Record<string, string> } } })[] }[];
+    };
+    const report = flow.jobs.flatMap((job) => job.steps).find((step) => step.name === "Report the renewal")!.task.inputs.env.ORBIT_RENEW_REPORT;
+    const steps = { "Create the private folder": { status: "failed" }, "Issue the Gateway session": { status: "skipped" } };
+    const value = cel.evaluate(report.trim().replace(/^\$\{\{/, "").replace(/\}\}$/, "").trim(), { inputs: {}, steps, run: { id: "run-1" } });
+    assertEquals(JSON.parse(value as string), { outcome: "failed", error_code: "conn.node_unreachable" });
 });
 
 Deno.test("tasks.dependency_merge confirms on every path, also after a failed mint", () => {
@@ -58,13 +67,5 @@ Deno.test("tasks.publish confirms on every path of a copy and a VM, also after a
     }
     endCheckRuns("workflow-operation-task-publish.yaml", "Confirm publication", {
         "copy: a failed preflight": { intent: { workspace: {} }, steps: { "Preflight the copy": { status: "failed" } } },
-    });
-});
-
-Deno.test("vault.setup: a skipped cleanup step never skips the end check", () => {
-    endCheckRuns("workflow-operation-vault-setup.yaml", "Confirm the setup", {
-        "a verified account": { steps: { workspace: { status: "succeeded" }, "Read probe identity": { status: "succeeded" } } },
-        "a failed probe": { steps: { workspace: { status: "succeeded" }, "Read probe identity": { status: "failed" } } },
-        "a failed workspace": { steps: { workspace: { status: "failed" } } },
     });
 });

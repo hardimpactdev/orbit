@@ -228,7 +228,7 @@ The `Orbit Swamp` session of the container is not renewed: nothing uses it yet. 
 | `conn.environment_missing` | The Node has no such container. |
 | `conn.environment_unreadable` | Incus did not answer for the container. |
 | `conn.session_issue_failed` | T3 in the container did not issue a session. |
-| `conn.node_unreachable` | The run did not reach the Node. |
+| `conn.node_unreachable` | The run did not reach the Node, or failed before its Node step. |
 | `conn.server_unreachable` | The T3 server did not answer at its recorded URL. |
 | `conn.environment_mismatch` | The URL serves another environment id. |
 | `conn.session_rejected` | T3 did not accept the new session. |
