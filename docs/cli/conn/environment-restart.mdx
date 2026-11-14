@@ -2,6 +2,10 @@
 title: "orbit conn:environment-restart"
 sidebarTitle: "conn:environment-restart"
 description: "Restart an idle container Instance's T3 server so that it shows its machine name. A busy, sleeping or current server is left alone."
+covers:
+  - apps/gateway/extensions/conn/src/Domain/{ConnEnvironmentRestart,ConnEnvironmentRestartDecision,ConnEnvironmentRestartProjection}.php
+  - apps/gateway/extensions/conn/src/Actions/AdmitConnEnvironmentRestartAction.php
+  - apps/gateway/extensions/conn/src/Http/Controllers/ConnEnvironmentRestartController.php
 ---
 
 Restart the T3 server of one running container Instance, so that it shows the Instance's [machine name](/reference/development-containers#the-machine-name), `<instance>.<project slug>`. Stock T3 reads the name only when it starts. A container that ran before the name existed still shows `instance-<id>` until its T3 starts again. [Existing Instances](/reference/development-containers#existing-instances) explains when to run this command, and why no schedule runs it.
@@ -54,3 +58,4 @@ The API is `POST /api/v1/conn/instances/{instance}/t3-restart`. The Conn extensi
 | `extension.disabled` | The Conn extension is off. |
 | `conn.t3_inactive` | The `failed` answer: T3 was not active again within the wait. |
 | `conn.t3_label_mismatch` | The `failed` answer: T3 is active, but its label is not the machine name. |
+| `conn.t3_restart_failed` | The `failed` answer: the run failed without its own code. |
