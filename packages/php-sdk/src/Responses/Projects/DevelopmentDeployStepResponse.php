@@ -10,6 +10,7 @@ use SensitiveParameter;
 
 final readonly class DevelopmentDeployStepResponse implements JsonSerializable
 {
+    /** @param list<string> $inputs */
     public function __construct(
         public string $name,
         #[SensitiveParameter]
@@ -17,6 +18,7 @@ final readonly class DevelopmentDeployStepResponse implements JsonSerializable
         public int $timeoutSeconds,
         public string $requestId = '',
         public bool $required = true,
+        public array $inputs = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -28,10 +30,11 @@ final readonly class DevelopmentDeployStepResponse implements JsonSerializable
             is_int($data['timeout_seconds'] ?? null) ? $data['timeout_seconds'] : 0,
             $requestId,
             is_bool($data['required'] ?? null) ? $data['required'] : true,
+            is_array($data['inputs'] ?? null) ? array_values(array_filter($data['inputs'], is_string(...))) : [],
         );
     }
 
-    /** @return array{name: string, command: string, timeout_seconds: int, required: bool} */
+    /** @return array{name: string, command: string, timeout_seconds: int, required: bool, inputs: list<string>} */
     public function toArray(): array
     {
         return [
@@ -39,19 +42,20 @@ final readonly class DevelopmentDeployStepResponse implements JsonSerializable
             'command' => $this->command,
             'timeout_seconds' => $this->timeoutSeconds,
             'required' => $this->required,
+            'inputs' => $this->inputs,
         ];
     }
 
-    /** @return array{name: string, command: string, timeout_seconds: int, required: bool} */
+    /** @return array{name: string, command: string, timeout_seconds: int, required: bool, inputs: list<string>} */
     public function jsonSerialize(): array
     {
         return $this->__debugInfo();
     }
 
-    /** @return array{name: string, command: string, timeout_seconds: int, required: bool} */
+    /** @return array{name: string, command: string, timeout_seconds: int, required: bool, inputs: list<string>} */
     public function __debugInfo(): array
     {
-        return ['name' => $this->name, 'command' => '[COMMAND]', 'timeout_seconds' => $this->timeoutSeconds, 'required' => $this->required];
+        return ['name' => $this->name, 'command' => '[COMMAND]', 'timeout_seconds' => $this->timeoutSeconds, 'required' => $this->required, 'inputs' => $this->inputs];
     }
 
     /** @return array<never, never> */

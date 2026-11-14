@@ -211,6 +211,8 @@ A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enab
 
 `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` turns on the [refresh after a release](/reference/development-containers#refresh-after-a-release), read as `instances.nested_fleet_refresh`. It defaults to off; the live fleet has it on since 13 November 2026. While it is off, the release step prints one line and admits nothing. Turn it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
 
+`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE` is the [root disk size of a nested-fleet default](/reference/development-containers#the-root-disk), read as `instances.nested_default_root_size`. It defaults to `80GiB`. Write `<n>GiB`, at least `40GiB`; any other value refuses with `instance.nested_root_size_invalid`. A default grows to it at its next start; a lowered value shrinks nothing. Apply a change with [Apply an env change](/reference/gateway-recovery#apply-an-env-change).
+
 Task VM hosts use [Node `settings.task_vms`](/reference/node-settings#configure-a-task-vm-host), not an environment list. Configure and verify each host's stored settings before removing the former `ORBIT_TASK_VMS_INCUS_HOSTS` variable with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read the environment list, including when configuration is cached.
 
 A Gateway release runs no smoke step. Remove the former `ORBIT_GATEWAY_RELEASE_SMOKE_TIMEOUT` and `ORBIT_GATEWAY_RELEASE_SMOKE_PROJECT` variables from the shared env file with [Apply an env change](/reference/gateway-recovery#apply-an-env-change). The Gateway does not read them.

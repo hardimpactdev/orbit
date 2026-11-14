@@ -84,6 +84,7 @@ sequenceDiagram
       Note over GW: Record active<br/>one transaction
       %%> Result:
       %%> - the Route is `active`, then the Instance `active` with `first_setup_pending` false
+      %%> - for a task copy, in the same transaction, its reserved task runs and the task's completion-failure assistance request ends; any other request stays
     else a step fails or the run is cancelled
       %% path: failed
       SW->>N: Withdraw the Route<br/>route-withdraw
@@ -94,6 +95,7 @@ sequenceDiagram
       %%> Result:
       %%> - the Instance stays `source_resolved` with `failed_step` and `error_code`; the container keeps running and T3 keeps its thread
       %%> - `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone
+      %%> - for a task copy, Orbit keeps the copy: its task stays `reserved` and asks for assistance with this retry
       %%> Retry:
       %%> - the same command runs the whole completion again, with the steps a create retry runs
     end

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Projects;
 
+use App\Domain\Projects\DevelopmentDeployStep;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
@@ -19,6 +20,7 @@ final class UpdateProjectDevelopmentDeployStepRequest extends FormRequest
             'command' => ['sometimes', 'string'],
             'timeout_seconds' => ['sometimes', 'integer:strict'],
             'required' => ['sometimes', 'boolean:strict'],
+            'inputs' => ['sometimes', 'nullable', 'array'],
             'before' => ['sometimes', 'string'],
             'after' => ['sometimes', 'string'],
         ];
@@ -32,6 +34,7 @@ final class UpdateProjectDevelopmentDeployStepRequest extends FormRequest
                 'command',
                 'timeout_seconds',
                 'required',
+                'inputs',
                 'before',
                 'after',
             ]);
@@ -42,6 +45,13 @@ final class UpdateProjectDevelopmentDeployStepRequest extends FormRequest
 
     public function withValidator(Validator $validator): void
     {
+        $validator->after(static function (Validator $validator): void {
+            $inputs = $validator->getData()['inputs'] ?? null;
+            $error = is_array($inputs) && ! $validator->errors()->has('inputs') ? DevelopmentDeployStep::inputsError($inputs) : null;
+            if ($error !== null) {
+                $validator->errors()->add('inputs', $error);
+            }
+        });
         $validator->after(function () use ($validator): void {
             $payload = $this->validated();
 
@@ -63,6 +73,18 @@ final class UpdateProjectDevelopmentDeployStepRequest extends FormRequest
         $required = $this->validated('required');
 
         return is_bool($required) ? $required : null;
+    }
+
+    /** @return list<string>|null null keeps the stored inputs; an empty list, from `null` or `[]`, clears them */
+    public function inputs(): ?array
+    {
+        $payload = $this->validated();
+
+        if (! array_key_exists('inputs', $payload)) {
+            return null;
+        }
+
+        return is_array($payload['inputs']) ? DevelopmentDeployStep::validInputs($payload['inputs']) : [];
     }
 
     public function hasCommand(): bool

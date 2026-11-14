@@ -1903,6 +1903,7 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
           assertEquals(wrote, damage === "clean" ? 0 : 1);
           assert(f.run("start").ok);
           assertEquals(incusCalls(f).filter((args) => args.join(" ") === autostart.join(" ")).length, wrote);
+          if (damage === "clean") rootSizeShapes(f);
         } else {
           assert(!result.ok, result.output);
           assertEquals(f.result(), {error_code: "instance.container_network_unsafe"});
@@ -1913,6 +1914,39 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
       } finally { f.cleanup(); }
     },
   });
+}
+
+/**
+ * The root disk of a nested-fleet default (docs/reference/development-containers.md#the-root-disk), on the clean nested container of
+ * the start gate: a start grows a smaller `<n>GiB` to the intent's size before the guard, keeps a larger one, and the guard refuses
+ * any other form. The shapes share that case's container: the file's slices are full.
+ */
+function rootSizeShapes(f: ReturnType<typeof fixture>) {
+  const devices = (f.container as unknown as {allowed_devices: Record<string, Record<string, string>>}).allowed_devices;
+  for (const [shape, has, intent] of [["grows", "40GiB", "80GiB"], ["keeps-larger", "80GiB", "40GiB"], ["same", "40GiB", "40GiB"],
+    ["odd-form", "50GB", "40GiB"]] as const) {
+    const state = f.state();
+    const row = state.containers["instance-7"];
+    row.status = "Stopped";
+    row.devices = row.devices.map((value: string) => value.startsWith("root,size=") ? `root,size=${has}` : value);
+    Object.assign(f.container, {root_disk_size: intent, allowed_devices: {...devices, root: {...devices.root, size: intent}}});
+    Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+    Deno.writeTextFileSync(`${f.folder}/calls`, "");
+    f.write();
+    const result = f.run("start");
+    const grow = ["--project", "orbit-instances-nested", "config", "device", "set", "instance-7", "root", `size=${intent}`].join(" ");
+    const grew = incusCalls(f).filter((args) => args.join(" ") === grow).length;
+    const size = f.state().containers["instance-7"].devices.filter((value: string) => value.startsWith("root,size="));
+    if (shape === "odd-form") {
+      assert(!result.ok, result.output);
+      assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, shape);
+      assertEquals([shape, f.state().containers["instance-7"].status, grew, size], [shape, "Stopped", 0, ["root,size=50GB"]]);
+      continue;
+    }
+    assert(result.ok, `${shape}: ${result.output}`);
+    assertEquals([shape, f.state().containers["instance-7"].status, grew, size],
+      [shape, "Running", shape === "grows" ? 1 : 0, [`root,size=${shape === "keeps-larger" ? "80GiB" : intent}`]]);
+  }
 }
 
 Deno.test({

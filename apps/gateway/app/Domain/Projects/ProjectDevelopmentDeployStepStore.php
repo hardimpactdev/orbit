@@ -41,6 +41,7 @@ final readonly class ProjectDevelopmentDeployStepStore
         }, 5);
     }
 
+    /** @param  list<string>|null  $inputs  null keeps the stored inputs; an empty list clears them */
     public function update(
         Project $project,
         string $name,
@@ -51,8 +52,9 @@ final readonly class ProjectDevelopmentDeployStepStore
         bool $hasCommand,
         bool $hasTimeout,
         ?bool $required = null,
+        ?array $inputs = null,
     ): DevelopmentDeployStep {
-        return DB::transaction(function () use ($project, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout, $required): DevelopmentDeployStep {
+        return DB::transaction(function () use ($project, $name, $command, $timeoutSeconds, $before, $after, $hasCommand, $hasTimeout, $required, $inputs): DevelopmentDeployStep {
             Project::query()->lockForUpdate()->findOrFail($project->id);
             $existing = $this->ordered($project);
             $index = $this->indexByName($existing, $name);
@@ -65,6 +67,7 @@ final readonly class ProjectDevelopmentDeployStepStore
                     $hasCommand ? (string) $command : $current->command,
                     $hasTimeout ? (int) $timeoutSeconds : $current->timeoutSeconds,
                     $required ?? $current->required,
+                    $inputs ?? $current->inputs,
                 );
             } catch (InvalidArgumentException) {
                 $this->invalid('A development deploy step is invalid.');
@@ -207,13 +210,14 @@ final readonly class ProjectDevelopmentDeployStepStore
                 'timeout_seconds' => $step->timeoutSeconds,
                 'required' => $step->required,
                 'position' => $position,
+                'inputs' => $step->inputs === [] ? null : $step->inputs,
             ]);
         }
     }
 
     private function toDomain(ProjectDevelopmentDeployStep $row): DevelopmentDeployStep
     {
-        return new DevelopmentDeployStep($row->name, $row->command, $row->timeout_seconds, $row->required);
+        return new DevelopmentDeployStep($row->name, $row->command, $row->timeout_seconds, $row->required, $row->inputs ?? []);
     }
 
     private function invalid(string $message): never

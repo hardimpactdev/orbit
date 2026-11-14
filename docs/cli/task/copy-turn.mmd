@@ -31,6 +31,7 @@ sequenceDiagram
   %%> - the intent names the copy's container, the T3 command, whether the turn starts or continues its thread, the provider instance and model, the candidate, the 3,600 s bound and a title that names the Orbit thread; no credential and no vault key
   %%> Requirements:
   %%> - the group owns its copy and the copy is `active`; otherwise `tasks.no_workspace` or `tasks.copy_not_ready`, and nothing is recorded
+  %%> - the copy's last completion did not fail; otherwise `tasks.copy_completion_failed` with its Operation, failed step, error code and the retry `orbit instance:complete ID`, and nothing is recorded
   %%> - an implementer or reviewer turn with no caller's model; a consult or `--model` answers `tasks.copy_turn_unsupported`
   %%> - `--thread=ID` names the role's thread that the turn would continue; otherwise `tasks.thread_role_mismatch`
   %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`

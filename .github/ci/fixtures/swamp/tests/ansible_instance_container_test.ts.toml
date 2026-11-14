@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "a7fe9b20148047365584789f88cb42e39846016c353132949fb095d22b175ea6"
+source_sha256 = "09685086a900cb23cc526bfe2f5bebd4ce442246f8a2e2632b38eee585a3edec"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -90,7 +90,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3989
+cost = 4029
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   # The bundle's edge cases (44s locally, run in full before the PR): with it the file needs a 72nd slice and defers whole. The PR keeps
@@ -205,7 +205,7 @@ inputs = [
   "nested fleet start gate: changed-host-path" = 25 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.5-29.4s
   "nested fleet start gate: writable-share" = 25 # p90 of 15 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.4-27.5s
   "nested fleet start gate: privileged" = 30 # p90 of 16 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.9-29.1s
-  "nested fleet start gate: clean" = 41 # p90 of 14 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.5-40.4s
+  "nested fleet start gate: clean" = 81 # p90 41s of 14 hosted PR runs on 2026-11-13, plus 40s for the four root-size starts added 2026-11-14 (local 16s to 33s)
   "nested fleet start gate: kernel-modules" = 30 # p90 of 11 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 18.1-29.4s
   "nested fleet start gate: mount-intercept" = 29 # p90 of 10 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 17.5-28.8s
   "nested fleet start gate: bpf-intercept" = 31 # p90 of 10 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.1-29.3s

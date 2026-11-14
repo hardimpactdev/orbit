@@ -6,6 +6,7 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -43,6 +44,7 @@ final readonly class TaskInstanceWorkspace
      */
     public function intent(): array
     {
+        $this->requireReady();
         if ($this->runtime->power_state !== InstanceRuntimePowerState::Running) {
             throw new ResourceOperationException('tasks.instance_not_running', 'The container of the task workspace is not running.', 409);
         }
@@ -55,6 +57,23 @@ final readonly class TaskInstanceWorkspace
     }
 
     /**
+     * Refuses a turn, a check, a publish and a proof of a task copy that is not ready (docs/reference/tasks.md#a-failed-completion). A
+     * copy whose completion failed (TaskCopyLifecycle::completionFailure) answers `tasks.copy_completion_failed`: the completion did not
+     * start its Processes or a nested copy's inner fleet, and its retry may run at the same time. Any other copy that is not `active`
+     * yet, because its create, its completion or a retry still runs, answers `tasks.copy_not_ready`.
+     */
+    public function requireReady(): void
+    {
+        $failure = TaskCopyLifecycle::completionFailure($this->instance);
+        if ($failure !== null) {
+            throw new ResourceOperationException('tasks.copy_completion_failed', "The completion of the task copy failed. Retry it with `{$failure['retry']}`.", 409, details: $failure);
+        }
+        if ($this->instance->status !== InstanceState::Active) {
+            throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
+        }
+    }
+
+    /**
      * What a publication from a task copy adds to its intent (docs/reference/tasks.md#task-copy): the recorded guest target, the copy's
      * start commit and the path of the `.env` Orbit wrote, relative to the checkout. No commit from the start on may hold that file.
      *
@@ -62,6 +81,8 @@ final readonly class TaskInstanceWorkspace
      */
     public function publication(): array
     {
+        // Readiness first: a copy whose create still runs has no start commit yet, and it is only not ready.
+        $this->requireReady();
         $start = $this->instance->starting_commit;
         $environment = InstanceContainer::environmentFile($this->instance);
         if (! is_string($start) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $start) !== 1 || ! str_starts_with($environment, self::Root.'/')) {

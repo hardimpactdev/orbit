@@ -380,6 +380,20 @@
     argv: "{{ incus_project + ['config', 'set', container.name, 'boot.autostart=' ~ container.config['boot.autostart']] }}"
   changed_when: true
 
+# A nested-fleet default's root disk grows to its intent's size, which a Gateway setting names: its quota also counts the seeds that its
+# copies pin. Incus sets the ZFS quota on a running container. Only a smaller `<n>GiB` grows: a failed shrink below the used space
+# leaves the dataset without a quota, so no start shrinks one (docs/reference/development-containers.md#the-root-disk).
+- name: Grow the root disk to its intent
+  tags: [container, clone, start]
+  when: >-
+    phase in ['container', 'clone', 'start'] and not start_skips_boot | default(false) | bool and container_read.rc == 0
+    and container.allowed_devices is defined
+    and (container_read.stdout | from_json).expanded_devices.root.size | default('') is match('^[1-9][0-9]*GiB$')
+    and ((container_read.stdout | from_json).expanded_devices.root.size[:-3] | int) < (container.root_disk_size[:-3] | int)
+  ansible.builtin.command:
+    argv: "{{ incus_project + ['config', 'device', 'set', container.name, 'root', 'size=' ~ container.root_disk_size] }}"
+  changed_when: true
+
 # Both independent ACLs reject by default. Validate all effective bridge NICs, including copied local extra devices.
 - name: Check the container's effective egress gates before starting it
   tags: [container, clone, start]

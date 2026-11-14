@@ -57,6 +57,7 @@ final class ProjectDevelopmentDeployStepsController extends Controller
                 $request->hasCommand(),
                 $request->hasTimeout(),
                 $request->required(),
+                $request->inputs(),
             )->toArray(),
             'meta' => $this->meta($request),
         ]);
