@@ -177,6 +177,14 @@ Orbit drops the entries of an environment that is gone:
 - **No write-back.** A device that writes from its older version gets a conflict. It cannot write the threads back.
 - **On read.** A read leaves out the threads of an environment that was deleted. It writes nothing and adds no version. The next write of the section drops them from the store.
 
+A failure of the drop never stops the destroy:
+
+- **After the destroy.** The drop runs after the destroy commits. It cannot fail, roll back or delay the destroy.
+- **One profile at a time.** The drop writes each profile in its own transaction.
+- **Skipped profile.** The drop skips a profile it cannot read or write, such as a document that is not valid JSON. The other profiles still get their drop.
+- **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem.
+- **Hidden entries.** The skipped entries stay stored, and every read leaves them out.
+
 A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
 
 A profile from before this section has no `attachedThreads` key and no version for it. It reads as no attached threads, at section version 0, so the first patch sends version 0. No migration runs. A client that does not know the section keeps working: it ignores the key, `PUT` cannot send it and keeps it as it is, and a patch changes only the sections it names.
@@ -236,7 +244,7 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
-Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings, and drops the environment's [attached threads](#attached-threads) from every profile, before core deletes the Instance. New pairings refuse an Instance marked removing.
+Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. After that commits, Orbit drops the environment's [attached threads](#attached-threads) from the profiles. New pairings refuse an Instance marked removing.
 
 ### Renewal of an Instance server
 
