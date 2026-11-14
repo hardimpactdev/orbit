@@ -128,7 +128,7 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Step | What it does |
 | --- | --- |
 | Fetch the commit | Fetches the commit into `shared/orbit.git` when it is missing. The read token reaches git only in its environment. |
-| Build the release | Refuses a downgrade with `gateway.release_downgrade`. A new build first checks the [disk floor](#migrations-and-the-snapshot) for itself and a snapshot, and refuses with `gateway.release_disk_low`. Builds and seals the release. Prints the grants the new code renders. |
+| Build the release | Refuses a downgrade with `gateway.release_downgrade`, or a disk below the [floor](#migrations-and-the-snapshot) with `gateway.release_disk_low`. Builds and seals the release, and prints its grants. |
 | Install the web build | Downloads the artifact, checks its digest, and extracts it with safe names only into `web/releases/<id>`. |
 | Snapshot the database | Writes `backups/pre-<id>-<time>-<hex>.sqlite` with `VACUUM INTO`. Refuses with `gateway.release_disk_low` before the copy when the disk floor would break. The newest two stay, and the one a pause names. |
 | Migrate | Runs `artisan migrate --force --isolated` from the new release and prints the end of its output with its exit code. |
@@ -351,7 +351,11 @@ Before it migrates, the run writes a consistent SQLite copy with `VACUUM INTO` t
 
 No rollback reads a snapshot: a rollback restores no data. The newest snapshot holds the database from before the live release's migrations, and the one before it the database from before the previous release's. An operator restores one only after a failed migration, and that run's pause names the snapshot it needs.
 
-The run keeps the disk floor of Doctor's `node.disk_low`: at least 2 GiB and 10 % of the root disk stay free after the copy. When the copy would break the floor, the snapshot step first removes every older snapshot except the newest and the paused one. If the copy still does not fit, the step refuses with `gateway.release_disk_low` before it writes. Nothing has migrated, so the old release stays live. Automatic releases try the commit again, and the third failed attempt raises a `release_failed` alert. A new build checks the same floor before it writes anything. The 1 GiB for the build must fit as the disk is. The build and the database's size for the snapshot must fit when the older snapshots that the snapshot step would remove are gone. A copy that a stopped run left as `pre-*.sqlite.partial` goes at the next snapshot.
+The run keeps the disk floor of Doctor's `node.disk_low`: at least 2 GiB and 10 % of the root disk stay free after the copy.
+
+When the copy would break the floor, the snapshot step first removes every older snapshot except the newest and the paused one. If the copy still does not fit, the step refuses with `gateway.release_disk_low` before it writes. Nothing has migrated, so the old release stays live. Automatic releases try the commit again, and the third failed attempt raises a `release_failed` alert.
+
+A new build checks the same floor before it writes anything. The 1 GiB for the build must fit as the disk is. The build and the database's size for the snapshot must fit when the older snapshots that the snapshot step would remove are gone. A copy that a stopped run left as `pre-*.sqlite.partial` goes at the next snapshot.
 
 The new release runs `php artisan migrate --force --isolated` while the old release still serves. Migrations must use expand and contract: both releases must work with the new schema. Before a schema squash, finish the existing migration chain, as the [contributor guide](/contributor-guide#3-implement-and-verify) requires.
 
