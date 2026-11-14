@@ -111,7 +111,8 @@ sequenceDiagram
     %%> What it does, in one step:
     %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all
-    %%> - the T3 part: T3 starts for the first time and creates its identity; while it starts, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions and adds the T3 project `/srv/workspace`, all three at once as `agent`; the tokens go only to the run's private folder
+    %%> - the T3 part: T3 starts for the first time and creates its identity; while it starts, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
+    %%> - after T3 answers, the T3 project `/srv/workspace` is added as `agent`; during T3's start that call fails
     %%> - a failed session issue fails this step with `instance.t3_unready`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`

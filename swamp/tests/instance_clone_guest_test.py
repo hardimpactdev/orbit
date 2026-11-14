@@ -1100,23 +1100,25 @@ class CloneGuestTest(unittest.TestCase):
 
     T3 = {"unit": "t3.service", "title": "Proof", "project_mark": "/home/agent/.config/orbit/t3-project"}
 
-    def test_the_t3_step_issues_both_sessions_and_adds_the_project_while_t3_starts(self):
+    def test_the_t3_step_issues_both_sessions_while_t3_starts_and_adds_the_project_after_its_answer(self):
         seen = {}
 
         def at_curl(commands):
-            # When the step starts to wait for T3's answer, both session issues have started and the project is added and marked.
+            # When the step starts to wait for T3's answer, both session issues have started; `project add`, which fails during
+            # T3's start, has not.
             deadline = time.monotonic() + 2
             while time.monotonic() < deadline and sum("--label" in argv for argv in list(commands)) < 2:
                 time.sleep(0.01)
             seen["issues"] = sum("--label" in argv for argv in list(commands))
-            seen["marked"] = GUEST.pathlib.Path(self.T3["project_mark"]).is_file()
+            seen["project"] = any(argv[1:3] == ["project", "add"] for argv in list(commands))
 
         commands, output, error = self.readiness("t3", existing=False, expected_exit=0, t3=self.T3, on_curl=at_curl)
         result = json.loads(output)
         cli = [argv for argv in commands if argv[0] == "/opt/agent/bin/t3"]
         self.assertEqual(sorted(argv[1:3] for argv in cli), [["auth", "session"], ["auth", "session"], ["project", "add"]])
         self.assertEqual(sorted(argv[argv.index("--label") + 1] for argv in cli if "--label" in argv), ["Orbit Gateway", "Orbit Swamp"])
-        self.assertEqual(seen, {"issues": 2, "marked": True})
+        self.assertEqual(seen, {"issues": 2, "project": False})
+        self.assertTrue(any(change.endswith(self.T3["project_mark"]) for change in result["changes"]))
         # The tokens leave only as the private reply, which the Node keeps in the run's private file; never in the public receipt.
         self.assertEqual(result["private_reply"], {"gateway": {"token": "Orbit Gateway-PRIVATE-TOKEN"}, "swamp": {"token": "Orbit Swamp-PRIVATE-TOKEN"}})
         public = {key: value for key, value in result.items() if key != "private_reply"}
@@ -1125,12 +1127,10 @@ class CloneGuestTest(unittest.TestCase):
         commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3={**self.T3, "project_mark": GUEST.CHECKOUT_MARK})
         self.assertFalse(any(argv[:3] == ["/opt/agent/bin/t3", "project", "add"] for argv in commands))
 
-    def test_a_t3_that_does_not_answer_still_leaves_the_projects_mark_for_the_retry(self):
-        seen = {}
-        _, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=self.T3,
-                                          on_curl=lambda _: seen.update(marked=GUEST.pathlib.Path(self.T3["project_mark"]).is_file()))
+    def test_a_t3_that_does_not_answer_adds_no_project_so_a_retry_adds_it_once(self):
+        commands, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=self.T3)
         self.assertEqual((output, error), ("", "instance.container_t3_failed: command curl exited 17\n"))
-        self.assertEqual(seen, {"marked": True})
+        self.assertFalse(any(argv[1:3] == ["project", "add"] for argv in commands))
 
     def test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit(self):
         _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/t3", entrypoint=True, t3=self.T3)

@@ -570,18 +570,12 @@ def phase_main(phase, raw):
         if not active:
             run(["systemctl", "start", t["unit"]])
             changes.append("start:t3")
-        # While T3 starts, its own CLI issues the two sessions and adds the project: stock T3's CLI writes its store before and during
-        # the server's first start (docs/reference/development-containers.md#create). The tokens leave only as the private reply.
-        mark = root(t["project_mark"])
-        cli = [(name, [t["t3"], "auth", "session", "issue", "--label", label, "--token-only"]) for name, label in SESSIONS]
-        if not mark.exists():
-            cli.append(("project", [t["t3"], "project", "add", ws, "--title", t["title"]]))
-        with ThreadPoolExecutor(max_workers=len(cli)) as pool:
-            started = {name: pool.submit(run, argv, agent=True) for name, argv in cli}
-            # The project's mark goes the moment T3 holds the project, before anything else can fail: a retry then adds no second
-            # project, which T3 refuses.
-            if "project" in started:
-                write(t["project_mark"], started.pop("project").result().stdout.strip() + "\n", 2750, 2750, "0600")
+        # While T3 starts, its own CLI issues the two sessions: stock T3's CLI writes its sessions before and during the server's
+        # first start. `project add` waits for T3's answer: during the start it fails (docs/reference/development-containers.md#create).
+        # The tokens leave only as the private reply.
+        with ThreadPoolExecutor(max_workers=len(SESSIONS)) as pool:
+            started = {name: pool.submit(run, [t["t3"], "auth", "session", "issue", "--label", label, "--token-only"], agent=True)
+                       for name, label in SESSIONS}
             ready = run(
                 [
                     "curl",
@@ -608,6 +602,10 @@ def phase_main(phase, raw):
         environment = json.loads(ready.stdout)
         assert environment["environmentId"] and environment["serverVersion"]
         assert all(issued[name] for name, _ in SESSIONS) and issued["gateway"] != issued["swamp"]
+        mark = root(t["project_mark"])
+        if not mark.exists():
+            r = run([t["t3"], "project", "add", ws, "--title", t["title"]], agent=True)
+            write(t["project_mark"], r.stdout.strip() + "\n", 2750, 2750, "0600")
         print(
             json.dumps(
                 {

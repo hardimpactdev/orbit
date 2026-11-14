@@ -1378,11 +1378,11 @@ In the container, as `agent`:
 
 1. The T3 step starts T3. T3's own CLI issues the `Orbit Gateway` session beside that start, as `agent`: `t3 auth session issue --label "Orbit Gateway" --token-only`.
 2. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
-3. In parallel, `t3 project add` adds the workspace. Its mark is written as soon as T3 holds the project, so a retry never adds it twice.
+3. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
 4. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
 5. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
 
-Stock T3's CLI writes T3's store before and during the server's first start. So the three calls run while T3 starts and add no time of their own.
+Stock T3's CLI writes its sessions before and during the server's first start. So the two issues run while T3 starts and add no time of their own.
 
 A create that fails after the T3 step leaves its two sessions valid in T3, as a resume does. Both copies of the tokens stay in private folders, which the create's cleanup removes.
 
