@@ -1030,7 +1030,7 @@ Copies of several groups can share a Node, and their checks, publishes and syncs
 | The workspace phase of a publish: preflight, export, discard | `task-workspace-<node>-<group>` | 1,800 s |
 | The check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 10,800 s, 600 s, 600 s |
 | The `.env` content check, the import and the push of a publish on 209 | `task-publish-content-<node>-<group>`, `task-publish-import-<node>-<group>`, `task-publish-push-<node>-<group>` | 240 s, 60 s, 60 s |
-| The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 120 s |
+| The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 180 s, 60 s |
 
 One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name. It runs 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, or only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
 
@@ -1367,7 +1367,7 @@ A refusal at admission, such as `tasks.copy_publish_held`, `tasks.commit_not_che
 
 Only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal: the next tick reads the group again and stores nothing. Any other refusal is stored, also a 503 such as `swamp.ssh_identity_unavailable`, because Orbit marks no admission code as passing; release the group once its cause is fixed. A fault that is no refusal is reported, stored as `tasks.publish_failed`, and the tick goes on with the next group. A refusal is never stored over a publish of the group that was admitted in between.
 
-A publish that failed because a Swamp behavior lock timed out is no refusal. Its run waited 60 seconds for a step that another run held, and nothing on the copy or on GitHub was wrong. Swamp reports a failed step whose error reads `Lock "<path>/.lock" held by <holder> (pid <pid>) — timed out after <ms>ms`, or the same without the holder when it let go at the deadline. Orbit records `tasks.publish_lock_timeout`.
+A publish that failed because a Swamp behavior lock timed out is no refusal. Its run waited 60 seconds for a step that another run held, and nothing on the copy or on GitHub was wrong. The step can come after the push, so the branch may be pushed already. A retry is still safe: an identical tip pushes nothing, and the PR plan updates an open pull request instead of opening a second. Swamp reports a failed step whose error reads `Lock "<path>/.lock" held by <holder> (pid <pid>) — timed out after <ms>ms`, or the same without the holder when it let go at the deadline. Orbit records `tasks.publish_lock_timeout`.
 
 The tick then starts the same done check again, one attempt per tick and at most 3 attempts in all. Each retry is a new Operation, keyed with its attempt. While attempts remain, `publication` shows `publishing`. After the third lock timeout it shows `refused` with `tasks.publish_lock_timeout`, and `task:publish <group>` tries again.
 
