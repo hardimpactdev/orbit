@@ -542,7 +542,9 @@ A container cannot reach the Gateway: its traffic would leave as its Node's Wire
 A target of the access plan can carry a fleet private name. Today only an attached private websocket app does: `reverb.orbit` at port 8443. The plan lists each one under `private_names`, with the exact address and port it admits; the key is absent for every other Instance, so their plans stay as they were.
 
 - **Hosts file.** The container has no DNS server, and the egress proxy refuses private names. So Orbit writes each name with its address into the container's `/etc/hosts`.
-- **When.** The create, clone, migrate and start phases write the names. `env:sync` writes them in a running container.
+- **When.** The create, migrate and start phases write the names; deploy and wake run the start phase. `env:sync` writes them in a running container.
+- **Clones.** A clone holds no app of its default, so its create writes no name.
+- **Seed leftovers.** A clone resets the seed's proxy bypass before its first start. Its first start phase removes a hosts block from the seed.
 - **Owned lines.** Orbit owns only the lines between `# BEGIN Orbit private names` and `# END Orbit private names`. With no name, it removes them.
 - **No proxy.** Each name goes into `NO_PROXY` through the one place that composes the container's proxy settings, so the client connects on the exact path and not through the proxy.
 - **Env check.** The migrate's env check admits a name only at the port the plan gives it. Every other private name stays refused.
@@ -617,7 +619,7 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 - for a [nested-fleet](#nested-fleet) container, its inner fleet (`10.45.0.1`, `10.45.0.0/24` and `10.232.2.0/24`): the container's own CLI then reaches its inner Gateway;
 - each name of the container intent's [`private_names`](#private-names-of-the-access-plan) list, such as `reverb.orbit` for an attached private websocket app.
 
-A normal container without these keeps the image's value only. Every writer of the value takes it from this builder. When the value is not the image's base, the intent carries it as `proxy_environment`. The create, clone and start phases then hand it to the one guest writer, and so does `env:sync`. Units read it at their next start. `env:sync` restarts the web unit and the running Process units only when `.env` changed, as for a database attach, and never T3.
+A normal container without these keeps the image's value only. Every writer of the value takes it from this builder. When the value is not the image's base, the intent carries it as `proxy_environment`. The create, migrate and start phases then hand it to the one guest writer, and so does `env:sync`. Units read it at their next start. `env:sync` restarts the web unit and the running Process units only when `.env` changed, as for a database attach, and never T3.
 
 | Reader | Source | When it reads a new value |
 | --- | --- | --- |

@@ -22,6 +22,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Route;
+use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use RuntimeException;
 
@@ -318,8 +319,10 @@ final readonly class InstanceContainer
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
         $nestedFleet = $runtime->incus_project === InstancePlacement::NestedProject;
-        $resetProxy = $source !== null && InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
-            ->where('node_id', '!=', $source->node_id)->exists();
+        // The seed carries the default's proxy bypass: a remote Node service host, or the private name of its websocket app.
+        $resetProxy = $source !== null && (InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
+            ->where('node_id', '!=', $source->node_id)->exists()
+            || WebSocketAppTarget::query()->where('instance_id', $source->instance_id)->whereNull('route_id')->exists());
         $project = $instance->project;
         $agent = InstanceHostIntent::AgentUid;
         $workspace = InstanceHostIntent::Workspace;
