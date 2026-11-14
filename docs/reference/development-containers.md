@@ -533,25 +533,26 @@ Only an idle T3 restarts. The Gateway reads T3's threads with its admin session,
 
 Only T3's service restarts. The run first checks that `/etc/machine-info` holds the name; without it, it answers `skipped` with `name_not_written`. Then it runs `systemctl try-restart t3.service` in the container and reads T3's label inside the container until it is the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
 
-`t3.service` sets no `KillMode`, so a restart ends every process in the service's cgroup. So right before the restart the run reads systemd's `MainPID` of `t3.service` and the exact members of its `cgroup.procs`, with the parent, age and name of each, in one call. It restarts only when every member may go; any other member answers `busy` with `processes` and the counts, and nothing restarts.
+`t3.service` sets no `KillMode`, so a restart ends every process in the service's cgroup and in any cgroup below it. So right before the restart the run reads, in one call, systemd's `MainPID` of `t3.service`, the cgroups below it, and the exact members of its `cgroup.procs` with each one's parent, session, terminal and name. It restarts only when every member may go. Any other member answers `busy` with `processes` and the counts, and nothing restarts. This table is the rule; the playbook's template only applies it.
 
 | Member of `t3.service` | Answer |
 | --- | --- |
 | T3 itself: the `MainPID`, and no other process | may go |
-| T3's resource monitor (`t3-resource-mon`), a direct child of T3 | may go |
-| T3's own short `git` call, a direct child of T3 | may go |
-| A provider, `claude` or `codex`, a direct child of T3; the names are the binaries the recipe ships | may go |
-| A provider's descendant that started within 10 seconds of it: its session's `sh`, or a stdio MCP server such as Laravel Boost's `php`, or `npm` and `node` | may go |
-| Any other direct child of T3: a terminal shell that node-pty forked, open idle or running something | `busy`, counted in `terminals` |
-| What a terminal runs, such as a development server or a long command | `busy`, counted in `commands` |
-| A provider's descendant that started later: a turn's tool, or a server an earlier turn left running | `busy`, counted in `commands` |
+| T3's resource monitor (`t3-resource-mon`) or its own `git` call, a direct child of T3 with no terminal | may go |
+| A provider, `claude` or `codex` (the binaries the recipe ships), a direct child of T3 with no terminal | may go |
+| A member of the `claude` provider's own session whose parent is in the service: its setup `sh` and stdio MCP servers such as Laravel Boost's `php`, or `npm` and `node` | may go |
+| Any member with a terminal (a tty), such as a shell node-pty forked or an `exec claude` typed in it | `busy`: `terminals` when T3 is its parent, else `commands` |
+| Any other direct child of T3 | `busy`, counted in `terminals` |
+| A `claude` tool tree, in the session of its own that Claude Code starts each tool shell in: a turn's tool, or a server it left running | `busy`, counted in `commands` |
+| Any descendant of `codex`: its tools may share its session, so none is allowed | `busy`, counted in `commands` |
 | A process whose parent left the service, such as a backgrounded `nohup` server that PID 1 adopted | `busy`, counted in `commands` |
+| A member line the read cannot parse | `busy`, counted in `commands` |
 
 An open idle shell counts because a restart loses its state. After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
 
-The read fails closed. When it cannot be read, or `MainPID` is 0 or not a member, the answer is `busy` with `processes_unreadable`, and nothing restarts.
+The read fails closed. When it cannot be read, `MainPID` is 0 or not a member, or a cgroup sits below the service, the answer is `busy` with `processes_unreadable`, and nothing restarts.
 
-So the restart ends only T3, its monitor and git calls, and an idle provider session with the processes it started with. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here. A turn that has not run a tool yet shows only its provider, so it is cut, and T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
+So the restart ends T3, its monitor and `git` calls, an idle provider with no descendant outside the `claude` session, and a terminal or command that started in the second between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here. A turn that has not run a tool yet shows only its provider, so it is cut, and T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
 
 A frozen or stopped container is skipped. T3 reads the name at its next start.
 

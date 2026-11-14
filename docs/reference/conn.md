@@ -337,9 +337,9 @@ The intent holds the Instance, its container, T3's port in the container, the na
 
 The Node form walks the Node's container Instances by ID and reads each one right before its own admission.
 
-The run checks that `/etc/machine-info` holds the name (else `skipped` with `name_not_written`), and reads the members of T3's service by systemd's `MainPID` and `cgroup.procs`. An open terminal, a command it runs, a provider's later descendant or an orphan answers `busy` with `processes` and the counts; a read that fails answers `busy` with `processes_unreadable`. Nothing restarts then. [Existing Instances](/reference/development-containers#existing-instances) has the rule.
+The run checks that `/etc/machine-info` holds the name (else `skipped` with `name_not_written`), and reads the members of T3's service once more. A terminal, a command or an unreadable read answers `busy` (`processes`, `processes_unreadable`), and nothing restarts; [Existing Instances](/reference/development-containers#existing-instances) has the rule.
 
-Otherwise the run restarts T3 in the container and reads its label inside the container until it is the name. It succeeds as `restarted` with `window_ms`, or fails as `failed` with `conn.t3_unready` or `conn.t3_label_mismatch`. An open T3 terminal and what it runs are never ended. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
+Otherwise the run restarts T3 in the container and reads its label inside the container until it is the name. It succeeds as `restarted` with `window_ms`, or fails as `failed` with `conn.t3_unready` or `conn.t3_label_mismatch`. An open T3 terminal and what it runs are not ended, unless the terminal opens in the second between that read and the restart. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
 
 ## Thread index
 
