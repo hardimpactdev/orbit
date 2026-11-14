@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
-  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
+  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
@@ -2361,11 +2361,13 @@ The step sends `swamp/ansible/instance_shape_tools.py` into the outer container 
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
-| The venv has `.complete`, the collections folder has `ansible_collections`, and the five packages are installed | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| The venv has `.complete`, the collections folder has `ansible_collections`, and the six packages are installed | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
 | The tools are ready, but a package is missing | Installs the missing packages with one `apt-get install` | `tools: built`, `tools_reason: missing` |
 | Anything else | Builds the tools, as the list below says | `tools: built`, `tools_reason: missing` |
 
-The five packages are `python3-venv`, `zip`, `unzip`, `jq` and `btrfs-progs`. The step reads each one with `dpkg-query`. The image lacks `zip`, `unzip` and `jq`; an image older than PR #3706 also lacks `btrfs-progs`. So the first refresh that finds a package missing installs it, with `libjq1` and `libonig5` for `jq`, about 0.75 MB. The `apt-get update` and the install add an estimated 10 to 20 s, once. For a default that lacks only `btrfs-progs`, the next refresh reports `tools: built`, `tools_reason: missing` once; the install alone took 1.4 s in a copy of Instance 2454. Later refreshes report `tools: present`. The step changes no image and moves no image alias.
+It also keeps `duperemove`, which [the shrink of the nested root disks](#the-inner-machines-stay-small) runs. The image does not carry it, so the first refresh after the shrink was added installs it.
+
+The six packages are `python3-venv`, `zip`, `unzip`, `jq`, `btrfs-progs` and `duperemove`. The step reads each one with `dpkg-query`. The image lacks `zip`, `unzip` and `jq`; an image older than PR #3706 also lacks `btrfs-progs`. So the first refresh that finds a package missing installs it, with `libjq1` and `libonig5` for `jq`, about 0.75 MB. The `apt-get update` and the install add an estimated 10 to 20 s, once. For a default that lacks only `btrfs-progs`, the next refresh reports `tools: built`, `tools_reason: missing` once; the install alone took 1.4 s in a copy of Instance 2454. Later refreshes report `tools: present`. The step changes no image and moves no image alias.
 
 A build does five things:
 
@@ -2381,12 +2383,37 @@ A failed build or package install never fails the refresh. The refresh goes on a
 
 The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
 
+#### The inner machines stay small
+
+The three nested containers hold their root disks on the inner pool. A refresh keeps them small in the window where it retakes `base`, with the three stopped, the old `base` deleted and the new one not yet taken. So the new `base` and the seed hold the small form. The step is `swamp/ansible/instance_fleet_shrink.py`, run as root in the outer container. It has two parts:
+
+The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then a rename over it.
+
+The second part is the dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent. The kernel compares the bytes before it shares them, so no file changes. It needs a btrfs pool and `duperemove`. [The pinned shape tools](#the-pinned-shape-tools) step keeps `duperemove` in the container.
+
+The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due shrink makes `base` due for all three, so the dedupe shares blocks across them.
+
+| Case | What the step does | Result |
+| --- | --- | --- |
+| No package changed since the last shrink | Checks only | `shrink: skipped`, `shrink_reason: current` |
+| No record, or a dpkg status changed | Relinks and dedupes; writes the record; `base` of all three | `shrink: ran`, `shrink_reason: record` or `packages` |
+| `duperemove` is not installed yet | Relinks only and writes no record, so the next refresh runs it again | `shrink: relinked` |
+| The check cannot read | Nothing; `base` is decided as before | `shrink: skipped`, `shrink_reason: unreadable` |
+| The run fails or times out (600 s) | Writes no record; the refresh goes on | `shrink: failed` |
+
+The first nested fleet held 116 separate copies of the coreutils binary in each machine, 1.26 GiB each. Its three machines shared no blocks. On a copy of it the shrink took the inner pool from 11.8 GiB to 3.7 GiB in 36 s, with the fleet stopped. The inner volume's own size went from 10.3 GiB to 3.2 GiB. The machines ran again, and `dpkg --verify rust-coreutils` was clean.
+
+The links were lost in that fleet's one-time hand move to the inner volume (14 November 2026). The Incus paths of a new default keep them. Each was checked: an image unpack on the btrfs pool, a start that shifts the IDs, and a move between a directory pool and a btrfs pool, with or without a snapshot. An export and import, and a snapshot restore, keep them too.
+
+A default whose tools step has not yet installed `duperemove` gets `shrink: relinked` at its first such refresh; the tools step after `base` installs `duperemove`, and the next refresh runs the whole shrink and retakes `base` once more.
+
 The Operation's result has `fleet_refresh`. It holds these fields:
 
 - `migrate`: `applied`, `nothing` or `skipped`. `restart`: `yes` or `no`.
 - `converge`: `ran` or `skipped`. `converge_reason`: `changed`, `record`, `digest_unreadable`, `stale` or `unchanged`. `converge_nodes`: the Nodes the converge ran for. `changed`: the tasks the converges changed.
 - `tokens`: `reminted`, `young` or `skipped`. `tokens_reason`: `age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`.
 - `tools`: `present`, `built` or `failed`. `tools_reason`: see [The pinned shape tools](#the-pinned-shape-tools).
+- `shrink`: `ran`, `relinked`, `failed` or `skipped`. `shrink_reason`: `record`, `packages`, `current` or `unreadable`. See [The inner machines stay small](#the-inner-machines-stay-small).
 - `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
 - `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.
 
