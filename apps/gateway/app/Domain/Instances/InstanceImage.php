@@ -229,11 +229,13 @@ final readonly class InstanceImage
      */
     private static function nestedFiles(): array
     {
+        // The inner Incus maps the workspace's owners into the nested Gateway and app-dev (the fleet rules' raw.idmap): the user `orbit`
+        // and `agent`, and the group `orbit` and `work`. Each needs its own line here, or the nested container does not start.
         $ids = "root:1000000:100000000\nroot:".InstanceHostIntent::OrbitUid.":1\n";
 
         return [
-            ['path' => '/etc/subuid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-            ['path' => '/etc/subgid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/subuid', 'content' => $ids.'root:'.InstanceHostIntent::AgentUid.":1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => '/etc/subgid', 'content' => $ids.'root:'.InstanceHostIntent::WorkGid.":1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/orbit/apparmor-off', 'content' => "N\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'],
             ['path' => self::NestedWaitOnline, 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/usr/lib/systemd/systemd-networkd-wait-online --interface=eth0:routable --timeout=30\n",

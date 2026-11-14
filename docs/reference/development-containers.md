@@ -1427,7 +1427,7 @@ It is the normal image with these changes:
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
 | Packages | `wireguard-tools`, `sqlite3`, `sudo` and `zstd` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
-| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000` |
+| Subordinate IDs | `/etc/subuid` gives root `1000000:100000000`, `1000:1` and `2750:1`; `/etc/subgid` gives `1000000:100000000`, `1000:1` and `2760:1` |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
@@ -1458,7 +1458,7 @@ A delegated ZFS dataset is not used: `incus copy` does not copy its child datase
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus the [workspace mapping](#fleet-rules): `1000:1` in both, `2750:1` in `/etc/subuid` and `2760:1` in `/etc/subgid`. The range fits inside the outer 101,000,000 IDs.
 
 ### Fleet rules
 
