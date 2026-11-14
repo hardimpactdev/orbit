@@ -206,6 +206,7 @@ additionalFiles:
   - ansible/task-vm-fleet-wait.yml
   - ansible/task-instance-workspace.yml
   - ansible/task-copy-turn.yml
+  - ansible/t3_copy_rpc.mjs
   - ansible/tasks/task-instance-workspace-phase.yml
   - ansible/task-vm-idle-save.yml
   - ansible/shape-gate-requirements.txt

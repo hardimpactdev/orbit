@@ -3,8 +3,10 @@
 # the role's thread to continue it, waits for its run and reads the thread back. The CLI issues its T3 session inside the container
 # and revokes it at exit, so no credential reaches the Node, Swamp or the Gateway. The title names the Orbit thread, so a run cut by
 # its bound is still found, and a continued turn finds its thread. A reviewer works on the checked candidate, detached, and the task
-# branch is checked out again at its tip after its turn. Ansible keeps the raw replies out of its log and writes them to the run folder only;
-# `@nckrtl/task-copy-turn` bounds and redacts them. Each T3 read is bounded at 60 s and each Git command at 20 s.
+# branch is checked out again at its tip after its turn. A run that waits for an answer has its question stored, and only then is it
+# stopped, by `t3_copy_rpc.mjs` through the stock T3 server's own RPC: the answer comes as the next turn. Ansible keeps the raw replies out
+# of its log and writes them to the run folder only; `@nckrtl/task-copy-turn` bounds and redacts them. Each T3 read and each helper call
+# is bounded at 60 s, each Git command at 20 s.
 - name: Address the recorded copy Node
   hosts: localhost
   connection: local
@@ -40,6 +42,7 @@
           - intent.runtime.project | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
           - intent.runtime.name | default('') is match('^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$')
           - intent.turn.t3 | default('') is match('^/opt/orbit-agent/current/agent/bin/t3$')
+          - intent.turn.node | default('') is match('^/opt/orbit-runtime/current/bin/node$')
           - intent.turn.thread | default('') in ['new', 'continue']
           - intent.turn.thread != 'new' or intent.turn.provider | default('', true) is match('^[A-Za-z][A-Za-z0-9]{0,63}$')
           - intent.turn.thread != 'new' or intent.turn.model | default('', true) is match('^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$')
@@ -202,6 +205,61 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        # `--wait` exits 2 when the run waits for an answer. The question is stored first; the run is stopped only after its evidence is
+        # written, so a stopped run's question is never lost. The helper reads its session from `t3 auth session issue` itself and keeps it
+        # in its memory only; the phase passes it nothing.
+        - name: End the turn at its question
+          when: turn_start.rc == 2
+          block:
+            - name: Name the waiting run
+              ansible.builtin.set_fact:
+                turn_waiting: "{{ turn_start.stdout | from_json }}"
+              no_log: true
+            - name: Read the question
+              ansible.builtin.command:
+                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', 'read', turn_waiting.threadId] }}"
+                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+              register: turn_ask
+              failed_when: false
+              changed_when: false
+              no_log: true
+            - name: Write the question evidence
+              ansible.builtin.copy:
+                content: "{{ {'ask_exit': turn_ask.rc, 'ask': turn_ask.stdout | default('')} | to_json }}"
+                dest: "{{ run }}/ask.json"
+                mode: "0600"
+              delegate_to: localhost
+              become: false
+              no_log: true
+              vars:
+                ansible_connection: local
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
+            - name: Stop the run that asks
+              when: turn_ask.rc == 0 and (turn_ask.stdout | from_json).requests | map(attribute='questions') | flatten | length > 0
+              ansible.builtin.command:
+                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', 'interrupt', turn_waiting.threadId, turn_waiting.runId] }}"
+                stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
+              register: turn_interrupt
+              failed_when: false
+              changed_when: true
+              no_log: true
+          rescue:
+            # A start or a question that is not JSON stops nothing: the result reads the question as unread.
+            - name: Stop nothing
+              ansible.builtin.meta: noop
+          always:
+            - name: Write the interrupt evidence
+              when: turn_interrupt.rc is defined
+              ansible.builtin.copy:
+                content: "{{ {'interrupt_exit': turn_interrupt.rc, 'interrupt': turn_interrupt.stdout | default('')} | to_json }}"
+                dest: "{{ run }}/interrupt.json"
+                mode: "0600"
+              delegate_to: localhost
+              become: false
+              no_log: true
+              vars:
+                ansible_connection: local
+                ansible_python_interpreter: "{{ ansible_playbook_python }}"
         - name: Read the thread back
           block:
             - name: Find the thread by its title

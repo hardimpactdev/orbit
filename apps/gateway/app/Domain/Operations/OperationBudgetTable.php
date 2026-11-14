@@ -117,10 +117,10 @@ final class OperationBudgetTable
         // Replace with the longest run x 1.5 once the history holds author turns.
         'tasks.turn' => 3600,
         // No run yet. Basis: the agent's turn in a task copy, which its own step bounds at 3,600 s (the bound of `tasks.turn`), and
-        // the Ansible phase around it, which `timeout 4050` bounds: the kill grace (30 s), three T3 reads (up to 3 minutes), a reviewer's
-        // checkout and restore (up to 160 s) and the SSH set-up, rounded to 70 minutes.
-        // Replace with the longest run x 1.5 once the history holds turns.
-        'tasks.copy_turn' => 4200,
+        // the Ansible phase around it, which `timeout 4170` bounds: the kill grace (30 s), three T3 reads (up to 3 minutes), the read
+        // of a question and the stop of its run (up to 2 minutes), a reviewer's checkout and restore (up to 160 s) and the SSH set-up,
+        // rounded to 72 minutes. Replace with the longest run x 1.5 once the history holds turns.
+        'tasks.copy_turn' => 4320,
         // No run yet. Basis: the task VM resume (about 90 s), the sync of the refs (about 2 minutes) and the first implementer turn, which
         // the one-hour bound of `tasks.turn` limits, so 1 hour and 5 minutes, rounded to 75 minutes. Replace with the 14-day p95 after the
         // first success.

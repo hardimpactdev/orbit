@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
@@ -14,7 +15,8 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Records a copy turn where a task VM turn is recorded: the thread's state and error, and its transcript in the Gateway's archive,
- * which outlives the copy. T3's CLI reports no token use, so the metrics stay null.
+ * which outlives the copy. A turn that asked keeps its questions on the thread until the thread's next turn. The result names the
+ * effort that the turn's provider instance carries. T3's CLI reports no token use, so the metrics stay null.
  */
 final readonly class TaskCopyTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
@@ -31,6 +33,10 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             $captured = ValidatedData::object($data['result'] ?? [])['turn'] ?? null;
             $result = is_string($captured) ? json_decode($captured, true, flags: JSON_THROW_ON_ERROR) : $captured;
             $result = is_array($result) ? ValidatedData::object($result) : [];
+            if ($result !== []) {
+                $instance = $result['provider_instance'] ?? null;
+                $result['effort'] = is_string($instance) ? InstanceContainer::claudeEffort($instance) : null;
+            }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];
             }
@@ -60,5 +66,8 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)->update(['external_id' => $result['t3_thread_id']]);
         }
         TaskTurnProjection::recordThread($operation->target_id, $thread, array_diff_key($result, ['metrics' => true]));
+        $questions = $result['state'] === AgentThreadState::AskingForInput->value && is_array($result['questions'] ?? null) && $result['questions'] !== []
+            ? array_values(array_map(ValidatedData::object(...), $result['questions'])) : null;
+        AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)->update(['questions' => $questions === null ? null : json_encode($questions, JSON_THROW_ON_ERROR)]);
     }
 }
