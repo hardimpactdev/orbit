@@ -100,14 +100,14 @@ return [
         // Models for new groups. Unset keeps TaskAgentDefaults.
         'implementer_model' => env('ORBIT_TASKS_IMPLEMENTER_MODEL'),
         'reviewer_model' => env('ORBIT_TASKS_REVIEWER_MODEL'),
-        // Effort for new threads. Existing threads keep their stored value.
-        'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'high' : $implementerEffort,
+        // Effort for new threads, on a task VM and in a task copy. Existing threads keep their stored value.
+        'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'medium' : $implementerEffort,
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
-        // The T3 provider and model of a new thread in a task copy, per role, as `<provider>/<model>`. A copy reaches Claude Code only.
-        // Stock T3's CLI takes no effort, so T3 picks it.
+        // The Claude model of a new thread in a task copy, per role. A copy reaches Claude Code only. The role's effort above picks
+        // the T3 provider instance the thread starts on.
         'copy_turn_models' => [
-            'implementer' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claudeAgent/claude-opus-5-5'),
-            'reviewer' => (string) env('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claudeAgent/claude-opus-5-5'),
+            'implementer' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claude-opus-5-5'),
+            'reviewer' => (string) env('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claude-opus-5-5'),
         ],
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),

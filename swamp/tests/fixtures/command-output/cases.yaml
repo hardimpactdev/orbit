@@ -1938,15 +1938,19 @@ non_command_output:
   reason: Validates the admitted path of T3's command, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[3]
-  reason: Validates the admitted T3 provider, not command output.
-- file: task-copy-turn.yml
-  task: Validate the admitted turn
   field: ansible.builtin.assert.that[4]
-  reason: Validates the admitted model, not command output.
+  reason: Validates the admitted T3 provider instance, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[5]
+  reason: Validates the admitted model, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[6]
+  reason: Validates the admitted reviewer candidate commit, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[7]
   reason: Validates the admitted thread title, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
