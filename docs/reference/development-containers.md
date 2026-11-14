@@ -1733,7 +1733,8 @@ The size reaches a container two ways:
 
 - A create and a clone write the intent's size.
 - An existing default grows at its next start, such as a deploy. The start reads a smaller `<n>GiB` and sets the intent's size before the guard.
-- Incus sets the quota on the running container, without a restart.
+
+Incus sets the quota on the running container, without a restart. A failed grow fails the start before the guard, and the container keeps its old size.
 
 A start never shrinks a root disk. On ZFS, a quota below the used space fails, and Incus then leaves the dataset without a quota. So a lowered setting changes no existing default, and the guard admits a root size that is larger than the intent's. That also keeps a default's start working after a rollback to a release that writes a smaller size. A rollback to a release before this rule refuses a grown default at its start (`instance.container_network_unsafe`, device `root`): roll forward instead.
 
