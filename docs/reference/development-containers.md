@@ -1400,7 +1400,7 @@ An Instance sleeps only when no row of this table keeps it awake. The sweep chec
 | `http_unreadable` | Its Node does not answer the read of the access logs. |
 | `watch_starting`, `watching` | The sweep has not yet watched it for one idle window. |
 | `http_active` | Its Route's access log changed within the window. |
-| `woke_recently` | A wake of it ended within the window. |
+| `woke_recently` | A wake of it ended within the window; for a nested-fleet clone, also the [start](#a-stopped-nested-fleet-clone-starts) a wake takes. |
 | `deployed_recently` | A deployment of it ended within the window. A release refresh resumes a nested-fleet default; it gets a full window before the next freeze. |
 | `t3_unreadable` | Its T3 server cannot be read. |
 | `t3_turn_running` | A turn runs, or a run waits for a delegated thread or a background task. |

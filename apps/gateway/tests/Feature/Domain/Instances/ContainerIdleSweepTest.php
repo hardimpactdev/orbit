@@ -275,13 +275,17 @@ it('reads the access logs of a Node in one call', function (): void {
     expect($this->reads)->toBe(1);
 });
 
-it('gives a woken Instance a full window, then lets it sleep', function (int $wokeAgo, string $reason): void {
+it('gives a woken Instance a full window, then lets it sleep', function (string $kind, int $wokeAgo, string $reason): void {
     $clone = idleClone($this, 'clone');
-    Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
+    Operation::query()->create(['kind' => $kind, 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
         'status' => 'succeeded', 'input' => [], 'state' => [], 'finished_at' => $this->now->subSeconds($wokeAgo)]);
 
     expect(reasonOf(idleSweep($this)->run(true), $clone))->toBe($reason);
-})->with([[IdleWindow - 60, 'woke_recently'], [IdleWindow + 60, 'sleep']]);
+})->with([
+    ['instance.wake', IdleWindow - 60, 'woke_recently'], ['instance.wake', IdleWindow + 60, 'sleep'],
+    // A wake of a nested-fleet clone that no sleep froze takes its start.
+    ['instance.start', IdleWindow - 60, 'woke_recently'], ['instance.start', IdleWindow + 60, 'sleep'],
+]);
 
 it('never puts to sleep an Instance whose turn runs, whatever its age, or whose T3 cannot be read', function (AgentActivity $activity, string $reason): void {
     $clone = idleClone($this, 'clone');

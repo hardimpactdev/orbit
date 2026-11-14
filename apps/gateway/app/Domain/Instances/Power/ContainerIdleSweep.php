@@ -168,7 +168,8 @@ final readonly class ContainerIdleSweep
         if ($watch === null && ! $dryRun) {
             $runtime->forceFill(['idle_watch_started_at' => $now])->save();
         }
-        $wake = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+        // A wake of a nested-fleet clone that no sleep froze is its start (InstanceStart): its end counts as a wake's.
+        $wake = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])->where('target_type', 'instance')->where('target_id', $instance->id)
             ->whereNotNull('finished_at')->max('finished_at');
         $deploy = Operation::query()->where('kind', OperationKinds::InstanceDeploy)->where('target_type', 'instance')->where('target_id', $instance->id)
             ->whereNotNull('finished_at')->max('finished_at');
