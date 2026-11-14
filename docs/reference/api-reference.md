@@ -47,6 +47,8 @@ The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its des
 
 The generated `conn-pairing-create` tool includes optional `renew`, and its schema answers 202, 409 and 422. [Conn renewal](/reference/conn#renewal) defines when a renewal is refused.
 
+The generated `conn-environment-session` tool takes only `environment` and answers 200 with `ConnHeldSessionData`, the calling Node's held session, or 202 with `conn.session_hold`. Its description in `bin/docs-openapi` names its 409 refusals; [Held sessions](/reference/conn#held-sessions) owns them. The generated `conn-pairing-list` tool includes optional `include_held`, declared in `bin/docs-openapi` beside `auto_deploy` of `instance-list`.
+
 The generated `conn-environment-renew` tool has no body and answers 202 with `conn.environment_renew`. Its description in `bin/docs-openapi` names `conn.environment_not_instance` and `operation.target_busy`; [Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server) owns them. `conn-environment-list` also returns `renewal_error_code` and `renewal_checked_at`.
 
 The generated `conn-instance-name-check` reason includes `domain_invalid` for an uncreatable web Route. Its description names the live 64-character certificate limit and the DNS limits. [Conn name checks](/reference/conn#threads-in-an-orbit-project) owns the refusal contract.

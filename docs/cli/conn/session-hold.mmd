@@ -1,0 +1,101 @@
+sequenceDiagram
+  %% Target design: Conn plan O4 (Nick, 2026-11-14): Orbit pairs with a container T3 server on demand, holds the session, renews it, and hands it to the Node; the Node talks to the server directly. DECISIONS R1-R4. docs/reference/conn.md#held-sessions.
+  %% status: draft
+  %% command: none · API (conn-environment-session)
+  %% kind: conn.session_hold
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane T3 icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>API callers
+  participant GW as Gateway<br/>Laravel API
+  participant SW as Swamp<br/>serve on Node 209
+  participant T3 as T3 server<br/>stock T3 auth API
+  CLI->>GW: Read the held session<br/>GET conn/…/ENV/session
+  %%> Command:
+  %%> - `GET /api/v1/conn/environments/ENV/session`
+  %%> - syntax: the MCP tool `conn-environment-session` with `environment`
+  %%> Input:
+  %%> - the container Instance's T3 server; the calling Node is whose session it is
+  %%> Not included:
+  %%> - there is no `orbit` command; no pairing step on the device
+  Note over GW: Check access, find session<br/>held pairing · Node · ENV
+  %%> Requirements:
+  %%> - the `conn` extension is on; the caller is an active Node
+  %%> - the caller has an access grant to the Node that serves ENV, else `node_access.required`
+  %%> Result:
+  %%> - a held session of the calling Node that has not ended answers at once (step 4); nothing else runs
+  alt the Node holds a session
+    GW-->>CLI: 200 OK · access_token<br/>url · expires_at
+    %%> Returns:
+    %%> - `environment_id`, `url`, `pairing_id`, `token_type: Bearer`, `access_token`, `expires_at`; `Cache-Control: no-store`
+    %%> Next:
+    %%> - the caller connects to `url` directly with the token as its bearer; the Gateway is not in that path
+    %%> Why no task:
+    %%> - a read of recorded state starts no run (R1); it takes about 0.1 s
+  else no held session yet
+    Note over GW: Record held pairing 7<br/>task #5172 · session to vault
+    %%> Requirements:
+    %%> - ENV is a container Instance's server, else `conn.environment_not_instance`; not removing; not asleep, else `conn.environment_asleep`
+    %%> - the Gateway's admin session on ENV has not ended, else `conn.session_expired`
+    %%> What it does:
+    %%> - takes ENV's row lock: an open hold of the same Node answers instead, so concurrent first reads start one task
+    %%> - records held pairing 7 with a unique label, such as `phone via Orbit k3j9x0qa`
+    %%> - pushes the admin session to the Swamp vault after commit (R3)
+    GW->>SW: Start run, full intent<br/>operation-conn-session-hold
+    %%> Inputs:
+    %%> - the server URL, the label, T3's administrative scopes, and the vault key name; never a session
+    GW-->>CLI: 202 Accepted<br/>task #5172
+    %%> Next:
+    %%> - the caller follows `GET /api/v1/conn/operations/5172` and reads the session again after success
+  end
+  Note over SW: Create private replies
+  %%> How:
+  %%> - mktemp creates a private directory for both T3 replies
+  SW->>T3: Mint a pairing link<br/>POST /api/auth/pairing-token
+  %%> How:
+  %%> - one bounded curl from 209 with the admin session from `vault.get`, the label and the scopes
+  Note over SW: Read the link
+  %%> What it does:
+  %%> - a typed data method reads T3's pairing result; the echoed label must match
+  %%> - stores the one-time link as a native sensitive field; only its key name is public
+  SW->>T3: Redeem the link<br/>POST /oauth/token
+  %%> How:
+  %%> - T3's normal pairing endpoint, as a device uses it: OAuth token exchange of the link, no DPoP proof
+  %%> - curl reads the link from `vault.get` into a variable, never into argv
+  %%> Why the Gateway can hand it on:
+  %%> - T3 issues a plain bearer session; it checks only signature, end and revocation, not the client
+  Note over SW: Store the session
+  %%> What it does:
+  %%> - reads T3's access-token result: a `Bearer` token, its scopes and `expires_in`
+  %%> - stores the session as a native sensitive field and reports only public metadata
+  Note over SW: Remove private replies
+  %%> How:
+  %%> - declared completed or skipped dependencies clean up after failure too
+  Note over SW: Confirm session
+  %%> Check:
+  %%> - the native assert requires a stored session and successful cleanup
+  alt T3 issued the session
+    SW-->>GW: Run succeeded<br/>terminal event · expiry
+    Note over GW: Keep the session<br/>encrypted · keys deleted
+    %%> What it does:
+    %%> - reads the session key once, stores it encrypted on pairing 7, deletes both vault keys
+    %%> - a revoke that named pairing 7 while it ran wins: the session is withdrawn and revoked by id
+    %%> Result:
+    %%> - task #5172 succeeds; its result holds only the pairing, link id and expiry
+  else T3 refuses, answers badly or not at all
+    SW--xGW: Run failed<br/>conn.* error_code
+    %%> The Gateway reads:
+    %%> - `conn.session_rejected`, `conn.request_refused`, `conn.response_invalid` or `conn.redeem_refused`: T3 answered, no session exists
+    %%> - anything else is `conn.session_outcome_unknown`: the pairing is withdrawn and revoked by its label
+    %%> Retry:
+    %%> - the next read starts a new task with a new label
+  end
+  opt renewal (hourly, at wake)
+    Note over GW: Renew under 7 days left<br/>renews_pairing_id
+    %%> When:
+    %%> - each held session that ends within seven days; also on Instances no device uses; a wake renews a sleeping Instance's
+    %%> What it does:
+    %%> - the same run makes the new session; on success the old one is withdrawn and revoked by its pairing id
+  end

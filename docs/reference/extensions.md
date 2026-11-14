@@ -107,6 +107,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 | `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
 | `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
+| `App\Domain\Nodes\NodeAccessRemovalHook` | [`node:access:remove`](/cli/node/access-remove), after it deleted an edge | `removed()` |
 
 `DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
 
@@ -120,7 +121,9 @@ Destroy calls `projectDestroy()` after native success, inside the projection tra
 
 `InstanceAgentActivity::read()` runs in each runtime hibernator sweep, once per container clone that is otherwise idle. Conn contributes the read of the clone's T3 server. While Conn is off, its contribution returns nothing, and no clone sleeps: the idle sleep treats a clone it cannot read as active.
 
-A successful wake calls `projectWake()` after its projection commits; it must not block or fail the wake. Conn admits the renewal of a session that ends within seven days or has ended, and does nothing while it is off.
+A successful wake calls `projectWake()` after its projection commits; it must not block or fail the wake. Conn admits the renewal of a session that ends within seven days or has ended, renews the [held sessions](/reference/conn#held-sessions) that end within seven days, and does nothing while it is off. `projectCreate()` also admits the held sessions of the creating Node's profile after its transaction commits, while Conn is on.
+
+`NodeAccessRemovalHook::removed()` runs after `node:access:remove` deleted an edge, also while the extension is off; a removal of an absent edge calls nothing. Conn withdraws the consumer's held sessions on the servers that the consumer now cannot reach, and admits their revoke. A revoke that cannot start is logged, and the hourly renewal tick admits it again.
 
 `ProcessOwnershipClaim::forNode()` checks a named Node Process before a service claims it; `assertClaimable()` checks explicitly selected Processes. Both call the core Instance attachment dependency guard before owner state or runtime changes, including while extensions are off. This shared admission introduces no plug-in point. Analytics checks its collector and selected storage Processes; the AI router checks its collector before enabling owner state or adopting its runtime. A dependent Node service target refuses with `process.node_service_ownership_conflict`, naming every affected Instance. A refusal preserves ownership, Process configuration and attachment records.
 
