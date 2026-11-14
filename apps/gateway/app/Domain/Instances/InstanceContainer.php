@@ -194,7 +194,8 @@ final readonly class InstanceContainer
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
             // A new nested-fleet default gets an inner volume, and a copy of a default with one gets its own copy of it; every other
-            // runtime, Instance 2454 and its copies among them, records none (docs/reference/development-containers.md#the-inner-volume).
+            // runtime records none (docs/reference/development-containers.md#the-inner-volume). An existing default gets the same name
+            // later only through its conversion (InstanceInnerVolumeCommand).
             'inner_volume' => ($source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject)
                 || $sourceRuntime?->inner_volume !== null ? NestedFleetInnerVolume::name(self::name($instance)) : null,
             // A copy takes its default's map size, which its seed's inner fleet was made for; a new nested-fleet default the full size

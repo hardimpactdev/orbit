@@ -9,8 +9,9 @@ use App\Models\InstanceRuntime;
 /**
  * The inner volume of a nested-fleet Instance (docs/reference/development-containers.md#the-inner-volume): one custom btrfs volume
  * per Instance on the Node's pool, attached as the disk `inner-pool`, which holds the inner Incus pool. A runtime records its name in
- * `inner_volume`: a new nested-fleet default, and each copy of such a default, which copies the volume from the default's seed. A
- * runtime without it (Instance 2454 and its copies) keeps the directory pool, and no step makes, snapshots or checks a volume for it.
+ * `inner_volume`: a new nested-fleet default, an existing default after its conversion (InstanceInnerVolumeCommand), and each copy
+ * of such a default, which copies the volume from the default's seed. A runtime without it (Instance 2454 before its conversion, and
+ * its copies) keeps the directory pool, and no step makes, snapshots or checks a volume for it.
  * This is the one place that names the volume's keys: the create writes them and the start guard requires exactly them.
  */
 final readonly class NestedFleetInnerVolume
