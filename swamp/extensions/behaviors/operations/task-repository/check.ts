@@ -379,13 +379,15 @@ export async function localResult(
  * A passed handoff names the commit that `git commit` made, read back with
  * `git rev-parse HEAD HEAD^{tree} HEAD^`. Its tree and parent must be the
  * checked snapshot; otherwise the workspace moved and the check is `changed`.
- * A container check commits only a changed tree and reads no parent: a
- * clean checked head with the checked tree is its own candidate.
+ * A container check (`container`) makes no commit for a clean head that an
+ * earlier check recorded, and reads no parent: that head, with the checked
+ * tree, is its own candidate. A task VM check always commits.
  */
 export function candidateResult(
     input: Input,
     local: Record<string, unknown>,
     read: Run,
+    container = false,
 ) {
     if (
         typeof local.error_code === "string" || local.outcome !== "passed" ||
@@ -395,10 +397,10 @@ export function candidateResult(
         return { ...local, error_code: "tasks.repository_execution_unknown" };
     }
     const [commit = "", tree, parent] = (read.stdout ?? "").trim().split("\n");
-    // A clean checked tree makes no commit: the candidate is then the checked head itself.
+    const recorded = container && commit === local.head;
     if (
         !Sha.test(commit) || tree !== local.tree ||
-        (commit !== local.head && parent !== local.head)
+        (!recorded && parent !== local.head)
     ) {
         return { ...local, outcome: "changed" };
     }
@@ -755,6 +757,8 @@ export const behavior = {
                     input,
                     ObjectValue.parse(args.local),
                     run(ObjectValue.parse(args.steps), "commit_read"),
+                    // Only a container Instance workspace names `workspace`.
+                    "workspace" in ObjectValue.parse(args.intent),
                 );
                 return output(ctx, {
                     result,
