@@ -929,7 +929,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
         ],
         'process:list' => [[], ['instance' => null, 'node' => null, 'project' => null, 'json' => false]],
         'process:logs' => [['process'], ['lines' => '100', 'follow' => false, 'json' => false]],
-        'process:destroy' => [['process'], ['project' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
+        'process:destroy' => [['process'], ['project' => null, 'instance' => null, 'yes' => false, 'idempotency-key' => null, 'json' => false]],
         'process:restart' => [['process'], ['idempotency-key' => null, 'json' => false]],
         'process:show' => [['name'], ['project' => null, 'json' => false]],
         'process:start' => [['process'], ['idempotency-key' => null, 'json' => false]],

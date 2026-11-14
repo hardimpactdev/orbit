@@ -21,6 +21,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\StartsOperation;
+use App\Http\Requests\Processes\DestroyProcessRequest;
 use App\Http\Requests\Processes\ListProcessesRequest;
 use App\Http\Requests\Processes\ProcessLogsRequest;
 use App\Http\Requests\Processes\StoreProcessRequest;
@@ -113,12 +114,13 @@ final class ProcessesController extends Controller
     }
 
     #[StartsOperation('process.destroy')]
-    public function destroy(Request $request, string $process, DestroyProcessAction $action): JsonResponse
+    public function destroy(DestroyProcessRequest $request, string $process, DestroyProcessAction $action): JsonResponse
     {
         $record = Process::query()->findOrFail($process);
         $request->route()?->setParameter('process', $record);
 
-        return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id')));
+        return $this->operationResponse($request, $action->admit($record, caller: $this->caller($request), requestId: $request->attributes->getString('orbit.request_id'),
+            instanceId: $request->instanceId()));
     }
 
     private function synchronous(Process $process): bool

@@ -84,9 +84,10 @@ final readonly class DestroyProcessAction
         });
     }
 
-    public function admit(Process $process, bool $removedByOwningRole = false, ?Node $caller = null, ?string $requestId = null): Operation
+    /** `$instanceId` names the Instance of a container Process (process:destroy --instance); it is required for one. */
+    public function admit(Process $process, bool $removedByOwningRole = false, ?Node $caller = null, ?string $requestId = null, ?int $instanceId = null): Operation
     {
-        return DB::transaction(function () use ($process, $removedByOwningRole, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($process, $removedByOwningRole, $caller, $requestId, $instanceId): Operation {
             $fresh = Process::query()->whereKey($process->id)->lockForUpdate()->firstOrFail();
             if (! $removedByOwningRole) {
                 foreach ($this->guards as $guard) {
@@ -102,7 +103,7 @@ final readonly class DestroyProcessAction
                 );
             }
 
-            return app(ProcessOperationAdmission::class)->execute($fresh, 'destroy', caller: $caller, requestId: $requestId);
+            return app(ProcessOperationAdmission::class)->execute($fresh, 'destroy', caller: $caller, requestId: $requestId, namedInstanceId: $instanceId);
         });
     }
 }

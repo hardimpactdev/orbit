@@ -7,12 +7,13 @@ covers:
 ---
 
 ```bash
-orbit process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]
+orbit process:destroy <process> [--project=ID] [--instance=ID] [--yes] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
 | `--project=ID` | Select a definition by name. |
+| `--instance=ID` | The Instance of a Process in an Instance container. Required for such a Process. |
 | `--yes` | Confirm without a prompt. A JSON or non-interactive call without `--yes` returns `input.confirmation_required`. A declined prompt, Ctrl-C, or EOF returns `input.cancelled`. |
 
 ```bash
@@ -21,6 +22,20 @@ orbit process:destroy queue --project=1 --yes
 ```
 
 Destroying a definition leaves every existing Instance copy in place.
+
+## A Process in an Instance container
+
+A container Instance takes its Processes from the Project's development definitions. A Process that a current definition owns is changed through that definition and a deployment of the default: `process:destroy` refuses it with `operation.kind_unavailable`. The message names the two commands that work: `orbit process:destroy <name> --project=<id> --yes` to remove the definition, then `orbit instance:deploy <default>`.
+
+`process:destroy` removes a container Process that no current development definition owns: one whose definition the Project removed, or one recorded without a definition, such as a Process that a [migration](/reference/development-containers#migrate-a-checkout-instance) captured. This is the way to remove such a Process from a clone, which has no deployment.
+
+```bash
+orbit process:destroy 236 --instance=572 --yes
+```
+
+Name the Process's Instance with `--instance`. A container Process without it, or with another Instance, refuses with `process.instance_mismatch` before anything changes. So a wrong Process ID cannot remove a Process of another Instance, such as a default's.
+
+The run stops and disables only this Process's unit in the container, removes its unit file and its `/etc/orbit/processes/<id>` folder, reloads systemd and checks that the unit is gone. Then the record is deleted. A stopped container fails the run with `process.target_inactive`, and the record stays.
 
 For a systemd Process, Orbit clears a retained failure only after the unit file and boot link are absent and no running process, cgroup or pending job remains. It checks the state again before deleting the record. Destroy preserves the source environment file.
 

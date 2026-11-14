@@ -1,6 +1,6 @@
 id: 6d0b7f4e-3c51-4a8e-9b1f-2e8c5d7a4f10
 name: operation-process-container
-description: One Process of an Instance container through `incus exec` on its Node, the `process` tag of instance-container.yml. A child of process start, stop and restart, and migrated Schedule log reads.
+description: One Process of an Instance container through `incus exec` on its Node, the `process` tag of instance-container.yml. A child of process start, stop, restart and destroy, and migrated Schedule log reads.
 vaults:
 - orbit-control-inputs
 queueTimeout: 30
@@ -11,7 +11,7 @@ inputs:
     # 0 for the Gateway's migrated Schedule log read, which records no Operation.
     operation_id: {type: integer, minimum: 0}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [process.start, process.stop, process.restart, schedule.inspect]}
+    kind: {type: string, enum: [process.start, process.stop, process.restart, process.destroy, schedule.inspect]}
     intent:
       type: object
       properties:
@@ -66,7 +66,7 @@ jobs:
       inputs:
         intent: '${{ inputs.intent }}'
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-  # Start, stop or restart the unit and check its state.
+  # Start, stop, restart or remove the unit and check its state.
   - name: Act on the Process
     guard: '${{ inputs.kind == "schedule.inspect" }}'
     labels: {role: swamp}

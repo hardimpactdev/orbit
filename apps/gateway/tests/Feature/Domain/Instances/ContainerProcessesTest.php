@@ -6,6 +6,7 @@ use App\Actions\Doctor\Intent\RuntimeDoctorIntent;
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Processes\DestroyProcessAction;
 use App\Actions\Processes\ListProcessesAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Hibernation\DevelopmentHibernationPolicy;
@@ -25,6 +26,7 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Processes\RemoteProcessRuntimeManager;
+use App\Infrastructure\Processes\SystemdProcessRenderer;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -188,6 +190,59 @@ describe('the Process target of a container Instance', function (): void {
         expect(processContainerError(fn () => app(ProcessOperationAdmission::class)->execute($this->process, $verb)))->toBe('operation.kind_unavailable')
             ->and(Operation::query()->where('target_type', 'process')->count())->toBe(0);
     })->with(['create', 'update', 'destroy']);
+
+    it('names the commands that work when it refuses a Process its live definition owns', function (): void {
+        $refusal = null;
+        try {
+            app(DestroyProcessAction::class)->admit($this->process, instanceId: $this->instance->id);
+        } catch (ResourceOperationException $exception) {
+            $refusal = $exception;
+        }
+
+        expect($refusal?->errorCode)->toBe('operation.kind_unavailable')
+            ->and($refusal?->getMessage())->toContain("orbit process:destroy worker --project={$this->instance->project_id} --yes")
+            ->toContain("orbit instance:deploy {$this->instance->id}")
+            ->and(Operation::query()->where('target_type', 'process')->count())->toBe(0);
+    });
+
+    it('destroys a container Process that no current definition owns, only with its own Instance named', function (string $case): void {
+        match ($case) {
+            'removed definition' => ProcessDefinition::query()->whereKey($this->process->source_definition_id)->delete(),
+            'no definition' => $this->process->update(['source_definition_id' => null]),
+        };
+        $other = Instance::query()->create(['node_id' => $this->instance->node_id, 'project_id' => $this->instance->project_id, 'name' => 'other',
+            'checkout_path' => '/workspace/other', 'root' => '.', 'status' => 'active']);
+
+        // A wrong or missing Instance stops before anything is recorded: a Process id of the default never removes it by mistake.
+        expect(processContainerError(fn () => app(DestroyProcessAction::class)->admit($this->process->refresh())))->toBe('process.instance_mismatch')
+            ->and(processContainerError(fn () => app(DestroyProcessAction::class)->admit($this->process->refresh(), instanceId: $other->id)))->toBe('process.instance_mismatch')
+            ->and(Operation::query()->where('target_type', 'process')->count())->toBe(0)
+            ->and($this->process->refresh()->status)->toBe(LifecycleStatus::Active);
+
+        processContainerError(fn () => app(DestroyProcessAction::class)->admit($this->process->refresh(), instanceId: $this->instance->id));
+
+        $operation = Operation::query()->where('kind', 'process.destroy')->sole();
+        expect($operation->input['container'])->toBe(['instance_id' => $this->instance->id, 'project' => 'orbit-instances', 'name' => 'instance-'.$this->instance->id])
+            ->and($operation->input['name'])->toBe(app(SystemdProcessRenderer::class)->unitName($this->process))
+            ->and($this->process->refresh()->status)->toBe(LifecycleStatus::Removing);
+    })->with(['removed definition', 'no definition']);
+
+    it('reads the named Instance from the destroy request', function (): void {
+        $this->process->update(['source_definition_id' => null]);
+        $node = Node::query()->findOrFail($this->instance->node_id);
+        $node->accessibleNodes()->syncWithoutDetaching([$node->id]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+            ->deleteJson('/api/v1/processes/'.$this->process->id, ['instance' => $this->instance->id + 1000])
+            ->assertStatus(422)->assertJsonPath('error.code', 'process.instance_mismatch')
+            // The named Instance reaches admission: the message names it, not a missing one.
+            ->assertJsonPath('error.message', "Process [{$this->process->id}] is not a Process of Instance [".($this->instance->id + 1000).'].');
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+            ->deleteJson('/api/v1/processes/'.$this->process->id, ['instance' => 'abc'])
+            ->assertStatus(422);
+
+        expect(Operation::query()->where('target_type', 'process')->count())->toBe(0);
+    });
 
     it('never sends a container Process to the Node agent, for a change or a live log stream', function (): void {
         expect(processContainerError(fn () => app(RemoteProcessRuntimeManager::class)->restart($this->process)))->toBe('process.target_unsupported')

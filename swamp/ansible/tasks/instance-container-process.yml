@@ -1,18 +1,21 @@
 ---
 # One Process of an Instance container (docs/reference/development-containers.md#processes), the `process` tag of
 # instance-container.yml. `process_action` is start, stop or restart, which change the Process's `orbit-*` unit in the container
-# and check its state into `process_result`.
+# and check its state into `process_result`, or destroy, which removes only this Process's unit and folder
+# (docs/cli/process/destroy.mdx#a-process-in-an-instance-container).
 - name: Name the Process command
   ansible.builtin.set_fact:
     as_root: "{{ ['incus', 'exec', '--project', container.project, container.name, '--'] }}"
     process_unit: "{{ intent.control.name }}"
+    process_folder: "{{ '/etc/orbit/processes/' ~ intent.control.process_id }}"
     process_action: "{{ lookup('ansible.builtin.env', 'ORBIT_PROCESS_ACTION') }}"
 
 - name: Refuse another unit or action
   ansible.builtin.assert:
     that:
       - process_unit is match('^orbit-process-[1-9][0-9]*-[a-z0-9-]+\.service$')
-      - process_action in ['start', 'stop', 'restart']
+      - process_action in ['start', 'stop', 'restart', 'destroy']
+      - process_unit is match('^orbit-process-' ~ intent.control.process_id ~ '-')
     fail_msg: process.target_unsupported
     quiet: true
 
@@ -38,6 +41,51 @@
         'restart': [['enable'], ['restart', '--no-block']]}[process_action] }}
   changed_when: true
 
+# Destroy: this Process's unit and folder only. A unit that is already gone is no failure; the check below decides.
+- name: Stop and disable the unit to remove
+  when: process_action == 'destroy'
+  ansible.builtin.command: { argv: "{{ as_root + ['timeout', '20', 'systemctl', 'disable', '--now', '--', process_unit] }}" }
+  register: process_disable
+  changed_when: process_disable.rc == 0
+  failed_when: process_disable.rc != 0 and 'does not exist' not in process_disable.stderr and 'not loaded' not in process_disable.stderr
+
+# Its boot link too: a link left by a unit file that is already gone is not removed by `disable`.
+- name: Remove the unit file, its boot link and the Process folder
+  when: process_action == 'destroy'
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['rm', '-rf', '--', '/etc/systemd/system/' ~ process_unit,
+         '/etc/systemd/system/multi-user.target.wants/' ~ process_unit, process_folder] }}
+  changed_when: true
+
+- name: Reload systemd after the removal
+  when: process_action == 'destroy'
+  ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
+  changed_when: true
+
+- name: Clear the removed unit's failed state
+  when: process_action == 'destroy'
+  ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'reset-failed', '--', process_unit] }}" }
+  changed_when: false
+  failed_when: false
+
+- name: Read the removed unit
+  when: process_action == 'destroy'
+  ansible.builtin.command:
+    argv: "{{ as_root + ['systemctl', 'show', '--property=LoadState', '--property=ActiveState', '--property=UnitFileState', '--', process_unit] }}"
+  register: process_removed
+  changed_when: false
+
+- name: Require the unit gone
+  when: process_action == 'destroy'
+  ansible.builtin.assert:
+    that:
+      - "'LoadState=not-found' in process_removed.stdout_lines"
+      - "'UnitFileState=' in process_removed.stdout_lines"
+      - "'ActiveState=inactive' in process_removed.stdout_lines"
+    fail_msg: process.destroy_failed
+    quiet: true
+
 - name: Wait for the unit job and admitted state
   when: process_action in ['start', 'restart']
   ansible.builtin.command:
@@ -51,6 +99,7 @@
   delay: 1
 
 - name: Read the unit's state
+  when: process_action != 'destroy'
   ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'is-active', '--', process_unit] }}" }
   register: process_state
   changed_when: false
@@ -71,6 +120,6 @@
 - name: Keep the result
   ansible.builtin.set_fact:
     process_result:
-      state: "{{ process_state.stdout | trim or 'unknown' }}"
+      state: "{{ 'removed' if process_action == 'destroy' else (process_state.stdout | trim or 'unknown') }}"
       output: ""
   no_log: true
