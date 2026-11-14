@@ -80,7 +80,7 @@ sequenceDiagram
     Note over GW: Record asleep
     %%> Result:
     %%> - the runtime's `power_state` is `stopped` for a frozen and a stopped container; the result says `sleep: frozen` or `sleep: stopped`, and `swap_subtree`, the number of inner cgroups the freeze opened
-    %%> - `t3_turn` is `idle` when the idle sleep read T3 first, `no_server` for an Instance without a T3 server, and `not_checked` for the command
+    %%> - `t3_turn` is `idle` when the idle sleep read T3 first, `no_server` for an Instance without a T3 server, whoever started the sleep, and `not_checked` for the command
     %%> - the Conn layer shows its T3 server asleep; the hourly renewal skips it
   else a step fails
     %% path: failed

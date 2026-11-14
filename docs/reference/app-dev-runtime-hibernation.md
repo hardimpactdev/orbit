@@ -57,7 +57,7 @@ Set these values in the Gateway's environment, not an Instance's `.env`. They co
 | Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` | `ORBIT_HIBERNATION_SWEEP_SECONDS` |
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` | `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` | `ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS` |
-| Container idle sleep | Off | `orbit.hibernation.container_sleep`: `off`, `without_t3` or `all` | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true` |
+| Container idle sleep | Off | `orbit.hibernation.container_sleep`, the environment value as written | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true` |
 | Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids |
 
 `ORBIT_HIBERNATION_CONTAINER_SLEEP` is one setting with three values. `false`, or no value, puts no container to sleep by itself. `true` lets the idle sleep act on every development container. `without_t3` lets it act only on Instances whose runtime records no T3 server, which today are the Projects' defaults; a clone stays awake with the reason `t3_server`. Any other value fails each run of the runtime hibernator with an error that names the value, and nothing sleeps by itself. The dry run prints each value's decisions side by side, so an operator sees what a change would do before making it.
