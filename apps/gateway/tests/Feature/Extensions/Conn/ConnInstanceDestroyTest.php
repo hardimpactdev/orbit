@@ -1145,7 +1145,7 @@ describe('the Conn cancel', function (): void {
             ->and(Route::query()->whereKey($route->id)->exists())->toBeTrue();
     });
 
-    it('answers a second cancel as the first, with no second effect', function (string $status): void {
+    it('answers a second cancel as the first: an ended create stays as it is, a running one asks Swamp again', function (string $status, array $asks): void {
         [, $create] = connCancelCreate($status);
         $first = connCancelCall($create)->assertOk();
         $create->refresh();
@@ -1157,8 +1157,13 @@ describe('the Conn cancel', function (): void {
             ->and($second->json('data.status'))->toBe($first->json('data.status'))
             ->and($second->json('data.cancel_requested'))->toBeTrue()
             ->and($create->fresh()->cancel_requested_at?->toISOString())->toBe($create->cancel_requested_at?->toISOString())
-            ->and($create->fresh()->finished_at?->toISOString())->toBe($create->finished_at?->toISOString());
-    })->with(['ended before its run' => ['queued'], 'running, its cancel requested' => ['running']]);
+            ->and($create->fresh()->finished_at?->toISOString())->toBe($create->finished_at?->toISOString())
+            ->and(connSwampCancels())->toBe($asks);
+    })->with([
+        'ended before its run: no Swamp message' => ['queued', []],
+        // The repeat is on purpose: an earlier request whose forward window has closed must not swallow it (CancelOperationAction).
+        'running, its cancel requested: Swamp is asked again' => ['running', ['workflow.cancel', 'workflow.cancel']],
+    ]);
 
     it('answers 404 for another Node\'s create and leaves it running', function (): void {
         $tablet = Node::withoutEvents(fn (): Node => Node::query()->create([

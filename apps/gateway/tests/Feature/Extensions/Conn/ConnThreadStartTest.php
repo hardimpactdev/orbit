@@ -1585,7 +1585,7 @@ it('refuses a clone of a nested-fleet Project before it records an Instance or a
  *
  * @return array{0: Operation, 1: Operation}
  */
-function threadCreatedClone(Node $caller): array
+function threadCreatedClone(Node $caller, ?Closure $beforeEnd = null): array
 {
     $default = threadDefault(test()->beast, 'tool');
     $create = Operation::query()->findOrFail(threadCall($caller, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login'])
@@ -1593,7 +1593,10 @@ function threadCreatedClone(Node $caller): array
     $create->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'success-run']]);
     swampVaultStandIn();
     workspaceReader();
-    app(DevelopmentInstanceCreateProjection::class)->apply($create, ['status' => 'succeeded', 'run_id' => 'success-run',
+    if ($beforeEnd !== null) {
+        $beforeEnd($create);
+    }
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => 'succeeded', 'run_id' => 'success-run',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['ready' => true,
             'instance_id' => $create->target_id, 'commit' => str_repeat('a', 40), 't3' => [
                 'environment_id' => 'env-read', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
@@ -1655,6 +1658,21 @@ describe('the Conn read of a clone\'s completion', function (): void {
         threadCall($tablet, 'GET', "operations/{$retry->id}")->assertOk()->assertJsonPath('data.kind', 'instance.complete');
         threadCall($this->phone, 'GET', "operations/{$retry->id}")->assertOk();
         threadCall($stranger, 'GET', "operations/{$retry->id}")->assertNotFound();
+    });
+
+    it('lets the creator cancel the completion of a create that ended succeeded after its cancel was requested', function (): void {
+        $cancel = fn (Operation $operation) => $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->call('POST', "/api/v1/conn/operations/{$operation->id}/cancel", [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}');
+        [$create, $completion] = threadCreatedClone($this->phone, function (Operation $create) use ($cancel): void {
+            $cancel($create)->assertOk()->assertJsonPath('data.status', 'running')->assertJsonPath('data.cancel_requested', true);
+        });
+
+        expect($create->status)->toBe(OperationStatus::Succeeded)
+            ->and($create->cancel_requested_at)->not->toBeNull()
+            ->and($create->result['completion_operation_id'])->toBe($completion->id);
+        $cancel($create)->assertOk()->assertJsonPath('data.status', 'succeeded');
+        $cancel($completion)->assertOk()->assertJsonPath('data.status', 'cancelled')
+            ->assertJsonPath('data.result.recovery.retry.command', 'instance:complete');
     });
 
     it('cancels the completion for the clone\'s creator, keeps the clone, and its Retry admits a new completion', function (): void {
