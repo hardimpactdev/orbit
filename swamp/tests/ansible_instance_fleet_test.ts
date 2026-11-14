@@ -55,8 +55,9 @@ function ruled() {
   containers["nested-gateway"].devices["club-key"] = { path: "/home/orbit/.config/swamp/club", required: "false", shift: "false", source: "/run/orbit-club", type: "disk" };
   containers["nested-app-dev"].devices.checkout = checkout;
   containers["nested-app-dev"].devices["apparmor-off"] = apparmor;
+  containers["nested-app-prod"].devices.checkout = checkout;
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
-  for (const name of ["nested-gateway", "nested-app-dev"]) containers[name].config["raw.idmap"] = idmap;
+  for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = Object.fromEntries(units.map((unit) => [unit, dropIn]));
   for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...egress };
@@ -285,12 +286,13 @@ Deno.test({
       assertEquals(calls, [
         ...reads,
         "incus config device add nested-app-dev apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
+        "incus config device add nested-app-prod checkout disk source=/srv/workspace path=/home/orbit/orbit shift=false",
         "incus config device add nested-app-prod apparmor-off disk source=/etc/orbit/apparmor-off path=/sys/module/apparmor/parameters/enabled readonly=true",
         "incus config device set nested-gateway checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         "incus config device set nested-gateway club-key source=/run/orbit-club path=/home/orbit/.config/swamp/club required=false shift=false",
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
-          [...(name === "nested-app-prod" ? [] : [`raw.idmap=${idmap}`]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
+          [`raw.idmap=${idmap}`, ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
         "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
         ...reads,
@@ -441,7 +443,7 @@ Deno.test({
     try {
       const refused = f.run("start");
       assert(!refused.ok);
-      assertStringIncludes(refused.output, "The nested fleet differs from its rules where Orbit does not write: nested-gateway config raw.idmap, nested-app-dev config raw.idmap\"");
+      assertStringIncludes(refused.output, "The nested fleet differs from its rules where Orbit does not write: nested-gateway config raw.idmap, nested-app-dev config raw.idmap, nested-app-prod config raw.idmap\"");
       assertStringIncludes(refused.output, '"msg": "instance.container_fleet_drift"');
       assertEquals(f.calls(), startReads);
       const one = ruled();
@@ -1976,6 +1978,106 @@ Deno.test({
       assert(!conflict.ok);
       assertStringIncludes(conflict.output, "instance.node_service_unit_conflict");
       assert(!f.calls().some((call) => call.includes("try-restart")));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base",
+  ignore: !hasAnsible,
+  fn() {
+    const old = ruled();
+    delete old["nested-app-prod"].devices.checkout;
+    delete old["nested-app-prod"].config["raw.idmap"];
+    const f = fixture(old, { base: true });
+    try {
+      const started = f.run("start", ["-e", "fleet_deploy_allow_missing_build=true"]);
+      assert(started.ok, started.output);
+      assertEquals(writes(f.calls()), []);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const map = calls.indexOf(`incus config set nested-app-prod raw.idmap=${idmap}`);
+      assert(map >= 0, calls.join("\n"));
+      for (const name of names) {
+        const stopped = calls.indexOf(`incus stop ${name} --timeout 90`);
+        assert(stopped >= 0 && stopped < map);
+        assert(calls.indexOf(`incus snapshot create ${name} base`) > map);
+      }
+      const base = f.state().containers["nested-app-prod"].snapshots.base;
+      assertEquals(base.config["raw.idmap"], idmap);
+      assertEquals(base.devices.checkout, ruled()["nested-app-prod"].devices.checkout);
+      // The next proof uses a strict reset, with no deployment admission flag.
+      const reset = f.run("reset");
+      assert(reset.ok, reset.output);
+      assertEquals(f.state().containers["nested-app-prod"].devices.checkout, base.devices.checkout);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps",
+  ignore: !hasAnsible,
+  fn() {
+    for (const phase of ["check", "start", "resume", "reset"]) {
+      const old = ruled();
+      delete old["nested-app-prod"].config["raw.idmap"];
+      const f = fixture(old, { base: true });
+      try {
+        const refused = f.run(phase);
+        assert(!refused.ok, phase);
+        assertStringIncludes(refused.output, "instance.container_fleet_drift");
+        assertStringIncludes(refused.output, "nested-app-prod config raw.idmap");
+        assert(!f.calls().some((call) => call.startsWith("incus config set")));
+      } finally {
+        f.cleanup();
+      }
+    }
+    const wrong = ruled();
+    wrong["nested-app-prod"].config["raw.idmap"] = "both 1000 1000";
+    const f = fixture(wrong, { base: true });
+    try {
+      for (const phase of ["start", "resume"]) {
+        const refused = f.run(phase, ["-e", "fleet_deploy_allow_missing_build=true"]);
+        assert(!refused.ok);
+        assertStringIncludes(refused.output, "instance.container_fleet_drift");
+        assertEquals(writes(f.calls()), []);
+      }
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
+  ignore: !hasAnsible,
+  fn() {
+    const old = ruled();
+    delete old["nested-app-prod"].devices.checkout;
+    delete old["nested-app-prod"].config["raw.idmap"];
+    const f = fixture(old, { base: true });
+    try {
+      const admitted = f.run("start", ["-e", "fleet_deploy_allow_missing_build=true"]);
+      assert(admitted.ok, admitted.output);
+      f.calls();
+      // The outer seed contains the admitted inner fleet. Restore returns those containers stopped, including their old base.
+      // The outer seed capture/restore itself is covered by ansible_instance_container_test.ts.
+      const seed = structuredClone(f.state().containers);
+      f.change((state) => {
+        state.containers = seed;
+        for (const name of names) state.containers[name].status = "Stopped";
+      });
+      const resumed = f.run("resume", ["-e", "fleet_deploy_allow_missing_build=true"]);
+      assert(resumed.ok, resumed.output);
+      assertEquals(writes(f.calls()), []);
+      for (const name of names) assertEquals(f.state().containers[name].status, "Running");
+      assertEquals(f.state().containers["nested-app-prod"].config["raw.idmap"], undefined);
+      assertEquals(f.state().containers["nested-app-prod"].devices.checkout, undefined);
     } finally {
       f.cleanup();
     }

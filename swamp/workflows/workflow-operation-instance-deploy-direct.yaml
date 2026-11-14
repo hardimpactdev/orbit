@@ -1792,7 +1792,7 @@ jobs:
       behaviorName: ${{ "instance-deploy-container-prepare-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true "$ORBIT_ANSIBLE/instance-container.yml"
+        run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true -e fleet_deploy_allow_missing_build=true "$ORBIT_ANSIBLE/instance-container.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
@@ -2001,7 +2001,7 @@ jobs:
       behaviorName: ${{ "instance-deploy-container-fleet-restored-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: 'k="$ORBIT_RUN/passed.json"; cp -- "$ORBIT_RUN/result.json" "$k" 2>/dev/null; timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ "$s" -eq 0 ] && [ -e "$k" ]; then cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
+        run: 'k="$ORBIT_RUN/passed.json"; cp -- "$ORBIT_RUN/result.json" "$k" 2>/dev/null; timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume -e fleet_deploy_allow_missing_build=true "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ "$s" -eq 0 ] && [ -e "$k" ]; then cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
         env: *container_ansible
   - name: Read the container result
     # The phases' result file: the deployed commit, or the public code of the refusal. It runs whatever happened.

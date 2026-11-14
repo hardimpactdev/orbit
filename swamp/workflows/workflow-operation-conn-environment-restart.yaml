@@ -1,0 +1,91 @@
+id: 558dd201-76e5-4031-b64c-41ff74c403f9
+name: operation-conn-environment-restart
+description: Restart an idle container's T3 server for its machine name (docs/cli/conn/environment-restart.mmd), then check inside the container that it answers with the name.
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: conn.environment_restart}
+    intent:
+      type: object
+      properties:
+        instance_id: {type: integer, minimum: 1}
+        t3_port: {type: integer, minimum: 1, maximum: 65535}
+        name: {type: string, minLength: 3, maxLength: 255}
+        machine_info: {type: string, pattern: '^PRETTY_HOSTNAME=.+\n$'}
+        read_at: {type: string}
+        container:
+          type: object
+          properties:
+            project: {type: string, pattern: '^[a-z0-9][a-z0-9-]{0,62}$'}
+            name: {type: string, pattern: '^instance-[1-9][0-9]*$'}
+          required: [project, name]
+          additionalProperties: false
+        ssh_execution: {type: object}
+      required: [instance_id, t3_port, name, machine_info, read_at, container, ssh_execution]
+      additionalProperties: false
+    # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
+    execution_secrets: {type: object, properties: {}, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent]
+  additionalProperties: false
+jobs:
+  - name: restart
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # One phase: the container and name reads, the try-restart, and the bounded wait for T3's label inside the container.
+      - name: Restart T3
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "conn-environment-restart-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags restart "$ORBIT_ANSIBLE/conn-environment-restart.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Restart T3, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-environment-restart-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 cat "$ORBIT_RUN/result.json"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "conn-environment-restart-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

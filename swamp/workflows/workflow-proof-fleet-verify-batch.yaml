@@ -170,6 +170,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          printf '%s\n' "$LINES"
+          printf '%s\n%s\n' "$LINES" "$RESET"
         env:
+          RESET: '${{ steps.?reset.?outputs.?result.?stdout.orValue("").split("\n").filter(l, l.startsWith("{") && l.contains("\"reset_seconds\"")).map(l, "{\"batch\": \"" + inputs.batch + "\", \"reset\": " + l + "}").join("\n") }}'
           LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? (steps.?reset.?status.orValue("") == "failed" ? "run stopped: the fleet reset failed" + [steps.?reset.?outputs.?result.?stdout.orValue("").split("\n").filter(l, l.startsWith("reason="))].map(r, size(r) > 0 ? ": " + r[0].split("reason=", 2)[1] : "")[0] : "run stopped: the batch setup did not succeed") : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'

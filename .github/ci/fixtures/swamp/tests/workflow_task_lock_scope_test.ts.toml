@@ -1,5 +1,5 @@
 order = 1470
-source_sha256 = "e8168689fc7896fda2edbe899f664f0343a51326ca28bd1ec2c1d6d7a5bf32bb"
+source_sha256 = "cb9beb4d01a009d23a6970a97e1956295d968193262c96de93b93f00740e9a12"
 cases = [
   "a publish names its group only for the content check, the import and the push",
   "the publish passes its group to every workspace phase",
@@ -7,7 +7,7 @@ cases = [
   "a copy check names its group only for the check, commit and commit-ref phases",
   "a sync names its group only for the clone and the bundle on 209",
   "a copy's base names its group only for the base phase, which runs up to 600 s",
-  "the sync passes its group to both calls of the copy's base",
+  "the copy's sync passes its group to both calls of the copy's base",
 ]
 file = "swamp/tests/workflow_task_lock_scope_test.ts"
 cost = 1
@@ -22,4 +22,5 @@ inputs = [
   "swamp/workflows/workflow-task-instance-check.yaml",
   "swamp/workflows/workflow-task-instance-workspace.yaml",
   "swamp/workflows/workflow-task-copy-base.yaml",
+  "swamp/workflows/workflow-operation-task-sync-copy.yaml",
 ]

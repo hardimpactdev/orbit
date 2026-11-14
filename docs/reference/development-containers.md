@@ -525,11 +525,67 @@ Where each path writes the name:
 
 T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 
-No path restarts T3 for its name, and only a new container gets its kernel hostname at once. A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
+No path above restarts T3 for its name, and only a new container gets its kernel hostname at once. One explicit command restarts an idle running T3: see [Existing Instances](#existing-instances). A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
 
 #### Existing Instances
 
 An existing Instance gets its name without a new container. The converge of its Node writes the files. The kernel hostname takes the name at the container's next start, and T3 its label at T3's next start, such as a stopped container's next start or an agent folder update. T3's environment ID, threads, sessions and pairings do not depend on the name.
+
+A container that ran before the name existed keeps showing `instance-<id>` as T3's label until T3 starts again, and a default Instance can run for weeks. [`conn:environment-restart`](/cli/conn/environment-restart) restarts the T3 of one running container whose label is not the name; [`conn:node-environments-restart`](/cli/conn/node-environments-restart) does it for each container of a Node. Run the Node form once on each app-dev Node after the release that brought the name.
+
+Only an idle T3 restarts. The Gateway reads T3's threads with its admin session, the read the idle sleep uses. While a turn works, or any runtime request is pending, it restarts nothing and answers `busy`. A later run takes that container.
+
+Only T3's service restarts. The run first checks that `/etc/machine-info` holds the name; without it, it answers `skipped` with `name_not_written`. Then it runs `systemctl try-restart t3.service` in the container and reads T3's label inside the container until it is the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
+
+`t3.service` sets no `KillMode`, so a restart ends every process in the service's cgroup and in any cgroup below it. So right before the restart the run reads, in one call, systemd's `MainPID` of `t3.service`, the cgroups below it, and the exact members of its `cgroup.procs` with each one's parent, session, terminal and name. It restarts only when every member may go. Any other member answers `busy` with `processes` and the counts, and nothing restarts. This table is the rule; the playbook's template only applies it.
+
+| Member of `t3.service` | Answer |
+| --- | --- |
+| T3 itself: the `MainPID`, and no other process | may go |
+| T3's resource monitor (`t3-resource-mon`) or its own `git` call, a direct child of T3 with no terminal | may go |
+| A provider, `claude` or `codex` (the binaries the recipe ships), a direct child of T3 with no terminal | may go |
+| A member of the `claude` provider's own session whose parent is in the service: its setup `sh` and stdio MCP servers such as Laravel Boost's `php`, or `npm` and `node` | may go |
+| Any member with a terminal (a tty), such as a shell node-pty forked or an `exec claude` typed in it | `busy`: `terminals` when T3 is its parent, else `commands` |
+| Any other direct child of T3 | `busy`, counted in `terminals` |
+| A `claude` tool tree, in the session of its own that Claude Code starts each tool shell in: a turn's tool, or a server it left running | `busy`, counted in `commands` |
+| Any descendant of `codex`: its tools may share its session, so none is allowed | `busy`, counted in `commands` |
+| A process whose parent left the service, such as a backgrounded `nohup` server that PID 1 adopted | `busy`, counted in `commands` |
+| A member line the read cannot parse | `busy`, counted in `commands` |
+
+The `claude` session allowance depends on Claude Code starting each tool shell in a session of its own, as the pinned recipe version does. Measure it again on each Claude Code bump in the recipe.
+
+An open idle shell counts because a restart loses its state. After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
+
+An accepted limit: an MCP server that starts a long-running child without detaching keeps that child in the provider's session, and the restart ends it.
+
+The read fails closed. When it cannot be read, `ps` fails for a member that is still alive, `MainPID` is 0 or not a member, or `cgroup.stat` counts a cgroup below the service, the answer is `busy` with `processes_unreadable`, and nothing restarts.
+
+So the restart ends T3, its monitor and `git` calls, an idle provider with no descendant outside the `claude` session, and a terminal or command that started in the moment (about a second) between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here.
+
+A turn with no live tool process outside the provider's session is cut, for example one that runs Grep, Read or Edit, or whose Bash command already ended. T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
+
+A frozen or stopped container is skipped. T3 reads the name at its next start.
+
+#### The restart window
+
+The thread read and the restart are two steps. The read stays in the Gateway so the busy rule has one place. A read inside the run would need the admin session as a vault execution copy, as `conn.session_hold` has, and a second copy of the busy rule outside PHP. So the Gateway admits the Operation right after the read. The Node form reads every label at once and each container's threads right before its own admission.
+
+An estimate, until the proof of the command measures it: about 5 to 15 seconds pass from the Gateway's read to the restart, for the dispatch, the run's input step, the start of its Ansible phase and its reads.
+
+The `conn_operation` check and the admission are two queries in one request, milliseconds apart. A Conn Operation admitted in that gap can overlap the restart; it then fails on its own T3 call and is run again.
+
+The run's process read narrows the window for a turn that runs a tool, and for every terminal, to about a second: the time from that read to `try-restart`. One call of the Node form admits at most four restarts, so the Swamp queue does not widen it. The intent carries `read_at`, the end of the Gateway's read. The run notes `restart_at` just before the restart. A restarted Operation's result keeps both and `window_ms`, the time between them.
+
+What a user sees:
+
+- **A turn in the window** with no live tool process outside the provider's session is cut. T3 0.1.7 marks that run cancelled as it stops.
+- **The cut turn continues.** T3 continues it in a new run after its start. The T3 setting `continueThreadsAfterServerUpdate` does this, and it is on by default.
+- **A connected client** shows *Reconnecting…* and reconnects by itself. Its backoff starts at one second.
+- **An unsent draft stays.** T3's client keeps drafts in the browser (`t3code:composer-drafts:v1`), never on the server.
+
+A container whose T3 nobody restarts keeps its old label until T3's next start, such as the container's next start or an agent folder update. Nothing else changes.
+
+No schedule runs the restart. The label changes once, after one release, and a stock T3 that starts later reads the name by itself. A scheduled pass would add an always-on loop for a one-off change, and it would restart T3 servers at times nobody chose, each restart with its window above.
 
 A rename of the Project (`project:update --slug`) writes no container file itself. The containers take the new name at their next start or at the next converge of their Node.
 
@@ -1188,6 +1244,33 @@ Success turns the Route `active`, then the Instance `active` with `provisioning_
 A completion that publishes the Route holds its Nodes for the whole run; a completion with no publication holds none. A clone's create holds the Nodes only when they are free at its admission, and only until `clone-route` ends, so two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
 The create's terminal projection admits the first completion. A completion that ends moves a [task copy](/reference/tasks#task-copy) on: `active` makes its task run. A failure keeps the copy, and its task stays `reserved` and asks for assistance with the retry.
+
+#### A failed clone phase names its command
+
+Every phase of a clone's create and completion runs `swamp/scripts/instance_clone.py` on the Node. When one of its commands fails, the Operation's `error.detail` holds three things:
+
+1. The code line, such as `instance.container_services_failed: command incus exited 1`.
+2. What the command did, in public words, such as `(incus exec instance-7 python3 guest services)`. No option or `-c` program appears.
+3. The end of the command's stderr, in whole lines.
+
+The whole detail has at most 4,000 UTF-8 bytes. The native step adds its own words, and the Gateway keeps 4,096 bytes.
+
+Native run history keeps a step's stderr. So the script redacts the text before it prints it:
+
+- Each private value of at least 8 characters becomes `[REDACTED]`.
+- The private values are the strings of the framed vault value. Their lines and the values of their `KEY=VALUE` lines count too.
+- Credentials become `[REDACTED]` by their shape, as in the Gateway's redaction.
+- These shapes are URL user parts, `Authorization` and `Bearer` values, GitHub tokens, PEM blocks and 64-character hex strings.
+- A `password=` or `token=` pair loses its value.
+- The script drops a line that still holds an 8-character piece of a private value.
+
+The Gateway redacts the detail once more with the Instance's stored values.
+
+The guest phase in the container also hands on the stderr of its own failed `git`, `mkdir` or `systemctl`, on the lines after its diagnostic. It never hands on the stderr of `curl`, `php`, `t3` or `python3`: those commands can see a token that T3 issues in the container or a Project's value, and the Node script cannot know those to redact them. Any other failure of the guest names the error's type, and for a file error its cause and path.
+
+The `workspace` and `services` parts make no Incus file call. Incus serves a container's files through one `forkfile` helper per container, and the helper exits after about 15 seconds without a request. A request that reaches it just before that exit is never served: `incus file push` fails with `Error: error receiving version packet from server: server unexpectedly closed connection`. A completion's first file call comes about 15 seconds after the create's last one, so it could meet that exit.
+
+So the Node script puts the Node runtime helper (`/usr/local/libexec/orbit-instance-node-runtime.py`) in the guest's intent. The guest writes it, owned by root with mode 0755, in the exec it runs anyway. The other phases' file calls come seconds apart within one create. A failed one names its command and Incus's words. Nothing retries it.
 
 ### Clone the database
 
@@ -2016,7 +2099,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | Rule | Where | Why |
 | --- | --- | --- |
 | The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host |
-| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | `nested-gateway`, `nested-app-dev` | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
+| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
@@ -2449,10 +2532,10 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 
 The fleet rules:
 
-- The disk device `checkout` gives the workspace to the nested Gateway and `app-dev` with `shift=false`. An ID shift fails two levels below the host.
+- The disk device `checkout` gives the workspace to all three nested containers with `shift=false`. An ID shift fails two levels below the host.
 - The disk device `club-key` gives the folder `/run/orbit-club` of the container to the nested Gateway at `/home/orbit/.config/swamp/club`, with `shift=false` and `required=false`.
 - In the nested Gateway, `/home/orbit/.config/swamp/api-key` links to `club/swamp-club-api-key`. `base` keeps the link.
-- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into the nested Gateway and `app-dev`, so the nested `orbit` and the container's `orbit` own the workspace together.
+- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into all three nested containers, so the nested `orbit` and the container's `orbit` own the workspace together.
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - `boot.autostart=true` is on the three nested containers.
 - The egress proxy settings are `environment.*` keys on the three nested containers, and the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
@@ -2460,7 +2543,11 @@ The fleet rules:
 
 The refresh writes an egress file that differs on the running fleet, before the converge of the nested Nodes. The rules then find it in place.
 
-Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs (a key or device while the fleet is stopped, a file before the converge), and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent. A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; the check and the start also refuse a fleet that lacks `raw.idmap`.
+Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs (a key or device while the fleet is stopped, a file before the converge), and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent.
+
+A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; a standalone check, start or proof reset also refuses a fleet that lacks `raw.idmap`. The deployment’s initial start permits an absent build rule because its later refresh writes it with the fleet stopped and retakes `base`. A conflicting value still refuses before any change. This lets an older fleet acquire a newly required map through its normal deployment.
+
+If the deployment fails, the resume of the restored seed permits absent build rules too. It starts the fleet that Prepare admitted, without changing its maps. The next deployment installs the missing rules. Conflicting maps still refuse on rollback.
 
 The Operation's result `fleet_drift` names each difference, as `<container> <kind> <name>`; for the inner bridge the first part is the bridge, as in `oe-nested network raw.dnsmasq`.
 

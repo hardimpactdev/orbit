@@ -1,0 +1,70 @@
+---
+title: "orbit conn:environment-restart"
+sidebarTitle: "conn:environment-restart"
+description: "Restart an idle container Instance's T3 server so that it shows its machine name. A busy, sleeping or current server is left alone."
+covers:
+  - apps/gateway/extensions/conn/src/Domain/{ConnEnvironmentRestart,ConnEnvironmentRestartDecision,ConnEnvironmentRestartProjection}.php
+  - apps/gateway/extensions/conn/src/Actions/AdmitConnEnvironmentRestartAction.php
+  - apps/gateway/extensions/conn/src/Http/Controllers/ConnEnvironmentRestartController.php
+  - apps/cli/app/Commands/Conn/**
+  - packages/php-sdk/src/{Requests,Responses}/Conn/**
+  - swamp/ansible/conn-environment-restart.yml
+---
+
+Restart the T3 server of one running container Instance, so that it shows the Instance's [machine name](/reference/development-containers#the-machine-name), `<instance>.<project slug>`. Stock T3 reads the name only when it starts. A container that ran before the name existed still shows `instance-<id>` until its T3 starts again. [Existing Instances](/reference/development-containers#existing-instances) explains when to run this command, and why no schedule runs it.
+
+Orbit restarts T3 only when no turn works, no request waits, and no T3 terminal is open in it. Nothing else in the container restarts.
+
+To restart every container on one Node, use [`conn:node-environments-restart`](/cli/conn/node-environments-restart). It gives the same answer for each Instance.
+
+## Usage
+
+```sh
+orbit conn:environment-restart 42
+orbit conn:environment-restart 42 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `instance` | Numeric Instance ID. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+The command answers one of these:
+
+| Answer | Reason | Meaning |
+| --- | --- | --- |
+| `restarted` | | T3 restarted and answers inside the container with the name. |
+| `current` | | T3 already shows the name. Nothing restarted. |
+| `busy` | `t3_working` | A turn works, or a request waits for an answer or a tool, in one of T3's threads. Run the command again later. |
+| `busy` | `processes` | Found by the run right before the restart: a T3 terminal or a command runs in T3's service ([the rule](/reference/development-containers#existing-instances)). The line, and `terminals` and `commands` in `--json`, name the counts. Nothing restarted. |
+| `busy` | `processes_unreadable` | The run could not read the processes of T3's service, so it did not restart. |
+| `busy` | `conn_operation` | Another Conn Operation, such as a session renewal or a pairing, runs on the server. |
+| `busy` | an error code | Other work holds the Instance, such as `operation.target_busy`, or the Instance is not active (`instance.lifecycle_not_active`). |
+| `skipped` | `frozen`, `stopped` | The container sleeps or is stopped. T3 reads the name at the container's next start. |
+| `skipped` | `name_not_written` | `/etc/machine-info` does not hold the name yet. Run [`node:converge`](/cli/node/converge) on the Node first. |
+| `skipped` | `no_t3` | The Instance has no container T3 server that Conn knows. |
+| `skipped` | `t3_unreadable` | T3 did not answer the label read or the thread read. |
+| `skipped` | `next_run`, `deadline` | Only the Node form: the call reached its restarts or its time. Run it again. |
+| `failed` | an error code | T3 did not come back after the restart, does not show the name, or the restart could not be admitted. |
+
+The Gateway answers with HTTP 200 and one answer per Instance. For a restart it admits one `conn.environment_restart` Operation and answers `restarting` with its `operation_id`. The CLI follows the Operation and prints `restarted`, `skipped` or `failed`. The Operation never retries; run the command again.
+
+Running the command again on a restarted Instance answers `current`.
+
+**What a user sees.** The run restarts nothing while a T3 terminal is open or a command runs in T3's service; [Existing Instances](/reference/development-containers#existing-instances) has the rule. A terminal that opens in the moment (about a second) between that read and the restart is ended. A turn with no live tool process outside the provider's session is cut, for example one that runs Grep, Read or Edit, or whose Bash command already ended; T3 continues it. Orbit Processes do not restart. A Conn or T3 client that is connected shows *Reconnecting…* and reconnects by itself. A draft that was not sent stays: the client keeps it in the browser. [Restart for the machine name](/reference/conn#restart-for-the-machine-name) has the details.
+
+The API is `POST /api/v1/conn/instances/{instance}/t3-restart`. The Conn extension must be on.
+
+## How it works
+
+<div className="flow-at" data-chart="conn/environment-restart"></div>
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.disabled` | The Conn extension is off. |
+| `conn.t3_unready` | The `failed` answer: T3 did not answer inside the container within the wait. |
+| `conn.t3_label_mismatch` | The `failed` answer: T3 is active, but its label is not the machine name. |
+| `conn.t3_restart_failed` | The `failed` answer: the run failed without its own code. |
+| `conn.restart_admission_failed` | The `failed` answer: the Gateway could not read or admit this Instance; the others went on. |

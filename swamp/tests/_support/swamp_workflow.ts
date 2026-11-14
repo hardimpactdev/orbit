@@ -11,6 +11,37 @@ export const environment = new Environment({ enableOptionalTypes: true, unlisted
 
 export { TopologicalSortService };
 
+type Node = { op: string; args: unknown };
+
+const isNode = (value: unknown): value is Node =>
+  value !== null && typeof value === "object" && !Array.isArray(value) && typeof (value as Node).op === "string";
+
+/** A scalar literal: a `value` node (string, int, uint, double, bytes, bool or null), or unary minus over one. `uint(1)` is a call. */
+const isScalarLiteral = (value: unknown): boolean =>
+  isNode(value) && (value.op === "value" || (value.op === "-_" && isNode(value.args) && value.args.op === "value"));
+
+/** e459's walk, verbatim: any `in`, or `==` / `!=` whose arguments hold no scalar literal, anywhere in the expression. */
+function visit(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(visit);
+  if (!isNode(value)) return false;
+  if (value.op === "value") return false;
+  if (value.op === "in") return true;
+  if ((value.op === "==" || value.op === "!=") && Array.isArray(value.args) && !value.args.some(isScalarLiteral)) return true;
+  return visit(value.args);
+}
+
+/**
+ * The pinned Swamp's secret rule (e459 src/infrastructure/cel/container_comparison.ts, ported over the same cel-js parse): it refuses
+ * as a whole an expression that reads a secret (`vault.get`) and holds a container comparison: any `in`, or `==` / `!=` with no
+ * scalar literal among its arguments, such as `inputs.a == inputs.b` (`secret_operation_unsupported`). `has()` is not one. Serve
+ * refuses such an expression when the run starts. Returns the refusal for an expression written with `vault.get(`, or null.
+ */
+export function secretRefusal(expression: string): string | null {
+  if (!expression.includes("vault.get(")) return null;
+  const parsed = environment.parse(expression.replaceAll("vault.get(", "vaultget(")) as unknown as { ast: unknown };
+  return visit(parsed.ast) ? "secret_operation_unsupported: a vault.get expression with a container comparison" : null;
+}
+
 type Workflow = { jobs: { steps: { name: string; task?: unknown }[] }[] };
 
 /**
@@ -27,6 +58,11 @@ export function failures(workflow: string, inputs: Record<string, unknown>): str
       for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
         const expression = match[1].trim();
         if (!/execution_secrets|intent\.read/.test(expression) || /\b(self|steps)\./.test(expression)) continue;
+        const refused = secretRefusal(expression);
+        if (refused !== null) {
+          failed.push(`${step}: ${refused}`);
+          continue;
+        }
         try {
           environment.evaluate(expression.replaceAll("vault.get(", "vaultget("), { inputs, run: { id: "run-1" } });
         } catch (error) {

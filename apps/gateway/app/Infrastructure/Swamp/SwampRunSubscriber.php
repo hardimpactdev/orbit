@@ -74,9 +74,9 @@ final class SwampRunSubscriber
 
             return;
         }
-        $definition = app(DirectOperation::class)->definition($operation->kind);
+        $workflow = app(DirectOperation::class)->workflowFor($operation);
         $run = $operation->state['swamp_run_id'] ?? null;
-        if ($definition === null || ! app(DirectOperation::class)->usesNativeTerminal($operation) || ! is_string($run) || ! Str::isUuid($run)
+        if ($workflow === null || ! app(DirectOperation::class)->usesNativeTerminal($operation) || ! is_string($run) || ! Str::isUuid($run)
             || ($this->following[$operationId]['run'] ?? null) === $run || ($this->queued[$operationId] ?? null) === $run) {
             return;
         }
@@ -84,7 +84,7 @@ final class SwampRunSubscriber
         if ($old !== null) {
             unset($this->requests[$old]);
         }
-        $this->following[$operationId] = ['run' => $run, 'workflow' => $definition['workflow'], 'request' => null, 'attached' => false];
+        $this->following[$operationId] = ['run' => $run, 'workflow' => $workflow, 'request' => null, 'attached' => false];
     }
 
     /** One pass beside the existing Gateway observer's Reverb receive loop. */

@@ -469,7 +469,8 @@ class CloneTest(unittest.TestCase):
         self.assertFalse(any(call[:3] == ["incus", "network", "acl"] for call in calls))
         # Any other failure of the read refuses before the copy; it never creates an ACL over one it could not read.
         calls, _, error = self.clone(overrides={"fixture_acl": "error"})
-        self.assertEqual(error, "instance.container_container_failed: command incus exited 1\n")
+        self.assertEqual(error, "instance.container_container_failed: command incus exited 1 (incus query /1.0/network-acls/instance-7?project=default):\n"
+                                "Error: Project not found\n")
         self.assertFalse(any(call[3:4] == ["copy"] or call[:3] == ["incus", "network", "acl"] for call in calls))
 
     def test_the_container_phase_prints_the_seconds_of_each_part(self):
@@ -1452,26 +1453,120 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
                 self.assertEqual(self.invoke(diagnostic), diagnostic)
         self.assert_structured_process_failure_reaches_the_completion_receipt()
 
-    def test_rejects_private_or_mismatched_guest_diagnostics(self):
-        for stderr in [
-            "instance.container_check_failed: command SECRET_TOKEN_abcd1234 exited 17",
-            "PRIVATE-STDERR",
-            "instance.container_check_failed: command php exited 17\nPRIVATE-STDERR",
-            "instance.container_agent_failed: command php exited 17",
-            "instance.container_check_failed: command php PRIVATE-ARGV exited 17",
+    def test_a_failed_command_names_what_ran_and_keeps_only_public_stderr(self):
+        # Any first line that is not the guest's own diagnostic makes the code line "command incus exited N", with what ran; the
+        # stderr follows only as its redacted end. The stdin's private text never appears (`invoke` asserts no PRIVATE).
+        head = "instance.container_check_failed: command incus exited 7 (incus exec instance-proof python3 guest check):\n"
+        for stderr, kept in [
+            ("Error: Instance is not running", "Error: Instance is not running"),
+            ("instance.container_agent_failed: command php exited 17", "instance.container_agent_failed: command php exited 17"),
+            ("instance.container_check_failed: command php ARGV exited 17", "instance.container_check_failed: command php ARGV exited 17"),
+            ("echo PRIVATE-INPUT\ntoken=ghp_abcdefghijklmnopqrstuvwxyz0123", "echo [REDACTED]\ntoken=[REDACTED]"),
         ]:
             with self.subTest(stderr=stderr):
-                self.assertEqual(
-                    self.invoke(stderr),
-                    "instance.container_check_failed: command incus exited 7\n",
-                )
-
-    def test_node_command_failure_names_executable_and_exit_without_output(self):
-        self.assertEqual(
+                self.assertEqual(self.invoke(stderr), head + kept + "\n")
+        # The guest's own line stays the code line; the lines after it are its command's redacted stderr.
+        self.assertEqual(self.invoke("instance.container_check_failed: command php exited 17\nPHP Fatal error: x\nPRIVATE-INPUT"),
+                         "instance.container_check_failed: command php exited 17:\nPHP Fatal error: x\n[REDACTED]\n")
+        # A Node command names its executable and what ran, then the end of its words.
+        self.assertRegex(
             # In the T3 step only the checkout runs Git on the Node, so the failure names the checkout.
-            self.invoke("PRIVATE-STDERR", phase="t3", fail="git", stdin=json.dumps({"environment": "PRIVATE-ENV", "processes": {}})),
-            "instance.container_checkout_failed: command git exited 7\n",
+            self.invoke("fatal: bad object\nPRIVATE-INPUT", phase="t3", fail="git", stdin=json.dumps({"environment": "PRIVATE-INPUT", "processes": {}})),
+            r"\Ainstance\.container_checkout_failed: command git exited 7 \(git /\S+/mirror rev-parse refs/heads/proof\^\{commit\}\):\n"
+            r"fatal: bad object\n\[REDACTED\]\n\Z",
         )
+
+
+class ServicesPhaseFailureTest(unittest.TestCase):
+    """The services phase (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command): one guest exec and no
+    Incus file call, and a failure names what ran and the redacted end of its stderr."""
+
+    EXEC = "incus exec instance-proof python3 guest services"
+    APP_KEY = "base64:c2VjcmV0LWFwcC1rZXktdmFsdWUtMTIzNA=="
+    DB_PASSWORD = "s3cret-Xq9vT2wLp7zK"
+
+    def services(self, guest=(0, "")):
+        """Run the services phase with the guest exec's exit and stderr; return (exit, calls, stdout, stderr)."""
+        calls = []
+        stdin = json.dumps({"processes": {"/etc/orbit/processes/7/vp-dev.env": "APP_KEY=" + self.APP_KEY + "\nDB_PASSWORD="
+                                          + self.DB_PASSWORD + "\n"}})
+
+        def command(argv, **kwargs):
+            calls.append(argv)
+            code, stderr = guest
+            return subprocess.CompletedProcess(argv, code, '{"phase": "services", "changes": []}' if code == 0 else "", stderr)
+
+        container = {"name": "instance-proof", "project": "orbit-instances"}
+        output, error, code = io.StringIO(), io.StringIO(), 0
+        with tempfile.TemporaryDirectory() as folder, patch(
+            "sys.argv", [str(SCRIPT), json.dumps(container), "guest", "network", pwd.getpwuid(os.getuid()).pw_name, folder,
+                         json.dumps({"node": "print('helper')"}), "services"],
+        ), patch("sys.stdin", io.StringIO(stdin)), patch("subprocess.run", command), contextlib.redirect_stdout(output), \
+                contextlib.redirect_stderr(error):
+            try:
+                runpy.run_path(str(SCRIPT), run_name="__main__")
+            except SystemExit as exit_status:
+                code = exit_status.code
+        return code, calls, output.getvalue(), error.getvalue()
+
+    def test_the_phase_is_one_guest_exec_and_a_failure_names_its_command_and_the_end_of_its_stderr(self):
+        # Completion 22240 failed when the helper's `incus file push` met Incus's file helper as it exited after 15 s idle.
+        code, calls, output, error = self.services()
+        self.assertEqual((code, error, json.loads(output)["phase"]), (0, "", "services"))
+        self.assertEqual([call[3:5] for call in calls], [["exec", "instance-proof"]])
+        self.assertEqual(json.loads(calls[0][-1])["node_runtime"], "print('helper')")
+        # A failed guest command names itself and the redacted end of its stderr.
+        guest = (1, "instance.container_services_failed: command systemctl exited 1\nvp-dev: DB_PASSWORD=" + self.DB_PASSWORD
+                 + " ghp_abcdefghijklmnopqrstuvwxyz\nFailed to connect to system scope bus\n")
+        code, _, output, error = self.services(guest)
+        self.assertEqual((code, output), (1, ""))
+        self.assertEqual(error, "instance.container_services_failed: command systemctl exited 1:\nvp-dev: [REDACTED] [REDACTED]\n"
+                                "Failed to connect to system scope bus\n")
+        # A failed exec names incus, what ran and Incus's words. The real words of a forkfile that exits as a file call reaches it (Incus 7.0.2, reproduced on Beast 2026-11-14), and others.
+        for stderr in ["Error: error receiving version packet from server: server unexpectedly closed connection: unexpected EOF\n",
+                       "Error: Failed to retrieve PID of executing child process\n", "Error: Instance is not running\n"]:
+            with self.subTest(stderr=stderr):
+                code, calls, _, error = self.services((255, stderr))
+                self.assertEqual((code, len(calls)), (1, 1))
+                self.assertEqual(error, "instance.container_services_failed: command incus exited 255 (" + self.EXEC + "):\n" + stderr)
+        # A guest that failed by an error of its own names that error's type.
+        _, _, _, error = self.services((1, "instance.container_services_failed: FileNotFoundError: No such file or directory: /x\n"))
+        self.assertEqual(error, "instance.container_services_failed: command incus exited 1 (" + self.EXEC + "):\n"
+                                "instance.container_services_failed: FileNotFoundError: No such file or directory: /x\n")
+
+    def test_the_detail_holds_no_private_value_and_the_end_of_a_long_stderr(self):
+        stderr = "\n".join([
+            "loading APP_KEY=" + self.APP_KEY,
+            "password " + self.DB_PASSWORD + " refused",
+            "a piece: " + self.DB_PASSWORD[2:14],
+            "remote https://x-access-token:ghs_abcdefghijklmnopqrstuvwxyz@github.com/o/r.git",
+            "Authorization: Bearer abcdefghijklmnop",
+            "github_pat_abcdefghijklmnopqrstuvwxyz0123",
+            "-----BEGIN PRIVATE KEY-----", "MIIEvQIBADANBg", "-----END PRIVATE KEY-----",
+            "api_key=plain-value-123 done",
+            "Error: the last public line",
+        ])
+        code, _, _, error = self.services((1, stderr))
+        self.assertEqual(code, 1)
+        for secret in [self.APP_KEY, self.DB_PASSWORD, self.DB_PASSWORD[2:14], "ghs_abcdefghijklmnopqrstuvwxyz", "abcdefghijklmnop",
+                       "github_pat_", "MIIEvQIBADANBg", "plain-value-123"]:
+            self.assertNotIn(secret, error)
+        self.assertEqual(error.splitlines()[1:], [
+            "loading [REDACTED]", "password [REDACTED] refused", "remote https://[REDACTED]@github.com/o/r.git",
+            "Authorization: [REDACTED]", "[REDACTED]", "[REDACTED]", "api_key=[REDACTED] done", "Error: the last public line"])
+        # A long stderr keeps its end, in whole lines, within the detail's size.
+        stderr = "".join("line %05d %s\n" % (number, "x" * 40) for number in range(2000))
+        code, _, _, error = self.services((1, stderr))
+        lines = error.splitlines()
+        self.assertEqual(code, 1)
+        self.assertLessEqual(len(error.encode()), 4001)
+        # The bound counts UTF-8 bytes: wide characters keep the code line inside the Gateway's 4,096 bytes.
+        _, _, _, wide = self.services((1, "".join("ü" * 50 + "\n" for _ in range(200))))
+        self.assertLessEqual(len(wide.encode()), 4001)
+        self.assertTrue(wide.startswith("instance.container_services_failed: command incus exited 1 ("))
+        self.assertEqual(lines[0], "instance.container_services_failed: command incus exited 1 (" + self.EXEC + "):")
+        self.assertEqual(lines[-1], "line 01999 " + "x" * 40)
+        self.assertTrue(all(line.startswith("line ") and len(line) == 51 for line in lines[1:]))
 
 
 class InnerVolumeGuardTest(unittest.TestCase):
@@ -1698,7 +1793,8 @@ console.log(created.stdout);
         code, guest, _, error = self.phase(fail="bundle")
         self.assertEqual(code, 1)
         self.assertEqual(json.loads(self.left), {"t3_part": "checkout"})
-        self.assertEqual(error, "instance.container_checkout_failed: command git exited 1\n")
+        # The code line names the checkout and what ran; the stderr's redacted end follows it.
+        self.assertTrue(error.startswith("instance.container_checkout_failed: command git exited 1 (git "), error)
         self.assertNotIn("sessions", [member for member, _ in guest])
 
     def test_a_failed_sessions_check_names_the_registration(self):
@@ -1797,9 +1893,11 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
                 self.assertEqual((code, pushed), (0, []))
                 intent = json.loads(next(argv for argv, _ in self.calls if "python3" in argv)[-1])
                 self.assertEqual(intent["expected_commit"], "c" * 40)
-                # Any other Git failure never falls back to the seed: the phase fails by its own name, without Git's output.
+                # Any other Git failure never falls back to the seed: the phase fails by its own name, what ran and Git's words.
                 code, guest, _, _, error = self.phase(phase, rev_parse=128)
-                self.assertEqual((code, guest, error), (1, [], "instance.container_" + phase + "_failed: command git exited 128\n"))
+                self.assertEqual((code, guest), (1, []))
+                self.assertRegex(error, r"\Ainstance\.container_" + phase + r"_failed: command git exited 128 \(git /\S+ rev-parse "
+                                 r"refs/heads/proof\^\{commit\}\):\nPRIVATE-STDERR\n\Z")
 
     def test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout(self):
         _, _, _, output, _ = self.phase("checkout")
@@ -1809,14 +1907,20 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         code, guest, pushed, output, _ = self.phase("services")
         self.assertEqual(code, 0)
         self.assertEqual(guest, [("services", {"processes": self.VALUE["processes"]})])
-        self.assertEqual(pushed, ["instance-proof/usr/local/libexec/orbit-instance-node-runtime.py"])
+        # The helper goes in the guest's intent, which writes it: the phase makes no Incus file call.
+        self.assertEqual(pushed, [])
+        self.assertFalse(any("file" in argv for argv, _ in self.calls))
+        intent = json.loads(next(argv for argv, _ in self.calls if "python3" in argv)[-1])
+        self.assertEqual(intent["node_runtime"], "node-helper-source")
         self.assertEqual(json.loads(output), {"phase": "services", "changes": []})
 
     def test_workspace_still_passes_the_whole_value_in_one_guest_call(self):
         code, guest, pushed, output, _ = self.phase("workspace")
         self.assertEqual(code, 0)
         self.assertEqual(guest, [("workspace", self.VALUE)])
-        self.assertEqual(len(pushed), 2)
+        # Only the bundle is pushed; the helper goes in the guest's intent.
+        self.assertEqual(len(pushed), 1)
+        self.assertEqual(json.loads(next(argv for argv, _ in self.calls if "python3" in argv)[-1])["node_runtime"], "node-helper-source")
         self.assertTrue(output.startswith("orbit-commit=first\n"))
 
     def test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt(self):

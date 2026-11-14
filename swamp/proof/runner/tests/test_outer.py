@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import fleet as fleet_module
 from fakes import completed, outer_machine
 
-NODES = {'app-prod': {'instance': 'nested-app-prod', 'node_id': 212, 'bridge': '10.0.0.3'}}
+NODES = {'gateway': {'instance': 'nested-gateway'}, 'app-prod': {'instance': 'nested-app-prod', 'node_id': 212, 'bridge': '10.0.0.3'}}
 TASK_VM_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/orbit', 'ORBIT_HOME': '/home/orbit/.orbit', 'COLUMNS': '240'}
 INSTANCE_ENV = {'PATH': '/usr/local/bin:/usr/bin:/bin', 'HOME': '/home/agent', 'ORBIT_HOME': '/home/agent/.orbit', 'COLUMNS': '240'}
 INSTANCE_CHECKOUT = Path('/srv/workspace')
@@ -26,11 +26,15 @@ def instance_checkout():
 
 
 def fresh_node(calls):
-    """A `subprocess.run` for a Node that has neither the mount nor the profile; it records every command."""
+    """A VM lacks the mount; a copy has the mount from base. Both lack the profile."""
     def run(argv, **kwargs):
         calls.append(list(argv))
+        if argv[:4] == ['incus', 'config', 'device', 'get'] and argv[-1] == 'shift':
+            return completed(0, 'false\n' if fleet_module.CHECKOUT == INSTANCE_CHECKOUT else 'true\n')
         if argv[:4] == ['incus', 'config', 'device', 'get']:
-            return completed(1)
+            return completed(0, str(INSTANCE_CHECKOUT)) if fleet_module.CHECKOUT == INSTANCE_CHECKOUT else completed(1)
+        if 'getent' in argv:
+            return completed(2)
         if argv[-3:-1] == ['-q', '"nested"']:
             return completed(1)
         return completed(0, '{}')
@@ -104,17 +108,19 @@ class InstanceTest(unittest.TestCase):
 
     def test_a_fresh_node_gets_the_ca_of_agent_and_the_nested_facts_stay_the_same(self):
         calls = []
-        with outer_machine('/home/agent'), instance_checkout(), patch.object(fleet_module.subprocess, 'run', fresh_node(calls)):
+        with outer_machine('/home/agent'), instance_checkout(), patch.object(Path, 'stat', return_value=type('Stat', (), {'st_gid': 2760})()), patch.object(fleet_module.subprocess, 'run', fresh_node(calls)):
             fleet_module.Fleet(NODES).prepare_node_cli('app-prod')
         push = next(call for call in calls if call[:3] == ['incus', 'file', 'push'])
         # Only the source is the home of agent. The target is the CLI home of the managed user `orbit` of the Node.
         self.assertEqual(push, ['incus', 'file', 'push', '/home/agent/.orbit/nested-ca.pem', 'nested-app-prod/home/orbit/.orbit/nested-ca.pem',
                                 '--uid', '1000', '--gid', '1000', '--mode', '0644'])
-        mount = next(call for call in calls if call[:4] == ['incus', 'config', 'device', 'add'])
-        self.assertIn('source=/srv/workspace', mount)
-        self.assertIn('path=/home/orbit/orbit', mount)
+        self.assertFalse(any(call[:4] == ['incus', 'config', 'device', 'add'] for call in calls))
+        self.assertIn(['incus', 'exec', 'nested-app-prod', '--', 'groupadd', '--gid', '2760', 'work'], calls)
+        membership = ['incus', 'exec', 'nested-app-prod', '--', 'usermod', '--append', '--groups', 'work', 'orbit']
+        self.assertIn(membership, calls)
+        self.assertLess(calls.index(membership), next(i for i, call in enumerate(calls) if 'gateway:add' in call))
         profile = next(call for call in calls if 'gateway:add' in call)
-        self.assertEqual(profile[:10], ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env'])
+        self.assertEqual(profile[:14], ['incus', 'exec', 'nested-app-prod', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'COLUMNS=240', '--', 'runuser', '-u', 'orbit', '--'])
         self.assertIn('--ca=/home/orbit/.orbit/nested-ca.pem', profile)
         self.assertEqual([call for call in calls if call is not push and any('/home/agent' in word for word in call)], [])
 
@@ -181,6 +187,51 @@ class ControllerTest(unittest.TestCase):
             with patch.object(fleet_module.runpy, 'run_path', return_value=self.gate(Path('/opt/orbit-shape-gate'), lambda tools: bin_dir)):
                 controller, collections = fleet_module.proof_controller()
         self.assertEqual((controller, collections), (bin_dir, Path('/opt/orbit-shape-gate/collections-4567')))
+
+
+class CopyCallerMountTest(unittest.TestCase):
+    def test_an_unshifted_fleet_with_a_missing_caller_device_requires_refresh_without_remapping_it(self):
+        calls = []
+        def run(argv, **kwargs):
+            calls.append(argv)
+            return completed(0, 'false') if argv[-1] == 'shift' else completed(1)
+        with instance_checkout(), patch.object(fleet_module.subprocess, 'run', run):
+            with self.assertRaisesRegex(fleet_module.FleetError, 'refresh the fleet'):
+                fleet_module.Fleet(NODES).prepare_node_cli('app-prod')
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0], ['incus', 'config', 'device', 'get', 'nested-gateway', 'checkout', 'shift'])
+
+    def test_a_copy_reuses_its_existing_checkout_group_and_reports_a_failed_group_read(self):
+        for rc, output in [(0, 'work:x:2760:orbit\n'), (1, '')]:
+            calls = []
+            def run(argv, **kwargs):
+                calls.append(argv)
+                if argv[-1] == 'shift':
+                    return completed(out='false')
+                if argv[-1] == 'source':
+                    return completed(out=str(INSTANCE_CHECKOUT))
+                if 'getent' in argv:
+                    return completed(rc, output)
+                return completed()
+            with self.subTest(rc=rc), instance_checkout(), patch.object(Path, 'stat', return_value=type('Stat', (), {'st_gid': 2760})()), patch.object(fleet_module.subprocess, 'run', run):
+                if rc:
+                    with self.assertRaisesRegex(fleet_module.FleetError, 'cannot read the checkout group'):
+                        fleet_module.Fleet(NODES).prepare_node_cli('app-prod')
+                else:
+                    fleet_module.Fleet(NODES).prepare_node_cli('app-prod')
+            self.assertFalse(any('groupadd' in call for call in calls))
+            self.assertEqual(any('usermod' in call for call in calls), rc == 0)
+
+    def test_fingerprint_artisan_runs_as_orbit_with_its_groups_not_uid_alone(self):
+        fleet = fleet_module.Fleet(NODES)
+        counts = dict.fromkeys(fleet_module.FINGERPRINT_KEYS, 0)
+        with patch.object(fleet, 'cli', return_value={'rc': 0}), \
+                patch.object(fleet_module.subprocess, 'run', return_value=completed(out=json.dumps(counts))) as run:
+            result = fleet_module.fingerprint(fleet)
+        argv = run.call_args.args[0]
+        self.assertEqual(argv[argv.index('--') + 1:][:6], ['runuser', '-u', 'orbit', '--', 'php', '/home/orbit/orbit/apps/gateway/artisan'])
+        self.assertNotIn('--user', argv)
+        self.assertEqual(result, {'doctor_healthy': True, **counts})
 
 
 if __name__ == '__main__':

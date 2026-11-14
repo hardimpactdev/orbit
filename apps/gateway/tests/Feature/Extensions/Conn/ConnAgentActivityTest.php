@@ -154,3 +154,13 @@ it('keeps the Instance awake when T3 refuses or does not answer, or Conn is off'
         Http::assertNothingSent();
     }
 })->with(['refused', 'unreachable', 'conn off']);
+
+it('blocks a restart for a working run or any pending request, blocking or not, and reads an unknown shell as unreadable', function (array $shell, ?bool $blocked): void {
+    expect(ConnAgentActivity::restartBlocked($shell))->toBe($blocked);
+})->with([
+    'idle' => [['threads' => [shellThread([])], 'archivedThreads' => []], false],
+    'a running turn' => [['threads' => [shellThread(['status' => 'running'])], 'archivedThreads' => []], true],
+    'a blocking request' => [['threads' => [shellThread(['status' => 'waiting', 'pendingRuntimeRequest' => ['id' => 'r', 'kind' => 'approval', 'createdAt' => '2026-11-14T08:00:00.000Z']])]], true],
+    'a non-blocking request on a completed thread' => [['threads' => [], 'archivedThreads' => [shellThread(['pendingRuntimeRequest' => ['id' => 'r', 'kind' => 'question', 'createdAt' => '2026-11-14T08:00:00.000Z', 'blocking' => false]])]], true],
+    'unreadable' => [['projects' => []], null],
+]);

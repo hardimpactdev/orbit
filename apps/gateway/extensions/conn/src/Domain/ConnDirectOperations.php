@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Domain;
 
 use App\Domain\Operations\DirectOperationContribution;
+use Orbit\Extensions\Conn\Actions\AdmitConnEnvironmentRestartAction;
 
 final readonly class ConnDirectOperations implements DirectOperationContribution
 {
@@ -42,6 +43,10 @@ final readonly class ConnDirectOperations implements DirectOperationContribution
         $kinds['conn.environment_renew'] = ['workflow' => 'operation-conn-environment-renew', 'projection' => ConnRenewalProjection::class,
             'workflow_inputs' => true, 'terminal_result' => ['job' => 'cleanup', 'step' => 'Report the renewal'],
             'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => ConnRenewalProjection::SessionKey]]];
+
+        // A restart for the machine name reports through its own result step; the run takes no secret.
+        $kinds[AdmitConnEnvironmentRestartAction::Kind] = ['workflow' => 'operation-conn-environment-restart', 'projection' => ConnEnvironmentRestartProjection::class,
+            'workflow_inputs' => true, 'terminal_result' => ['job' => 'restart', 'step' => 'result']];
 
         return $kinds;
     }

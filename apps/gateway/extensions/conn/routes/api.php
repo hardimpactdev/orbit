@@ -7,6 +7,7 @@ use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireEnabledExtension;
 use App\Http\Middleware\RequireNodeAccess;
 use Illuminate\Support\Facades\Route;
+use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentRestartController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnEnvironmentsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnInstancesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnNodesController;
@@ -53,6 +54,9 @@ Route::middleware([
         Route::post('instances/{instance_id}/destroy', [ConnInstancesController::class, 'destroy'])->whereNumber('instance_id')->name('conn:instance:destroy');
         Route::post('instances/{instance_id}/complete', [ConnInstancesController::class, 'complete'])->whereNumber('instance_id')->name('conn:instance:complete');
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
+        // Operator commands: restart idle container T3 servers for their machine name (/reference/conn#restart-for-the-machine-name).
+        Route::post('instances/{instance}/t3-restart', [ConnEnvironmentRestartController::class, 'instance'])->whereNumber('instance')->name('conn:environment:restart');
+        Route::post('nodes/{node}/t3-restart', [ConnEnvironmentRestartController::class, 'node'])->whereNumber('node')->name('conn:node:environments:restart');
         Route::post('environments/{environment}/renew', [ConnEnvironmentsController::class, 'renew'])->name('conn:environment:renew');
         Route::get('environments/{environment}/session', [ConnSessionsController::class, 'show'])->name('conn:environment:session');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');

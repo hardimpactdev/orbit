@@ -242,7 +242,7 @@ class CommandTest(unittest.TestCase):
 
 class FleetCliTest(unittest.TestCase):
     def test_the_default_caller_runs_the_candidate_cli_of_the_checkout_on_the_outer_vm(self):
-        found = fleet_module.Fleet({'app-prod': {'instance': 'nested-app-prod', 'node_id': 3, 'bridge': '10.0.0.3'}})
+        found = fleet_module.Fleet({'gateway': {'instance': 'nested-gateway'}, 'app-prod': {'instance': 'nested-app-prod', 'node_id': 3, 'bridge': '10.0.0.3'}})
         done = Mock(returncode=0, stdout='{}', stderr='')
         with patch.object(fleet_module.subprocess, 'run', return_value=done) as run:
             found.cli(['firewall:list'])
@@ -270,7 +270,7 @@ class NodeCliTest(unittest.TestCase):
     """The real Fleet runs the tested CLI on a Node: Nothing installs an `orbit` binary on a nested Node, so a bare `orbit` ended in exit 127."""
 
     def setUp(self):
-        self.fleet = fleet_module.Fleet({'app-prod': {'instance': 'nested-app-prod', 'node_id': 212, 'bridge': '10.0.0.3'}})
+        self.fleet = fleet_module.Fleet({'gateway': {'instance': 'nested-gateway'}, 'app-prod': {'instance': 'nested-app-prod', 'node_id': 212, 'bridge': '10.0.0.3'}})
         self.calls = []
 
     def script(self, mounted=True, profile=True, failing=None):
@@ -280,6 +280,8 @@ class NodeCliTest(unittest.TestCase):
             text = ' '.join(argv)
             if failing and failing in text:
                 return completed(1, '', 'it failed')
+            if argv[:4] == ['incus', 'config', 'device', 'get'] and argv[-1] == 'shift':
+                return completed(0, 'true\n')
             if argv[:4] == ['incus', 'config', 'device', 'get']:
                 return completed(0 if mounted else 1, str(fleet_module.CHECKOUT) + '\n' if mounted else '')
             if argv[-3:-1] == ['-q', '"nested"']:   # the check of the profile: grep in config.json
@@ -293,7 +295,7 @@ class NodeCliTest(unittest.TestCase):
     def test_runs_the_checkout_cli_as_the_managed_user_of_the_node_and_never_a_bare_orbit(self):
         with patch.object(fleet_module.subprocess, 'run', self.script()):
             result = self.fleet.cli(['firewall:list', '--node=211'], node='app-prod')
-        self.assertEqual(self.last(), ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'COLUMNS=240', '--',
+        self.assertEqual(self.last(), ['incus', 'exec', 'nested-app-prod', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env', 'COLUMNS=240', '--', 'runuser', '-u', 'orbit', '--',
                                         'php', '/home/orbit/orbit/apps/cli/orbit', 'firewall:list', '--node=211', '--json'])
         self.assertEqual(result['rc'], 0)
         self.assertNotIn('orbit', [call[call.index('--') + 1] for call in self.calls if '--' in call])

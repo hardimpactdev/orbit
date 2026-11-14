@@ -7,6 +7,21 @@
       "pages": [
         "reference/conn"
       ]
+    },
+    {
+      "tab": "CLI",
+      "group": "Operations",
+      "order": 7,
+      "pages": [
+        {
+          "group": "conn",
+          "pages": [
+            "cli/conn/index",
+            "cli/conn/environment-restart",
+            "cli/conn/node-environments-restart"
+          ]
+        }
+      ]
     }
   ]
 }

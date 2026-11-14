@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "808edbd0df3907081198898567920fbc0cc7bfc9f297a60668c4d12eef5c251b"
+source_sha256 = "155842027afc308088e79bdaf4f4a1d963b8874ede229ac6a9c21d849f4f0e6c"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -56,6 +56,7 @@ cases = [
   "test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit",
   "test_non_php_check_has_no_php_probe",
   "test_php_readiness_still_checks_the_project_runtime",
+  "test_a_failed_git_mkdir_or_systemctl_hands_its_stderr_to_the_node_script_after_the_diagnostic",
   "test_command_failure_names_command_and_exit_code_without_private_output",
   "test_broken_php_still_fails_readiness",
   "test_non_php_workspace_does_not_write_php_configuration",

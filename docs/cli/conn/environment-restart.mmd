@@ -1,0 +1,64 @@
+sequenceDiagram
+  %% Container runtime (docs/reference/development-containers.md#existing-instances, docs/reference/conn.md#restart-for-the-machine-name): restart an idle container T3 server whose label is not yet the machine name. Stock T3 reads PRETTY_HOSTNAME only at its start. The Gateway reads every label at once, then each candidate's threads right before that Instance's own `conn.environment_restart` admission. The Node form walks its containers by Instance ID.
+  %% status: draft
+  %% command: orbit conn:environment-restart <instance> · orbit conn:node-environments-restart <node>
+  %% kind: conn.environment_restart
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>API callers
+  participant GW as Gateway<br/>Conn layer
+  participant SW as Swamp<br/>workflow execution
+  participant N as Node<br/>the container
+  CLI->>GW: conn:environment-restart<br/>INSTANCE · or a Node's
+  %%> Command:
+  %%> - `orbit conn:environment-restart INSTANCE`, syntax `<instance-id> [--json]`
+  %%> - `orbit conn:node-environments-restart NODE`, syntax `<node-id> [--json]`: the same steps for each container Instance of the Node
+  Note over GW: Read every T3 label<br/>at once · 5 s · no session
+  %%> Answers without a run:
+  %%> - `skipped`: `frozen` or `stopped` (it reads the name at its next start), `no_t3` (no Conn server row), `t3_unreadable`
+  %%> - `current`: the label already equals `<instance>.<project slug>`
+  loop each candidate, by Instance ID
+    Note over GW: Read its threads<br/>shell · admin session
+    %%> Busy, answered `busy` without a run:
+    %%> - a working run (the idle sleep's rule), or any pending runtime request, blocking or not: `t3_working`
+    %%> - another Conn Operation on the server: `conn_operation`; other work on the Instance, or an Instance that is not active: the refusal code
+    %%> Limits:
+    %%> - at most four restarts a call, later ones `skipped` `next_run`; past 120 s the rest `skipped` `deadline`
+    %%> Why the read is here:
+    %%> - one busy rule in one place; a read in the run would need the admin session as a vault copy and the rule a second time outside PHP
+    GW->>SW: Start run, full intent<br/>operation-conn-environment-restart
+    %%> Result:
+    %%> - one Operation holding the Instance's lock; the intent has no session
+  end
+  GW-->>CLI: 200 · one answer each<br/>restarting has operation_id
+  SW->>N: Restart T3<br/>name · processes · restart
+  %%> What it does:
+  %%> - stops with `skipped` when the container no longer runs, or `name_not_written` when /etc/machine-info lacks the name
+  %%> - right before the restart, reads T3's service members once (the rule: docs/reference/development-containers.md#existing-instances); a terminal or command answers `busy` `processes`, an unreadable read `processes_unreadable`
+  %%> - `systemctl try-restart t3.service`; nothing else restarts, and the kernel hostname stays
+  %%> - then reads the label inside the container on T3's port until it is the name, about 84 s at most
+  %%> What a user sees:
+  %%> - a turn with no live tool process outside the provider's session is cut (Grep, Read or Edit, or an ended Bash command); T3 continues it
+  %%> - an open T3 terminal is not ended unless it opens in the moment (about a second) between that read and the restart; Orbit Processes do not restart
+  %%> - a connected client shows Reconnecting… and reconnects; an unsent draft stays in the browser
+  alt T3 answers with its name
+    %% path: restarted
+    SW-->>GW: Run succeeded<br/>restarted · window_ms
+  else T3 runs a terminal or a turn's command
+    %% path: processes
+    SW-->>GW: Run succeeded<br/>busy · processes
+    %%> Result:
+    %%> - the counts of terminal shells and commands; nothing restarted, and a later run takes it
+  else T3 does not come back
+    %% path: not-back
+    SW--xGW: Run failed<br/>conn.t3_unready
+    %%> Result:
+    %%> - `failed`, or `conn.t3_label_mismatch` when T3 answers with another label; the Operation does not retry
+  end
+  loop until terminal, per restart
+    CLI->>GW: operation:show TASK
+    GW-->>CLI: Status and result
+  end

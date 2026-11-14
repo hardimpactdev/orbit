@@ -42,6 +42,8 @@ class CallerPreparationTest(unittest.TestCase):
             nonlocal mounted, profiled
             if argv[0] == 'curl':
                 return done(document={'data': []})
+            if argv[:4] == ['incus', 'config', 'device', 'get'] and argv[-1] == 'shift':
+                return done(stdout='true')
             if argv[:4] == ['incus', 'config', 'device', 'get']:
                 if timeout:
                     raise subprocess.TimeoutExpired(argv, 60)
