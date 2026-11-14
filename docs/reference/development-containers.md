@@ -184,7 +184,7 @@ Orbit's own Git commands in the workspace start no automatic maintenance (`maint
 
 Each deployment's fetch adds one pack, so a deployment's checkout runs its own repack in the foreground, after the checkout and before the pass: `git repack -d --geometric=2`. It merges the small packs into the next larger one until each pack holds at least twice the objects of the packs after it. A deployment's one new pack merges in milliseconds, and the pack count stays near log2 of the history's size. It keeps every object and the group's mode. It has 30 seconds.
 
-A repack that fails or runs out of time does not fail the deployment: the checkout's output names it in one `orbit-workspace-repack=` line, and the next deployment tries again. A repack that ran out of time leaves its temporary files (`tmp_pack_*`, `tmp_idx_*`); the next checkout removes them once they are an hour old.
+A repack that fails or runs out of time does not fail the deployment: the checkout's output names it in one `orbit-workspace-repack=` line, and the next deployment tries again. A repack that ran out of time leaves its temporary files (`tmp_pack_*`, `tmp_idx_*`, `tmp_rev_*`); the next checkout removes them once they are an hour old. A workspace whose repack never fits in 30 seconds pays those seconds at each deployment and prints the line each time.
 
 There is one exception to "a URL reaches only `orbit`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
 
