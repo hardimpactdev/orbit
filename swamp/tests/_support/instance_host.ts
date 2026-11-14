@@ -290,6 +290,8 @@ export const browserTrust = {
     gid: 2750,
     mode: "0600",
     directory_mode: "0700",
+    library: "libp11-kit0",
+    version: "0.26.2-2",
 };
 
 type Rule = {

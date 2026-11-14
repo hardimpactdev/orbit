@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\TaskVms\TaskVmNestedFleet;
+use App\Infrastructure\TaskVms\RecipeImageBuilds;
 
 /**
  * The container image of a development Instance (docs/reference/development-containers.md#inside-a-container): the stock Ubuntu image
@@ -160,17 +161,23 @@ final readonly class InstanceImage
      * from the user's NSS store, `~/.pki/nssdb`, never from `/etc/ssl/certs`. So `agent`'s store names the runtime folder's p11-kit
      * trust module, which reads the system bundle that already holds the root; NSS makes its own databases at first use. `entry` is
      * the module's block in `pkcs11.txt`. The image, a clone and the converge write a missing store with only that block, and append
-     * it to a store that lacks it; nothing else in the file changes. A container without `home` gets nothing.
+     * it to a store that lacks it; nothing else in the file changes. The module needs the container's `library` at exactly `version`,
+     * the recipe part's version, so a new pin also names a new image, which the build checks again.
      *
-     * @return array{home: string, directories: list<string>, path: string, entry: string, uid: int, gid: int, mode: string, directory_mode: string}
+     * @return array{home: string, directories: list<string>, path: string, entry: string, uid: int, gid: int, mode: string, directory_mode: string,
+     *     library: string, version: string}
      */
     public static function browserTrust(): array
     {
         $home = '/home/agent';
+        $module = app(RecipeImageBuilds::class)->currentRecipe()->instances?->trustModule()
+            ?? throw new \LogicException('The recipe holds no shared Instance folders.');
+        $library = $module->trustModule['library'] ?? throw new \LogicException('The trust module part names no library.');
 
         return ['home' => $home, 'directories' => ["{$home}/.pki", "{$home}/.pki/nssdb"], 'path' => "{$home}/.pki/nssdb/pkcs11.txt",
             'entry' => 'library='.InstanceHostIntent::RuntimeFolder.'/current/'.InstanceHostIntent::TrustModule."\nname=Orbit system trust\n\n",
-            'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600', 'directory_mode' => '0700'];
+            'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600', 'directory_mode' => '0700',
+            'library' => $library, 'version' => $module->version];
     }
 
     private static function fonts(string $folder): string

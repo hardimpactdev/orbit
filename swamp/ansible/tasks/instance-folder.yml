@@ -59,7 +59,7 @@
           - "-"
           - "{{ folder_stage }}"
           - >-
-            {{ folder.parts | selectattr('archive', 'equalto', 'deb') | map('dict2items') | map('selectattr', 'key', 'in', ['name', 'trust_module'])
+            {{ folder.parts | selectattr('archive', 'equalto', 'deb') | map('dict2items') | map('selectattr', 'key', 'in', ['name', 'version', 'trust_module'])
                | map('items2dict') | list | to_json }}
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_folder_debs.py') }}"
       register: folder_debs

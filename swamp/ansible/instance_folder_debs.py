@@ -4,7 +4,9 @@ docs/reference/development-containers.md#browser-libraries-and-fonts. Each entry
 valid when the staging folder is renamed to its version. Two parts that give the same name fail: one would hide the other.
 
 A part with a `trust_module` gives the folder only that one module, linked at its own path outside `lib`, and nothing in `lib` or
-`fonts`: the dynamic linker never sees its name (docs/reference/development-containers.md#trust).
+`fonts`: the dynamic linker never sees its name (docs/reference/development-containers.md#trust). Beside it, `requires` names the
+library package and the exact version the module needs, as `<package> <version>`, so an agent in a container can compare it with
+its own.
 """
 
 import json
@@ -29,7 +31,7 @@ def gather(stage, parts):
                 print(json.dumps({"error_code": "instance.host_unavailable", "missing": f"{name}/{module['source']}"}))
                 return 1
             target = Path(module["path"])
-            modules[target] = Path(*[".."] * (len(target.parts) - 1), name, module["source"])
+            modules[target] = (Path(*[".."] * (len(target.parts) - 1), name, module["source"]), f"{module['library']} {part['version']}\n")
             continue
         libraries = stage / name / LIBRARIES
         if libraries.is_dir():
@@ -50,9 +52,10 @@ def gather(stage, parts):
         (stage / kind).mkdir(exist_ok=True)
         for name, (source,) in names.items():
             (stage / kind / name).symlink_to(source)
-    for target, source in modules.items():
+    for target, (source, requires) in modules.items():
         (stage / target).parent.mkdir(parents=True, exist_ok=True)
         (stage / target).symlink_to(source)
+        (stage / target).with_name("requires").write_text(requires)
     print(json.dumps({"lib": len(links["lib"]), "fonts": len(links["fonts"]), "modules": sorted(str(target) for target in modules)}))
     return 0
 

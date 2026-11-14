@@ -4,6 +4,7 @@
  */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { browserTrust, fixture, hasAnsible } from "./_support/instance_host.ts";
+import { stockImageDaemon } from "./_support/stock_image.ts";
 
 const sha256 = async (path: string) =>
     Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", Deno.readFileSync(path))))
@@ -70,7 +71,8 @@ Deno.test({
             assertEquals(Deno.readTextFileSync(`${version}/lib/nss/libsoftfake.so`), "module");
             assertEquals(Deno.readTextFileSync(`${version}/fonts/FakeSans.ttf`), "font");
             // The trust module's package gives only its module, outside `lib`: no `pkcs11` folder and no `p11-kit-proxy.so` there.
-            assertEquals([...Deno.readDirSync(`${version}/pkcs11`)].map((e) => e.name), ["p11-kit-trust.so"]);
+            assertEquals([...Deno.readDirSync(`${version}/pkcs11`)].map((e) => e.name).sort(), ["p11-kit-trust.so", "requires"]);
+            assertEquals(Deno.readTextFileSync(`${version}/pkcs11/requires`), "libp11-kit0 0.26.2-2\n");
             assertEquals(Deno.readLinkSync(`${version}/pkcs11/p11-kit-trust.so`), "../browser-p11-kit-modules/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so");
             assertEquals(Deno.readTextFileSync(`${f.folder}/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so`), "trust module");
 
@@ -134,7 +136,11 @@ function containers(rows: { name: string; status: string }[], extra: Record<stri
     new Deno.Command("openssl", { args: ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=Orbit Fixture Root",
         "-keyout", `${folder}/orbit-root-ca.key`, "-out", `${folder}/orbit-root-ca.crt`] }).outputSync();
     Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({ instances: rows.map((row) => ({ ...row, project: "orbit-instances" })), ...extra }));
-    return { folder, state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)), cleanup: () => Deno.removeSync(folder, { recursive: true }) };
+    // The local API's socket, which answers a path's type.
+    const stop = stockImageDaemon(folder);
+    return { folder, state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
+        calls: () => Deno.readTextFileSync(`${folder}/calls`).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[]),
+        cleanup: () => { stop(); Deno.removeSync(folder, { recursive: true }); } };
 }
 
 /** The container step's own script against the fixture's Incus, without a whole converge; `root` is the Node's CA file. */
@@ -143,7 +149,7 @@ function pass(folder: string, root = `${folder}/orbit-root-ca.crt`) {
         args: ["-I", new URL("../ansible/instance_container_files.py", import.meta.url).pathname, JSON.stringify({
             projects: ["orbit-instances", "orbit-instances-nested"], files: shared.map(({ path, content, mode }) => ({ path, content, mode })),
             trust: { source: root, path: "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt", directory: "/etc/ssl/certs" },
-            browser_trust: { ...browserTrust, library: "libp11-kit0", version: "0.26.2-2" },
+            browser_trust: browserTrust, socket: `${folder}/unix.socket`,
             libraries: `${folder}/opt/orbit-runtime/current/lib`, state: `${folder}/container-libraries`,
         })],
         env: { HOST_FIXTURE: folder, PATH: `${folder}/bin:${Deno.env.get("PATH")}` },
@@ -354,47 +360,55 @@ Deno.test({
 });
 
 
+const owned = { mode: "0700", uid: "2750", gid: "2750" };
+const listed = (summary: { browser_trust: { container: string; reason: string }[] }) =>
+    Object.fromEntries(summary.browser_trust.map((row) => [row.container.split("/")[1], row.reason]));
+
 Deno.test({
     name: "agent's NSS store names the trust module in running, stopped and frozen containers: a new store holds only the entry, an existing one gets it appended once",
     ignore: !hasAnsible,
     fn() {
         // The stopped container's user had opened the store already; the frozen one holds the entry from an earlier converge.
         const own = "library=\nname=NSS Internal PKCS #11 Module\nparameters=configdir='sql:/home/agent/.pki/nssdb'\nNSS=Flags=internal\n";
-        const store = { mode: "0700", uid: "2750", gid: "2750" };
         const f = containers([
-            { name: "app-default", status: "Running" }, { name: "app-asleep", status: "Stopped" }, { name: "app-frozen", status: "Frozen" },
+            { name: "app-default", status: "Running" }, { name: "app-open", status: "Running" }, { name: "app-asleep", status: "Stopped" },
+            { name: "app-frozen", status: "Frozen" },
         ], {
-            dirs: { ...homes(["app-default", "app-asleep", "app-frozen"]), "app-asleep/home/agent/.pki": store, "app-asleep/home/agent/.pki/nssdb": store,
-                "app-frozen/home/agent/.pki": store, "app-frozen/home/agent/.pki/nssdb": store },
+            dirs: { ...homes(["app-default", "app-open", "app-asleep", "app-frozen"]),
+                "app-open/home/agent/.pki": owned, "app-open/home/agent/.pki/nssdb": owned,
+                "app-asleep/home/agent/.pki": owned, "app-asleep/home/agent/.pki/nssdb": owned,
+                "app-frozen/home/agent/.pki": owned, "app-frozen/home/agent/.pki/nssdb": owned },
             files: {
+                [`app-open${browserTrust.path}`]: { content: own, mode: "0600", uid: "2750", gid: "2750" },
                 [`app-asleep${browserTrust.path}`]: { content: own, mode: "0600", uid: "2750", gid: "2750" },
                 [`app-frozen${browserTrust.path}`]: { content: own + "\n" + browserTrust.entry, mode: "0600", uid: "2750", gid: "2750" },
             },
         });
-        const folder = f.folder;
         try {
             let run = pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
+            assertEquals(run.summary.browser_trust, []);
             const state = f.state();
-            // A missing store: both folders, owned by agent and closed to others, and a file with only the entry.
-            for (const directory of browserTrust.directories) {
-                assertEquals(state.dirs[`app-default${directory}`], { mode: "0700", uid: "2750", gid: "2750" });
-            }
+            // A missing store in a running container: `agent` makes both folders and the file itself, closed to others by its umask.
+            for (const directory of browserTrust.directories) assertEquals(state.dirs[`app-default${directory}`], owned);
             assertEquals(state.files[`app-default${browserTrust.path}`], { content: browserTrust.entry, mode: "0600", uid: "2750", gid: "2750" });
-            // A store without the entry gets it after a blank line; its own text stays as it was.
+            // A store without the entry gets it after a blank line, as agent in a running container and through the file API in a
+            // stopped one; its own text stays as it was.
+            assertEquals(state.files[`app-open${browserTrust.path}`].content, own + "\n" + browserTrust.entry);
             assertEquals(state.files[`app-asleep${browserTrust.path}`].content, own + "\n" + browserTrust.entry);
-            // A store that holds the entry is not written, and the frozen container gets no exec.
             assertEquals(state.files[`app-frozen${browserTrust.path}`].content, own + "\n" + browserTrust.entry);
-            assert(!run.summary.written.some((path: string) => path.startsWith("orbit-instances/app-frozen/home/")), JSON.stringify(run.summary.written));
+            const calls = f.calls();
+            // Root never writes into a running container's store: only `agent` does, by its own exec.
+            const agent = calls.filter((call) => call[0] === "exec" && call.includes("--user"));
+            assertEquals(agent.map((call) => [call[call.indexOf("exec") + 3], call[call.indexOf("--user") + 1], call[call.indexOf("--group") + 1]]).sort(),
+                [["app-default", "2750", "2750"], ["app-open", "2750", "2750"]]);
+            assert(!calls.some((call) => call[0] === "file" && call.some((arg) => /^app-(default|open)\/home\//.test(arg))), JSON.stringify(calls));
+            assert(!calls.some((call) => call[0] === "exec" && call.includes("app-frozen")));
             assertEquals(run.summary.written.filter((path: string) => path.includes("/home/agent/")).sort(), [
                 "orbit-instances/app-asleep/home/agent/.pki/nssdb/pkcs11.txt",
-                "orbit-instances/app-default/home/agent/.pki",
-                "orbit-instances/app-default/home/agent/.pki/nssdb",
                 "orbit-instances/app-default/home/agent/.pki/nssdb/pkcs11.txt",
+                "orbit-instances/app-open/home/agent/.pki/nssdb/pkcs11.txt",
             ]);
-            const calls = Deno.readTextFileSync(`${folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
-            assert(!calls.some((call) => call[0] === "exec" && call.includes("app-frozen")));
-            assertEquals(run.summary.no_agent_home, []);
             // A second pass writes nothing in any store.
             run = pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
@@ -406,17 +420,69 @@ Deno.test({
 });
 
 Deno.test({
-    name: "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest",
+    name: "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed, running or stopped; every other step still runs",
     ignore: !hasAnsible,
     fn() {
-        const f = containers([{ name: "app-default", status: "Running" }, { name: "app-bare", status: "Stopped" }], { dirs: homes(["app-default"]) });
+        const planted = {
+            "run-link": { status: "Running", dirs: [".pki", ".pki/nssdb"], links: { ".pki/nssdb/pkcs11.txt": "/etc/passwd" } },
+            "stop-link": { status: "Stopped", dirs: [".pki", ".pki/nssdb"], links: { ".pki/nssdb/pkcs11.txt": "/etc/passwd" } },
+            "run-file": { status: "Running", dirs: [".pki"], files: { ".pki/nssdb": "planted" } },
+            "stop-file": { status: "Stopped", dirs: [".pki"], files: { ".pki/nssdb": "planted" } },
+            "run-folder": { status: "Running", dirs: [".pki", ".pki/nssdb", ".pki/nssdb/pkcs11.txt"] },
+            "frozen-folder": { status: "Frozen", dirs: [".pki", ".pki/nssdb", ".pki/nssdb/pkcs11.txt"] },
+            "stop-dirlink": { status: "Stopped", links: { ".pki": "/etc" } },
+        } as Record<string, { status: string; dirs?: string[]; files?: Record<string, string>; links?: Record<string, string> }>;
+        const dirs: Record<string, unknown> = homes([...Object.keys(planted), "app-default"]);
+        const files: Record<string, unknown> = {};
+        const links: Record<string, string> = {};
+        for (const [name, row] of Object.entries(planted)) {
+            for (const dir of row.dirs ?? []) dirs[`${name}/home/agent/${dir}`] = owned;
+            for (const [path, content] of Object.entries(row.files ?? {})) files[`${name}/home/agent/${path}`] = { content, mode: "0644", uid: "2750", gid: "2750" };
+            for (const [path, target] of Object.entries(row.links ?? {})) links[`${name}/home/agent/${path}`] = target;
+        }
+        const f = containers([...Object.entries(planted).map(([name, row]) => ({ name, status: row.status })), { name: "app-default", status: "Running" }],
+            { dirs, files, links });
         try {
             const run = pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
-            assertEquals(run.summary.no_agent_home, ["orbit-instances/app-bare"]);
+            assertEquals(listed(run.summary), {
+                "frozen-folder": "path refused: /home/agent/.pki/nssdb/pkcs11.txt is directory",
+                "run-file": "path refused: /home/agent/.pki/nssdb is file",
+                "run-folder": "path refused: /home/agent/.pki/nssdb/pkcs11.txt is directory",
+                "run-link": "path refused: /home/agent/.pki/nssdb/pkcs11.txt is symlink",
+                "stop-dirlink": "path refused: /home/agent/.pki is symlink",
+                "stop-file": "path refused: /home/agent/.pki/nssdb is file",
+                "stop-link": "path refused: /home/agent/.pki/nssdb/pkcs11.txt is symlink",
+            });
+            const state = f.state();
+            // Nothing was written through or over a planted path; the link still points where it did and /etc/passwd is untouched.
+            assertEquals(state.links["run-link/home/agent/.pki/nssdb/pkcs11.txt"], "/etc/passwd");
+            assertEquals(state.links["stop-link/home/agent/.pki/nssdb/pkcs11.txt"], "/etc/passwd");
+            assertEquals(state.files["stop-file/home/agent/.pki/nssdb"].content, "planted");
+            assert(!Object.keys({ ...state.files, ...state.dirs }).some((path) => path.startsWith("stop-dirlink/etc/nssdb") || path.endsWith("/etc/passwd")));
+            assertEquals(run.summary.failed, []);
+            // Each refused container still gets its shared files and root CA, and a running one its bundle; the healthy one its store.
+            for (const name of Object.keys(planted)) assert(run.summary.written.includes(`orbit-instances/${name}/etc/gitconfig`), name);
+            assertEquals(run.summary.ca_bundle, ["orbit-instances/app-default", "orbit-instances/run-file", "orbit-instances/run-folder", "orbit-instances/run-link"]);
+            assertEquals(state.files[`app-default${browserTrust.path}`].content, browserTrust.entry);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest",
+    ignore: !hasAnsible,
+    fn() {
+        const f = containers([{ name: "app-default", status: "Running" }, { name: "app-bare", status: "Stopped" }, { name: "app-gone", status: "Running" }],
+            { dirs: homes(["app-default"]) });
+        try {
+            const run = pass(f.folder);
+            assert(run.ok, JSON.stringify(run.summary));
+            assertEquals(listed(run.summary), { "app-bare": "no agent home", "app-gone": "no agent home" });
             assertEquals(run.summary.skipped, []);
-            assert(!Object.keys(f.state().files).some((path) => path.startsWith("app-bare/home/")), JSON.stringify(Object.keys(f.state().files)));
-            assert(!Object.keys(f.state().dirs).some((path) => path.startsWith("app-bare/")));
+            assert(!Object.keys(f.state().files).some((path) => /^app-(bare|gone)\/home\//.test(path)));
             // It still gets the shared files and the root CA, and the Node writes its digest: the next converge drops no cache again.
             assert(run.summary.written.includes("orbit-instances/app-bare/etc/gitconfig"));
             assert(f.state().files[`app-default${browserTrust.path}`]);
@@ -428,27 +494,29 @@ Deno.test({
 });
 
 Deno.test({
-    name: "a container whose libp11-kit0 is not the trust module's version gets no NSS store and fails the step, naming both versions",
+    name: "a container whose libp11-kit0 is not the trust module's version gets no NSS store and is listed with both versions; the step passes",
     ignore: !hasAnsible,
     fn() {
         const f = containers([
             { name: "app-default", status: "Running" }, { name: "app-old", status: "Frozen" }, { name: "app-none", status: "Stopped" },
-        ], { dirs: homes(["app-default", "app-old", "app-none"]), packages: { "app-old": { "libp11-kit0": "0.25.5-3" }, "app-none": { "libp11-kit0": null } } });
+            { name: "app-later", status: "Running" },
+        ], { dirs: homes(["app-default", "app-old", "app-none", "app-later"]),
+            packages: { "app-old": { "libp11-kit0": "0.25.5-3" }, "app-none": { "libp11-kit0": null }, "app-later": { "libp11-kit0": "0.26.3-1" } } });
         try {
             const run = pass(f.folder);
-            assert(!run.ok);
-            assertEquals(run.summary.error_code, "instance.browser_trust_mismatch");
-            assertEquals(run.summary.browser_trust_mismatch, [
-                "orbit-instances/app-none: libp11-kit0 is not installed; the trust module needs exactly 0.26.2-2",
-                "orbit-instances/app-old: libp11-kit0 is 0.25.5-3; the trust module needs exactly 0.26.2-2",
-            ]);
-            assertStringIncludes(run.summary.message, "0.25.5-3");
-            // Their browsers keep their built-in roots: no store at all. The other container still gets its store and every file.
-            for (const name of ["app-old", "app-none"]) {
-                assert(!Object.keys(f.state().files).some((path) => path.startsWith(`${name}/home/`)), name);
+            assert(run.ok, JSON.stringify(run.summary));
+            assertEquals(listed(run.summary), {
+                "app-later": "version mismatch: 0.26.3-1 != 0.26.2-2",
+                "app-none": "version mismatch: not installed != 0.26.2-2",
+                "app-old": "version mismatch: 0.25.5-3 != 0.26.2-2",
+            });
+            // Their browsers keep their built-in roots: no store at all. Every container still gets every other file.
+            for (const name of ["app-old", "app-none", "app-later"]) {
                 assert(!Object.keys(f.state().dirs).some((path) => path.startsWith(`${name}/home/agent/.pki`)), name);
                 assert(run.summary.written.includes(`orbit-instances/${name}/etc/gitconfig`), name);
             }
+            assert(!f.calls().some((call) => call[0] === "exec" && call.includes("--user") && call.includes("app-later")));
+            assertEquals(run.summary.ca_bundle, ["orbit-instances/app-default", "orbit-instances/app-later"]);
             assertEquals(f.state().files[`app-default${browserTrust.path}`].content, browserTrust.entry);
         } finally {
             f.cleanup();
@@ -457,7 +525,7 @@ Deno.test({
 });
 
 /** The folder build's own script on a staging folder of the given Debian package parts, unpacked as the build unpacks them. */
-async function stage(root: string, version: string, parts: { name: string; trust_module?: Record<string, string> }[], debs: Record<string, string>) {
+async function stage(root: string, version: string, parts: { name: string; version?: string; trust_module?: Record<string, string> }[], debs: Record<string, string>) {
     const dir = `${root}/${version}`;
     for (const part of parts) {
         Deno.mkdirSync(`${dir}/${part.name}`, { recursive: true });
@@ -484,10 +552,12 @@ Deno.test({
             const debs = { [nss.name]: `${f.folder}/artifacts/libfake3_1.0_amd64.deb`, [trust.name]: `${f.folder}/artifacts/p11-kit-modules_1.0_amd64.deb` };
             const module = { source: "usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so", path: "pkcs11/p11-kit-trust.so", library: "libp11-kit0" };
             const before = await stage(f.folder, "old", [{ name: nss.name }], debs);
-            const after = await stage(f.folder, "new", [{ name: nss.name }, { name: trust.name, trust_module: module }], debs);
+            const after = await stage(f.folder, "new", [{ name: nss.name }, { name: trust.name, version: "1.0", trust_module: module }], debs);
             assert(same(before, after), "the module's part and its link restart nothing");
             assertEquals([...Deno.readDirSync(`${after}/lib`)].map((e) => e.name).sort(), [...Deno.readDirSync(`${before}/lib`)].map((e) => e.name).sort());
-            assertEquals([...Deno.readDirSync(`${after}/pkcs11`)].map((e) => e.name), ["p11-kit-trust.so"]);
+            assertEquals([...Deno.readDirSync(`${after}/pkcs11`)].map((e) => e.name).sort(), ["p11-kit-trust.so", "requires"]);
+            // What the module needs, for an agent in a container to compare with its own library.
+            assertEquals(Deno.readTextFileSync(`${after}/pkcs11/requires`), "libp11-kit0 1.0\n");
             assertEquals(Deno.readTextFileSync(`${after}/pkcs11/p11-kit-trust.so`), "trust module");
             // A package that lacks its module fails the build by name.
             const broken = new Deno.Command("python3", { args: ["-I", new URL("../ansible/instance_folder_debs.py", import.meta.url).pathname, before,

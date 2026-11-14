@@ -114,6 +114,22 @@ it('projects each admitted Tool independently without failing the parent or chan
     expect($again->result)->toBe($result);
 });
 
+it('keeps each Instance container without Chromium\'s trust store and its reason in a successful Operation result', function (): void {
+    // docs/reference/development-containers.md#trust: one container's own state never fails the converge; the result names it.
+    $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
+    $listed = [['container' => 'orbit-instances/instance-7', 'reason' => 'version mismatch: 0.25.5-3 != 0.26.2-2'],
+        ['container' => 'orbit-instances/instance-8', 'reason' => 'path refused: /home/agent/.pki/nssdb/pkcs11.txt is symlink'],
+        ['container' => 'orbit-instances-nested/instance-9', 'reason' => 'no agent home']];
+    $result = [...converge_receipt(null, $observations), 'browser_trust' => $listed];
+
+    $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => $result]);
+    expect($operation->status)->toBe(OperationStatus::Succeeded)->and($operation->result['browser_trust'])->toBe($listed);
+    expect(fn () => NodeConvergeResult::parse([...$result, 'browser_trust' => [['container' => 'instance-7', 'reason' => 'no agent home']]]))
+        ->toThrow(ResourceOperationException::class, 'terminal result is invalid')
+        ->and(fn () => NodeConvergeResult::parse([...$result, 'browser_trust' => [['container' => 'orbit-instances/instance-7', 'reason' => "no\nhome"]]]))
+        ->toThrow(ResourceOperationException::class, 'terminal result is invalid');
+});
+
 it('does not project unadmitted or incomplete Tool receipts', function (string $case): void {
     $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
     if ($case === 'unadmitted') {

@@ -14,7 +14,7 @@ final readonly class FolderPin
     /**
      * @param  array<string, string>  $bin  Program name => path inside the unpacked artifact.
      * @param  array{path: string, library: string}|null  $trustModule  The module's path inside the unpacked package, and the
-     *     container's package that the module needs at exactly this part's version.
+     *                                                                  container's package that the module needs at exactly this part's version.
      */
     public function __construct(
         public string $version,

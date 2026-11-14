@@ -487,7 +487,8 @@ The module:
 - The runtime folder holds it once per Node, at `/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so`.
 - The recipe pins its Debian package, `p11-kit-modules`, as the part `browser-p11-kit-modules`.
 - The folder takes only the module from that package. It sits outside `lib`, so the dynamic linker never caches its name.
-- A new folder version only adds the module, so nothing restarts.
+- Beside it, `/opt/orbit-runtime/current/pkcs11/requires` names the library the module needs, such as `libp11-kit0 0.26.2-2`.
+- A new folder version only adds these files, so nothing restarts.
 
 The store:
 
@@ -496,21 +497,34 @@ The store:
 - NSS makes `cert9.db` and `key4.db` itself at first use.
 - Orbit never replaces or rewrites an existing store. A store without the entry gets the entry appended after a blank line. A store with the entry stays as it is.
 
-A container without `/home/agent` gets nothing. The converge names it in `no_agent_home` in its summary and passes. The Node still keeps its library digest. A clone without the folder gets nothing too.
+`agent` owns these paths, so root never writes through them while `agent` could change them.
 
-The version check:
+In a running container, the converge runs a short script as `agent`, with uid and gid 2750 and umask 077. `agent` writes its own store, so a link it planted gains it nothing.
 
-- The module needs the container's `libp11-kit0` at exactly the part's version, `0.26.2-2`. The recipe holds that version once.
-- The image build reads the version with `dpkg-query`. On a mismatch it fails before it writes the store, and the image is not published.
-- The converge reads `/var/lib/dpkg/status` through the file API, so a frozen container gets the check too.
-- A container with another version, or without the package, gets no store. Its browser keeps its built-in roots.
-- The converge still writes every other file and every other container. Then it fails with `instance.browser_trust_mismatch`. The message names the container, its version and the version the module needs.
+In a stopped or frozen container, nothing runs, so no path changes during the step. The converge reads each path's type from the `X-Incus-Type` header of the local Incus API. The home and both folders must be directories, and `pkcs11.txt` a file or missing. Only then does it write through the file API. A link anywhere is refused.
 
-| Where | What Orbit does |
+A clone's copy has not started yet. The clone script makes the same type check. A refusal fails the create with `instance.clone_browser_trust_refused`.
+
+The module needs the container's `libp11-kit0` at exactly the part's version, `0.26.2-2`. The recipe holds that version once. The image definition carries it too, so a new pin builds and checks a new image.
+
+| Where | A mismatch |
 | --- | --- |
-| Image | The build checks the library, then makes the store with only the entry |
-| Clone | `boot_files` names the store. The clone script makes it, or appends the entry, before the copy's first start |
-| Running, stopped or frozen container | The converge checks the library, then makes the store or appends the entry, through the file API. Nothing restarts |
+| Image build | The build reads the version with `dpkg-query` and fails with `instance.browser_trust_mismatch`. It writes no store and publishes no image |
+| Clone | The clone script reads the copy's `/var/lib/dpkg/status` and fails the create with `instance.clone_browser_trust_mismatch` |
+| Converge | The converge reads `/var/lib/dpkg/status` through the file API, so a frozen container gets the check too. That container gets no store |
+
+The converge never fails because of one container. A container without `/home/agent`, with a refused path, or with another library version gets no store. The rest of the converge goes on for it and for every other container. The `node.converge` Operation result lists each such container in `browser_trust`, with its reason:
+
+- `no agent home`
+- `path refused: <path> is <type>`
+- `version mismatch: <installed> != <expected>`
+- `store failed: <cause>`, when a call to Incus failed
+
+`orbit operation:show <id> --json` shows the list. In such a container, Chromium behaves as before this store: it refuses the Orbit certificate, and nothing else changes. An agent in the container can see why with one command:
+
+```sh
+printf 'installed: %s\nneeded: %s\n' "$(dpkg-query -W -f='${Version}' libp11-kit0 2>/dev/null || echo none)" "$(cat /opt/orbit-runtime/current/pkcs11/requires)"; grep -qx 'library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so' ~/.pki/nssdb/pkcs11.txt 2>/dev/null && echo 'store: names the module' || echo 'store: lacks the module'
+```
 
 A new Orbit root needs nothing here. It flows into the bundle as above, and the module reads the bundle, so no store needs a new seed.
 
@@ -2013,7 +2027,9 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
 | `instance.nested_fleet_image_unavailable` | 502 | The create of a nested-fleet default while the Node records a failed build of the [nested-fleet image](#the-nested-fleet-image). Orbit makes no container; converge the Node again |
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
-| `instance.browser_trust_mismatch` | 409 | A container or the image holds another `libp11-kit0` than the trust module needs. That container gets no NSS store, and the image is not published. The message names both versions ([Trust](#trust)) |
+| `instance.browser_trust_mismatch` | 409 | The image build found another `libp11-kit0` than the trust module needs. The image is not published ([Trust](#trust)) |
+| `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
+| `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | The direct container Process journal read failed |

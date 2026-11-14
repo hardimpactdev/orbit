@@ -1,8 +1,17 @@
 /** Stateful Incus boundary for the real host-preparation Ansible tasks. No live host commands. */
 const folder = Deno.env.get("HOST_FIXTURE")!;
 if (Deno.args[0] === "--daemon") {
-  Deno.serve({ path: `${folder}/unix.socket`, onListen: () => console.log(`ready ${Deno.pid}`) }, () => {
+  Deno.serve({ path: `${folder}/unix.socket`, onListen: () => console.log(`ready ${Deno.pid}`) }, (request) => {
     const current = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
+    const url = new URL(request.url);
+    // The files API names a path's type in `X-Incus-Type` and never follows a link; a missing path is a 404.
+    const files = url.pathname.match(/^\/1\.0\/instances\/([^/]+)\/files$/);
+    if (files) {
+      const key = `${decodeURIComponent(files[1])}${url.searchParams.get("path")}`;
+      const kind = current.links?.[key] !== undefined ? "symlink" : current.files?.[key] !== undefined ? "file"
+        : current.dirs?.[key] !== undefined ? "directory" : null;
+      return kind === null ? new Response("not found", { status: 404 }) : new Response("", { headers: { "X-Incus-Type": kind } });
+    }
     return Response.json({ metadata: { environment: { server_pid: current.socket_server_pid ?? Deno.pid } } });
   });
   await new Promise(() => {});
@@ -300,6 +309,38 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   Deno.writeTextFileSync(file, JSON.stringify(state));
   if (state.publish_alias_failure) fail("Injected publication alias assignment failure");
   state.images.at(-1).aliases.push({name: alias});
+} else if (family === "exec" && args.includes("--user")) {
+  // A command as a container user runs for real against a copy of that container's /home/agent from the state, which it then
+  // replaces: what the user's own script makes, with its own modes, is what the container holds.
+  if (!instance(action)) fail("Instance not found");
+  const prefix = `${action}/home/agent`;
+  const root = Deno.makeTempDirSync();
+  const local = (key: string) => `${root}/home/agent${key.slice(prefix.length)}`;
+  const under = (key: string) => key === prefix || key.startsWith(`${prefix}/`);
+  for (const key of Object.keys(state.dirs ?? {}).filter(under).sort()) Deno.mkdirSync(local(key), { recursive: true });
+  for (const [key, row] of Object.entries(state.files ?? {}).filter(([key]) => under(key)) as [string, { content: string }][]) {
+    Deno.writeTextFileSync(local(key), row.content);
+  }
+  for (const [key, target] of Object.entries(state.links ?? {}).filter(([key]) => under(key)) as [string, string][]) Deno.symlinkSync(target, local(key));
+  const command = args.slice(args.indexOf("--") + 1).map((arg) => arg.startsWith("/home/agent") ? `${root}${arg}` : arg);
+  const ran = new Deno.Command(command[0], { args: command.slice(1), cwd: root }).outputSync();
+  for (const kind of ["dirs", "files", "links"]) {
+    state[kind] = Object.fromEntries(Object.entries(state[kind] ?? {}).filter(([key]) => !under(key)));
+  }
+  const walk = (path: string, key: string) => {
+    const info = Deno.lstatSync(path);
+    const mode = "0" + (info.mode! & 0o777).toString(8);
+    if (info.isSymlink) state.links[key] = Deno.readLinkSync(path);
+    else if (info.isDirectory) {
+      state.dirs[key] = { mode, uid: "2750", gid: "2750" };
+      for (const entry of Deno.readDirSync(path)) walk(`${path}/${entry.name}`, `${key}/${entry.name}`);
+    } else state.files[key] = { content: Deno.readTextFileSync(path), mode, uid: "2750", gid: "2750" };
+  };
+  try { Deno.lstatSync(`${root}/home/agent`); walk(`${root}/home/agent`, prefix); } catch { /* no home */ }
+  Deno.removeSync(root, { recursive: true });
+  Deno.writeTextFileSync(file, JSON.stringify(state));
+  Deno.stdout.writeSync(new TextEncoder().encode(new TextDecoder().decode(ran.stdout).replaceAll(root, "")));
+  Deno.exit(ran.code);
 } else if (family === "exec") {
   if (!instance(action)) fail("Instance not found");
   const command = args.slice(args.indexOf("--") + 1);

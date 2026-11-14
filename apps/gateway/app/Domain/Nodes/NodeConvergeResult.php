@@ -20,7 +20,7 @@ final class NodeConvergeResult
         if (! is_array($value)) {
             self::invalid();
         }
-        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'error_code', 'cleanup_complete', 'failure']));
+        $raw = array_intersect_key($value, array_flip(['outcome', 'phases', 'failed_phase', 'changed', 'elapsed_seconds', 'tools', 'browser_trust', 'error_code', 'cleanup_complete', 'failure']));
         $rules = [
             'failure' => ['sometimes', 'required', 'array:task,host,reason,rc'],
             'failure.task' => ['present_with:failure', 'nullable', 'string', 'min:1', 'max:120', 'regex:/\A[\x20-\x7e]+\z/D'],
@@ -43,6 +43,12 @@ final class NodeConvergeResult
             'tools.*.id' => ['required', 'integer', 'min:1', 'distinct:strict'],
             'tools.*.status' => ['required', Rule::in(['installed', 'failed'])],
             'tools.*.installed_version' => ['present', 'nullable', 'string', 'max:255', 'not_regex:/[\x00-\x20\x7f]/'],
+            // Each Instance container without Chromium's trust store and why (docs/reference/development-containers.md#trust). A run
+            // that Swamp started before this key existed has none.
+            'browser_trust' => ['sometimes', 'array', 'list', 'max:1000'],
+            'browser_trust.*' => ['required', 'array:container,reason'],
+            'browser_trust.*.container' => ['required', 'string', 'regex:/\A[a-z0-9-]{1,63}\/[A-Za-z0-9-]{1,63}\z/D'],
+            'browser_trust.*.reason' => ['required', 'string', 'max:160', 'regex:/\A[\x20-\x7e]+\z/D'],
         ];
         foreach (self::Phases as $index => $phase) {
             $rules["phases.{$index}.name"] = ['required', Rule::in([$phase])];

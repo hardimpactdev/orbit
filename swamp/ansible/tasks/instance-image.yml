@@ -30,8 +30,6 @@
     in_build: [incus, exec, --project, "{{ instance_variant.project }}", orbit-instance-build, --env, DEBIAN_FRONTEND=noninteractive, --]
     # The Orbit root CA that the Node's base converge writes for its agent (InstanceHostIntent::TrustSource).
     instance_trust_source: /etc/orbit/agent/ca.pem
-    # The runtime folder's one part with the trust module: its version is the one its library must have in the image.
-    instance_trust_part: "{{ instances.folders.runtime.parts | selectattr('trust_module', 'defined') | first }}"
     browser_trust: "{{ instance_variant.image.browser_trust }}"
   block:
     - name: Read existing prepared-image builders
@@ -127,21 +125,21 @@
         - name: Remove the copied packages and the service block
           ansible.builtin.command: { argv: "{{ in_build + ['rm', '--', '/usr/sbin/policy-rc.d'] + inner_debs }}" }
           changed_when: true
-    # Chromium loads the runtime folder's trust module, which needs the image's own library at exactly the part's version
+    # Chromium loads the runtime folder's trust module, which needs the image's own library at exactly the recipe part's version
     # (docs/reference/development-containers.md#trust). A mismatch fails the build before `agent`'s NSS store names the module.
     - name: Read the library of the trust module in the image
       ansible.builtin.command:
-        argv: "{{ in_build + ['dpkg-query', '--show', '--showformat=${Version}', instance_trust_part.trust_module.library] }}"
+        argv: "{{ in_build + ['dpkg-query', '--show', '--showformat=${Version}', browser_trust.library] }}"
       register: image_trust_library
       changed_when: false
       failed_when: false
     - name: Require the library version of the trust module
       ansible.builtin.assert:
-        that: image_trust_library.rc == 0 and image_trust_library.stdout == instance_trust_part.version
+        that: image_trust_library.rc == 0 and image_trust_library.stdout == browser_trust.version
         fail_msg: >-
-          instance.browser_trust_mismatch: the image has {{ instance_trust_part.trust_module.library }}
+          instance.browser_trust_mismatch: the image has {{ browser_trust.library }}
           {{ image_trust_library.stdout if image_trust_library.rc == 0 else 'not installed' }}; the trust module needs exactly
-          {{ instance_trust_part.version }}
+          {{ browser_trust.version }}
         quiet: true
     - name: Set up the users, the workspace and no sudo
       ansible.builtin.command: { argv: "{{ in_build + ['sh', '-c', instance_variant.image.prepare] }}" }

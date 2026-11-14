@@ -162,6 +162,10 @@
         "mode": 511,
         "link": "../browser-p11-kit-modules/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so"
       },
+      "opt/orbit-runtime/111111111111/pkcs11/requires": {
+        "mode": 420,
+        "text": "libp11-kit0 0.26.2-2\n"
+      },
       "opt/orbit-runtime/111111111111/single": {
         "mode": 493,
         "directory": true

@@ -1,5 +1,5 @@
 order = 70
-source_sha256 = "853dbcf9fa68011e0fd39f556b33f206d7fa6c100e2e7da785f8864c2ea6aa8c"
+source_sha256 = "a65e51d0d09e76737fa38eb426207008fdce91ddd18459851e7b65764709f766"
 cases = [
   "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
   "two Debian packages that give the same library name fail the folder build: one would hide the other",
@@ -9,14 +9,15 @@ cases = [
   "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
   "a Node without a readable Orbit root CA fails the step by name and writes nothing",
   "agent's NSS store names the trust module in running, stopped and frozen containers: a new store holds only the entry, an existing one gets it appended once",
+  "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed, running or stopped; every other step still runs",
   "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest",
-  "a container whose libp11-kit0 is not the trust module's version gets no NSS store and fails the step, naming both versions",
+  "a container whose libp11-kit0 is not the trust module's version gets no NSS store and is listed with both versions; the step passes",
   "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib",
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 249
+cost = 253
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
-slices = 11
+slices = 12
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -59,5 +60,6 @@ inputs = [
   "a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
   "agent's NSS store names the trust module in running, stopped and frozen containers: a new store holds only the entry, an existing one gets it appended once" = 4
   "a container without /home/agent gets no NSS store and is listed by name; the step passes and keeps the library digest" = 3
-  "a container whose libp11-kit0 is not the trust module's version gets no NSS store and fails the step, naming both versions" = 3
   "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib" = 1
+  "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed, running or stopped; every other step still runs" = 4
+  "a container whose libp11-kit0 is not the trust module's version gets no NSS store and is listed with both versions; the step passes" = 3
