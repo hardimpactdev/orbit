@@ -183,6 +183,8 @@ final readonly class InstanceHostIntent
             // The shared-folder refresh restarts running containers in every project that the Node's runtimes record.
             ...($nestedRuntimes > 0 ? ['runtime_projects' => InstancePlacement::projects()] : []),
             'folders' => InstanceFolderPlan::for($folders),
+            // The presented machine name of each container on the Node, which the converge writes into its files (InstanceMachineName).
+            'machine_names' => InstanceMachineName::forNode($node),
             // The redirect of agent development ports on the WireGuard address to Caddy's development listener.
             'dev_ports' => ['table' => InstanceDevPorts::Table, 'unit' => InstanceDevPorts::TableUnit,
                 'ruleset' => app(InstanceDevPorts::class)->ruleset($node)],
