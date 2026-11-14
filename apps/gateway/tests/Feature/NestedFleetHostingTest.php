@@ -221,7 +221,7 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/test/feature']);
             $runtime = $containers->reserve($instance, $node, $source);
         }
-        $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
+        $expected = normalContainerSinceMain($instance, $runtime);
         if ($clone) {
             // The one change since main: every clone carries the files a seed may lack, before `files` (InstanceContainer::bootFiles).
             $actual = $containers->intent($instance, $runtime);
@@ -257,7 +257,7 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
 
         $intent = $containers->intent($instance, $runtime);
         expect(json_encode($intent, JSON_THROW_ON_ERROR))
-            ->toBe(json_encode(app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime), JSON_THROW_ON_ERROR))
+            ->toBe(json_encode(normalContainerSinceMain($instance, $runtime), JSON_THROW_ON_ERROR))
             ->and($intent)->not->toHaveKey('private_names')
             ->and(array_column($intent['bridge_endpoints'], 'port'))->toBe([5434]);
     });
@@ -275,9 +275,23 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
         expect($runtime->incus_project)->toBe('orbit-instances')
             ->and($instance->checkout_path)->toBe('/var/lib/incus/storage-pools/orbit-instances/containers/orbit-instances_instance-'.$instance->id.'/rootfs/srv/workspace')
             ->and(json_encode($captured, JSON_THROW_ON_ERROR))
-            ->toBe(json_encode(app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime), JSON_THROW_ON_ERROR));
+            ->toBe(json_encode(normalContainerSinceMain($instance, $runtime), JSON_THROW_ON_ERROR));
     });
 });
+
+/**
+ * The frozen baseline with the one intended change since it: a default's deploy steps put Playwright's browsers beside its package
+ * (InstanceContainer::BrowserEnvironment).
+ *
+ * @return array<string, mixed>
+ */
+function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime): array
+{
+    $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
+    $expected['environment'][] = 'PLAYWRIGHT_BROWSERS_PATH=0';
+
+    return $expected;
+}
 
 describe('a switched-on Node', function (): void {
     it('prepares the nested project and keeps two spare maps; recorded nested runtimes add one each, on their Node only', function (): void {

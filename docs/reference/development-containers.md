@@ -445,10 +445,11 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 - **The browser.** It is no part of the folder. Each Playwright version pins its own browser build.
 - **The download.** The Project's own Playwright downloads that build through the [egress proxy](#egress-and-dns), such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
 - **Where the build goes.** `PLAYWRIGHT_BROWSERS_PATH=0` puts it beside the Project's Playwright, in `node_modules/playwright-core/.local-browsers`, not in a user's `~/.cache/ms-playwright`. See [Playwright browsers](#playwright-browsers).
+- **The trust module.** One more package, `browser-p11-kit-modules`, gives only p11-kit's trust module, at `pkcs11/p11-kit-trust.so`. It adds nothing to `lib` or `fonts`. [Trust](#trust) says why.
 
 #### Playwright browsers
 
-The default's deploy steps run as `orbit`, and a [task check](#a-task-copy-starts-clean) runs as `agent`. A browser in one user's cache is not visible to the other. The dependency folder is shared by both users through the group `work`. A Project ignores `node_modules` in its `.gitignore`, so the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
+The default's deploy steps run as `orbit`, and a [task check](#a-task-copy-starts-clean) runs as `agent`. A browser in one user's cache is not visible to the other. The dependency folder is shared by both users through the group `work`. When a Project ignores `node_modules` in its `.gitignore`, the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
 
 So a Project whose check runs browser tests installs the browser in a [development deploy step](/reference/deployments#development-deploy-steps) of its own, after its JavaScript install, such as `bunx playwright install chromium`. The step downloads only when the Project's Playwright version changed. Otherwise it does nothing.
 
@@ -460,7 +461,6 @@ So a Project whose check runs browser tests installs the browser in a [developme
 The setting is not a [shared file](#existing-containers), and it is not on the Incus profile or in the image. So the converge changes no existing container: a running clone whose agent installed a browser into `~/.cache/ms-playwright` keeps finding it. A default gets the setting at its next deployment, and only its later clones get the boot files.
 
 A fresh JavaScript install can drop the folder. With the same Playwright version, `bun install`, `npm install` and `pnpm install` keep it. A new Playwright version replaces the package folder, and `npm ci` deletes `node_modules`. The deploy step runs after the install, so the default's seed always holds the build. An agent that reinstalls `node_modules` in a task copy, or changes the Playwright version, runs the Project's own install command again, such as `bunx playwright install chromium`, before it runs browser tests.
-- **The trust module.** One more package, `browser-p11-kit-modules`, gives only p11-kit's trust module, at `pkcs11/p11-kit-trust.so`. It adds nothing to `lib` or `fonts`. [Trust](#trust) says why.
 
 ### Existing containers
 
@@ -732,7 +732,7 @@ Orbit sets the proxy for everything that runs in a container. Tools read the upp
 | --- | --- |
 | Every unit: T3, FrankenPHP and each Process. Claude Code, Codex and their commands inherit it from T3 | `DefaultEnvironment` in `/etc/systemd/system.conf.d/90-orbit-runtime.conf`, beside the runtime folder's variables |
 | `incus exec`: the Node's patch run and the image build | The profile's `environment.*` keys |
-| Deploy steps of a default Instance, which run under `env -i` | The intent's `environment` list: `HOME`, `USER`, `LOGNAME`, `PATH` and the container environment |
+| Deploy steps of a default Instance, which run under `env -i` | The intent's `environment` list: `HOME`, `USER`, `LOGNAME`, `PATH`, the container environment and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | Login shells | `/etc/profile.d/90-orbit-runtime.sh` |
 | apt | `/etc/apt/apt.conf.d/90orbit-egress` |
 

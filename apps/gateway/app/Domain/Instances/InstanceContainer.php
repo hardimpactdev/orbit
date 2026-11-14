@@ -70,7 +70,7 @@ final readonly class InstanceContainer
 
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
-     * (docs/reference/development-containers.md#browser-libraries-and-fonts). The default's deploy steps run as `orbit` and a task
+     * (docs/reference/development-containers.md#playwright-browsers). The default's deploy steps run as `orbit` and a task
      * check runs as `agent`, so a per-user cache would be invisible to the check; the dependency folder is shared, comes with the
      * seed, and always holds the build of the Project's own Playwright version. A default's deploy steps get it; a new clone gets it
      * through its boot files. An existing container keeps what it has.

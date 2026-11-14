@@ -382,10 +382,9 @@ final readonly class BaselineNormalInstanceContainer
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => $application.'/.env',
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
-            // the egress proxy (docs/reference/development-containers.md#egress-and-dns), and the Playwright browser folder.
+            // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
-                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment),
-                'PLAYWRIGHT_BROWSERS_PATH=0'],
+                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),
             'mail' => $mail,
             'mail_units' => $mail === null ? [] : app(DevelopmentMail::class)->units($mail),
