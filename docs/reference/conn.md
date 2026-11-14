@@ -9,7 +9,7 @@ covers:
   - apps/gateway/database/migrations/2027_02_03_000001_add_instance_to_conn_environments.php
   - apps/gateway/database/migrations/2027_02_10_000000_add_renewal_to_conn_environments.php
   - apps/gateway/database/migrations/2027_02_15_000000_create_conn_threads_table.php
-  - apps/gateway/database/migrations/2027_02_16_000000_add_held_sessions_to_conn_pairings.php
+  - apps/gateway/database/migrations/2027_02_17_000000_add_held_sessions_to_conn_pairings.php
 ---
 
 # Conn layer
