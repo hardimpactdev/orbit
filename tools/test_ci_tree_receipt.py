@@ -285,7 +285,7 @@ class ReceiptTest(unittest.TestCase):
             outputs = dict(line.split('=', 1) for line in Path(tmp, 'output').read_text().splitlines())
         self.assertFalse(any(json.loads(outputs['jobs']).values()))
         needs = needs_for()
-        needs['changes']['outputs'].update(outputs)
+        needs['changes']['outputs'].update(outputs, fixture_shards='[]', fixture_capacity='[]')
         for name in needs:
             if name not in ('changes', 'gateway-release'):
                 needs[name]['result'] = 'skipped'
