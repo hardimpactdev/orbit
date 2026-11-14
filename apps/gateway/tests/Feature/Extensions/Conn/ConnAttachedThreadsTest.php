@@ -293,6 +293,16 @@ it('keeps the attached set through a workspaces replace and out of a profile tha
         ->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
 });
 
+it('refuses a replace that echoes the whole document with the attached set, and writes nothing', function (): void {
+    attached_patch($this->desktop, 0, [['env-beast', 'thread-1']])->assertOk();
+    $read = attached_call($this->phone, 'GET', 'profiles/'.$this->profile->id.'/settings')->assertOk()->json('data');
+
+    attached_call($this->phone, 'PUT', 'profiles/'.$this->profile->id.'/settings', ['version' => $read['version'], 'settings' => $read['settings']])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+
+    expect(attached_call($this->phone, 'GET', 'profiles/'.$this->profile->id.'/settings')->json('data'))->toBe($read);
+});
+
 it('keeps an empty set as a list in an object and removes the section with null', function (): void {
     attached_patch($this->desktop, 0, [])->assertOk();
     $raw = attached_call($this->phone, 'GET', 'profiles/'.$this->profile->id.'/settings')->assertOk()->getContent();
