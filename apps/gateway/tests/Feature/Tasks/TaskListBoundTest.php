@@ -12,10 +12,12 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
+use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskReviewedCommit;
@@ -148,6 +150,11 @@ describe('the task list', function (): void {
         $workspace = Instance::query()->create(['project_id' => $this->orbit->id, 'node_id' => $node->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Reserved]);
         $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id, 'capacity_wait_reason' => 'task places full', 'pr_branch' => 'feature']);
         $group->tasks()->firstOrFail()->update(['fixup_problem' => 'A failed check.']);
+        $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
+        $route = Route::withoutEvents(fn (): Route => Route::query()->create(['kind' => 'app', 'project_id' => $this->orbit->id, 'cluster_id' => $cluster->id, 'provenance' => 'explicit',
+            'publication' => 'private', 'domain' => 'workspace.orbit.test', 'status' => 'pending']));
+        $route->targets()->create(['instance_id' => $workspace->id, 'position' => 1]);
+        $route->forceFill(['status' => 'active'])->saveQuietly();
         TaskVm::query()->create(['host_node_id' => $node->id, 'node_id' => $node->id, 'group_id' => $group->id, 'provider' => 'incus', 'name' => 'tvm-1', 'state' => 'ready', 'size' => 'normal', 'wireguard_ip' => '10.44.0.137', 'pi_token' => str_repeat('p', 40)]);
         TaskReviewedCommit::query()->create(['task_id' => $group->id, 'sha' => str_repeat('a', 40), 'source' => 'orbit_push']);
         Operation::query()->create(['kind' => 'tasks.provision', 'target_type' => 'task_group', 'target_id' => $group->id, 'input' => ['capacity_request' => ['commit' => str_repeat('c', 40)]], 'status' => OperationStatus::Waiting]);
@@ -161,7 +168,7 @@ describe('the task list', function (): void {
             return $subtask;
         }, $detail['subtasks'])];
         expect($list->json('data.0'))->toBe($expected)
-            ->and($expected['vm_power'])->toBe('running')->and($expected['capacity_wait']['position'] ?? null)->toBe(1)
+            ->and($expected['preview_url'])->toBe('https://workspace.orbit.test')->and($expected['vm_power'])->toBe('running')->and($expected['capacity_wait']['position'] ?? null)->toBe(1)
             ->and($expected['review_and_merge']['reviewed_commits'])->toHaveCount(1)->and($expected['resolved_agents'])->not->toBe([]);
     });
 
