@@ -1007,6 +1007,8 @@ A converge cannot run a command in a frozen container, so a container that slept
 
 That is the converge's own rule: only names such as `libasound.so.2` count, not the file `libasound.so.2.0.0`, which the cache never lists. The run does it after its marker removal; the Node's wake script does it after every pending request. A failed check fails nothing, and each rebuild is logged ("rebuilt" in the run's output, "library cache rebuilt" in the journal).
 
+A second check follows for the same reason. The converge keeps each container's Orbit root CA file current through the Incus file API, frozen containers included, but only a command in the container rebuilds the bundle. When `/etc/ssl/certs/ca-certificates.crt` lacks the root that `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` holds, the wake runs `update-ca-certificates`. A container without that file skips the check. It is logged as "refreshed" in the run's output and "CA bundle refreshed" in the journal, and it never fails the wake.
+
 Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
 A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.

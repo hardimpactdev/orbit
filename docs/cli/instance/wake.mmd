@@ -38,7 +38,7 @@ sequenceDiagram
     %%> What it does:
     %%> - the Operation is recorded without its run; the Node calls run after its commit
     %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>.wake`; only root writes in that folder
-    %%> - the app-dev role's script, started by a systemd path unit, acts only on `instance-<id>` of `orbit-instances` found Frozen with its asleep marker and a request under 1 s old: `incus resume`, `memory.swap.max` 0, one request to FrankenPHP for an answer below 500 (1.5 s at most), then it removes the marker, writes `app-instance-<id>.resumed`, and rebuilds a stale library cache as the run does
+    %%> - the app-dev role's script, started by a systemd path unit, acts only on `instance-<id>` of `orbit-instances` found Frozen with its asleep marker and a request under 1 s old: `incus resume`, `memory.swap.max` 0, one request to FrankenPHP for an answer below 500 (1.5 s at most), then it removes the marker, writes `app-instance-<id>.resumed`, and rebuilds a stale library cache and CA bundle as the run does
     %%> - the Gateway reads the request folder and the marker with `hibernation.times` until the resume shows, within 3 s
     %%> Why:
     %%> - measured on a frozen clone: the resume takes 0.02 s and the web probe 0.4 s, but the run's start-up and playbook took 8-13 s of the 9-19 s a visitor waited
@@ -67,6 +67,7 @@ sequenceDiagram
   %%> - a 5xx answer gets up to 5 s to clear; an app that answers 5xx by itself is then served as it is
   %%> - removes the asleep marker, so Caddy sends the next request to the app
   %%> - then rebuilds the container's library cache with `ldconfig -X` when it lacks a soname of the runtime folder (a converge cannot exec in a frozen container); a failed check fails nothing
+  %%> - then runs `update-ca-certificates` when the CA bundle lacks the container's Orbit root (the converge writes the root's file, but a frozen container refuses the exec); a container without the file skips it
   %%> - then waits up to 30 s for T3's environment endpoint in a clone, else `instance.t3_unready`
   %%> Why:
   %%> - one playbook: a second Ansible start costs about 4 s on the visitor's path

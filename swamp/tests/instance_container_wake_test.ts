@@ -209,8 +209,53 @@ Deno.test("a second request is taken before the first container's library check"
         await Deno.writeTextFile(`${folder}/markers/app-instance-4.asleep`, "");
         await Deno.writeTextFile(`${folder}/requests/app-instance-3.wake`, "");
         await run(folder);
-        const order = calls(folder).filter((call) => call.startsWith("query") || call.includes("sh -c"));
+        const order = calls(folder).filter((call) => call.startsWith("query") || call.includes("ldconfig -p"));
         assertEquals(order.map((call) => call.startsWith("query") ? call.split("instance-")[1].split("?")[0] : "check"), ["3", "4", "check"]);
         assert(!exists(`${folder}/requests/app-instance-4.wake`));
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
+
+const caCheck = (text: string) => text.match(/r=\/usr\/local\/share\/ca-certificates\/orbit-managed-root-ca\.crt;[^\n']*refreshed; \}/)![0];
+
+Deno.test("the Node script and the wake's workflow run the same CA bundle check, after the library check", () => {
+    const power = Deno.readTextFileSync(new URL("../ansible/tasks/instance-container-power.yml", import.meta.url));
+    const text = Deno.readTextFileSync(script);
+    assertEquals(caCheck(text), caCheck(power));
+    const tasks = parse(power) as Record<string, any>[];
+    const names = tasks.map((task) => task.name);
+    const ca = names.indexOf("Refresh a stale CA bundle after the wake");
+    assert(ca === names.indexOf("Refresh a stale library cache after the wake") + 1 && ca < names.indexOf("Wait for T3"), names.join(" | "));
+    assertEquals(tasks[ca].failed_when, false);
+    assertEquals(tasks[ca].changed_when, "'refreshed' in wake_ca_bundle.stdout");
+    assert(text.indexOf('sh -c "$ca_check"') > text.indexOf('sh -c "$library_check"'));
+    assert(!text.match(/\bsleep\s/), "no polling in the script (shape gate)");
+});
+
+Deno.test("the CA bundle check refreshes the bundle only when it lacks the container's Orbit root, and skips a container without it", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        await Deno.mkdir(`${folder}/bin`);
+        const root = `${folder}/orbit-managed-root-ca.crt`;
+        const bundle = `${folder}/ca-certificates.crt`;
+        const pem = (body: string) => `-----BEGIN CERTIFICATE-----\n${body.match(/.{1,64}/g)!.join("\n")}\n-----END CERTIFICATE-----\n`;
+        const oldRoot = "MIIB" + "A".repeat(120);
+        const newRoot = "MIIB" + "B".repeat(120);
+        // update-ca-certificates appends the root, as the real one does from the CA folder.
+        await Deno.writeTextFile(`${folder}/bin/update-ca-certificates`, `#!/bin/sh\ncat '${root}' >> '${bundle}'\necho 'Updating certificates'\n`);
+        await Deno.chmod(`${folder}/bin/update-ca-certificates`, 0o755);
+        const check = caCheck(Deno.readTextFileSync(script)).replace("/usr/local/share/ca-certificates/orbit-managed-root-ca.crt", root)
+            .replace("/etc/ssl/certs/ca-certificates.crt", bundle);
+        const run = async () => {
+            const out = await new Deno.Command("sh", { args: ["-c", check], stdout: "piped", stderr: "piped", env: { PATH: `${folder}/bin:/usr/bin:/bin` } }).output();
+            assertEquals(out.code, 0);
+            return new TextDecoder().decode(out.stdout).trim();
+        };
+        await Deno.writeTextFile(bundle, pem("MIIC" + "Z".repeat(200)) + pem(oldRoot));
+        await Deno.writeTextFile(root, pem(newRoot));
+        assertEquals(await run(), "refreshed", "a rotated root that the bundle lacks refreshes it");
+        assertStringIncludes(Deno.readTextFileSync(bundle).replace(/\n/g, ""), newRoot);
+        assertEquals(await run(), "", "a second wake changes nothing");
+        Deno.removeSync(root);
+        assertEquals(await run(), "", "a container without the CA file skips the check");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });

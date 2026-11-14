@@ -26,6 +26,9 @@ max_age_ns=1000000000
 # cannot exec in a frozen container, so its library cache may lack the shared runtime libraries.
 # shellcheck disable=SC2016 # it runs in the container's shell, which expands it
 library_check='d=/opt/orbit-runtime/current/lib; c=$(ldconfig -p) || exit 0; for f in "$d"/lib*.so*; do n=${f##*/}; case "$n" in *.so|*.so.[0-9]|*.so.[0-9][0-9]|*.so.[0-9][0-9][0-9]) ;; *) continue;; esac; [ -e "$f" ] || continue; printf "%s\n" "$c" | sed -n "s/.* => //p" | grep -qxF "$d/$n" || { ldconfig -X && echo rebuilt; exit 0; }; done'
+# The same check as the wake's workflow ("Refresh a stale CA bundle after the wake"): the bundle must hold the container's Orbit root.
+# shellcheck disable=SC2016 # it runs in the container's shell, which expands it
+ca_check='r=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt; [ -r "$r" ] || exit 0; b=$(grep -v -- ----- "$r" | tr -d "\n"); grep -v -- ----- /etc/ssl/certs/ca-certificates.crt | tr -d "\n" | grep -qF "$b" || { update-ca-certificates >/dev/null && echo refreshed; }'
 
 now_ns() { date +%s%N; }
 log() { echo "orbit-instance-wake: $*"; }
@@ -110,6 +113,9 @@ while (( ${#pending[@]} > 0 )); do
     pending=("${pending[@]:1}")
     if [ "$(timeout 5 incus exec --project "$project" "instance-$id" -- sh -c "$library_check" 2>/dev/null)" = rebuilt ]; then
         log "instance $id: library cache rebuilt"
+    fi
+    if [ "$(timeout 5 incus exec --project "$project" "instance-$id" -- sh -c "$ca_check" 2>/dev/null)" = refreshed ]; then
+        log "instance $id: CA bundle refreshed"
     fi
     take_requests
 done

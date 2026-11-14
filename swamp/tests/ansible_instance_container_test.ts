@@ -11,7 +11,7 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 // The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
 // list, and the image's last `rm -f /etc/ld.so.cache`); the Orbit root CA in the image adds one task and two Incus calls (one push, and
 // `update-ca-certificates` in the definition's finish); the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 66, tasks: 169, digest: "370b19c622e30bcee558e1fa878208032c0d5de3f9755c2b8c51d1a61dbed2a6"};
+const MAIN_NORMAL_HOST = {calls: 66, tasks: 174, digest: "4f193b4cd5168f4f65ae0c51b5a3e9698b8144f7ea613dead27c2cd60da768d0"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -996,6 +996,7 @@ Deno.test({
       assert(typeof result.resume_seconds === "number" && typeof result.web_probe_seconds === "number", JSON.stringify(result));
       // After the marker went, one exec checks the library cache that a converge could not refresh while the container was frozen.
       assert(Deno.readTextFileSync(`${f.folder}/calls`).includes("ldconfig -p"), "the library check ran");
+      assert(Deno.readTextFileSync(`${f.folder}/calls`).includes("update-ca-certificates"), "the CA bundle check ran");
     } finally {
       f.cleanup();
     }

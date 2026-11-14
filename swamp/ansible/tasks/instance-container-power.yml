@@ -187,6 +187,17 @@
   changed_when: "'rebuilt' in wake_library_cache.stdout"
   failed_when: false
 
+# The converge keeps each container's Orbit root CA file current through the Incus file API, frozen ones included, but only an exec
+# rebuilds the bundle, and a frozen container refuses an exec: so the wake does, after the marker went. A container without the file
+# skips it. The Node's wake script (files/instance-container-wake.sh) runs the same check after its resume.
+- name: Refresh a stale CA bundle after the wake
+  when: power == 'awake'
+  ansible.builtin.command:
+    argv: ['incus', 'exec', '--project', '{{ container.project }}', '{{ container.name }}', '--', 'sh', '-c', 'r=/usr/local/share/ca-certificates/orbit-managed-root-ca.crt; [ -r "$r" ] || exit 0; b=$(grep -v -- ----- "$r" | tr -d "\n"); grep -v -- ----- /etc/ssl/certs/ca-certificates.crt | tr -d "\n" | grep -qF "$b" || { update-ca-certificates >/dev/null && echo refreshed; }']
+  register: wake_ca_bundle
+  changed_when: "'refreshed' in wake_ca_bundle.stdout"
+  failed_when: false
+
 # T3 gates only the end of the wake: a clone whose T3 stays silent ends failed while its site already serves.
 - name: Wait for T3
   when: power == 'awake' and container.clone | default(none) is not none
