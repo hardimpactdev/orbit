@@ -86,5 +86,46 @@ class WebSocketReconcileTest(unittest.TestCase):
         self.assertEqual(plain['stale'], [])
 
 
+class ComposedProxyWriteTest(unittest.TestCase):
+    """The env:sync step hands the composed value to the one writer, instance_node_services.py `proxy`, and skips it at the base."""
+
+    def run_step(self, proxy_environment):
+        executable = shutil.which('ansible-playbook')
+        self.assertIsNotNone(executable, 'Pinned Ansible is required')
+        tasks = yaml.safe_load(PLAYBOOK.read_text())[1]['tasks'][0]['block']
+        task = next(task for task in tasks if task['name'] == 'Write the composed proxy environment')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            # The container's root shell, faked: it records the guest command and its stdin and answers as the writer does.
+            fake = root / 'as-root'
+            fake.write_text('#!/bin/sh\nprintf "%s\\0" "$@" > "$(dirname "$0")/argv"\ncat > "$(dirname "$0")/stdin"\necho \'{"changed": true}\'\n')
+            fake.chmod(0o755)
+            shutil.copyfile(ROOT / 'swamp/ansible/instance_node_services.py', root / 'instance_node_services.py')
+            play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+                     'vars': {'plan': {'proxy_environment': proxy_environment}, 'as_root': [str(fake)]}, 'tasks': [task]}]
+            path = root / 'play.yml'
+            path.write_text(yaml.safe_dump(play))
+            result = subprocess.run([executable, '-i', 'localhost,', str(path)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            written = (root / 'argv').exists()
+            argv = (root / 'argv').read_text().split('\0')[:-1] if written else []
+            return argv, json.loads((root / 'stdin').read_text()) if written else None, result.stdout
+
+    def test_a_composed_value_goes_to_the_one_writer(self):
+        value = {'NO_PROXY': 'localhost,reverb.orbit', 'no_proxy': 'localhost,reverb.orbit'}
+        argv, stdin, output = self.run_step(value)
+        # `timeout 30` runs the root shell, which runs the writer's script with the one command.
+        self.assertEqual(argv[:2], ['python3', '-c'])
+        self.assertIn('def write_proxy_environment', argv[2])
+        self.assertEqual(argv[3:], ['proxy'])
+        self.assertEqual(stdin, {'proxy_environment': value})
+        self.assertIn('changed: [localhost]', output)
+
+    def test_the_base_value_writes_nothing(self):
+        argv, stdin, output = self.run_step(None)
+        self.assertFalse(argv)
+        self.assertIn('skipping: [localhost]', output)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -138,6 +138,15 @@
             private_names_container: "{{ container.name }}"
             private_names: "{{ plan.private_names }}"
 
+        # The composed NO_PROXY with the plan's private names, before the keys whose change restarts the units that read it.
+        - name: Write the composed proxy environment
+          when: plan.proxy_environment is not none
+          ansible.builtin.command:
+            argv: "{{ ['timeout', '30'] + as_root + ['python3', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py'), 'proxy'] }}"
+            stdin: "{{ {'proxy_environment': plan.proxy_environment} | to_json }}"
+          register: connection_proxy_write
+          changed_when: connection_proxy_write.rc == 0 and (connection_proxy_write.stdout | from_json).changed
+
         - name: Write the connection keys
           ansible.builtin.command:
             argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_env_keys.py') }}",

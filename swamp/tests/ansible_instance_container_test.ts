@@ -88,6 +88,8 @@ function fixture() {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
+  // The composed proxy environment goes into the container through instance_node_services.py `proxy`; the fake keeps its value.
+  Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.copyFileSync(new URL("tasks/instance-fleet.yml", root), `${folder}/tasks/instance-fleet.yml`);
   Deno.mkdirSync(`${folder}/run`);
@@ -1353,7 +1355,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container writes the access plan's private names into /etc/hosts, keeps other lines, and removes them when the plan has none",
+  name: "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1369,9 +1371,12 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n");
       assertEquals(again.changed, 0, again.output);
+      // Without a composed value other than the base, nothing writes the container's proxy bypass.
+      assertEquals(f.state().proxyWrites ?? 0, 0);
 
       // An Instance with a private websocket app: its name at the plan's address, after the image's own lines.
-      Object.assign(f.container, { private_names: [{ name: "reverb.orbit", host: "10.44.0.3", port: 8443 }] });
+      const proxy = { NO_PROXY: "localhost,127.0.0.1,reverb.orbit", no_proxy: "localhost,127.0.0.1,reverb.orbit" };
+      Object.assign(f.container, { private_names: [{ name: "reverb.orbit", host: "10.44.0.3", port: 8443 }], proxy_environment: proxy });
       f.write();
       const named = f.run("start");
       assert(named.ok, named.output);
@@ -1379,10 +1384,14 @@ Deno.test({
       assertEquals(f.state().files["/etc/hosts"], { uid: "0", gid: "0", mode: "0644" });
       const rerun = f.run("start");
       assertEquals(rerun.changed, 0, rerun.output);
+      // The one writer got the composed value once; the rerun found it in place.
+      assertEquals(f.state().containers["instance-7"].proxy, proxy);
+      assertEquals(f.state().proxyWrites, 2);
 
       // The app is removed: the next start takes the block away and keeps every other line.
       Deno.writeTextFileSync(hosts, "127.0.0.1 localhost\n" + block + "10.1.1.1 operator\n");
       delete (f.container as Record<string, unknown>).private_names;
+      delete (f.container as Record<string, unknown>).proxy_environment;
       f.write();
       const removed = f.run("start");
       assert(removed.ok, removed.output);

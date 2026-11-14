@@ -170,7 +170,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "cdd89e89b7261d9e02693856c6b57cfb49634e5a1da1275abb994dd28c996ee2",
+    "source_sha256": "c7a48d1d131e331bf627ea5f84348ac0f6922a4a3fa25625ad5d499ca5e27dac",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -199,7 +199,7 @@
       "the agent phase trusts only its workspace and preserves other Git settings on reruns",
       "the agent can commit with its default identity and keeps each configured identity value",
       "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
-      "container writes the access plan's private names into /etc/hosts, keeps other lines, and removes them when the plan has none",
+      "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
       "start refuses a NIC with missing ACL before starting the container",
       "start refuses a NIC with permissive default before starting the container",
       "start refuses a NIC with bridge union ACL before starting the container",
@@ -2592,12 +2592,14 @@
     ]
   },
   "swamp/tests/instance_connection_websocket_test.py": {
-    "source_sha256": "73560a3ca82667f907ecdae25af6e4076dca63055d1a7357c03933eb32a079ef",
+    "source_sha256": "40227f2f726b662f93122c7c94abc3f15aca64fe032afab46d10786cbbcf1009",
     "cases": [
       "test_an_attached_app_adds_its_rule_once_and_keeps_the_other_rules",
       "test_a_removed_app_closes_the_path_and_keeps_every_other_rule",
       "test_a_moved_websocket_node_replaces_the_old_address",
-      "test_an_instance_without_an_app_changes_nothing"
+      "test_an_instance_without_an_app_changes_nothing",
+      "test_a_composed_value_goes_to_the_one_writer",
+      "test_the_base_value_writes_nothing"
     ]
   }
 }

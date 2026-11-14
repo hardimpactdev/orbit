@@ -311,6 +311,16 @@ if (family === "list") {
     }
     Deno.exit(0);
   }
+  if (command[0] === "python3" && command[1] === "-c" && command.at(-1) === "proxy" && command[2].includes("def write_proxy_environment")) {
+    // instance_node_services.py `proxy`, the one writer of the container's proxy bypass: keep the value it was given.
+    const given = JSON.parse(new TextDecoder().decode(await new Response(Deno.stdin.readable).arrayBuffer())).proxy_environment;
+    const changed = JSON.stringify(state.containers[name].proxy ?? null) !== JSON.stringify(given);
+    state.containers[name].proxy = given;
+    state.proxyWrites = (state.proxyWrites ?? 0) + 1;
+    save();
+    console.log(JSON.stringify({ changed }));
+    Deno.exit(0);
+  }
   if (command[0] === "python3" && (command[1] === "/usr/local/libexec/orbit-instance-node-runtime.py" || command.includes("seed-prepare") || command.includes("seed-complete"))) {
     // Runtime conversion and Vite+ behavior have their own real helper/fake-vp fixture.
     const converted = command.includes("seed-prepare") && state.node_seed_convert === true;
