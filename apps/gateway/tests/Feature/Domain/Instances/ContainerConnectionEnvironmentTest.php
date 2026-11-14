@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
+use App\Actions\Instances\UpdateInstanceEnvironmentAction;
 use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
@@ -18,7 +19,9 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
+use App\Models\Node;
 use App\Models\Operation;
+use App\Models\Route;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -250,4 +253,91 @@ it('records nothing as owned after a failed write', function (): void {
 
     expect($projected->error_code)->toBe('env.configuration_invalid')
         ->and($instance->refresh()->environment_owned_keys)->toBeNull();
+});
+
+/** The connection fixture with its Route, so env:update and placeholders resolve. */
+function pendingKeysFixture(): Instance
+{
+    $instance = connectionEnvFixture();
+    $instance->forceFill(['provisioning_step' => 'active'])->save();
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id, 'node_id' => $instance->node_id, 'provenance' => 'explicit',
+        'publication' => 'private', 'domain' => 'default.tool.test', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    $route->update(['status' => 'active']);
+    app(InstanceEnvironmentStore::class)->seedForCreate($instance, ['APP_NAME' => 'Tool', 'VITE_REVERB_HOST' => 'old.example']);
+
+    return $instance->refresh();
+}
+
+/** Run one sync to its end: admission, the vault copy of the lines, and the projection of the given outcome. */
+function pendingKeysSync(Instance $instance, string $status = 'succeeded'): array
+{
+    $vault = connectionEnvVault();
+    if (! Node::query()->where('name', 'control')->exists()) {
+        containerDefaultNode('control', '10.44.0.209', false)->roles()->create(['role' => RoleName::Swamp, 'status' => 'active']);
+    }
+    $operation = app(ContainerConnectionEnvironment::class)->start($instance->refresh(), null, null);
+    app(ContainerConnectionEnvironment::class)->input($operation);
+    $lines = json_decode(collect($vault->puts)->firstWhere('key', 'instance-environment-'.$operation->id)['value'], true, 512, JSON_THROW_ON_ERROR)['lines'];
+    $operation->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'pending-'.$operation->id]])->save();
+    $keys = $operation->input['connection_environment']['keys'];
+    app(ContainerConnectionEnvironment::class)->apply($operation, ['status' => $status, 'run_id' => 'pending-'.$operation->id,
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => $status === 'succeeded' ? ['environment' => ['status' => 'changed', 'written' => $keys, 'added' => [], 'kept' => [], 'unchanged' => []]]
+            : ['error_code' => 'env.configuration_invalid']]);
+    $operation->forceFill(['lock_key' => null])->save();
+
+    return ['keys' => $keys, 'lines' => $lines];
+}
+
+it('marks a key env:update stores on a container Instance for the next sync, also when the stored value was the same', function (): void {
+    $instance = pendingKeysFixture();
+
+    $same = app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'VITE_REVERB_HOST', 'old.example');
+    app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'APP_NAME', 'Tool 2');
+
+    expect($same->changed)->toBeFalse()
+        ->and($instance->refresh()->environment_pending_keys)->toBe(['APP_NAME', 'VITE_REVERB_HOST']);
+});
+
+it('marks nothing on a host Instance, whose sync renders the whole file', function (): void {
+    $instance = pendingKeysFixture();
+    $instance->runtime()->delete();
+
+    app(UpdateInstanceEnvironmentAction::class)->execute($instance->refresh(), 'APP_NAME', 'Tool 2');
+
+    expect($instance->refresh()->environment_pending_keys)->toBeNull();
+});
+
+it('writes a pending key once, rendered with its placeholder, lets a connection line win, and leaves a later hand edit alone', function (): void {
+    $instance = pendingKeysFixture();
+    app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'VITE_REVERB_HOST', 'reverb.{{instance.domain}}');
+    // A pending key of a connection's name keeps the connection's line.
+    app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'DB_HOST', 'hand.example');
+
+    $first = pendingKeysSync($instance);
+
+    expect($first['keys'])->toContain('VITE_REVERB_HOST')->toContain('DB_HOST')
+        ->and($first['lines']['VITE_REVERB_HOST'])->toBe('VITE_REVERB_HOST="reverb.default.tool.test"')
+        ->and($first['lines']['DB_HOST'])->toBe('DB_HOST="10.44.0.7"')
+        ->and($first['lines'])->not->toHaveKey('APP_NAME')
+        ->and($instance->refresh()->environment_pending_keys)->toBeNull();
+
+    // Someone edits the line by hand after that sync: the next sync names no such key, so the writer leaves the line as it is.
+    $second = pendingKeysSync($instance);
+    expect($second['keys'])->toBe(['DB_CONNECTION', 'DB_DATABASE', 'DB_HOST', 'DB_PASSWORD', 'DB_PORT', 'DB_USERNAME']);
+});
+
+it('keeps the pending keys after a failed sync and drops a key whose stored value is gone', function (): void {
+    $instance = pendingKeysFixture();
+    app(UpdateInstanceEnvironmentAction::class)->execute($instance, 'VITE_REVERB_HOST', 'new.example');
+    $instance->refresh()->forceFill(['environment_pending_keys' => ['GONE_KEY', 'VITE_REVERB_HOST']])->save();
+
+    $failed = pendingKeysSync($instance, 'failed');
+
+    expect($failed['keys'])->toContain('VITE_REVERB_HOST')->not->toContain('GONE_KEY')
+        ->and($instance->refresh()->environment_pending_keys)->toBe(['GONE_KEY', 'VITE_REVERB_HOST']);
+
+    pendingKeysSync($instance);
+    expect($instance->refresh()->environment_pending_keys)->toBe(['GONE_KEY']);
 });
