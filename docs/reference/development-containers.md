@@ -1869,7 +1869,7 @@ The refresh lists each step that writes a nested container's own disk once, with
 
 The nested Gateway's other two state mounts need no rule. The refresh writes nothing to `swamp/vaults`: on the live default, no file there changed during a refresh.
 
-The nested Gateway's serve loads the workflows of the checkout as they change, with no step of the refresh. It still registers the built-in triggers of the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node), `swamp-credential-monitor` and `swamp-datastore-watch`, and their runs fail there: they read Node 209's checkout. A later change removes those built-in triggers, so that only the production release sets them.
+The nested Gateway's serve loads the workflows of the checkout as they change, with no step of the refresh. It does not register the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node), `swamp-credential-monitor` and `swamp-datastore-watch`: they have no built-in trigger, and only the production release load sets them.
 
 Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
 
