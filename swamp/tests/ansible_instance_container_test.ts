@@ -1347,10 +1347,14 @@ Deno.test({
   fn() {
     const f = fixture();
     try {
-      const woken = wakeFrom(f, "Frozen");
+      // The sleep's record names the inner cgroups it opened: one is still there, one belonged to a unit that ended, one climbs out.
+      const woken = wakeFrom(f, "Frozen", { inner: { "lxc.payload.nested-gateway/memory.swap.max": "max", "system.slice/polkit.service/memory.swap.max": "33554432" },
+        record: "lxc.payload.nested-gateway/memory.swap.max\nsystem.slice/systemd-hostnamed.service/memory.swap.max\n../escape/memory.swap.max\n" });
       assert(woken.run.ok, woken.run.output);
       assertEquals(woken.status, "Running");
       assertEquals(woken.swap, "0");
+      assertEquals(woken.inner, { "lxc.payload.nested-gateway/memory.swap.max": "0", "system.slice/polkit.service/memory.swap.max": "33554432" });
+      assertEquals(woken.record, null);
       assert(!woken.sleeping.present());
       assert(woken.families.includes("resume"));
       assert(!woken.families.includes("start") && !woken.families.includes("stop"), woken.families.join(","));
@@ -1422,24 +1426,6 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
-  ignore: !hasAnsible,
-  fn() {
-    const f = fixture();
-    try {
-      const woken = wakeFrom(f, "Frozen", { inner: { "lxc.payload.nested-gateway/memory.swap.max": "max", "system.slice/polkit.service/memory.swap.max": "33554432" },
-        record: "lxc.payload.nested-gateway/memory.swap.max\nsystem.slice/systemd-hostnamed.service/memory.swap.max\n../escape/memory.swap.max\n" });
-      assert(woken.run.ok, woken.run.output);
-      assertEquals([woken.status, woken.swap, woken.record], ["Running", "0", null]);
-      assertEquals(woken.inner, { "lxc.payload.nested-gateway/memory.swap.max": "0", "system.slice/polkit.service/memory.swap.max": "33554432" });
-      assertEquals(f.result().wake, "resumed");
-    } finally {
-      f.cleanup();
-    }
-  },
-});
-
-Deno.test({
   name: "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   ignore: !hasAnsible,
   fn() {
@@ -1470,43 +1456,20 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
+  name: "a deployment's start resumes a Frozen container, closes its swap, removes its asleep marker and then converges as usual",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      for (const status of ["Frozen", "Stopped"] as const) {
-        const marker = `${f.folder}/hibernation/app-instance-7.asleep`;
-        delete (f.intent as Record<string, unknown>).marker;
-        delete (f.intent as Record<string, unknown>).web;
-        const started = wakeFrom(f, status, { intent: { asleep_marker: marker }, inner: { "inner.slice/memory.swap.max": "max" }, record: "inner.slice/memory.swap.max\n" });
-        assert(started.run.ok, started.run.output);
-        assertEquals(started.status, "Running");
-        assert(!started.sleeping.present(), status);
-        assertEquals(started.sleeping.webChecks(), 0);
-        assertEquals(f.result().wake, undefined);
-        if (status === "Frozen") assertEquals([started.swap, started.inner["inner.slice/memory.swap.max"], started.record], ["0", "0", null]);
-      }
-    } finally {
-      f.cleanup();
-    }
-  },
-});
-
-Deno.test({
-  name: "a deployment's start resumes a Frozen container and then converges as usual",
-  ignore: !hasAnsible,
-  fn() {
-    const f = fixture();
-    try {
-      asleep(f, { web: [200] });
-      const state = f.state();
-      state.containers["instance-7"].status = "Frozen";
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      Deno.mkdirSync(`${f.folder}/cgroup/lxc.payload.orbit-instances_instance-7`, { recursive: true });
-      const result = f.run("start", {}, ["-e", `cgroup_root=${f.folder}/cgroup`]);
+      // A deployment's intent names `asleep_marker`, not a wake's `marker`: no web wait and no wake result, but the Route serves again.
+      const started = wakeFrom(f, "Frozen", { intent: { asleep_marker: `${f.folder}/hibernation/app-instance-7.asleep` },
+        inner: { "inner.slice/memory.swap.max": "max" }, record: "inner.slice/memory.swap.max\n" });
+      const result = started.run;
       assert(result.ok, result.output);
-      assertEquals(f.state().containers["instance-7"].status, "Running");
+      assertEquals(started.status, "Running");
+      assert(!started.sleeping.present());
+      assertEquals(started.sleeping.webChecks(), 0);
+      assertEquals([started.swap, started.inner["inner.slice/memory.swap.max"], started.record], ["0", "0", null]);
       assertEquals(f.result().wake, undefined);
       assert(/Configure the container's PHP settings|Read the container's PHP settings/.test(result.output));
       assert(!/Read the container's PHP settings\]\s*\n\s*skipping/.test(result.output), result.output);

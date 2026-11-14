@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "f68841c5fef6a300f1090b7c93af5a0a6083155178157f6ca7c286a9fa78b074"
+source_sha256 = "0890089c986bebedd13f41792cae8b4fb0b8a98fe478f32b5914beba45207f17"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -26,7 +26,8 @@ cases = [
   "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds",
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
-  "a deployment's start resumes a Frozen container and then converges as usual",
+  "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
+  "a deployment's start resumes a Frozen container, closes its swap, removes its asleep marker and then converges as usual",
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
   "a clone's first boot starts no unit of the default and the clone has its own machine-id",
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last",
@@ -93,9 +94,13 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4084
+cost = 4112
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # A nested-fleet wake: the resume of a Frozen one, the refusal of a Stopped one, no stop of a silent one (56s locally, run in full
+  # before the PR): a 72nd slice would defer the whole file. The PR keeps the swap close of each recorded cgroup in "a wake resumes a
+  # Frozen container without a boot" and the nested never-stop of a sleep in ansible_instance_container_power_test.ts.
+  "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
   # its start phase, and a later phase's failure; about 145s locally): a 72nd slice would push the file above the 8-shard PR limit. The PR keeps the merged plays of a normal
   # default's deploy (start,fetch and seed,check), a refusal in the second phase and a failed first phase in "a deployment checks out
@@ -197,10 +202,10 @@ inputs = [
   "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers" = 83 # ESTIMATE: local 39s x 2.1, rounded up, plus 1s
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s
   "a wake's start of a Project without a web unit removes the marker without a web wait" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
-  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
+  "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds" = 39 # ESTIMATE: local 18s x 2.1, rounded up, plus 1s
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one" = 37 # ESTIMATE: local 17s x 2.1, rounded up, plus 1s
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker" = 94 # ESTIMATE: local 44s x 2.1, rounded up, plus 1s
-  "a deployment's start resumes a Frozen container and then converges as usual" = 27 # ESTIMATE: local 12s x 2.1, rounded up, plus 1s
+  "a deployment's start resumes a Frozen container, closes its swap, removes its asleep marker and then converges as usual" = 43 # ESTIMATE: local 20s x 2.1, rounded up, plus 1s
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start" = 116 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 70.1-118.2s
   "a clone's first boot starts no unit of the default and the clone has its own machine-id" = 117 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 85.6-118.1s
   "the workspace stays writable for its group before and after the deploy steps, whoever installed last" = 77 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 44.7-76.6s
