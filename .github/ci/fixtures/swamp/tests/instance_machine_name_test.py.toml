@@ -10,7 +10,7 @@ cases = [
   "test_only_the_127_0_1_1_line_changes_and_the_private_names_survive_both_orders",
 ]
 file = "swamp/tests/instance_machine_name_test.py"
-cost = 10
+cost = 7
 # The files it reads: the writer, the private names renderer and the Gateway's shared fixture of file texts.
 inputs = [
   "swamp/ansible/instance_machine_name.py",
@@ -25,6 +25,3 @@ inputs = [
 "test_a_running_kernel_hostname_that_differs_stays_an_alias_until_the_next_boot" = 1
 "test_the_file_texts_match_the_shared_fixture_that_the_gateway_asserts" = 1
 "test_only_the_127_0_1_1_line_changes_and_the_private_names_survive_both_orders" = 1
-"swamp/ansible/instance_machine_name.py" = 1
-"swamp/ansible/instance_node_services.py" = 1
-"apps/gateway/tests/Fixtures/machine-name-files.json" = 1
