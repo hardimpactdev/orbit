@@ -58,7 +58,7 @@ They stay until then because a release reloads with the load workflow that serve
 
 ### Changing the file
 
-The load only sets the entries that the file holds. A missing or empty file sets nothing and passes, because a rollback runs the load against an older checkout without the file.
+The load only sets the entries that the file holds. A missing or empty file sets nothing and passes, because a rollback runs the load against an older checkout without the file. A file that jq cannot read fails the load.
 
 When you remove an entry from the file, its override stays in serve.yaml. Remove it on Node 209 by hand, as `orbit` in the serve checkout:
 

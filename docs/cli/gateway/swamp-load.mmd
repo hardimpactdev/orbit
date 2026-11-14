@@ -61,7 +61,7 @@ sequenceDiagram
     %%> - `swamp workflow trigger set` for each entry of `swamp/config/swamp-node-schedules.json`: serve keeps the schedules of the Swamp Node as trigger overrides; a schedule serve does not confirm fails the load
     %%> Why the overrides:
     %%> - those workflows read Node 209's checkout, and every serve, a nested fleet's too, registers a built-in trigger; the overrides come first, so Node 209 keeps both schedules when a later release removes the built-in triggers
-    %%> - a missing or empty file sets nothing and passes: a rollback runs this load against an older checkout without it
+    %%> - a missing or empty file sets nothing and passes: a rollback runs this load against an older checkout without it; a file that jq cannot read fails the load
     %%> Why:
     %%> - a reload, not a restart: running work keeps going
     Note over SW: load checks commit<br/>swamp workflow list

@@ -32,7 +32,7 @@ const load = (parse(
 }).jobs[0].steps.find((step) => step.name === "load")!.task.inputs.run;
 
 /** Runs the release load's `load` script against a stand-in `swamp` that logs each call, in a checkout that holds `config`, if any. */
-async function runLoad(config: string | null, refuse = "") {
+async function runLoad(config: string | null, refuse = "", drain = false) {
     const folder = await Deno.makeTempDir();
     await Deno.mkdir(`${folder}/checkout/swamp/config`, { recursive: true });
     if (config !== null) {
@@ -45,6 +45,7 @@ async function runLoad(config: string | null, refuse = "") {
         `${folder}/swamp`,
         `#!/bin/sh
 printf '%s\\n' "$*" >> ${folder}/calls
+${drain ? "cat >/dev/null" : ""}
 case "$1 $2" in
   "serve reload"|"access reload") echo '{"success": true}' ;;
   "workflow list") echo '{"results": [{"id": "a", "name": "swamp-datastore-watch"}]}' ;;
@@ -100,4 +101,26 @@ Deno.test("a checkout without the schedules file sets no schedule and passes, as
     assertEquals(run.code, 0);
     assertFalse(run.calls.some((call) => call.startsWith("workflow trigger")));
     assert(run.calls.some((call) => call.startsWith("workflow list")));
+});
+
+Deno.test("an empty schedules file sets no schedule and passes", async () => {
+    const run = await runLoad("");
+    assertEquals(run.code, 0);
+    assertFalse(run.calls.some((call) => call.startsWith("workflow trigger")));
+});
+
+Deno.test("a schedules file that jq cannot read fails the release load", async () => {
+    const run = await runLoad('{"swamp-credential-monitor": ');
+    assertEquals(run.code === 0, false);
+    assertFalse(run.calls.some((call) => call.startsWith("workflow trigger")));
+    assertFalse(run.calls.some((call) => call.startsWith("workflow list")));
+});
+
+Deno.test("a swamp that reads its standard input still sets every schedule", async () => {
+    const run = await runLoad(JSON.stringify(schedules), "", true);
+    assertEquals(run.code, 0);
+    assertEquals(
+        run.calls.filter((call) => call.startsWith("workflow trigger set")).map((call) => call.split(" ")[3]),
+        ["swamp-credential-monitor", "swamp-datastore-watch"],
+    );
 });
