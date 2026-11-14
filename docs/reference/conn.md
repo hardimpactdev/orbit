@@ -344,7 +344,7 @@ A remote target created after the Node's final head read cannot be detected by c
 
 Checkout stays inside `clone-workspace`. No setup or deploy command runs again after checkout. Dependencies and build come from the default's seed, and may need an install or build for the selected code.
 
-Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with the core Instance API, and an `instance.destroy` started through the Conn endpoint below. Other destroy Operations keep their existing 404 on this path. Conn Operation cancel does not cancel it.
+Conn follows that Operation with `GET /operations/{id}`. Conn Operation show also shows an `instance.create` that the caller started, here or with the core Instance API, and an `instance.destroy` started through the Conn endpoint below. Other destroy Operations keep their existing 404 on this path. It also shows a clone's [completion](/cli/instance/complete), `instance.complete`, to the Node that started it and to the Node that created the clone: the create's `result.completion_operation_id` names the first completion. Conn Operation cancel cancels none of these three kinds; it answers 404, and a removal cancels a running completion.
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
