@@ -1458,7 +1458,7 @@ In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:10000
 
 ### Fleet rules
 
-Each rule below is a device or config key of a nested container, or a file it reads. All of them are in `base`, because a restore of `base` reverts device and config keys. A file rule is owned: the refresh writes the whole file where it differs, root-owned with mode 0644. The rules are the shape of the first inner fleet, which was built by hand and runs.
+Each rule below is a device or config key of a nested container, a file it reads, or a key of the inner bridge `oe-nested`. The container rules are in `base`, because a restore of `base` reverts device and config keys. The bridge is in the inner Incus, not in a container, so a restore of `base` keeps its keys. A file rule is owned: the refresh writes the whole file where it differs, root-owned with mode 0644. The rules are the shape of the first inner fleet, which was built by hand and runs.
 
 | Rule | Where | Why |
 | --- | --- | --- |
@@ -1471,6 +1471,13 @@ Each rule below is a device or config key of a nested container, or a file it re
 | The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/90orbit-package-cache`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
 | `security.nesting=true` and a memory limit | All three | Docker runs in them |
 | `boot.autostart=true` | All three | They start with the outer container, also after a restore of its seed. With `false`, the start still starts them, and the refresh writes `true` |
+| `raw.dnsmasq` `no-resolv` on the inner bridge `oe-nested` | The inner Incus | A name the fleet does not know is refused at once, not after a silent wait of about 15 s. See below the table |
+
+The bridge's dnsmasq answers the fleet's own names. Without `no-resolv` it forwards every other name to the outer container's resolver. That resolver has no DNS server and refuses at once, but dnsmasq drops the refusal and sends no answer. Each lookup then waits for its timeouts: about 15 s in the start of php-fpm, `orbit-websocket` and the Swamp workers. With no upstream, dnsmasq refuses at once. `gateway.orbit` resolves through the nested Node's `orbit` link, which this key does not change.
+
+The cost: while `raw.dnsmasq` is set, the inner Incus runs the inner bridge's dnsmasq without its Incus AppArmor profile. It still runs as the user `incus`, inside the unprivileged outer container.
+
+Incus restarts the bridge's dnsmasq when the key changes, so only the refresh writes it, with the fleet stopped. A start only compares. A copy whose seed lacks the key starts as before. A bridge that cannot be read is refused with `instance.container_fleet_drift`.
 
 The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The apt file replaces the task VM package cache that the image names. No Instance runs that cache. A role add through the nested Gateway still writes the cache back, and the next refresh replaces it. The refresh writes both files before the converge.
 
