@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% env:sync on a container Instance: Orbit never renders an existing container .env again, so it writes only the attached connections' keys in place.
+  %% env:sync on a container Instance: Orbit never renders an existing container .env again, so it writes only the attached connections' keys and the keys env:update stored since the last sync, in place.
   %% status: draft
   %% command: env:sync
   %% kind: instance.connection_environment
@@ -18,7 +18,8 @@ sequenceDiagram
   Note over GW: Admit the connection keys<br/>key names · paths · units
   %%> When:
   %%> - a running container, active, with no unfinished lifecycle work; hold its Instance lock
-  %%> - key names of every attached connection and of the websocket app, each path's ACL egress rule, bridge endpoint and UFW rule, the private names, and the Instance's running units
+  %%> - key names of every attached connection, of the websocket app, and of each key that `env:update` stored since the last sync; a connection's own line wins
+  %%> - each path's ACL egress rule, bridge endpoint and UFW rule, the private names, and the Instance's running units
   %%> - with no key to write, the run still starts: it withdraws a removed websocket app's path
   %%> On failure:
   %%> - a stopped container or busy work start no run
@@ -40,11 +41,13 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal result
     %%> Result:
     %%> - the written keys become Orbit-owned keys of Instance 24
+    %%> - each key `env:update` stored leaves the wait list: the next sync writes it no more, so a later hand edit stays
   else file refused or phase failed
     %% path: failed
     N--xSW: env.configuration_invalid
     %%> On failure:
     %%> - a missing file, a link, or a quoted value that never closes leaves the file as it was; paths already added stay; a rerun is safe
+    %%> - the keys `env:update` stored stay on the wait list for the next sync
     SW--xGW: Run failed<br/>error code
   end
   loop until terminal

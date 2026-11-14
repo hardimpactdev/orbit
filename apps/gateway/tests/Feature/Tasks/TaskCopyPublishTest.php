@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Data\Tasks\StartTaskPublishData;
+use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -12,8 +14,11 @@ use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
+use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
+use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
@@ -46,6 +51,7 @@ function copyPublishWorld(?string $root = 'public'): array
     ]));
     $node->forceFill(['instance_bridge' => '10.253.0.0/24'])->saveQuietly();
     $project = Project::query()->create(['name' => 'Trial', 'slug' => 'trial', 'repository_url' => 'https://github.com/example/trial.git', 'default_branch' => 'main', 'root' => $root]);
+    config(['orbit.tasks.copy_publish_projects' => [$project->id]]);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/var/lib/incus/rootfs/srv/workspace',
         'status' => InstanceState::Active, 'branch' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'starting_commit' => str_repeat('a', 40)]);
@@ -90,6 +96,65 @@ it('publishes a task copy through its container, with its start commit and the p
     'application folder' => ['apps/web/public', 'apps/web/.env'],
 ]);
 
+/** A native vault that records each put, as the Swamp serve socket answers it. */
+function publishEnvironmentVault(): object
+{
+    return new class implements WebSocketClient
+    {
+        /** @var list<array{key: string, value: string}> */
+        public array $puts = [];
+
+        /** @var list<array<string, mixed>> */
+        private array $frames = [];
+
+        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+        public function send(array $message): void
+        {
+            $this->frames[] = $message;
+        }
+
+        public function receive(float $timeoutSeconds): array
+        {
+            $frame = end($this->frames);
+            $this->puts[] = ['key' => $frame['payload']['key'], 'value' => (string) $frame['payload']['value']];
+
+            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => [
+                'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption']]]];
+        }
+
+        public function close(): void {}
+
+        public function isConnected(): bool
+        {
+            return true;
+        }
+    };
+}
+
+it('gives the run of a copy publish the .env Orbit renders for the Instance as a vault copy, and a task VM publish none', function (): void {
+    [$group, $check, $instance] = copyPublishWorld();
+    InstanceEnvironmentValue::query()->create(['instance_id' => $instance->id, 'env_key' => 'APP_KEY', 'env_value' => 'base64:not-a-real-key']);
+    app()->instance(WebSocketClient::class, $vault = publishEnvironmentVault());
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+
+    $key = 'task-publish-environment-'.$operation->id;
+    $rendered = app(DevelopmentCreateEnvironment::class)->content($instance->refresh());
+    expect($inputs['execution_secrets']['environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and($vault->puts)->toBe([['key' => $key, 'value' => $rendered]])
+        ->and($rendered)->toContain('base64:not-a-real-key')
+        ->and(json_encode($inputs))->not->toContain('not-a-real-key')
+        ->and($operation->refresh()->input)->not->toHaveKey('execution_secrets.environment');
+
+    $vm = $operation->replicate();
+    $vm->input = array_diff_key($operation->input, ['workspace' => true]);
+    expect(app(DirectOperation::class)->workflowInputs($vm)['execution_secrets'])->not->toHaveKey('environment')
+        ->and($vault->puts)->toHaveCount(1);
+});
+
 it('refuses a copy publish without a start commit or a running container, before any Operation', function (Closure $arrange, string $code): void {
     [$group, $check, $instance, $runtime] = copyPublishWorld();
     $arrange($instance, $runtime);
@@ -101,6 +166,21 @@ it('refuses a copy publish without a start commit or a running container, before
     'no start commit' => [fn (Instance $instance) => $instance->update(['starting_commit' => null]), 'tasks.no_workspace'],
     'stopped container' => [fn (Instance $instance, InstanceRuntime $runtime) => $runtime->update(['power_state' => 'stopped']), 'tasks.instance_not_running'],
 ]);
+
+it('holds a copy publish for a Project that is not released for it, before any Operation; a listed or nested-fleet Project publishes', function (): void {
+    [$group, $check] = copyPublishWorld();
+    $publish = fn (): Operation => app(TaskPublishIntent::class)->start($group->refresh(), StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+
+    foreach ([[], [$group->project_id + 1], (object) [], null, [(string) $group->project_id]] as $listed) {
+        config(['orbit.tasks.copy_publish_projects' => $listed]);
+        expect($publish)->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.copy_publish_held')
+            ->and($exception->status)->toBe(409)->and($exception->getMessage())->toContain('The checked commit stays in the task copy'));
+    }
+    expect(Operation::query()->where('kind', 'tasks.publish')->count())->toBe(0);
+
+    $group->project->forceFill(['nested_fleet' => true])->saveQuietly();
+    expect($publish()->kind)->toBe('tasks.publish');
+});
 
 it('keeps the task VM path for a group without a container: no VM workspace refuses as before', function (): void {
     [$group, $check, $instance, $runtime] = copyPublishWorld();

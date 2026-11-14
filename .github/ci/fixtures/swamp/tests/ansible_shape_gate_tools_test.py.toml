@@ -1,14 +1,21 @@
 order = 450
-source_sha256 = "5d4ed64fa727443866ac35a2e1d76d9bad165053dd15c2e2ce775fbf9a0a1a44"
+source_sha256 = "bd8f23535ee91447c5a0d80462505b9e4ca29f3e345762f613591580cf7c897e"
 cases = [
   "test_uses_the_system_tools_only_when_built_for_these_pins",
   "test_a_built_venv_needs_no_write_access_and_no_install",
+  "test_a_first_build_keeps_standard_output_free",
   "test_the_playbook_names_the_tools_as_the_gate_does",
   "test_the_playbook_builds_the_tools_where_the_gate_looks",
   "test_deno_ansible_fixtures_receive_the_installed_pinned_collections",
   "test_every_deno_test_file_runs_once_with_three_early_instance_host_groups",
   "test_each_instance_command_receives_one_deadline_at_launch",
   "test_a_completed_command_is_reported_while_its_neighbor_is_still_running",
+  "test_missing_tools_are_built_where_the_gate_looks_and_other_pins_go",
+  "test_complete_tools_are_only_read_and_a_cleanup_left_over_is_done",
+  "test_complete_collections_are_kept_when_only_the_venv_is_new",
+  "test_a_missing_python3_venv_is_installed_through_apt",
+  "test_each_failed_step_is_named_and_leaves_nothing_complete",
+  "test_the_names_are_the_gates_own",
 ]
 file = "swamp/tests/ansible_shape_gate_tools_test.py"
 cost = 3
@@ -22,6 +29,7 @@ inputs = [
   "swamp/ansible/instance_folder_debs.py",
   "swamp/ansible/instance_folder_same.py",
   "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_shape_tools.py",
   "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/library/orbit_artifact.py",
   "swamp/ansible/requirements.txt",

@@ -802,7 +802,9 @@ At admission, the retry records the Project's current development Process defini
 
 A container default without `--database-server` uses the database its Project names in the workspace, such as SQLite. With `--database-server`, the database family creates its database on that server, and the container reaches it by its own [database rules](#network). Dependency installs in the deploy steps reach the internet through the [egress proxy](#egress-and-dns).
 
-A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Setup, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node. On a container Instance, `env:sync` writes only the keys of the attached connections into the existing `.env`, in place, and adds their network paths; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and on that Node until the default is active with a seed snapshot. Every other Instance is a [clone](#create).
+A web-serving Project without a PHP version refuses with `project.source_defaults_incomplete`, and one whose PHP build the runtime folder lacks with `instance.host_unavailable`. Setup, `env:import`, transfer, rename and clone refuse a container Instance with `operation.kind_unavailable`: they work on a checkout from the Node.
+
+On a container Instance, `env:sync` writes only the keys of the attached connections, and the keys that `env:update` stored since the last sync, into the existing `.env`, in place, and adds their network paths; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). Another Instance of the Project refuses with `instance.default_missing` on any Node but the default's, and on that Node until the default is active with a seed snapshot. Every other Instance is a [clone](#create).
 
 ### Create
 
@@ -1266,7 +1268,7 @@ The agents use their own subagents only. MCP servers come from the project's own
 
 ## Tasks in an Instance container
 
-This section is the target. Built today, for a Project with `nested_fleet` on: the start, the check ([Task Instance workspace](/reference/task-instance-workspace)), a new implementer turn ([`tasks.copy_turn`](/cli/task/turn#a-task-that-runs-in-a-copy)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
+This section is the target. Built today, for a Project whose default is a container (a nested-fleet Project included): the start, the check ([Task Instance workspace](/reference/task-instance-workspace)), a new implementer turn ([`tasks.copy_turn`](/cli/task/turn#a-task-that-runs-in-a-copy)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. A publish is held per Project until an operator releases it. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
 
 A task group runs in one Instance container. Everything else about a group, its subtasks, checks, reviews and reads, stays as [Tasks](/reference/tasks) describes.
 
@@ -1637,6 +1639,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens | With the Club key: a token is missing, older than 20 days or unreadable. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
+| Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate` | The tools of these pins are not complete. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
@@ -1705,7 +1708,32 @@ The refresh then restarts the nested Gateway's services, because they read the n
 
 The remint takes about 1 to 3 minutes. A refresh that does not remint reads the list once, in about 2 seconds. A remint writes the nested Gateway's disk, so its `base` is retaken. A failed remint fails the refresh with `instance.container_fleet_refresh_failed`, its step "Renew the inner Swamp tokens", and the run restores the old seed. No token reaches a log line or the result. Without the Club key the nested Swamp does not run, and the tokens are `skipped`.
 
-The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `tokens` (`reminted`, `young` or `skipped`), `tokens_reason` (`age`, `incomplete`, `unreadable`, `young` or `no_key`), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+#### The pinned shape tools
+
+The proof runner in a copy needs the pinned Ansible controller of `bin/swamp-shape-gate`: a venv and the Ansible collections, about 160 MB. A copy gets the default's seed, not the image, and the default is never rebuilt from a new image. So every refresh keeps the tools in the default itself, after `base` and before the seed. Each copy then holds the tools of its own commit. No copy builds them, and no copy needs `python3-venv`.
+
+The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
+
+| State in the default | What the step does | Result |
+| --- | --- | --- |
+| The venv has `.complete` and the collections folder has `ansible_collections` | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| Anything else | Builds the tools, as the list below says | `tools: built`, `tools_reason: missing` |
+
+A build does five things:
+
+1. It installs `python3-venv` when it is missing.
+2. It builds the venv with the gate's own `tool_path`.
+3. It installs the collections into a `.partial` folder and renames it. Collections that are complete already stay.
+4. It writes the venv's `.complete`, the marker of ready tools.
+5. It removes the `venv-*` and `collections-*` folders of other pins.
+
+The build reaches three services: the Ubuntu mirror (apt, for `python3-venv`), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
+
+A failed build never fails the refresh. The refresh goes on and takes the seed. The result says `tools: failed`, and `tools_reason` names the step: `names` (the checkout's gate cannot be read), `package`, `venv`, `collections` or `cleanup`, `timeout` after 600 s, or `unreadable` when the script printed no result line. The run's log then shows the end of the step's error output.
+
+The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
+
+The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `tokens` (`reminted`, `young` or `skipped`), `tokens_reason` (`age`, `incomplete`, `unreadable`, `young` or `no_key`), `tools` (`present`, `built` or `failed`), `tools_reason` (see [The pinned shape tools](#the-pinned-shape-tools)), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
 
 When `base` stays, the seed is taken while the inner fleet runs. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 

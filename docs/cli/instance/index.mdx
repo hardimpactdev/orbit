@@ -103,7 +103,7 @@ Analytics commands publish the tracking hosts that send visits to the [analytics
 
 On a Node of the build list, a Project's first `default` Instance runs in a container, and every other Instance of the Project is a [clone](/reference/development-containers#create) of it, with its own T3 server. A clone keeps its default's `.env` except its own connection keys and `APP_URL`; its result names the copied and dropped keys. See [the environment of a clone](/reference/development-containers#the-environment-of-a-clone). See [the default Instance](/reference/development-containers#the-default-instance).
 
-A task of a nested-fleet Project starts as a clone `task-<id>` that the task owns: a [task copy](/reference/tasks#task-copy). `task:cancel` destroys it. An `instance:destroy` of it also cancels a task that still runs.
+A task of a Project whose default Instance is a container, or of a nested-fleet Project, starts as a clone `task-<id>` that the task owns: a [task copy](/reference/tasks#task-copy). `task:cancel` destroys it. An `instance:destroy` of it also cancels a task that still runs.
 
 Conn can also [create a thread clone on a selected branch](/reference/conn#threads-in-an-orbit-project). That optional API selection reserves a branch before creation and freezes its source commit. The CLI keeps its existing create rules.
 

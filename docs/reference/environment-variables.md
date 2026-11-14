@@ -39,7 +39,7 @@ The Gateway's own environment is separate from an Instance's stored configuratio
 
 `ORBIT_GATEWAY_CHECKOUT` is the Gateway application directory. It defaults to `/home/orbit/orbit/apps/gateway`, which is a link to the current release in the release layout.
 
-`ORBIT_GATEWAY_RELEASES_KEEP` sets how many recent sealed releases the [release run](/reference/gateway-recovery#release-as-a-swamp-run) keeps. It defaults to `3` and has a minimum of `2`. The current and previous releases and the build served by `web/current` also stay. The run needs 1 GiB free beyond the database size and keeps the newest three [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot), plus the one a pause names. These limits are fixed in the workflow.
+`ORBIT_GATEWAY_RELEASES_KEEP` sets how many recent sealed releases the [release run](/reference/gateway-recovery#release-as-a-swamp-run) keeps. It defaults to `3` and has a minimum of `2`. The current and previous releases and the build served by `web/current` also stay. A new build needs room for 1 GiB and a copy of the database above the floor of 2 GiB and 10 % free. The run keeps the newest two [database snapshots](/reference/gateway-recovery#migrations-and-the-snapshot), plus the one a pause names. These limits are fixed in the release scripts.
 
 The release run verifies `/up` and Gateway status at `https://gateway.orbit`, using the Orbit root CA at `/etc/caddy/orbit-cert-current/root-ca.pem`. The verification origin is fixed in the workflow.
 
@@ -132,7 +132,7 @@ On `app-prod`, every release links `.env` in its application directory to the pr
 
 A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. A clone keeps its default's `.env` from the seed snapshot, except the keys it must own, and points copied values on the default's Route host at its own. It keeps the keys of a connection its default [shares](/reference/database-connections#share-a-connection-with-clones); see [the environment of a clone](/reference/development-containers#the-environment-of-a-clone).
 
-`env:import` refuses a container Instance with `operation.kind_unavailable`. `env:sync` on a container Instance never renders the file again: it writes only the keys of the attached connections in place, and leaves every other line as it is; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). See [the default Instance](/reference/development-containers#the-default-instance).
+`env:import` refuses a container Instance with `operation.kind_unavailable`. `env:sync` on a container Instance never renders the file again. It writes only the keys of the attached connections and the keys that `env:update` stored since the last sync, in place. Every other line stays as it is; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Import
 

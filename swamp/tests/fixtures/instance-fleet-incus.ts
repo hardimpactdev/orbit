@@ -9,8 +9,9 @@ const folder = Deno.env.get("HOST_FIXTURE")!;
 const file = `${folder}/state.json`;
 const state = JSON.parse(Deno.readTextFileSync(file));
 const args = [...Deno.args];
-// A script sent with `python3 -c` is recorded by its name.
-const recorded = args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)] : args;
+// A script sent with `python3 -c` (instance_node_services.py) or `python3 -I -c` (instance_shape_tools.py) is recorded by its name.
+const recorded = args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
+  : args[5] === "python3" && args[6] === "-I" && args[7] === "-c" ? [...args.slice(0, 8), "<instance_shape_tools.py>", ...args.slice(9)] : args;
 Deno.writeTextFileSync(`${folder}/${args[0] === "--project" ? "calls" : "node-calls"}`, JSON.stringify(recorded) + "\n", { append: true });
 const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
 const fail = (message: string, code = 1): never => {
@@ -65,6 +66,24 @@ if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
   done({ changed });
 }
 if (command[0] === "systemctl" && command[1] === "try-restart") done();
+
+// instance_shape_tools.py in the Instance container: its last line is the result, and its programs write to standard error.
+// `tools` is what the container holds: "present" (the default) or "missing", which a build makes "present". `toolsFail` names the step
+// that fails; `toolsExit` makes the script end with that code and no result line (124: the timeout ended it).
+if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c") {
+  if (command[4] !== "/srv/workspace") fail(`The tools script got ${command[4]}, not the workspace`);
+  if (state.toolsExit) {
+    save();
+    console.error("Traceback (most recent call last):");
+    Deno.exit(state.toolsExit);
+  }
+  const names = { venv: "venv-0123456789abcdef", collections: "collections-0123456789abcdef" };
+  if ((state.tools ?? "present") === "present") done(JSON.stringify({ tools: "present", reason: "current", ...names }));
+  console.error("Installing the pinned shape tools into /opt/orbit-shape-gate/venv-0123456789abcdef");
+  if (state.toolsFail) done(JSON.stringify({ tools: "failed", reason: state.toolsFail, ...names }));
+  state.tools = "present";
+  done(JSON.stringify({ tools: "built", reason: "missing", ...names }));
+}
 
 if (command[0] === "test" && command[1] === "-s") {
   save();

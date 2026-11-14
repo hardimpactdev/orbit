@@ -28,3 +28,7 @@ orbit env:update --instance=12 --key=APP_URL --value='https://{{instance.domain}
 ```
 
 `{{instance.domain}}` resolves to the Route domain, and `{{instance.environment}}` to `development` on `app-dev` or `production` on `app-prod`, when the Gateway renders the file. Any other placeholder returns `env.configuration_invalid` with the key and the rule.
+
+The output names the Instance ID, the operation, `changed` and the stored key count. `changed` says whether the stored value changed: `false` means Orbit already stored this exact value. The command writes no file, so no output field speaks of the file; the human output says that the next `env:sync` writes it.
+
+On a container Instance, the stored value reaches the `.env` inside the container at the next `env:sync`. That sync writes the key once, in place, and leaves every other line as it is. This holds also when the stored value was already the same and the output says `changed: false`; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). Store the same key again to write it again.

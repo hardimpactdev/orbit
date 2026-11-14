@@ -16,7 +16,7 @@ The VM receives the title, brief and deliverables of the subtask, then your prom
 
 ### A task that runs in a copy
 
-A task of a Project with a nested fleet runs in a [task copy](/reference/tasks#task-copy). Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
+A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it. `task:start` makes one for a Project whose default Instance is a container or that has a nested fleet; a nested-fleet task without a copy refuses with `tasks.no_workspace`. Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
 
 - Only a new implementer thread runs. A reviewer turn, `--thread=ID` and `--model` answer `tasks.copy_turn_unsupported`.
 - The model is the Gateway's `ORBIT_TASKS_COPY_TURN_MODEL`, `claudeAgent/claude-opus-5-5` by default. T3 picks the effort.

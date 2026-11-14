@@ -1,6 +1,7 @@
 import { assert } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
+import { environment as pinned } from "./_support/swamp_workflow.ts";
 
 type Dependency = { step: string; condition: { type: string } };
 type Step = { name: string; guard?: string; dependsOn?: Dependency[]; task: Record<string, unknown> };
@@ -48,7 +49,9 @@ Deno.test("no case runs before the check: the proof of the command depends on it
 Deno.test("assigned batches use the old runner plan interface and filter its whole batch lines", async () => {
     const verify = parse(await Deno.readTextFile(new URL("../workflows/workflow-proof-fleet-verify.yaml", import.meta.url))) as Workflow;
     const read = verify.jobs.flatMap(job => job.steps).find(step => step.name === "Read the runner plan")!;
-    const args = (read.task.inputs as { argv: string[] }).argv;
+    // The argv of a task VM, as the pinned CEL builds it: no copy prefix.
+    const argv = (read.task.inputs as { argv: string }).argv;
+    const args = pinned.evaluate(argv.slice(3, -2).trim(), { inputs: { intent: { checkout_path: "/c", file: "f" } } }) as string[];
     assert(args.length === 6 && args[2] === "plan" && args[3] === "--lines" && args[4] === "--file");
     const plan = verify.jobs.flatMap(job => job.steps).find(step => step.name === "plan")!;
     const expression = (plan.task.inputs as { env: { PLAN: string } }).env.PLAN.slice(3, -2).trim();

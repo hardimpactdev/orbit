@@ -2,9 +2,10 @@
 # Adds the worktree of a fetched commit, installs its dependencies, seals it with REVISION and a cached configuration, and prints the release's Swamp grants.
 # Arguments: sha, force, agent manifest. The commit is in the shared repository already (the step "Fetch the commit").
 # Run by the step "Build the release" of swamp/workflows/workflow-operation-gateway-release.yaml, from the commit it builds.
+# ORBIT_RELEASE_BASE moves the base for tests only.
 set -euo pipefail
 sha=$1 force=$2 manifest=$3
-id=${sha:0:12} base=/home/orbit
+id=${sha:0:12} base=${ORBIT_RELEASE_BASE:-/home/orbit}
 repo=$base/shared/orbit.git release=$base/releases/$id app=$base/releases/$id/apps/gateway
 fail() { echo "$1: $2" >&2; exit 1; }
 current=$(readlink "$base/orbit") || fail gateway.release_not_adopted "$base/orbit is no release link"
@@ -28,8 +29,9 @@ else
   # The PHP code is in single quotes on purpose.
   # shellcheck disable=SC2016
   database=$(php8.5 -r '$c = require $argv[1]; echo $c["database"]["connections"]["sqlite"]["database"];' "$base/releases/$current/apps/gateway/bootstrap/cache/config.php")
-  need=$(( $(stat -c %s "$database") + 1073741824 ))
-  [ "$(df --output=avail -B1 "$base" | tail -1)" -ge "$need" ] || fail gateway.release_disk_low "less than $need bytes free on $base"
+  # Before anything is written: 1 GiB for the build and a copy of the database for the snapshot, above the floor; the snapshot script owns that rule.
+  check=$(git -C "$repo" show "$sha:swamp/scripts/gateway-release-snapshot.sh")
+  bash -c "$check" gateway-release-snapshot --check "$database" 1073741824
   install -d -m 0710 -g caddy "$base/releases"
   if [ -e "$release" ]; then chmod -R u+w "$release"; rm -rf "$release"; fi
   git -C "$repo" worktree prune

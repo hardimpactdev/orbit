@@ -63,6 +63,10 @@ final readonly class ContainerDestroyExecutionCopies
                 }
             }
         }
+        // A task copy's publish holds the copy's rendered .env as a run-start copy (TaskPublishProjection::workflowInput).
+        foreach (Operation::query()->where('kind', 'tasks.publish')->where('input->instance_id', $destroy->target_id)->get(['id']) as $publish) {
+            $keys[] = 'task-publish-environment-'.$publish->id;
+        }
         // One connection for every key: serve refuses a burst of connections from the Gateway's address.
         $this->vault->deleteSecrets('orbit-control-inputs', array_values(array_unique($keys)));
     }

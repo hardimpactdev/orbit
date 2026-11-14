@@ -370,6 +370,8 @@ Token revocation (`gh api --method DELETE installation/token`) and scratch clean
 
 A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
 
+When the run starts, the Gateway also renders the `.env` from the Instance's stored values and passes it as a vault copy (`execution_secrets.environment`, key `task-publish-environment-<operation>`), never as a run input. The agent cannot change that copy, unlike the file in the copy. It holds the copy's own keys as Orbit stored them; it is not the copy's file byte for byte, because a clone keeps the default's file from the seed and rewrites only its own keys ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)). When the copy is destroyed, these copies are deleted with the Instance's other execution copies.
+
 Instead of the VM reads, the [workspace phases](/reference/task-instance-workspace#contract) `preflight` and `export` read the checkout as `agent` and fetch the branch bundle to 209; the Node keeps no copy, and the copy receives no token.
 
 After the import, a step on 209 checks every commit from the copy's start to the candidate: each must hold the `.env` path exactly as the start does. A commit that adds or changes it fails with `tasks.publish_secret_path` before the token is minted, also when a later commit removes it again, because the key would stay in the pushed history. The same code answers when the branch history lacks the start commit, for example after a rebase past it.
@@ -932,21 +934,24 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Task copy
 
-A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
+A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
-[`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs a new implementer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes; the turn's thread and transcript stay on the Gateway after the copy is gone. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. Reviewer turns, continued threads, a handoff check with hosted CI, prep and build do not run in a copy yet.
+[`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs a new implementer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes; the turn's thread and transcript stay on the Gateway after the copy is gone. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet. Reviewer turns, continued threads, a handoff check with hosted CI, prep and build do not run in a copy yet.
 
 The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 
 | Part | Rule |
 | --- | --- |
 | Source | The Project's default Instance, active with a seed, whose container runs: `task:start` reads it once before it admits the copy, because the power record can be stale |
-| Cap | `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env`, default 1: the task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait |
+| Cap | `ORBIT_TASKS_COPIES_MAX`, default 1: the nested-fleet task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait. Other copies have no task cap |
+| Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
 | Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too, and so does a failed or cancelled completion |
 | Kept copy | After an expired run budget or a failed destroy, the task keeps the copy until `task:cancel` or `instance:destroy --force` |
 | End | When the copy's destroy succeeds, a running task is `cancelled` and a failed task stays `failed`. Both let go of the copy |
+
+A held publish leaves the checked commit in the copy. An operator adds a Project to `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` once the publish guard for `.env` content is live; a copy of any other Project is a plain clone, so the nested-fleet cap does not count it.
 
 ### Workspace ownership
 
@@ -1001,9 +1006,11 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 ### Drivers
 
-A driver translates Orbit's thread operations for one agent runtime. Task agents, the implementer and the reviewer, run on the `pi` driver only. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the two roles, and both default to `pi`. A new task stores those values. The Gateway registers `pi` and no other task-agent driver. Any other value returns `tasks.agent_driver_unavailable` and stores no task.
+A driver translates Orbit's thread operations for one agent runtime. A turn in a task VM runs on the `pi` driver. A turn in a [task copy](#task-copy) runs on T3 instead: Swamp runs stock `t3 thread start` in the copy as user `agent`, and the thread records the driver `t3`. The Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) setting chooses between the two.
 
-A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
+`ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the driver of each role on a task VM, and both default to `pi`. Every new task stores those values, a task copy's too. The Gateway registers `pi` and no other task-agent driver, and a copy turn does not use the registry. Any other value, `t3` included, returns `tasks.agent_driver_unavailable` and stores no task.
+
+A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads are never resumed: each copy turn starts a new thread. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
@@ -1581,9 +1588,9 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 ### Task agents run on Pi
 
-T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
+Host T3 task threads ran as the operator's Unix user and had that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers on a task VM. A task copy runs its implementer turns with T3's own CLI as `agent`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
 
 Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
 

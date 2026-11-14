@@ -17,7 +17,7 @@ sequenceDiagram
   %%> - `orbit task:turn SUBTASK --role=implementer --prompt="Run Doctor and commit a note." --thread=new`
   Note over GW: Admit the turn<br/>owned copy · current subtask
   %%> What it does:
-  %%> - `InstancePlacement::taskRuntime` reads the Project's `nested_fleet` flag once: on, the turn runs in the group's copy as `tasks.copy_turn`; off, it is the task VM turn (`turn.mmd`)
+  %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`; every other group takes the task VM turn (`turn.mmd`). A nested-fleet group without a copy refuses here with `tasks.no_workspace`
   %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt
   %%> - records a new implementer thread with the driver `t3`, the copy's Node and the model of `ORBIT_TASKS_COPY_TURN_MODEL` (default `claudeAgent/claude-opus-5-5`); T3 picks the effort
   %%> - the intent names the copy's container, the T3 command, the model, the 3,600 s bound and a title that names the thread; no credential and no vault key

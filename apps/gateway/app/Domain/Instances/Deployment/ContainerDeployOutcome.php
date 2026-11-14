@@ -88,7 +88,7 @@ final readonly class ContainerDeployOutcome
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
@@ -98,7 +98,8 @@ final readonly class ContainerDeployOutcome
         $words = ['migrate' => ['applied', 'nothing', 'skipped'], 'restart' => ['yes', 'no'], 'converge' => ['ran', 'skipped'],
             'converge_reason' => ['changed', 'record', 'digest_unreadable', 'stale', 'unchanged'],
             'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'no_key'], 'base' => ['retaken', 'kept'],
-            'record' => ['present', 'missing', 'unreadable']];
+            'record' => ['present', 'missing', 'unreadable'], 'tools' => ['present', 'built', 'failed'],
+            'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable']];
         $refresh = [];
         foreach ($words as $part => $allowed) {
             if (! in_array($raw[$part] ?? null, $allowed, true)) {
@@ -116,10 +117,11 @@ final readonly class ContainerDeployOutcome
         }
         $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
             'converge_reason' => $refresh['converge_reason'], 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
-            'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record']];
+            'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
+            'tools_reason' => $refresh['tools_reason']];
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
         $refresh['seconds'] = [];
-        foreach (['gateway', 'converge', 'ready', 'base'] as $part) {
+        foreach (['gateway', 'converge', 'ready', 'base', 'tools'] as $part) {
             if (is_int($seconds[$part] ?? null) && $seconds[$part] >= 0) {
                 $refresh['seconds'][$part] = $seconds[$part];
             }

@@ -8,6 +8,7 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
@@ -67,9 +68,11 @@ final readonly class TaskCopyStart
             if (Instance::query()->where('project_id', $project->id)->where('name', $name)->exists()) {
                 throw new ResourceOperationException('tasks.copy_name_taken', "Instance [{$name}] already exists in Project [{$project->slug}].", 409);
             }
+            // The cap guards what a nested-fleet copy costs the Node (memory and its isolated ID range); a copy of another Project is a
+            // plain clone and counts as every clone does.
             $limit = Config::integer('orbit.tasks.copies_max');
             $live = self::live($default->node_id);
-            if ($live >= $limit) {
+            if ($runtime->incus_project === InstancePlacement::NestedProject && $live >= $limit) {
                 throw new ResourceOperationException('tasks.copy_capacity_full',
                     "The Node holds {$live} task copies; the Gateway allows {$limit} at once.", 409, details: ['live' => $live, 'limit' => $limit]);
             }
@@ -101,9 +104,13 @@ final readonly class TaskCopyStart
         }
     }
 
-    /** The task copies on the Node now: every Instance with a container that a task group owns, also one that is failing or being destroyed. */
+    /**
+     * The nested-fleet task copies on the Node now: every Instance with a container in the nested Incus project that a task group owns,
+     * also one that is failing or being destroyed.
+     */
     public static function live(int $nodeId): int
     {
-        return Instance::query()->where('node_id', $nodeId)->whereNotNull('task_workspace_owner_id')->whereHas('runtime')->count();
+        return Instance::query()->where('node_id', $nodeId)->whereNotNull('task_workspace_owner_id')
+            ->whereHas('runtime', static fn ($runtime) => $runtime->where('incus_project', InstancePlacement::NestedProject))->count();
     }
 }

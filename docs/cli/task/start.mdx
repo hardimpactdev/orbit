@@ -9,11 +9,11 @@ orbit task:start <task> [--idempotency-key=KEY] [--json]
 
 Start the work place of a parent task in Todo. The task must use external orchestration and have no claimed workspace. The command follows the Operation it gets until that Operation ends. It starts no subtask, check, turn, or publication.
 
-Orbit first checks the Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) flag. That one check decides where the task runs.
+Orbit first decides where the task runs. A Project whose default Instance is a container, or that has the [`nested_fleet`](/reference/projects#nested-fleet-setting) flag on, gets a task copy. A Project whose default is a host checkout gets a task VM.
 
 ## A task copy
 
-A task of a Project with the flag on starts as a copy of the Project's default Instance. Orbit clones the default into the Instance `task-<id>`, on the new branch `task-<id>`, as [`instance:create`](/cli/instance/create) clones it. The task owns the copy. Orbit returns the `instance.create` Operation. The task is `running` once that Operation succeeded and the copy is `active`, which is fully set up. The copy's T3 server registers with Conn as every clone's does, labelled with the Project name and `task-<id>`.
+The task starts as a copy of the Project's default Instance. Orbit clones the default into the Instance `task-<id>`, on the new branch `task-<id>`, as [`instance:create`](/cli/instance/create) clones it. The task owns the copy. Orbit returns the `instance.create` Operation. The task is `running` once that Operation succeeded and the copy is `active`, which is fully set up. The copy's T3 server registers with Conn as every clone's does, labelled with the Project name and `task-<id>`. The copy has its own database, Route and Processes, as every clone does. Only a copy of a nested-fleet Project carries an inner fleet.
 
 Orbit refuses the start at once and records nothing in these cases:
 
@@ -21,9 +21,9 @@ Orbit refuses the start at once and records nothing in these cases:
 | --- | --- |
 | `tasks.copy_source_unavailable` (409) | The default Instance is missing, not active, stopped, or has no seed snapshot. One read of its container, at most about 6 s, confirms that it runs, whatever its record says: a stopped, asleep or unreachable container refuses |
 | `tasks.copy_name_taken` (409) | An Instance named `task-<id>` exists |
-| `tasks.copy_capacity_full` (409) | The default's Node holds as many task copies as the Gateway allows. There is no wait |
+| `tasks.copy_capacity_full` (409) | Nested-fleet Project only: the default's Node holds as many nested-fleet task copies as the Gateway allows. There is no wait |
 
-The Gateway setting `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env` sets how many task copies one Node holds at once. The default is 1. Every copy that a task owns counts, also one whose create failed or that is being destroyed.
+The Gateway setting `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env` sets how many nested-fleet task copies one Node holds at once. The default is 1. Every nested copy that a task owns counts, also one whose create failed or that is being destroyed. A copy of any other Project is a plain clone: it does not count and has no task cap.
 
 When the create fails, is refused by Swamp, or is cancelled before its run starts, the task is `failed` and Orbit destroys the copy with force. When the create's run budget expires, the task stays `reserved` with its copy, because the run may still be stopping. If the destroy fails, the task also keeps owning the copy. Run `task:cancel` or `orbit instance:destroy <id> --yes --force` to destroy it.
 
@@ -31,7 +31,7 @@ The copy's agent gets the fixed task model key, as every clone does; the key is 
 
 ## A task VM
 
-Every other Project's task takes a task VM through the existing `tasks.provision` operation. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): every host has 0 task places, so no task VM starts. A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
+A task of a Project whose default is a host checkout takes a task VM through the existing `tasks.provision` operation. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet): every host has 0 task places, so no task VM starts. A task VM serves only the proof Project, because the base VM carries only its checkout. Orbit refuses a task of another Project at once with HTTP 409 `task_vm.project_unsupported` and records no Operation.
 
 When no task place is free, or an earlier task is waiting, the operation waits in the shared task queue, first come, first served. It holds no VM, and the task stays in Todo. `operation:show` and `task:show` report `capacity_wait`: the queue position and the tasks that hold the places, with each one's status and last activity. `task:status` shows the places of every host and the whole queue. The wait ends with `tasks.capacity_timeout` after two hours. [Task places](/reference/tasks#task-places) defines these fields. A failed start releases its place. Changing a task's status with `task:update --status=todo` changes board state only; it does not start a VM.
 

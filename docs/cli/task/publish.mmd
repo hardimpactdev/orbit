@@ -27,6 +27,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
   %%> - group 42 is an open external group with its own task VM workspace, or with its own task copy whose container runs (`tasks.instance_not_running`) and has a start commit
+  %%> - a task copy's Project is released for publishing: a nested-fleet trial Project, or listed in the Gateway's `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`; otherwise HTTP 409 `tasks.copy_publish_held`, and the checked commit stays in the copy
   %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
   %%> - group 42 is provisioned: while its `tasks.provision` Operation waits or runs, the publish answers `tasks.not_provisioned` (409) with that Operation's ID in `details.operation_id`
   %%> - a task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs

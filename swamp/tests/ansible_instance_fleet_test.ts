@@ -76,6 +76,8 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   // of converge inputs the refresh hashes.
   Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   Deno.copyFileSync(new URL("fleet-converge-inputs.json", root), `${folder}/fleet-converge-inputs.json`);
+  // The refresh sends instance_shape_tools.py into the container the same way.
+  Deno.copyFileSync(new URL("instance_shape_tools.py", root), `${folder}/instance_shape_tools.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
     "- name: Run one phase of the fleet step",
     "  hosts: localhost",
@@ -228,6 +230,8 @@ const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gatew
 const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- runuser -u orbit -- env HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp " +
   "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 " +
   "swamp access token list --json";
+/** The pinned shape tools in the Instance container: instance_shape_tools.py, named by the workspace's own gate, after base. */
+const toolsCall = "python3 -I -c <instance_shape_tools.py> /srv/workspace";
 /** The remint play on the nested Gateway: it makes the worker set whole and renews the six tokens. */
 const remint = "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_DISPLAY_FAILED_STDERR=true " +
   "/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags remint /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml";
@@ -453,6 +457,8 @@ Deno.test({
         ...reads,
         ...names.map((name) => `incus snapshot delete ${name} base`),
         ...names.map((name) => `incus snapshot create ${name} base`),
+        // The pinned shape tools in the outer container, after base: the seed after this phase holds them.
+        toolsCall,
         recordWrite,
       ]);
       assertKeyUntouched(calls, refreshed.output);
@@ -924,10 +930,13 @@ Deno.test({
       }
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
-        changed: 0, tokens: "young", tokens_reason: "young", base: "kept", base_containers: [], record: "present", seconds: undefined });
+        changed: 0, tokens: "young", tokens_reason: "young", base: "kept", base_containers: [], record: "present", tools: "present",
+        tools_reason: "current", seconds: undefined });
       // Young tokens: one read and no remint.
       assertEquals([calls.filter((call) => call === tokenRead).length, ran(calls, "--tags remint")], [1, false]);
-      assertEquals(Object.keys(result.seconds as object), ["gateway", "converge", "ready", "base"]);
+      assertEquals(Object.keys(result.seconds as object), ["gateway", "converge", "ready", "base", "tools"]);
+      // Present tools: one read in the container, just before the record write.
+      assertEquals(calls.slice(-2), [toolsCall, recordWrite]);
       assertEquals(f.state().outer.modes[record], "root:root 0644");
       // The record keeps the time of the last converge that ran; the seeded record of the short cases is the one a refresh writes.
       assertEquals(JSON.parse(f.state().outer.files[record]), written);
@@ -1400,6 +1409,59 @@ Deno.test({
       assertEquals(f.state().outer.files[record], undefined);
       assert(!tokenShaped.test(failed.output), "a token-shaped string is in the output");
       assertKeyUntouched(calls, failed.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => state.tools = "missing");
+      const first = f.run("refresh");
+      assert(first.ok, first.output);
+      const calls = f.calls();
+      // After the last write to a nested disk, and before the record: the seed after this phase holds the tools.
+      assertEquals(calls.slice(-2), [toolsCall, recordWrite]);
+      const built = f.refreshed()!;
+      assertEquals([built.tools, built.tools_reason], ["built", "missing"]);
+      assertEquals(Object.keys(built.seconds as object), ["gateway", "converge", "ready", "base", "tools"]);
+      const again = f.run("refresh");
+      assert(again.ok, again.output);
+      assertEquals(f.calls().filter((call) => call === toolsCall).length, 1);
+      const read = f.refreshed()!;
+      assertEquals([read.tools, read.tools_reason], ["present", "current"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      for (const [edit, reason] of [
+        [(state: Record<string, unknown>) => Object.assign(state, { tools: "missing", toolsFail: "venv" }), "venv"],
+        [(state: Record<string, unknown>) => Object.assign(state, { toolsFail: undefined, toolsExit: 124 }), "timeout"],
+        [(state: Record<string, unknown>) => Object.assign(state, { toolsExit: 1 }), "unreadable"],
+      ] as const) {
+        f.change(edit);
+        const refreshed = f.run("refresh");
+        assert(refreshed.ok, refreshed.output);
+        assertEquals(f.calls().at(-1), recordWrite);
+        const result = f.refreshed()!;
+        assertEquals([result.tools, result.tools_reason], ["failed", reason]);
+        // An ok task prints no standard error: the report shows the end of the step's own output.
+        assertStringIncludes(refreshed.output, `The pinned shape tools failed at ${reason}`);
+      }
+      assertEquals(f.state().tools, "missing");
     } finally {
       f.cleanup();
     }

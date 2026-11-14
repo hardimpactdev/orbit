@@ -27,7 +27,7 @@ const exists = (path: string) => {
 const receipt = '{"error_code":"instance.container_process_inactive","process_failure":{"process_id":41,"unit":"orbit-process-41-worker.service","state":"failed"}}';
 
 async function fixture(mode: Mode, slow: Long = "clone-services") {
-    const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
+    const folder = Deno.makeTempDirSync({ dir: "/tmp", prefix: "orbit-ansible-" });
     const auth = await nativeAuth(folder);
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, { args: [...args, "--json"], cwd: folder, ...auth }).output();

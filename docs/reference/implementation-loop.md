@@ -223,7 +223,7 @@ A file that cannot fit even an otherwise empty eight-shard plan, or contains a u
 
 Migration remains after-merge-only: its declared work needs twelve shards, above the eight-shard limit. The host ACL file also exceeds a lane, and the host build-list file needs an isolated measurement before admission. The FrankenPHP proxy fixture needs the pinned binary through `ORBIT_FRANKENPHP`, which hosted fixture setup does not install. Their table entries explain these coverage gaps. The measured container file remains eligible.
 
-The native migration fixture also forces advisory mail failure and malformed receipts for defaults and clones, proving that Route cutover and retirement succeed without rollback. Its account gate uses Swamp's upstream [throwaway credential fixture](https://github.com/swamp-club/swamp/blob/db3f6373/integration/auth_gate_fixture.ts), with no real credential or fleet call.
+The native migration fixture also forces advisory mail failure and malformed receipts for defaults and clones, proving that Route cutover and retirement succeed without rollback. Its account gate uses Swamp's upstream [throwaway credential fixture](https://github.com/swamp-club/swamp/blob/db3f6373/integration/auth_gate_fixture.ts), with no real credential or fleet call. Native create, complete and migration fixtures create their run folders directly under `/tmp`, as the production folder schema requires. Verify them through `bin/ci-units run`: its per-unit `TMPDIR` must not move those folders below another directory.
 
 The task VM host egress Python file is also after-merge-only: it repeatedly reached the 180-second PR ceiling, including run 43102509039. Python files run as whole units; the full-set receiver retains every case until measured case splitting makes PR admission possible. These explicit deferrals do not fail Required checks.
 
@@ -516,7 +516,7 @@ The gate prints each command's start and reports its result as soon as it finish
 
 The shape checker resolves a constant quoted CEL child-workflow name and scans that child just as it scans a literal target.
 
-A task VM holds the same environment in `/opt/orbit-shape-gate`. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins, so the check runs offline.
+A task VM holds the same environment in `/opt/orbit-shape-gate`, and so does a copy of a nested-fleet default: its [refresh](/reference/development-containers#the-pinned-shape-tools) builds the tools before the seed. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins, so the check runs offline.
 
 Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
