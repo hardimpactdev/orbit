@@ -41,6 +41,9 @@ const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
   ...names.flatMap((name) => Object.keys(egress).map((path): [string, string] => [name, path])),
 ];
+/** The inner bridge as the seed's first fleet has it, and with its rule: its dnsmasq has no upstream. */
+const exportedBridge = { "ipv4.address": "10.232.2.1/24", "ipv4.nat": "true", "ipv6.address": "none" };
+const ruledBridge = { ...exportedBridge, "raw.dnsmasq": "no-resolv" };
 const push = (name: string, path: string) => `incus file push --create-dirs --uid 0 --gid 0 --mode 0644 - ${name}${path}`;
 
 /** The shape a fleet has after the fleet rules: the exported shape with the devices and keys the rules give each container. */
@@ -60,7 +63,7 @@ function ruled() {
   return containers;
 }
 
-function fixture(containers: Record<string, Record<string, unknown>>, options: { club?: boolean; base?: boolean } = {}) {
+function fixture(containers: Record<string, Record<string, unknown>>, options: { club?: boolean; base?: boolean; bridge?: Record<string, string> } = {}) {
   const folder = Deno.makeTempDirSync();
   Deno.mkdirSync(`${folder}/bin`);
   Deno.mkdirSync(`${folder}/tasks`);
@@ -101,7 +104,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   if (options.club) files[clubKey] = clubValue;
   Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
     outer: { project: "orbit-instances-nested", name: "instance-9", files },
-    containers, tunnel: null, hubKey, nodes,
+    containers, network: { name: "oe-nested", config: { ...(options.bridge ?? ruledBridge) } }, tunnel: null, hubKey, nodes,
   }));
   Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
     container: { project: "orbit-instances-nested", name: "instance-9", workspace: "/srv/workspace",
@@ -191,6 +194,7 @@ function assertKeyUntouched(calls: string[], output: string) {
 
 const reads = [
   ...names.map((name) => `incus query /1.0/instances/${name}`),
+  "incus query /1.0/networks/oe-nested",
   ...fileRules.map(([name, path]) => `incus file pull ${name}${path} -`),
 ];
 const startCalls = [
@@ -240,7 +244,7 @@ Deno.test({
   name: "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   ignore: !hasAnsible,
   fn() {
-    const f = fixture(structuredClone(shapes), { club: true });
+    const f = fixture(structuredClone(shapes), { club: true, bridge: exportedBridge });
     try {
       const first = f.run("rules");
       assert(first.ok, first.output);
@@ -255,6 +259,7 @@ Deno.test({
         "incus config device set nested-app-dev checkout source=/srv/workspace path=/home/orbit/orbit shift=false",
         ...["nested-gateway", "nested-app-dev", "nested-app-prod"].flatMap((name) =>
           [...(name === "nested-app-prod" ? [] : [`raw.idmap=${idmap}`]), ...proxyKeys].map((key) => `incus config set ${name} ${key}`)),
+        "incus network set oe-nested raw.dnsmasq=no-resolv",
         ...fileRules.map(([name, path]) => push(name, path)),
         ...reads,
       ]);
@@ -930,6 +935,52 @@ Deno.test({
       const calls = f.calls();
       assert(ran(calls, parts.converge) && !ran(calls, parts.migrate) && !ran(calls, parts.restart), calls.join("\n"));
       assertEquals(f.refreshed()?.base, "retaken");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The seed of a copy made before the rule: its bridge's dnsmasq still forwards to a resolver that refuses.
+      f.change((state) => delete state.network.config["raw.dnsmasq"]);
+      const started = f.run("start");
+      assert(started.ok, started.output);
+      assert(!f.calls().some((call) => call.includes(" network set ")));
+      assertEquals(f.state().network.config, exportedBridge);
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      // The fake refuses a bridge change while a nested container runs.
+      const set = calls.indexOf("incus network set oe-nested raw.dnsmasq=no-resolv");
+      assert(set > calls.findLastIndex((call) => call.startsWith(parts.stop)), calls.join("\n"));
+      assert(set < calls.findIndex((call) => call.startsWith(parts.base)), calls.join("\n"));
+      assertEquals(f.state().network.config, ruledBridge);
+      const result = f.refreshed()!;
+      assertEquals([result.base, result.base_containers], ["retaken", names]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled());
+    f.change((state) => state.networkUnreadable = true);
+    try {
+      const refused = f.run("start");
+      assert(!refused.ok);
+      assertStringIncludes(refused.output, "where Orbit does not write: oe-nested network oe-nested");
+      assertStringIncludes(refused.output, '"msg": "instance.container_fleet_drift"');
+      assertEquals(f.calls(), reads);
     } finally {
       f.cleanup();
     }

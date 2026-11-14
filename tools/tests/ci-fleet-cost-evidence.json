@@ -4,7 +4,7 @@
     43530610727
   ],
   "source_sha256": "d75505fb415058689e4c53a2a33c3f7d02419fda4480268c153dcc3c0e0d4332",
-  "note": "Largest completed case body in the two runs; censored samples excluded. Not a p90. Includes the two new #3645 cases. #3661 renamed five cases and keeps their earlier hosted body (the same scenario, now with less work); its three new seeded-record cases carry the local estimate (local 21-22 s x 3), not a hosted sample.",
+  "note": "Largest completed case body in the two runs; censored samples excluded. Not a p90. Includes the two new #3645 cases. #3661 renamed five cases and keeps their earlier hosted body (the same scenario, now with less work); its three new seeded-record cases carry the local estimate (local 21-22 s x 3), not a hosted sample. The inner-bridge refresh case and the unreadable-bridge start case carry the local estimate (local 43 s and 2 s x 3), not a hosted sample.",
   "case_seconds": {
     "a deleted record runs every part and never fails the refresh": 115.461,
     "a malformed record runs every part and never fails the refresh": 115.151,
@@ -43,6 +43,8 @@
     "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written": 16.315,
     "a moved base intent of one Node converges the three Nodes one by one, and the result names why": 66,
     "a converge older than seven days runs although no input changed, and the result names it stale": 63,
-    "an unreadable base intent digest converges, names why, and records no converge digest": 66
+    "an unreadable base intent digest converges, names why, and records no converge digest": 66,
+    "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three": 129,
+    "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read": 6
   }
 }

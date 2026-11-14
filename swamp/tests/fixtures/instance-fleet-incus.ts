@@ -1,7 +1,8 @@
 /**
  * Stateful Incus boundary for the nested fleet of an Instance container (swamp/ansible/tasks/instance-fleet-*.yml). The Node's `incus`
  * reaches only `exec` into the Instance container; there the inner `incus`, `ip`, `wg`, `ping`, `test` and `curl` act on one JSON state:
- * the nested containers with their devices, configuration keys, files and snapshots, the operator tunnel, and the nested Gateway's API.
+ * the nested containers with their devices, configuration keys, files and snapshots, the inner bridge's keys, the operator tunnel, and
+ * the nested Gateway's API.
  * Every call is one JSON line in `calls`. No live host command runs.
  */
 const folder = Deno.env.get("HOST_FIXTURE")!;
@@ -104,6 +105,20 @@ if (command[0] === "incus") {
   if (inner[0] === "admin" && inner[1] === "waitready") done();
   if (inner[0] === "list") {
     done(Object.entries(containers).map(([name, value]) => `${name},${value.status.toUpperCase()}`).join("\n"));
+  }
+  // The inner bridge: `network` is its name and keys; `networkUnreadable` makes its read fail.
+  if (inner[0] === "query" && inner[1].startsWith("/1.0/networks/")) {
+    const name = inner[1].slice("/1.0/networks/".length);
+    if (state.networkUnreadable || name !== state.network.name) fail("Network not found");
+    done({ name, type: "bridge", config: state.network.config });
+  }
+  if (inner[0] === "network" && inner[1] === "set") {
+    if (inner[2] !== state.network.name) fail("Network not found");
+    // Incus restarts the bridge's dnsmasq, and a nested container on it loses DNS and DHCP while it runs: the fake refuses that.
+    const running = Object.entries(containers).filter(([, value]) => value.status === "Running").map(([name]) => name);
+    if (running.length > 0) fail(`The bridge changed under running nested containers: ${running.join(", ")}`);
+    Object.assign(state.network.config, pairs(inner.slice(3)));
+    done();
   }
   if (inner[0] === "query") {
     const [route, query] = inner[1].slice("/1.0/instances/".length).split("?");
