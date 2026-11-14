@@ -91,6 +91,7 @@ final readonly class ProofVerifyIntent
         if (! $group->project->nested_fleet) {
             throw new ResourceOperationException('proof.wrong_project', 'Proof cases in a task copy need a Project with a nested fleet.', 409);
         }
+        $copy->refuseFailedCompletion();
         if ($copy->instance->status !== InstanceState::Active) {
             throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
         }

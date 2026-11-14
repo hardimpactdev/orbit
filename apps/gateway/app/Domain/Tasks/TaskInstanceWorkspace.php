@@ -56,7 +56,7 @@ final readonly class TaskInstanceWorkspace
     }
 
     /**
-     * Refuses a turn, a check and a publish of a task copy whose completion failed (TaskCopyLifecycle::completionFailure): the completion
+     * Refuses a turn, a check, a publish and a proof of a task copy whose completion failed (TaskCopyLifecycle::completionFailure): the completion
      * did not start the copy's Processes or a nested copy's inner fleet, and its retry may run at the same time
      * (docs/reference/tasks.md#a-failed-completion).
      */

@@ -989,7 +989,7 @@ A failed, cancelled, interrupted or unadmitted `instance.complete` of a copy kee
 
 The task asks for assistance with kind `failure`, unless a direction request is open. The reason names the completion Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>`. `task:show` and `task:status` show it.
 
-Until a completion succeeds, a turn, a check and a publish answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn answers `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
+Until a completion succeeds, a turn, a check, a publish and a proof answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn answers `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
 
 #### Removal by Orbit
 
