@@ -39,4 +39,4 @@ The sync refuses a copy while a copy turn of the group may still run. While a ch
 | `tasks.vm_resuming` | the task VM was parked; its resume is admitted |
 | `tasks.instance_not_running` | the task copy's container does not run |
 | `tasks.copy_turn_unended` | a copy turn of the group may still run |
-| `tasks.sync_failed` | a step of the run failed, such as the clone of a branch that does not exist on origin |
+| `tasks.sync_failed` | a step of the run failed, such as the clone of a branch that does not exist on origin; for a task copy also at once (422) when the Project has no GitHub repository or valid default branch |
