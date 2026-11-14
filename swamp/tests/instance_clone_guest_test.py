@@ -307,9 +307,14 @@ class WorkspaceCheckoutTest(unittest.TestCase):
             if actual[0] == "git":
                 actual = [str(self.base / "tmp/proof.bundle") if a == container["bundle"] else a for a in actual]
                 self.git_calls.append((actual, _kwargs.get("env", {})))
+                # In a container another user owns /srv/workspace, and only `orbit`'s global configuration trusts it: a call without
+                # that configuration sees a foreign owner, as Git's own test switch makes it.
+                isolated = _kwargs.get("env", {}).get("GIT_CONFIG_GLOBAL") == "/dev/null"
+                actual = [a.replace("safe.directory=/srv/workspace", "safe.directory=" + str(self.workspace)) for a in actual]
                 return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
                                 input=_kwargs.get("input"), errors=_kwargs.get("errors", "strict"),
-                                env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", LC_ALL="C"))
+                                env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", LC_ALL="C",
+                                         **({"GIT_TEST_ASSUME_DIFFERENT_OWNER": "1"} if isolated else {})))
             stdout = ""
             if "/usr/local/libexec/orbit-instance-node-runtime.py" in actual:
                 stdout = '{"status":"unchanged"}'
@@ -524,6 +529,19 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.phase("checkout", self.task_copy())
         self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
         self.assertFalse((self.workspace / "l0").exists())
+
+    def test_every_git_call_of_the_clean_trusts_the_checkout_that_another_user_owns(self):
+        # Release 2046: without global configuration `orbit` lost its trust of /srv/workspace and the first clean call exited 128.
+        # The harness gives each call without global configuration a foreign owner (GIT_TEST_ASSUME_DIFFERENT_OWNER), so a call
+        # without the trust fails here as live; and every such call names it.
+        self.default_tree()
+        result = self.phase("workspace", self.task_copy())
+        self.assertEqual(result["cleaned"]["removed_count"], 3)
+        isolated = [argv for argv, env in self.git_calls if env.get("GIT_CONFIG_GLOBAL") == "/dev/null"]
+        verbs = {verb for argv in isolated for verb in ("ls-files", "update-index", "diff", "reset", "clean", "status") if verb in argv}
+        self.assertEqual(verbs, {"ls-files", "diff", "reset", "clean", "status"})
+        for argv in isolated:
+            self.assertIn("safe.directory=/srv/workspace", argv)
 
     def test_the_clean_reads_the_agents_ignore_file_as_the_task_check_does(self):
         self.seed("main", self.expected)

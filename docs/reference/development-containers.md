@@ -808,7 +808,7 @@ A [task copy](/reference/tasks#task-copy) starts from its start commit alone. Th
 | Untracked files | Then `git clean -d -ff`, without `-x`, with the start commit's `.gitignore`: what Git does not ignore goes, nested repositories too. It repeats until a dry run finds nothing new, at most 64 rounds |
 | Check | `git status --porcelain --untracked-files=all` must be empty, else the create fails with `instance.create_workspace_failed`, for example for a changed submodule |
 
-Git runs here with the task check's ignore rules: no global or system configuration, and the agent's own ignore file, `~agent/.config/git/ignore`, which the check reads as `agent`. A file name that is not UTF-8 is cleaned too and named with its bytes escaped.
+Git runs here with the task check's ignore rules: no global or system configuration, and the agent's own ignore file, `~agent/.config/git/ignore`, which the check reads as `agent`. Like the check, it trusts the checkout by name (`safe.directory`), because another user owns it and the global configuration that trusts it is left out. A file name that is not UTF-8 is cleaned too and named with its bytes escaped.
 
 What Git ignores stays: `vendor`, `node_modules`, built assets, a SQLite file and `.env`. They come from the seed and match the start commit, which is the seed's commit.
 
