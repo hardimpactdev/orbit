@@ -131,8 +131,10 @@ final readonly class ConnAttachedThreads
 
         DB::transaction(function () use ($environmentIds): void {
             $holders = ConnProfile::query()->whereExists(static fn (Builder $query) => $query->selectRaw('1')
-                ->fromRaw("json_each(conn_profiles.settings, '$.attachedThreads.threads')")
-                ->whereIn(DB::raw("json_extract(value, '$.environmentId')"), $environmentIds));
+                // json_tree walks every element without parsing it as an object, so a malformed element cannot fail the
+                // query; the loop below confirms each match.
+                ->fromRaw("json_tree(conn_profiles.settings, '$.attachedThreads.threads')")
+                ->where('key', 'environmentId')->whereIn('atom', $environmentIds));
 
             foreach ($holders->lockForUpdate()->get() as $profile) {
                 $section = $profile->settings[ConnProfileSections::AttachedThreads] ?? null;

@@ -8,7 +8,8 @@ use Orbit\Extensions\Conn\Http\Requests\ConnProfileSettingsRules;
 
 /**
  * `bin/docs-openapi` writes the settings patch body by hand, because the rules depend on the sections a request holds.
- * This keeps the published body, and the MCP tool built from it, on the request rules.
+ * This keeps the published body, and the MCP tool built from it, on the request rules. It reads the generated
+ * `docs/openapi.json` and MCP manifest, so run `bin/build-api` first, as CI does.
  */
 function contract_pattern(array $rules): string
 {

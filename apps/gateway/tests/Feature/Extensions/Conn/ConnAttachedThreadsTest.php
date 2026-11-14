@@ -217,6 +217,14 @@ it('reads and locks only the profiles that hold a removed environment', function
         ->and(attached_read($this->phone)['threads'])->toBe([]);
 });
 
+it('drops a removed Instance\'s threads when a profile holds a malformed element', function (): void {
+    $this->profile->forceFill(['settings' => ['workspaces' => [], 'attachedThreads' => ['schema' => 1, 'threads' => ['not-an-entry', ['environmentId' => 'env-beast', 'threadId' => 'thread-1']]]]])->save();
+
+    DB::transaction(fn () => app(ConnInstanceLifecycle::class)->projectDestroy($this->onBeast));
+
+    expect($this->profile->fresh()?->settings['attachedThreads']['threads'])->toBe([]);
+});
+
 it('drops a removed Instance\'s threads from a document that is already over a limit', function (array $settings): void {
     $this->profile->forceFill(['settings' => [...$settings, 'attachedThreads' => attached_value([['env-beast', 'thread-1'], ['env-mini', 'thread-2']])]])->save();
 
