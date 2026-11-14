@@ -118,7 +118,7 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None):
         calls = []
         self.inputs = {}
         real_run = subprocess.run
@@ -240,7 +240,7 @@ class CloneTest(unittest.TestCase):
                         str(SCRIPT),
                         json.dumps(container),
                         "guest",
-                        (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else NETWORK_CHECK.read_text(),
+                        (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else (network_check or NETWORK_CHECK.read_text()),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
                         json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
@@ -274,9 +274,12 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(nic["security.acls"], "orbitinst0-proxy,instance-7")
         self.assertEqual(nic["security.acls.default.egress.action"], "reject")
         self.assertEqual(nic["security.acls.default.ingress.action"], "reject")
-        # The copy's NIC accepts only its own IPv4 and MAC address.
+        # The copy's NIC accepts only its own IPv4 and MAC address: the clone reads FILTERS from the check's source it receives.
         self.assertEqual(nic["security.ipv4_filtering"], "true")
         self.assertEqual(nic["security.mac_filtering"], "true")
+        _, read, error = self.clone(network_check='FILTERS = {"security.ipv4_filtering": "true"}\n' + NETWORK_CHECK.read_text().replace("FILTERS = {", "_FILTERS = {", 1))
+        self.assertEqual(error, "")
+        self.assertNotIn("security.mac_filtering", read["expanded_devices"]["eth0"])
         start = ["incus", "--project", "orbit-instances", "start", "instance-7"]
         self.assertIn(start, calls)
         links = next(call for call in calls if call[3:5] == ['file', 'delete'] and '--force' not in call)
@@ -584,6 +587,19 @@ class CloneTest(unittest.TestCase):
         for filters in [{}, {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}]:
             result = check({**stock, **filters, "security.acls": ""})
             self.assertEqual(result.returncode, 1)
+
+    def test_the_three_holders_of_the_nic_filters_are_equal(self):
+        # One holder per language: Python (the shared NIC check, which the native clone reads), Ansible and the Gateway.
+        namespace = {}
+        exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0], namespace)
+        python = namespace["FILTERS"]
+        ansible = json.loads((NETWORK_CHECK.parent / "instance-nic-filters.json").read_text())
+        php = (SCRIPT.parents[2] / "apps/gateway/app/Domain/Instances/InstanceHostIntent.php").read_text()
+        constant = php.split("public const array NicFilters = [", 1)[1].split("];", 1)[0]
+        gateway = dict(pair.strip().replace("'", "").split(" => ") for pair in constant.split(","))
+        self.assertEqual(python, {"security.ipv4_filtering": "true", "security.mac_filtering": "true"})
+        self.assertEqual(ansible, python)
+        self.assertEqual(gateway, python)
 
     def test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it(self):
         namespace = {}

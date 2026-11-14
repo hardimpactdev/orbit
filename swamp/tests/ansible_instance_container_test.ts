@@ -61,6 +61,7 @@ function fixture() {
   Deno.mkdirSync(`${folder}/tasks`);
   Deno.copyFileSync(new URL("instance_bridge.py", root), `${folder}/instance_bridge.py`);
     Deno.copyFileSync(new URL("instance_network.py", root), `${folder}/instance_network.py`);
+    Deno.copyFileSync(new URL("instance-nic-filters.json", root), `${folder}/instance-nic-filters.json`);
     Deno.copyFileSync(new URL("instance_nested.py", root), `${folder}/instance_nested.py`);
   Deno.writeTextFileSync(`${folder}/bin/curl`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-bridge-curl.ts", import.meta.url).pathname}' "$@"\n`);
   Deno.chmodSync(`${folder}/bin/curl`, 0o755);

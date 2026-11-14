@@ -41,13 +41,16 @@
         fail_msg: >-
           instance.host_unavailable: instance {{ instance_variant.project }}/{{ build }} requires an operator;
           see /solutions/incus-shared-image-refresh#operator-cleanup
-    # Its fixed address lets it carry the address filters of an Instance NIC (instance_network.py's FILTERS); the profile's eth0 has
+    # Its fixed address lets it carry the address filters of an Instance NIC (instance-nic-filters.json); the profile's eth0 has
     # no address, so the profile does not set them.
     - name: Create the build container
+      vars:
+        nic_filters: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance-nic-filters.json') | from_json }}"
       ansible.builtin.command:
-        argv: [incus, --project, "{{ instance_variant.project }}", init, "{{ instances.stock }}", "{{ build }}",
-               --config, security.idmap.isolated=true, --device, "eth0,ipv4.address={{ instances.build_address }}",
-               --device, "eth0,security.ipv4_filtering=true", --device, "eth0,security.mac_filtering=true"]
+        argv: >-
+          {{ ['incus', '--project', instance_variant.project, 'init', instances.stock, build,
+              '--config', 'security.idmap.isolated=true', '--device', 'eth0,ipv4.address=' ~ instances.build_address]
+             + (['--device'] | product(['eth0,'] | product(nic_filters.items() | map('join', '=')) | map('join')) | flatten) }}
       register: image_created
       changed_when: true
     - name: Read the build container's effective devices

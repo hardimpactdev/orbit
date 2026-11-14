@@ -33,8 +33,9 @@ final readonly class InstanceHostIntent
     public const string NicAcl = self::Network.'-proxy';
 
     /**
-     * The address filters of every Instance NIC: it accepts only its own IPv4 and MAC address. Swamp's `instance_network.py` holds the
-     * same keys for create, clone and migrate (docs/reference/development-containers.md#network).
+     * The address filters of every Instance NIC: it accepts only its own IPv4 and MAC address. Swamp holds the same keys in
+     * `instance_network.py` (Python) and `instance-nic-filters.json` (Ansible); `swamp/tests/instance_clone_test.py` keeps the three
+     * equal (docs/reference/development-containers.md#network).
      *
      * @var array<string, string>
      */

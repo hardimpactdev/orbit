@@ -3,8 +3,10 @@
 import json
 import sys
 
-# Each Instance NIC accepts only its own IPv4 and MAC address (docs/reference/development-containers.md#network). Create, clone and
-# migrate write these keys; a NIC made before them is reported, not refused, until every existing NIC has them.
+# Each Instance NIC accepts only its own IPv4 and MAC address (docs/reference/development-containers.md#network). The Python holder
+# of the keys: the native clone reads them from this source. Ansible reads instance-nic-filters.json, the Gateway
+# InstanceHostIntent::NicFilters; instance_clone_test.py keeps the three equal. A NIC made before them is reported, not refused, until
+# every existing NIC has them.
 FILTERS = {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}
 
 

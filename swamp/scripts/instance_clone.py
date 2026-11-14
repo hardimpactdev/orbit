@@ -1,5 +1,6 @@
 """One native clone phase on its Node. Public intent is argv; private input is stdin."""
 
+import ast
 import datetime
 import json
 import os
@@ -54,6 +55,14 @@ def select_branch(container, git, remote_git, run):
     if observed.returncode:
         raise RuntimeError("instance.clone_source_unavailable")
     run(git + ["update-ref", target, commit])
+
+
+def nic_filters(network_check):
+    """The address filters of every Instance NIC: `FILTERS` of the shared NIC check, whose source this phase receives."""
+    for node in ast.parse(network_check).body:
+        if isinstance(node, ast.Assign) and [getattr(target, "id", "") for target in node.targets] == ["FILTERS"]:
+            return ast.literal_eval(node.value)
+    raise RuntimeError("instance.container_network_unsafe")
 
 
 def main():
@@ -273,12 +282,10 @@ def main():
                     "eth0,security.acls.default.egress.action=reject",
                     "--device",
                     "eth0,security.acls.default.ingress.action=reject",
-                    # The address filters of instance_network.py's FILTERS: the NIC accepts only its own IPv4 and MAC address.
-                    "--device",
-                    "eth0,security.ipv4_filtering=true",
-                    "--device",
-                    "eth0,security.mac_filtering=true",
                 ]
+                # The NIC accepts only its own IPv4 and MAC address.
+                for key, value in nic_filters(network_check).items():
+                    argv += ["--device", "eth0," + key + "=" + value]
                 change(argv)
                 read = json.loads(
                     run(

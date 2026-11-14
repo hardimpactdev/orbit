@@ -178,6 +178,7 @@ additionalFiles:
   - ansible/tasks/instance-bridge-rules.yml
   - ansible/instance_bridge.py
   - ansible/instance_network.py
+  - ansible/instance-nic-filters.json
   - ansible/instance_nested.py
   - ansible/instance_folder_debs.py
   - ansible/instance_folder_same.py
