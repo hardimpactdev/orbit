@@ -194,8 +194,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 1892
-slices = 15
+cost = 2534
+slices = 33
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -205,40 +205,45 @@ inputs = [
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
+# ESTIMATE: completed hosted case bodies from PR runs 43529816432 and 43530610727, rounded up plus 1s,
+# never reducing an existing estimate. One case per slice; startup adds 6s.
+# The failed-run case uses a 140s planning estimate (149.0s observed); the existing
+# converge estimate stays 141s (151.5s observed). Both use the 40s runtime headroom.
+# Neither is a measured p90: collect five completed hosted samples before calibration.
 [fixture.case_costs]
-  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 22 # ESTIMATE: local 7s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
-  "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 22 # ESTIMATE: local 7s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
+  "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 40
+  "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: local 13s x 3, plus 1s
-  "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 28 # ESTIMATE: local 12s on a loaded Beast (about 9s at the table's base) x 3, plus 1s
-  "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 16 # ESTIMATE: local 5s x 3, plus 1s
-  "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 40 # ESTIMATE: local 13s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
-  "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 58 # ESTIMATE: local 27s on a loaded Beast (about 19s at the table's base) x 3, plus 1s
-  "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 25 # ESTIMATE: local 8s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
-  "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 28 # ESTIMATE: local 9s x 3 (PR run 43427055111 cut a 44-second slice at 101.5 s), rounded up, plus 1s
-  "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 31 # ESTIMATE: local 10s x 3, plus 1s
-  "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 13 # ESTIMATE: local 4s x 3, plus 1s
-  "a fleet built from the rules has the live shape, with boot.autostart true" = 19 # ESTIMATE: local 6s x 3, plus 1s
-  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 49 # ESTIMATE: local 16s x 3, plus 1s
+  "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
+  "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
+  "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 50
+  "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79
+  "a refresh stops at a failed Node converge and takes no base; without the Club key it skips the grants and the Swamp units" = 35
+  "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 44
+  "the live fleet passes the check and its start changes no config: running it is a no-op, stopped it only starts" = 39
+  "a live fleet with a foreign difference is refused by the check and by the rules before any change" = 18
+  "a fleet built from the rules has the live shape, with boot.autostart true" = 31
+  "on the live fleet a refresh writes the egress files before the converge, then boot.autostart, then takes base" = 54
   "a refresh whose egress files are missing at the converge fails cleanly with the Node and the task, and takes no base" = 22 # ESTIMATE: local 7s x 3, plus 1s
   "readiness reads a healthy Doctor on the first poll; an empty, an error or no response fails with what the last poll got" = 76 # ESTIMATE: local 25s x 3, plus 1s
-  "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 55 # ESTIMATE: local 18s x 3, plus 1s
-  "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 64 # ESTIMATE: local 21s x 3, plus 1s
-  "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 13 # ESTIMATE: local 4s x 3, plus 1s
-  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 57 # local 28s on Beast, x2, plus 1s
-  "a changed input alone runs its own part, once: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
-  "a changed input alone runs its own part, once: the code without a pending migration migrates, restarts and converges, and keeps base" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
-  "a changed input alone runs its own part, once: swamp converges" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
-  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 85 # local about 42s each (168s for four) on Beast, x2, plus 1s
+  "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 77
+  "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 85
+  "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 20
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 82
+  "a changed input alone runs its own part, once: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 114
+  "a changed input alone runs its own part, once: the code without a pending migration migrates, restarts and converges, and keeps base" = 108
+  "a changed input alone runs its own part, once: swamp converges" = 138
+  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 126
   "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too" = 141 # local 70s on Beast, x2, plus 1s
-  "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three" = 85 # local 42s on Beast, x2, plus 1s
-  "a deleted record runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
-  "a malformed record runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
-  "an unreadable record runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
-  "a failed digest read runs every part and never fails the refresh" = 73 # local about 35s each (141s for four) on Beast, x2, plus 1s
+  "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three" = 140
+  "a deleted record runs every part and never fails the refresh" = 117
+  "a malformed record runs every part and never fails the refresh" = 117
+  "an unreadable record runs every part and never fails the refresh" = 116
+  "a failed digest read runs every part and never fails the refresh" = 106
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 101 # ESTIMATE: two refreshes and a reset, about 50s local, x2, plus 1s
-  "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges" = 85 # as the other input cases: local about 42s, x2, plus 1s
-  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 85 # ESTIMATE: two refreshes, local about 42s, x2, plus 1s
-  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 85 # ESTIMATE: two refreshes, local about 42s, x2, plus 1s
+  "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges" = 138
+  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 103
+  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 100
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
