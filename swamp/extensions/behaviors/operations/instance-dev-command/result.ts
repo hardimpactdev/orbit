@@ -120,6 +120,26 @@ export function cloneEnvironment(phase: Phase): {copied: string[]; dropped: stri
     return null;
 }
 
+/**
+ * A task copy's checkout prints what its cleaning took from the default's tree (docs/reference/development-containers.md#a-task-copy-starts-clean):
+ * the counts and the first names of the tracked files it reset and the untracked files and folders it removed. Names only; a clone that
+ * is no task copy prints none.
+ */
+export function cloneCleaned(phase: Phase): {reset_count: number; reset: string[]; removed_count: number; removed: string[]} | null {
+    if (phase?.status !== "succeeded") return null;
+    for (const line of String(phase.outputs?.stdout ?? "").split("\n")) {
+        let parsed: unknown;
+        try { parsed = JSON.parse(line); } catch { continue; }
+        const printed = parsed as {phase?: unknown; cleaned?: unknown} | null;
+        if (printed?.phase !== "checkout" || printed.cleaned == null) continue;
+        const value = printed.cleaned as {reset_count?: unknown; reset?: unknown; removed_count?: unknown; removed?: unknown};
+        const names = (raw: unknown) => Array.isArray(raw) ? raw.filter((name): name is string => typeof name === "string") : [];
+        const count = (raw: unknown) => Number.isSafeInteger(raw) ? raw as number : 0;
+        return {reset_count: count(value.reset_count), reset: names(value.reset), removed_count: count(value.removed_count), removed: names(value.removed)};
+    }
+    return null;
+}
+
 /** Ansible emits only this bounded public vocabulary; no file contents or Process output is decoded. */
 function mailResult(phase: Phase) {
     if (phase?.status !== "succeeded") return null;
@@ -192,6 +212,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ? mailResult(container?.mail) ?? {status: "failed", reason: "instance.mail_update_failed", ports: [1025, 2525]}
         : null;
     const environment = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneEnvironment(container?.workspace) : null;
+    const cleaned = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneCleaned(container?.workspace) : null;
     const nested = (intent.container as {club_key?: unknown} | null | undefined)?.club_key != null;
     const club = nested ? clubKeyWord((intent.container as {clone?: unknown}).clone != null, container?.club_key, phases.club_key_file) : null;
     const result = {
@@ -203,6 +224,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
             ? {node_pin: {status: "not_prepared", reason: "container_from_stock_image"}} : {}),
         ...(server ? { t3: server } : {}),
         ...(environment ? {environment} : {}),
+        ...(cleaned ? {workspace_cleaned: cleaned} : {}),
         ...(mail ? {mail} : {}),
         ...(club ? {club_key: club} : {}),
         ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),

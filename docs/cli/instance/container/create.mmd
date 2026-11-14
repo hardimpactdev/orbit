@@ -81,6 +81,10 @@ sequenceDiagram
     %%> - `.env` names the clone's database before the completion creates it; nothing in the container reads it before the completion starts the units
     %%> - a copied value that points at the default's Route host (its Route without a web root) points at the clone's Route host; the rest of the value stays
     %%> - prints only the names of the copied, dropped, rewritten and shared keys; the result carries them as `environment`
+    %%> Task copy (`container.clone.clean_workspace`), at the first checkout, before the mark:
+    %%> - excludes `/.env`, clears index flags, then `git reset --hard` and, after it, `git clean -d -ff` without `-x` until a dry run finds nothing new, with the task check's ignore rules: the default's modified and untracked files go, what the start commit's ignore rules name stays
+    %%> - `git status --porcelain` must be empty, else the step fails
+    %%> - the result carries the counts and the first 20 names of the reset and removed paths as `workspace_cleaned`; a clone without the mark keeps the default's tree
     %%> On failure:
     %%> - `failed_step: workspace`, `instance.create_workspace_failed`
     and T3 beside the checkout
