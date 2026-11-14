@@ -28,6 +28,12 @@ use SensitiveParameter;
  * @property string|null $default_branch
  * @property string|null $root
  * @property string|null $task_check
+ * @property string|null $task_implementer_provider
+ * @property string|null $task_implementer_model
+ * @property string|null $task_implementer_effort
+ * @property string|null $task_reviewer_provider
+ * @property string|null $task_reviewer_model
+ * @property string|null $task_reviewer_effort
  * @property bool $nested_fleet
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
@@ -54,7 +60,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'nested_fleet', 'review_and_merge', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'review_and_merge', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
