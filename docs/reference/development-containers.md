@@ -534,7 +534,11 @@ For a target on another Node, Orbit also adds the exact route allowance from the
 
 **Address filters.** Create, clone and migrate write `security.ipv4_filtering=true` and `security.mac_filtering=true` on `eth0` in the one call that makes the container. The image build container does the same at its fixed address. The project profile's `eth0` has no address, so it carries no filter.
 
-No Orbit path rewrites the `eth0` of an existing container. A container made before the filters keeps its NIC until an operator sets the two keys; Incus applies them to a running or frozen container with no restart. Until every existing NIC has them, the NIC check admits a NIC without them, and its log names it with `instance.nic_unfiltered`. The nested guard compares the other keys only. A later change makes the check refuse such a NIC.
+No Orbit path rewrites the `eth0` of an existing container. Incus applies the two keys to a running or frozen container with no restart, so the containers made before the filters got them by hand.
+
+The NIC check refuses a bridge NIC that holds its own `ipv4.address` but lacks either key, with `instance.nic_filters_missing`. An unguarded NIC keeps its own code. The check runs before the start of a create, a clone, a migrate and the image build container, and at the end of the host converge. The nested guard compares the other keys only, so a nested-fleet container without the filters gets the same code.
+
+A NIC without its own address takes a DHCP lease, and Incus can pin no address there, so it carries no filter. That is the project profile's `eth0`, which the converge's clone probe uses: the check does not ask it for the filters. Every Instance NIC holds its address, because create, clone and migrate write it with the filters.
 
 **Open after the filters.** The egress proxy and the model forwarder admit the whole bridge range without identity. A container that can only send from its own address still reaches both, and neither tells one container from another.
 
@@ -1880,6 +1884,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.bridge_command_timeout` | 502 | A Docker/NAT read exhausted the helper’s remaining budget, or an Incus request timed out |
 | `instance.bridge_state_unresolved` | 502 | A bounded ACL readback could not determine the result after a timeout or ambiguous write; retry convergence |
 | `instance.container_endpoint_unresolved` | 502 | A local Docker endpoint has no unique exact DNAT mapping; the phase refuses before probing or downtime |
+| `instance.nic_filters_missing` | 502 | A bridge NIC with its own address lacks `security.ipv4_filtering` or `security.mac_filtering`. Orbit does not start the container; a host converge fails |
 | `instance.container_network_unsafe` | 502 | The NIC has no effective ACL or no default egress reject. In the nested-fleet project, also a `raw.*` key, privilege or an unlisted device. Orbit does not start it |
 | `instance.nested_club_key_unsafe_transfer` | 502 | A nested-fleet start would send the Club key with pipelining off or remote files kept. Orbit stops before it reads the value |
 | `instance.nested_club_key_not_tmpfs` | 502 | The container's `/run` is not a tmpfs, so a snapshot could hold the Club key. Orbit does not write it |
