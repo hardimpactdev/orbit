@@ -1,5 +1,5 @@
 order = 850
-source_sha256 = "4df3ccbfbe86338984a921ed9cd7948c7b2de6560c99aa52738640b82a30ef9f"
+source_sha256 = "0d8ea1a7bb7628bc951839f225cef7419526be6b38f6a9d6407d0113f60a62a4"
 cases = [
   "pinned complete: a normal clone with a Route runs every step and ends ready",
   "pinned complete: a dead unit fails the check with its receipt and withdraws the Route",
@@ -7,6 +7,7 @@ cases = [
   "pinned complete: a cancel during clone-services stops it within 10 s, withdraws the Route and removes the private folder",
   "pinned complete: a cancel during server-database-fill stops it within 10 s, withdraws the Route and removes the private folder",
   "pinned complete: a cancel during clone-fleet stops it within 10 s, withdraws the Route and removes the private folder",
+  "pinned complete: a clone whose create published its address runs no Route step and withdraws nothing",
 ]
 file = "swamp/tests/instance_complete_native_test.ts"
 cost = 30

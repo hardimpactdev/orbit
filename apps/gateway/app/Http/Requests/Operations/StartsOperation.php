@@ -14,8 +14,10 @@ final readonly class StartsOperation
 {
     /** @param list<string> $secretInputs Dot paths excluded from the idempotency fingerprint.
      * @param  array<string, string>  $kindWhenTrue  Declared boolean request fields that select another kind.
+     * @param  bool  $keyed  False for a read that may start an Operation and dedupes its starts itself: it ignores Idempotency-Key, so a
+     *                       repeated read answers the current state, never a replay.
      */
-    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = [], public bool $bindCaller = false, public array $kindWhenTrue = []) {}
+    public function __construct(public string $kind, public bool $requiresKey = false, public ?int $maxJsonBytes = null, public array $secretInputs = [], public bool $bindCaller = false, public array $kindWhenTrue = [], public bool $keyed = true) {}
 
     public function requestKind(Request $request): string
     {

@@ -144,5 +144,8 @@ return [
     // read-through and the last read before a sleep, are off until the operator turns them on. The routes and write-through always run.
     'conn' => [
         'thread_index_poll' => (bool) env('ORBIT_CONN_THREAD_INDEX_POLL', false),
+        // The held sessions a new clone's server gets for the creating profile's Nodes before their first read
+        // (docs/reference/conn.md#held-sessions): off until the operator turns it on. The session handle, renewal and revoke always run.
+        'held_session_premint' => (bool) env('ORBIT_CONN_HELD_SESSION_PREMINT', false),
     ],
 ];

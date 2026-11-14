@@ -313,6 +313,9 @@ describe('the result of a start', function (): void {
             // What the refresh did with the nested Gateway's Swamp tokens, and why, are its own words too.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens' => 'renewed']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens_reason' => 'expired']])->result)->not->toHaveKey('fleet_refresh')
+            // A refresh whose record vouches for the oldest token reads no list: young, because `recorded`.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tokens' => 'young', 'tokens_reason' => 'recorded']])->result['fleet_refresh'])
+            ->toBe([...$refresh, 'tokens' => 'young', 'tokens_reason' => 'recorded'])
             // So are what it did with the pinned shape tools and why; a refresh that does not say is not recorded.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tools' => 'skipped']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'tools_reason' => 'pip']])->result)->not->toHaveKey('fleet_refresh')

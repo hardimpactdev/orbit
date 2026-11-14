@@ -124,10 +124,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 // A deployment starts a stopped container; clones start at the snapshot a passed deployment took.
                 $runtime = $instance->runtime()->firstOrFail();
                 $runtime->update([...($payload['started'] ?? false) === true ? ['power_state' => InstanceRuntimePowerState::Running] : [],
-                    ...$status === 'succeeded' || ($payload['seed_kept'] ?? false) === true ? ['seed_commit' => $facts['commit']] : []]);
-                // A run that kept its new seed (only the fleet start after it failed) installed the Processes of that seed.
+                    ...$status === 'succeeded' ? ['seed_commit' => $facts['commit']] : []]);
                 app(ContainerProcesses::class)->complete($instance, ValidatedData::object($admitted['container'])['processes'] ?? [],
-                    $status === 'succeeded' || ($payload['seed_kept'] ?? false) === true, ValidatedData::nullableString($data['error_code'] ?? null),
+                    $status === 'succeeded', ValidatedData::nullableString($data['error_code'] ?? null),
                     inactiveUnits: ValidatedData::stringList($payload['units_inactive'] ?? []));
             } elseif ($variant === 'development' && $status === 'succeeded') {
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);

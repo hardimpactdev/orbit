@@ -258,7 +258,8 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
             route: "succeeded",
             container: { ...container, ...changes },
         }).stdout);
-    assertEquals(create({}), { instance_id: 7, ready: true, name_converted_from: null, commit, t3: JSON.parse(server) });
+    // The clone's Route is published beside it, and says so; it never decides the create.
+    assertEquals(create({}), { instance_id: 7, ready: true, name_converted_from: null, commit, t3: JSON.parse(server), route_publication: "published" });
     // The workspace phase's names of the keys copied from and dropped from the default's .env; a name that is no key does not pass.
     const printed = JSON.stringify({ phase: "checkout", changes: [], environment: { copied: ["S3_BUCKET", "APP_KEY", "bad name=x"], dropped: ["DATABASE_URL"] } });
     assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}\n${printed}\n` } } }).environment,
@@ -436,4 +437,26 @@ Deno.test("the fleet phase's result file gives its own code, detail and drift li
         { error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] });
     assertEquals(fleetFailure({ error_code: "instance.container_fleet_check_failed", detail: "x".repeat(2000) })?.detail, "x".repeat(1000));
     for (const raw of [{ error_code: "instance.container_network_unsafe" }, { commit: null }, {}, null, "x"]) assertEquals(fleetFailure(raw), null);
+});
+
+Deno.test("a clone's Route publication never decides its create: published, failed with the Route warning, or absent without a Route", () => {
+    const container = {launch: "succeeded", workspace: phases.checkout, deploy: [], processes: "skipped", seed: "skipped",
+        t3: "succeeded", register: "succeeded", server: '{"server_id":8}'};
+    const admitted = {...intent, setup_steps: [], route: {leaf_indexes: [0]}, container: {clone: {}, mail: null}};
+    const run = (route: string, certificates: string[], intended: Record<string, unknown> = admitted) =>
+        JSON.parse(createResult(intended, {...phases, container, route, certificates}).stdout);
+    const published = run("succeeded", ["succeeded"]);
+    assertEquals([published.ready, published.route_publication, published.warnings, published.failed_step], [true, "published", undefined, undefined]);
+    // A failed CSR skips clone-route; a failed clone-route or its probe fails the step. The create still succeeds at the registration.
+    for (const [route, certificates] of [["skipped", ["failed"]], ["failed", ["succeeded"]]] as const) {
+        const failed = run(route, [...certificates]);
+        assertEquals([failed.ready, failed.route_publication, failed.failed_step], [true, "failed", undefined], route);
+        assertEquals(failed.warnings, [{code: "instance.create_route_failed", step: "route"}], route);
+    }
+    // A clone whose admission found the Route Nodes held carries no `route`; neither does a Project without one.
+    assertEquals(run("skipped", [], {...admitted, route: null}).route_publication, undefined);
+    // A default container create keeps its Route as a phase of the create.
+    const fallen = JSON.parse(createResult({...admitted, container: {mail: null}}, {...phases, container: {...container, processes: "succeeded", seed: "succeeded"},
+        route: "failed", certificates: ["succeeded"]}).stdout);
+    assertEquals([fallen.ready, fallen.failed_step, fallen.route_publication], [false, "route", undefined]);
 });

@@ -1,11 +1,11 @@
 order = 1160
-source_sha256 = "78394e4f8eb14bcdddb320e8e6046225e60acd505da92d7f2025bd46f8474d47"
+source_sha256 = "c7b2e1429e2f14b3a5aa6a68a1e7b4fe8c9532ed20d5090ea676a30e090dafd7"
 cases = [
   "a normal container deployment skips every fleet step, after success and after a failure",
-  "a nested-fleet default first keeps its current seed, refreshes its fleet before the last seed, and restores nothing when every step passes",
+  "a nested-fleet default checks its running fleet once, keeps its current seed, refreshes the fleet before the last seed, and starts it no second time",
   "a fleet that the check refuses changes nothing: every later step skips and no seed is restored",
   "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result",
-  "the start of a deployment waits for no Doctor; a passed refresh starts its fleet again after the seed, and a failure of that start keeps the new seed",
+  "the deployment's one fleet check waits for no Doctor, and the refresh starts again what it stopped for base before the seed",
   "after a restore the restored fleet is started and waited for, and the first failure stays the run's result",
 ]
 file = "swamp/tests/workflow_instance_deploy_fleet_test.ts"

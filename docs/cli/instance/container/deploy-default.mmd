@@ -57,7 +57,7 @@ sequenceDiagram
   %%> - stops the default's Processes for a moment, snapshots the container and starts them again, so clones copy no half-written file
   %%> - every passed deployment retakes `seed-<commit>`, also at the same commit, so a clone copies the default's current caches and built files
   %%> - deletes older seed snapshots that no clone uses
-  %%> - a default with an inner volume: the volume's snapshot of the same name is the other half of the seed; it is taken right after the container's, retaken when it is missing, and the older halves go only after both new halves exist. A failed volume snapshot deletes both new halves and fails with `instance.seed_volume_snapshot_failed`; at the same commit no older pair is left, so clones refuse until the next passed deployment
+  %%> - a default with an inner volume: the volume's snapshot of the same name is the other half of the seed; it is taken right after the container's, retaken when it is missing, and the older halves go only after both new halves exist. Right before the volume's half, `sync -f /srv/inner-pool` as root in the container commits btrfs, so the snapshot holds what the fleet wrote; a failed flush or volume snapshot deletes the new halves and fails with `instance.seed_volume_flush_failed` or `instance.seed_volume_snapshot_failed`; the old pair stays
   %%> - while the deployment is open, a clone of the default refuses `instance.default_seed_in_flight`, so no copy reads one half before the retake and the other after it
   %%> - starting the units again restarts every running Process on the new commit, such as a queue worker
   SW->>C: Check the container<br/>Ansible · tags check
