@@ -467,12 +467,11 @@ jobs:
     - step: Verify the account
       condition:
         type: succeeded
+    # Both cleanup steps are guarded; a skipped one must still let the end check run.
     - step: Clear the session
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove CLI session
-      condition:
-        type: completed
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     task:
       type: assert
       expr: steps["Clear the session"].status == "succeeded" && steps["Remove CLI session"].status == "succeeded"
