@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Nodes\NodeDesiredConvergeInput;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Nodes\SwampRoleUnits;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Models\Node;
@@ -111,4 +112,22 @@ it('fails without --base, and for an unknown Node, with no digest printed', func
     $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev']])->assertFailed();
     $this->artisan('orbit:node-converge-digest', ['nodes' => ['app-dev', 'missing'], '--base' => true])
         ->expectsOutputToContain('The Node missing is unknown.')->doesntExpectOutputToContain('app-dev":')->assertFailed();
+});
+
+it('carries the units of the Node roles in the base intent, never the serve unit, so the digest moves when their text does', function (): void {
+    $gateway = Node::query()->where('name', 'gateway')->sole();
+    $gateway->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
+    $units = app(NodeDesiredConvergeInput::class)->baseIntent($gateway)['role_units'];
+
+    expect(array_column($units, 'name'))->toBe(['orbit-swamp-worker@.service', 'orbit-websocket.service'])
+        ->and($units[0]['content'])->toBe(SwampRoleUnits::for('orbit', $gateway->id)['worker'])
+        ->and($units[1]['content'])->toContain('Description=Orbit websocket role: Reverb realtime server')
+        ->and(array_column($units, 'name'))->not->toContain('orbit-swamp-serve.service')
+        // A Node without these roles carries none.
+        ->and(app(NodeDesiredConvergeInput::class)->baseIntent($this->node)['role_units'])->toBe([]);
+
+    $before = app(NodeDesiredConvergeInput::class)->baseDigest($gateway);
+    expect(app(NodeDesiredConvergeInput::class)->baseDigest($gateway))->toBe($before);
+    config(['orbit.websocket.port' => (int) config('orbit.websocket.port') + 1]);
+    expect(app(NodeDesiredConvergeInput::class)->baseDigest($gateway))->not->toBe($before);
 });
