@@ -68,6 +68,7 @@ inputs = [
   "swamp/tests/_support/fixture_supervisor.py",
   "swamp/tests/_support/instance_host.ts",
   "swamp/tests/_support/host_image_boundary.ts",
+  "swamp/tests/_support/regenerate_host_image_boundaries.ts",
   "swamp/tests/fixtures/host-image-boundaries.json",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",
@@ -104,3 +105,13 @@ inputs = [
   "a failed normal image build on a switched-on Node still fails the role and builds no nested-fleet image" = 11
   "a hosting intent without the nested-fleet image builds only the normal image" = 18
   "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 2
+
+# Verify the persistent host state before a host-task change can merge.
+[mandatory_cases]
+"swamp/ansible/tasks/instance-host.yml" = [
+  "the saved dir host prepare boundary matches the shipped tasks",
+  "the saved zfs host prepare boundary matches the shipped tasks",
+  "the saved nested host prepare boundary matches the shipped tasks",
+  "a passed nested-fleet image build repeats the host prepare stage without changes",
+  "a prepared-image replacement rechecks the local socket despite the default remote"
+]
