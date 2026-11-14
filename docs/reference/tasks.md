@@ -1206,6 +1206,8 @@ Orbit decides from its own records that a group's work is done. All of these mus
 
 A copy reviewer turn records no verdict. The caller's move of the last subtask to `completed`, after a reviewer turn on exactly the done check, is the approval.
 
+For a Project without a task check, a passed handoff check only records the commit: nothing ran on it. The automatic publish still runs. What stands in front of it is the reviewer turn on exactly that commit and the guards of every publish: the [copy publish allow list](#task-copy) and the `.env` content and Club key checks.
+
 ### Publish by itself
 
 The Gateway scheduler runs `task:pr-when-done` every minute while the Tasks extension is on. For each group in `pr_when_done` whose work is done, and whose done check recorded `pr_when_done`, it starts the same `tasks.publish` as [`task:publish`](#publish-an-external-group), with the done check, a title and a body. Every guard of a manual publish applies: the group lock, the [copy publish allow list](#task-copy), the candidate check, the `.env` and Club key checks, and the token minted at the push. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/pr-when-done.mmd) shows the tick.
@@ -1253,7 +1255,7 @@ Orbit never merges the pull request of a group whose workspace is a task copy, a
 | Path | Behavior |
 | --- | --- |
 | [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read |
-| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group, open or ended |
+| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group, open or ended, before any GitHub read |
 | [`task:pr-gate`](#gate-check) | Skips the group with `tasks.copy_pr_no_merge`: no ready step, no review round, no merge |
 | [Review and merge](#review-and-merge) | Acts only through `task:pr-gate` and `project:pr-merge`, so it merges no such pull request |
 | [Dependency merge](#dependency-batch-squash-admission) | Refused for a batch group whose publish came from a task copy |

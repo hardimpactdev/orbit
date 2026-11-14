@@ -20,6 +20,9 @@ sequenceDiagram
   %%> - syntax: the MCP tool `project-pr-merge` with `project`, `pull_request`, `head_sha`
   %%> Who can call it:
   %%> - a Node with an access grant to the Gateway; there is no `orbit` command
+  %%> Refused at once:
+  %%> - a Project without review and merge: `project.review_and_merge_disabled`
+  %%> - a PR that a task copy's publish opened, whether its group is open or ended: `tasks.copy_pr_no_merge` (409), before any GitHub read; a person merges it on GitHub
   GW->>GH: Read the PR and its checks<br/>read-only App token
   %%> What it does:
   %%> - reads the PR and the check runs of the head with read-only App tokens (`pull_requests: read`, `checks: read`)
@@ -31,7 +34,6 @@ sequenceDiagram
   %%> - the PR targets the default branch of the Project and comes from a branch of the repository itself, not from a fork
   %%> - the Project's merge check (`Required checks`) passed on that head
   %%> - no open Task group watches the PR (a task PR merges through `task:pr-merge`; a group that ended no longer holds its PR) and no other merge of the Project runs
-  %%> - no task copy's publish opened the PR, whether its group is open or ended, else `tasks.copy_pr_no_merge`; a person merges it on GitHub
   %%> What it does:
   %%> - names the vault key `pr-merge-write-<uuid>` for the write token; it mints no token
   %%> Why:
