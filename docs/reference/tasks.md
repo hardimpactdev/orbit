@@ -1396,7 +1396,7 @@ The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
 - `daily`: merged and not merged tasks for each day of the period.
-- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each implementer model, each Project, and each [Gateway release](/reference/gateway-recovery). A task belongs to the last verified release that began before the task's `started_at`.
+- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery). A task's model is the model its first implementer thread ran; a task without an implementer thread counts as `Unknown`. A task belongs to the last verified release that began before the task's `started_at`.
 
 ### On the board
 
