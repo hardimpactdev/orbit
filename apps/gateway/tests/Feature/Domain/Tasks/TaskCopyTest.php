@@ -8,6 +8,7 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Extensions\ExtensionStore;
@@ -666,6 +667,21 @@ describe('a complete of a group that owns a copy', function (): void {
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe(2)
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
             ->and($group->taskable_id)->toBe($copy->id);
+    });
+});
+
+describe('a stop of a subtask in a copy', function (): void {
+    it('stops a running subtask whose implementer thread runs on t3, which has no interrupt', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'node_id' => $copy->node_id, 'driver' => 't3',
+            'runtime_key' => 'instance:'.$copy->id, 'external_id' => (string) Str::uuid(), 'role' => 'implementer', 'model' => 'gpt-5.6-luna', 'effort' => null]);
+        $subtask->update(['status' => TaskStatus::Running, 'implementer_agent_thread_id' => $thread->id]);
+
+        app(StopTaskSubtaskAction::class)->execute($group->refresh(), $subtask->refresh());
+
+        expect($subtask->refresh()->status)->toBe(TaskStatus::Running);
     });
 });
 

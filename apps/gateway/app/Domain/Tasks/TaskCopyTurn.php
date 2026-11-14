@@ -23,6 +23,9 @@ use Illuminate\Support\Str;
  */
 final readonly class TaskCopyTurn
 {
+    /** The driver of a copy turn's thread. T3's CLI cannot stop a run, so the registry holds no driver for it. */
+    public const string Driver = 't3';
+
     /** How long the agent's turn may run before Swamp ends its wait; the bound of a task VM turn. */
     public const int TurnSeconds = 3600;
 
@@ -61,7 +64,7 @@ final readonly class TaskCopyTurn
         $instance = $workspace->instance;
         $thread = AgentThread::query()->create([
             'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
-            'driver' => 't3', 'runtime_key' => 'instance:'.$instance->id, 'external_id' => (string) Str::uuid(),
+            'driver' => self::Driver, 'runtime_key' => 'instance:'.$instance->id, 'external_id' => (string) Str::uuid(),
             'role' => TaskThreadRole::Implementer->value, 'model' => $model, 'effort' => null,
         ]);
         $task->update(['implementer_agent_thread_id' => $thread->id]);
