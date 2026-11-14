@@ -187,6 +187,8 @@ Measured container and fleet files declare costs by exact case name, with run ID
 
 A case cost is a high percentile of hosted runs, not one run. When a case is added or changed, declare its local time × 2.1, rounded up, plus one second, marked `ESTIMATE`. When the case has completed in at least five hosted pull request runs, replace the estimate with the 90th percentile of those completed times, rounded up, plus one second, and name the runs.
 
+The fleet refresh fixture uses one case per unit. Its planning estimates include the hosted refresh and record-recovery times; the two slowest cases use their own lanes and the runtime headroom. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+
 The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case moves to after-merge only when its own cost plus startup exceeds the 150-second lane; name it and its percentile in the table.
 
 The container fixture uses that rule from 23 hosted pull request runs of 13 November 2026 (43344497786 to 43427754924): its 60 retained cases declare 3319 seconds, 3679 with startup, and need seven shards. On the same runs, a case's slowest completed time was at most 1.26 times its 90th percentile. A replay of those times through the planned shards, four workers each, kept every shard below 160 seconds at the 99th percentile.

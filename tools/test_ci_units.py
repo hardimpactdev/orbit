@@ -1,6 +1,7 @@
 """Fixture selection, bounded packing, process deadlines and the required matrix gate."""
 import contextlib
 import io
+import heapq
 import json
 import os
 from pathlib import Path
@@ -703,6 +704,27 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(result['shards'], [])
         self.assertEqual(len(result['deferred']), 25)
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
+
+    def test_fleet_refresh_costs_keep_hosted_cases_inside_the_shard_deadline(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/ansible_instance_fleet_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-fleet-cost-evidence.json').read_text())
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(result.get('capacity'))
+        self.assertFalse(result['deferred'])
+        self.assertFalse(result.get('excluded'))
+        self.assertLessEqual(len(result['shards']), budget['pr_shards'])
+        seen = []
+        for shard in result['shards']:
+            loads = [0.] * budget['shard_workers']
+            for unit in shard['units']:
+                cases = units.case_names(unit, fixtures)
+                self.assertEqual(len(cases), 1, unit)
+                seen.extend(cases)
+                seconds = sum(evidence['case_seconds'][name] for name in cases)
+                heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
+            self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
+        self.assertCountEqual(seen, fixtures[file]['cases'])
 
     def test_container_host_prepare_packs_completed_case_costs_individually(self):
         budget, fixtures, defaults = units.configuration()
