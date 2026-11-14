@@ -99,6 +99,7 @@ sequenceDiagram
     %%> What it does:
     %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
     %%> - a nested-fleet default's root disk grows to the intent's size first, online; it never shrinks
+    %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
     %%> - waits only for FrankenPHP and the enabled Process units, which the container's boot starts
     opt nested-fleet default
       SW->>N: Check the inner fleet<br/>Ansible · tags fleet_start

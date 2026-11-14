@@ -33,6 +33,7 @@ sequenceDiagram
     %%> - Swamp starts the run only after that commit: a Gateway that stops before it leaves no record and no run
     %%> Result:
     %%> - the create runs as every clone's does: the copy of the default's seed, its own database, Route and Processes, its inner fleet when the Project has one, its T3 server registered with Conn (the container create chart)
+    %%> - the copy presents itself as `task-<task id>.<project slug>`: its hostname and its T3 server's name, while its Incus name stays `instance-<id>`
     %%> - the copy's agent gets the fixed task model key, as every clone does: it is not per task
     GW->>SW: Start run, full intent<br/>operation-instance-create
     alt the create succeeds
