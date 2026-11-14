@@ -28,16 +28,24 @@ sequenceDiagram
   %%> - a running completion refuses with `operation.target_busy` and names it in `details.operation_id`
   %%> - this slice supports a non-default container Instance, cloned or migrated; the Instance named `default` remains unavailable
   %%> - `--force` is required until guarded removal is built; no work or turn check runs
-  alt container default
+  alt container default, not removable
     %% path: default-unavailable
     GW--xCLI: Refused<br/>operation.kind_unavailable
-  else clone without --force
+    %%> When:
+    %%> - the default's Project is not on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS`, or its runtime records no inner volume
+    %%> - so a normal Project's default, and Instance 2454, which has no inner volume, always refuse
+  else container default with a copy
+    %% path: default-has-copies
+    GW--xCLI: Refused<br/>instance.default_has_copies
+    %%> - an Instance of the Project, in any state, has this default as its clone source; remove the copies first
+  else clone or removable default without --force
     %% path: force-required
     GW--xCLI: Refused<br/>force required
     %%> Code:
     %%> - `instance.container_destroy_force_required`
-  else forced clone
+  else forced clone or removable default
     %% path: admitted
+    %%> A removable default: a nested-fleet default whose runtime records an inner volume, of a Project on the operator list, with no copy left
     Note over GW: Dry run preparation<br/>discard its result
     %%> Result:
     %%> - capture the clone's container identity, Route, Processes and owned databases
