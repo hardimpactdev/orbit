@@ -429,7 +429,8 @@ class CloneTest(unittest.TestCase):
                    "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
                                                  "security.acls": "orbitinst0-proxy,instance-7",
                                                  "security.acls.default.egress.action": "reject",
-                                                 "security.acls.default.ingress.action": "reject"}}}
+                                                 "security.acls.default.ingress.action": "reject",
+                                                 "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}}
         for case, clone, existing in (("retry on a running copy", {"boot_files": self.BOOT_FILES}, running),
                                       ("normal clone", {}, None),
                                       # An intent admitted by the previous Gateway release: the files are in clone.files,
@@ -563,30 +564,39 @@ class CloneTest(unittest.TestCase):
                 self.assertEqual(error, "instance.container_network_unsafe\n")
                 self.assertFalse(any("start" in call for call in calls))
 
-    def test_nic_check_reports_a_stock_nic_without_filters_and_still_refuses_a_real_defect(self):
+    def test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address(self):
         stock = {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2", "security.port_isolation": "true",
                  "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
                  "security.acls.default.ingress.action": "reject"}
+        filters = {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}
 
-        def check(device):
-            container = {"name": "instance-7", "expanded_devices": {"eth0": device}}
+        def check(device, name="instance-7"):
+            container = {"name": name, "expanded_devices": {"eth0": device}}
             return subprocess.run(["python3", str(NETWORK_CHECK), "orbitinst0", "eth0"], input=json.dumps(container),
                                   capture_output=True, text=True, check=False)
 
-        # A NIC made before the filters passes, and the check names it.
-        result = check(stock)
-        self.assertEqual(result.returncode, 0)
-        self.assertEqual(result.stdout, "instance-7/eth0 lacks security.ipv4_filtering and security.mac_filtering\n")
-        # One filter is not enough to pass silently.
-        result = check({**stock, "security.ipv4_filtering": "true"})
-        self.assertEqual((result.returncode, result.stdout != ""), (0, True))
-        # With both filters the check is silent.
-        result = check({**stock, "security.ipv4_filtering": "true", "security.mac_filtering": "true"})
-        self.assertEqual((result.returncode, result.stdout), (0, ""))
-        # A missing ACL still refuses, filters or not.
-        for filters in [{}, {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}]:
-            result = check({**stock, **filters, "security.acls": ""})
-            self.assertEqual(result.returncode, 1)
+        # An Instance NIC without both filters refuses with exit 2, which every caller maps to instance.nic_filters_missing.
+        for partial in [{}, {"security.ipv4_filtering": "true"}, {"security.mac_filtering": "true"}, {"security.ipv4_filtering": "false",
+                                                                                                         "security.mac_filtering": "true"}]:
+            result = check({**stock, **partial})
+            self.assertEqual(result.returncode, 2, partial)
+            self.assertEqual(result.stdout, "instance-7/eth0 lacks security.ipv4_filtering and security.mac_filtering\n")
+        # With both filters it passes, silently.
+        self.assertEqual((check({**stock, **filters}).returncode, check({**stock, **filters}).stdout), (0, ""))
+        # A real defect keeps its own exit, filters or not.
+        for keys in [{}, filters]:
+            self.assertEqual(check({**stock, **keys, "security.acls": ""}).returncode, 1)
+        # The clone probe: the profile's eth0 has no address of its own, so it takes no filter and passes on its ACLs alone.
+        profile = {key: value for key, value in stock.items() if key != "ipv4.address"}
+        self.assertEqual(check(profile, "orbit-clone-probe-copy").returncode, 0)
+        self.assertEqual(check({**profile, "security.acls": ""}, "orbit-clone-probe-copy").returncode, 1)
+
+    def test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start(self):
+        for key in ["security.ipv4_filtering", "security.mac_filtering"]:
+            with self.subTest(key=key):
+                calls, _, error = self.clone(lambda read, key=key: read["expanded_devices"]["eth0"].pop(key))
+                self.assertEqual(error, "instance.nic_filters_missing\n")
+                self.assertFalse(any("start" in call for call in calls))
 
     def test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code(self):
         source = NETWORK_CHECK.read_text()
@@ -610,20 +620,22 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(ansible, python)
         self.assertEqual(gateway, python)
 
-    def test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it(self):
-        namespace = {}
-        exec(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0]
-             + (NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], namespace)
+    def test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code(self):
+        program = NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()
         nic = {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7",
                "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"}
-        # The Gateway's allowlist names the filters; a container made before them lacks them.
         allowed = {"eth0": {**nic, "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}
-        stock = {"name": "instance-7", "expanded_config": {}, "expanded_devices": {"eth0": dict(nic)}}
-        self.assertEqual(namespace["nested_unsafe_device"](stock, allowed, {}), "")
-        self.assertNotEqual(namespace["unfiltered_report"](stock, "orbitinst0"), "")
-        # Any other change to the NIC still refuses.
-        changed = {"name": "instance-7", "expanded_config": {}, "expanded_devices": {"eth0": {**nic, "ipv4.address": "10.253.0.9"}}}
-        self.assertEqual(namespace["nested_unsafe_device"](changed, allowed, {}), "eth0")
+
+        def check(device):
+            container = {"name": "instance-7", "expanded_config": {}, "expanded_devices": {"eth0": device}}
+            return subprocess.run(["python3", "-c", program, "orbitinst0", "eth0", json.dumps(allowed), "{}"],
+                                  input=json.dumps(container), capture_output=True, text=True, check=False).returncode
+
+        # The exact device check leaves the filters out, so a NIC without them gets the filters' own exit, not the guard's.
+        self.assertEqual(check(dict(nic)), 2)
+        self.assertEqual(check(dict(allowed["eth0"])), 0)
+        # Any other change to the NIC is the guard's refusal.
+        self.assertEqual(check({**allowed["eth0"], "ipv4.address": "10.253.0.9"}), 1)
 
     def test_normal_clone_uses_the_exact_original_checker_program_and_argv(self):
         calls, _, error = self.clone()
@@ -635,7 +647,8 @@ class CloneTest(unittest.TestCase):
             "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
             "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
                      "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
-                     "security.acls.default.ingress.action": "reject"},
+                     "security.acls.default.ingress.action": "reject",
+                     "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
             "orbit-runtime": {"type": "disk", "source": "/opt/orbit-runtime", "path": "/opt/orbit-runtime", "readonly": "true", "shift": "true"},
             "orbit-agent": {"type": "disk", "source": "/opt/orbit-agent", "path": "/opt/orbit-agent", "readonly": "true", "shift": "true"},
             "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},

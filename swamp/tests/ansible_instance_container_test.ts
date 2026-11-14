@@ -3,7 +3,7 @@
  * build, a rerun that changes nothing, a deployment, the refusals of a deployment and the result file each phase writes. The Node is
  * this machine: the run's connection is local and nothing becomes root.
  */
-import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { fixture as hostFixture } from "./_support/instance_host.ts";
 
@@ -11,9 +11,9 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 // The browser change adds exactly one task (the image's shared files in existing containers) and two Incus calls (its instance
 // list, and the image's last `rm -f /etc/ld.so.cache`); the Orbit root CA in the image adds one task and two Incus calls (one push, and
 // `update-ca-certificates` in the definition's finish); the host files stay as they were. The NIC address filters add two `--device`
-// keys to the build container's init (digest 4f193b4c… → b21a521d…) and two report tasks (174 → 176): the clone probe's profile NIC,
-// which has no address and so no filter, and the build container, whose init `--device` keys this fake host does not keep.
-const MAIN_NORMAL_HOST = {calls: 66, tasks: 176, digest: "b21a521da2ee6c2f7f75de1306bdb09e1810f2bef5ed0c64f742878ee2cbca4e"};
+// keys to the build container's init (digest 4f193b4c… → b21a521d…). The strict filter check has no report task, so the tasks are
+// 174 again and the digest, which covers the task names, is 20b1670d…; the Incus calls stay the same.
+const MAIN_NORMAL_HOST = {calls: 66, tasks: 174, digest: "20b1670d13063394dc5ab1b3cea358656abf704875a068b4533ca9d15f6192fa"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -1436,45 +1436,34 @@ for (const damage of ["missing ACL", "permissive default", "bridge union ACL"]) 
 }
 
 Deno.test({
-  name: "start admits a stock NIC without the address filters and reports it; the rollout's device set keeps the status and ends the report",
+  name: "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
       assert(f.run("container").ok);
-      // A container made before the filters: its NIC has every other key.
-      const state = f.state();
-      state.containers["instance-7"].devices = state.containers["instance-7"].devices
-        .filter((device: string) => !device.startsWith("eth0,security.ipv4_filtering=") && !device.startsWith("eth0,security.mac_filtering="));
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      const stock = f.run("start");
-      assert(stock.ok, stock.output);
-      assertStringIncludes(stock.output, "instance.nic_unfiltered: instance-7/eth0 lacks security.ipv4_filtering and security.mac_filtering");
-      assertEquals(f.state().containers["instance-7"].status, "Running");
-      // The live rollout step, on the running container and on a frozen one: one device set, no restart.
-      for (const status of ["Running", "Frozen"]) {
-        const before = f.state();
-        before.containers["instance-7"].status = status;
-        before.containers["instance-7"].devices = before.containers["instance-7"].devices
-          .filter((device: string) => !device.includes("_filtering="));
-        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(before));
-        const set = new Deno.Command(`${f.folder}/bin/incus`, {
-          args: ["--project", "orbit-instances", "config", "device", "set", "instance-7", "eth0", "security.ipv4_filtering=true",
-            "security.mac_filtering=true"],
-          env: { HOST_FIXTURE: f.folder },
-        }).outputSync();
-        assert(set.success, new TextDecoder().decode(set.stderr));
-        const after = f.state().containers["instance-7"];
-        assertEquals(after.status, status);
-        assert(after.devices.includes("eth0,security.ipv4_filtering=true") && after.devices.includes("eth0,security.mac_filtering=true"));
+      assert(f.run("stop").ok);
+      // Both keys missing, then only one: each refuses before the start, with the filters' own code.
+      for (const missing of [["ipv4", "mac"], ["mac"]]) {
+        const state = f.state();
+        state.containers["instance-7"].devices = state.containers["instance-7"].devices
+          .filter((device: string) => !missing.some((key) => device.startsWith(`eth0,security.${key}_filtering=`)));
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        const refused = f.run("start");
+        assert(!refused.ok, refused.output);
+        assertEquals(f.result(), { error_code: "instance.nic_filters_missing" }, refused.output);
+        assertEquals(f.state().containers["instance-7"].status, "Stopped");
       }
-      // The next start of the stopped container reads the filters and reports nothing.
-      const stopped = f.state();
-      stopped.containers["instance-7"].status = "Stopped";
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stopped));
+      // The by-hand repair: one device set adds the keys, and the next start passes.
+      const set = new Deno.Command(`${f.folder}/bin/incus`, {
+        args: ["--project", "orbit-instances", "config", "device", "set", "instance-7", "eth0", "security.ipv4_filtering=true",
+          "security.mac_filtering=true"],
+        env: { HOST_FIXTURE: f.folder },
+      }).outputSync();
+      assert(set.success, new TextDecoder().decode(set.stderr));
+      assertEquals(f.state().containers["instance-7"].status, "Stopped");
       const filtered = f.run("start");
       assert(filtered.ok, filtered.output);
-      assert(!filtered.output.includes("instance.nic_unfiltered"), filtered.output);
       assertEquals(f.state().containers["instance-7"].status, "Running");
     } finally { f.cleanup(); }
   },
@@ -1690,7 +1679,7 @@ for (const damage of [...Object.keys(nestedDamage), "extra-device", "changed-hos
         };
         Object.assign(f.container, {project: "orbit-instances-nested", config: NESTED_CONFIG, allowed_devices: {
           root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
-          eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+          eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject", "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
           ...structuredClone(disks),
         }});
         // The config create wrote; Incus's own keys and the profile's environment come on top.
@@ -1746,7 +1735,7 @@ Deno.test({
 function nestedCreate(f: ReturnType<typeof fixture>) {
   Object.assign(f.container, {project: "orbit-instances-nested", image: "orbit-instance-nested", config: NESTED_CONFIG, allowed_devices: {
     root: {type: "disk", path: "/", pool: "orbit-instances", size: "40GiB"},
-    eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject"},
+    eth0: {type: "nic", network: "orbitinst0", "security.port_isolation": "true", "ipv4.address": "10.253.0.2", "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject", "security.acls.default.ingress.action": "reject", "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
   }});
   f.write();
 }
