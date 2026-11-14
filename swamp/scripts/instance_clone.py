@@ -11,6 +11,10 @@ import sys
 import time
 from pathlib import Path
 
+# The Node files a `boot_files` entry may name as its `source`: the Orbit root CA that each Node's base converge writes for its agent
+# (docs/reference/development-containers.md#trust). No intent can make a clone copy any other host file into a container.
+BOOT_SOURCES = ("/etc/orbit/agent/ca.pem",)
+
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
@@ -159,7 +163,36 @@ def main():
         print(json.dumps({"phase": phase, "changed": False}))
         return
 
+    def boot_files():
+        """The copy's files before its first start. A `source` entry is read on the Node now, before any change, and also gets its
+        hashed name in `hash_directory`, where OpenSSL looks a CA up: a missing or unreadable source fails the create by name."""
+        files = []
+        for item in container["clone"].get("boot_files", []):
+            if "source" not in item:
+                files.append({key: item[key] for key in ("path", "content", "uid", "gid", "mode")})
+                continue
+            if item["source"] not in BOOT_SOURCES:
+                raise RuntimeError("instance.clone_boot_source_refused")
+            try:
+                content = Path(item["source"]).read_text()
+            except OSError:
+                raise RuntimeError("instance.clone_trust_unavailable") from None
+            subject = run(["openssl", "x509", "-noout", "-subject_hash"], content, check=False)
+            if subject.returncode or not re.fullmatch(r"[0-9a-f]{8}", subject.stdout.strip()):
+                raise RuntimeError("instance.clone_trust_unavailable")
+            entry = {key: item[key] for key in ("path", "uid", "gid", "mode")}
+            files.append({**entry, "content": content})
+            if item.get("hash_directory"):
+                # The links that `update-ca-certificates` makes, so its rehash keeps them: `<stem>.pem` to the file, the hashed
+                # name to `<stem>.pem`. `replaces` names the file whose older root's hashed name goes.
+                linked = item["hash_directory"] + "/" + Path(item["path"]).stem + ".pem"
+                files.append({"link": linked, "target": item["path"]})
+                files.append({"link": item["hash_directory"] + "/" + subject.stdout.strip() + ".0", "target": linked,
+                              "replaces": item["path"]})
+        return files
+
     if phase == "container":
+        boot = boot_files()
         owner = private_folder()
         credential = folder / "git-credential"
         credential.write_text(secret)
@@ -347,7 +380,23 @@ def main():
                 )
                 # Rule: only a copy that is not running gets these files; a running copy may already hold its own value from the
                 # Node services apply below, which runs after the start and so writes last. An intent without the key has none.
-                for item in container["clone"].get("boot_files", []):
+                # The seed may trust an older root under another hashed name: read it before any push, and that name goes, so no
+                # stale trust stays.
+                for item in [item for item in boot if "replaces" in item]:
+                    old = run(project + ["file", "pull", name + item["replaces"], "-"], check=False)
+                    stale = run(["openssl", "x509", "-noout", "-subject_hash"], old.stdout, check=False) if old.returncode == 0 else None
+                    if stale is not None and stale.returncode == 0 and re.fullmatch(r"[0-9a-f]{8}", stale.stdout.strip()):
+                        stale_path = str(Path(item["link"]).parent) + "/" + stale.stdout.strip() + ".0"
+                        if stale_path != item["link"]:
+                            # Only an absent file is no failure; anything else would leave the old root trusted.
+                            gone = run(project + ["file", "delete", name + stale_path], check=False)
+                            if gone.returncode and "does not exist" not in gone.stderr:
+                                raise RuntimeError("instance.clone_trust_unavailable")
+                            changes.append("incus")
+                for item in boot:
+                    if "link" in item:
+                        change(project + ["file", "create", "--type=symlink", "--force", name + item["link"], item["target"]])
+                        continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
             for rule in container.get("firewall", []):

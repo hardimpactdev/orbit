@@ -43,6 +43,17 @@ final readonly class InstanceHostIntent
 
     public const string Workspace = '/srv/workspace';
 
+    /**
+     * The Orbit root CA that every Node's base converge writes for its agent: the one Node file that a container gets
+     * (docs/reference/development-containers.md#trust).
+     */
+    public const string TrustSource = '/etc/orbit/agent/ca.pem';
+
+    /** Where a container holds that root, as a local CA file; its links in `TrustDirectory` are the ones `update-ca-certificates` makes. */
+    public const string TrustFile = '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt';
+
+    public const string TrustDirectory = '/etc/ssl/certs';
+
     public const int AgentUid = 2750;
 
     public const int OrbitUid = 1000;

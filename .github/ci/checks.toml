@@ -473,9 +473,9 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 233
+cost = 238
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
-slices = 5
+slices = 7
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "apps/gateway/resources/machine-software/recipe.json",
@@ -508,11 +508,13 @@ inputs = [
 ]
 
 [fixture.case_costs]
-  "a Debian package part gives the runtime folder its libraries and fonts; existing containers get the shared files with no restart" = 82 # ESTIMATE: Beast 38s * 2.1, rounded up + 1s
+  "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 82 # ESTIMATE: Beast 35-38s * 2.1, rounded up + 1s
   "two Debian packages that give the same library name fail the folder build: one would hide the other" = 18 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
   "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2 # ESTIMATE: Beast 0.82s, no Ansible; rounded up
   "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
   "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container" = 130 # ESTIMATE: Beast 61s * 2.1, rounded up + 1s; two converges, with 6s startup within the 150s lane
+  "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec" = 4 # ESTIMATE: Beast 1s, no Ansible; rounded up
+  "a Node without a readable Orbit root CA fails the step by name and writes nothing" = 1 # ESTIMATE: Beast 0.1s, no Ansible; rounded up
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_host_runtime_test.ts"

@@ -404,7 +404,7 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 
 ### Existing containers
 
-A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration and `/etc/gitconfig`. The converge of the Node writes them into each existing container too. It writes them into running and stopped containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
+A container keeps the image it was made from. The image definition marks the files that every container needs as `existing`: the linker and font configuration and `/etc/gitconfig`. The converge of the Node writes them into each existing container too. It writes them into running, stopped and frozen containers, in the Instance project and in the nested-fleet one. Nothing restarts. Each later process reads the files by itself.
 
 A clone copies its default's seed snapshot, not the default itself, and a seed taken before these files existed lacks them. So every clone gets the same files before its first start, with an empty linker cache that the stock `ldconfig.service` rebuilds at that start.
 
@@ -414,8 +414,25 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 - **Stopped.** A stopped container loses its cache instead. At its next start, the stock `ldconfig.service` builds a new cache.
 - **New.** An image removes its cache last, so each new container builds its own at its first start.
 - **Digest.** The Node keeps a digest of the library names it last applied, in `/var/lib/orbit/instance-container-libraries`. So a changed folder reaches stopped containers too.
-- **Frozen.** A frozen container is skipped. The Node then keeps its old digest, so the next converge drops a stopped cache again.
+- **Frozen.** A frozen container gets the files through the file API. `incus exec` refuses it, so it gets no exec.
+- **Thaw.** A frozen container keeps its cache, because it thaws without a boot. Its wake rebuilds a cache that lacks a runtime library.
 - **Failure.** A failed Incus call fails the converge after every other container had its turn.
+
+### Trust
+
+Every container trusts the Orbit root CA, so curl, PHP and OpenSSL verify an Orbit-signed site with no extra option. The source is the root that every Node's base converge writes for its agent, `/etc/orbit/agent/ca.pem`. The Gateway never puts the certificate in an intent.
+
+A container holds the root as a local CA file, `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt`. Two links in `/etc/ssl/certs` point to it, as `update-ca-certificates` makes them: `orbit-managed-root-ca.pem`, and the OpenSSL hashed name, such as `912e8a91.0`. The static PHP build's OpenSSL and its curl look a CA up in that folder, as system curl does. So PHP needs no php.ini setting. `update-ca-certificates` also adds the root to `/etc/ssl/certs/ca-certificates.crt`, for tools that read only that bundle.
+
+| Where | What Orbit does |
+| --- | --- |
+| Image | The build pushes the Node's root; the image definition runs `update-ca-certificates`. A later root reaches its containers at the converge |
+| Clone | `boot_files` names the Node file as a source. The clone script reads it before the copy and writes the file and its links |
+| Clone source | Only that one Node path may be a source. A missing or unreadable file fails the create with `instance.clone_trust_unavailable` |
+| Running container | The converge writes the file and its links. When the bundle lacks the root, it runs `update-ca-certificates` |
+| Stopped or frozen container | The converge writes the file and its links through the file API. The wake rebuilds a bundle that lacks the root |
+
+A new root on the Node reaches every container at the next converge. The converge and the clone script remove the old root's hashed name. A stopped or frozen container's bundle keeps the old root until its wake.
 
 ## Environment notes
 

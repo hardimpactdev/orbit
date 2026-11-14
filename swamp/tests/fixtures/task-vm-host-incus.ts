@@ -112,7 +112,15 @@ function accounts(row: Accounts, script: string) {
     }
   }
 }
-if (family === "query") {
+if (family === "query" && args.at(-1)!.includes("/files?")) {
+  // The files API: a link answers with its target as an absolute path, a file with its content.
+  const query = new URLSearchParams(args.at(-1)!.split("?")[1]);
+  const key = `${args.at(-1)!.split("/")[3]}${query.get("path")}`;
+  const link = state.links?.[key];
+  if (link !== undefined) console.log(link.startsWith("/") ? link : `${query.get("path")!.replace(/\/[^/]*$/, "")}/${link}`);
+  else if (state.files?.[key] !== undefined) Deno.stdout.writeSync(new TextEncoder().encode(state.files[key].content));
+  else fail("not found");
+} else if (family === "query") {
   const path = args.at(-1)!;
   const [route, query = ""] = path.slice(5).split("?");
   const [resource, item] = route.split("/");
@@ -287,12 +295,34 @@ if (family === "query") {
     state.folder_restarts ??= [];
     state.folder_restarts.push({project, name: action, unit: command[2], marked: Deno.statSync(`${folder}/opt/orbit-${kind}/.restart`).isFile});
   }
+  // The CA bundle: `update-ca-certificates` builds it from the local CA files, here only Orbit's root.
+  if (command[0] === "update-ca-certificates") {
+    state.files ??= {};
+    state.ca_updates ??= [];
+    state.ca_updates.push(action);
+    const root = state.files[`${action}/usr/local/share/ca-certificates/orbit-managed-root-ca.crt`];
+    state.files[`${action}/etc/ssl/certs/ca-certificates.crt`] = { content: root?.content ?? "", mode: "0644", uid: "0", gid: "0" };
+    // As the real tool: `<name>.pem` links to the local CA file, and its rehash replaces each hashed name with a relative link.
+    // An image build pushes the CA file by local path, which this fake records without content: no root to rehash then.
+    if (root?.content) {
+      const pem = Deno.makeTempFileSync();
+      Deno.writeTextFileSync(pem, root.content);
+      const hash = new TextDecoder().decode(new Deno.Command("openssl", { args: ["x509", "-noout", "-subject_hash", "-in", pem] }).outputSync().stdout).trim();
+      Deno.removeSync(pem);
+      state.links ??= {};
+      state.links[`${action}/etc/ssl/certs/orbit-managed-root-ca.pem`] = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt";
+      delete state.files[`${action}/etc/ssl/certs/${hash}.0`];
+      state.links[`${action}/etc/ssl/certs/${hash}.0`] = "orbit-managed-root-ca.pem";
+    }
+  }
   // The dynamic linker's cache: `ldconfig -X` reads the runtime folder's `lib` only once Orbit's configuration names it.
   if (command[0] === "ldconfig") {
     state.ldcache ??= {};
     const lib = `${folder}/opt/orbit-runtime/current/lib`;
     if (command[1] === "-X") {
-      state.ldcache[action] = state.files?.[`${action}/etc/ld.so.conf.d/zz-orbit-browser.conf`]
+      let exists = true;
+      try { Deno.statSync(lib); } catch { exists = false; }
+      state.ldcache[action] = state.files?.[`${action}/etc/ld.so.conf.d/zz-orbit-browser.conf`] && exists
         ? [...Deno.readDirSync(lib)].map((entry) => entry.name).filter((name) => /^lib.+\.so(\.[0-9]+)?$/.test(name)).sort() : [];
     } else {
       for (const name of state.ldcache[action] ?? []) console.log(`\t${name} (libc6,x86-64) => ${lib}/${name}`);
@@ -315,9 +345,15 @@ if (family === "query") {
   const pulled = state.files?.[args[2]];
   if (pulled === undefined) fail("Error: not found");
   Deno.stdout.writeSync(new TextEncoder().encode(pulled.content));
+} else if (family === "file" && action === "create") {
+  // Only symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.
+  state.links ??= {};
+  state.links[args.at(-2)!] = args.at(-1)!;
 } else if (family === "file" && action === "delete") {
   state.deleted_files ??= [];
   state.deleted_files.push(args[2]);
+  delete state.files?.[args[2]];
+  delete state.links?.[args[2]];
 } else if (family === "file" && action === "push") {
   state.files ??= {};
   state.files[args.at(-1)!] = {

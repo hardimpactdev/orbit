@@ -34,7 +34,7 @@ const shared = [
 ];
 
 Deno.test({
-    name: "a Debian package part gives the runtime folder its libraries and fonts; existing containers get the shared files with no restart",
+    name: "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture();
@@ -71,16 +71,19 @@ Deno.test({
 
             const after = f.state();
             // Every running and stopped container gets each shared file; a frozen one is left alone.
-            for (const name of ["app-default", "app-asleep"]) {
+            // Running, stopped and frozen containers all get each shared file through the file API.
+            for (const name of ["app-default", "app-asleep", "app-frozen"]) {
                 for (const file of shared) {
                     assertEquals(after.files[`${name}${file.path}`], { content: file.content, mode: "0644", uid: "0", gid: "0" });
                 }
             }
-            assert(!Object.keys(after.files).some((key) => key.startsWith("app-frozen/")));
+            // A frozen container gets no exec, and it keeps its cache: it thaws without a boot, and its wake runs the check.
+            assert(!f.calls().some((call) => call[0] === "exec" && call.includes("app-frozen")));
+            assert(!(after.deleted_files ?? []).includes("app-frozen/etc/ld.so.cache"));
             // The running container reads the new libraries into its cache; the stopped one loses its cache, which the stock
             // `ldconfig.service` builds again at its next start.
             assertEquals(after.ldcache["app-default"], ["libfake3.so", "libfakeutil.so.1"]);
-            assertEquals(after.deleted_files, ["app-asleep/etc/ld.so.cache"]);
+            assertEquals(after.deleted_files.filter((path: string) => path.endsWith("ld.so.cache")), ["app-asleep/etc/ld.so.cache"]);
             // Nothing restarts: no T3, no Process.
             assert(!f.calls().some((call) => call.includes("try-restart") || call.includes("restart")), JSON.stringify(f.calls()));
 
@@ -109,11 +112,12 @@ Deno.test({
     },
 });
 
-/** The container step's own script against the fixture's Incus, without a whole converge. */
-function pass(folder: string) {
+/** The container step's own script against the fixture's Incus, without a whole converge; `root` is the Node's CA file. */
+function pass(folder: string, root = `${folder}/orbit-root-ca.crt`) {
     const out = new Deno.Command("python3", {
         args: ["-I", new URL("../ansible/instance_container_files.py", import.meta.url).pathname, JSON.stringify({
             projects: ["orbit-instances", "orbit-instances-nested"], files: shared.map(({ path, content, mode }) => ({ path, content, mode })),
+            trust: { source: root, path: "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt", directory: "/etc/ssl/certs" },
             libraries: `${folder}/opt/orbit-runtime/current/lib`, state: `${folder}/container-libraries`,
         })],
         env: { HOST_FIXTURE: folder, PATH: `${folder}/bin:${Deno.env.get("PATH")}` },
@@ -139,15 +143,17 @@ Deno.test({
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
             let run = pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
-            // The nested-fleet project's containers mount the same runtime folder, so they get the same files.
-            assertEquals(run.summary.written.length, 9);
+            // The nested-fleet project's containers mount the same runtime folder, so they get the same files: 3 shared files, the
+            // Node's root CA and its two links (`<name>.pem` and the hashed name), in each of the 3 containers.
+            assertEquals(run.summary.written.length, 18);
+            assertEquals(run.summary.ca_bundle, ["orbit-instances/app-default", "orbit-instances-nested/fleet-trial"]);
             assert(run.summary.written.includes("orbit-instances-nested/fleet-trial/etc/gitconfig"));
             assertEquals(run.summary.ldconfig, ["orbit-instances/app-default", "orbit-instances-nested/fleet-trial"]);
             assertEquals(run.summary.cache_dropped, ["orbit-instances/app-asleep"]);
 
             run = pass(f.folder);
             assert(run.ok, JSON.stringify(run.summary));
-            assertEquals([run.summary.written, run.summary.ldconfig, run.summary.cache_dropped], [[], [], []]);
+            assertEquals([run.summary.written, run.summary.ldconfig, run.summary.cache_dropped, run.summary.ca_bundle], [[], [], [], []]);
 
             // A new library in the folder: the running cache lacks it, and the stopped container builds its cache again at start.
             Deno.writeTextFileSync(`${lib}/libtwo.so.2`, "two");
@@ -238,6 +244,83 @@ Deno.test({
             assertEquals(f.state().ldcache["app-default"], ["libfake3.so"]);
             // The old version goes once no process maps it, as before.
             assert(!f.has("opt/orbit-runtime/111111111111"));
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+/** A self-signed root with its OpenSSL hashed name. */
+function root(folder: string, name: string) {
+    const made = new Deno.Command("openssl", { args: ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", `/CN=${name}`,
+        "-keyout", `${folder}/${name}.key`, "-out", `${folder}/${name}.crt`] }).outputSync();
+    assert(made.success, new TextDecoder().decode(made.stderr));
+    const digest = new Deno.Command("openssl", { args: ["x509", "-noout", "-subject_hash", "-in", `${folder}/${name}.crt`] }).outputSync();
+    return { path: `${folder}/${name}.crt`, pem: Deno.readTextFileSync(`${folder}/${name}.crt`), hash: new TextDecoder().decode(digest.stdout).trim() };
+}
+
+Deno.test({
+    name: "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            const old = root(f.folder, "old-root");
+            const next = root(f.folder, "new-root");
+            const ca = "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt";
+            const state = f.state();
+            state.instances.push(
+                { name: "app-default", project: "orbit-instances", status: "Running" },
+                { name: "app-asleep", project: "orbit-instances", status: "Stopped" },
+                { name: "app-frozen", project: "orbit-instances", status: "Frozen" },
+            );
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            let run = pass(f.folder, old.path);
+            assert(run.ok, JSON.stringify(run.summary));
+            assertEquals(run.summary.frozen, ["orbit-instances/app-frozen"]);
+            const linked = (name: string, hash: string) =>
+                [`/etc/ssl/certs/orbit-managed-root-ca.pem`, "orbit-managed-root-ca.pem"].includes(f.state().links?.[`${name}/etc/ssl/certs/${hash}.0`]);
+            for (const name of ["app-default", "app-asleep", "app-frozen"]) {
+                assertEquals(f.state().files[`${name}${ca}`].content, old.pem);
+                assert(linked(name, old.hash), name);
+            }
+
+            const before = f.calls().length;
+            run = pass(f.folder, next.path);
+            assert(run.ok, JSON.stringify(run.summary));
+            const files = f.state().files;
+            for (const name of ["app-default", "app-asleep", "app-frozen"]) {
+                assertEquals(files[`${name}${ca}`].content, next.pem);
+                assert(linked(name, next.hash), name);
+                assert(!f.state().links?.[`${name}/etc/ssl/certs/${old.hash}.0`], name);
+                assert(run.summary.removed.includes(`orbit-instances/${name}/etc/ssl/certs/${old.hash}.0`), JSON.stringify(run.summary));
+            }
+            assertEquals(f.state().deleted_files.filter((path: string) => path.endsWith(`${old.hash}.0`)).sort(),
+                ["app-asleep", "app-default", "app-frozen"].map((name) => `${name}/etc/ssl/certs/${old.hash}.0`));
+            // Only the running container reads its bundle again; the frozen one gets file writes and deletes only, never an exec.
+            assertEquals(run.summary.ca_bundle, ["orbit-instances/app-default"]);
+            assert(!f.calls().slice(before).some((call) => call[0] === "exec" && call.includes("app-frozen")));
+            assertEquals(files["app-default/etc/ssl/certs/ca-certificates.crt"].content, next.pem);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a Node without a readable Orbit root CA fails the step by name and writes nothing",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            const state = f.state();
+            state.instances.push({ name: "app-default", project: "orbit-instances", status: "Running" });
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const run = pass(f.folder, `${f.folder}/missing.crt`);
+            assert(!run.ok);
+            assertEquals(run.summary.error_code, "instance.host_unavailable");
+            assertStringIncludes(run.summary.message, "no readable Orbit root CA");
+            assertEquals(f.state().files ?? {}, {});
         } finally {
             f.cleanup();
         }

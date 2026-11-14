@@ -350,9 +350,10 @@ final readonly class InstanceContainer
     /**
      * The image's files that every container needs (InstanceImage::shared) and an empty linker cache. The stock `ldconfig.service`
      * runs at boot when the cache is empty, so the copy's first start builds a cache that knows the runtime folder's `lib`; the
-     * dynamic linker ignores an empty cache until then (docs/reference/development-containers.md#existing-containers).
+     * dynamic linker ignores an empty cache until then (docs/reference/development-containers.md#existing-containers). Last, the
+     * Node's Orbit root CA: the clone script reads it on the Node and adds its hashed name (docs/reference/development-containers.md#trust).
      *
-     * @return list<array{path: string, content: string, uid: int, gid: int, mode: string}>
+     * @return list<array<string, int|string>>
      */
     private static function bootFiles(): array
     {
@@ -360,6 +361,8 @@ final readonly class InstanceContainer
             ...array_map(static fn (array $file): array => ['path' => $file['path'], 'content' => $file['content'], 'uid' => $file['uid'],
                 'gid' => $file['gid'], 'mode' => $file['mode']], InstanceImage::shared()),
             ['path' => '/etc/ld.so.cache', 'content' => '', 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['source' => InstanceHostIntent::TrustSource, 'path' => InstanceHostIntent::TrustFile, 'hash_directory' => InstanceHostIntent::TrustDirectory,
+                'uid' => 0, 'gid' => 0, 'mode' => '0644'],
         ];
     }
 

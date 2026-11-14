@@ -1302,8 +1302,8 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 }
 
 // Frozen from main a38e037e; accepted deltas: clone-mail progress folds into clone-container; clone-fleet (skipped unless the intent has
-// `fleet`) joins the clone job after clone-club-key; every clone's `clone.boot_files` carries the shared browser, font and Git files and an
-// empty linker cache (InstanceContainer::bootFiles). Conn maps only its four stable stage names (docs/reference/conn.md), so no delta reaches its card.
+// `fleet`) joins the clone job after clone-club-key; every clone's `clone.boot_files` carries the shared browser, font and Git files, an
+// empty linker cache and the Node root CA entry (InstanceContainer::bootFiles). Conn maps only its four stable stage names (docs/reference/conn.md), so no delta reaches its card.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');

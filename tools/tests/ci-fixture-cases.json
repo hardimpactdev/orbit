@@ -168,7 +168,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "a881f68693af2f30491f1c7515586fb77655cc1cc04b56a9d9880ba5effbb6e3",
+    "source_sha256": "3a50e8242780529230a7ae501a34da067bb0e8908dd8c61c7e8900b640e6afd4",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -260,7 +260,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "7461b0dcb188890ffb3e75de9514f5ad702f9d204882a2caa89cc98bbc9f1795",
+    "source_sha256": "bb45ddeded10e20b6be5a5b52cbb32da1730b18125020a872675e9ccf9a8f73e",
     "cases": [
       "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",
@@ -281,13 +281,15 @@
     ]
   },
   "swamp/tests/ansible_instance_host_browser_test.ts": {
-    "source_sha256": "57cc7ef8ec2408c4898ea942b4109bc3059e009a70bc1dede411408671ad1397",
+    "source_sha256": "cb555c5e368582d1e98b18d3f961e82f9a8c6ba547981a98e5b47b6e7973b45c",
     "cases": [
-      "a Debian package part gives the runtime folder its libraries and fonts; existing containers get the shared files with no restart",
+      "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
       "two Debian packages that give the same library name fail the folder build: one would hide the other",
       "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike",
       "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not",
-      "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container"
+      "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
+      "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
+      "a Node without a readable Orbit root CA fails the step by name and writes nothing"
     ]
   },
   "swamp/tests/ansible_instance_host_runtime_test.ts": {

@@ -87,6 +87,9 @@ final readonly class InstanceImage
             ],
             'finish' => [
                 ['systemctl', 'enable', 'nftables.service', 't3.service'],
+                // The build has pushed the Node's Orbit root CA (docs/reference/development-containers.md#trust): the bundle and the
+                // links in /etc/ssl/certs. It is part of the definition, so an image without the root gets a new name and is built again.
+                ['update-ca-certificates'],
                 ['apt-get', 'clean'],
                 ['find', '/var/lib/apt/lists', '-mindepth', '1', '-delete'],
                 // The build container has booted, so it holds a machine-id, and every container of the image would share it. An empty

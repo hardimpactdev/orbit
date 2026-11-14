@@ -292,8 +292,10 @@ Deno.test({
             const digest = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(calls))))
                 .map((byte) => byte.toString(16).padStart(2, "0")).join("");
             // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape; and
-            // again when the image removed its linker cache last and the converge read the existing containers (two calls more).
-            assertEquals([f.calls().length, digest], [55, "38e311a084b87f551f11b9bca602bca318516d6d5eca1e15dedf26af7c51a083"]);
+            // again when the image removed its linker cache last and the converge read the existing containers (two calls more), and
+            // when the image took the Node's Orbit root CA (one push, and `update-ca-certificates` in the definition's finish: two calls more).
+            assertEquals([f.calls().length, digest], [57, "17192b9d380bc5414d71944b0ac6c31f0d0acdb3e7fcb4233879ffa6157f6b28"]);
+            assert(f.calls().some((call) => call.includes("exec") && call.at(-1) === "update-ca-certificates"));
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
             assertEquals(f.state().images.flatMap((image: {project: string; aliases: {name: string}[]}) =>

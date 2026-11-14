@@ -87,6 +87,8 @@ const replacements = (folder: string): [string, string][] => [
     ["/usr/local/libexec", `${folder}/libexec`],
     ["/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`],
     ["/var/lib/orbit/instance-container-libraries", `${folder}/container-libraries`],
+    // The Node's own Orbit root CA, a real self-signed certificate of the fixture; the container path stays as it is.
+    ['"instance_trust_source":"/etc/orbit/agent/ca.pem"', `"instance_trust_source":"${folder}/orbit-root-ca.crt"`],
     ["/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`],
     ["/etc/modprobe.d/orbit-instances-zfs.conf", `${folder}/arc.conf`],
     ["/etc/systemd/system/", `${folder}/systemd/`],
@@ -340,6 +342,9 @@ export async function fixture(
         Deno.mkdirSync(`${folder}/${dir}`);
     }
     Deno.writeTextFileSync(`${folder}/arc`, "0\n");
+    const nodeRoot = new Deno.Command("openssl", { args: ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "2", "-subj", "/CN=Orbit Fixture Root",
+        "-keyout", `${folder}/orbit-root-ca.key`, "-out", `${folder}/orbit-root-ca.crt`] }).outputSync();
+    assert(nodeRoot.success, new TextDecoder().decode(nodeRoot.stderr));
     Deno.writeTextFileSync(`${folder}/ip-addr`, addresses.join("\n") + "\n");
     Deno.writeTextFileSync(
         `${folder}/meminfo`,
