@@ -234,7 +234,7 @@ def main():
         return (f"http://incus/1.0/instances/{urllib.parse.quote(name)}/files?project={urllib.parse.quote(container['project'])}"
                 f"&path={urllib.parse.quote(path)}")
 
-    def file_type(path):
+    def file_type(path, refused="instance.clone_browser_trust_refused"):
         """What a path is in the copy, from the files API's `X-Incus-Type` header, or None when it is missing."""
         result = run(["curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code} %header{x-incus-type}", "--unix-socket",
                       INCUS_SOCKET, files_url(path)], check=False)
@@ -242,7 +242,7 @@ def main():
         if code == "404":
             return None
         if result.returncode or code != "200":
-            raise RuntimeError("instance.clone_browser_trust_refused")
+            raise RuntimeError(refused)
         return kind or "unknown"
 
     def file_read(path, refused):
@@ -341,11 +341,58 @@ def main():
         content = item["entry"] if not store else store + ("" if store.endswith("\n\n") else "\n" if store.endswith("\n") else "\n\n") + item["entry"]
         change(project + ["file", "push"] + owner + ["--mode", item["mode"], "-", name + item["path"]], content)
 
+    def start_input():
+        """The credential line and, from a Gateway that frames it (`model_environment.frame`), the model environment after the frame
+        line. An older Gateway sends the line alone; the T3 step then starts T3 as before."""
+        frame = container.get("clone", {}).get("model_environment", {}).get("frame")
+        if frame:
+            line, marker, model = secret.partition(frame + "\n")
+            if marker and (line == "" or line.endswith("\n")):
+                return line, model
+        return secret, None
+
+    def t3_start_files(model):
+        """T3's files before the copy's first start, so the copy's boot starts T3 (docs/reference/development-containers.md#t3-starts-with-
+        the-copy): the model environment, the `before_start` files and last the file T3's unit waits for. The copy is stopped, so nothing
+        reads a half-written file. A JSON file merges into the seed's own, as the agent part does; a missing folder is made for its
+        owner, 0700 for `agent` and 0755 for root. The agent part then finds them all in place."""
+        clone = container["clone"]
+        condition = clone["t3"]["condition"]
+        files = [dict(clone["model_environment"], content=model)] + sorted(
+            [item for item in clone["files"] if item.get("before_start")], key=lambda item: item["path"] == condition)
+        for item in files:
+            content = item.get("content")
+            if "json" in item:
+                held = file_read(item["path"], "instance.clone_t3_files_refused")
+                old = json.loads(held["content"]) if held is not None else {}
+                # A seed file that holds the keys with the agent part's owner and mode stays as it is.
+                if held is not None and old | item["json"] == old and (held["uid"], held["gid"], held["mode"]) == (
+                        str(item["uid"]), str(item["gid"]), item["mode"].zfill(4)):
+                    continue
+                content = json.dumps(old | item["json"], separators=(",", ":")) + "\n"
+            parents = []
+            for parent in Path(item["path"]).parents:
+                if str(parent) in ("/", "/home", "/etc"):
+                    break
+                # A folder that is a link, or not a folder, is refused: a push would follow it out of the agent's home.
+                kind = file_type(str(parent), "instance.clone_t3_files_refused")
+                if kind not in (None, "directory"):
+                    raise RuntimeError("instance.clone_t3_files_refused")
+                if kind == "directory":
+                    break
+                parents.append(str(parent))
+            for parent in reversed(parents):
+                change(project + ["file", "create", "--type=directory", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
+                                  "--mode", "0755" if item["uid"] == 0 else "0700", name + parent])
+            change(project + ["file", "push", "--uid", str(item["uid"]), "--gid", str(item["gid"]), "--mode", item["mode"], "-",
+                              name + item["path"]], content)
+
     if phase == "container":
         boot = boot_files()
         owner = private_folder()
+        line, model = start_input()
         credential = folder / "git-credential"
-        credential.write_text(secret)
+        credential.write_text(line)
         credential.chmod(0o600)
         try:
             current = run(
@@ -604,6 +651,12 @@ def main():
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
                 proxy_drop_ins()
             boot_timer.__exit__()
+            # 1 when the copy's boot starts T3: this run carried the model environment and the copy was not running yet.
+            timings["t3_files"] = 0
+            if model is not None and read["status"] != "Running":
+                with timed("t3_files_seconds"):
+                    t3_start_files(model)
+                timings["t3_files"] = 1
             firewall_timer = timed("firewall")
             firewall_timer.__enter__()
             for rule in container.get("firewall", []):
@@ -886,6 +939,8 @@ def main():
             expected_commit()
             with timed("t3"):
                 output = inside("t3", "")
+            # 1 when T3 already ran as the step began: the copy's boot started it.
+            timings["at_boot"] = 1 if output.pop("at_boot") else 0
             cached.unlink()
         else:
             expected_commit()

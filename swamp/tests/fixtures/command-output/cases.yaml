@@ -1,5 +1,33 @@
 # Production expressions are selected, never copied. Contexts are sanitized command-format samples.
 contexts:
+  # `incus query /1.0/instances/<name>` of a nested-fleet default, cut to its root disk (2026-11-14, Beast).
+  root-smaller:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "40GiB", "type": "disk"}}}'
+    container:
+      root_disk_size: 80GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 80GiB}
+  root-larger:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "80GiB", "type": "disk"}}}'
+    container:
+      root_disk_size: 40GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
+  root-odd-form:
+    phase: start
+    container_read:
+      rc: 0
+      stdout: '{"name": "instance-2454", "project": "orbit-instances-nested", "status": "Running", "expanded_devices": {"root": {"path": "/", "pool": "orbit-instances", "size": "50GB", "type": "disk"}}}'
+    container:
+      root_disk_size: 40GiB
+      allowed_devices:
+        root: {type: disk, path: /, pool: orbit-instances, size: 40GiB}
   grants-current:
     fleet_grants:
       stdout: 'localhost : ok=3 changed=0 unreachable=0 failed=0'
@@ -2107,6 +2135,21 @@ cases:
   field: vars.fleet_doctor_issues
   context: fleet-doctor-gateway-error
   expected: []
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-smaller
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-larger
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Grow the root disk to its intent
+  field: when
+  context: root-odd-form
+  expected: false
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
