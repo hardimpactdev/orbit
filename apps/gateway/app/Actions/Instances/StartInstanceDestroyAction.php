@@ -21,6 +21,7 @@ use App\Domain\Nodes\Storage\ManagedCheckoutOverlap;
 use App\Domain\Nodes\Storage\ProtectedPathCatalog;
 use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\LifecycleStep;
@@ -78,7 +79,9 @@ final readonly class StartInstanceDestroyAction
         app(ContainerInstanceDestroy::class)->assertAvailable($instance, $force);
         $admission = $instance->status === InstanceState::Removing ? [] : app(InstanceDestroyWorktrees::class)->assertAvailable($instance);
         $snapshot = [...$this->snapshot($instance, $force), ...$admission];
-        $completion = $cancelCompletion ? $this->completion($instance) : null;
+        // A running create is cancelled and the removal starts after it, for every caller: a removal is accepted at once and never
+        // hangs (docs/reference/conn.md#remove-an-instance). A running completion does the same only for the Conn removal.
+        $completion = $this->create($instance) ?? ($cancelCompletion ? $this->completion($instance) : null);
         if ($completion !== null) {
             $snapshot['after_operation_id'] = $completion;
         }
@@ -104,7 +107,8 @@ final readonly class StartInstanceDestroyAction
     {
         $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
         if ($completion !== null) {
-            // After the record, which took the Instance and marked it removing: the order the completion's projection uses.
+            // After the record, which took the Instance and marked it removing: the order the create's and the completion's
+            // projections use.
             $running = Operation::query()->lockForUpdate()->findOrFail($completion);
             if (! $running->status->terminal() && ! isset($running->state['swamp_run_id'])) {
                 // No run is bound: the cancel ends a queued completion here with no Swamp call. One whose start is in flight only
@@ -120,6 +124,15 @@ final readonly class StartInstanceDestroyAction
         $input['run_budget_seconds'] = $this->budget($input);
 
         return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
+    }
+
+    /** The create that holds the Instance lock, if one runs. */
+    private function create(Instance $instance): ?int
+    {
+        $id = Operation::query()->where('kind', 'instance.create')->whereNotIn('status', OperationStatus::terminalValues())
+            ->where('lock_key', OperationStore::lockKey('instance', $instance->id))->value('id');
+
+        return is_int($id) ? $id : null;
     }
 
     /** The clone's completion that holds the Instance lock, if one runs. */

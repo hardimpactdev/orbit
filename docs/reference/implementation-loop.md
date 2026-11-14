@@ -328,7 +328,7 @@ Tests of bin scripts live beside their script. The shape job names the liveness 
 
 Each main SHA has its own concurrency group in both CI and the reusable Swamp workflow. Main runs complete independently. A shared group would replace an older pending run even with `cancel-in-progress: false`; that option protects only the running job. Pull requests share a group and cancel superseded runs.
 
-Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
+Docs build installs the locked Docs dev dependencies and Gateway runtime dependencies. On a pull request it also installs the CLI dev dependencies, from the CLI Pest suite's cache, because `bin/cli-contract --changed` in the PR gate runs the CLI tests that replay the changed fixtures. It uses the existing PHP action and Bun 1.4.2 pin, installs only the API-types workspace, and generates OpenAPI, MCP tools and web types before building the Docs index and running Pest. Python 3, Git and Node come from `ubuntu-26.04`; no service or fleet operation is needed.
 
 Every pull request selects this job, including changes with no covered documentation. Other events retain path selection, including `apps/docs/**`, `bin/check-*` and docs chart changes.
 
@@ -898,6 +898,8 @@ Clone branch fixtures use unprivileged local Git repositories and run without an
 Its `checkout`, `services` and `check` cases check that each part gets only its half of the workspace value. The guest fixture runs `checkout` then `services` on a real Git workspace and compares the files, the mark, the units started and the result with the one `workspace` phase.
 
 The `instance:complete` workflow fixture runs `operation-instance-complete` on the pinned engine's levels, with the real `finish` receipt, for a plain clone, a database clone and a nested-fleet clone, and for each failure. Its native fixture runs the real workflow on the pinned Swamp binary with local stubs for the machine steps and the Route children; it needs `ORBIT_SWAMP_PROOF_BINARY`, so CI runs it after merge. The create's level fixture in `workflow_absent_secrets_test.ts` and its native fixture, `instance_create_native_test.ts`, do the same for a clone's create, which ends at `clone-register`.
+
+The create fixtures also run the clone's Route beside the copy: published, a failed CSR or Route child that leaves the run succeeded, a cancel during `clone-route`, and a later clone failure that keeps a published address. The native complete fixture covers a completion of a Route its create published, which runs no Route step.
 
 The `instance:restore` workflow fixture evaluates every expression of `operation-instance-restore` against the input its projection renders. It needs no Node, database or playbook.
 

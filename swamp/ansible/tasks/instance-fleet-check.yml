@@ -1,7 +1,7 @@
 ---
-# Check the nested fleet of a nested-fleet default before its deployment changes anything (docs/cli/instance/container/fleet-refresh.mmd):
-# wait for the inner Incus, then compare the fleet with its rules (instance-fleet-rules.yml without `fleet_rules_apply`). It changes
-# nothing, so its refusal, `instance.container_fleet_drift`, never restores a seed. Input: instance-fleet.yml.
+# Check the nested fleet that a clone copied, before its start (docs/reference/development-containers.md#a-clone-starts-its-fleet): wait for
+# the inner Incus, then compare the fleet with its rules (instance-fleet-rules.yml without `fleet_rules_apply`). It changes nothing. A
+# deployment's one fleet check is the start (instance-fleet-start.yml), which compares the same way. Input: instance-fleet.yml.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
 # The inner Incus starts by socket when the Instance container starts; a read before it is ready is not a drift.
 - name: Wait for the inner Incus

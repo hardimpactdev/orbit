@@ -94,8 +94,8 @@ final readonly class InstanceHostIntent
     public const int TaskPlaceIds = 101000000;
 
     /**
-     * The converted size of a nested-fleet container: the inner Incus's base of 1,000,000, its range of 65,536 and 100,000 spare
-     * (development-containers.md#the-id-map-size).
+     * The converted size of a nested-fleet container. The inner Incus takes its range from its own map: 1,000,000 up to this size, so
+     * 165,536 IDs; the floor is 1,065,536 (development-containers.md#the-id-map-size).
      */
     public const int NestedIdMapSize = 1165536;
 

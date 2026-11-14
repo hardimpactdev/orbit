@@ -1,10 +1,10 @@
 order = 1400
-source_sha256 = "eadf8cae203253a968a5b5d38bd8d9e4e19a3a46120625d2c751ff9a109aab29"
+source_sha256 = "c451b68d91ffc70a8aaf510c1cdfdf8a1d94192c76589adf8545184262985f90"
 cases = [
   "Route update workflows place every step on the swamp role and keep mutation parents small",
   "restore keeps the observed candidate serving, then withdraws it after DNS grace",
   "Route primitive and shared publication children use one209selector",
-  "a clone's completion publishes its prepared Route beside the services without waiting for app startup",
+  "a clone publishes its prepared Route beside the copy in its create, and its completion beside the services",
   "a captured same-Node move retains its first live DNS child and omits only the redundant final child",
   "a captured replacement with real record changes runs both DNS stages and completes",
   "mixed captured Nodes keep dense final child indexes and exact contribution completeness",
@@ -22,7 +22,7 @@ inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json
 "Route update workflows place every step on the swamp role and keep mutation parents small" = 1
 "restore keeps the observed candidate serving, then withdraws it after DNS grace" = 1
 "Route primitive and shared publication children use one209selector" = 1
-"a clone's completion publishes its prepared Route beside the services without waiting for app startup" = 1
+"a clone publishes its prepared Route beside the copy in its create, and its completion beside the services" = 1
 "a captured same-Node move retains its first live DNS child and omits only the redundant final child" = 1
 "a captured replacement with real record changes runs both DNS stages and completes" = 1
 "mixed captured Nodes keep dense final child indexes and exact contribution completeness" = 1

@@ -1,0 +1,33 @@
+---
+# Wait for the state mounts of the nested Gateway and app-dev, once in every refresh, before any part reads or writes them
+# (instance-fleet-refresh.yml). `.env`, `storage` and `bootstrap/cache` stay on each guest's own disk, bound over the checkout at boot, and
+# so do the nested Gateway's Swamp state (`.swamp`, `vaults`, `grants`) when its Swamp runs. Right after a start a mount can still be
+# `activating`, so the read waits until all are active: a write before its mount would land in the checkout, under the mount. Input:
+# instance-fleet.yml and `fleet_club` of the refresh.
+- name: Read the state mounts
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests[item.0], '--', 'systemctl', 'is-active'] + item.1 }}"
+  loop:
+    - [gateway, "{{ fleet_state_mounts + (fleet_swamp_state_mounts if fleet_club.rc == 0 else []) }}"]
+    - [app-dev, "{{ fleet_state_mounts }}"]
+  loop_control: { label: "{{ item.0 }}" }
+  register: fleet_mounts
+  changed_when: false
+  failed_when: false
+  until: fleet_mounts.stdout_lines == ['active'] * (item.1 | length)
+  retries: "{{ ((fleet_boot_seconds | int) / ([fleet_ready_delay | int, 1] | max)) | round(0, 'ceil') | int }}"
+  delay: "{{ fleet_ready_delay }}"
+- name: Check the state mounts
+  vars:
+    fleet_mounts_down: >-
+      {%- set out = [] -%}
+      {%- for read in fleet_mounts.results -%}
+      {%-   if read.stdout_lines != ['active'] * (read.item.1 | length) -%}
+      {%-     set _ = out.append(intent.fleet.guests[read.item.0]) -%}
+      {%-   endif -%}
+      {%- endfor -%}
+      {{ out }}
+  ansible.builtin.assert:
+    that: fleet_mounts_down | length == 0
+    fail_msg: "The state mounts are not active after {{ fleet_boot_seconds }} s in {{ fleet_mounts_down | join(', ') }}"
+    quiet: true

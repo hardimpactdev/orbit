@@ -117,3 +117,17 @@ Deno.test("each failure names its step and code, and a published Route is withdr
   const bare = run(plain, { "clone-services": { status: "failed" } });
   assertEquals([receipt(bare).failed_step, bare["withdraw-route"].status], ["workspace", "skipped"]);
 });
+
+Deno.test("a completion of a Route its create published carries no Route: no Route step, no withdrawal on a failed check (D3)", () => {
+  // Guards: `inputs.intent.route == null` skips `route`, and the CSR's forEach list is empty.
+  const ran = run(plain, { "clone-input": { duration: 2 }, "clone-services": { duration: 6 } });
+  assertEquals([ran.route.status, "route-csr-0" in ran, ran["withdraw-route"].status], ["skipped", false, "skipped"]);
+  assertEquals(ran.finish.start, ran["clone-check"].end);
+  assertEquals(ran.finish.outputs!.ready, true);
+  // A dead unit fails the completion; the address the create published stays up (502) until a retry or a removal.
+  const failed = run(plain, { "clone-check": { duration: 1.7, outputs: { stdout: JSON.stringify(dead), exitCode: 1 } } });
+  assertEquals([failed.finish.outputs!.ready, receipt(failed).failed_step, failed["withdraw-route"].status], [false, "check", "skipped"]);
+  // A completion that captured the Route (the create's Nodes were held, or its publication failed) withdraws it on its own failure.
+  const fallback = run(routed, { "route-csr-0": { outputs: { sign: { stdout: "pem" } } }, route: { status: "failed", duration: 6 } });
+  assertEquals([receipt(fallback).failed_step, receipt(fallback).error_code, fallback["withdraw-route"].status], ["route", "instance.create_route_failed", "succeeded"]);
+});

@@ -22,7 +22,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Admits `instance.complete`, the second Operation of a clone create (docs/reference/development-containers.md#complete-a-clone): the
- * database, a nested fleet, the services, the Route and a check. The command, the API and the create's terminal projection all call it.
+ * database, a nested fleet, the services, a check, and the Route when the create did not publish it. The command, the API and the create's terminal projection all call it.
  */
 final readonly class StartInstanceCompleteAction
 {
@@ -75,9 +75,12 @@ final readonly class StartInstanceCompleteAction
             'direct_provisioning' => ['instance_id' => $instance->id, 'database' => $admitted['database'] ?? null,
                 'server_database' => $admitted['server_database'] ?? null, 'server_valkey' => $admitted['server_valkey'] ?? null,
                 'container' => [...ValidatedData::object($admitted['container']), 'processes' => app(ContainerProcesses::class)->units($instance)]]];
-        if ($input['route_id'] !== null) {
-            // The Route publication from the current site catalog, as a create captures it; the run holds the publication Nodes.
-            $route = Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
+        $route = $input['route_id'] === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
+        if ($route !== null && ! $route->sites_published) {
+            // A Route the create did not publish: its Nodes were held at the create's admission, its publication failed there, or an
+            // earlier completion's failed (docs/reference/development-containers.md#the-address-during-the-create). The publication
+            // from the current site catalog, as a create captures it; the run holds the publication Nodes. A published Route is left as
+            // it is, and the run holds no Node.
             $input = [...$input, ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $instance->node_id,
                 preserveEnvironment: true, preparedWorkloads: true)];
         }

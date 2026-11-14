@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Swamp;
 
+use App\Domain\Instances\ClonePublication;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStore;
 use App\Jobs\Operations\ReconcileSwampOperations;
@@ -53,7 +54,9 @@ final readonly class NativeRunProgress
             } else {
                 unset($active[$key]);
             }
-            if ($event['kind'] === 'step_failed' && ($event['allowedFailure'] ?? false) !== true && ! isset($state['native_failure'])) {
+            // A clone's publication never fails its create, so its failure names no failed step of the create, now or at its end.
+            if ($event['kind'] === 'step_failed' && ($event['allowedFailure'] ?? false) !== true && ! isset($state['native_failure'])
+                && ! ClonePublication::ownsStep($operation, $event)) {
                 $state['native_failure'] = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [[
                     'name' => $event['stepId'], 'status' => 'failed', 'error' => $event['error'] ?? null,
                 ]]]]], $operation);
@@ -75,6 +78,11 @@ final readonly class NativeRunProgress
                 'state' => $state, 'current_step' => $current['step'] ?? null,
                 'failed_step' => is_array($failure) && is_string($failure['failed_step'] ?? null) ? $failure['failed_step'] : null,
             ]);
+            // A clone's create that published its address frees its Route Nodes now, not at its end, with the Route active in this
+            // transaction (docs/reference/routes.md#coordinate-publication).
+            if ($event['kind'] === 'step_completed' && $parent === $runId && $event['jobId'] === 'publication' && $event['stepId'] === 'clone-route') {
+                app(ClonePublication::class)->published($operation);
+            }
             // A cancel that waited for the database copy goes to Swamp now, not at the next minute pass.
             if ($operation->cancel_requested_at !== null && NativeRunCancellation::endsCopy($operation, $event)) {
                 ReconcileSwampOperations::dispatch()->afterCommit();

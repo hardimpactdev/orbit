@@ -483,7 +483,10 @@ describe('the id map size', function (): void {
             'a rollback under a small copy' => '101000000',
             default => '1165536',
         };
-        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $target->id, 'size' => $size])->expectsOutputToContain($code)->assertFailed();
+        // The size refusal names the floor: the inner range is the outer size minus 1,000,000 (development-containers.md#the-id-map-size).
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $target->id, 'size' => $size])
+            ->expectsOutputToContain($case === 'another size' ? $code.': The size must be 1165536 or 101000000. The inner range is the outer size minus 1,000,000, so no size below 1,065,536 works.' : $code)
+            ->assertFailed();
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->first(['idmap_size', 'seed_commit'])?->only(['idmap_size', 'seed_commit']))
             ->toBe(['idmap_size' => $case === 'a rollback under a small copy' ? 1165536 : 101000000, 'seed_commit' => str_repeat('a', 40)]);
     })->with([

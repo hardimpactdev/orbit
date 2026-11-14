@@ -65,11 +65,6 @@ final readonly class ContainerDeployOutcome
                     'detail' => mb_strcut(app(LogRedactor::class)->redact($detail, $secrets), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
                     'stderr_recorded' => true];
             }
-            // The start after a passed refresh failed: the new seed and `base` stay, so the seed's commit is recorded.
-            if ($code === 'instance.container_fleet_resume_failed' && is_string($file['commit'] ?? null)) {
-                $payload['commit'] = $file['commit'];
-                $payload['seed_kept'] = true;
-            }
             // A unit the run saw not become active: its Process is failed; the other active ones keep running.
             if (is_array($file['units_inactive'] ?? null)) {
                 $payload['units_inactive'] = array_values(array_filter($file['units_inactive'], is_string(...)));
@@ -97,7 +92,7 @@ final readonly class ContainerDeployOutcome
         }
         $words = ['migrate' => ['applied', 'nothing', 'skipped'], 'restart' => ['yes', 'no'], 'converge' => ['ran', 'skipped'],
             'converge_reason' => ['changed', 'record', 'digest_unreadable', 'stale', 'unchanged'],
-            'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'no_key'], 'base' => ['retaken', 'kept'],
+            'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'recorded', 'no_key'], 'base' => ['retaken', 'kept'],
             'record' => ['present', 'missing', 'unreadable'], 'tools' => ['present', 'built', 'failed'],
             'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable']];
         $refresh = [];

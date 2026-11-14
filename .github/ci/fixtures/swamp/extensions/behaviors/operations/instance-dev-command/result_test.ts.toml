@@ -1,5 +1,5 @@
 order = 1280
-source_sha256 = "7adf4ca430cf1ace38845a5c4fa7ecab22f615febfd39d02fe1627d923a5749d"
+source_sha256 = "3caab38e441e65f9bade6c1d8ef621a3dbfc5fe73a266516e0abf7f528ecd536"
 cases = [
   "create returns only the commit when every step finished",
   "create names the first unfinished phase",
@@ -21,9 +21,10 @@ cases = [
   "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else",
   "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it",
   "the fleet phase's result file gives its own code, detail and drift lines to the completion's receipt",
+  "a clone's Route publication never decides its create: published, failed with the Route warning, or absent without a Route",
 ]
 file = "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts"
-cost = 20
+cost = 21
 inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts", "swamp/workflows/workflow-operation-instance-create.yaml"]
 [case_costs]
 "create returns only the commit when every step finished" = 1
@@ -46,3 +47,4 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it" = 1
 "the fleet phase's result file gives its own code, detail and drift lines to the completion's receipt" = 1
 "a clone's result carries the seconds of each part of its phases, names and numbers only" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"a clone's Route publication never decides its create: published, failed with the Route warning, or absent without a Route" = 1

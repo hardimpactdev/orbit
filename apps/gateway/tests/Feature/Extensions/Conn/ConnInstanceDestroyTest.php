@@ -6,6 +6,7 @@ use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\InstanceCompleteProjection;
@@ -43,6 +44,7 @@ use App\Models\DatabaseConnection;
 use App\Models\DatabaseConnectionTarget;
 use App\Models\DatabaseExecutionIntent;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
@@ -836,6 +838,28 @@ describe('a removal while the clone\'s completion runs', function (): void {
             ->assertJsonPath('data.status', 'queued')->assertJsonPath('data.input.after_operation_id', null);
     });
 
+    it('withdraws an address the create published, whether the completion runs or failed at its check', function (string $status): void {
+        // The create published the address beside the copy: the Route is active with its sites published before the clone is active
+        // (docs/reference/development-containers.md#the-address-during-the-create).
+        [$instance] = connCompletingClone(status: $status);
+        $route = Route::query()->where('domain', 'feature.fixture.test')->firstOrFail();
+        $route->update(['status' => 'active', 'sites_published' => true]);
+        // A clone keeps the preparation id its create reserved it with.
+        $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+
+        $removal = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        if ($status === 'running') {
+            connCompletionEnds(Operation::query()->where('kind', 'instance.complete')->where('target_id', $instance->id)->firstOrFail());
+        }
+
+        expect($removal->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and(array_column($removal->input['members'], 'route_id'))->toBe([$route->id])
+            ->and($removal->input['native_destroy']['route_mutations']['forward']['publications'])->not->toBe([]);
+        connRemovalSucceed($removal->refresh());
+        expect($instance->fresh())->toBeNull()
+            ->and(Route::query()->whereKey($route->id)->exists())->toBeFalse();
+    })->with(['completion running' => ['running'], 'completion failed at its check' => ['failed']]);
+
     it('keeps the CLI and core API refusal while the completion runs, naming the completion, and changes nothing', function (): void {
         [$instance, $completion] = connCompletingClone();
         $before = connRemovalStored();
@@ -944,5 +968,118 @@ describe('a removal while the clone\'s completion runs', function (): void {
         $this->workspace->answer = json_encode(connWorkAnswer(baseline: 'default_now'), JSON_THROW_ON_ERROR);
 
         connWorkRead($instance->id)->assertOk()->assertJsonPath('data.state', 'clean')->assertJsonPath('data.baseline', 'default_now');
+    });
+});
+
+/**
+ * A clone whose create still runs, as its admission leaves it: `reserved` with its preparation id, its Route pending, the create holding
+ * the Instance lock. `free` took the Route Node (its publication runs), `published` is after `clone-route` succeeded (the Route active, the
+ * Node freed), `deferred` found the Node held and carries no publication (docs/reference/development-containers.md#the-address-during-the-create).
+ *
+ * @return array{Instance, Operation, Route}
+ */
+function connCreatingClone(string $name, string $mode): array
+{
+    $default = test()->default;
+    $instance = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $default->node_id, 'name' => $name,
+        'status' => InstanceState::Reserved, 'checkout_path' => '/fixture/reservation', 'source_layout' => 'checkout',
+        'source_prepare_id' => (string) Str::uuid(), 'first_setup_pending' => true]);
+    $instance->update(['checkout_path' => InstanceContainer::workspaceOnNode($instance)]);
+    app(InstanceContainer::class)->reserve($instance, $default->node, $default);
+    $route = Route::query()->create(['kind' => 'app', 'project_id' => $instance->project_id, 'node_id' => $instance->node_id,
+        'domain' => $name.'.fixture.test', 'provenance' => 'explicit', 'publication' => 'private', 'status' => 'pending']);
+    $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);
+    DatabaseConnection::query()->create(['slug' => $name.'-db', 'driver' => 'sqlite', 'node_id' => $instance->node_id,
+        'owner_instance_id' => $instance->id, 'path' => $instance->checkout_path.'/database.sqlite']);
+    $create = Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $instance->id,
+        'node_id' => $instance->node_id, 'lock_key' => OperationStore::lockKey('instance', $instance->id),
+        'input' => ['instance_id' => $instance->id, 'route_id' => $route->id, 'direct_provisioning' => ['container' => ['clone' => ['source' => 'instance-'.$default->id], 'processes' => []]],
+            ...($mode === 'deferred' ? [] : ['route_create' => ['route_id' => $route->id]])],
+        'state' => ['swamp_run_id' => (string) Str::uuid()], 'status' => 'running', 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subSeconds(3)]);
+    if ($mode === 'free') {
+        DB::table('route_publication_holds')->insert(['node_id' => $instance->node_id, 'operation_id' => $create->id, 'created_at' => now(), 'lease_until' => null]);
+    }
+    if ($mode === 'published') {
+        $route->update(['status' => 'active', 'sites_published' => true]);
+    }
+
+    return [$instance->refresh(), $create, $route];
+}
+
+/** The create's run reports its cancelled end, as Swamp reports it; the removal behind it then promotes. */
+function connCreateEnds(Operation $create): void
+{
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), ['status' => 'cancelled', 'run_id' => $create->state['swamp_run_id'],
+        'error_code' => 'operation.cancelled', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $create->target_id, 'ready' => false, 'failed_step' => 'clone', 'route_publication' => 'failed']]);
+    app(RoutePublicationHolds::class)->promoteAndStart();
+}
+
+describe('a removal while the clone\'s create runs', function (): void {
+    it('answers 202 at once with one removal waiting behind the create, cancels the create, and leaves nothing when both have ended', function (string $mode): void {
+        [$instance, $create, $route] = connCreatingClone('feature', $mode);
+
+        $response = connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()
+            ->assertJsonPath('data.kind', 'instance.destroy')->assertJsonPath('data.status', 'waiting');
+        $removal = Operation::query()->findOrFail($response->json('data.id'));
+
+        expect($removal->input['after_operation_id'])->toBe($create->id)
+            ->and($create->refresh()->cancel_requested_at)->not->toBeNull()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+            ->and([$route->refresh()->status->value, $route->sites_published])->toBe(['retiring', false])
+            // The removal's withdrawal captures the clone's site whether or not the create has published it.
+            ->and(array_column($removal->input['members'], 'route_id'))->toBe([$route->id]);
+        // A clone-route that succeeds now leaves the retiring Route alone.
+        if ($mode === 'free') {
+            app(NativeRunProgress::class)->apply($create->id, $create->state['swamp_run_id'], ['kind' => 'step_completed', 'jobId' => 'publication',
+                'stepId' => 'clone-route', 'seq' => 1, 'completedAt' => now()->toIso8601String()]);
+            expect([$route->refresh()->status->value, $route->sites_published])->toBe(['retiring', false]);
+        }
+        app(RoutePublicationHolds::class)->promoteAndStart();
+        expect($removal->refresh()->status)->toBe(OperationStatus::Waiting);
+
+        connCreateEnds($create);
+
+        // The removal owns the clone: the create's end records nothing of it and admits no completion.
+        expect($create->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and($create->result['completion_operation_id'] ?? null)->toBeNull()
+            ->and(Operation::query()->where('kind', 'instance.complete')->exists())->toBeFalse()
+            ->and($instance->refresh()->status)->toBe(InstanceState::Removing)
+            ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
+            ->and($removal->refresh()->status)->toBe(OperationStatus::Queued);
+        connRemovalSucceed($removal->refresh());
+        expect($instance->fresh())->toBeNull()
+            ->and(Route::query()->whereKey($route->id)->exists())->toBeFalse()
+            ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->exists())->toBeFalse()
+            ->and(DatabaseConnection::query()->where('owner_instance_id', $instance->id)->exists())->toBeFalse();
+    })->with(['hold free, before clone-route' => ['free'], 'after clone-route published' => ['published'], 'address deferred' => ['deferred']]);
+
+    it('lets two removals wait at once, each behind its own clone\'s create', function (): void {
+        [$one, $first] = connCreatingClone('one', 'free');
+        [$two, $second] = connCreatingClone('two', 'deferred');
+        $removals = array_map(fn (Instance $instance): Operation => Operation::query()->findOrFail(
+            connRemovalCall($instance->id, ['acknowledge_unsaved' => true], 'remove-'.$instance->id)->assertAccepted()
+                ->assertJsonPath('data.status', 'waiting')->json('data.id')), [$one, $two]);
+
+        connCreateEnds($second);
+        connCreateEnds($first);
+        foreach ($removals as $removal) {
+            if ($removal->refresh()->status === OperationStatus::Waiting) {
+                app(RoutePublicationHolds::class)->promoteAndStart();
+            }
+            expect($removal->refresh()->status)->toBe(OperationStatus::Queued);
+            connRemovalSucceed($removal);
+            app(RoutePublicationHolds::class)->promoteAndStart();
+        }
+        expect([$one->fresh(), $two->fresh()])->toBe([null, null]);
+    });
+
+    it('admits the CLI and core API removal during a create the same way: accepted, waiting behind the cancelled create', function (): void {
+        [$instance, $create] = connCreatingClone('feature', 'free');
+
+        $removal = app(StartInstanceDestroyAction::class)->execute($instance, true);
+
+        expect([$removal->kind, $removal->status, $removal->input['after_operation_id']])->toBe(['instance.destroy', OperationStatus::Waiting, $create->id])
+            ->and($create->refresh()->cancel_requested_at)->not->toBeNull();
     });
 });

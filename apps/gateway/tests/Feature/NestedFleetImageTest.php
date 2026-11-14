@@ -63,6 +63,12 @@ it('names the runtime folder\'s trust module in agent\'s NSS store of both image
         ->and($normal['browser_trust']['library'])->toBe($part?->trustModule['library'] ?? null);
 });
 
+it('keeps the nested image definition of the image built on Beast, so no converge is needed for it', function (): void {
+    // The alias of the nested image that Beast holds since before the ID map size (orbit-instance-nested-6388773554e6). A change of
+    // the definition gives a new alias, which only a converge builds; change this value only with a planned converge.
+    expect(InstanceImage::for('10.253.0.1', nestedImageIncus())['alias'])->toBe('orbit-instance-nested-6388773554e6');
+});
+
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {
     $off = app(InstanceHostIntent::class)->for(nestedImageHost(false));
     Node::query()->delete();
@@ -92,8 +98,8 @@ it('builds the nested-fleet variant with the pinned inner Incus, agent authority
         ->and($nested['incus'])->toBe(array_values(array_filter($incus['packages'], fn (array $package): bool => $package['name'] !== 'incus')))
         ->and($nested['prepare'])->toBe($normal['prepare']."usermod --append --groups incus-admin agent\n")
         ->and($files)->not->toHaveKey('/etc/sysctl.d/90-orbit-no-userns.conf')
-        ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:65536\nroot:1000:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])
-        ->and($files['/etc/subgid']['content'])->toBe("root:1000000:65536\nroot:1000:1\n")
+        ->and($files['/etc/subuid'])->toBe(['path' => '/etc/subuid', 'content' => "root:1000000:100000000\nroot:1000:1\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'])
+        ->and($files['/etc/subgid']['content'])->toBe("root:1000000:100000000\nroot:1000:1\n")
         ->and($files['/etc/orbit/apparmor-off']['content'])->toBe("N\n")
         ->and($files['/etc/sudoers.d/orbit-agent'])->toBe(['path' => '/etc/sudoers.d/orbit-agent', 'content' => "agent ALL=(ALL:ALL) NOPASSWD: ALL\n", 'uid' => 0, 'gid' => 0, 'mode' => '0440'])
         // The network wait asks only for a route on eth0: the DNS that netplan's wait asks for never comes, and held each start for 120 s.

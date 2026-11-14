@@ -65,6 +65,35 @@ final class TaskFields
         return is_string($value) ? $value : null;
     }
 
+    /**
+     * A list of JSON objects, each with its string keys only; empty when the field is absent or not a list.
+     *
+     * @param  array<string, mixed>  $data
+     * @return list<array<string, mixed>>
+     */
+    public static function objects(array $data, string $key): array
+    {
+        $value = $data[$key] ?? null;
+        if (! is_array($value)) {
+            return [];
+        }
+        $objects = [];
+        foreach ($value as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $object = [];
+            foreach ($item as $field => $content) {
+                if (is_string($field)) {
+                    $object[$field] = $content;
+                }
+            }
+            $objects[] = $object;
+        }
+
+        return $objects;
+    }
+
     /** @param array<string, mixed> $data */
     public static function nullableInt(array $data, string $key): ?int
     {
