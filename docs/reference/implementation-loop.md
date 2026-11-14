@@ -632,7 +632,7 @@ Each part prints its output when it fails. The run ends with a summary of at mos
 
 A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
 
-A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it, for example `1 skipped: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. In an older copy without `jq`, `swamp/tests/swamp_node_schedules_test.ts` is skipped this way: its release load script needs `jq` and `timeout`. A Pest test that needs a program the copy lacks still fails as its test fails.
+A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it as not runnable, with the missing program, for example `1 not runnable here: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. In an older copy without `jq`, `swamp/tests/swamp_node_schedules_test.ts` is named not runnable this way: its release load script needs `jq` and `timeout`. A Pest test that needs a program the copy lacks still fails as its test fails.
 
 #### What it leaves to CI
 

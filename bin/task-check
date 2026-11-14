@@ -317,7 +317,7 @@ def fixtures(plan, deadline, table):
         return Part('fixtures', 'not selected', 0, 'no planned unit' + ('; ' + ', '.join(deferred) if deferred else ''))
     lacking = missing_programs(planned, table)
     unrunnable = {unit for units_of in lacking.values() for unit in units_of}
-    lacks = '; '.join(f'{len(units_of)} skipped: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
+    lacks = '; '.join(f'{len(units_of)} not runnable here: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
     costs = {unit: plan['units'][unit]['declared_seconds'] for unit in planned}
     workers = fixture_workers()
     capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
