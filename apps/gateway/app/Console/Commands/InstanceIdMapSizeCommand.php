@@ -33,7 +33,7 @@ final class InstanceIdMapSizeCommand extends Command
         $size = (string) $this->argument('size');
         $sizes = [InstanceHostIntent::NestedIdMapSize, InstanceHostIntent::TaskPlaceIds];
         if (! in_array((int) $size, $sizes, true) || (string) (int) $size !== $size) {
-            return $this->refuse('instance.idmap_size_invalid', 'The size must be '.implode(' or ', $sizes).'.');
+            return $this->refuse('instance.idmap_size_invalid', 'The size must be '.implode(' or ', $sizes).'. The inner range is the outer size minus 1,000,000, so no size below 1,065,536 works.');
         }
         $instance = ctype_digit($id) ? Instance::query()->find((int) $id) : null;
         $runtime = $instance?->runtime()->first();
