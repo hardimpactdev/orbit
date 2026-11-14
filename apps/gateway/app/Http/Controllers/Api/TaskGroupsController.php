@@ -40,6 +40,7 @@ use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Http\Requests\Tasks\CreateTaskGroupRequest;
+use App\Http\Requests\Tasks\CancelTaskRequest;
 use App\Http\Requests\Tasks\EmptyTasksRequest;
 use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
@@ -280,14 +281,14 @@ final class TaskGroupsController extends Controller
 
     #[StartsOperation('tasks.cancel', requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function cancel(EmptyTasksRequest $request, Task $task, TaskCancelIntent $action, CancelRunningSubtaskAction $childAction): JsonResponse
+    public function cancel(CancelTaskRequest $request, Task $task, TaskCancelIntent $action, CancelRunningSubtaskAction $childAction): JsonResponse
     {
         if ($task->parent_id !== null) {
             return response()->json(['data' => TaskData::fromModel($childAction->execute($task->parent()->firstOrFail(), $task))->toArray(), 'meta' => $this->meta($request)]);
         }
 
         $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->start($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
+        $operation = $action->start($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId, $request->discard());
 
         return response()->json(['data' => OperationData::summary($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }

@@ -89,3 +89,13 @@ it('finishes a no-change maintenance group whose VM is gone at admission, and th
         ->and($this->group->refresh()->status)->toBe(TaskGroupStatus::Completed)
         ->and($this->subtask->refresh()->status)->toBe(TaskStatus::Completed);
 });
+
+it('accepts discard: true and refuses a discard that is not a boolean', function (): void {
+    test()->withHeader('Idempotency-Key', 'cancel-discard-bad')->postJson("/api/v1/tasks/{$this->group->id}/cancel", ['discard' => 'yes'])
+        ->assertStatus(422);
+    expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Todo);
+
+    test()->withHeader('Idempotency-Key', 'cancel-discard')->postJson("/api/v1/tasks/{$this->group->id}/cancel", ['discard' => true])
+        ->assertStatus(202)->assertJsonPath('data.status', 'succeeded');
+    expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});

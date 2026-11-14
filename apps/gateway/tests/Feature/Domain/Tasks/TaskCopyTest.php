@@ -505,14 +505,33 @@ describe('the end of the copy\'s create', function (): void {
 });
 
 describe('a cancel of a group that owns a copy', function (): void {
-    it('records what the copy holds, admits the copy\'s destroy with force and cancels the group when the destroy succeeds', function (): void {
+    it('refuses a copy that holds work origin lacks, with its counts, and changes nothing', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
             'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 2, 'names' => ['b', 'c']],
             'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 3, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 3]]]];
 
-        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        try {
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+            $this->fail('The cancel destroyed unpublished work.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->status)->toBe(409)
+                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'unpushed' => 3, 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
+        }
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse()
+            ->and(Instance::query()->find($copy->id))->not->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('records what the copy holds, admits the copy\'s destroy with force on discard and cancels the group when the destroy succeeds', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
+            'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 2, 'names' => ['b', 'c']],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 3, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 3]]]];
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true);
 
         $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
         expect($cancel->kind)->toBe('tasks.cancel')
@@ -523,7 +542,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
             // The group runs on until the copy is gone.
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
-        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409');
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true)))->toBe('operation.target_busy 409');
 
         destroySucceeded($destroy);
 
@@ -533,12 +552,20 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Cancelled);
     });
 
-    it('records a stopped copy as unknown and still admits its destroy', function (): void {
+    it('refuses a copy it cannot read unless the caller discards it, then records it as unknown and admits its destroy', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
 
-        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        try {
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+            $this->fail('The cancel destroyed an unread copy.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_workspace_unknown')->and($error->status)->toBe(409)->and($error->details)->toBe(['reason' => 'stopped']);
+        }
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true);
 
         expect($cancel->result['workspace'])->toMatchArray(['state' => 'unknown', 'reason' => 'stopped', 'unpushed' => null])
             ->and(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();

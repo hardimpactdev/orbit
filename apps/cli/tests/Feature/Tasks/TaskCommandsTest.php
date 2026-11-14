@@ -364,6 +364,23 @@ describe('requests', function (): void {
         $mock->assertNotSent(ShowTaskRequest::class);
     });
 
+    it('sends discard only with --discard, never with --yes alone', function (array $options, array $body): void {
+        $operation = ['id' => 42, 'kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => 1,
+            'status' => 'succeeded', 'sequence' => 4, 'result' => ['cleanup_complete' => true]];
+        $mock = MockClient::global([
+            CancelTaskRequest::class => MockResponse::make(['data' => $operation], 202),
+            ShowOperationRequest::class => MockResponse::make(['data' => $operation]),
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit']]),
+        ]);
+
+        expect(Artisan::call('task:cancel', ['task' => '1', '--yes' => true, '--json' => true, ...$options]))->toBe(0);
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CancelTaskRequest && $request->body()->all() === $body);
+    })->with([
+        '--yes alone' => [[], []],
+        '--discard' => [['--discard' => true], ['discard' => true]],
+    ]);
+
     it('cancels a running subtask with --yes without reading the group first', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/task-cancel/child-cancelled'));
 

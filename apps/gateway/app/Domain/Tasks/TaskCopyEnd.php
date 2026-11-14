@@ -54,6 +54,26 @@ final readonly class TaskCopyEnd
     }
 
     /**
+     * Refuses a copy that holds work origin lacks, or whose workspace could not be read, unless the caller discards it. Before
+     * `task:publish` the task branch exists only in the copy. Call before any change.
+     *
+     * @param  array<string, mixed>  $workspace
+     */
+    public static function assertDiscardable(array $workspace, bool $discard): void
+    {
+        if ($discard || $workspace['state'] === 'clean') {
+            return;
+        }
+        if ($workspace['state'] === 'dirty') {
+            throw new ResourceOperationException('tasks.copy_unpublished_work', 'The task copy holds work that origin lacks; publish it, or cancel with discard to destroy it.', 409,
+                details: array_intersect_key($workspace, array_flip(['head', 'unpushed', 'uncommitted', 'modified', 'untracked', 'stashes'])));
+        }
+
+        throw new ResourceOperationException('tasks.copy_workspace_unknown', 'The task copy\'s workspace cannot be read; cancel with discard to destroy it unread.', 409,
+            details: ['reason' => $workspace['reason']]);
+    }
+
+    /**
      * Records the cancel and admits the destroy of the copy, in one transaction. The record comes first and takes the group's lock key,
      * so an Operation that holds or takes the group lock refuses the record and the transaction admits no destroy. Refused while an
      * Operation holds the copy: its create still runs, or an earlier destroy has not ended.

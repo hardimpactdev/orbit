@@ -31,12 +31,13 @@ final readonly class TaskCancelIntent
         return $this->admit($group, 'project-maintenance', null, 'tasks.maintenance_finish');
     }
 
-    public function start(Task $group, string $caller, ?string $request): Operation
+    /** `$discard`: the caller lets the destroy of a task copy take work that origin lacks, or a copy that cannot be read. */
+    public function start(Task $group, string $caller, ?string $request, bool $discard = false): Operation
     {
-        return $this->admit($group, $caller, $request, 'tasks.cancel');
+        return $this->admit($group, $caller, $request, 'tasks.cancel', $discard);
     }
 
-    private function admit(Task $group, string $caller, ?string $request, string $kind): Operation
+    private function admit(Task $group, string $caller, ?string $request, string $kind, bool $discard = false): Operation
     {
         app(RequireTasksExtensionAction::class)->execute();
         if (($replay = $this->keys->replay($kind)) !== null) {
@@ -46,7 +47,7 @@ final readonly class TaskCancelIntent
         $copy = $kind === 'tasks.cancel' && ! TaskVm::forGroup($group) instanceof TaskVm ? TaskInstanceWorkspace::forGroup($group) : null;
         $workspace = $copy === null ? null : app(TaskCopyEnd::class)->workspace($copy->instance);
 
-        return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $workspace): Operation {
+        return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $workspace, $discard): Operation {
             if (($replay = $this->keys->replay($kind)) !== null) {
                 return $replay;
             }
@@ -67,8 +68,9 @@ final readonly class TaskCancelIntent
             if ($kind === 'tasks.cancel') {
                 self::eligible($group->refresh(), $kind);
                 $this->review->assertOnOrigin($group);
-                if ($copy !== null) {
+                if ($copy !== null && $workspace !== null) {
                     TaskCopyEnd::assertFree($copy->instance);
+                    TaskCopyEnd::assertDiscardable($workspace, $discard);
                 }
                 $this->operations->cancelOpen($group);
                 // An ended Operation can still hold the group: a timed-out one whose run nothing has proven ended. The cancel refuses
