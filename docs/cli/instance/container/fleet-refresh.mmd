@@ -34,6 +34,7 @@ sequenceDiagram
   %%> What it does:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
   %%> - grows the default's root disk to the intent's size (`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`) before the start guard, online; never shrinks it
+  %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   SW->>F: Check the inner fleet<br/>Ansible · tags fleet_start
   %%> What it does:
   %%> - first reads the room on the nested Nodes' disk (`df` in the container of `/`, or of the inner volume's mount when the default has one: where the nested Nodes' `/` lies): the inner Doctor wants at least 2 GiB and 10% of it free (`node.disk_low`), and a refresh writes up to 2 GiB more (checkout, installs, the nested Gateway's records, and a `base` retake); it refuses `instance.container_fleet_no_room` when the free space minus 2 GiB is under that floor, and the detail names the size, the free space, the floor and the need

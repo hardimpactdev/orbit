@@ -26,6 +26,8 @@ sequenceDiagram
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
   opt the default Instance is asleep
     SW->>N: Start the container<br/>incus start
+    %%> What it does:
+    %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   end
   %%> - the start waits only for the units the container's boot starts: FrankenPHP and the enabled Process units; a new or newly running Process is the next step's work
   opt nested-fleet container

@@ -482,7 +482,7 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
 ### The machine name
 
-A container Instance presents itself as `<instance name>.<project slug>`, such as `task-5003.dlf-leden` or `default.shop`. That is its hostname and the name its T3 server shows. A person never sees `instance-<id>` as the machine's name.
+A container Instance presents itself as `<instance name>.<project slug>`, such as `task-5003.dlf-leden` or `default.shop`. Its T3 server shows that name. Its hostname is the same text when the slug is a lowercase hostname label and the name fits in 63 characters; otherwise it is the long form below. A person never sees `instance-<id>` as the machine's name.
 
 `instance-<id>` stays the Incus name. It is the machine key: the ACL, the UFW comments, the mail state folder, the Node mirror `<id>.git` and the certificate scopes `app-instance-<id>` keep it. An Operation's `input` keeps it too, as `container.name`; it is the Incus name, not the presented name.
 
@@ -504,9 +504,9 @@ For a slug such as `My_App`, a person sees `default.My_App` as T3's label, and `
 
 - **`/etc/hostname`** holds the hostname alone.
 - **`/etc/machine-info`** is Orbit's whole file: `PRETTY_HOSTNAME=<name>`. The clone's boot file writes the same text.
-- **`/etc/hosts`** gets its `127.0.1.1` line: the hostname, its first label and the Incus name.
+- **`/etc/hosts`** gets its `127.0.1.1` line: the hostname, its first label, the running kernel hostname and the Incus name, each once.
 
-The Incus name stays on the hosts line, so the kernel hostname resolves before and after the next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
+The running kernel hostname and the Incus name stay on the hosts line, so the kernel hostname resolves before and after the next boot. The converge reads the running kernel hostname of a running container; a frozen container renamed while frozen resolves its kernel hostname again at its next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
 
 Where each path writes the name:
 
@@ -525,7 +525,11 @@ An existing Instance gets its name without a new container. The converge of its 
 
 A rename of the Project (`project:update --slug`) writes no container file itself. The containers take the new name at their next start or at the next converge of their Node.
 
-The converge reads, renders and writes `/etc/hosts` of a running container while an `env:sync` or a start may write its private names block. If both write at once, one of them can drop the other's change until its next run. This does not block: each writer keeps the other's lines when it runs, so the next converge, start or `env:sync` restores the file, and a lost `127.0.1.1` change only delays a name that the kernel takes at the next boot anyway.
+Three writers change `/etc/hosts` of a container: the converge writes the `127.0.1.1` line; `env:sync` and a start write the private names block; a clone's post-start pass writes both, but only into its new copy. The converge can run while an `env:sync` or a start writes the same file. If both write at once, one can drop the other's change.
+
+This does not block: each writer keeps the other's lines when it runs, so the next writer of the lost part restores it. A lost block comes back at the next `env:sync` or start; a lost `127.0.1.1` line comes back at the next converge, and the kernel takes its name at the next boot anyway.
+
+A presented name that equals one of the container's private names, such as an Instance `reverb` in a Project with the slug `orbit` beside the private name `reverb.orbit`, would shadow that name in `/etc/hosts`. Choose another Instance name in that case.
 
 Incus does not keep the name. A copy's own metadata holds the stock templates `/etc/hostname` and `/etc/hosts` (`when: [create, copy]`), which write the Incus name at the first start after a create or a copy. That is why the hostname and the hosts line come right after that start, and why a start writes nothing into a container that never started. `/etc/machine-info` has no template.
 
