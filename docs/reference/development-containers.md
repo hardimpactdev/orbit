@@ -178,6 +178,10 @@ T3 and the agents run as `agent`, and so do the shell commands of Claude Code an
 
 A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root gives the group back what the owner has before a deployment's steps and after them, and after a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next deployment.
 
+The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path, and the pass never follows a link.
+
+Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it. A workspace that only deployments write, such as a default's, gains one pack per deployment; Orbit does not repack it yet.
+
 There is one exception to "a URL reaches only `orbit`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
 
 ### Agent development servers
@@ -2112,9 +2116,11 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
 | Room before a change | The check reads the room on the nested Nodes' disk first. When a refresh could not end above the inner Doctor's floor, it refuses with `instance.container_fleet_no_room` and the numbers. Nothing changed |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
-| A failure names its phase | The Operation names the first failed step, and its code names the failed phase, such as `instance.container_fleet_refresh_failed` from "Finish the container". `error.detail` names the failed task and its message |
+| A failure names its phase | The Operation names the first failed step, and its code names the failed phase, such as `instance.container_fleet_refresh_failed` from "Finish the container". `error.detail` names the failed task and its message. |
 | Migrate before Doctor | The check checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | The refresh starts again what it stopped for `base`, before the seed. After a restore, the run starts the restored fleet |
+
+A checkout that fails other than by a refusal also writes its detail: the failed task, its message and the end of the command's stderr, at most 4,096 characters.
 
 A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is every issue of the last Doctor body: its code, Node, summary and observed value, each at most 240 characters, and at most 12 issues. Any other body gives its first 300 characters. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
 
