@@ -25,9 +25,11 @@ cases = [
   "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 185
-# Local Deno case times on Beast rounded up by one second; not CI measurements.
-slices = 1
+cost = 766
+# Hosted runs 43621397546 (Sabre) and 43633174432 (PR): largest completed case time + 25%, rounded up + 1s.
+# Reviewer-detach has only censored hosted receipts: its 120s body cost is an ESTIMATE until a complete hosted run.
+# One case per slice prevents several slow Ansible paths sharing one unit.
+slices = 22
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
@@ -40,25 +42,25 @@ inputs = [
 ]
 
 [case_costs]
-  "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 1
-  "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time" = 1
-  "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 3
-  "a continued turn finds its thread by title and sends the prompt to it, with no model and no title" = 4
-  "a continued turn whose thread T3 does not hold launches nothing and says so" = 2
-  "a continued turn whose thread list fails launches nothing and names T3's failure, not a missing thread" = 2
-  "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn" = 12
-  "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so" = 18
-  "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 6
-  "an intent outside the admitted shape runs nothing in the copy" = 4
-  "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4
-  "a run that asks has its question stored before the run is stopped, and the thread is read back after" = 9
-  "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored" = 21
-  "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing" = 23
-  "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched" = 30
-  "a new thread reads T3's catalog first and runs a model it offers, by slug or alias" = 11
-  "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout" = 5
-  "without T3's cached catalog the check is skipped and the turn runs" = 5
-  "a continued thread keeps its model: the catalog is not read" = 5
-  "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check" = 11
-  "the start evidence keeps stderr only when the start failed, and only its last 4096 characters" = 5
-  "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing" = 3
+  "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 2
+  "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time" = 2
+  "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 20
+  "a continued turn finds its thread by title and sends the prompt to it, with no model and no title" = 17
+  "a continued turn whose thread T3 does not hold launches nothing and says so" = 10
+  "a continued turn whose thread list fails launches nothing and names T3's failure, not a missing thread" = 10
+  "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn" = 53
+  "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so" = 97
+  "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 33
+  "an intent outside the admitted shape runs nothing in the copy" = 32
+  "a thread list that is not JSON reads as no thread, and the start's end is still written" = 19
+  "a new thread reads T3's catalog first and runs a model it offers, by slug or alias" = 33
+  "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout" = 15
+  "without T3's cached catalog the check is skipped and the turn runs" = 17
+  "a continued thread keeps its model: the catalog is not read" = 17
+  "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check" = 56
+  "the start evidence keeps stderr only when the start failed, and only its last 4096 characters" = 22
+  "a run that asks has its question stored before the run is stopped, and the thread is read back after" = 27
+  "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored" = 92
+  "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing" = 67
+  "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched" = 120
+  "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing" = 5
