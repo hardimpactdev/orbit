@@ -3,13 +3,17 @@
 declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 uses(LazilyRefreshDatabase::class);
@@ -39,9 +43,9 @@ describe('the copy turn agent of a task group', function (): void {
             'implementer_model' => 'claude-fable-5-2', 'implementer_effort' => 'max', 'reviewer_provider' => 'claude'])->assertCreated();
 
         $group = Task::topLevel()->findOrFail($response->json('data.id'));
-        expect($group->only(['implementer_provider', 'implementer_model', 'implementer_effort', 'reviewer_provider', 'reviewer_model', 'reviewer_effort']))->toBe([
-            'implementer_provider' => null, 'implementer_model' => 'claude-fable-5-2', 'implementer_effort' => 'max',
-            'reviewer_provider' => 'claude', 'reviewer_model' => null, 'reviewer_effort' => null,
+        expect($group->only(['implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort', 'reviewer_agent_provider', 'reviewer_agent_model', 'reviewer_agent_effort']))->toBe([
+            'implementer_agent_provider' => null, 'implementer_agent_model' => 'claude-fable-5-2', 'implementer_agent_effort' => 'max',
+            'reviewer_agent_provider' => 'claude', 'reviewer_agent_model' => null, 'reviewer_agent_effort' => null,
         ])
             ->and($response->json('data.implementer_model'))->toBe('claude-fable-5-2')
             ->and($response->json('data.reviewer_model'))->toBeNull()
@@ -53,15 +57,43 @@ describe('the copy turn agent of a task group', function (): void {
             ]);
     });
 
-    it('stores no model for a group that names none: the Gateway\'s Claude defaults resolve, and no task VM label', function (): void {
-        config(['orbit.tasks.implementer_model' => 'pi-model', 'orbit.tasks.reviewer_model' => 'pi-model']);
-
+    it('stores no agent value for a group that names none: the Gateway\'s Claude defaults resolve', function (): void {
         $response = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief'])->assertCreated();
 
-        expect(Task::topLevel()->findOrFail($response->json('data.id'))->only(['implementer_model', 'reviewer_model']))->toBe(['implementer_model' => null, 'reviewer_model' => null])
+        expect(TaskCopyAgent::stored(Task::topLevel()->findOrFail($response->json('data.id')), TaskThreadRole::Implementer))->toBe(['provider' => null, 'model' => null, 'effort' => null])
+            ->and($response->json('data.implementer_model'))->toBeNull()
             ->and($response->json('data.resolved_agents.implementer.model'))->toBe(['value' => 'claude-opus-5-5', 'source' => 'gateway'])
             ->and($response->json('data.resolved_agents.implementer.effort'))->toBe(['value' => 'medium', 'source' => 'gateway'])
             ->and($response->json('data.resolved_agents.reviewer.effort'))->toBe(['value' => 'high', 'source' => 'gateway']);
+    });
+
+    it('keeps a new group readable by the release before it: the task VM model columns hold each role\'s resolved Claude model, and no read shows them', function (): void {
+        $this->project->update(['task_reviewer_model' => 'claude-haiku-5-5']);
+
+        $plain = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Plain', 'brief' => 'Brief'])->assertCreated();
+        $named = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Named', 'brief' => 'Brief', 'implementer_model' => 'claude-fable-5-2'])
+            ->assertCreated();
+
+        // The row as the earlier release reads it: both columns are strings, never null, and name a Claude model.
+        $rows = DB::table('tasks')->whereIn('id', [$plain->json('data.id'), $named->json('data.id')])->orderBy('id')->get(['implementer_model', 'reviewer_model']);
+        expect($rows->map(static fn (object $row): array => (array) $row)->all())->toBe([
+            ['implementer_model' => 'claude-opus-5-5', 'reviewer_model' => 'claude-haiku-5-5'],
+            ['implementer_model' => 'claude-fable-5-2', 'reviewer_model' => 'claude-haiku-5-5'],
+        ])
+            // The reads show the agent values the group names, and the resolved ones; never the task VM columns.
+            ->and($plain->json('data.implementer_model'))->toBeNull()->and($plain->json('data.reviewer_model'))->toBeNull()
+            ->and($this->getJson('/api/v1/tasks/'.$plain->json('data.id'))->json('data.reviewer_model'))->toBeNull()
+            ->and($named->json('data.implementer_model'))->toBe('claude-fable-5-2');
+    });
+
+    it('resolves an open group whose task VM columns hold the task VM\'s Pi model to the copy defaults', function (): void {
+        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo,
+            'implementer_model' => TaskAgentDefaults::ImplementerModel, 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
+
+        $this->getJson('/api/v1/tasks/'.$group->id)->assertOk()
+            ->assertJsonPath('data.implementer_model', null)->assertJsonPath('data.reviewer_model', null)
+            ->assertJsonPath('data.resolved_agents.implementer.model', ['value' => 'claude-opus-5-5', 'source' => 'gateway'])
+            ->assertJsonPath('data.resolved_agents.reviewer.model', ['value' => 'claude-opus-5-5', 'source' => 'gateway']);
     });
 
     it('refuses a provider, effort or model the copy cannot take', function (array $body, string $field): void {
@@ -79,18 +111,18 @@ describe('the copy turn agent of a task group', function (): void {
 
     it('changes and clears a role\'s values with task:update until the role\'s first thread, then refuses them with tasks.agent_settings_locked', function (): void {
         $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Todo,
-            'implementer_model' => 'claude-fable-5-2', 'reviewer_effort' => 'max']);
+            'implementer_agent_model' => 'claude-fable-5-2', 'reviewer_agent_effort' => 'max']);
 
         $this->patchJson('/api/v1/tasks/'.$group->id, ['implementer_model' => null, 'implementer_effort' => 'low', 'reviewer_effort' => 'xhigh'])->assertOk()
             ->assertJsonPath('data.implementer_effort', 'low')->assertJsonPath('data.resolved_agents.implementer.model.source', 'gateway');
-        expect($group->refresh()->only(['implementer_model', 'implementer_effort', 'reviewer_effort']))
-            ->toBe(['implementer_model' => null, 'implementer_effort' => 'low', 'reviewer_effort' => 'xhigh']);
+        expect($group->refresh()->only(['implementer_agent_model', 'implementer_agent_effort', 'reviewer_agent_effort']))
+            ->toBe(['implementer_agent_model' => null, 'implementer_agent_effort' => 'low', 'reviewer_agent_effort' => 'xhigh']);
 
         agentThreadOf($group, 'reviewer');
         $this->patchJson('/api/v1/tasks/'.$group->id, ['implementer_model' => 'claude-sonnet-5-5', 'reviewer_model' => 'claude-haiku-5-5'])
             ->assertStatus(409)->assertJsonPath('error.code', 'tasks.agent_settings_locked')->assertJsonPath('error.details.role', 'reviewer');
         // A refusal changes nothing; the role without a thread still changes alone.
-        expect($group->refresh()->implementer_model)->toBeNull();
+        expect($group->refresh()->implementer_agent_model)->toBeNull();
         $this->patchJson('/api/v1/tasks/'.$group->id, ['implementer_model' => 'claude-sonnet-5-5'])->assertOk()->assertJsonPath('data.implementer_model', 'claude-sonnet-5-5');
 
         agentThreadOf($group, 'implementer');

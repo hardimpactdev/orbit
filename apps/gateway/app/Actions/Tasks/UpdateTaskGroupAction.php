@@ -58,7 +58,7 @@ final readonly class UpdateTaskGroupAction
             }
             if ($data->agents !== []) {
                 TaskCopyAgent::assertChangeable($locked, $data->agents);
-                $locked->fill($data->agents);
+                $locked->fill(TaskCopyAgent::groupColumns($data->agents));
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;

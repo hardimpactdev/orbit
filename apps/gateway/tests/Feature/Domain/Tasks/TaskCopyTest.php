@@ -30,6 +30,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
+use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
@@ -1046,12 +1047,13 @@ describe('a turn of a group that owns a copy', function (): void {
             ->toBe(['model' => 'claude-haiku-5-5', 'effort' => 'max', 'provider_instance' => 'claudeMax']);
     });
 
-    it('ships Claude Opus 5.5 at medium effort for the implementer and at high effort for the reviewer, and reads no task VM setting', function (): void {
+    it('ships Claude Opus 5.5 at medium effort for the implementer and at high effort for the reviewer, and reads no task VM value', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
-        // The task VM's settings do not reach a copy.
-        config(['orbit.tasks.implementer_model' => 'pi-model', 'orbit.tasks.implementer_effort' => 'low', 'orbit.tasks.reviewer_effort' => 'low']);
+        // An open group of an earlier release holds the task VM's Pi model in its VM columns; the task VM efforts do not reach a copy either.
+        $group->update(['implementer_model' => TaskAgentDefaults::ImplementerModel, 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
+        config(['orbit.tasks.implementer_effort' => 'low', 'orbit.tasks.reviewer_effort' => 'low']);
 
         $implementer = copyTurn($group);
         copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
@@ -1066,7 +1068,7 @@ describe('a turn of a group that owns a copy', function (): void {
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $group->project->update(['task_implementer_model' => 'claude-sonnet-5-5', 'task_implementer_effort' => 'low', 'task_reviewer_effort' => 'xhigh']);
-        $group->update(['implementer_effort' => 'max', 'reviewer_model' => 'claude-fable-5-2']);
+        $group->update(['implementer_agent_effort' => 'max', 'reviewer_agent_model' => 'claude-fable-5-2']);
 
         $implementer = copyTurn($group);
         copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
@@ -1100,7 +1102,7 @@ describe('a turn of a group that owns a copy', function (): void {
     })->with([
         'a Gateway effort Claude Code has no instance for' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.effort' => 'minimal'])],
         'a Gateway provider the copy has no instance of' => [static fn (Task $group) => config(['orbit.tasks.copy_agents.implementer.provider' => 'codex'])],
-        'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_effort' => 'minimal'])],
+        'a stored group effort the copy no longer offers' => [static fn (Task $group) => $group->update(['implementer_agent_effort' => 'minimal'])],
         'a stored Project provider the copy no longer offers' => [static fn (Task $group) => $group->project->update(['task_implementer_provider' => 'codex'])],
     ]);
 

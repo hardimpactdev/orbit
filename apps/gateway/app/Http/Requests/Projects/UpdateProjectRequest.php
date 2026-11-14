@@ -49,7 +49,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', ...TaskCopyAgent::columns('task_')],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', ...TaskCopyAgent::fields('task_')],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -73,7 +73,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('task_workspace_routed')
                 && ! $this->exists('merge_check')
                 && ! $this->exists('nested_fleet')
-                && ! $this->hasAny(TaskCopyAgent::columns('task_'))
+                && ! $this->hasAny(TaskCopyAgent::fields('task_'))
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }

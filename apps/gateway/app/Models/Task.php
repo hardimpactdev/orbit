@@ -7,6 +7,7 @@ namespace App\Models;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskableType;
+use App\Domain\Tasks\TaskAgentDefaults;
 use App\Domain\Tasks\TaskAssistance;
 use App\Domain\Tasks\TaskBroadcastObserver;
 use App\Domain\Tasks\TaskDeliverable;
@@ -103,12 +104,14 @@ use LogicException;
  * @property bool|null $preview
  * @property bool|null $current_recipe
  * @property TaskReviewMode $review_mode
- * @property string|null $implementer_model the implementer's model as the group names it; null takes the Project's or the Gateway's
- * @property string|null $reviewer_model
- * @property string|null $implementer_provider
- * @property string|null $implementer_effort
- * @property string|null $reviewer_provider
- * @property string|null $reviewer_effort
+ * @property string $implementer_model the task VM path's model; a task copy reads implementer_agent_model
+ * @property string $reviewer_model
+ * @property string|null $implementer_agent_provider the copy turn agent values the group names (TaskCopyAgent); null takes the Project's or the Gateway's
+ * @property string|null $implementer_agent_model
+ * @property string|null $implementer_agent_effort
+ * @property string|null $reviewer_agent_provider
+ * @property string|null $reviewer_agent_model
+ * @property string|null $reviewer_agent_effort
  * @property int|null $reviewer_agent_thread_id
  * @property string|null $capacity_wait_reason
  * @property string $implementer_agent_driver
@@ -167,10 +170,12 @@ final class Task extends Model
         'review_mode',
         'implementer_model',
         'reviewer_model',
-        'implementer_provider',
-        'implementer_effort',
-        'reviewer_provider',
-        'reviewer_effort',
+        'implementer_agent_provider',
+        'implementer_agent_model',
+        'implementer_agent_effort',
+        'reviewer_agent_provider',
+        'reviewer_agent_model',
+        'reviewer_agent_effort',
         'reviewer_agent_thread_id',
         'implementer_agent_driver',
         'reviewer_agent_driver',
@@ -306,10 +311,12 @@ final class Task extends Model
         'review_mode',
         'implementer_model',
         'reviewer_model',
-        'implementer_provider',
-        'implementer_effort',
-        'reviewer_provider',
-        'reviewer_effort',
+        'implementer_agent_provider',
+        'implementer_agent_model',
+        'implementer_agent_effort',
+        'reviewer_agent_provider',
+        'reviewer_agent_model',
+        'reviewer_agent_effort',
         'reviewer_agent_thread_id',
         'implementer_agent_driver',
         'reviewer_agent_driver',
@@ -689,6 +696,8 @@ final class Task extends Model
                 'current_recipe' => false,
                 'review_mode' => TaskReviewMode::Manual->value,
                 'assistance_requested' => false,
+                'implementer_model' => TaskAgentDefaults::ImplementerModel,
+                'reviewer_model' => TaskAgentDefaults::ReviewerModel,
             ]);
 
             return;

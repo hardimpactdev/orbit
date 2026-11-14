@@ -97,9 +97,6 @@ return [
         'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
         'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
         'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
-        // The Pi models of a new task VM thread whose group names none. Unset keeps TaskAgentDefaults.
-        'implementer_model' => env('ORBIT_TASKS_IMPLEMENTER_MODEL'),
-        'reviewer_model' => env('ORBIT_TASKS_REVIEWER_MODEL'),
         // Effort for new task VM threads. Existing threads keep their stored value.
         'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'medium' : $implementerEffort,
         'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,

@@ -13,8 +13,10 @@ use Illuminate\Validation\Rules\In;
 
 /**
  * The agent of each role of a task copy turn: its provider, model and effort (docs/reference/tasks.md#copy-turn-agents). Each value
- * comes from the group, else from the Project's default, else from the Gateway's `orbit.tasks.copy_agents`. The provider and the
- * effort pick the copy's T3 provider instance, which Orbit writes into the copy's T3 settings (InstanceContainer::CopyProviders).
+ * comes from the group's `<role>_agent_<value>` column, else from the Project's `task_<role>_<value>` default, else from the
+ * Gateway's `orbit.tasks.copy_agents`. The group's task VM columns `implementer_model` and `reviewer_model` are never read here.
+ * The provider and the effort pick the copy's T3 provider instance, which Orbit writes into the copy's T3 settings
+ * (InstanceContainer::CopyProviders).
  * T3 offers its models in a catalog it fetches itself, so the turn's first step checks the model in the copy.
  */
 final readonly class TaskCopyAgent
@@ -25,11 +27,12 @@ final readonly class TaskCopyAgent
     public const string ModelPattern = '/\A[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\z/D';
 
     /**
-     * The columns of the values: `implementer_provider` … on a group, `task_implementer_provider` … on a Project with `task_`.
+     * The request and response fields of the values: `implementer_provider` … for a group, `task_implementer_provider` … for a
+     * Project with `task_`. A Project field is its column; a group field maps to its column through groupColumns().
      *
      * @return list<string>
      */
-    public static function columns(string $prefix = ''): array
+    public static function fields(string $prefix = ''): array
     {
         $columns = [];
         foreach (TaskThreadRole::cases() as $role) {
@@ -56,7 +59,7 @@ final readonly class TaskCopyAgent
     }
 
     /**
-     * The values a validated request sends, keyed by column; null clears one.
+     * The values a validated request sends, keyed by field; null clears one.
      *
      * @param  array<array-key, mixed>  $validated
      * @return array<string, string|null>
@@ -64,13 +67,55 @@ final readonly class TaskCopyAgent
     public static function provided(array $validated, string $prefix = ''): array
     {
         $provided = [];
-        foreach (self::columns($prefix) as $column) {
-            if (array_key_exists($column, $validated)) {
-                $provided[$column] = is_string($validated[$column]) ? $validated[$column] : null;
+        foreach (self::fields($prefix) as $field) {
+            if (array_key_exists($field, $validated)) {
+                $provided[$field] = is_string($validated[$field]) ? $validated[$field] : null;
             }
         }
 
         return $provided;
+    }
+
+    /** The group column of a role's value: `implementer_agent_model` for `implementer` and `model`. */
+    public static function groupColumn(TaskThreadRole $role, string $value): string
+    {
+        return $role->value.'_agent_'.$value;
+    }
+
+    /**
+     * Group values keyed by field, as provided() reads them, keyed by group column instead.
+     *
+     * @param  array<string, string|null>  $provided
+     * @return array<string, string|null>
+     */
+    public static function groupColumns(array $provided): array
+    {
+        $columns = [];
+        foreach (TaskThreadRole::cases() as $role) {
+            foreach (self::Values as $value) {
+                if (array_key_exists($role->value.'_'.$value, $provided)) {
+                    $columns[self::groupColumn($role, $value)] = $provided[$role->value.'_'.$value];
+                }
+            }
+        }
+
+        return $columns;
+    }
+
+    /**
+     * The group's stored values of the role, keyed by value; null where it names none.
+     *
+     * @return array{provider: string|null, model: string|null, effort: string|null}
+     */
+    public static function stored(Task $group, TaskThreadRole $role): array
+    {
+        $stored = [];
+        foreach (self::Values as $value) {
+            $stored[$value] = $group->getAttribute(self::groupColumn($role, $value));
+        }
+
+        /** @var array{provider: string|null, model: string|null, effort: string|null} $stored */
+        return $stored;
     }
 
     /**
@@ -82,10 +127,11 @@ final readonly class TaskCopyAgent
     {
         $resolved = [];
         foreach (self::Values as $value) {
-            $column = $role->value.'_'.$value;
+            $grouped = $group->getAttribute(self::groupColumn($role, $value));
+            $projected = $group->project->getAttribute('task_'.$role->value.'_'.$value);
             $resolved[$value] = match (true) {
-                is_string($group->getAttribute($column)) => ['value' => (string) $group->getAttribute($column), 'source' => 'group'],
-                is_string($group->project->getAttribute('task_'.$column)) => ['value' => (string) $group->project->getAttribute('task_'.$column), 'source' => 'project'],
+                is_string($grouped) => ['value' => $grouped, 'source' => 'group'],
+                is_string($projected) => ['value' => $projected, 'source' => 'project'],
                 default => ['value' => config()->string('orbit.tasks.copy_agents.'.$role->value.'.'.$value), 'source' => 'gateway'],
             };
         }
@@ -119,7 +165,7 @@ final readonly class TaskCopyAgent
      * Refuses a change to a role's values once the role has a thread: the thread keeps the values it started with. The caller holds
      * the group's execution lock, which a turn's admission takes too.
      *
-     * @param  array<string, string|null>  $changes  keyed by group column
+     * @param  array<string, string|null>  $changes  keyed by field
      */
     public static function assertChangeable(Task $group, array $changes): void
     {

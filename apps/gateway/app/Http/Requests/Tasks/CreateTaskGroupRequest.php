@@ -93,7 +93,7 @@ final class CreateTaskGroupRequest extends FormRequest
                     'review',
                     'preview',
                     'current_recipe',
-                    ...TaskCopyAgent::columns(),
+                    ...TaskCopyAgent::fields(),
                     'subtasks',
                 ]);
         } catch (UnexpectedValueException $exception) {

@@ -56,7 +56,7 @@ final class UpdateTaskGroupRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->route('task') instanceof Task && $this->route('task')->parent_id !== null
                 ? ['title', 'brief', 'position', 'deliverables', 'topology', 'status']
-                : ['title', 'brief', 'status', 'preview', ...TaskCopyAgent::columns()]);
+                : ['title', 'brief', 'status', 'preview', ...TaskCopyAgent::fields()]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }

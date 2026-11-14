@@ -110,7 +110,7 @@ final readonly class TaskTurnIntent
         if ($thread !== null && $data->model !== null) {
             throw new ResourceOperationException('tasks.model_fixed', 'A continued thread keeps its model.', 422);
         }
-        $model = $thread->model ?? $data->model ?? TaskAgentDefaults::vmModel($group, $data->threadRole()->value);
+        $model = $thread->model ?? $data->model ?? ($data->threadRole() === TaskThreadRole::Implementer ? $group->implementer_model : $group->reviewer_model);
         try {
             $model = PiModel::onlyProvider($model, 'orbit-task-vm');
         } catch (AgentDriverException $exception) {
