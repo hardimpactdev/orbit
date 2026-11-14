@@ -144,6 +144,15 @@ class FixtureRunTest(unittest.TestCase):
         with patch.dict(check['fixtures'].__globals__, {'run': run, 'fixture_workers': lambda: workers}):
             return check['fixtures'](plan, time.monotonic() + left, {}), calls
 
+    def test_the_cheapest_units_run_first_so_a_long_unit_cannot_crowd_out_a_quick_check(self):
+        # The plan lists units from the most expensive down: the quick source checks at its end still run within the budget.
+        plan = self.plan()
+        plan['units'].update({'swamp/tests/a_test.ts': {'declared_seconds': 70}, 'swamp/tests/b_test.ts': {'declared_seconds': 60},
+                              'swamp/tests/c_test.ts': {'declared_seconds': 5}})
+        part, calls = self.fixtures(plan, 95, 0, 'passed')
+        self.assertEqual(json.loads(calls[0][calls[0].index('--units') + 1]), ['swamp/tests/c_test.ts', 'swamp/tests/b_test.ts'])
+        self.assertIn('budget skipped: swamp/tests/a_test.ts (budget: declared 70s)', part.detail)
+
     def test_a_failed_tool_setup_fails_and_is_no_budget_skip(self):
         part, _calls = self.fixtures(self.plan(10), 200, 1, 'NOT RUN', 'Fixture tool setup FAILED; every selected case is NOT RUN')
         self.assertEqual(part.status, 'FAILED')

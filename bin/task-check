@@ -331,7 +331,8 @@ def fixtures(plan, deadline, table):
     capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
                 'shard_workers': workers}
     admitted, skipped = [], []
-    for unit in (unit for unit in planned if unit not in unrunnable):
+    # Cheapest first: a quick source check of the change runs before a long suite can take the budget, which CI runs anyway.
+    for unit in sorted((unit for unit in planned if unit not in unrunnable), key=lambda unit: costs[unit]):
         try:
             fits = capacity['shard_seconds'] > 0 and units.pack([(name, costs[name], 0) for name in (*admitted, unit)], capacity) is not None
         except ValueError:

@@ -630,7 +630,7 @@ The population check catches a Deno fixture whose registered cases differ from t
 
 The budget is wall time from the start of the run. Each part gets the time left as a hard limit. A part that reaches the end of the budget is stopped and reported as `skipped (budget: stopped after Ns)`. A part with no time left does not start and is reported as skipped.
 
-A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. Units join cheapest first, by their declared cost, so a quick source check of the change runs before a long suite can take the budget. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`. Every file and unit that did not start or was stopped is named, with the reason. A budget skip does not fail the check; CI still runs it.
 
