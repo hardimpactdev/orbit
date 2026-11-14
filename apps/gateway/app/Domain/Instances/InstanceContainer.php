@@ -105,6 +105,12 @@ final readonly class InstanceContainer
         return ApplicationDirectory::resolve(InstanceHostIntent::Workspace, $instance->root ?? $instance->project->root);
     }
 
+    /** The `.env` that Orbit writes, with the Instance's secrets: in the application's folder (development-containers.md#what-is-built). */
+    public static function environmentFile(Instance $instance): string
+    {
+        return self::application($instance).'/.env';
+    }
+
     /** The Node keeps a bare mirror of the Project's repository per Instance: Git runs there, never in the container. */
     public static function mirror(Instance $instance): string
     {
@@ -241,7 +247,7 @@ final readonly class InstanceContainer
             'mirror' => self::mirror($instance), 'repository' => $project->repository_url,
             'protocols' => ValidatedData::stringList(config('orbit.git.checkout_protocols', ['https'])),
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
-            'workspace' => $workspace, 'environment_file' => $application.'/.env',
+            'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
             // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),

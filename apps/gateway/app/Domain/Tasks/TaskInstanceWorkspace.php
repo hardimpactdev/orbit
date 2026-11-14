@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
@@ -51,6 +52,23 @@ final readonly class TaskInstanceWorkspace
         }
 
         return ['runtime' => ['project' => $this->runtime->incus_project, 'name' => $this->runtime->container_name], 'branch' => $branch, 'snapshot_id' => (string) Str::uuid()];
+    }
+
+    /**
+     * What a publication from a task copy adds to its intent (docs/reference/tasks.md#task-copy): the recorded guest target, the copy's
+     * start commit and the path of the `.env` Orbit wrote, relative to the checkout. No commit from the start on may hold that file.
+     *
+     * @return array{runtime: array{project: string, name: string}, branch: string, snapshot_id: string, start: string, environment_path: string}
+     */
+    public function publication(): array
+    {
+        $start = $this->instance->starting_commit;
+        $environment = InstanceContainer::environmentFile($this->instance);
+        if (! is_string($start) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $start) !== 1 || ! str_starts_with($environment, self::Root.'/')) {
+            throw new ResourceOperationException('tasks.no_workspace', 'The task copy has no recorded start commit.', 409);
+        }
+
+        return [...$this->intent(), 'start' => $start, 'environment_path' => substr($environment, strlen(self::Root) + 1)];
     }
 
     /**

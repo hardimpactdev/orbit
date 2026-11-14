@@ -11,6 +11,8 @@ orbit task:publish 42 --check=17 --title="Deliver the feature" --body="Adds the 
 
 The optional `task` argument is the numeric task group ID. `--check` supplies the eligible handoff check ID. Supply `--title` and `--body` together to publish a pull request, or omit both to push only. Add `--draft` to open a new pull request as a draft; it needs `--title` and `--body`, and an open pull request keeps its state. `--idempotency-key` reuses an operation start. The command follows the operation with the shared display and supports `--json`.
 
+A group whose workspace is a [task copy](/reference/tasks#task-copy) publishes the same way and gets the same result. Its commit leaves the copy as a bundle; the push and the pull request run on the Swamp worker, so the copy never holds a token. A range from the copy's start that holds the copy's `.env` in any commit fails with `tasks.publish_secret_path`, and nothing is pushed.
+
 ## How it works
 
 <div className="flow-at" data-chart="task/publish"></div>

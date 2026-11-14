@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "54d91a2a9101a28c99d742170f5ae17997cce594350f6ebab69fe3a9ec3f9047"
+source_sha256 = "97e994aee5ffba952edfd51bd5ae4352bd24303ae7294d39459a2624efdc954a"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -77,7 +77,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3957
+cost = 3968
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -128,7 +128,7 @@ inputs = [
 
 [case_costs]
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 72 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 43.6-73.7s
-  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 124 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s
+  "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 135 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s; plus 11s ESTIMATE for three workspace runs of the .env exclude (local 5s x 2.1, rounded up)
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 57 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 33.6-61.7s
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 68 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 36.0-71.1s

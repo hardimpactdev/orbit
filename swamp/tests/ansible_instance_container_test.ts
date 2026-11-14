@@ -223,6 +223,9 @@ Deno.test({
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
       assertEquals(state.files["/srv/workspace/.env"], { uid: "1000", gid: "2760", mode: "0640" });
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.env`), "APP_KEY=base64:secret\n");
+      // Git never takes the .env, although the Project's own files do not ignore it.
+      assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/.git/info/exclude`).split("\n").filter((line) => line === "/.env").length, 1);
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${head}`]);
       assert(state.systemctl.some((call: string[]) => call.join(" ") === "enable --now --no-block -- orbit-frankenphp.service"));
       assertEquals(Deno.readTextFileSync(`${f.folder}/containers/instance-7/etc/orbit/frankenphp.Caddyfile`), f.container.web_config.content);
@@ -241,6 +244,21 @@ Deno.test({
       }
 
       assertEquals(Deno.readTextFileSync(helper), "pre-existing helper: do not install or convert");
+
+      // A container made before the .env line existed: its own exclude lines stay, the .env line comes once.
+      const exclude = `${guest}/srv/workspace/.git/info/exclude`;
+      Deno.writeTextFileSync(exclude, "# local\n*.log");
+      for (const _ of [1, 2]) assert(f.run("workspace").ok);
+      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n");
+      // An application folder names its own .env.
+      Object.assign(f.container, { environment_file: "/srv/workspace/apps/web/.env" });
+      f.write();
+      Deno.mkdirSync(`${guest}/srv/workspace/apps/web`, { recursive: true });
+      assert(f.run("workspace").ok);
+      assertEquals(Deno.readTextFileSync(exclude), "# local\n*.log\n/.env\n/apps/web/.env\n");
+      assertEquals(f.workspace("status", "--porcelain", "--untracked-files=all"), "");
+      Object.assign(f.container, { environment_file: "/srv/workspace/.env" });
+      f.write();
       assertEquals(Deno.readLinkSync(guest + "/var/lib/orbit/vite-plus-home/js_runtime"), "/opt/orbit-runtime/current/vite-plus-home/js_runtime");
 
       // Configuration drift alone restarts PHP, even when its unit has not changed.
@@ -488,6 +506,9 @@ Deno.test({
       // The branch is new, at the seed's commit; the default's workspace and seed stay as they were.
       assertEquals(git(`${clone}/srv/workspace`, "symbolic-ref", "--short", "HEAD"), "feature");
       assertEquals(git(`${clone}/srv/workspace`, "rev-parse", "HEAD"), seed);
+      // The seed's exclude line comes with the copy; the clone's own write keeps it once.
+      assertEquals(Deno.readTextFileSync(`${clone}/srv/workspace/.git/info/exclude`).split("\n").filter((line) => line === "/.env").length, 1);
+      assertEquals(git(`${clone}/srv/workspace`, "status", "--porcelain", "--untracked-files=all"), "");
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${seed}`]);
       assertEquals(Deno.readTextFileSync(`${clone}/etc/orbit/instance`), "ORBIT_INSTANCE_ID=8\n");
