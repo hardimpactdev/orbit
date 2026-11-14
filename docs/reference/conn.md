@@ -276,6 +276,19 @@ A thread is in the index at once when Orbit or Conn starts it. Conn records a th
 
 `GET /threads` returns the rows of the covered servers, the newest user message first, and `meta.environments`: every covered server with its `power_state`, `read_at` and `read_error`, also a server without threads. `project` and `instance`, both optional positive ids, narrow it. While the switch is on, the list first reads through each running server whose last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds.
 
+### Cost
+
+Measured on 2026-11-14 on a nested test fleet, against stock T3 0.1.7 shells of about 1.9 KB per thread, with 10 threads a server and 30 ms per answer:
+
+| Servers running | One pass | Shell payload | Gateway memory |
+| --- | --- | --- | --- |
+| 3 real T3 servers | 33 to 164 ms | 2 to 6 KB a server | — |
+| 43 | 150 to 190 ms | 0.8 MB | +12.5 MB |
+| 200 | 0.6 s, 2 s when it first writes 2,000 rows | 3.8 MB | +30.5 MB |
+| 200, 2 of them hanging | 10.6 s: the hanging ones end at their 10-second bound | 3.7 MB | +30.5 MB |
+
+A list of one Project or Instance answers in 30 to 130 ms, read-through included. An unfiltered list returns every covered server's rows, the asleep ones included: 2,000 rows (650 KB) take about 0.3 s. Its read-through of 43 servers adds about 0.2 s, and more while it waits for the poll's writes.
+
 ### Sleep and removal
 
 Before a sleep is admitted, from the idle sleep or from [`instance:sleep`](/cli/instance/sleep), the index reads the server one last time, outside the Instance lock, with the poll's bounds. The sleep switch does not matter: the index's switch does. A failed read keeps the rows and does not stop the sleep. An asleep or stopped Instance keeps its last rows with their `seen_at` until it wakes and the next read runs. Destroying the Instance removes its server record, and the rows go with it.

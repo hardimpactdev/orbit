@@ -57,8 +57,14 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
             $this->refresh($environments->filter(static fn (ConnEnvironment $environment): bool => $environment->instance?->runtime?->power_state === InstanceRuntimePowerState::Running
                 && ($environment->threads_read_at === null || $environment->threads_read_at->isBefore($stale)))->values(), self::ReadThroughTimeoutSeconds);
         }
-        $threads = ConnThread::query()->whereIn('conn_environment_id', $environments->modelKeys())->with(['environment', 'instance'])
-            ->orderByRaw('last_user_message_at is null')->orderByDesc('last_user_message_at')->orderBy('id')->get();
+        // Each row takes its server and Instance from the servers already loaded, so the rows load no relation of their own.
+        $byId = $environments->keyBy('id');
+        $threads = ConnThread::query()->whereIn('conn_environment_id', $byId->keys())
+            ->orderByRaw('last_user_message_at is null')->orderByDesc('last_user_message_at')->orderBy('id')->get()
+            ->each(static function (ConnThread $thread) use ($byId): void {
+                $environment = $byId->get($thread->conn_environment_id);
+                $thread->setRelation('environment', $environment)->setRelation('instance', $environment?->instance);
+            });
 
         return ['environments' => $environments, 'threads' => $threads];
     }
