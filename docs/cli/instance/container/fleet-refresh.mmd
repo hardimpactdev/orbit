@@ -78,8 +78,9 @@ sequenceDiagram
   %%> - retakes `base` only for the containers whose disk changed: a step that writes a nested disk and reported a change (the migrate that applied one, the grants reload that changed a file), that container; a converge that changed a Node, that Node and the nested Gateway; a missing `base`, that container; a missing or unreadable record or a rule or file that differed, all three
   %%> - each of them stops first; the others keep running; with all three stopped it writes the owned rules (and a build rule only where it is absent), and it checks every rule; with some stopped the rules only compare, and a difference fails the refresh
   %%> - otherwise the fleet keeps running and `base` stays
+  %%> - every run, after `base`: keeps the pinned shape tools in the Instance container at `/opt/orbit-shape-gate`, named by the checkout's own `bin/swamp-shape-gate` from its three pin files; when the venv and the collections of these pins are complete it only reads them; otherwise it installs `python3-venv` when it is missing, builds them and removes the tools of other pins
   %%> - removes the record before its first write to a nested disk and writes it again last, so a run that stops in the middle leaves none, and the next run does every part and retakes `base` of all three
-  %%> - the result names each part, ran or skipped, why the converge ran or was skipped, the tasks the converges changed, what it did with the tokens and why (`tokens`, `tokens_reason`), `base` retaken or kept and for which containers, and the seconds of each part
+  %%> - the result names each part, ran or skipped, why the converge ran or was skipped, the tasks the converges changed, what it did with the tokens and why (`tokens`, `tokens_reason`), what it did with the shape tools and why (`tools`, `tools_reason`), `base` retaken or kept and for which containers, and the seconds of each part
   %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and body, or curl's error
   %%> Why:
   %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes, and three base converges that change nothing about 87 s
@@ -89,6 +90,9 @@ sequenceDiagram
   %%> - a reset restores `base` of all three in seconds; taking `base` costs about 32 s per container, so only what changed is retaken
   %%> - the set stays consistent: the nested Gateway's database holds the schema and records each converge, so its `base` is retaken with any other
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state, so `base` is taken with the fleet stopped
+  %%> - the proof runner in a copy needs the pinned Ansible controller, and the default is never rebuilt from a new image: the seed after this step gives every copy the tools of its own commit, so no copy builds them or needs `python3-venv`
+  %%> On failure:
+  %%> - a failed tools install does not fail the refresh: the result says `tools: failed` with the step in `tools_reason`, the log shows the end of its error output, and the seed is taken without ready tools (the venv's `.complete` is written last); a proof in such a copy builds the tools in its own cache, and when that fails its fleet preparation fails with the line that names the missing pinned folder
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> What it does:
   %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
