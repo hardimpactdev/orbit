@@ -15,6 +15,8 @@
     },
     "copy": {"project": "orbit-instances", "name": "instance-2747"},
     "restore_first": false,
-    "final_restore": false
+    "final_restore": false,
+    "container": {"instance_id": 2747, "project": "orbit-instances", "name": "instance-2747", "workspace": "/srv/workspace"},
+    "fleet": {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}}
   }
 }
