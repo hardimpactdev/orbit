@@ -761,6 +761,28 @@ describe('a cancel of a group that owns a copy', function (): void {
 });
 
 describe('a complete of a group that owns a copy', function (): void {
+    it('removes a copy with an inner volume and its volume in the one destroy that a cancel or a complete admits', function (string $end): void {
+        $default = copySource();
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
+        $group = copyGroup($default->project);
+        $copy = finishedCopy($group, startCopy($group));
+        if ($end === 'cancel') {
+            $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
+                'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 0, 'names' => []],
+                'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true);
+        } else {
+            $group->update(['status' => TaskGroupStatus::Settling]);
+            $group->tasks()->update(['status' => TaskStatus::Completed]);
+            app(CompleteTaskGroupAction::class)->execute($group->refresh());
+        }
+
+        // docs/reference/development-containers.md#copies-of-the-volume: the copy's own volume, never the default's.
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($destroy->target_id)->toBe($copy->id)
+            ->and($destroy->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$copy->id, 'inner_volume' => 'inner-'.$copy->id]);
+    })->with(['cancel', 'complete']);
+
     it('admits the copy\'s destroy with force, completes the group and lets go of the copy when the destroy succeeds', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
