@@ -521,11 +521,36 @@ Where each path writes the name:
 
 T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 
-No path restarts T3 for its name, and only a new container gets its kernel hostname at once. A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
+No path above restarts T3 for its name, and only a new container gets its kernel hostname at once. One explicit command restarts an idle running T3: see [Existing Instances](#existing-instances). A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
 
 #### Existing Instances
 
 An existing Instance gets its name without a new container. The converge of its Node writes the files. The kernel hostname takes the name at the container's next start, and T3 its label at T3's next start, such as a stopped container's next start or an agent folder update. T3's environment ID, threads, sessions and pairings do not depend on the name.
+
+A container that ran before the name existed keeps showing `instance-<id>` as T3's label until T3 starts again, and a default Instance can run for weeks. [`conn:environment-restart`](/cli/conn/environment-restart) restarts the T3 of one running container whose label is not the name; [`conn:node-environments-restart`](/cli/conn/node-environments-restart) does it for each container of a Node. Run the Node form once on each app-dev Node after the release that brought the name.
+
+Only an idle T3 restarts. The Gateway reads T3's threads with its admin session, the read the idle sleep uses. While a turn works, or any runtime request is pending, it restarts nothing and answers `busy`. A later run takes that container.
+
+Only T3 restarts. The run runs `systemctl try-restart t3.service` in the container. Then it waits a bounded time until T3 is active and shows the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
+
+A frozen or stopped container is skipped. T3 reads the name at its next start.
+
+#### The restart window
+
+The thread read and the restart are two steps. The Gateway holds the session, and a run may not call back for it. So the Gateway admits the Operation right after the read. The Node form reads each container right before its own admission.
+
+About 5 to 15 seconds pass from the read to the restart: the dispatch, the run's input step and the start of its Ansible phase. The proof of the command measures it.
+
+What a user sees:
+
+- **A turn in the window** is cut. T3 0.1.7 marks that run cancelled as it stops.
+- **The cut turn continues.** T3 continues it in a new run after its start. The T3 setting `continueThreadsAfterServerUpdate` does this, and it is on by default.
+- **A connected client** shows *Reconnecting…* and reconnects by itself. Its backoff starts at one second.
+- **An unsent draft stays.** T3's client keeps drafts in the browser (`t3code:composer-drafts:v1`), never on the server.
+
+A container whose T3 nobody restarts keeps its old label until T3's next start, such as the container's next start or an agent folder update. Nothing else changes.
+
+No schedule runs the restart. The label changes once, after one release, and a stock T3 that starts later reads the name by itself. A scheduled pass would add an always-on loop for a one-off change, and it would restart T3 servers at times nobody chose, each restart with its window above.
 
 A rename of the Project (`project:update --slug`) writes no container file itself. The containers take the new name at their next start or at the next converge of their Node.
 

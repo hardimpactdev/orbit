@@ -313,6 +313,27 @@ The `Orbit Swamp` session of the container is not renewed: nothing uses it yet. 
 | `conn.renewal_incomplete` | The session was issued, but the run ended before it was stored. |
 | `conn.renewal_failed` | The run failed without a `conn.*` code. |
 
+### Restart for the machine name
+
+A container T3 server reads its label, the [machine name](/reference/development-containers#the-machine-name), only when it starts. [`conn:environment-restart`](/cli/conn/environment-restart) and [`conn:node-environments-restart`](/cli/conn/node-environments-restart) restart a running server whose label is not the name yet. [Existing Instances](/reference/development-containers#existing-instances) says when to run them. The Gateway's own label of the server, `<project> / <instance>`, does not change.
+
+For each container Instance, the Gateway decides in this order:
+
+1. A sleeping container (`power_state` `stopped`) is `skipped`. The reason is `frozen` after a succeeded sleep that froze it. Any other sleeping container reads as `stopped`.
+2. An Instance with no T3 port or no server row is `skipped` with `no_t3`.
+3. The Gateway reads the label from `GET /.well-known/t3/environment`, with no session. No answer is `skipped` with `t3_unreadable`.
+4. A label that equals `<instance>.<project slug>` is `current`.
+5. The Gateway reads the threads from `GET /api/orchestration/shell` with its admin session. An unreadable answer is `skipped` with `t3_unreadable`.
+6. `ConnAgentActivity::restartBlocked()` reads the threads. A run that works by the idle sleep's rule makes them busy. So does any pending runtime request, blocking or not. A busy server is `busy` with `t3_working`.
+7. Otherwise the Gateway admits `conn.environment_restart` at once, on the Instance's lock.
+8. A refused admission is `busy` with its error code, such as `operation.target_busy`.
+
+The intent holds the Instance, its container, the server's URL and the name. It holds no session.
+
+The Node form walks the Node's container Instances by ID and reads each one right before its own admission.
+
+The run restarts T3 in the container and checks that it is active again and shows the name. It succeeds as `restarted`, or fails as `failed` with `conn.t3_inactive` or `conn.t3_label_mismatch`. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
+
 ## Thread index
 
 The Gateway keeps an index of the threads on each container T3 server. A device reads one list from the Gateway to find a Project's or an Instance's threads. It connects to a server only when it opens one of that server's threads, not to every server at launch. The [index chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/thread-index.mmd) has the steps. Host servers, those with no Instance, have no index.

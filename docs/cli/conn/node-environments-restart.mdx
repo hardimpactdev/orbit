@@ -1,0 +1,36 @@
+---
+title: "orbit conn:node-environments-restart"
+sidebarTitle: "conn:node-environments-restart"
+description: "Restart the idle T3 server of each container Instance on one Node whose label is not yet its machine name."
+---
+
+Run [`conn:environment-restart`](/cli/conn/environment-restart) for each container Instance on one Node, in order of Instance ID. Run it once on each app-dev Node after the release that brought the [machine name](/reference/development-containers#the-machine-name).
+
+## Usage
+
+```sh
+orbit conn:node-environments-restart 7
+orbit conn:node-environments-restart 7 --json
+```
+
+| Argument or option | Meaning |
+| --- | --- |
+| `node` | Numeric Node ID. |
+| `--json` | [Machine output](/reference/cli-ux#input-and-output-modes). |
+
+The command prints one line for each container Instance on the Node, with the same answers as `conn:environment-restart`: `restarted`, `current`, `busy`, `skipped` or `failed`, with their reasons.
+
+The Gateway reads each Instance's T3 label and threads right before it admits that Instance's own `conn.environment_restart` Operation. So the read is as close to the restart as for one Instance, however many containers come before it. One busy, sleeping or failed Instance does not hold back the others. Run the command again later to take the ones that were busy.
+
+The API is `POST /api/v1/conn/nodes/{node}/t3-restart`. The Conn extension must be on.
+
+## How it works
+
+Each Instance follows the [`conn:environment-restart` chart](/cli/conn/environment-restart#how-it-works). The Node form only walks the Node's container Instances.
+
+## Errors
+
+| Code | Meaning |
+| --- | --- |
+| `extension.disabled` | The Conn extension is off. |
+| `node.not_found` | No Node has that ID. |

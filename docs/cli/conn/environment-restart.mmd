@@ -1,0 +1,46 @@
+sequenceDiagram
+  %% Container runtime (docs/reference/development-containers.md#existing-instances, docs/reference/conn.md#restart-for-the-machine-name): restart an idle container T3 server whose label is not yet the machine name. Stock T3 reads PRETTY_HOSTNAME only at its start. The Gateway reads the label and the threads, then admits one `conn.environment_restart` Operation per Instance; the Node form walks its containers and reads each one right before its own admission.
+  %% status: draft
+  %% command: orbit conn:environment-restart <instance> · orbit conn:node-environments-restart <node>
+  %% kind: conn.environment_restart
+  autonumber
+  %% lane CLI icon=terminal pill=caller tone=gray
+  %% lane GW icon=gateway pill=intent tone=blue
+  %% lane SW icon=workflow pill=executes tone=green
+  %% lane N icon=server pill=target tone=purple
+  participant CLI as CLI / MCP<br/>API callers
+  participant GW as Gateway<br/>Conn layer
+  participant SW as Swamp<br/>workflow execution
+  participant N as Node<br/>the container
+  CLI->>GW: Restart T3 for its name<br/>one Instance, or a Node's
+  %%> Order:
+  %%> - the Node form takes its container Instances by ID, and runs steps 2 to 4 for each before it reads the next
+  Note over GW: Read the T3 label<br/>describe · no session
+  %%> Answers without a run:
+  %%> - `skipped`: `frozen` or `stopped` (it reads the name at its next start), `no_t3` (no Conn server row), `t3_unreadable`
+  %%> - `current`: the label already equals `<instance>.<project slug>`
+  Note over GW: Read the threads<br/>shell · admin session
+  %%> Busy, answered `busy` without a run:
+  %%> - a working run (the idle sleep's rule), or any pending runtime request, blocking or not
+  %%> - an open Operation on the Instance, or an Instance that is not active
+  %%> Why here:
+  %%> - only the Gateway holds the admin session; the admission follows the read at once, the tightest window the shape allows
+  GW->>SW: Start run, full intent<br/>operation-conn-environment-restart
+  %%> Result:
+  %%> - one Operation holding the Instance's lock; the intent has no session
+  GW-->>CLI: Answer per Instance<br/>restarting · busy · skipped
+  SW->>N: Restart T3<br/>try-restart · is-active · label
+  %%> What it does:
+  %%> - stops with `skipped` when the container no longer runs
+  %%> - `systemctl try-restart t3.service` in the container; nothing else restarts, and the kernel hostname stays
+  %%> - then waits a bounded time for `systemctl is-active t3.service`, and for the label to equal the name
+  %%> What a user sees:
+  %%> - a turn that started after the read is cut; T3 records it as cancelled and continues it after its start
+  %%> - a connected client shows Reconnecting… and reconnects; an unsent draft stays in the browser
+  alt T3 is back with its name
+    SW-->>GW: Run succeeded<br/>restarted
+  else T3 does not come back
+    SW--xGW: Run failed<br/>conn.t3_inactive
+    %%> Result:
+    %%> - `failed`; the Operation does not retry. Look at the container's T3 unit, then run the command again
+  end
