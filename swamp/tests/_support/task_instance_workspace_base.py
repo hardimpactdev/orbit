@@ -149,8 +149,10 @@ class BaseHarness(unittest.TestCase):
                        'snapshot_id': self.snapshot_id, 'instance_id': self.instance_id, 'default_branch': 'main', 'repository': self.server.url,
                        'mirror': str(self.mirrors / '12.git'), 'source_mirror': str(self.source_mirror), 'start': self.seed}
         self.play = self.root / 'play.yml'
+        # The production phase over a local connection: its transport check accepts that only for this harness's host variable.
         self.play.write_text(json.dumps([{'name': 'Exercise the production phase', 'hosts': 'localhost', 'connection': 'local',
-            'gather_facts': False, 'tasks': [{'name': 'Run workspace phase', 'ansible.builtin.import_tasks': str(TASKS)}]}]))
+            'gather_facts': False, 'vars': {'task_base_local_transport': True},
+            'tasks': [{'name': 'Run workspace phase', 'ansible.builtin.import_tasks': str(TASKS)}]}]))
         self.mark = self.root / 'held'
         self.result = self.root / 'result.json'
         # Ansible's own temporary folders of this run: no credential may rest there either.

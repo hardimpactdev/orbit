@@ -37,11 +37,6 @@
 - name: Name the guest boundary
   ansible.builtin.set_fact:
     workspace_base_phases: [base, base-cleanup]
-    # task:sync of a copy: the copy's Node scratch holds the bundle, never a credential. It and the copy's bundle folder are named by
-    # the copy's Instance, so base-cleanup, the next base and the copy's destroy find what a cancelled run left; the group lock lets
-    # one sync of a copy run at a time.
-    base_node: "/var/tmp/orbit-task-base-{{ intent.instance_id | default('') }}"
-    base_guest: "/tmp/orbit-task-base-{{ intent.instance_id | default('') }}"
     # Root in the copy, for the bundle folder that agent may read and never change.
     base_root_exec: "{{ ['incus', '--project', intent.runtime.project, 'exec', '--disable-stdin', intent.runtime.name, '--'] }}"
     workspace_exec: >-
@@ -65,8 +60,6 @@
       phase = sys.argv[1]
       root = Path.cwd()
       scratch = Path('/tmp/orbit-task-workspace-' + request['snapshot_id'])
-      # task:sync of a copy: the bundle the Node pushes in, in a folder root made and owns; agent only reads it.
-      base_scratch = Path('/tmp/orbit-task-base-' + str(request.get('instance_id', '')))
       env = {'HOME': '/home/agent', 'PATH': '/usr/local/bin:/usr/bin:/bin',
              'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
       git_argv = ['/usr/bin/git', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
@@ -258,7 +251,8 @@
               return {'branch_commit': head, 'origin': origin, 'gid': os.getgid(), 'changed': False}
           target, before = request['base_head'], text('for-each-ref', '--format=%(objectname)', ref)
           if request['bundled']:
-              bundle = base_scratch / 'base.bundle'
+              # The bundle the Node pushed in, in a folder root made and owns; agent only reads it.
+              bundle = Path(request['base_guest']) / 'base.bundle'
               git('bundle', 'verify', '--quiet', str(bundle))
               git('-c', 'gc.auto=0', '-c', 'maintenance.auto=false', 'fetch', '--quiet', '--no-tags', '--no-write-fetch-head',
                   str(bundle), '+refs/heads/' + request['default_branch'] + ':' + ref)
@@ -571,6 +565,14 @@
         that: workspace_export_cleanup.rc | default(1) == 0
         fail_msg: tasks.workspace_phase_failed
 
+# task:sync of a copy: the copy's Node scratch holds the bundle, never a credential. The group lock lets one sync of a copy run at a
+# time.
+- name: Name the copy's base scratch by its Instance
+  when: workspace_phase in workspace_base_phases
+  ansible.builtin.import_tasks: task-copy-base-names.yml
+  vars:
+    task_base_instance: "{{ intent.instance_id }}"
+
 # task:sync of a copy. Git runs on the Node, in the copy's own mirror. The read credential is a Git header that reaches the one fetch
 # only through the stdin of a pipelined task, which Ansible keeps in memory: never argv, a file or a stored output, so a killed run
 # leaves none behind. The copy receives only a bundle of what it lacks, in a folder root owns, and agent imports it into
@@ -623,14 +625,15 @@
         - [/usr/bin/git, init, --quiet, --bare, "{{ intent.mirror }}"]
         - "{{ base_mirror_git + ['fetch', '--quiet', '--no-tags', '--', intent.source_mirror, '+refs/heads/*:refs/seed/*'] }}"
       changed_when: true
+    # The block sets pipelining; the transport must be ssh, which pipelines, and no setting may keep the module files. Only the local
+    # test harness sets task_base_local_transport, to run the same tasks without an SSH server.
     - name: Refuse a transfer that writes the module arguments on the Node
       ansible.builtin.assert:
         that:
-          - ansible_pipelining | bool
-          - ansible_ssh_pipelining | bool
           - not (lookup('ansible.builtin.config', 'DEFAULT_KEEP_REMOTE_FILES') | bool)
-          - (ansible_connection | default(lookup('ansible.builtin.config', 'DEFAULT_TRANSPORT')))
-            in ['ssh', 'ansible.builtin.ssh', 'local', 'ansible.builtin.local']
+          - >-
+            (ansible_connection | default(lookup('ansible.builtin.config', 'DEFAULT_TRANSPORT'))) in ['ssh', 'ansible.builtin.ssh']
+            or (task_base_local_transport | default(false) | bool and ansible_connection | default('') == 'local')
         fail_msg: tasks.workspace_phase_failed
         quiet: true
     # The header, scoped to the Project's repository, is the environment of this one git command, as the publish's push sends it.
@@ -705,7 +708,7 @@
       ansible.builtin.command:
         argv: >-
           {{ workspace_exec + [workspace_guest_program, 'base-import',
-             intent | combine({'base_head': base_head.stdout | trim, 'bundled': base_new.stdout | int > 0}) | to_json] }}
+             intent | combine({'base_head': base_head.stdout | trim, 'bundled': base_new.stdout | int > 0, 'base_guest': base_guest}) | to_json] }}
         expand_argument_vars: false
         stdin: ''
         stdin_add_newline: false

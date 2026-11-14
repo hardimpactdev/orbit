@@ -2240,8 +2240,8 @@ non_command_output:
   field: ansible.builtin.command.argv
   reason: Prefixes the commit ids that the mirror holds with ^ as bundle prerequisites; it parses no command output.
 - file: instance-container-destroy.yml
-  task: Remove the Node task base scratch
-  field: ansible.builtin.file.path
+  task: Name the copy's base scratch by its Instance
+  field: vars.task_base_instance
   reason: Takes the Instance id from the admitted mirror path's file name; it parses no command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn

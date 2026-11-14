@@ -15,6 +15,7 @@ inputs = [
   "swamp/tests/_support/task_instance_workspace_base.py",
   "swamp/ansible/task-instance-workspace.yml",
   "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/task-copy-base-names.yml",
   "swamp/ansible/tasks/ssh-execution-*.yml",
   "swamp/extensions/behaviors/operations/task-instance-workspace/**",
   "swamp/workflows/workflow-task-copy-base.yaml"
