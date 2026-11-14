@@ -33,7 +33,7 @@ sequenceDiagram
   %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`
   %%> - the role's copy model is a model name, and the role's effort is `low`, `medium`, `high`, `xhigh` or `max`; otherwise `tasks.copy_turn_model_invalid` or `tasks.copy_turn_effort_invalid`
   %%> - no other Operation of the group runs; otherwise `operation.target_busy`
-  %%> - no earlier turn of the group may still run in the copy: the latest turn of each thread whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`. One case passes: a turn that ended `waiting` for an answer does not hold a turn that continues its own thread, so the answer can be sent
+  %%> - no earlier turn of the group may still run in the copy: the latest turn of each thread whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`. One case passes: a turn that ended `waiting` for an answer does not hold a turn that continues its own thread, so the answer can be sent (that `t3 thread send` answers a waiting run is an assumption read from T3 0.1.7's CLI). A reviewer turn whose checkout is not restored holds the same way: its result is not over
   GW->>SW: Start one run<br/>operation-task-copy-turn
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
@@ -46,22 +46,22 @@ sequenceDiagram
   %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
   %%> - first one `true` in the copy: a copy the phase cannot reach fails before anything is launched, so its group stays free
   %%> - a continued turn first finds its T3 thread by its title with `t3 thread list`. A list that fails or is not JSON fails with `tasks.copy_turn_failed`; when T3 holds not exactly one thread of the title, the phase fails with `tasks.copy_thread_missing`. Nothing is launched
-  %%> - a reviewer turn then requires a clean checkout on a branch and checks the candidate out, detached; a checkout with changes fails with `tasks.copy_tree_dirty` before anything is launched
+  %%> - a reviewer turn then requires a clean checkout on a branch, reads the branch's tip and checks the candidate out, detached; a checkout with changes fails with `tasks.copy_tree_dirty` before anything is launched. The detach mark is written as soon as the checkout is detached
   %%> - a new thread: `t3 thread start --provider --model --title --wait --json /srv/workspace -`; a continued one: `t3 thread send --wait --json THREAD -`. The prompt goes on stdin, bounded by `timeout` at 3,600 s
   %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back. Each read is bounded at 60 s
-  %%> - after a reviewer turn, also a failed or cut one, the phase discards what the reviewer changed and checks the branch out again, then reads that the checkout is clean on its branch
-  %%> - writes each evidence file as soon as its command ends: the thread found to continue, the reviewer's checkout, the launch mark, the start's end, the read, the restore; a cut phase still tells whether a turn was launched
+  %%> - after a reviewer turn, also a failed or cut one, the phase discards what the reviewer changed and checks the branch out again, then reads that the checkout is clean, on its branch, and that the branch is at the tip read before the detach
+  %%> - writes each evidence file as soon as its command ends: the thread found to continue, the reviewer's checkout, the detach mark, the launch mark, the start's end, the read, the restore; a cut phase still tells whether a turn was launched
   %%> - T3's CLI issues its own full-access session inside the copy and revokes it when it exits; the replies stay in the run folder, never in a log
   Note over N: T3 runs the turn<br/>provider instance · effort
   %%> What it does:
   %%> - the copy's T3 settings hold one `claudeAgent` provider instance per effort level, `claudeLow` to `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment; the copy's create writes them
-  %%> - Claude Code takes that variable over any other effort for the session, so the thread runs at its recorded effort
+  %%> - Claude Code takes that variable over the `--effort` T3 passes, so the thread runs at its recorded effort: verified with Claude Code 2.1.311 and T3 0.1.7
   Note over SW: result
   %%> What it does:
   %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`, a thread to continue that T3 does not hold fails with `tasks.copy_thread_missing`
-  %%> - a reviewer turn whose run T3 ended done or waiting, but whose checkout is not clean on its branch again, fails with `tasks.copy_review_unrestored`; a failed run keeps its own error
+  %%> - a reviewer turn with the detach mark and no restore that reads clean on its branch at its tip fails with `tasks.copy_review_unrestored`, whatever its run did, also when it failed or nothing was launched; the error keeps the run's own error
   %%> - keeps the message text of the thread, all its turns, redacted and bounded to 256 KiB with the newest kept; T3's CLI gives no tool items and no token use
-  %%> - records whether T3's run is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state
+  %%> - records whether the turn is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state. An unrestored reviewer turn is never over, so it holds its group until `task:cancel`
   Note over SW: cleanup
   %%> What it does:
   %%> - removes the private run folder
