@@ -36,12 +36,12 @@ final class AgentThreadData extends Data
         public ?float $costUsd,
         public ?int $linesAdded,
         public ?int $linesDeleted,
-        /** @var list<array<string, mixed>>|null What the thread's last turn asked, until its next turn. */
-        public ?array $questions = null,
+        /** @var list<array<string, mixed>> */
+        public array $questions = [],
     ) {}
 
     public static function fromModel(AgentThread $thread): self
     {
-        return new self($thread->id, $thread->task_group_id, $thread->task_id, $thread->node_id, $thread->role, $thread->model, $thread->effort, $thread->driver, $thread->external_id, $thread->activityState(), $thread->observed_at?->toIso8601String(), $thread->observation_error, $thread->error, $thread->tokens, $thread->input_tokens, $thread->cached_input_tokens, $thread->output_tokens, $thread->model_calls, $thread->peak_context_tokens, $thread->cost_usd, $thread->lines_added, $thread->lines_deleted, $thread->questions);
+        return new self($thread->id, $thread->task_group_id, $thread->task_id, $thread->node_id, $thread->role, $thread->model, $thread->effort, $thread->driver, $thread->external_id, $thread->activityState(), $thread->observed_at?->toIso8601String(), $thread->observation_error, $thread->error, $thread->tokens, $thread->input_tokens, $thread->cached_input_tokens, $thread->output_tokens, $thread->model_calls, $thread->peak_context_tokens, $thread->cost_usd, $thread->lines_added, $thread->lines_deleted, $thread->questions ?? []);
     }
 }

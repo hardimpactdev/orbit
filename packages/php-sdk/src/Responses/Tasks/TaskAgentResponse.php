@@ -30,8 +30,8 @@ final readonly class TaskAgentResponse
         public ?int $linesAdded,
         public ?int $linesDeleted,
         public string $requestId,
-        /** @var list<array<string, mixed>>|null What the thread's last turn asked, until its next turn. */
-        public ?array $questions = null,
+        /** @var list<array<string, mixed>> What the thread's last turn asked, until its next turn. */
+        public array $questions = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -60,7 +60,7 @@ final readonly class TaskAgentResponse
             linesAdded: TaskFields::nullableInt($data, 'lines_added'),
             linesDeleted: TaskFields::nullableInt($data, 'lines_deleted'),
             requestId: $requestId,
-            questions: TaskFields::nullableObjects($data, 'questions'),
+            questions: TaskFields::objects($data, 'questions'),
         );
     }
 

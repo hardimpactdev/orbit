@@ -589,7 +589,7 @@ describe('task responses from recorded Gateway fixtures', function (): void {
             ->and($agents->agents[1]->inputTokens)->toBeNull()
             ->and($agents->agents[1]->peakContextTokens)->toBeNull()
             // A thread whose last turn asked keeps its questions in the agent's own words.
-            ->and($agents->agents[0]->questions)->toBeNull()
+            ->and($agents->agents[0]->questions)->toBe([])
             ->and($agents->agents[1]->questions[0]['question'] ?? null)->toBe('Which color?')
             ->and($agents->toArray()['agents'][1]['questions'][0]['options'][1]['label'] ?? null)->toBe('Blue')
             ->and($agents->toArray()['agents'][0])->not->toHaveKey('request_id');
