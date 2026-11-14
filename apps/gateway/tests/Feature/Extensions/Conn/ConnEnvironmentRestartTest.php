@@ -222,3 +222,53 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
     'restarted, with its window from the read' => ['succeeded', ['answer' => 'restarted', 'restart_at' => '2026-11-14T12:00:07.500000Z'], 'window', null],
     'stopped after the read' => ['succeeded', ['answer' => 'skipped', 'reason' => 'stopped'], ['answer' => 'skipped', 'reason' => 'stopped'], null],
 ]);
+
+it('skips a runtime without a T3 port as no_t3, even with a Conn server row', function (): void {
+    InstanceRuntime::query()->where('instance_id', $this->default->id)->update(['t3_port' => null]);
+    $record = ConnEnvironment::query()->create(['environment_id' => 'env-default', 'label' => 'shop / default', 'url' => 'http://10.44.0.7:3800',
+        'node_id' => $this->node->id, 'admin_session' => 'gateway-session-default', 'admin_session_expires_at' => now()->addDays(20), 'registered_at' => now()]);
+    $record->forceFill(['instance_id' => $this->default->id])->save();
+    Http::fake();
+
+    expect(restartOne($this->default))->toMatchArray(['answer' => 'skipped', 'reason' => 'no_t3']);
+    Http::assertNothingSent();
+});
+
+describe('API', function (): void {
+    beforeEach(function (): void {
+        $this->operator = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'phone', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.77', 'wireguard_ip' => '10.44.0.77', 'user' => 'orbit']));
+        $this->operator->accessibleNodes()->attach($this->node->id);
+        $this->outsider = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'mini', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.9', 'wireguard_ip' => '10.44.0.9', 'user' => 'orbit']));
+    });
+
+    it('refuses a caller without access to the Instance\'s or the target Node', function (string $path): void {
+        $clone = restartServer($this->default, 'clone', 3840);
+        Http::fake();
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.9'])->postJson('/api/v1/conn/'.str_replace(['{instance}', '{node}'], [$clone->id, $this->node->id], $path))
+            ->assertForbidden();
+        Http::assertNothingSent();
+        expect(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->count())->toBe(0);
+    })->with(['instances/{instance}/t3-restart', 'nodes/{node}/t3-restart']);
+
+    it('answers 200 for one Instance when it admits no restart', function (): void {
+        $clone = restartServer($this->default, 'clone', 3840);
+        Http::fake(restartT3(3840, 'clone.shop'));
+
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.77'])->postJson("/api/v1/conn/instances/{$clone->id}/t3-restart")
+            ->assertOk()->assertJsonPath('data.restarts.0', ['instance_id' => $clone->id, 'instance' => 'clone', 'answer' => 'current', 'reason' => null, 'operation' => null]);
+    });
+
+    it('answers 202 for a Node walk that admits a restart, with its Operation', function (): void {
+        $clone = restartServer($this->default, 'clone', 3840);
+        Http::fake(restartT3(3840, 'instance-'.$clone->id));
+
+        $response = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.77'])->postJson("/api/v1/conn/nodes/{$this->node->id}/t3-restart")->assertStatus(202);
+
+        expect(array_column($response->json('data.restarts'), 'answer'))->toBe(['skipped', 'restarting'])
+            ->and($response->json('data.restarts.1.operation.kind'))->toBe(AdmitConnEnvironmentRestartAction::Kind)
+            ->and($response->json('data.restarts.1.operation.id'))->toBe(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->sole()->id);
+    });
+});
