@@ -106,38 +106,42 @@ final class TaskGroupData extends Data
         return $data;
     }
 
+    /** What a group's data reads beyond its own columns. A list loads these first, with the columns a row shows. */
+    public const array Relations = ['project', 'tasks.latestCheck', 'latestVm', 'reviewedCommits', 'taskable'];
+
+    public static function fromModel(Task $group): self
+    {
+        return self::fromModels(new Collection([$group]))[0];
+    }
+
     /**
-     * The rows of a list, with the reads the groups share done once for all of them.
+     * The data of many groups, with every read they share done once for all of them: show reads one group, a list a page.
      *
      * @param  Collection<int, Task>  $groups
      * @return list<self>
      */
     public static function fromModels(Collection $groups): array
     {
+        $groups->loadMissing(self::Relations);
         $activity = TaskGroupActivity::of(array_values($groups->modelKeys()));
         $waits = app(TaskPlaces::class)->waitsOfGroups(array_values($groups->whereNotNull('capacity_wait_reason')->modelKeys()));
 
-        return array_values($groups->map(static fn (Task $group): self => self::fromModel($group, $activity[$group->id], $waits))->all());
+        return array_values($groups->map(static fn (Task $group): self => self::fromLoaded($group, $activity[$group->id], $waits))->all());
     }
 
     /**
-     * @param  array{last_activity_at: string|null, active_operation_id: int|null}|null  $activity  read for many groups at once by a list
-     * @param  array<int, TaskPlaceWaitData>|null  $waits  group id => its capacity wait, read for many groups at once by a list
+     * @param  array{last_activity_at: string|null, active_operation_id: int|null}  $activity
+     * @param  array<int, TaskPlaceWaitData>  $waits  group id => its capacity wait
      */
-    public static function fromModel(Task $group, ?array $activity = null, ?array $waits = null): self
+    private static function fromLoaded(Task $group, array $activity, array $waits): self
     {
-        $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
         $status = $group->groupStatus();
 
         return new self(
-            lastActivityAt: ($activity ?? TaskGroupActivity::ofGroup($group->id))['last_activity_at'],
+            lastActivityAt: $activity['last_activity_at'],
             previewUrl: self::previewUrl($group, $taskable),
-            capacityWait: match (true) {
-                $group->capacity_wait_reason === null => null,
-                $waits === null => app(TaskPlaces::class)->waitOfGroup($group),
-                default => $waits[$group->id] ?? null,
-            },
+            capacityWait: $waits[$group->id] ?? null,
             orchestration: $group->groupOrchestration(),
             capacityWaitReason: $group->capacity_wait_reason,
             vmPower: self::vmPower($group),
@@ -183,9 +187,7 @@ final class TaskGroupData extends Data
             durationMs: $group->duration_ms,
             questions: (int) ($group->questions ?? 0),
             escalations: (int) ($group->escalations ?? 0),
-            subtasks: array_values($group->tasks
-                ->map(static fn (Task $task): TaskData => TaskData::fromModel($task))
-                ->all()),
+            subtasks: TaskData::fromModels($group->tasks),
         );
     }
 
@@ -206,7 +208,7 @@ final class TaskGroupData extends Data
             return null;
         }
         // A task VM reports running while ready and destroyed once gone. The capacity wait reason names other states.
-        $vm = $group->relationLoaded('latestVm') ? $group->latestVm : $group->latestVm()->first();
+        $vm = $group->latestVm;
         if ($vm instanceof TaskVm) {
             return match ($vm->state) {
                 TaskVmState::Ready => VmPower::Running,

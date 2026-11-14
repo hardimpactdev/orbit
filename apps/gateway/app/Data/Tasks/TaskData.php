@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskType;
 use App\Models\Task;
 use App\Models\TaskCheck;
+use Illuminate\Database\Eloquent\Collection;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -76,7 +77,25 @@ final class TaskData extends Data
 
     public static function fromModel(Task $task): self
     {
-        $check = $task->relationLoaded('latestCheck') ? $task->latestCheck : $task->latestCheck()->first();
+        return self::fromModels(new Collection([$task]))[0];
+    }
+
+    /**
+     * The data of many subtasks, with their latest checks read once for all of them.
+     *
+     * @param  Collection<int, Task>  $tasks
+     * @return list<self>
+     */
+    public static function fromModels(Collection $tasks): array
+    {
+        $tasks->loadMissing('latestCheck');
+
+        return array_values($tasks->map(self::fromLoaded(...))->all());
+    }
+
+    private static function fromLoaded(Task $task): self
+    {
+        $check = $task->latestCheck;
 
         return new self(
             type: $task->type,

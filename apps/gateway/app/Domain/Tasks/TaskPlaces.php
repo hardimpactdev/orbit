@@ -53,12 +53,6 @@ final readonly class TaskPlaces
         return new TaskPlaceWaitData($operation->id, TaskVmAdmission::queue()->where('id', '<=', $operation->id)->count(), $this->taskHolders());
     }
 
-    /** The place in the task queue of the group's waiting admission, or null when the group waits for none. */
-    public function waitOfGroup(Task $group): ?TaskPlaceWaitData
-    {
-        return $this->waitsOfGroups([$group->id])[$group->id] ?? null;
-    }
-
     /**
      * The place in the task queue of each group's first waiting admission, in a fixed number of queries whatever the number of groups.
      *

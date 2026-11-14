@@ -241,7 +241,7 @@ final class TaskGroupsController extends Controller
     {
         $parent = $request->parentTask();
         if ($parent instanceof Task) {
-            $rows = $action->subtasks($parent, $request->subtaskStatus(), $request->projectId())->map(static fn (Task $task): TaskData => TaskData::fromModel($task))->all();
+            $rows = TaskData::fromModels($action->subtasks($parent, $request->subtaskStatus(), $request->projectId()));
             $nextCursor = null;
         } else {
             $page = $action->execute($request->projectId(), $request->status(), $request->limit(), $request->cursor());
@@ -250,7 +250,7 @@ final class TaskGroupsController extends Controller
         }
 
         return response()->json([
-            'data' => array_values(array_map(static fn (TaskData|TaskGroupData $row): array => $request->boolean('compact') ? $row->toCompactArray() : $row->toListArray(), $rows)),
+            'data' => array_map(static fn (TaskData|TaskGroupData $row): array => $request->boolean('compact') ? $row->toCompactArray() : $row->toListArray(), $rows),
             'meta' => [...$this->meta($request), 'next_cursor' => $nextCursor],
         ]);
     }
