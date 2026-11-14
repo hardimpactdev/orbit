@@ -205,7 +205,7 @@ const api = "curl -sSk --noproxy * -m 80 -H Host: gateway.orbit -H Accept: appli
 /** The refresh reads its record and the checkout's digests first, and writes the record last (instance-fleet-refresh.yml). */
 const record = "/var/lib/orbit/fleet-refresh.json";
 const recordReads = [`cat ${record}`, "git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract HEAD:swamp"];
-const recordWrite = `install -D -o root -g root -m 0644 /dev/stdin ${record}`;
+const recordWrite = `sh -c mkdir -p "\${1%/*}" && cat > "$1.tmp" && chown root:root "$1.tmp" && chmod 0644 "$1.tmp" && mv -f "$1.tmp" "$1" sh ${record}`;
 const recordRemove = `rm -f ${record}`;
 const readyCalls = [
   "incus list --format csv --columns ns",
@@ -839,7 +839,7 @@ Deno.test({
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", changed: 0, base: "kept",
         base_containers: [], record: "present", seconds: undefined });
       assertEquals(Object.keys(result.seconds as object), ["gateway", "converge", "ready", "base"]);
-      assertEquals(f.state().outer.modes[record], "-D -o root -g root -m 0644");
+      assertEquals(f.state().outer.modes[record], "root:root 0644");
       assertEquals(JSON.parse(f.state().outer.files[record]), {
         code: JSON.parse(f.state().outer.files[record]).code, converge: JSON.parse(f.state().outer.files[record]).converge });
       assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", "converge"]);

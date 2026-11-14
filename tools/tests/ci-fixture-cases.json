@@ -130,7 +130,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "64d446b3e83c43974a99498d32a4c0d4ccc37cb80406ae8dc9df015a33aae7ab",
+    "source_sha256": "823af33dc4b5e4fff6c59d257f829ebbafe2340547135dfa3cda649054a3f27e",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -2543,6 +2543,13 @@
       "pinned complete: a cancel during clone-services stops it within 10 s, withdraws the Route and removes the private folder",
       "pinned complete: a cancel during server-database-fill stops it within 10 s, withdraws the Route and removes the private folder",
       "pinned complete: a cancel during clone-fleet stops it within 10 s, withdraws the Route and removes the private folder"
+    ]
+  },
+  "swamp/tests/incus_exec_stdin_test.ts": {
+    "source_sha256": "1684b5664cefb12d8b8f25f560fe1dd5a95796f54511ef7b4dfe2921d6377d56",
+    "cases": [
+      "no command behind incus exec opens stdin by path",
+      "the check finds the record write of Operation 20393, through the variable that holds incus exec"
     ]
   }
 }

@@ -57,11 +57,15 @@ if (command[0] === "rm" && command[1] === "-f") {
   delete state.outer.files[command[2]];
   done();
 }
-if (command[0] === "install" && command.includes("/dev/stdin")) {
-  const path = command.at(-1)!;
+// The Instance container's id map is isolated: the Node's stdin pipe shows there as owned by nobody, mode 0600, so an open of
+// /dev/stdin or /proc/self/fd/0 by path is refused, as on a real container. A command reads the open stream instead.
+if (command.some((part) => /\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0/.test(part))) fail(`${command[0]}: Permission denied`);
+// The record write: `cat` the stream into a file beside the record, set owner and mode, rename it over the record.
+if (command[0] === "sh" && command[1] === "-c" && command[2].includes('cat > "$1.tmp"') && command[3] === "sh") {
+  const path = command[4];
   state.outer.files[path] = await new Response(Deno.stdin.readable).text();
   state.outer.modes ??= {};
-  state.outer.modes[path] = command.slice(1, -2).join(" ");
+  state.outer.modes[path] = [...command[2].matchAll(/(?:chown|chmod) (\S+) /g)].map((match) => match[1]).join(" ");
   done();
 }
 // The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail.

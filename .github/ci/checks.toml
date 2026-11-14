@@ -1878,6 +1878,14 @@ inputs = [
 ]
 
 [[fixture]]
+file = "swamp/tests/incus_exec_stdin_test.ts"
+cost = 1
+inputs = [
+  "swamp/ansible/**/*.yml",
+  "swamp/workflows/*.yaml",
+]
+
+[[fixture]]
 file = "swamp/tests/instance_clone_guest_test.py"
 cost = 40
 inputs = [
