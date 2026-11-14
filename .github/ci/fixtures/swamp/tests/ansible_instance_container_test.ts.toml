@@ -80,11 +80,13 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4032
+cost = 3989
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
-  # 31s locally: with it the file needs 9 hosted shards, above the 8-shard PR limit. The PR keeps the same keys in
-  # instance_clone_test.py (InnerVolumeGuardTest runs the guard's volume check with the volumes given).
+  # The inner volume cases, 20 to 31s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard PR limit.
+  # The PR keeps the guard's volume keys in instance_clone_test.py (InnerVolumeGuardTest).
+  "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",
+  "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool",
   "the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
@@ -99,7 +101,7 @@ after_merge_cases = [
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
 # 71 slices give each of the 71 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 73
+slices = 71
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -204,5 +206,3 @@ inputs = [
   "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 87 # p90 of 5 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 56.1-86.4s
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left" = 77 # ESTIMATE: fewer than five hosted runs (2, max 75.5s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it" = 72 # ESTIMATE: local 23s against 22s local for the converted-store seed case (69), rounded up
-  "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it" = 23 # estimate: local run on Beast, not a CI measurement
-  "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool" = 20 # estimate: local run on Beast, not a CI measurement
