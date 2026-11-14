@@ -38,7 +38,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "proof-copy-fleet-reset-" + string(inputs.intent.container.instance_id) }}'
+          behaviorName: '${{ ("proof-copy-fleet-reset-" + string(inputs.intent.container.instance_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: s=$(date +%s%N); timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_reset "$ORBIT_ANSIBLE/instance-container.yml"; rc=$?; echo $(( ($(date +%s%N) - s) / 1000000 )) > "$ORBIT_RUN/reset_ms"; exit $rc
