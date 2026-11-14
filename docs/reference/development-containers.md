@@ -808,7 +808,7 @@ A [task copy](/reference/tasks#task-copy) starts from its start commit alone. Th
 | Untracked files | Then `git clean -d -ff`, without `-x`, with the start commit's `.gitignore`: what Git does not ignore goes, nested repositories too. It repeats until a dry run finds nothing new, at most 64 rounds |
 | Check | `git status --porcelain --untracked-files=all` must be empty, else the create fails with `instance.create_workspace_failed`, for example for a changed submodule |
 
-Git runs here with the task check's ignore rules: no global or system configuration, and the agent's own ignore file, `~agent/.config/git/ignore`, which the check reads as `agent`. A file name that is not UTF-8 is cleaned too and named with its bytes escaped.
+Git runs here with the task check's ignore rules: no global or system configuration, and the agent's own ignore file, `~agent/.config/git/ignore`, which the check reads as `agent`. Like the check, it trusts the checkout by name (`safe.directory`), because another user owns it and the global configuration that trusts it is left out. A file name that is not UTF-8 is cleaned too and named with its bytes escaped.
 
 What Git ignores stays: `vendor`, `node_modules`, built assets, a SQLite file and `.env`. They come from the seed and match the start commit, which is the seed's commit.
 
@@ -1375,6 +1375,7 @@ Swamp drives a container's T3 server through T3's own CLI, run in the container.
 Stock T3 0.1.7 serves its thread tools at `/mcp`, but accepts there only an MCP client session. A session that `t3 auth session issue` makes, as the create's `Orbit Swamp` session, is refused. A session issued with the MCP client subject is held to `approval-required`, because the CLI cannot give it a higher mode. Only T3 itself issues a full-access MCP session, through its OAuth approval or in its own process. So Swamp uses T3's own CLI:
 
 - **Path.** One Ansible phase on the container's Node runs `incus exec` into the container, then `runuser -u agent`. The shell is not a login shell.
+- **Lock.** Swamp locks the turn's step by the copy's Instance id for the whole turn. One copy takes one turn at a time; turns in two copies on one Node run side by side ([turn](/cli/task/turn#in-a-task-copy)).
 - **Groups.** `runuser` keeps the agent's groups. `incus exec --user` would drop the `work` group, which owns the checkout's Git folder.
 - **Session.** Each `t3 thread` command issues its own full-access session inside the container.
 - **Session end.** The command calls T3 on its loopback address. At its exit, it revokes the session.

@@ -103,9 +103,38 @@ Deno.test("a task VM still restores first and last and passes no prefix", () => 
     assertEquals(cel(step(parent, "batch-${{ self._index }}").task.inputs!.runner_prefix, { inputs: parentInputs(vmIntent) }), []);
 });
 
+// Swamp locks a behavior by name for the whole step; a second run waits 60 s and then fails. A batch holds its lock for its setup and
+// its cases. On a task VM every step acts on the host's one fleet, so the Node's name keeps two proofs apart there. In a task copy the
+// steps act only inside that copy, so the copy's name keeps two proofs of one copy apart and lets two copies on one Node prove at once.
+Deno.test("in a copy the steps that run there lock on the copy; on a task VM they keep the Node's lock", () => {
+    const names = (intent: Record<string, unknown>) => {
+        const context = { inputs: parentInputs(intent) };
+        const plan = step(parent, "Read the runner plan").task;
+        const token = step(parent, "Read the token age").task;
+        const batch = cel(step(parent, "batch-${{ self._index }}").task.inputs!.ssh_name, context);
+        // The behavior and its SSH model carry the same name, and the flagged-case replay passes the same one as the batches.
+        assertEquals(cel(plan.behaviorName, context), cel((plan as { globalArgs?: { name: string } }).globalArgs!.name, context));
+        assertEquals(step(parent, "fail-batch-${{ self._index }}").task.inputs!.ssh_name, step(parent, "batch-${{ self._index }}").task.inputs!.ssh_name);
+        return { plan: cel(plan.behaviorName, context), token: cel(token.behaviorName, context), batch };
+    };
+    assertEquals(names(copyIntent), { plan: "proof-verify-ssh-9-2747", token: "proof-verify-9-read-the-token-age-2747", batch: "proof-verify-ssh-9-2747" });
+    assertEquals(names({ ...copyIntent, instance_id: 2748, copy: { project: "orbit-instances", name: "instance-2748" } }).batch, "proof-verify-ssh-9-2748");
+    assertEquals(names(vmIntent), { plan: "proof-verify-ssh-9", token: "proof-verify-9-read-the-token-age", batch: "proof-verify-ssh-9" });
+    for (const name of ["setup", "batch"]) {
+        const task = step(child, name).task as Step["task"] & { behaviorName: string; globalArgs: { name: string } };
+        for (const sshName of ["proof-verify-ssh-9-2747", "proof-verify-ssh-9"]) {
+            const inputs = { ...childInputs(prefix, false), ssh_name: sshName };
+            assertEquals([cel(task.behaviorName, { inputs }), cel(task.globalArgs.name, { inputs })], [sshName, sshName]);
+        }
+    }
+    const pattern = new RegExp((child.inputs.properties.ssh_name as { pattern: string }).pattern);
+    assert(pattern.test("proof-verify-ssh-9-2747") && pattern.test("proof-verify-ssh-9") && !pattern.test("x".repeat(65)));
+    assert(child.inputs.required.includes("ssh_name"));
+});
+
 const childInputs = (runnerPrefix: string[], restore: boolean) => ({
     ssh_execution: copyIntent.ssh_execution, checkout_path: "/srv/workspace", group_id: 4993n, file: "swamp/proof/firewall/allow.cases.yaml",
-    runner_prefix: runnerPrefix, batch: "fresh-fleet", setup: false, restore, cases: ["new-restricted-allow", "already-applied"],
+    runner_prefix: runnerPrefix, ssh_name: runnerPrefix.length > 0 ? "proof-verify-ssh-9-2747" : "proof-verify-ssh-9", batch: "fresh-fleet", setup: false, restore, cases: ["new-restricted-allow", "already-applied"],
 });
 const guard = (name: string, inputs: Record<string, unknown>, steps: Record<string, unknown> = {}) => cel(step(child, name).guard, { inputs, steps });
 
