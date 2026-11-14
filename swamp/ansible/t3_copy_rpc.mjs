@@ -10,8 +10,14 @@ import { readFileSync } from "node:fs";
 
 // The shortest session that outlives one read, or one interrupt and its wait for the run to end.
 const SessionTtl = "1m";
-const EndWaitMs = 30000;
 const PollMs = 1000;
+// Everything fits the phase's 60 s bound: the issue gets 10 s, the RPC work and the wait for the run's end what is left of 42 s, and
+// the revoke 5 s, so the helper prints its answer before the bound cuts it.
+const Start = Date.now();
+const WorkDeadline = Start + 42000;
+const IssueMs = 10000;
+const RevokeMs = 5000;
+const left = () => Math.max(0, WorkDeadline - Date.now());
 // The largest read that still fits the result step's 1 MiB bound once Ansible escapes it into the evidence file (up to six bytes a
 // character); a larger one is not stored whole, so its run is not stopped.
 const ReadBytes = 150000;
@@ -29,7 +35,8 @@ const scopes = command === "read" ? ["orchestration:read"] : ["orchestration:rea
 
 /** One RPC socket on a fresh ticket; T3's RPC frames are newline-separated JSON. */
 async function connect() {
-    const ticket = await fetch(`${origin}/api/auth/websocket-ticket`, { method: "POST", headers: { authorization: `Bearer ${issued.token}` } });
+    const ticket = await fetch(`${origin}/api/auth/websocket-ticket`, { method: "POST", headers: { authorization: `Bearer ${issued.token}` },
+        signal: AbortSignal.timeout(left()) });
     if (!ticket.ok) throw new Error(`T3 refused a WebSocket ticket (HTTP ${ticket.status}).`);
     const socket = new WebSocket(`${origin.replace(/^http/, "ws")}/ws?orchestrationProtocol=2&wsTicket=${encodeURIComponent((await ticket.json()).ticket)}`);
     const pending = new Map();
@@ -41,15 +48,20 @@ async function connect() {
             if (frame._tag === "Exit" && pending.has(String(frame.requestId))) pending.get(String(frame.requestId))(frame.exit);
         }
     };
-    await new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = () => reject(new Error("T3 refused the RPC socket.")); });
-    const call = (tag, payload) => new Promise((resolve, reject) => {
+    const timed = (promise, what) => {
+        let timer;
+        return Promise.race([promise, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`T3 did not answer ${what} in time.`)), left()); })])
+            .finally(() => clearTimeout(timer));
+    };
+    await timed(new Promise((resolve, reject) => { socket.onopen = resolve; socket.onerror = () => reject(new Error("T3 refused the RPC socket.")); }), "the socket");
+    const call = (tag, payload) => timed(new Promise((resolve, reject) => {
         const id = String(++next);
         pending.set(id, (exit) => {
             pending.delete(id);
             exit._tag === "Success" ? resolve(exit.value) : reject(new Error(`T3 answered ${tag} with ${JSON.stringify(exit).slice(0, 2000)}`));
         });
         socket.send(JSON.stringify({ _tag: "Request", id, tag, payload, headers: [] }));
-    });
+    }), tag);
     return { call, close: () => socket.close() };
 }
 
@@ -87,7 +99,7 @@ let rpc = null;
 let out;
 try {
     raw = execFileSync(T3, ["auth", "session", "issue", ...scopes.flatMap((scope) => ["--scope", scope]), "--ttl", SessionTtl,
-        "--label", "orbit copy turn", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: 20000 });
+        "--label", "orbit copy turn", "--json"], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"], timeout: IssueMs });
     try {
         issued = JSON.parse(raw);
     } catch {
@@ -112,8 +124,9 @@ try {
         } else {
             error = "The run no longer waits for the stored questions: it was answered, or it asks something else.";
         }
+        // The wait for the run's end takes what is left of the deadline, keeping one poll's time for its last read.
         let after = await state(rpc);
-        for (const deadline = Date.now() + EndWaitMs; error === null && live(after) && Date.now() < deadline;) {
+        while (error === null && live(after) && left() > 2 * PollMs) {
             await new Promise((resolve) => setTimeout(resolve, PollMs));
             after = await state(rpc);
         }
@@ -124,11 +137,11 @@ try {
     const session = issued?.sessionId ?? /"sessionId"\s*:\s*"([^"]+)"/.exec(raw)?.[1];
     if (session) {
         try {
-            execFileSync(T3, ["auth", "session", "revoke", session], { stdio: "ignore", timeout: 20000 });
+            execFileSync(T3, ["auth", "session", "revoke", session], { stdio: "ignore", timeout: RevokeMs });
         } catch {
             // The session expires after its minute.
         }
     }
 }
-process.stdout.write(JSON.stringify(out));
-process.exit(0);
+// Exit only once the answer is written: a pipe takes 64 KiB at a time, and an earlier exit would cut a long read.
+process.stdout.write(JSON.stringify(out), () => process.exit(0));

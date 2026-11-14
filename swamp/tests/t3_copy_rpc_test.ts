@@ -88,6 +88,9 @@ Deno.test({ name: "the read prints every pending question in the result step's s
         // An approval is not a question Orbit can store: the read says the run may not be stopped.
         const approval = await helper(waiting([{ id: "a1", kind: "approval", status: "pending" }], {}), ["read", thread]);
         assertEquals(approval.out!.stoppable, false);
+        // A question too large to fit the result step's bound once escaped is not stored whole either.
+        const large = await helper(waiting([{ id: "r1", kind: "user_input", status: "pending" }], { r1: [{ ...color, question: "x".repeat(160000) }] }), ["read", thread]);
+        assertEquals([large.code, large.out!.stoppable, (large.out!.requests as unknown[]).length], [0, false, 1]);
     } });
 
 Deno.test({ name: "the stop ends the run only while it waits for exactly the stored questions", ignore: !available, async fn() {

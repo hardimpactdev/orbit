@@ -53,7 +53,7 @@ const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-play
 
 // Validates the Incus boundary, then answers as T3's CLI, the question helper and Git would. `T3_START` picks the start's or the send's
 // behaviour; `waiting` asks a question, `missing` lists no thread of the turn's title and `listfail` fails the list. `T3_ASK` is the
-// helper's read: `questions`, `none` (no pending request), `approval` or `fail`. `T3_TREE` is the checkout: `dirty` has changes before the turn,
+// helper's read: `questions`, `none` (no pending request), `approval`, `large` (not stoppable) or `fail`. `T3_TREE` is the checkout: `dirty` has changes before the turn,
 // `stuck` keeps changes after the restore, `moved` has the branch at another commit after it, and `locked` fails the reset.
 const SHIM = `#!/usr/bin/env python3
 import json, os, sys
@@ -105,9 +105,11 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
         if ask == 'fail':
             sys.exit(1)
         questions = [{'id': 'Which color?', 'header': 'Color', 'question': 'Which color?', 'options': [{'label': 'Red', 'description': 'Choose red'}]}]
+        # 'large' holds questions alone but more than the result can hold: the read says the run may not be stopped.
+        asking = ask in ('questions', 'large')
         print(json.dumps({'runs': [{'id': 'run:1', 'status': 'running'}], 'stoppable': ask == 'questions',
-                          'requests': [] if ask == 'none' else [{'request_id': 'request:1', 'kind': 'user_input' if ask == 'questions' else 'approval',
-                                                                  'questions': questions if ask == 'questions' else []}]}), end='')
+                          'requests': [] if ask == 'none' else [{'request_id': 'request:1', 'kind': 'user_input' if asking else 'approval',
+                                                                  'questions': questions if asking else []}]}), end='')
         sys.exit(0)
     assert rest[5:] == ['interrupt', thread, 'run:1', 'request:1'], rest
     # The question is stored before the run is stopped.
@@ -312,8 +314,8 @@ Deno.test({ name: "a run that asks has its question stored before the run is sto
 } });
 
 Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored", ignore: !available, async fn() {
-    // A read that fails, finds no request, or finds an approval stops nothing.
-    for (const ask of ["fail", "none", "approval"]) {
+    // A read that fails, finds no request, finds an approval, or finds questions too large to store whole stops nothing.
+    for (const ask of ["fail", "none", "approval", "large"]) {
         const unread = await phase("waiting", {}, "clean", ask);
         assert(unread.ok, unread.output);
         assertEquals([helper(unread.calls).length, unread.ask!.ask_exit, unread.interrupt, unread.read!.found], [1, ask === "fail" ? 1 : 0, null, 1], ask);
