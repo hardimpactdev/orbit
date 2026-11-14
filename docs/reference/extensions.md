@@ -2,7 +2,7 @@
 title: "Extensions"
 description: "How an optional Gateway feature lives in its own directory, contributes to core through plug-in points, and stays behind one switch."
 covers:
-  - apps/gateway/app/Domain/Instances/InstanceLifecycleContribution*.php
+  - apps/gateway/app/Domain/Instances/{InstanceLifecycleContribution,InstanceThreadContribution}*.php
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,Processes/ProcessOwnershipClaim,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
@@ -107,6 +107,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 | `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
 | `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
+| `App\Domain\Instances\InstanceThreadContribution` | A task copy's turn and the admission of a container sleep | `recordThread()` and `beforeSleep()` |
 | `App\Domain\Nodes\NodeAccessRemovalHook` | [`node:access:remove`](/cli/node/access-remove), after it deleted an edge | `removed()` |
 
 `DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
@@ -124,6 +125,8 @@ Destroy calls `projectDestroy()` after native success, inside the projection tra
 A successful wake calls `projectWake()` after its projection commits; it must not block or fail the wake. Conn admits the renewal of a session that ends within seven days or has ended, renews the [held sessions](/reference/conn#held-sessions) that end within seven days, and does nothing while it is off. `projectCreate()` also admits the held sessions of the creating Node's profile after its transaction commits, while Conn is on.
 
 `NodeAccessRemovalHook::removed()` runs after `node:access:remove` deleted an edge, also while the extension is off; a removal of an absent edge calls nothing. Conn withdraws the consumer's held sessions on the servers that the consumer now cannot reach, and admits their revoke. A revoke that cannot start is logged, and the hourly renewal tick admits it again.
+
+`InstanceThreadContribution::recordThread()` receives the T3 thread that a task copy's turn started, with the turn's title, after the turn's projection commits. `beforeSleep()` runs when a sleep of a container is asked for, from the idle sleep or `instance:sleep`: after the replay of a repeated request and the sleep's refusals, which run once without the lock for it, and before the Instance lock. Neither may fail its caller: the contribution catches and reports its own errors. Conn contributes its [thread index](/reference/conn#thread-index): it records the thread, and reads the server one last time while the index's switch is on. While Conn is off, both do nothing.
 
 `ProcessOwnershipClaim::forNode()` checks a named Node Process before a service claims it; `assertClaimable()` checks explicitly selected Processes. Both call the core Instance attachment dependency guard before owner state or runtime changes, including while extensions are off. This shared admission introduces no plug-in point. Analytics checks its collector and selected storage Processes; the AI router checks its collector before enabling owner state or adopting its runtime. A dependent Node service target refuses with `process.node_service_ownership_conflict`, naming every affected Instance. A refusal preserves ownership, Process configuration and attachment records.
 

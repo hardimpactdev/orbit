@@ -14,9 +14,9 @@ require_once __DIR__.'/ContainerInstanceHelpers.php';
 
 /*
  * The live defaults, Instance 2454 and every fixture default, have runtime rows from before the inner volume. After the migration they
- * must read no inner volume, or every clone and task copy of them would refuse with instance.inner_volume_clone_unavailable.
+ * must read no inner volume, or every clone and task copy of them would try to copy a volume and a volume seed that do not exist.
  */
-it('gives a runtime row made before the migration no inner volume, so its clone is admitted', function (): void {
+it('gives a runtime row made before the migration no inner volume, so its clone copies no volume', function (): void {
     $migration = require database_path('migrations/2027_02_14_000000_add_inner_volume_to_instance_runtimes.php');
     $migration->down();
     expect(Schema::hasColumn('instance_runtimes', 'inner_volume'))->toBeFalse();

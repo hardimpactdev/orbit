@@ -97,7 +97,8 @@ sequenceDiagram
   %%> What it does:
   %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
   %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
-  %%> - the inner fleet runs during the snapshot when the refresh kept `base`: the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut
+  %%> - a default with an inner volume also snapshots the volume as `seed-COMMIT` with the Processes stopped; the pair is the seed, and the older pairs go after both halves exist
+  %%> - the inner fleet runs during the snapshot when the refresh kept `base`: on the directory pool the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut; on an inner volume the two halves are taken one after the other, a fraction of a second apart
   %%> - the seed holds the refresh record of the fleet it holds
   SW->>C: Check the container<br/>Ansible · tags check
   SW->>F: Start the refreshed fleet<br/>Ansible · tags fleet_resume
@@ -115,7 +116,8 @@ sequenceDiagram
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:
     %%> - stops the container and restores its newest seed by creation time: the one "Keep the current seed" took, or a newer one
-    %%> - refuses `instance.fleet_seed_missing` when no seed is left
+    %%> - a default with an inner volume restores the volume to its snapshot of the same name too; a failed volume restore fails the run with the container already restored
+    %%> - refuses `instance.fleet_seed_missing` when no seed is left, or when the inner volume lacks the seed's half; both are checked before anything is restored
     SW->>N: Start on the old seed<br/>Ansible · tags start
     %%> What it does:
     %%> - starts it through `start`, so the start delivers what every start delivers

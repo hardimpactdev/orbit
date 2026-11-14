@@ -486,6 +486,17 @@ it('follows a turn operation and preserves its typed input in JSON', function ()
         && json_decode((string) $request->body(), true) === ['role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
 });
 
+it('sends no thread when --thread is omitted, so a task copy continues the role\'s thread', function (): void {
+    $seen = [];
+    $mock = cli_deploy_gateway([
+        cli_operation(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => ['state' => 'done'], 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.copy_turn', 'target_type' => 'task_group']);
+
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Fix the failing test.', '--json' => true, '--no-interaction' => true]))->toBe(0);
+    $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskRequest
+        && json_decode((string) $request->body(), true) === ['role' => 'implementer', 'prompt' => 'Fix the failing test.']);
+});
+
 describe('task:publish', function (): void {
     beforeEach(function (): void {
         MockClient::global(gateway_fixture_mock());

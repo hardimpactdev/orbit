@@ -1,8 +1,6 @@
 id: 11bb5e01-eb16-4425-930e-2b7e2a8bd100
 name: swamp-datastore-watch
-description: Every 15 minutes, count the files of Swamp serve's datastore on Node 209 and sample serve CPU; the Gateway raises a problem past a bound.
-trigger:
-  schedule: '0 */15 * * * *'
+description: Every 15 minutes, count the files of Swamp serve's datastore on Node 209 and sample serve CPU; the Gateway raises a problem past a bound. Only the release load schedules it.
 reports:
   skip: ["@swamp/workflow-summary"]
 vaults: []

@@ -76,30 +76,52 @@ abstract readonly class InstancePower implements DirectOperationProjection
         if (($replay = app(OperationIdempotency::class)->replay($this->kind())) !== null) {
             return $replay;
         }
+        // The refusals run once without the lock, so the work before the admission runs only for an Instance that may be admitted.
+        if ($this->admissible(Instance::query()->with(['node', 'project'])->findOrFail($instance->id))['open'] === null) {
+            $this->beforeAdmission($instance);
+        }
 
         return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
             $instance = Instance::query()->with(['node', 'project'])->lockForUpdate()->findOrFail($instance->id);
-            $runtime = $instance->runtime()->first();
-            if ($runtime === null) {
-                throw new ResourceOperationException('operation.kind_unavailable', 'Sleep and wake require a container Instance.', 409);
-            }
-            if ($runtime->incus_project === InstancePlacement::NestedProject && $runtime->t3_port === null) {
-                throw new ResourceOperationException('instance.sleep_unsupported', 'A nested-fleet default starts through its deployment; it does not sleep or wake.', 409);
-            }
-            if ($instance->placementEnvironment() !== 'development' || $runtime->incus_project === InstancePlacement::NestedProject
-                || $instance->project->nested_fleet) {
-                throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container that runs no nested fleet sleeps and wakes.', 409);
-            }
-            if (($open = $this->open($instance)) !== null) {
+            ['runtime' => $runtime, 'open' => $open] = $this->admissible($instance);
+            if ($open !== null) {
                 return $open;
             }
-            self::assertIdle($instance);
-            $this->refuse($instance, $runtime);
 
             return $this->admit($instance, $runtime,
                 ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance), ...$this->intent()],
                 $caller, $requestId);
         });
+    }
+
+    /** Work of the kind after the refusals and before the Instance lock, such as a last read of the Instance. It must not fail. */
+    protected function beforeAdmission(Instance $instance): void {}
+
+    /**
+     * Every refusal of the kind, in order: the Instance's runtime, or an open Operation of this kind that a second caller joins.
+     *
+     * @return array{runtime: InstanceRuntime, open: ?Operation}
+     */
+    private function admissible(Instance $instance): array
+    {
+        $runtime = $instance->runtime()->first();
+        if ($runtime === null) {
+            throw new ResourceOperationException('operation.kind_unavailable', 'Sleep and wake require a container Instance.', 409);
+        }
+        if ($runtime->incus_project === InstancePlacement::NestedProject && $runtime->t3_port === null) {
+            throw new ResourceOperationException('instance.sleep_unsupported', 'A nested-fleet default starts through its deployment; it does not sleep or wake.', 409);
+        }
+        if ($instance->placementEnvironment() !== 'development' || $runtime->incus_project === InstancePlacement::NestedProject
+            || $instance->project->nested_fleet) {
+            throw new ResourceOperationException('instance.sleep_unsupported', 'Only a development container that runs no nested fleet sleeps and wakes.', 409);
+        }
+        if (($open = $this->open($instance)) !== null) {
+            return ['runtime' => $runtime, 'open' => $open];
+        }
+        self::assertIdle($instance);
+        $this->refuse($instance, $runtime);
+
+        return ['runtime' => $runtime, 'open' => null];
     }
 
     /**

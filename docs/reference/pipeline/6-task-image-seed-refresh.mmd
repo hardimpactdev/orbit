@@ -37,14 +37,18 @@ sequenceDiagram
     SW->>N: Take the seed snapshot<br/>Processes stopped · ZFS
     %%> What it does:
     %%> - refuses when the Club key is a file on the default's disk; the key lives outside it
+    %%> - a default with an inner volume: also snapshots the volume under the same name; the two snapshots are the seed, and older pairs go after both new halves exist
   end
   alt the run passes on a Node
     SW-->>GW: Node refreshed<br/>terminal event per Node
     Note over GW: Record the seed commit<br/>clones copy it
     %%> Result:
     %%> - one slow Node does not hold the others; existing clones keep their fleet
+    %%> - a new copy of a default with an inner volume copies both halves: the volume to its own `inner-<id>`, then the container; while the run is open such a copy refuses with `instance.default_seed_in_flight`
   else a step fails on a Node
     SW->>N: Restore the newest seed<br/>then start the default
+    %%> What it does:
+    %%> - a default with an inner volume needs both halves of the seed before it restores anything, then restores the container and the volume
     SW--xGW: Node not refreshed<br/>failed step
     Note over GW: Keep the old seed<br/>next release retries
     %%> Result:
