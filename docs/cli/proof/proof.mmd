@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: `orbit proof COMMAND`, the first step of stage 3 of the command development pipeline. The author proves one command on the task VM they work in, with the nested fleet that VM already has and no new VM. The Gateway finds the VM by the calling Node, records the intent and records the verdicts; Orbit's own Swamp runs the workflow `proof-fleet-verify` over SSH, restores `base` first and leaves a clean fleet after. `proof:run` is the CI path on a VM of its own.
+  %% Target design: `orbit proof COMMAND`, the first step of stage 3 of the command development pipeline. The author proves one command in the task copy they work in, with the nested fleet that copy already has and no new copy. The Gateway records the intent and the verdicts; Orbit's own Swamp reaches the copy through its Node and runs the runner in it as `agent`, restores `base` first and leaves a clean fleet after. `proof:run` is the CI path.
   %% status: draft
   %% command: proof
   %% kind: proof.verify
@@ -7,53 +7,37 @@ sequenceDiagram
   %% lane CLI icon=terminal pill=caller tone=gray
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
-  %% lane VM icon=server pill=target tone=purple
-  participant CLI as Author<br/>orbit proof
+  %% lane CP icon=server pill=target tone=purple
+  participant CLI as Operator<br/>orbit proof
   participant GW as Gateway<br/>Laravel API
   participant SW as Swamp<br/>serve on Node 209
-  participant VM as Task VM<br/>this VM
-  CLI->>GW: Prove the command<br/>proof COMMAND
+  participant CP as Task copy<br/>agent in the copy
+  CLI->>GW: Prove the command<br/>proof COMMAND --group
   %%> Requirements:
-  %%> - the call comes from a task VM of the Orbit Project that has its owned workspace and no other operation running, except the turn of the agent that calls; the Gateway finds the VM and its group by the calling Node
-  %%> Decided by the orchestrator, for Nick's review (2026-11-06):
-  %%> - the route keeps Gateway access, which no task VM holds; so a Node with Gateway access (an operator machine or the Swamp role) names the task group with `--group`, and the Gateway takes that group instead of the calling Node's
-  %%> Open question for Nick:
-  %%> - may a task VM prove its own group without Gateway access, through a narrower check (the caller is the guest Node of the group's VM)? That changes who may start work, so it waits for Nick
-  %%> - the command names a cases file: `firewall:allow` is `swamp/proof/firewall/allow.cases.yaml` in the VM's own checkout, so the cases run against the code the author has now, committed or not
-  %%> - nested command names are accepted; colons after the family become hyphens in the file name, so `node:role:add` names `swamp/proof/node/role-add.cases.yaml`, using the same lookup as CI
-  %%> What it does:
-  %%> - one command per local run; in CI, `proof:run` balances whole batches across the free CI places and merges their reports
-  %%> Built, not yet passed live:
-  %%> - the command, the admission and the run; the workflow `proof-fleet-verify` and the restore of `base` it uses have not passed a live run yet
-  Note over GW: Admit the proof<br/>VM · group · inputs
+  %%> - the route needs Gateway access, which no copy holds; a Node with Gateway access names the group
+  %%> - the cases come from the copy's own checkout, so they run against the code the author has now, committed or not
+  Note over GW: Admit the proof<br/>copy · group · inputs
   %%> What it records:
-  %%> - the group, the workspace and its checkout path, the pinned SSH target of the VM, the cases file, and two flags for the workflow: `restore_first` and `final_restore`; no step calls back
+  %%> - the copy's Incus project and container, its Node as the SSH target and the cases file; no secret, and no step calls back
   %%> Refuses:
-  %%> - `proof.no_task_vm` when the caller is not a task VM and names no group, `tasks.group_missing` when the named group does not exist, `proof.wrong_project` when its group is not on the Orbit Project, `operation.target_busy` while another operation holds the group, `tasks.no_workspace` without an owned workspace
+  %%> - a group without a copy, a copy that is not active or not running, a Project without a nested fleet, a copy turn that may still run, or another operation on the group
+  %%> - a copy where a proof or an agent turn already ran, until a copy can restore `base`
   GW-->>CLI: 202 Accepted<br/>operation ID
   GW->>SW: Start the run<br/>proof-fleet-verify
+  SW->>CP: Select the cases<br/>runner plan --lines
   %%> What it does:
-  %%> - the Swamp workflow `proof-fleet-verify` is the one that `proof:run` runs as a child on its own VM; this run starts it directly with this VM as input
-  SW->>VM: Select the cases<br/>runner plan --lines
-  %%> What it does:
-  %%> - one line a batch, in the order of `swamp/proof/batches.yaml`; a cases file that is missing or invalid fails the run here, before anything changes in the fleet
-  SW->>VM: Restore the base snapshot<br/>restore_first · about 16 s
-  %%> What it does:
-  %%> - the author's fleet may have moved since the last proof, so the run starts from `base`, with the 45 s limit of every restore; `proof:run` leaves this out, because its VM has just taken `base`
-  opt the tokens in base are older than 20 days
-    SW->>VM: Re-mint the Swamp tokens<br/>then take base again
-    %%> What it does:
-    %%> - the same steps as in the proof of CI (stage 3 chart): the step of the provision renews the tokens, readiness is checked, and `base` is taken again so that the batches keep the new tokens
-  end
+  %%> - every runner call goes Node SSH, `incus exec` into the copy, `runuser -u agent`, as a copy turn does; a missing or invalid cases file fails the run here, before the fleet changes
+  SW->>CP: Restore the base snapshot<br/>first · 45 s limit
+  %%> Why:
+  %%> - the author's fleet may have moved since the copy started
   loop each batch, in the order of swamp/proof/batches.yaml
-    SW->>VM: Run the batch<br/>restore · setup · cases
+    SW->>CP: Run the batch<br/>restore · setup · cases
     %%> What it does:
-    %%> - as in stage 3: one restore of `base` per batch but the first, the batch start state, then each case with its own resources and no undo; a case that did not pass triggers a restore
+    %%> - one restore of `base` per batch but the first, the batch start state, then each case with its own resources and no undo
   end
-  SW->>VM: Restore base<br/>final_restore · clean fleet
-  %%> What it does:
-  %%> - the author keeps working on a clean fleet that runs the latest code; nothing switches back
-  %%> - it runs after a failed case and after a step that stopped the run; a run that is cancelled leaves the fleet as it is, and the next proof restores `base` first
+  SW->>CP: Restore base<br/>last · clean fleet
+  %%> When:
+  %%> - also after a failed case or a stopped run; a cancelled run leaves the fleet as it is
   Note over SW: Join the verdicts<br/>report step
   %%> What it does:
   %%> - one line a case, in plan order; a case of a batch that did not run is `unrun` with cause `infrastructure`
@@ -66,7 +50,5 @@ sequenceDiagram
     Note over GW: Record the result once<br/>FAIL
     GW--xCLI: Failed check per case<br/>exit nonzero
     %%> Result:
-    %%> - `proof.head_behind_platform` before any restore, when the checkout lacks a platform change that `origin/main` has, and `proof.sync_needed` when it has no `origin/main` to compare with (run `task:sync`); neither is built yet (stage 3 chart, "Check the head")
-    %%> - `proof.cases_failed` when a case failed or did not run after some case ran; `proof.run_failed` when no case ran; `proof.restore_failed` when every case passed and the last restore failed, so the fleet is not clean
-    %%> - the receipt of each case stays in the VM's evidence directory (`.orbit-artifacts/GROUP/verify`)
+    %%> - `proof.cases_failed`, `proof.run_failed` or `proof.restore_failed`; the receipt of each case stays in the copy's evidence directory
   end

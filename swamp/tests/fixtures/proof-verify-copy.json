@@ -1,0 +1,20 @@
+{
+  "comment": "The proof.verify intent of a task copy, as the Gateway admits it (ProofVerifyIntentTest checks this shape; proof_verify_copy_test.ts runs the workflow with it).",
+  "intent": {
+    "group_id": 4993,
+    "instance_id": 2747,
+    "node_id": 9,
+    "command": "firewall:allow",
+    "file": "swamp/proof/firewall/allow.cases.yaml",
+    "checkout_path": "/srv/workspace",
+    "ssh_execution": {
+      "control_node_id": 209,
+      "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
+      "public_key": "ssh-ed25519 fixture",
+      "target": {"name": "target", "node_id": 9, "host": "10.44.0.9", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 fixture-public-key"]}
+    },
+    "copy": {"project": "orbit-instances", "name": "instance-2747"},
+    "restore_first": false,
+    "final_restore": false
+  }
+}
