@@ -101,6 +101,10 @@ def configuration(path=TABLE):
         weights = fixture.get('case_costs', {})
         if any(name not in fixture.get('cases', []) or type(seconds) is not int or seconds <= 0 for name, seconds in weights.items()):
             raise ValueError(f'{file}: invalid case_costs')
+        if weights and file.endswith('.py'):
+            # Full set replaces stored names with live collection. Validate that
+            # same population on every PR, including unselected Python fixtures.
+            units_for({**fixture, **collect(file)}, budget)
         slices = fixture.get('slices', True)
         if type(slices) not in (int, bool) or type(slices) is int and slices < 1:
             raise ValueError(f'{file}: slices must be a positive count or a boolean')

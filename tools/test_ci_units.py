@@ -2,6 +2,7 @@
 import contextlib
 import io
 import heapq
+import math
 import json
 import os
 from pathlib import Path
@@ -327,6 +328,19 @@ class TableTest(unittest.TestCase):
         for f in fixtures.values():
             result = units.plan([f['file']], budget, fixtures, defaults)
             self.assertIn(f['file'], {u.split('#')[0] for u in names(result) + result['deferred']})
+
+    def test_required_planner_rejects_live_python_cost_drift_even_when_unselected(self):
+        file = 'swamp/tests/instance_clone_test.py'
+        collect = units.collect
+        current = collect(file)
+        for cases in ([*current['cases'], 'test_added_without_cost'], current['cases'][1:]):
+            with self.subTest(cases=len(cases)):
+                def changed_population(path):
+                    return {**current, 'cases': cases} if path == file else collect(path)
+                with patch.object(units, 'collect', side_effect=changed_population):
+                    with self.assertRaisesRegex(ValueError, file + ': case_costs must name every retained case'):
+                        budget, fixtures, defaults = units.configuration()
+                        units.plan(['docs/mission.md'], budget, fixtures, defaults)
 
     def test_new_gate_files_get_default_cost_and_invalid_long_python_is_refused(self):
         with tempfile.TemporaryDirectory() as scratch:
@@ -705,11 +719,14 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(len(result['deferred']), 25)
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
 
-    def test_fleet_refresh_costs_keep_hosted_cases_inside_the_shard_deadline(self):
+    def test_fleet_refresh_costs_keep_every_case_and_bound_each_refresh(self):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_fleet_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-fleet-cost-evidence.json').read_text())
         result = units.plan([file], budget, fixtures, defaults)
+        for name in evidence['single_refresh_cases']:
+            self.assertIn(name, fixtures[file]['cases'])
+            self.assertLessEqual(fixtures[file]['case_costs'][name] + budget['slice_startup_seconds'], 90, name)
         self.assertFalse(result.get('capacity'))
         self.assertFalse(result['deferred'])
         self.assertFalse(result.get('excluded'))
@@ -721,9 +738,35 @@ class PopulationTest(unittest.TestCase):
                 cases = units.case_names(unit, fixtures)
                 self.assertEqual(len(cases), 1, unit)
                 seen.extend(cases)
-                seconds = sum(evidence['case_seconds'][name] for name in cases)
+                # Later main cases retain their own table estimates; replay measured split cases from evidence.
+                seconds = sum(math.ceil(evidence['case_seconds'][name] * evidence['estimate_factor']) + 1
+                              if name in evidence['case_seconds'] else fixtures[file]['case_costs'][name] for name in cases)
                 heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
             self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
+        self.assertCountEqual(seen, fixtures[file]['cases'])
+
+    def test_reboot_slices_cover_every_case_with_measured_headroom(self):
+        budget, fixtures, defaults = units.configuration()
+        file = 'swamp/tests/fleet_reboot_test.ts'
+        evidence = json.loads((ROOT / 'tools/tests/ci-reboot-cost-evidence.json').read_text())
+        self.assertEqual(evidence['source_sha256'], fixtures[file]['source_sha256'])
+        self.assertCountEqual(evidence['case_seconds'], fixtures[file]['cases'])
+        result = units.plan([file], budget, fixtures, defaults)
+        self.assertFalse(result.get('capacity'))
+        self.assertFalse(result['deferred'])
+        self.assertFalse(result.get('excluded'))
+        selected = [unit for shard in result['shards'] for unit in shard['units']
+                    if unit.split('#')[0] == file]
+        self.assertEqual(len(selected), evidence['slices'])
+        seen = []
+        for unit in selected:
+            cases = units.case_names(unit, fixtures)
+            seen.extend(cases)
+            measured = sum(evidence['case_seconds'][name] for name in cases)
+            estimate = math.ceil(measured * evidence['estimate_factor']) + 1
+            declared = fixtures[file]['cost'] / evidence['slices']
+            self.assertGreaterEqual(declared, estimate)
+            self.assertLessEqual(declared + budget['slice_startup_seconds'], 90)
         self.assertCountEqual(seen, fixtures[file]['cases'])
 
     def test_image_cases_all_remain_required_and_have_ninety_second_planning_headroom(self):

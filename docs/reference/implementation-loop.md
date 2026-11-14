@@ -63,6 +63,10 @@ Default-remote replacement and failure cases rerun full preparation, including s
 
 The nested fleet step fixture runs the rules, start, refresh and reset of an Instance container's fleet against an Incus stand-in. The stand-in holds the device and configuration shape exported from the three nested containers of a task base.
 
+Refresh cases start from saved Incus state. A separate case runs the first refresh and start, then compares all persistent fields with that saved state. Each check of changed inputs, repeated refreshes, snapshots or failure recovery runs its own refresh. It does not rerun setup playbooks. The first refresh for each changed input verifies the record consumed by its repeat case.
+
+Saved refresh records keep the code and converge digests. Their `converged` timestamp is normalized and rebound to the current time when restored. Producer checks require a real timestamp within the refresh interval; a skipped converge must preserve its prior timestamp. The stale-record cases use explicit ages. Regenerate the saved state and records through the shipped refresh when its format changes.
+
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. It runs two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
@@ -191,7 +195,9 @@ Measured container and fleet files declare costs by exact case name, with run ID
 
 A case cost is a high percentile of hosted runs, not one run. When a case is added or changed, declare its local time × 2.1, rounded up, plus one second, marked `ESTIMATE`. When the case has completed in at least five hosted pull request runs, replace the estimate with the 90th percentile of those completed times, rounded up, plus one second, and name the runs.
 
-The fleet refresh fixture uses one case per unit. Its planning estimates include the hosted refresh and record-recovery times; the two slowest cases use their own lanes and the runtime headroom. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+The fleet refresh fixture uses one case per unit. Its costs combine hosted observations for earlier cases with local estimates for the split refresh cases. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+
+The fleet reboot fixture uses six interleaved units. Each unit is costed from the slowest measured group, including the declared startup allowance. All cases remain in Required.
 
 The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case moves to after-merge only when its own cost plus startup exceeds the 150-second lane; name it and its percentile in the table.
 
@@ -218,6 +224,8 @@ Each fixture shard has a four-minute job limit. The runner stops the shard at 19
 Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, time and an instruction to raise its table cost for another slice or make it faster. Units that cannot be sliced and cost more than 150 seconds run after merge only, with a reason in the table.
 
 The case inventory in `tools/tests/ci-fixture-cases.json` records measured registrations. Inventory edits select only the fixtures whose entries differ between the merge base and PR head, including added or removed entries for fixtures that still exist. Edits that only change JSON formatting select no fixture bodies.
+
+Required planning also collects the live names of every Python fixture with `case_costs`, without running test bodies. It checks the complete name set and cost total through the same validator as Main full set, even when the PR does not select that file. Stored inventory names alone cannot satisfy this check.
 
 A PR that adds or renames a Deno case updates its entry's `cases` and `source_sha256` and the fixture's `cost` and `case_costs` together. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`. A renamed case also renames its `case_costs` key: a cost for a name that the entry does not register fails `bin/ci-units plan` with `invalid case_costs`. A new case in a fixture without `case_costs` needs only the entry.
 
