@@ -756,3 +756,11 @@ it('transports keyed native cancellation and parses the accepted Operation', fun
         ->and($request->headers()->get('Idempotency-Key'))->toBe('cancel.13')
         ->and($request->body()->all())->toBe('{}');
 });
+
+it('sends a publish check, or the empty object for the release of a task copy\'s done check', function (?int $check, ?array $pullRequest, string $body): void {
+    expect((string) (new PublishTaskGroupRequest(13, $check, $pullRequest))->body())->toBe($body);
+})->with([
+    'a check' => [17, null, '{"check":17}'],
+    'a check with a pull request' => [17, ['title' => 'T', 'body' => 'B'], '{"check":17,"pull_request":{"title":"T","body":"B"}}'],
+    'the release' => [null, null, '{}'],
+]);

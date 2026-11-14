@@ -3,9 +3,13 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\RunTaskPublishWhenDoneAction;
+use App\Actions\Tasks\StartTaskPublishAction;
+use App\Data\Tasks\StartTaskPublishData;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskDonePublication;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrMode;
@@ -135,4 +139,38 @@ it('prints one JSON object per tick and does nothing while the extension is off'
     app(TaskExtensionState::class)->enable();
     Artisan::call('task:pr-when-done');
     expect(json_decode(Artisan::output(), true)['groups'][0]['result'])->toBe('admitted');
+});
+
+it('releases a waiting group\'s done check without --check, with the same title and body and a ready pull request', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $world->group->update(['publish_refusal' => ['code' => 'tasks.copy_publish_held', 'check_id' => $world->check->id, 'at' => now()->toIso8601String()]]);
+
+    $operation = app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+
+    expect($operation->kind)->toBe(OperationKinds::TasksPublish)
+        ->and($operation->input['check'])->toBe($world->check->id)
+        ->and($operation->input['pull_request'])->toBe(TaskDonePublication::for($world->group, $world->check)->pull_request)
+        ->and($operation->input['pull_request']['draft'])->toBeFalse()
+        ->and($world->group->refresh()->publish_refusal)->toBeNull();
+});
+
+it('refuses the release while the work is not done', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->turn->update(['finished_at' => now()->addMinute()]);
+
+    expect(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('tasks.not_done')->and($exception->status)->toBe(409);
+        });
+    expect(whenDonePublishes($world->group))->toBe(0);
+});
+
+it('replays a repeated release once the group is published', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $release = fn (): Operation => app(OperationIdempotency::class)->under('tasks.publish', 'release-1', 'fingerprint-1',
+        fn (): Operation => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null));
+    $first = $release();
+    $world->group->update(['pr_url' => 'https://github.com/example/trial/pull/7']);
+
+    expect($release()->id)->toBe($first->id)->and(whenDonePublishes($world->group))->toBe(1);
 });
