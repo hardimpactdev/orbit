@@ -123,16 +123,21 @@ Deno.test("Route primitive and shared publication children use one209selector", 
     }
 });
 
-Deno.test("a clone's completion publishes its prepared Route beside the services without waiting for app startup", async () => {
-    // A clone's create publishes no Route: its completion does (docs/cli/instance/complete.mmd).
+Deno.test("a clone publishes its prepared Route beside the copy in its create, and its completion beside the services", async () => {
+    // A clone's create publishes its Route when its admission took the Route Nodes (docs/cli/instance/container/create.mmd); its
+    // completion publishes one the create did not (docs/cli/instance/complete.mmd).
     const create = await steps("operation-instance-create");
-    assert(!create.some((step) => step.name.startsWith("clone-route")), "a clone's create has no Route step");
+    const clone = create.find((step) => step.name === "clone-route")!;
+    assertEquals(clone.dependsOn!.map((item) => item.step), ["clone-route-csr"]);
+    assertEquals(clone.task.workflowIdOrName, "operation-route-create");
+    // The copy's root disk is not there yet: the site step skips the Route access and APP_URL.
+    assertEquals(clone.task.inputs?.prepared, "${{ string(inputs.node_id) }}");
     const normal = create.find((step) => step.name === "route")!;
     assert(
         normal.dependsOn!.some((item) => item.step === "container-processes"),
     );
     const finish = create.find((step) => step.name === "finish")!;
-    assertEquals(finish.task.inputs?.route, '${{ "route" in steps ? steps.route.status : "skipped" }}');
+    assert(String(finish.task.inputs?.route).includes('"clone-route"'));
 
     const complete = await steps("operation-instance-complete");
     const early = complete.find((step) => step.name === "route")!;

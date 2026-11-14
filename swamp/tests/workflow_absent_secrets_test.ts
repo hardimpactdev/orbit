@@ -156,14 +156,15 @@ Deno.test("create finalization evaluates checkout, default and clone receipts wi
   }
 });
 
-Deno.test("a clone's create delivers a nested clone's Club key and has no fleet, database or Route step: the completion owns them", () => {
+Deno.test("a clone's create delivers a nested clone's Club key and has no fleet or database step: the completion owns them", () => {
   const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as {
     jobs: { name: string; steps: { name: string; guard: string; dependsOn: unknown[]; task: { inputs: Record<string, string> } }[] }[];
   };
   const clone = workflow.jobs.find((job) => job.name === "clone")!.steps;
   assertEquals(clone.map((step) => step.name), ["clone-input", "clone-container", "clone-club-key", "clone-workspace", "clone-t3", "clone-sessions",
     "clone-session-copy", "clone-register"]);
-  assertEquals(workflow.jobs.map((job) => job.name), ["input", "legacy", "clone", "create"]);
+  // Its Route is the job `publication`, which only a clone whose admission took the Route Nodes runs.
+  assertEquals(workflow.jobs.map((job) => job.name), ["input", "legacy", "clone", "publication", "create"]);
   const step = (name: string) => clone.find((s) => s.name === name)!;
   // The Club key comes right after the container's first start, as before; the workspace and T3 wait for it or its skip.
   assertEquals(step("clone-club-key").dependsOn, [{ step: "clone-container", condition: { type: "succeeded" } }]);
@@ -265,7 +266,9 @@ Deno.test("a clone's create ends at the registration: the workspace and T3 share
   // Swamp's levels come from the static graph, so guards (the Club key, the legacy steps) never move a step to another level.
   const { jobs, steps } = levelsOf("workflow-operation-instance-create.yaml");
   const sorted = (levels: string[][]) => levels.map((level) => [...level].sort());
-  assertEquals(sorted(jobs), [["input"], ["clone", "legacy"], ["create"]]);
+  assertEquals(sorted(jobs), [["input"], ["clone", "legacy", "publication"], ["create"]]);
+  // The address is published beside the copy, in its own job (docs/cli/instance/container/create.mmd).
+  assertEquals(sorted(steps.publication), [["clone-route-csr"], ["clone-route"]]);
   assertEquals(sorted(steps.clone), [["clone-input"], ["clone-container"], ["clone-club-key"], ["clone-t3", "clone-workspace"], ["clone-sessions"],
     ["clone-session-copy"], ["clone-register"]]);
   assertEquals(sorted(steps.create), [["clone-private-cleanup", "finish"], ["stop-container", "withdraw-route"], ["accepted", "cleanup"]]);
@@ -307,11 +310,82 @@ Deno.test("a normal clone succeeds at the registration in about 24 s, with the w
   }
 });
 
-Deno.test("a clone with a database or a Route ends at the registration as fast: its completion makes them", () => {
+// The publication's seconds from the outer fleet's Route clones (completions 21279, 21311, 21292): the CSR and its signature 3 to 4 s,
+// the Route create child with its TLS probe 5 to 7 s.
+const routeIntent = { ...cloneIntent, route: { leaf_indexes: [0] } };
+const publication = (csr: number, route: number, outcomes = cloneOutcomes()): Record<string, Outcome> =>
+  ({ ...outcomes, "clone-route-csr-0": { duration: csr, outputs: { sign: { stdout: "signed" } } }, "clone-route": { duration: route } });
+
+Deno.test("a clone's address is published beside its copy: from the first level after input, and the registration never waits for it", () => {
+  const ran = runCreate(routeIntent, publication(4, 7));
+  // The publication starts with the clone steps, at the first level after input.
+  assertEquals(ran["clone-route-csr-0"].start, ran.input.end);
+  assertEquals(ran["clone-route-csr-0"].start, ran["clone-input"].start);
+  assertEquals(ran["clone-route"].start, ran["clone-route-csr-0"].end);
+  for (const name of ["clone-route-csr-0", "clone-route"]) assertEquals(ran[name].status, "succeeded", name);
+  // The legacy Route steps stay skipped: the clone path has its own names.
+  assertEquals([ran["route-csr"].status, ran.route.status], ["skipped", "skipped"]);
+  // The clone chain is as fast as without a Route, and the create ends at the registration.
   const plain = runCreate(cloneIntent, cloneOutcomes());
-  const owned = runCreate({ ...cloneIntent, database: {}, server_database: { node_id: 5, fill: ["docker"] }, route: { leaf_indexes: [0] } }, cloneOutcomes());
-  assertEquals(owned.finish.start, plain.finish.start);
-  assertEquals([owned.finish.outputs!.ready, owned["withdraw-route"].status], [true, "skipped"]);
+  for (const name of ["clone-container", "clone-t3", "clone-sessions", "clone-register"]) assertEquals(ran[name].start, plain[name].start, name);
+  assertEquals(ran.finish.start, ran["clone-register"].end);
+  assertEquals(ran.finish.start, plain.finish.start);
+  const receipt = JSON.parse(String(ran.finish.outputs!.stdout));
+  assertEquals([ran.finish.outputs!.ready, receipt.route_publication, ran["withdraw-route"].status], [true, "published", "skipped"]);
+  // A database still waits for the completion.
+  const owned = runCreate({ ...routeIntent, database: {}, server_database: { node_id: 5, fill: ["docker"] } }, publication(4, 7));
+  assertEquals(Object.keys(owned).filter((name) => /database|server-/.test(name) && owned[name].status !== "skipped"), []);
+});
+
+Deno.test("the create's terminal job waits for the publication: a slow CSR or Route child delays finish, never the registration", () => {
+  const plain = runCreate(routeIntent, publication(4, 7));
+  // The measured margin is 1 to 10 s; a publication 30 s long is the case where the create waits.
+  for (const [csr, route] of [[4, 30], [30, 7]]) {
+    const ran = runCreate(routeIntent, publication(csr, route));
+    assertEquals(ran["clone-register"].start, plain["clone-register"].start, `${csr}/${route}`);
+    assertEquals(ran.finish.start, Math.max(ran["clone-register"].end, ran["clone-route"].end), `${csr}/${route}`);
+    assertEquals(ran.finish.start, ran["clone-route"].end, `${csr}/${route}`);
+    assertEquals(ran.finish.outputs!.ready, true);
+  }
+  // The longest measured publication (13 s) still ends before the shortest measured chain from clone-input to clone-register (14 s).
+  const longest = runCreate(routeIntent, publication(4, 9));
+  assert(longest["clone-route"].end <= longest["clone-register"].end);
+});
+
+Deno.test("a publication that fails in the create never stops a clone step or the create; it is not withdrawn there", () => {
+  for (const [name, outcome] of [["clone-route-csr-0", { status: "failed", duration: 3 }], ["clone-route", { status: "failed", duration: 6 }]] as const) {
+    const ran = runCreate(routeIntent, { ...publication(4, 7), [name]: outcome });
+    if (name === "clone-route-csr-0") assertEquals(ran["clone-route"].status, "skipped");
+    for (const step of ["clone-container", "clone-workspace", "clone-t3", "clone-sessions", "clone-register"]) assertEquals(ran[step].status, "succeeded", step);
+    const receipt = JSON.parse(String(ran.finish.outputs!.stdout));
+    assertEquals([ran.finish.outputs!.ready, receipt.failed_step, receipt.route_publication], [true, undefined, "failed"], name);
+    assertEquals(receipt.warnings, [{ code: "instance.create_route_failed", step: "route" }]);
+    // The create succeeds, so it withdraws nothing: the completion captures the Route again and publishes it.
+    assertEquals([ran["withdraw-route"].status, ran["stop-container"].status, ran.accepted.status], ["skipped", "skipped", "succeeded"], name);
+  }
+});
+
+Deno.test("a create that fails or is cancelled before clone-route ends withdraws the half Route; one that published keeps it", () => {
+  // A cancel ends the running steps failed: the copy and the Route child.
+  const cancelled = runCreate(routeIntent, { ...publication(4, 7), "clone-container": { status: "failed", duration: 5.3 }, "clone-route": { status: "failed", duration: 6 } });
+  assertEquals([cancelled.finish.outputs!.ready, cancelled["withdraw-route"].status, cancelled["stop-container"].status], [false, "succeeded", "succeeded"]);
+  // Only the CSR ran: its key and certificate go too.
+  const early = runCreate(routeIntent, { ...publication(4, 7), "clone-input": { status: "failed" }, "clone-route-csr-0": { status: "failed", duration: 1 } });
+  assertEquals([early.finish.outputs!.ready, early["withdraw-route"].status], [false, "succeeded"]);
+  // A published address is active and its Nodes are free: a later failure keeps it (502) until a retry or a removal.
+  const late = runCreate(routeIntent, { ...publication(4, 7), "clone-register": { status: "failed", duration: 1.3 } });
+  assertEquals([late["clone-route"].status, late.finish.outputs!.ready, late["withdraw-route"].status, late["stop-container"].status], ["succeeded", false, "skipped", "succeeded"]);
+});
+
+Deno.test("a clone without a Route, or whose admission found the Route Nodes held, runs no publication step", () => {
+  // Guard: `inputs.intent.route == null` skips clone-route, and the CSR's forEach list is empty.
+  for (const intent of [cloneIntent, { ...cloneIntent, container: { ...cloneIntent.container, clean_workspace: true } }]) {
+    const ran = runCreate(intent, cloneOutcomes());
+    assertEquals(ran["clone-route"].status, "skipped");
+    assertEquals("clone-route-csr-0" in ran, false);
+    assertEquals(JSON.parse(String(ran.finish.outputs!.stdout)).route_publication, undefined);
+    assertEquals(ran.finish.start, ran["clone-register"].end);
+  }
 });
 
 Deno.test("a nested-fleet clone gets its Club key before the workspace and T3, and starts no fleet in its create", () => {
@@ -319,6 +393,8 @@ Deno.test("a nested-fleet clone gets its Club key before the workspace and T3, a
   const nested = { ...cloneIntent, container: { ...cloneIntent.container, project: "orbit-instances-nested", club_key: { available: true } }, fleet: { seed: "e".repeat(40) } };
   const ran = runCreate(nested, outcomes);
   assertEquals(ran["clone-club-key"].status, "succeeded");
+  // A nested copy has no Route: no publication step runs, and the levels stay.
+  assertEquals([ran["clone-route"].status, "clone-route-csr-0" in ran], ["skipped", false]);
   assertEquals([ran["clone-workspace"].start, ran["clone-t3"].start], [ran["clone-club-key"].end, ran["clone-club-key"].end]);
   assertEquals("clone-fleet" in ran, false);
   assertEquals(ran.finish.outputs!.ready, true);

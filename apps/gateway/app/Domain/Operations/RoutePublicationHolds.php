@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Instances\ClonePublication;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\StartSwampRun;
@@ -167,6 +168,13 @@ final class RoutePublicationHolds
         if (! $after && ! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->acquire($operation->id, $nodes)) {
             return true;
         }
+        // A clone's create never waits for a Route Node: it leaves its publication to its completion and starts at once. The insert above
+        // is the decision, so of two creates admitted together exactly one takes the Nodes.
+        if (ClonePublication::takesFreeNodesOnly($operation)) {
+            app(ClonePublication::class)->defer($operation);
+
+            return true;
+        }
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Waiting,
             'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes]]);
 
@@ -301,6 +309,17 @@ final class RoutePublicationHolds
     public function releaseStep(Operation $operation): void
     {
         if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNotNull('lease_until')->delete() > 0) {
+            PromoteRouteWrites::dispatch()->afterCommit();
+        }
+    }
+
+    /**
+     * Gives back the Nodes a clone's create took at admission once its `clone-route` step has succeeded, in the caller's transaction
+     * that activates the Route, then asks for the waiting writes to start (ClonePublication).
+     */
+    public function releasePublished(Operation $operation): void
+    {
+        if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }

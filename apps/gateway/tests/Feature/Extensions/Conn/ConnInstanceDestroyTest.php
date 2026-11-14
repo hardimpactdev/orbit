@@ -836,6 +836,28 @@ describe('a removal while the clone\'s completion runs', function (): void {
             ->assertJsonPath('data.status', 'queued')->assertJsonPath('data.input.after_operation_id', null);
     });
 
+    it('withdraws an address the create published, whether the completion runs or failed at its check', function (string $status): void {
+        // The create published the address beside the copy: the Route is active with its sites published before the clone is active
+        // (docs/reference/development-containers.md#the-address-during-the-create).
+        [$instance] = connCompletingClone(status: $status);
+        $route = Route::query()->where('domain', 'feature.fixture.test')->firstOrFail();
+        $route->update(['status' => 'active', 'sites_published' => true]);
+        // A clone keeps the preparation id its create reserved it with.
+        $instance->update(['source_prepare_id' => (string) Str::uuid()]);
+
+        $removal = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        if ($status === 'running') {
+            connCompletionEnds(Operation::query()->where('kind', 'instance.complete')->where('target_id', $instance->id)->firstOrFail());
+        }
+
+        expect($removal->refresh()->status)->toBe(OperationStatus::Queued)
+            ->and(array_column($removal->input['members'], 'route_id'))->toBe([$route->id])
+            ->and($removal->input['native_destroy']['route_mutations']['forward']['publications'])->not->toBe([]);
+        connRemovalSucceed($removal->refresh());
+        expect($instance->fresh())->toBeNull()
+            ->and(Route::query()->whereKey($route->id)->exists())->toBeFalse();
+    })->with(['completion running' => ['running'], 'completion failed at its check' => ['failed']]);
+
     it('keeps the CLI and core API refusal while the completion runs, naming the completion, and changes nothing', function (): void {
         [$instance, $completion] = connCompletingClone();
         $before = connRemovalStored();

@@ -17,8 +17,8 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Projects the terminal receipt of `instance.complete` once (docs/reference/development-containers.md#complete-a-clone). Success makes the
- * Route and then the clone `active`. A failed or cancelled run keeps the clone `source_resolved`, its runtime and its T3 registration.
+ * Projects the terminal receipt of `instance.complete` once (docs/reference/development-containers.md#complete-a-clone). Success makes a
+ * Route this run published and then the clone `active`. A failed or cancelled run keeps the clone `source_resolved`, its runtime and its T3 registration.
  */
 final readonly class InstanceCompleteProjection implements DirectOperationProjection
 {
@@ -56,8 +56,11 @@ final readonly class InstanceCompleteProjection implements DirectOperationProjec
             $route = ($input['route_id'] ?? null) === null ? null : Route::query()->lockForUpdate()->findOrFail(ValidatedData::integer($input['route_id']));
             $container = ValidatedData::object(ValidatedData::object($input['direct_provisioning'])['container']);
             if ($status === 'succeeded') {
-                // An active routed Instance needs its active Route, so the Route turns active first.
-                $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
+                // An active routed Instance needs its active Route, so a Route this run published turns active first; one its create
+                // published is active already.
+                if (isset($input['route_create'])) {
+                    $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
+                }
                 $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false,
                     'failed_step' => null, 'error_code' => null, 'development_projection_pending' => false]);
             } elseif (in_array($status, ['failed', 'cancelled'], true)) {
