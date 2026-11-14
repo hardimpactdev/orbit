@@ -1,6 +1,6 @@
 {
   "source_sha256": "d126188db662fcc5c6dfb151899f706ed7893556335b02a1bf9bc94f77945875",
-  "note": "Completed local Beast run with four concurrent fixture processes after merging #3661 and regenerating the saved state and records through the shipped refresh. These are local body seconds, not hosted times or a p90. Existing estimates outside the split are retained. The two DNS bridge cases were measured again after merging #3666 and regenerating the network boundary from a real refresh; their former main estimates (129s and 6s) are replaced with these local body times.",
+  "note": "Completed local Beast run with four concurrent fixture processes after merging #3661 and regenerating the saved state and records through the shipped refresh. These are local body seconds, not hosted times or a p90. Existing estimates outside the split are retained. The two DNS bridge cases were measured again after merging #3666 and regenerating the network boundary from a real refresh; their former main table estimates (130s and 7s) are replaced with these local body times.",
   "estimate_factor": 2.1,
   "single_refresh_cases": [
     "the saved refreshed fleet boundary matches a real first refresh and start",
