@@ -35,6 +35,7 @@ sequenceDiagram
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
   SW->>F: Check the inner fleet<br/>Ansible · tags fleet_start
   %%> What it does:
+  %%> - first reads the room on the nested Nodes' disk (`df` in the container of `/`, or of the inner volume's mount when the default has one: where the nested Nodes' `/` lies): the inner Doctor wants at least 2 GiB and 10% of it free (`node.disk_low`), and a refresh writes up to 2 GiB more (checkout, installs, the nested Gateway's records, and a `base` retake); it refuses `instance.container_fleet_no_room` when the free space minus 2 GiB is under that floor, and the detail names the size, the free space, the floor and the need
   %%> - the one fleet check of the run: waits for the inner Incus, compares the three nested containers with the fleet rules, starts a nested container that is stopped, links the Club key and brings up `wg-nested` with `ip` and `wg`
   %%> - checks only what a start can promise: the three containers run and the tunnel reaches the hub; no Doctor wait
   %%> - changes no device or configuration key: on a running fleet it only reads
@@ -43,6 +44,7 @@ sequenceDiagram
   %%> - an owned rule that differs passes: the refresh writes it
   %%> Why:
   %%> - the fleet keeps running between releases, so the run checks it once, before it changes anything; a refusal or a failed start restores no seed
+  %%> - a refresh that cannot end above the inner Doctor's floor would fail only at its last readiness wait, after minutes of work and a restore: refresh 21617 did that on `node.disk_low`
   %%> - nothing in the run stops the fleet before the refresh, so no second start follows the checkout
   %%> - it takes the hub's key only when it is a WireGuard key: just after a boot, `wg` prints `(none)` with exit 0 until `wg-quick` has set the key
   %%> On failure:
@@ -87,7 +89,7 @@ sequenceDiagram
   %%> - every run, after `base`: keeps the pinned shape tools in the Instance container at `/opt/orbit-shape-gate`, named by the checkout's own `bin/swamp-shape-gate` from its three pin files; when the venv and the collections of these pins are complete it only reads them; otherwise it installs `python3-venv` when it is missing, builds them and removes the tools of other pins
   %%> - removes the record before its first write to a nested disk and writes it again last, so a run that stops in the middle leaves none, and the next run does every part and retakes `base` of all three
   %%> - the result names each part, ran or skipped, why the converge ran or was skipped, the tasks the converges changed, what it did with the tokens and why (`tokens`, `tokens_reason`), what it did with the shape tools and why (`tools`, `tools_reason`), `base` retaken or kept and for which containers, and the seconds of each part
-  %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and body, or curl's error
+  %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and every issue of the last body (code, Node and summary, each bounded), or curl's error
   %%> Why:
   %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes, and three base converges that change nothing about 87 s
   %%> - a file list cannot follow the Gateway code that builds a base intent, so the nested Gateway hashes the intent itself; the `swamp` list has a cover test
