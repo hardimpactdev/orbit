@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "d126188db662fcc5c6dfb151899f706ed7893556335b02a1bf9bc94f77945875"
+source_sha256 = "8916592521e11547482a100ebf53871eb5817b6c301b43bcfedcac0eb7eab393"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -44,6 +44,9 @@ cases = [
   "a moved base intent of one Node converges the three Nodes one by one, and the result names why",
   "a converge older than seven days runs although no input changed, and the result names it stale",
   "an unreadable base intent digest converges, names why, and records no converge digest",
+  "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
+  "a fleet without worker c remints at once and names it incomplete",
+  "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints",
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
@@ -51,8 +54,8 @@ cases = [
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 1975
-slices = 48
+cost = 2030
+slices = 51
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -112,6 +115,9 @@ inputs = [
   "a moved base intent of one Node converges the three Nodes one by one, and the result names why" = 40
   "a converge older than seven days runs although no input changed, and the result names it stale" = 45
   "an unreadable base intent digest converges, names why, and records no converge digest" = 43
+  "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
+  "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
+  "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 49
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 28

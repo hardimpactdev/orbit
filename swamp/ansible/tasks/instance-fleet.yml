@@ -60,7 +60,9 @@
     fleet_boot_seconds: 60
     # The services of the nested Gateway that run the checkout, and the Swamp units that need the Club key.
     fleet_gateway_services: [orbit-gateway-horizon.service, orbit-gateway-schedule.service, orbit-agent-view.service]
-    fleet_swamp_services: [orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service]
+    fleet_swamp_services: [orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service, orbit-swamp-worker@c.service]
+    # The Swamp tokens of the nested Gateway that the refresh keeps young (gateway-swamp.yml mints them, gateway-swamp-remint.yml renews them).
+    fleet_token_names: [serve-driver, orbit-gateway-run, orbit-gateway-read, orbit-worker-a-access, orbit-worker-b-access, orbit-worker-c-access]
     fleet_state_mounts: [home-orbit-orbit-apps-gateway-.env.mount, home-orbit-orbit-apps-gateway-storage.mount,
                          home-orbit-orbit-apps-gateway-bootstrap-cache.mount]
     # The nested Gateway's Swamp state on its own disk: run records, vault files and the grants (TaskVmNestedFleet::GatewayState).

@@ -224,6 +224,15 @@ const recordReads = [`cat ${record}`,
   `git -c safe.directory=* -C /srv/workspace rev-parse HEAD:apps/gateway HEAD:apps/agent/contract ${convergeInputs.map((path) => `HEAD:${path}`).join(" ")}`];
 /** After the migrate, the nested Gateway prints the digest of each Node's base converge intent; it admits and writes nothing. */
 const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan orbit:node-converge-digest --base gateway app-dev app-prod";
+/** With the Club key every refresh reads the nested Gateway's Swamp tokens: names and dates, no secret. */
+const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- runuser -u orbit -- env HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp " +
+  "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 " +
+  "swamp access token list --json";
+/** The remint play on the nested Gateway: it makes the worker set whole and renews the six tokens. */
+const remint = "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_DISPLAY_FAILED_STDERR=true " +
+  "/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags remint /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml";
+/** A Swamp token as `name.secret`: no output may hold one. */
+const tokenShaped = /[a-z0-9-]+\.[A-Za-z0-9_-]{20,}/;
 /** A call to the nested Gateway's converge API: an admission or a read of its Operation. */
 const convergeApi = (call: string) => call.startsWith(api) && (call.includes("/converge ") || call.includes("/operations/"));
 /** The three Nodes converge one after the other: the converge workflow's fixed behavior names share one Swamp lock. */
@@ -422,9 +431,11 @@ Deno.test({
         // The app user with its groups: `work` opens the checkout.
         exec("nested-gateway", "runuser -u orbit -- install -D -m 0444 /home/orbit/orbit/apps/gateway/resources/agent/frozen-manifest.json /home/orbit/orbit/apps/agent/delivery/manifest.json"),
         exec("nested-gateway", "env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_DISPLAY_FAILED_STDERR=true /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags grants /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml"),
+        // The tokens are one day old: one read, no remint.
+        tokenRead,
         "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
         exec("nested-gateway", `systemctl restart ${services.join(" ")}`),
-        ...[...services, "orbit-swamp-serve.service", "orbit-swamp-worker@a.service", "orbit-swamp-worker@b.service"]
+        ...[...services, "orbit-swamp-serve.service", "orbit-swamp-worker@a.service", "orbit-swamp-worker@b.service", "orbit-swamp-worker@c.service"]
           .map((unit) => exec("nested-gateway", `systemctl is-active --quiet ${unit}`)),
         intentRead,
         // The rules and files are read (and files written where they differ) on the running fleet, before the converge.
@@ -913,7 +924,9 @@ Deno.test({
       }
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
-        changed: 0, base: "kept", base_containers: [], record: "present", seconds: undefined });
+        changed: 0, tokens: "young", tokens_reason: "young", base: "kept", base_containers: [], record: "present", seconds: undefined });
+      // Young tokens: one read and no remint.
+      assertEquals([calls.filter((call) => call === tokenRead).length, ran(calls, "--tags remint")], [1, false]);
       assertEquals(Object.keys(result.seconds as object), ["gateway", "converge", "ready", "base"]);
       assertEquals(f.state().outer.modes[record], "root:root 0644");
       // The record keeps the time of the last converge that ran; the seeded record of the short cases is the one a refresh writes.
@@ -1303,6 +1316,90 @@ Deno.test({
       assertEquals([result.converge, result.converge_reason, result.record], ["ran", "digest_unreadable", "present"]);
       // Without its digest the next refresh converges again.
       assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", "converged"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // One token is 21 days old; a Node's intent moved too, so the converge shows that it waits for the remint.
+      f.change((state) => {
+        const old = new Date(Date.now() - 21 * 86400_000).toISOString();
+        const young = new Date(Date.now() - 86400_000).toISOString();
+        state.tokens = Object.fromEntries(["serve-driver", "orbit-gateway-run", "orbit-gateway-read", "orbit-worker-a-access",
+          "orbit-worker-b-access", "orbit-worker-c-access"].map((token) => [token, token === "orbit-gateway-read" ? old : young]));
+        state.intentDigests = { "app-dev": "9".repeat(64) };
+      });
+      const refreshed = f.run("refresh");
+      assert(refreshed.ok, refreshed.output);
+      const calls = f.calls();
+      const at = (call: string) => calls.indexOf(call);
+      const restart = calls.findIndex((call) => call.includes(parts.restart));
+      const workerC = calls.findIndex((call) => call.endsWith("is-active --quiet orbit-swamp-worker@c.service"));
+      // Read, remint, restart of the services that read the new tokens, the check that serve and the three workers run, then the converge.
+      assert(at(tokenRead) >= 0 && at(tokenRead) < at(remint) && at(remint) < restart && restart < workerC
+        && workerC < calls.findIndex(convergeApi), calls.join("\n"));
+      const result = f.refreshed()!;
+      assertEquals([result.tokens, result.tokens_reason, result.restart, result.base_containers], ["reminted", "age", "yes", ["nested-gateway"]]);
+      assertEquals(f.state().reminted, 1);
+      assert(!tokenShaped.test(refreshed.output), "a token-shaped string is in the output");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a fleet without worker c remints at once and names it incomplete",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The fleet of the first build: workers a and b only, all tokens one day old; the bound is the default.
+      f.change((state) => {
+        const young = new Date(Date.now() - 86400_000).toISOString();
+        state.tokens = Object.fromEntries(["serve-driver", "orbit-gateway-run", "orbit-gateway-read", "orbit-worker-a-access",
+          "orbit-worker-b-access"].map((token) => [token, young]));
+      });
+      const first = f.run("refresh");
+      assert(first.ok, first.output);
+      assert(ran(f.calls(), "--tags remint"));
+      const result = f.refreshed()!;
+      assertEquals([result.tokens, result.tokens_reason, result.base_containers], ["reminted", "incomplete", ["nested-gateway"]]);
+      // The remint made worker c and renewed all six: the next refresh finds them young, as the unchanged case shows.
+      assertEquals(f.state().containers["nested-gateway"].files["/etc/orbit/swamp-role-worker/c/server.token"], "made");
+      assertEquals(Object.keys(f.state().tokens).length, 6);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => {
+        state.tokensUnreadable = true;
+        state.remintFail = true;
+      });
+      const failed = f.run("refresh");
+      assert(!failed.ok);
+      assertStringIncludes(failed.output, "Renew the inner Swamp tokens");
+      const calls = f.calls();
+      assert(ran(calls, "--tags remint"));
+      assert(!calls.some((call) => call.includes(parts.converge) || call.includes("snapshot create") || call === recordWrite), calls.join("\n"));
+      assertEquals(f.state().outer.files[record], undefined);
+      assert(!tokenShaped.test(failed.output), "a token-shaped string is in the output");
+      assertKeyUntouched(calls, failed.output);
     } finally {
       f.cleanup();
     }
