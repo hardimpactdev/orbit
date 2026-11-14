@@ -17,9 +17,10 @@ sequenceDiagram
   CLI->>GW: process:destroy 417
   %%> Command:
   %%> - `orbit process:destroy 417`
-  %%> - syntax: `process:destroy <process> [--project=ID] [--yes] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `process:destroy <process> [--project=ID] [--instance=ID] [--yes] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the numeric Process ID; the CLI asks for confirmation first
+  %%> - `--instance` names the Instance of a container Process; the Gateway refuses a container Process without it or of another Instance
   %%> Optional:
   %%> - `--yes` skips the confirmation; `--idempotency-key` reuses a task start; `--json` returns JSON; none adds a step
   %%> Not handled here:
@@ -37,6 +38,8 @@ sequenceDiagram
   %%> - your Node has an access grant to the Process's Node
   %%> - no Route points to the Process, else `process.has_routes`
   %%> - the Process is not required by a Database server
+  %%> - a container Process: `--instance` names its own Instance, else `process.instance_mismatch`
+  %%> - a container Process that a current development definition owns refuses `operation.kind_unavailable`; the message names the definition destroy and the default's deploy
   %%> Result:
   %%> - Process 417 marked removing; the record stays until the run succeeds
   %%> - task #5130 recorded with the full intent
@@ -70,8 +73,16 @@ sequenceDiagram
   else Docker
     SW->>N: Remove the container<br/>cfgmgmt/docker_container
     SW->>N: Check container removal<br/>cfgmgmt/docker_container
+  else Instance container
+    SW->>N: Act in the container<br/>Ansible · tags process
+    %%> What it does:
+    %%> - the child run `operation-process-container` acts through `incus exec` on the Node, on this Process's unit and folder only
+    %%> - disables and stops `orbit-process-417-<name>.service`, removes its unit file and `/etc/orbit/processes/417`, reloads systemd, and checks that the unit is not found
+    %%> - a stopped container fails the run with `process.target_inactive`; the record stays
   end
-  SW->>N: Remove the environment<br/>cfgmgmt/directory absent
+  opt Node Process
+    SW->>N: Remove the environment<br/>cfgmgmt/directory absent
+  end
   opt Vite dev Process
     SW->>N: Remove the dev environment<br/>cfgmgmt/file absent
   end
