@@ -307,6 +307,14 @@ def command_batch(args):
     return 1 if 'failed' in verdicts else 2 if 'unrun' in verdicts else 0
 
 
+def record_fingerprint(fleet, directory, batch):
+    """The fleet as the batch finds it, before its setup: `fingerprint.json` in the batch's evidence, and one JSON line after the setup line."""
+    mark = fleet_module.fingerprint(fleet)
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / 'fingerprint.json').write_text(json.dumps({'batch': batch, 'at': round(time.time(), 1), **mark}) + '\n')
+    return mark
+
+
 def command_setup(args):
     """Run the setup steps a batch declares, on the fleet. One JSON line; exit 1 when a step fails or is not built."""
     spec = spec_module.load(args.file, args.batches)
@@ -314,10 +322,12 @@ def command_setup(args):
         raise spec_module.SpecError('unknown batch: ' + args.batch)
     started = time.time()
     failures = []
+    mark = None
     root = Path(args.evidence or fleet_module.evidence_root())
     try:
         items = spec_module.expand_steps(spec.batches[args.batch].get('setup') or [], 'setup', f'batch {args.batch} setup', {}, {}, {})
         fleet = fleet_module.prepare()
+        mark = record_fingerprint(fleet, root / ('batch-' + args.batch), args.batch)
         fleet.prepare_cli_callers(items)
         run = Run(fleet, spec, root / ('batch-' + args.batch))
         run_steps(run, items, 'setup', failures, time.time() + 120)
@@ -326,6 +336,8 @@ def command_setup(args):
     except Exception as error:
         failures.append(f'{type(error).__name__}: {error}')
     print(json.dumps({'batch': args.batch, 'setup': 'failed' if failures else 'ok', 'secs': round(time.time() - started, 1), 'failed': [message[:200] for message in failures][:3]}))
+    if mark is not None:
+        print(json.dumps({'batch': args.batch, 'fingerprint': mark}))
     return 1 if failures else 0
 
 

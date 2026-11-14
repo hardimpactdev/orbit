@@ -90,6 +90,38 @@ class SetupTest(unittest.TestCase):
         self.assertIn('not built', ' '.join(line['failed']))
         self.assertIn('"setup": "failed"', lines[0])  # the workflow's guards match this text
 
+    def test_the_fingerprint_of_the_fleet_before_the_setup_is_in_the_evidence_and_one_line_after_the_setup_line(self):
+        fake = FakeFleet()
+        order = []
+        fake.prepare_cli_callers = lambda items: order.append('setup')
+        real = fleet_module.fingerprint
+        with patch.object(fleet_module, 'prepare', return_value=fake), \
+                patch.object(fleet_module, 'fingerprint', side_effect=lambda f: order.append('fingerprint') or real(f)):
+            code, lines = self.setup_batch('fresh-fleet')
+        self.assertEqual(code, 0)
+        self.assertEqual(order, ['fingerprint', 'setup'])
+        expected = {'doctor_healthy': True, 'pending_migrations': 0, 'nodes': 4, 'access_grants': 3, 'firewall_rules': 6, 'instances': 0,
+                    'unended_operations': 0}
+        self.assertEqual([json.loads(line) for line in lines[1:]], [{'batch': 'fresh-fleet', 'fingerprint': expected}])
+        written = json.loads((Path(self.directory.name) / 'batch-fresh-fleet' / 'fingerprint.json').read_text())
+        self.assertEqual({key: value for key, value in written.items() if key != 'at'}, {'batch': 'fresh-fleet', **expected})
+        # The counts come from one read-only call in the nested Gateway, as its managed user.
+        self.assertEqual([(node, argv[2:4]) for node, argv in fake.commands], [('gateway', ['tinker', '--execute'])])
+        self.assertIn('->count()', fake.commands[0][1][4])
+        self.assertNotRegex(fake.commands[0][1][4], r'(?i)\b(save|delete|update|insert|create)\(')
+
+    def test_a_fingerprint_that_cannot_be_read_is_named_and_the_batch_goes_on(self):
+        fake = FakeFleet()
+        fake.counts = None
+        fake.records = [{'node': 'app-dev', 'port': 8080, 'protocol': 'tcp', 'source': 'Anywhere'}]   # drift: Doctor is not healthy
+        with patch.object(fleet_module, 'prepare', return_value=fake):
+            code, lines = self.setup_batch('fresh-fleet')
+        self.assertEqual((code, json.loads(lines[0])['setup']), (0, 'ok'))
+        mark = json.loads(lines[1])['fingerprint']
+        self.assertEqual(mark['doctor_healthy'], False)
+        self.assertNotIn('nodes', mark)
+        self.assertIn('counts: exit 1, Could not open input file', mark['error'])
+
     def test_an_unknown_batch_is_refused(self):
         code, _ = self.setup_batch('nope')
         self.assertEqual(code, 3)
