@@ -131,13 +131,13 @@ def plan(base, reports, cache, collections):
         Step('shape', 'check-swamp-base-policy', ['python3', 'bin/check-swamp-base-policy.py', '--base', base]),
         Step('shape', 'lint-behavior-names', ['deno', 'run', '--allow-read', '--allow-run', 'bin/lint-behavior-names.ts', '--base', base]),
         Step('shape', 'frozen agent commands', [str(ROOT / 'bin/check-frozen-agent-commands'), '--root', str(ROOT)]),
+        Step('shape', 'workflow placement', ['deno', 'run', '--allow-read', 'bin/lint-workflow-placement.ts']),
         Step('validate', 'validate-swamp-workflows', ['python3', 'bin/validate-swamp-workflows.py', '--cache', str(cache),
                                                       '--report', str(reports / 'workflow-validation.json')], needs=('credentials',)),
         # It imports the extensions that the workflow validation pulls, so it needs the same credential.
         Step('validate', 'node enrollment trust', ['deno', 'test', '-A', 'tests/node_add_bootstrap_test.ts'], needs=('credentials',)),
         Step('validate', 'check-grant-patterns', ['python3', 'bin/check-grant-patterns.py', '--cache', str(cache),
                                                   '--report', str(reports / 'grant-validation.json')], needs=('credentials', 'php')),
-        Step('validate', 'workflow placement', ['deno', 'run', '--allow-read', 'bin/lint-workflow-placement.ts']),
     ]
     return steps
 

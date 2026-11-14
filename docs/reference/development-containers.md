@@ -1843,7 +1843,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens | With the Club key: a token is missing, older than 20 days or unreadable. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
-| Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate` | The tools of these pins are not complete. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
+| Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate`, and four packages | The tools of these pins are not complete, or a package is missing. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
@@ -1918,24 +1918,29 @@ The remint takes about 1 to 3 minutes. A refresh that does not remint reads the 
 
 The proof runner in a copy needs the pinned Ansible controller of `bin/swamp-shape-gate`: a venv and the Ansible collections, about 160 MB. A copy gets the default's seed, not the image, and the default is never rebuilt from a new image. So every refresh keeps the tools in the default itself, after `base` and before the seed. Each copy then holds the tools of its own commit. No copy builds them, and no copy needs `python3-venv`.
 
+The same step keeps three host programs that Swamp fixture units run: `zip`, `unzip` and `jq`. A [task check](/reference/implementation-loop#the-scoped-task-check) in a copy runs those units, so the copy needs them too.
+
 The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
-| The venv has `.complete` and the collections folder has `ansible_collections` | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| The venv has `.complete`, the collections folder has `ansible_collections`, and the four packages are installed | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| The tools are ready, but a package is missing | Installs the missing packages with one `apt-get install` | `tools: built`, `tools_reason: missing` |
 | Anything else | Builds the tools, as the list below says | `tools: built`, `tools_reason: missing` |
+
+The four packages are `python3-venv`, `zip`, `unzip` and `jq`. The step reads each one with `dpkg-query`. The image lacks `zip`, `unzip` and `jq`. So the first refresh after this change installs five packages, with `libjq1` and `libonig5`, about 0.75 MB. The `apt-get update` and the install add an estimated 10 to 20 s, once. The step changes no image and moves no image alias.
 
 A build does five things:
 
-1. It installs `python3-venv` when it is missing.
+1. It installs the missing packages with one `apt-get install`.
 2. It builds the venv with the gate's own `tool_path`.
 3. It installs the collections into a `.partial` folder and renames it. Collections that are complete already stay.
 4. It writes the venv's `.complete`, the marker of ready tools.
 5. It removes the `venv-*` and `collections-*` folders of other pins.
 
-The build reaches three services: the Ubuntu mirror (apt, for `python3-venv`), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
+The build reaches three services: the Ubuntu mirror (apt, for the packages), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
 
-A failed build never fails the refresh. The refresh goes on and takes the seed. The result says `tools: failed`, and `tools_reason` names the step: `names` (the checkout's gate cannot be read), `package`, `venv`, `collections` or `cleanup`, `timeout` after 600 s, or `unreadable` when the script printed no result line. The run's log then shows the end of the step's error output.
+A failed build or package install never fails the refresh. The refresh goes on and takes the seed. The result says `tools: failed`, and `tools_reason` names the step: `names` (the checkout's gate cannot be read), `package`, `venv`, `collections` or `cleanup`, `timeout` after 600 s, or `unreadable` when the script printed no result line. The run's log then shows the end of the step's error output.
 
 The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
 
