@@ -170,7 +170,7 @@ A completed move or uncertain rollback stays pending until the deadline. Missing
 
 The shared reader projects a native kind from its declared end-check step. A kind whose action runs as one of several guarded steps names the others as `alternatives`, and the step that ran is the end check; see [Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step).
 
-A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because the normal terminal projection runs for a timed-out Operation only when its run beat the expiry. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
+A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because the normal terminal projection runs for a timed-out Operation only when its run beat the expiry. It does the same, with the Operation's own error code, when the Operation fails with `operation.result_unreadable`. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
 
 `task_vm.slot_release`, `tasks.cancel` and `tasks.maintenance_finish` hold the generic Operation target key (`task_vm:<id>` or `task_group:<id>`). Expiry keeps that key: a new admission returns `operation.target_busy` until the shared reader verifies the exact bound native terminal and releases it. Settlement leaves the timed-out Operation closed. Native `interrupted` release and Task cleanup results project as `failed`; recovery starts a new Operation. The task VM sweep logs each admission refusal with its details and continues with other rows.
 
@@ -417,7 +417,7 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 `operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway records the request and answers; it asks Swamp to cancel that run right after the answer, through the same send path as the reconciler, which stays the retry. So the caller reads the Operation still `running`, with `cancel_requested: true`.
 
-The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
+The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record. A run that has already ended cannot be cancelled: the next reconciler pass reads it and settles the operation from its end, before it sends the cancel, so Swamp is not asked again.
 
 A cancelled container create with its original Instance still retained for retry reports `recovery.state=retained_for_retry`, even before work starts. Its result names the [retry and destroy paths](/cli/instance/create#on-a-container-node); destroy remains unavailable for a container default.
 
@@ -442,6 +442,10 @@ Process lifecycle workflows use official cfgmgmt resources and SSH argv. Native 
 Admission records the intent, the idempotency key and the target hold in one transaction. After the commit, the Gateway pushes any execution copies and submits one native workflow for the kind ([Direct Swamp starts](#direct-swamp-starts)). Swamp runs the steps, retries and waits inside that workflow. The Gateway records the observed steps, then projects the workflow's terminal result into the operation and its domain record ([Recover a terminal native result](#recover-a-terminal-native-result)).
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
+
+A run can succeed while the end check that the kind reads its result from was skipped or failed, for example because a guard skipped it. The run has ended, so no later read can change that. The first reconciler pass that reads the run then fails the operation with `operation.result_unreadable`, frees its target and names the end check as its failed step. It does not wait for the budget. An end check that is absent or still running reads again in the next pass, because Swamp may not have written it yet. `instance.migrate` keeps its own missing-output recovery instead.
+
+An operation that had already timed out with such a run, within its budget, gets the same end. Whether the work took effect is not known: the kind's records leave their in-progress state as they do at a timeout.
 
 the WebSocket registry tasks (`websocket.sync`, `websocket.app_create`, `websocket.app_destroy` and `websocket.app_rotate`) and `proof.run` are the exception. The Gateway runs or closes them itself, with no Swamp run of their own; `proof.run` closes when its runs have ended. Each run is an Operation `proof.command` with a Swamp run of its own; its provision, cases and destruction are children of that run.
 
@@ -482,6 +486,7 @@ These codes belong to every operation.
 | `operation.target_busy` | Another operation holds the target |
 | `operation.superseded` | A rollback of the Instance cancelled this deploy before a workflow started it. The status is `cancelled` |
 | `operation.timed_out` | The run budget ended before the workflow finished. The status is `failed` |
+| `operation.result_unreadable` | The run ended, but its end check did not succeed, so its result cannot be read. The status is `failed`, `failed_step` names the end check, and `error.detail` gives its status |
 | `operation.failed` | The kind ended without an error code of its own |
 
 A kind adds its own codes. `instance.deploy` and `instance.rollback` use the [deployment codes](/reference/deployments#failures), such as `deployment.step_failed`.

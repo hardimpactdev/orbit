@@ -113,7 +113,7 @@ final readonly class InstanceRollbackProjection implements DirectOperationProjec
 
     public function timedOut(Operation $operation): void
     {
-        $this->history->recordNative($this->row($operation), 'failed', 'operation.timed_out',
+        $this->history->recordNative($this->row($operation), 'failed', ValidatedData::string($operation->error_code),
             ['release' => ValidatedData::string($operation->input['release']), 'selected_release' => null,
                 'commit' => ValidatedData::nullableString($operation->input['commit'] ?? null), 'failed_step' => null]);
     }

@@ -184,7 +184,7 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
         if (! is_int($id)) {
             return;
         }
-        $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', 'operation.timed_out',
+        $this->history->recordNative(InstanceDeployment::query()->where('instance_id', $operation->target_id)->findOrFail($id), 'failed', ValidatedData::string($operation->error_code),
             ['release' => $this->development($operation) ? null : InstanceDeploymentIntent::releaseName($operation), 'selected_release' => null,
                 'commit' => InstanceDeploymentIntent::commit($operation), 'failed_step' => null]);
     }

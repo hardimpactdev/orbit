@@ -52,6 +52,6 @@ final readonly class NodeRemovalProjection implements DirectOperationProjection,
 
     public function timedOut(Operation $operation): void
     {
-        app(NodeRemovalRecords::class)->fail(ValidatedData::object($operation->input['_node_removal']), 'operation.timed_out');
+        app(NodeRemovalRecords::class)->fail(ValidatedData::object($operation->input['_node_removal']), $operation->error_code);
     }
 }

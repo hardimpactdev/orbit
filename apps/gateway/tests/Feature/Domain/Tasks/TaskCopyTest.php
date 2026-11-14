@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
@@ -400,6 +401,17 @@ describe('the end of the copy\'s create', function (): void {
         Queue::assertNotPushed(DestroyTaskCopy::class);
     });
 
+    it('fails the group and queues the destroy when the create\'s run ended without a readable result', function (): void {
+        $group = copyGroup(copySource()->project);
+        $operation = runningOperation(startCopy($group));
+
+        app(FailUnreadableResultAction::class)->execute($operation, 'run-1', ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()], 'finish', 'skipped');
+
+        expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
+    });
+
     it('destroys a failed group\'s copy with force, and leaves the copy of a group that still runs', function (): void {
         $group = copyGroup(copySource()->project);
         $operation = startCopy($group);
@@ -464,6 +476,21 @@ describe('a cancel of a group that owns a copy', function (): void {
         expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409')
             ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
             ->and($operation->refresh()->status)->toBe(OperationStatus::Running);
+    });
+
+    it('is refused before the copy\'s destroy while a timed-out Operation still holds the group', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $held = Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'lock_key' => OperationStore::lockKey('task_group', $group->id), 'input' => [], 'status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
+            'state' => ['swamp_run_id' => '5d0c3a8e-4f7b-4a51-9a63-0e2b1c7d9f10', 'native_timeout' => ['budget_seconds' => 900]], 'sequence' => 1, 'attempts' => 1,
+            'started_at' => now()->subMinutes(20), 'finished_at' => now()->subMinutes(5)]);
+
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409')
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'tasks.cancel')->exists())->toBeFalse()
+            ->and(Instance::query()->find($copy->id))->not->toBeNull()
+            ->and($held->refresh()->lock_key)->not->toBeNull();
     });
 
     it('leaves the destroy of a clone that no group owns as it was', function (): void {

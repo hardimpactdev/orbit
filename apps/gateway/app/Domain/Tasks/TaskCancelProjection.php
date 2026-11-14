@@ -59,7 +59,7 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
 
     public function timedOut(Operation $operation): void
     {
-        $this->failed($operation, 'operation.timed_out');
+        $this->failed($operation, $operation->error_code);
     }
 
     /** Incomplete cleanup keeps the group and workspace for another cancel; only its captured VM cleanup fails. */

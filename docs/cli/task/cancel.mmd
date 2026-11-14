@@ -38,6 +38,7 @@ sequenceDiagram
     Note over GW: Admit the copy's destroy<br/>instance.destroy · force
     %%> Requirements:
     %%> - no Operation holds the copy, such as its create or an earlier destroy; otherwise HTTP 409 `operation.target_busy`, naming it
+    %%> - after the group's running work was asked to stop, no Operation still holds the group, such as a timed-out one whose run nothing has proven ended; otherwise HTTP 409 `operation.target_busy`, naming it, and no destroy is admitted
     %%> Result:
     %%> - the cancel is recorded as succeeded at once (R1), right after the destroy's admission; its result names the destroy Operation and holds the workspace read
     %%> - the destroy runs as every Instance destroy does; when it succeeds, a task that still runs and its open subtasks are `cancelled`, and the task lets go of the copy; a `failed` task stays `failed`
