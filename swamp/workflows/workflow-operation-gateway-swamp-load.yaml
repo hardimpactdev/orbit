@@ -122,8 +122,8 @@ jobs:
                 | jq -e '.success == true and ((.errors // []) | length) == 0' >/dev/null
               timeout 90 /usr/local/bin/swamp access reload --server ws://127.0.0.1:9418 \
                 --token-file /home/orbit/.config/swamp/serve-driver-token --json | jq -e '.success == true' >/dev/null
-              # The production Swamp Node's own schedules read this checkout. This load sets them as serve.yaml trigger overrides,
-              # so their built-in triggers, which every serve registers, can go. A missing or empty file passes on purpose: a
+              # The production Swamp Node's own schedules read this checkout. They have no built-in trigger, which every serve
+              # would register: only this load sets them, as serve.yaml trigger overrides. A missing or empty file passes on purpose: a
               # rollback runs this load against an older checkout without it. A present file that jq cannot read fails the load.
               schedules=swamp/config/swamp-node-schedules.json
               entries=$(if [ -s "$schedules" ]; then jq -r 'to_entries[] | "\(.key) \(.value)"' "$schedules"; fi)
