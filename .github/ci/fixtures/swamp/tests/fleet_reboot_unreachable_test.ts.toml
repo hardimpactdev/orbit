@@ -17,6 +17,7 @@ cost = 30
 after_merge_cases = ["fleet reboot records a persistently unreachable ordinary Node and later Nodes skip halted without SSH"]
 reason = "The ordinary unreachable case was censored at the shard deadline (unit 72.3s, run 43020616292); its eight production attempts did not fit the selected shard. Defer this case to the full-set receiver pending a completed cost measurement; keep the existing PR ceilings."
 inputs = [
+  "swamp/tests/fixtures/fleet-reboot-ssh.py",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
