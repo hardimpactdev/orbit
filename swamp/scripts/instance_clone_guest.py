@@ -371,8 +371,9 @@ def phase_main(phase, raw):
         def clean_git(*args, private_input=None):
             # The ignore rules the task check reads: no global or system configuration, and the agent's own ignore file, which the
             # check (as `agent`, HOME=/home/agent) reads by default. The C locale keeps `git clean -n`'s words as parsed below.
-            return git("-c", "core.quotePath=false", "-c", "core.excludesFile=" + AGENT_IGNORE, *args, isolated=True,
-                       private_input=private_input)
+            # Without global configuration `orbit` loses its trust of the checkout, which another user owns: trust it here, as the check does.
+            return git("-c", "safe.directory=" + ws, "-c", "core.quotePath=false", "-c", "core.excludesFile=" + AGENT_IGNORE, *args,
+                       isolated=True, private_input=private_input)
 
         # A skip-worktree (`S`, or `s` with assume-unchanged too) or assume-unchanged (lower case) flag in the default's index hides a
         # tracked file's edit from diff, reset and status. Each flag is cleared in its own call: `update-index` applies only the last
