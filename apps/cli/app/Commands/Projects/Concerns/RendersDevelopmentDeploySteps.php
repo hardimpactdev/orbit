@@ -22,6 +22,14 @@ trait RendersDevelopmentDeploySteps
         };
     }
 
+    /** @return list<string>|null null when no --input was given */
+    protected function developmentInputs(mixed $value): ?array
+    {
+        $inputs = is_array($value) ? array_values(array_filter($value, is_string(...))) : [];
+
+        return $inputs === [] ? null : $inputs;
+    }
+
     protected function projectId(): ?int
     {
         $id = filter_var(
@@ -72,8 +80,14 @@ trait RendersDevelopmentDeploySteps
         $this->writeDevelopmentStepLine('Command: '.$step->command);
         $this->writeDevelopmentStepLine('Timeout: '.$step->timeoutSeconds.' seconds');
         $this->writeDevelopmentStepLine('Required: '.($step->required ? 'true' : 'false'));
+        $this->writeDevelopmentStepLine('Inputs: '.$this->developmentInputsText($step));
 
         return self::SUCCESS;
+    }
+
+    private function developmentInputsText(DevelopmentDeployStepResponse $step): string
+    {
+        return $step->inputs === [] ? '—' : implode(', ', $step->inputs);
     }
 
     protected function renderDevelopmentDeploySteps(DevelopmentDeployStepsResponse $response): int
@@ -94,6 +108,7 @@ trait RendersDevelopmentDeploySteps
             $this->writeDevelopmentStepLine(($index + 1).'. '.$step->name.' ('.$step->timeoutSeconds.'s)');
             $this->writeDevelopmentStepLine('   '.$step->command);
             $this->writeDevelopmentStepLine('   Required: '.($step->required ? 'true' : 'false'));
+            $this->writeDevelopmentStepLine('   Inputs: '.$this->developmentInputsText($step));
         }
 
         return self::SUCCESS;

@@ -82,8 +82,38 @@ it('lists deploy steps in the stored order', function (): void {
     expect(instance_source_text(Artisan::output()))->toContain(
         '1. migrate (300s)',
         'php artisan migrate --force',
+        'Inputs: database/migrations',
         '2. optimize (45s)',
+        'Inputs: —',
     );
+});
+
+it('sends repeated inputs on create and shows them in the human result', function (): void {
+    $mock = MockClient::global([CreateProjectDevelopmentDeployStepRequest::class => development_step_mock_response()]);
+
+    expect(Artisan::call('project:dev-deploy-step:create', ['--project' => '17', 'name' => 'migrate', '--command' => 'php artisan migrate --force',
+        '--input' => ['database/migrations', 'composer.lock']]))->toBe(0)
+        ->and(instance_source_text(Artisan::output()))->toContain('Inputs: database/migrations')
+        ->and($mock->getLastRequest()?->body()->all())->toBe([
+            'name' => 'migrate', 'command' => 'php artisan migrate --force', 'inputs' => ['database/migrations', 'composer.lock'],
+        ]);
+});
+
+it('replaces inputs on update with --input and clears them with --clear-inputs', function (array $options, array $body): void {
+    $mock = MockClient::global([UpdateProjectDevelopmentDeployStepRequest::class => development_step_mock_response()]);
+    $this->artisan('project:dev-deploy-step:update', ['--project' => '17', 'name' => 'migrate', ...$options, '--json' => true])
+        ->expectsOutput(development_step_json())->assertExitCode(0);
+    expect($mock->getLastRequest()?->body()->all())->toBe($body);
+})->with([
+    'replace' => [['--input' => ['composer.json', 'composer.lock']], ['inputs' => ['composer.json', 'composer.lock']]],
+    'clear' => [['--clear-inputs' => true], ['inputs' => []]],
+]);
+
+it('refuses --input with --clear-inputs without sending a request', function (): void {
+    $mock = MockClient::global([]);
+    $this->artisan('project:dev-deploy-step:update', ['--project' => '17', 'name' => 'migrate', '--input' => ['composer.json'], '--clear-inputs' => true, '--json' => true])
+        ->assertExitCode(1);
+    $mock->assertNothingSent();
 });
 
 it('updates and destroys a deploy step by name', function (): void {
@@ -120,7 +150,7 @@ it('updates and destroys a deploy step by name', function (): void {
     expect($mock->getLastRequest())->toBeInstanceOf(DestroyProjectDevelopmentDeployStepRequest::class);
 });
 
-/** @return array{name: string, required: bool, command: string, timeout_seconds: int} */
+/** @return array{name: string, required: bool, command: string, timeout_seconds: int, inputs: list<string>} */
 function development_step_payload(): array
 {
     return [
@@ -128,6 +158,7 @@ function development_step_payload(): array
         'command' => 'php artisan migrate --force',
         'timeout_seconds' => 300,
         'required' => false,
+        'inputs' => ['database/migrations'],
     ];
 }
 
