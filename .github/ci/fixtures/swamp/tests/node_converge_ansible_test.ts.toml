@@ -1,5 +1,5 @@
 order = 900
-source_sha256 = "0593e497c02bbd0639ee7910704f6eb18ac7173daa0d8b020dbe9fbee8db1cff"
+source_sha256 = "ea836edce00318f8518fb8980aad21b2a244d27bc8edcdc4bb1d511581a10055"
 cases = [
   "generated converge vars preserve shell arguments, scalar strings and literal Jinja through Ansible",
   "peer DNS routing domains stay literal and a second application changes nothing",
@@ -28,9 +28,10 @@ cases = [
   "a Tool helper that cannot run with the compiled Swamp binary fails the tools phase and marks no Tool failed",
   "a Tool helper that cannot run with a missing Deno launcher fails the tools phase and marks no Tool failed",
   "with a working Tool helper, a refused Tool is marked failed alone and the tools phase succeeds",
+  "a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing",
 ]
 file = "swamp/tests/node_converge_ansible_test.ts"
-cost = 80
+cost = 85 # ESTIMATE: local 40s for the file x 2.1, rounded up, plus 1s
 inputs = [
   "apps/gateway/resources/machine-software/recipe.json",
   "bin/swamp-shape-gate",
@@ -42,6 +43,7 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/swamp-worker-renewal.yml",
+  "swamp/ansible/tasks/node-converge-base.yml",
   "swamp/ansible/tasks/node-kernel-policy.yml",
   "swamp/ansible/tasks/node-update-policy.yml",
   "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",

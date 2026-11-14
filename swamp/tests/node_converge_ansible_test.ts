@@ -396,3 +396,36 @@ Deno.test("with a working Tool helper, a refused Tool is marked failed alone and
         assertEquals(phase.recorded, [{ id: 3, status: "failed", installed_version: null }]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
+
+Deno.test("a converge writes the units of the Node's roles and reloads systemd once, never starts or restarts one, and a current unit changes nothing", async () => {
+    const folder = await Deno.makeTempDir();
+    try {
+        const base = parse(await Deno.readTextFile(taskPath("node-converge-base"))) as Array<Record<string, unknown>>;
+        const [write, load] = ["Write the units of the Node's roles", "Load the changed role units"].map((name) => structuredClone(base.find((task) => task.name === name)!));
+        assertEquals(load["ansible.builtin.systemd"], { daemon_reload: true });
+        // No task of the base names a role unit to start, stop or restart: the running service keeps its process.
+        for (const task of base) {
+            const unit = JSON.stringify(task["ansible.builtin.systemd"] ?? task["ansible.builtin.systemd_service"] ?? {});
+            assertEquals(/orbit-(swamp|websocket)/.test(unit), false, JSON.stringify(task));
+        }
+        // The real write task into a fixture folder, as a non-root user; the reload is recorded instead of run.
+        const copy = write["ansible.builtin.copy"] as Record<string, unknown>;
+        copy.dest = `${folder}/{{ item.name }}`;
+        delete copy.owner;
+        delete copy.group;
+        const marker = `${folder}/reloads`;
+        delete load["ansible.builtin.systemd"];
+        load["ansible.builtin.shell"] = `echo reload >> '${marker}'`;
+        const role_units = [{ name: "orbit-swamp-worker@.service", content: "[Unit]\nDescription=worker %i\n" },
+            { name: "orbit-websocket.service", content: "[Unit]\nDescription=Reverb\n" }];
+        await localPlay({ intent: { role_units } }, [write, load], false);
+        assertEquals(await Deno.readTextFile(`${folder}/orbit-swamp-worker@.service`), role_units[0].content);
+        assertEquals(await Deno.readTextFile(`${folder}/orbit-websocket.service`), role_units[1].content);
+        assertEquals(await Deno.readTextFile(marker), "reload\n");
+        // A Node whose units are current: changed 0 and no reload.
+        await localPlay({ intent: { role_units } }, [write, load]);
+        assertEquals(await Deno.readTextFile(marker), "reload\n");
+        // A Node without these roles writes nothing.
+        await localPlay({ intent: { role_units: [] } }, [write, load]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});
