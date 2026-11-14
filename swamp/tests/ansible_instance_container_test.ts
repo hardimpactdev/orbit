@@ -2885,7 +2885,7 @@ Deno.test({
       // A deployment at a new commit takes the new pair, then deletes both halves of the older one.
       git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
       const second = git(f.source, "rev-parse", "HEAD");
-      f.intent.deployment = { variant: "container" };
+      f.intent.deployment = { variant: "container", steps: [] };
       f.write();
       for (const phase of ["start", "fetch", "checkout", "seed"]) {
         const result = f.run(phase);
@@ -2959,7 +2959,7 @@ Deno.test({
       for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
       const first = git(f.source, "rev-parse", "HEAD");
       git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
-      f.intent.deployment = { variant: "container" };
+      f.intent.deployment = { variant: "container", steps: [] };
       f.write();
       for (const phase of ["start", "fetch", "checkout"]) assert(f.run(phase).ok);
       const state = f.state();
