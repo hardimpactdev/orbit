@@ -101,7 +101,7 @@ return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'pro
                 'execution_copies' => [...$claimCopies, ...$vmResume['execution_copies'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
                     ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-sync-token-[a-f0-9-]{36}$']],
             ], 'tasks.sync' => [
-                'workflow' => 'operation-task-sync', 'projection' => TaskSyncProjection::class,
+                'workflow' => 'operation-task-sync', 'alternate_workflows' => ['operation-task-sync-copy'], 'projection' => TaskSyncProjection::class,
                 'workflow_inputs' => true,
                 // A task copy's run captures the base phase's typed evidence instead of the refs.
                 'terminal_result' => ['job' => 'cleanup', 'step' => 'Confirm the sync', 'native' => true, 'captures' => ['refs' => ['job' => 'sync', 'step' => 'Read the refs', 'field' => 'stdout', 'artifact' => 'output'],

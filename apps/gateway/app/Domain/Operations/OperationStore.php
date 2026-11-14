@@ -51,7 +51,7 @@ final readonly class OperationStore
                 ]);
                 if (isset($definition['workflow'])) {
                     $operation->forceFill(['state' => [...($operation->state ?? []), 'swamp_start' => [
-                        'key' => 'operation:'.$operation->id, 'workflow' => $definition['workflow'],
+                        'key' => 'operation:'.$operation->id, 'workflow' => app(DirectOperation::class)->workflowFor($operation),
                     ]]])->save();
                 }
 

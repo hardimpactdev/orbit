@@ -67,7 +67,7 @@ final readonly class StartSwampRun
             }
             $endpoint = $this->endpoint();
             $payload = [
-                'workflowIdOrName' => $declaration['workflow'],
+                'workflowIdOrName' => app(DirectOperation::class)->workflowFor($operation),
                 'inputs' => app(DirectOperation::class)->workflowInputs($operation),
                 'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
             ];
