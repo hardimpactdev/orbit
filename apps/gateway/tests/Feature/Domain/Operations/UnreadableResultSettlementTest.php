@@ -118,7 +118,11 @@ function unreadablePass(): void
     app()->call([new ReconcileSwampOperations, 'handle']);
 }
 
-beforeEach(fn () => Queue::fake());
+beforeEach(function (): void {
+    Queue::fake();
+    // The cases compare stored times with times built from now(); a frozen clock keeps both in the same second.
+    $this->freezeSecond();
+});
 
 it('fails at once, frees its target and names the end check when the run succeeded but its end check was skipped', function (): void {
     $operation = unreadablePublish(startedMinutesAgo: 2);
