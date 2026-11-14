@@ -12,6 +12,7 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
@@ -214,7 +215,7 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
 
     $read = $operation->input['intent']['read_at'];
     $result = $result === 'window' ? ['answer' => 'restarted', 'read_at' => $read, 'restart_at' => '2026-11-14T12:00:07.500000Z',
-        'window_ms' => (int) round(Carbon\CarbonImmutable::parse($read)->diffInMilliseconds(Carbon\CarbonImmutable::parse('2026-11-14T12:00:07.500000Z'), false))] : $result;
+        'window_ms' => (int) round(CarbonImmutable::parse($read)->diffInMilliseconds(CarbonImmutable::parse('2026-11-14T12:00:07.500000Z'), false))] : $result;
     expect($projected->status->value)->toBe($status)->and($projected->result)->toBe($result)->and($projected->error_code)->toBe($code);
 })->with([
     'T3 inactive' => ['failed', ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], 'conn.t3_inactive'],
