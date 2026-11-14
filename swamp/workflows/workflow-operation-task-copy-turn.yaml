@@ -40,7 +40,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-copy-turn-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id) }}'
+          behaviorName: '${{ ("task-copy-turn-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 4000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"
