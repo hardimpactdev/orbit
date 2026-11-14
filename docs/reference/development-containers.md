@@ -1727,7 +1727,7 @@ Each nested-fleet runtime records the size of its isolated ID map in `idmap_size
 | A converted default | 1,165,536, which gives the inner fleet 165,536 IDs |
 | A normal container | None: Incus's 65,536 |
 
-The inner range is the outer size minus 1,000,000, at base 1,000,000. The nested image has no `newuidmap`, so the inner Incus ignores `/etc/subuid` and takes this range from its own process map. The floor is 1,065,536: below it the inner base moves and every inner file is remapped.
+The inner range is the outer size minus 1,000,000, at base 1,000,000. The nested image has no `newuidmap`, so the inner Incus ignores `/etc/subuid` and takes this range from its own process map. The floor is 1,065,536. Below it the inner base moves to 65,536 and every inner file is remapped; below 131,072 the inner Incus gets no map at all and runs only privileged containers.
 
 The inner fleet's three containers share that range. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough; a converted default gives them 165,536. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
 
