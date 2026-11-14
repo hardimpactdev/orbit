@@ -112,10 +112,13 @@ export const behavior = {
                     const failure = containerFailure(file ?? await resultFile(args.folder));
                     if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
                 }
-                // The receipt is stored first; then a ready create's run folder goes, so no cleanup step runs after the result
-                // (docs/cli/instance/container/create.mmd). A failed create keeps it: stop-container reads it, and the cleanup step removes it after.
-                await ctx.writeResource("result", "create", value);
-                return {...value, removed: value.ready ? await removeFolder(args.folder) : false};
+                // A ready create's run folder goes here, so no cleanup step runs after the result (docs/cli/instance/container/create.mmd).
+                // The step's outputs are the stored receipt, so `removed` is known before it is stored. A failed create keeps the folder:
+                // stop-container reads it, and the cleanup step removes it after.
+                const removed = value.ready ? await removeFolder(args.folder) : false;
+                const done = {...value, removed};
+                await ctx.writeResource("result", "create", done);
+                return done;
             },
         },
         complete_result: {
