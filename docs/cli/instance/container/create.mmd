@@ -26,7 +26,7 @@ sequenceDiagram
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
   %%> - a nested-fleet Project: the Node has the nested-fleet switch, else the placement rule refuses
-  %%> - a nested-fleet default whose runtime records an inner volume refuses `instance.inner_volume_clone_unavailable` (409) before any record: the clone of the volume follows separately
+  %%> - a nested-fleet default whose runtime records an inner volume: the clone's runtime records its own `inner-<id>`, and `container.clone` names the default's volume; every other clone, a copy of the first nested-fleet default included, records none
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
   %%> - `.env` is rendered from the Project's env template; it, the placeholder model key and a repository read token go to the vault
@@ -48,12 +48,17 @@ sequenceDiagram
     %%> What it does:
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
     %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
+    %%> Inner volume (a clone whose intent has `inner_volume` only; every other clone makes no volume call and copies the container as before):
+    %%> - the default's volume must hold its own snapshot `seed-<commit>`, the other half of the seed, else `instance.default_seed_moved` before any change
+    %%> - before the container: `incus storage volume copy` of that snapshot to `inner-<id>`, a ZFS clone; Incus gives the copy a new btrfs fsid (about 4 s in the 2026-11-14 test); a volume of that name without its container, left by a failed copy, is deleted and copied again
+    %%> - the container copy sets the disk `inner-pool` to `source=inner-<id>`, so the copy never attaches the default's volume
+    %%> - a failed container copy deletes the volume it copied, so a failed create leaves no volume without its container
     %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
     %%> - before the first start, the stopped copy gets the Orbit root in its CA bundle when the seed's bundle lacks it, so Chromium trusts Orbit's sites; a copy without a bundle refuses
     %%> - before the first start, the stopped copy gets the composed `NO_PROXY` drop-ins, the bytes `env:sync` writes
-    %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, and a root volume without `zfs.delegate`
+    %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, the copy's inner volume with exactly its keys, and a root volume without `zfs.delegate`
     %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
     %%> - right after the start, after the copy's own hosts template rewrote `/etc/hosts`: writes the plan's private names block with the renderer `env:sync` uses, so the clone resolves its own Route names; a failure is `instance.clone_private_names_failed`
     %%> Mail:

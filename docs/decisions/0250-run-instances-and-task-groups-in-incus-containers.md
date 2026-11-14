@@ -14,6 +14,8 @@ In progress.
 
 **Delivered state, 2026-11-11.** The independent development tick (#3331) was reverted. Development auto-deploy remains in the shared producer and depends on the policy setting. A Gateway release does not deploy development defaults. A clone starts from the container default's last successfully deployed seed; `instance:deploy` on that default is the explicit refresh path. The every-merge policy below remains the intended decision. A nested-fleet default is the planned exception: each Gateway release deploys it and refreshes its fleet ([Nested fleet](/reference/development-containers#refresh-after-a-release)). See [Automatic development defaults](/reference/deployments#automatic-development-defaults).
 
+**Delivered state, 2026-11-14.** A new nested-fleet default gets its [inner volume](/reference/development-containers#the-inner-volume) at create and loses it at destroy. Its seed is the container snapshot and the volume snapshot of the same name. A clone or task copy of it copies both, and gets its own volume. The first nested-fleet default still has a directory pool; its move to the volume follows separately.
+
 Nick decided the direction on 2026-11-09, after a spike on Beast proved nested Incus with Docker inside an unprivileged container. On the same day he decided that a T3 server is the agent engine in every agent container, and that a development container and a task container are one thing. The build follows [Build order](#build-order) under Decision.
 
 Principle: [Lean](/mission#principles) and [One way, one name](/mission#principles).
