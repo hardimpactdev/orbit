@@ -24,11 +24,14 @@
                         | zip(machine_name_held.results | map(attribute='rc') | map('ternary', none, '') | list)) | combine(
                           dict(machine_name_held.results | selectattr('rc', 'equalto', 0) | map(attribute='item')
                                | zip(machine_name_held.results | selectattr('rc', 'equalto', 0) | map(attribute='stdout')))),
-          'hostname': machine_name.hostname, 'pretty': machine_name.pretty, 'container': machine_name_container} | to_json }}
+          'hostname': machine_name.hostname, 'pretty': machine_name.pretty, 'container': machine_name_container,
+          'kernel': none} | to_json }}
   register: machine_name_rendered
   changed_when: false
 
+# A container without /etc/hosts keeps it missing: the line alone would drop localhost.
 - name: Write the changed files of the machine name
+  when: item.key != '/etc/hosts' or machine_name_held.results[2].rc == 0
   ansible.builtin.command:
     argv: >-
       {{ machine_name_push + ['file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-', machine_name_container ~ item.key] }}

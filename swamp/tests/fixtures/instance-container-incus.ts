@@ -94,7 +94,7 @@ if (args[0] === "query") {
           ...Object.fromEntries(device.settings.map((setting) => [setting.slice(0, setting.indexOf("=")), setting.slice(setting.indexOf("=") + 1)]))};
       }
       console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
-        expanded_devices: devices, expanded_config: {...Object.fromEntries((container.config ?? []).map((value: string) => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; })), ...(container.inherited_config ?? {})}, config: { "volatile.uuid": container.uuid } }));
+        expanded_devices: devices, expanded_config: {...Object.fromEntries((container.config ?? []).map((value: string) => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; })), ...(container.inherited_config ?? {})}, config: { "volatile.uuid": container.uuid, ...(container.volatile ?? {}) } }));
     }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);

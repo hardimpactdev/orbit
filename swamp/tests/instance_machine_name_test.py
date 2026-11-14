@@ -24,9 +24,9 @@ def command(source, name, given):
     return json.loads(done.stdout)
 
 
-def render(files, hostname='task-5003.dlf-leden', pretty='task-5003.dlf-leden'):
+def render(files, hostname='task-5003.dlf-leden', pretty='task-5003.dlf-leden', kernel=None):
     return command(SOURCE, 'render', {'files': dict(zip(PATHS, files)), 'hostname': hostname, 'pretty': pretty,
-                                      'container': 'instance-42'})['files']
+                                      'container': 'instance-42', 'kernel': kernel})['files']
 
 
 def hosts(text, hostname='task-5003.dlf-leden'):
@@ -56,6 +56,21 @@ class RenderTest(unittest.TestCase):
         self.assertEqual(hosts('127.0.0.1 localhost\n'), '127.0.1.1\ttask-5003.dlf-leden task-5003 instance-42\n127.0.0.1 localhost\n')
         # A hostname without a dot gives no second label.
         self.assertEqual(hosts('', 'default'), '127.0.1.1\tdefault instance-42\n')
+
+    def test_a_running_kernel_hostname_that_differs_stays_an_alias_until_the_next_boot(self):
+        # A Project renamed from dlf-leden to leden: the running kernel keeps the old name until its next start.
+        files = render(['task-5003.dlf-leden\n', 'PRETTY_HOSTNAME=task-5003.dlf-leden\n', '127.0.1.1\ttask-5003.dlf-leden task-5003 instance-42\n'],
+                       'task-5003.leden', 'task-5003.leden', kernel='task-5003.dlf-leden')
+        self.assertEqual(files['/etc/hosts'], '127.0.1.1\ttask-5003.leden task-5003 task-5003.dlf-leden instance-42\n')
+        # Once the kernel took the name, the old one goes.
+        self.assertEqual(render(['task-5003.leden\n', None, files['/etc/hosts']], 'task-5003.leden', 'task-5003.leden',
+                                kernel='task-5003.leden')['/etc/hosts'], '127.0.1.1\ttask-5003.leden task-5003 instance-42\n')
+
+    def test_the_file_texts_match_the_shared_fixture_that_the_gateway_asserts(self):
+        fixture = json.loads((ROOT / 'apps/gateway/tests/Fixtures/machine-name-files.json').read_text())
+        for case in fixture['cases']:
+            files = render([None, None, None], case['hostname'], case['pretty'])
+            self.assertEqual({path: files[path] for path in case['files']}, case['files'], case['pretty'])
 
     def test_only_the_127_0_1_1_line_changes_and_the_private_names_survive_both_orders(self):
         # A copy's first start: the template, then the clone script's private names, then this writer.

@@ -375,8 +375,10 @@ Deno.test({
             assertEquals(files["instance-7/etc/hostname"].content, "task-5003.dlf-leden\n");
             // Orbit owns the whole machine-info file, as the clone's boot file writes it.
             assertEquals(files["instance-7/etc/machine-info"].content, "PRETTY_HOSTNAME=task-5003.dlf-leden\n");
-            // The Incus name stays an alias: the kernel hostname resolves until the container's next start.
+            // The running kernel hostname (here still the Incus name) and the Incus name stay aliases until the container's next start.
             assertEquals(files["instance-7/etc/hosts"].content, "127.0.1.1\ttask-5003.dlf-leden task-5003 instance-7\n127.0.0.1\tlocalhost\n" + block);
+            // A container without /etc/hosts keeps it missing: the line alone would drop localhost.
+            assertEquals(files["instance-8/etc/hosts"], undefined);
             assertEquals(files["instance-8/etc/machine-info"].content, "PRETTY_HOSTNAME=default.dlf-leden\n");
             assertEquals(files["instance-9/etc/machine-info"].content, "PRETTY_HOSTNAME=default.My_App\n");
             assertEquals(files["instance-9/etc/hostname"].content, names[2].hostname + "\n");
@@ -385,11 +387,51 @@ Deno.test({
             assertEquals(files["instance-10/etc/hostname"], undefined);
             // No restart and no live hostname: T3 and the kernel take the name at the container's next start.
             assert(f.calls().some((call) => call[0] === "file" && call[1] === "push" && call.at(-1) === "instance-9/etc/machine-info"));
-            assert(!f.calls().slice(before).some((call) => call[0] === "exec" && (call.includes("hostname") || call.includes("systemctl"))));
+            // A running container's kernel hostname is only read (`hostname` alone), never set.
+            const execs = f.calls().slice(before).filter((call) => call[0] === "exec").map((call) => call.slice(call.indexOf("--") + 1));
+            assert(!execs.some((command) => (command[0] === "hostname" && command.length > 1) || command[0] === "systemctl"), JSON.stringify(execs));
             assert(!f.calls().slice(before).some((call) => call[0] === "exec" && call.includes("instance-9")));
             // A second pass writes none of them again.
             const again = await pass(f.folder, undefined, names);
             assertEquals(again.summary.written.filter((path: string) => /\/etc\/(hostname|machine-info|hosts)$/.test(path)), []);
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+Deno.test({
+    name: "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture();
+        try {
+            const state = f.state();
+            state.instances.push(
+                { name: "instance-7", project: "orbit-instances", status: "Running" },
+                { name: "instance-8", project: "orbit-instances", status: "Running" },
+            );
+            const hosts = "127.0.1.1\ttask-5003.dlf-leden task-5003 instance-7\n127.0.0.1\tlocalhost\n";
+            state.files = { ...(state.files ?? {}),
+                "instance-7/etc/hosts": { content: hosts, mode: "0644", uid: "0", gid: "0" },
+                "instance-8/etc/hosts": { content: "127.0.1.1\tdefault.dlf-leden default instance-8\n127.0.0.1\tlocalhost\n", mode: "0644", uid: "0", gid: "0" } };
+            // instance-7 changes its state mid-read; instance-8's kernel still runs the name of before the Project's rename.
+            state.pull_failures = ["instance-7/etc/hosts"];
+            state.kernel_hostnames = { "instance-8": "default.dlf-leden" };
+            Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+            const run = await pass(f.folder, undefined, [
+                { project: "orbit-instances", container: "instance-7", hostname: "task-5003.leden", pretty: "task-5003.leden" },
+                { project: "orbit-instances", container: "instance-8", hostname: "default.leden", pretty: "default.leden" },
+            ]);
+            assert(!run.ok);
+            assertEquals(run.summary.error_code, "instance.host_unavailable");
+            assert(run.summary.failed.some((line: string) => line.startsWith("orbit-instances/instance-7: incus file pull /etc/hosts")), JSON.stringify(run.summary));
+            const files = f.state().files;
+            // The failed container keeps its hosts file and got its trust files before the name part.
+            assertEquals(files["instance-7/etc/hosts"].content, hosts);
+            assert(files["instance-7/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"] !== undefined);
+            // The other container went on, with its running kernel hostname as an alias.
+            assertEquals(files["instance-8/etc/hosts"].content, "127.0.1.1\tdefault.leden default default.dlf-leden instance-8\n127.0.0.1\tlocalhost\n");
         } finally {
             f.cleanup();
         }

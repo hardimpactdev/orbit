@@ -24,7 +24,7 @@ MACHINE_NAME = SCRIPT.parents[1] / "ansible/instance_machine_name.py"
 HOSTNAME = "feature.tool"
 NAMED_LINE = "127.0.1.1\tfeature.tool feature instance-7"
 # The clone's one exec after the start.
-READ_SCRIPT = 'hostname "$1" && { cat -- /etc/hostname 2>/dev/null; printf "\\0"; cat -- /etc/hosts; }'
+READ_SCRIPT = 'printf "%s\\n" "$1" > /etc/hostname && hostname "$1" && cat -- /etc/hosts'
 # The renderer's commands: the clone runs the bundle's instance_node_services.py with `proxy-files` before the copy's first start
 # and with `hosts` right after it, once Incus has rendered the hosts template.
 RENDERS = ("hosts", "proxy-files")
@@ -259,13 +259,13 @@ class CloneTest(unittest.TestCase):
                     copied.clear()
                     files["/etc/hosts"] = HOSTS_TEMPLATE.format(name=container["name"])
                 if argv[3:4] == ["exec"] and argv[-3:] == [READ_SCRIPT, "sh", HOSTNAME]:
-                    # One exec: the kernel hostname, then /etc/hostname, a NUL and /etc/hosts.
+                    # One exec: /etc/hostname, the kernel hostname, then the hosts file.
                     if container.get("fixture_hosts_read_error"):
                         return subprocess.CompletedProcess(argv, 1, "", "Error: Failed to retrieve PID of executing child process")
+                    files["/etc/hostname"] = HOSTNAME + "\n"
                     files["kernel"] = HOSTNAME
                     held = files.get("/etc/hosts")
-                    return subprocess.CompletedProcess(argv, 0 if isinstance(held, str) else 1,
-                                                       files.get("/etc/hostname", "instance-7\n") + "\0" + (held if isinstance(held, str) else ""),
+                    return subprocess.CompletedProcess(argv, 0 if isinstance(held, str) else 1, held if isinstance(held, str) else "",
                                                        "" if isinstance(held, str) else "cat: /etc/hosts: No such file or directory")
                 if argv[0] == "curl" and argv[3] == "-":
                     # A file's bytes and its headers on stderr: from `fixture_files` (path: content, or the headers and content),
@@ -806,8 +806,8 @@ class CloneTest(unittest.TestCase):
         self.assertLess(read, calls.index(pushes[0]))
         # The private names and the machine name share the pass's one exec, between the start and the push.
         self.assertEqual([call for call in calls[start:calls.index(pushes[0])] if call[3:4] == ["exec"]], [self.READ])
-        self.assertLess(calls.index(pushes[0]), calls.index(["incus", "--project", "orbit-instances", "file", "push", "--uid", "0", "--gid", "0",
-                                                             "--mode", "0644", "-", "instance-7/etc/hostname"]))
+        # The exec writes /etc/hostname itself: no Incus call pushes it.
+        self.assertFalse(any(call[3:5] == ["file", "push"] and call[-1] == "instance-7/etc/hostname" for call in calls))
         # The clone runs the bundle's renderer, not a copy of it.
         render = next(call for call in calls if call[:2] == ["python3", "-c"] and call[3:] == ["hosts"])
         self.assertEqual(render[2], 'print(\'{"status":"unchanged"}\')')

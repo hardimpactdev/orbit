@@ -141,14 +141,28 @@ def delete(project, name, path):
         raise IncusFailure(f"incus file delete {path}: {result.stderr.strip()[:200]}")
 
 
-def machine_name(project, name, label, presented, code, summary):
-    """The three files of the presented name, each pushed only when instance_machine_name.py `render` changes it."""
-    current = {path: pull(project, name, path) for path in ("/etc/hostname", "/etc/machine-info", "/etc/hosts")}
+def pull_named(project, name, path):
+    """A file of the machine name, or None only when Incus says it is not found; any other failed read fails the container, so a
+    container that changed its state mid-read never gets a file rendered from nothing."""
+    result = incus("file", "pull", "--project", project, name + path, "-", ok=(0, 1))
+    if result.returncode and "not found" not in result.stderr.lower():
+        raise IncusFailure(f"incus file pull {path}: {result.stderr.strip()[:200]}")
+    return result.stdout if result.returncode == 0 else None
+
+
+def machine_name(project, name, status, label, presented, code, summary):
+    """The three files of the presented name, each pushed only when instance_machine_name.py `render` changes it. A container without
+    /etc/hosts keeps it missing: the line alone would drop localhost."""
+    current = {path: pull_named(project, name, path) for path in ("/etc/hostname", "/etc/machine-info", "/etc/hosts")}
+    # A running container keeps its kernel hostname until its next start, so the hosts line names it too.
+    kernel = incus("exec", "--project", project, name, "--", "hostname").stdout.strip() or None if status == "Running" else None
     rendered = subprocess.run(["python3", "-I", "-c", code, "render"], capture_output=True, text=True, check=False, input=json.dumps(
-        {"files": current, "hostname": presented["hostname"], "pretty": presented["pretty"], "container": name}))
+        {"files": current, "hostname": presented["hostname"], "pretty": presented["pretty"], "container": name, "kernel": kernel}))
     if rendered.returncode:
         raise IncusFailure(f"machine name render: {rendered.stderr.strip()[:200]}")
     for path, content in json.loads(rendered.stdout)["files"].items():
+        if path == "/etc/hosts" and current[path] is None:
+            continue
         incus("file", "push", "--project", project, "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + path, stdin=content)
         summary["written"].append(label + path)
 
@@ -175,8 +189,6 @@ def container(project, row, files, trust, browser, libraries, names, libraries_c
                   name + file["path"], stdin=file["content"])
             summary["written"].append(label + file["path"])
             written.add(file["path"])
-        if presented is not None:
-            machine_name(project, name, label, presented, code, summary)
         # The root's links, as `update-ca-certificates` makes them, so its rehash keeps them as they are.
         for path, target in trust["links"]:
             if link_target(project, name, path) == target:
@@ -200,6 +212,9 @@ def container(project, row, files, trust, browser, libraries, names, libraries_c
             summary["cache_dropped"].append(label)
         elif status == "Frozen":
             summary["frozen"].append(label)
+        # Last, so a failed read of a name file skips none of this container's trust and linker work.
+        if presented is not None:
+            machine_name(project, name, status, label, presented, code, summary)
     except IncusFailure as failure:
         summary["failed"].append(f"{label}: {failure}")
     browser_trust(project, name, status, label, browser, summary)

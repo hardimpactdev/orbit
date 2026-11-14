@@ -1690,9 +1690,23 @@ Deno.test({
       assertEquals(named(calls().slice(before)), []);
       assertEquals(Deno.readTextFileSync(`${etc}/hostname`), "default.shop\n");
 
+      // A stopped container whose Incus templates are still pending (it never started since a create or copy) gets nothing: its first
+      // start would write over the files.
+      assert(f.run("stop").ok);
+      let state = f.state();
+      state.containers["instance-7"].volatile = { "volatile.apply_template": "copy" };
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      before = calls().length;
+      const pending = f.run("start");
+      assert(pending.ok, pending.output);
+      assertEquals(named(calls().slice(before)), []);
+      assert(f.run("stop").ok);
+      state = f.state();
+      delete state.containers["instance-7"].volatile;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+
       // A start of the stopped container writes the files before the boot, through the file API: the boot takes the name, no exec
       // sets it and T3 does not restart.
-      assert(f.run("stop").ok);
       before = calls().length;
       const booted = f.run("start");
       assert(booted.ok, booted.output);
