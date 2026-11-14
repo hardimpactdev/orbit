@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "3421f4fca0dd1ecd97b6d4bc261a7d94dc3393fa6c3ab79f9ea8c397763fd33e"
+source_sha256 = "7d82772d24205234370365256a9dca1b9379d2c7d0aadc123c5416abf91e5fc7"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -68,6 +68,8 @@ cases = [
   "test_admits_exactly_the_keys_with_incus_own_and_empty_values",
   "test_refuses_a_changed_missing_or_added_key_and_names_it",
   "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name",
+  "test_admits_the_probe_profile_root_a_copy_and_a_grown_default",
+  "test_refuses_a_size_where_none_is_allowed_a_missing_smaller_or_odd_size_and_another_key",
   "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent",
   "test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them",
   "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
@@ -93,7 +95,7 @@ cases = [
   "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 148
+cost = 150
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -174,6 +176,8 @@ inputs = [
   "test_admits_exactly_the_keys_with_incus_own_and_empty_values" = 1 # estimate: local run on Beast, not a CI measurement
   "test_refuses_a_changed_missing_or_added_key_and_names_it" = 1 # estimate: local run on Beast, not a CI measurement
   "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_admits_the_probe_profile_root_a_copy_and_a_grown_default" = 1 # estimate: local run on Beast, under 0.01 s; not a CI measurement
+  "test_refuses_a_size_where_none_is_allowed_a_missing_smaller_or_odd_size_and_another_key" = 1 # estimate: local run on Beast, under 0.02 s; not a CI measurement
   "test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start" = 1 # estimate: local run on Beast, not a CI measurement
   "test_a_seed_bundle_with_the_root_stays_as_it_is" = 1 # estimate: local run on Beast, not a CI measurement
   "test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start" = 1 # estimate: local run on Beast, not a CI measurement
