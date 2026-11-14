@@ -43,11 +43,12 @@
       }
     },
     "swamp/tests/task_instance_workspace_base_test.py": {
-      "source_sha256": "311192ff108ef6372f9562236af9725d1cc8369b3a00d91f595b0467a830e5d9",
+      "source_sha256": "1b5bb19faa04fcd6810b1788d3dd569aa0433c94d85b975c87321ee176b4f36f",
       "case_seconds": {
-        "test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main": 6.686,
-        "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind": 16.83,
-        "test_only_the_base_step_of_the_child_reads_the_credential": 0.349
+        "test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main": 8.416,
+        "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind": 18.098,
+        "test_only_the_base_step_of_the_child_reads_the_credential": 0.405,
+        "test_the_sync_takes_the_copy_path_by_its_copy_key_and_keeps_the_task_vm_path": 1.644
       }
     },
     "swamp/tests/task_instance_workspace_base_cleanup_test.py": {

@@ -63,6 +63,7 @@ tasks.package
 tasks.pr_merge
 tasks.pr_ready
 tasks.script
+tasks.sync
 tasks.turn
 vault.setup
 vault.sync

@@ -68,9 +68,12 @@ sequenceDiagram
     SW->>SW: Bundle the refs<br/>git bundle create
     %%> What it does:
     %%> - one bundle of the default branch and `task-42`
+    SW->>N: Prepare the VM directory<br/>mkdir -m 0700
+    %%> What it does:
+    %%> - a private directory of the run on the VM
     SW->>N: Copy the bundle<br/>official SSH copy
     %%> What it does:
-    %%> - prepares a private directory on the VM and copies the bundle into it; no token and no script reaches the VM
+    %%> - copies the bundle into that directory; no token and no script reaches the VM
     SW->>N: Fetch the refs<br/>git fetch · bundle
     %%> What it does:
     %%> - `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` of the workspace
@@ -79,13 +82,16 @@ sequenceDiagram
     SW->>N: Read the refs<br/>git rev-parse
     %%> What it does:
     %%> - reads the two commits the fetch stored
-    SW->>N: Clean up<br/>remove scratch
+    SW->>SW: Clean up the scratch<br/>rm -rf
     %%> When:
-    %%> - always, on success and failure: the scratch directory on Node 209 and the one on the VM
+    %%> - always, on success and failure: the scratch directory of the run on Node 209
+    SW->>N: Clean up the VM directory<br/>rm -rf
+    %%> When:
+    %%> - always, after the scratch: the run's directory on the VM
   end
   Note over SW: Confirm the sync
   %%> What it does:
-  %%> - native assert: the fetch, the read and the clean up succeeded
+  %%> - native assert: for a task VM, the read and both clean ups succeeded; for a task copy, the base and its discard succeeded
   alt synced
     SW-->>GW: Run succeeded<br/>terminal event · commits
     %%> How the Gateway learns it:

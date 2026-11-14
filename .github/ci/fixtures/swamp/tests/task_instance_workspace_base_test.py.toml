@@ -1,11 +1,12 @@
 file = "swamp/tests/task_instance_workspace_base_test.py"
 slices = false
-cost = 55
-source_sha256 = "311192ff108ef6372f9562236af9725d1cc8369b3a00d91f595b0467a830e5d9"
+cost = 66
+source_sha256 = "1b5bb19faa04fcd6810b1788d3dd569aa0433c94d85b975c87321ee176b4f36f"
 cases = [
   "test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main",
   "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind",
-  "test_only_the_base_step_of_the_child_reads_the_credential"
+  "test_only_the_base_step_of_the_child_reads_the_credential",
+  "test_the_sync_takes_the_copy_path_by_its_copy_key_and_keeps_the_task_vm_path"
 ]
 inputs = [
   "tools/tests/ci-workspace-cost-evidence.json",
@@ -16,11 +17,13 @@ inputs = [
   "swamp/ansible/tasks/task-instance-workspace-phase.yml",
   "swamp/ansible/tasks/ssh-execution-*.yml",
   "swamp/extensions/behaviors/operations/task-instance-workspace/**",
-  "swamp/workflows/workflow-task-instance-workspace.yaml"
+  "swamp/workflows/workflow-task-instance-workspace.yaml",
+  "swamp/workflows/workflow-operation-task-sync.yaml"
 ]
 
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
-"test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main" = 16
-"test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind" = 37
+"test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main" = 19
+"test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind" = 40
 "test_only_the_base_step_of_the_child_reads_the_credential" = 2
+"test_the_sync_takes_the_copy_path_by_its_copy_key_and_keeps_the_task_vm_path" = 5
