@@ -60,6 +60,8 @@
                         }
                     }
                 },
+                "pr_mode": null,
+                "pr_mode_source": null,
                 "tokens": 182400,
                 "line_diff": 1240,
                 "lines_added": 1010,

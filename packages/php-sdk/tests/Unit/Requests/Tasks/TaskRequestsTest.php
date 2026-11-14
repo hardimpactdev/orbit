@@ -832,7 +832,13 @@ it('maps the mode, its source and the publication of a task copy\'s group, and l
         ->and($group->publication?->state)->toBe('waiting_for_release')
         ->and($group->toArray())->toMatchArray(['pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication])
         ->and($plain->publication)->toBeNull()
-        ->and($plain->toArray())->not->toHaveKey('publication');
+        ->and($plain->toArray())->not->toHaveKey('publication')->not->toHaveKey('pr_mode');
+});
+
+it('keeps the mode of a task copy\'s list row, which carries no publication', function (): void {
+    $row = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-list/default')[0], 'pr_mode' => 'pr_when_done', 'pr_mode_source' => 'group'], 'request-id');
+
+    expect($row->toArray())->toMatchArray(['pr_mode' => 'pr_when_done', 'pr_mode_source' => 'group'])->not->toHaveKey('publication');
 });
 
 it('maps the releases of task:status', function (): void {
