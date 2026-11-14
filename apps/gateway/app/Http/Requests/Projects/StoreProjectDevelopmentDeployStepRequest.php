@@ -8,6 +8,7 @@ use App\Domain\Projects\DevelopmentDeployStep;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Validation\Validator;
 use InvalidArgumentException;
 use UnexpectedValueException;
 
@@ -21,6 +22,7 @@ final class StoreProjectDevelopmentDeployStepRequest extends FormRequest
             'command' => ['required', 'string'],
             'timeout_seconds' => ['sometimes', 'integer:strict'],
             'required' => ['sometimes', 'boolean:strict'],
+            'inputs' => ['sometimes', 'nullable', 'array'],
             'before' => ['sometimes', 'string'],
             'after' => ['sometimes', 'string'],
         ];
@@ -35,12 +37,24 @@ final class StoreProjectDevelopmentDeployStepRequest extends FormRequest
                 'command',
                 'timeout_seconds',
                 'required',
+                'inputs',
                 'before',
                 'after',
             ]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(static function (Validator $validator): void {
+            $inputs = $validator->getData()['inputs'] ?? null;
+            $error = is_array($inputs) && ! $validator->errors()->has('inputs') ? DevelopmentDeployStep::inputsError($inputs) : null;
+            if ($error !== null) {
+                $validator->errors()->add('inputs', $error);
+            }
+        });
     }
 
     public function step(): DevelopmentDeployStep
@@ -55,6 +69,7 @@ final class StoreProjectDevelopmentDeployStepRequest extends FormRequest
                     ? $payload['timeout_seconds']
                     : DevelopmentDeployStep::DefaultTimeoutSeconds,
                 is_bool($payload['required'] ?? null) ? $payload['required'] : true,
+                is_array($payload['inputs'] ?? null) ? DevelopmentDeployStep::validInputs($payload['inputs']) : [],
             );
         } catch (InvalidArgumentException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
