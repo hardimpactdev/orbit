@@ -69,6 +69,13 @@ final readonly class InstanceContainer
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
 
     /**
+     * A clone's drop-in for T3's unit: T3 starts after nftables, the local file systems and the journal, not after `sysinit.target`
+     * (held about 0.6 s by udev's trigger in a container) or `network-online.target`. T3 listens on all addresses and needs neither
+     * (docs/reference/development-containers.md#t3-starts-with-the-copy). The unit itself stays as the image writes it.
+     */
+    public const string T3BootDropIn = '/etc/systemd/system/t3.service.d/10-orbit-boot.conf';
+
+    /**
      * The line after a clone's credential line on `clone-container`'s stdin; the model environment follows it. The copy's first boot then
      * starts T3 (docs/reference/development-containers.md#t3-starts-with-the-copy). Git's credential store skips the line and the rest.
      */
@@ -460,6 +467,9 @@ final readonly class InstanceContainer
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
                 ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
                     ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => self::claudeInstances()])]],
+                // No default dependencies: T3 waits for nftables, the local file systems and the journal, not for `sysinit.target`.
+                ['path' => self::T3BootDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
+                    'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=\nAfter=nftables.service local-fs.target systemd-journald.socket\nConflicts=shutdown.target\nBefore=shutdown.target\n"],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
