@@ -363,6 +363,11 @@ class CloneTest(unittest.TestCase):
             {"path": "/etc/fonts/fonts.conf", "uid": 0, "gid": 0, "mode": "0644", "content": "<fontconfig/>\n"},
             {"path": "/etc/gitconfig", "uid": 0, "gid": 0, "mode": "0644", "content": "[safe]\n\tdirectory = /srv/workspace\n"},
             {"path": "/etc/ld.so.cache", "uid": 0, "gid": 0, "mode": "0644", "content": ""},
+            # Playwright's browsers beside its package (InstanceContainer::BrowserEnvironment), for units and login shells.
+            {"path": "/etc/systemd/system.conf.d/91-orbit-browsers.conf", "uid": 0, "gid": 0, "mode": "0644",
+             "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n"},
+            {"path": "/etc/profile.d/91-orbit-browsers.sh", "uid": 0, "gid": 0, "mode": "0644",
+             "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n"},
         ]
         calls, _, error = self.clone_with({"boot_files": browser})
         self.assertEqual(error, "")

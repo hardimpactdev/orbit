@@ -68,6 +68,20 @@ final readonly class InstanceContainer
     /** T3's command in a container, from the agent release its image holds. */
     public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
+    /**
+     * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
+     * (docs/reference/development-containers.md#playwright-browsers). The default's deploy steps run as `orbit` and a task
+     * check runs as `agent`, so a per-user cache would be invisible to the check; the dependency folder is shared, comes with the
+     * seed, and always holds the build of the Project's own Playwright version. A default's deploy steps get it; a new clone gets it
+     * through its boot files. An existing container keeps what it has.
+     */
+    public const array BrowserEnvironment = ['PLAYWRIGHT_BROWSERS_PATH' => '0'];
+
+    /** The boot files that give a new clone's units and login shells, the task check among them, the browser setting. */
+    public const string BrowserUnitFile = '/etc/systemd/system.conf.d/91-orbit-browsers.conf';
+
+    public const string BrowserShellFile = '/etc/profile.d/91-orbit-browsers.sh';
+
     public function __construct(private RecipeImageBuilds $recipes) {}
 
     public static function name(Instance $instance): string
@@ -254,9 +268,10 @@ final readonly class InstanceContainer
             'branch' => $branch !== '' ? $branch : ValidatedData::string($project->default_branch), 'commit' => null,
             'workspace' => $workspace, 'environment_file' => self::environmentFile($instance),
             // The deploy commands' whole environment: `orbit`'s home and the runtime folder, the Project's PHP first, the Vite+ home and
-            // the egress proxy (docs/reference/development-containers.md#egress-and-dns).
+            // the egress proxy (docs/reference/development-containers.md#egress-and-dns), and the Playwright browser folder.
             'environment' => ['HOME=/home/orbit', 'USER=orbit', 'LOGNAME=orbit', 'PATH='.self::path($project),
-                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment)],
+                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys($environment), $environment),
+                ...array_map(static fn (string $name, string $value): string => "{$name}={$value}", array_keys(self::BrowserEnvironment), self::BrowserEnvironment)],
             ...($nodeServices === [] ? [] : ['node_services' => $nodeServices]),
             ...self::privateNames($access),
             // The units and login shells read it from the one guest writer at their next start (instance_node_services.py `proxy`).
@@ -387,12 +402,16 @@ final readonly class InstanceContainer
      * dynamic linker ignores an empty cache until then (docs/reference/development-containers.md#existing-containers). Last, the
      * Node's Orbit root CA: the clone script reads it on the Node and adds its hashed name (docs/reference/development-containers.md#trust).
      * And `agent`'s NSS store, which names the trust module for Chromium: the clone script makes it or appends the entry
-     * (InstanceImage::browserTrust).
+     * (InstanceImage::browserTrust). And the Playwright browser folder (self::BrowserEnvironment) for units and login shells: only a
+     * new clone gets it, so a running container whose agent installed browsers into its own cache keeps finding them.
      *
      * @return list<array<string, int|string|list<string>>>
      */
     private static function bootFiles(): array
     {
+        $browser = implode(' ', array_map(static fn (string $name, string $value): string => "{$name}={$value}",
+            array_keys(self::BrowserEnvironment), self::BrowserEnvironment));
+
         return [
             ...array_map(static fn (array $file): array => ['path' => $file['path'], 'content' => $file['content'], 'uid' => $file['uid'],
                 'gid' => $file['gid'], 'mode' => $file['mode']], InstanceImage::shared()),
@@ -400,6 +419,8 @@ final readonly class InstanceContainer
             ['source' => InstanceHostIntent::TrustSource, 'path' => InstanceHostIntent::TrustFile, 'hash_directory' => InstanceHostIntent::TrustDirectory,
                 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             InstanceImage::browserTrust(),
+            ['path' => self::BrowserUnitFile, 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment={$browser}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            ['path' => self::BrowserShellFile, 'content' => "# Managed by Orbit.\nexport {$browser}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
         ];
     }
 
