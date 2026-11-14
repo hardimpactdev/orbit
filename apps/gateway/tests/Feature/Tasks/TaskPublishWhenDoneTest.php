@@ -490,3 +490,16 @@ it('keeps a refused check refused when a later publish of it timed out on a lock
         ->and(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('refused')
         ->and(TaskPublicationData::fromModel($world->group)?->errorCode)->toBe('tasks.publish_secret_content');
 });
+
+it('shows a lock timeout of a group that the tick does not publish as refused at once', function (): void {
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    $timedOut = whenDoneEndPublish($world->group);
+
+    $publication = TaskPublicationData::fromModel($world->group->refresh());
+    expect($publication?->state)->toBe('refused')
+        ->and($publication?->errorCode)->toBe('tasks.publish_lock_timeout')
+        ->and($publication?->operationId)->toBe($timedOut->id)
+        ->and(whenDoneTick()[0])->toMatchArray(['result' => 'waiting'])
+        ->and(whenDonePublishes($world->group))->toBe(1);
+});

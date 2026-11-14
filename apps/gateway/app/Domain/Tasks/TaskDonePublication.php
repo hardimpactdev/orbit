@@ -49,14 +49,16 @@ final class TaskDonePublication
      * The publish of this done check, by any caller, that ended without success and keeps the check refused: Orbit does not start the check
      * again by itself, and the group shows it as refused (docs/reference/tasks.md#a-refused-automatic-publish). The newest publish that
      * failed with another code than {@see self::LockTimeoutCode}, or was cancelled or interrupted without one, refuses the check whatever
-     * came after. Lock timeouts alone refuse it once {@see self::LockTimeoutAttempts} publishes of the check timed out on a lock.
+     * came after. Lock timeouts alone refuse it once {@see self::LockTimeoutAttempts} publishes of the check timed out on a lock, and at once
+     * for a group the tick does not publish: its mode, or the mode its done check recorded, is not `pr_when_done`.
      */
-    public static function unsuccessful(Task $group, TaskCheck $check): ?Operation
+    public static function unsuccessful(Task $group, TaskCheck $check, ?TaskPrMode $mode): ?Operation
     {
         $ended = self::publishes($group, $check)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value]);
         $refused = (clone $ended)->where(static fn (Builder $query): Builder => $query->whereNull('error_code')->orWhere('error_code', '!=', self::LockTimeoutCode))
             ->orderByDesc('id')->first();
-        if ($refused instanceof Operation || self::lockTimeouts($group, $check) < self::LockTimeoutAttempts) {
+        $retried = $mode === TaskPrMode::PrWhenDone && $check->pr_mode === TaskPrMode::PrWhenDone;
+        if ($refused instanceof Operation || ($retried && self::lockTimeouts($group, $check) < self::LockTimeoutAttempts)) {
             return $refused;
         }
 

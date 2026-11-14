@@ -1032,7 +1032,7 @@ Copies of several groups can share a Node, and their checks, publishes and syncs
 | The `.env` content check, the import and the push of a publish on 209 | `task-publish-content-<node>-<group>`, `task-publish-import-<node>-<group>`, `task-publish-push-<node>-<group>` | 240 s, 60 s, 60 s |
 | The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 120 s |
 
-One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name: a step of 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, and a step that runs only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
+One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name. It runs 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, or only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
 
 ### Workspace ownership
 
@@ -1350,7 +1350,7 @@ The title is the group title. The body holds the group brief, the completed subt
 | `working` | The work is not done yet |
 | `waiting_for_release` | The work is done, and Orbit does not publish by itself: the mode is `review_before_pr`, or the done check recorded `review_before_pr` |
 | `publishing` | A publish of the done check runs, or the tick starts one within a minute because the group and its done check are in `pr_when_done`, also to retry a [lock timeout](#a-refused-automatic-publish) |
-| `refused` | A publish of the done check failed, was cancelled or was refused, by any caller. A lock timeout counts only after its last retry |
+| `refused` | A publish of the done check failed, was cancelled or was refused, by any caller. A [lock timeout](#a-refused-automatic-publish) counts after its last retry, or at once outside `pr_when_done` |
 | `published` | The group has its pull request |
 
 [`task:status`](/cli/task/status) lists every group in `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
@@ -1369,7 +1369,9 @@ Only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are
 
 A publish that failed because a Swamp behavior lock timed out is no refusal. Its run waited 60 seconds for a step that another run held, and nothing on the copy or on GitHub was wrong. Swamp reports a failed step whose error reads `Lock "<path>/.lock" held by <holder> (pid <pid>) — timed out after <ms>ms`, or the same without the holder when it let go at the deadline. Orbit records `tasks.publish_lock_timeout`.
 
-The tick then starts the same done check again, one attempt per tick and at most 3 attempts in all. Each retry is a new Operation, keyed with its attempt. While attempts remain, `publication` shows `publishing`. After the third lock timeout it shows `refused` with `tasks.publish_lock_timeout`, and `task:publish <group>` tries again. These retries never hold a hand `task:publish` of the same check: it is admitted while no Operation of the group runs, as any publish is. Any other failure, such as `tasks.publish_secret_content` or `tasks.push_failed`, stays a refusal and is not retried.
+The tick then starts the same done check again, one attempt per tick and at most 3 attempts in all. Each retry is a new Operation, keyed with its attempt. While attempts remain, `publication` shows `publishing`. After the third lock timeout it shows `refused` with `tasks.publish_lock_timeout`, and `task:publish <group>` tries again.
+
+These retries never hold a hand `task:publish` of the same check: it is admitted while no Operation of the group runs, as any publish is. Only a group in `pr_when_done` whose done check recorded `pr_when_done` is retried. The lock timeout of any other group shows `refused` at once. Any other failure, such as `tasks.publish_secret_content` or `tasks.push_failed`, stays a refusal and is not retried, also when a later publish of the same check timed out on a lock.
 
 A refused publish changes nothing else. The group keeps its status, and the task copy and its checked commit stay until `task:cancel` or `task:complete`.
 

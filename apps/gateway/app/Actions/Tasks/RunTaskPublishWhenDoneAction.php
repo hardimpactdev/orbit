@@ -88,7 +88,7 @@ final readonly class RunTaskPublishWhenDoneAction
         // A publish of this check that failed or was cancelled, whoever started it, is not started again by the tick; one that timed out
         // on a lock is, with attempts left, under the key of the attempt. An open retry replays under its key; admission refuses any other
         // open publish of the group as busy.
-        $failed = TaskDonePublication::unsuccessful($group, $check);
+        $failed = TaskDonePublication::unsuccessful($group, $check, $mode);
         if ($failed !== null) {
             return self::result($group, $check->id, 'skipped', TaskDonePublication::code($failed), $failed->id);
         }
