@@ -1001,9 +1001,11 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 ### Drivers
 
-A driver translates Orbit's thread operations for one agent runtime. Task agents, the implementer and the reviewer, run on the `pi` driver only. `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the two roles, and both default to `pi`. A new task stores those values. The Gateway registers `pi` and no other task-agent driver. Any other value returns `tasks.agent_driver_unavailable` and stores no task.
+A driver translates Orbit's thread operations for one agent runtime. A turn in a task VM runs on the `pi` driver. A turn in a [task copy](#task-copy) runs on T3 instead: Swamp runs stock `t3 thread start` in the copy as user `agent`, and the thread records the driver `t3`. The Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) setting chooses between the two.
 
-A managed task whose recorded driver is not `pi` does not start or resume an agent turn. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
+`ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the driver of each role on a task VM, and both default to `pi`. Every new task stores those values, a task copy's too. The Gateway registers `pi` and no other task-agent driver, and a copy turn does not use the registry. Any other value, `t3` included, returns `tasks.agent_driver_unavailable` and stores no task.
+
+A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads are never resumed: each copy turn starts a new thread. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
@@ -1581,9 +1583,9 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 ### Task agents run on Pi
 
-T3 task threads run as the operator's Unix user and have that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
+Host T3 task threads ran as the operator's Unix user and had that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers on a task VM. A task copy runs its implementer turns with T3's own CLI as `agent`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
 
 Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
 
