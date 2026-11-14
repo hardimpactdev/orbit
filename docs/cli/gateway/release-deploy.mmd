@@ -39,8 +39,15 @@ sequenceDiagram
   %%> - refuses a commit that does not descend from the current release
   %%> - links shared env and storage, installs dependencies, seals with `REVISION` and a cached config
   %%> - a sealed release of the commit is reused
+  %%> On failure:
+  %%> - a new build refuses with `gateway.release_disk_low` before it writes, when the free space and the snapshots that may go cannot hold the build, a database copy and the floor
   SW->>GN: Install the web build<br/>artifact · digest · rename
   SW->>GN: Snapshot the database<br/>VACUUM INTO
+  %%> What it does:
+  %%> - keeps the floor of Doctor's `node.disk_low`: 2 GiB and 10 % of the disk stay free after the copy
+  %%> - removes older snapshots before the copy when the floor needs it; keeps the newest two after it, and always the one a pause names
+  %%> On failure:
+  %%> - refuses with `gateway.release_disk_low` before the copy; nothing migrated, the old release stays live
   SW->>GN: Migrate<br/>artisan migrate --isolated
   %%> What it does:
   %%> - prints the end of the migration's output and its exit code; a failed exec would keep no output
