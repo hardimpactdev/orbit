@@ -3,11 +3,22 @@ name: task-instance-workspace
 description: One internal Node-side task workspace phase; no public task admission.
 queueTimeout: 30
 labels: {role: swamp}
+vaults:
+- orbit-control-inputs
 inputs:
   type: object
   properties:
     node_id: {type: integer, minimum: 1}
-    phase: {type: string, enum: [preflight, before, after, receipt, export, discard]}
+    phase: {type: string, enum: [preflight, before, after, receipt, export, discard, base, base-cleanup]}
+    # task:sync of a copy: the vault key of the read credential the Gateway minted for this run, as one credential-store line.
+    # Only the base phase reads it, in the environment of its own step; it never reaches the guest.
+    git_credential:
+      type: object
+      properties:
+        vault: {type: string, enum: [orbit-control-inputs]}
+        key: {type: string, pattern: '^task-sync-credential-[a-f0-9-]{36}$'}
+      required: [vault, key]
+      additionalProperties: false
     intent:
       type: object
       properties:
@@ -44,9 +55,17 @@ inputs:
         # Its content check: the copy's .env, by its path under the workspace, fetched beside the bundle.
         environment_path: {type: string, pattern: '^[^/]'}
         worker_environment: {type: string, pattern: '^/tmp/orbit-task-publish-[A-Za-z0-9]+/environment$'}
+        # task:sync of a copy: the default branch, the Project's repository, the copy's Node mirror, the default's mirror
+        # that makes a missing one, and the copy's start commit.
+        default_branch: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'}
+        repository: {type: string, pattern: '^https://'}
+        mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
+        source_mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
+        start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
         # The shared address-node tasks own the pinned SSH descriptor contract.
         ssh_execution: {type: object}
-      required: [runtime, branch, head, snapshot_id, ssh_execution]
+      # The phase assertion requires `head` of every phase that checks a candidate; check and base phases need none.
+      required: [runtime, branch, snapshot_id, ssh_execution]
       additionalProperties: false
   required: [node_id, phase, intent]
   additionalProperties: false
@@ -68,6 +87,8 @@ jobs:
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: input, condition: {type: succeeded}}]
+        # The base phase runs in its own step, the only one that reads the read credential.
+        guard: '${{ inputs.phase == "base" }}'
         task:
           type: behavior
           behaviorType: command/shell
@@ -84,10 +105,34 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      # task:sync of a copy: the same playbook, with the read credential as one environment value. Ansible writes it to a
+      # 0600 file on the Node for one fetch and removes it in `always`; base-cleanup removes it after a cancelled run.
+      - name: Bring in the base
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ inputs.phase != "base" }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-workspace-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags base "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_GIT_CREDENTIAL: '${{ vault.get(inputs.git_credential.vault, inputs.git_credential.key) }}'
       - name: evidence
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: Run workspace phase, condition: {type: always}}]
+        dependsOn:
+          - {step: Run workspace phase, condition: {type: always}}
+          - {step: Bring in the base, condition: {type: always}}
         task:
           type: behavior
           behaviorType: '@nckrtl/task-instance-workspace'
@@ -102,6 +147,7 @@ jobs:
         dependsOn:
           - {step: input, condition: {type: always}}
           - {step: Run workspace phase, condition: {type: always}}
+          - {step: Bring in the base, condition: {type: always}}
           - {step: evidence, condition: {type: always}}
         task:
           type: behavior

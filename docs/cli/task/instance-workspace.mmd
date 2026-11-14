@@ -8,7 +8,16 @@ sequenceDiagram
   %% lane N icon=server pill=target tone=amber
   participant SW as Swamp<br/>parent task flow
   participant N as Node<br/>Instance runtime
+  opt phase base
+    SW->>N: Bring in the base
+    %%> Why:
+    %%> - the one step with the read credential, a whole vault value in its environment; every other phase runs without it
+    %%> On the Node:
+    %%> - Ansible writes the credential to a 0600 file for one fetch into the copy's mirror and removes it in `always`
+  end
   SW->>N: Run workspace phase
+  %%> When:
+  %%> - every phase but base
   %%> Inputs:
   %%> - recorded Incus project and name, expected branch and head, snapshot identity and phase
   %%> - preflight returns the checkout identity; later calls must match it
