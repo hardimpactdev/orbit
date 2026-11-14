@@ -2181,7 +2181,16 @@ The cover test fails when the converge workflow calls such a method, when an imp
 
 The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 
-The `swamp` files are the same for the three Nodes. When the converge runs, the due Nodes converge one by one. They cannot run side by side: every step of the converge workflow has a fixed behavior name. Swamp locks each behavior, so a second run would wait for the first one's lock and fail after 60 s. A failed converge fails the refresh, and the run restores the old seed, as for any failed step.
+The `swamp` files are the same for the three Nodes. When the converge runs, the due Nodes converge side by side. Two things made them wait for each other before:
+
+| What | Now |
+| --- | --- |
+| The nested Gateway refused a second converge while one held the VPN hub, and every converge held it | Two base converges never conflict, the hub's own included: a base intent has no network. Against a converge with roles, Tools or a network, any converge still refuses ([node:converge](/cli/node/converge)) |
+| Every step of the converge workflow had a fixed behavior name, so a second run waited for the first one's Swamp lock | The seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`). The local steps of a second or less keep one name |
+
+The refresh admits every due Node first, then reads each Operation until it has ended. A failed or refused converge fails the refresh only after every admitted converge has ended, so no run is still going when the run restores the old seed. The error names each Node that failed. Three base converges that changed nothing took 108 s one by one (refresh 22223) and 48 s side by side (measured in a copy of the Orbit container).
+
+The bound is the nested Gateway's Swamp: three workers, one run each, and the workflow waits 30 s for a worker (`queueTimeout`). The three converges take all three workers, so nothing else should start on the nested Swamp during the converge.
 
 A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 

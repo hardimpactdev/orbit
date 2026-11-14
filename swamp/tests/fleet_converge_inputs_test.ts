@@ -190,6 +190,22 @@ Deno.test("a cut import fails when the converge workflow calls its method or a u
   assertThrows(() => checkCutImport({ ...guarded, methods: ["convergeInput"] }), Error, "is used outside convergeInput");
 });
 
+Deno.test("the converge workflow's Node plays lock a behavior per Node, so the refresh starts the inner Nodes side by side", () => {
+  const flow = parse(read("swamp/workflows/workflow-operation-node-converge-direct.yaml")) as {
+    jobs: { steps: { name: string; task: { behaviorName: string } }[] }[];
+  };
+  const names = Object.fromEntries(flow.jobs.flatMap((job) => job.steps).map((step) => [step.name, step.task.behaviorName]));
+  // The seven Ansible plays reach the Node and can hold their lock for many seconds: `<family>-<node_id>` (docs/cli/README.md).
+  const plays = ["Converge input", "Converge agent", "Converge software", "Converge roles", "Converge tools", "Converge network", "Check the Node"];
+  for (const step of plays) {
+    assert(/^\$\{\{ "node-converge-converge-[a-z]+-" \+ string\(inputs\.node_id\) \}\}$/.test(names[step]), `${step}: ${names[step]}`);
+  }
+  assertEquals(new Set(plays.map((step) => names[step])).size, plays.length, "each play has its own family");
+  // The local steps of a second or less keep one name: the secret writes, the ansible-input steps and the result, which the Gateway
+  // reads by name and version.
+  for (const [step, name] of Object.entries(names)) if (!plays.includes(step)) assert(!name.includes("inputs.node_id"), `${step}: ${name}`);
+});
+
 Deno.test("the refresh hashes the listed inputs and the inner Gateway's base intent digests", () => {
   const refresh = read("swamp/ansible/tasks/instance-fleet-refresh.yml");
   assert(refresh.includes("fleet-converge-inputs.json"), "the refresh reads the list");

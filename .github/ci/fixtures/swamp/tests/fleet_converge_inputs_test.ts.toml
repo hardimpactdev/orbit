@@ -1,14 +1,15 @@
 order = 1490
-source_sha256 = "4faa49aa8fe8a4e5f737dd52b4fac8669ceff8a2e34d90e2ab594be67df0f372"
+source_sha256 = "836ca0cf539aab0af4cd7dd6a454ab8430ce07cfb14c6606fd393a3aad822aff"
 cases = [
   "every file a nested Node's base converge reads is in the converge digest's list",
   "the list holds only files a base converge reads, each exists, ships in the manifest, and each cut still guards its include",
   "each cut import is used only by methods a converge never runs, or only under its guard",
   "a cut import fails when the converge workflow calls its method or a use leaves its guard",
+  "the converge workflow's Node plays lock a behavior per Node, so the refresh starts the inner Nodes side by side",
   "the refresh hashes the listed inputs and the inner Gateway's base intent digests",
 ]
 file = "swamp/tests/fleet_converge_inputs_test.ts"
-cost = 1 # ESTIMATE: five read-only cases completed in 0.05 s locally
+cost = 1 # ESTIMATE: six read-only cases completed in 0.05 s locally
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "swamp/ansible/tasks/instance-fleet-refresh.yml",

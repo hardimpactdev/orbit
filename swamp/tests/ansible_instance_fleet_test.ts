@@ -244,12 +244,12 @@ const remint = "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbi
 const tokenShaped = /[a-z0-9-]+\.[A-Za-z0-9_-]{20,}/;
 /** A call to the nested Gateway's converge API: an admission or a read of its Operation. */
 const convergeApi = (call: string) => call.startsWith(api) && (call.includes("/converge ") || call.includes("/operations/"));
-/** The due Nodes converge one after the other: the converge workflow's fixed behavior names share one Swamp lock. The fake numbers
- * each admitted Operation from 901 in admission order. */
-const convergeCallsFor = (nodes: number[]) => nodes.flatMap((node, index) => [
-  `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d {"base":true}`,
-  `${api} --fail https://10.45.0.1/api/v1/operations/${901 + index}`,
-]);
+/** The due Nodes converge side by side: every one is admitted first, then each Operation is read. The fake numbers each admitted
+ * Operation from 901 in admission order. */
+const convergeAdmit = (node: number) =>
+  `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d {"base":true}`;
+const convergeRead = (operation: number) => `${api} --fail https://10.45.0.1/api/v1/operations/${operation}`;
+const convergeCallsFor = (nodes: number[]) => [...nodes.map(convergeAdmit), ...nodes.map((_, index) => convergeRead(901 + index))];
 const convergeCalls = convergeCallsFor([1, 2, 3]);
 /** The record keys of the three nested Nodes' converge digests and last converge times. */
 const convergeKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converge_${role}`);
@@ -584,12 +584,42 @@ Deno.test({
       assert(!failed.ok);
       assertStringIncludes(failed.output, "The base converge of the nested Node app-dev (Operation 902) ended failed with node.converge_failed");
       const calls = f.calls();
-      // app-prod is never admitted after app-dev failed.
-      assertEquals(calls.filter(convergeApi), convergeCalls.slice(0, 4));
+      // The three converges run side by side: all are admitted and awaited before the failure fails the refresh.
+      assertEquals(calls.filter(convergeApi), convergeCalls);
       assert(!calls.some((call) => !call.includes(" file pull ") && (call.includes("ansible-playbook") || call.includes("orbit-swamp"))), calls.join("\n"));
       assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
       assertEquals(f.state().outer.files[record], undefined);
       assertKeyUntouched(calls, failed.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the due Nodes converge side by side, and a failed or refused Node fails the refresh only after every admitted converge has ended",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { base: true });
+    try {
+      assert(f.run("start").ok);
+      f.calls();
+      // gateway still runs for two reads, app-dev fails at once, app-prod is refused at its admission.
+      f.change((state) => {
+        state.convergeRunning = { 1: 2 };
+        state.convergeStatus = { 2: "failed" };
+        state.convergeRefused = [3];
+      });
+      const failed = f.run("refresh");
+      assert(!failed.ok);
+      assertStringIncludes(failed.output, "The nested Gateway did not admit the base converge of app-prod");
+      assertStringIncludes(failed.output, "The base converge of the nested Node app-dev (Operation 902) ended failed with node.converge_failed");
+      const calls = f.calls();
+      // All three are admitted before any read; the refresh reads gateway until it has ended, then app-dev.
+      assertEquals(calls.filter(convergeApi), [convergeAdmit(1), convergeAdmit(2), convergeAdmit(3), convergeRead(901), convergeRead(901), convergeRead(901), convergeRead(902)]);
+      assertEquals(f.state().convergeRunning, { 1: 0 });
+      assert(!calls.some((call) => call.includes("snapshot") || call.includes("incus stop") || call === recordWrite), calls.join("\n"));
+      assertEquals(f.state().outer.files[record], undefined);
     } finally {
       f.cleanup();
     }
@@ -866,8 +896,11 @@ Deno.test({
     try {
       const failed = f.run("refresh");
       assert(!failed.ok);
-      assertStringIncludes(failed.output, "Check the base converge of gateway");
-      assertStringIncludes(failed.output, "The base converge of the nested Node gateway (Operation 901) ended failed with node.converge_failed");
+      assertStringIncludes(failed.output, "Check the base converges of the nested Nodes");
+      // The three run side by side, and each Node that failed is named.
+      for (const [node, operation] of [["gateway", 901], ["app-dev", 902], ["app-prod", 903]]) {
+        assertStringIncludes(failed.output, `The base converge of the nested Node ${node} (Operation ${operation}) ended failed with node.converge_failed`);
+      }
       assert(!f.calls().some((call) => /^incus (snapshot|stop) /.test(call)));
     } finally {
       f.cleanup();

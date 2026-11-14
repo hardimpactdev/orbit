@@ -8,20 +8,26 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use App\Models\Operation;
+use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
-/** Reserves a convergence target and shared hub until its Operation settles. */
+/**
+ * Reserves a convergence target and the shared hub until its Operation settles. Every converge records the hub it may change and
+ * whether it is a base converge (`node.converge` with `base: true`). A base intent never converges the network, the hub's own
+ * included (NodeDesiredConvergeInput::baseIntent), so two base converges of different Nodes never conflict: the nested-fleet refresh
+ * starts the inner Nodes' base converges together. Against a converge with roles, Tools or a network, any converge refuses as before.
+ */
 final readonly class NodeNetworkReservation
 {
     /** @param Closure(?Node):Operation $admit */
-    public function hold(Node $node, Closure $admit): Operation
+    public function hold(Node $node, bool $base, Closure $admit): Operation
     {
-        return DB::transaction(function () use ($node, $admit): Operation {
+        return DB::transaction(function () use ($node, $base, $admit): Operation {
             $hub = Node::query()->whereHas('roles', static fn ($query) => $query->where('role', RoleName::Vpn))->first();
             Node::query()->whereKey(array_values(array_unique([$node->id, $hub->id ?? $node->id])))->orderBy('id')->lockForUpdate()->get();
             $node->refresh();
-            $busy = Operation::query()->where('kind', 'node.converge')
+            $open = Operation::query()->where('kind', 'node.converge')
                 ->where(static function ($query): void {
                     $query->whereNotIn('status', OperationStatus::terminalValues())
                         ->orWhere(static fn ($expired) => $expired->where('status', OperationStatus::Failed)
@@ -32,7 +38,11 @@ final readonly class NodeNetworkReservation
                     if ($hub !== null) {
                         $query->orWhere('input->_converge->network->hub_id', $hub->id);
                     }
-                })->exists();
+                })->get();
+            // A converge of the same Node always conflicts. Through the hub, only two base converges pass each other; an Operation
+            // without the mark counts as one with roles.
+            $busy = $open->contains(static fn (Operation $operation): bool => $operation->node_id === $node->id
+                || ! $base || (ValidatedData::object(ValidatedData::object($operation->input['_converge'] ?? [])['network'] ?? [])['base'] ?? false) !== true);
             if ($busy) {
                 throw new ResourceOperationException('operation.target_busy', 'Another Operation owns the Node or VPN hub.', 409);
             }
