@@ -34,6 +34,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property string|null $wireguard_public_key
  * @property string|null $dns_server_override
  * @property string|null $instance_bridge
+ * @property int|null $t3_port_last
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings
  * @property string|null $agent_secret_hash
