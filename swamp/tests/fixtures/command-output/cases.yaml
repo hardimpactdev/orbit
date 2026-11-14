@@ -2067,6 +2067,10 @@ non_command_output:
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[14]
   reason: Validates the admitted task branches of the earlier reviewer turns to settle, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[15]
+  reason: Validates the admitted tips of the earlier reviewer turns to settle, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
   field: ansible.builtin.copy.content

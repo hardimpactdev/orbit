@@ -75,8 +75,12 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             }
         }
         TaskTurnProjection::recordThread($operation->target_id, $thread, array_diff_key($result, ['metrics' => true]));
-        $questions = $result['state'] === AgentThreadState::AskingForInput->value && is_array($result['questions'] ?? null) && $result['questions'] !== []
-            ? array_values(array_map(ValidatedData::object(...), $result['questions'])) : null;
-        AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)->update(['questions' => $questions === null ? null : json_encode($questions, JSON_THROW_ON_ERROR)]);
+        // Only a turn that launched T3 on the thread replaces what it asked: one that launched nothing leaves the question open.
+        if (($result['launched'] ?? null) === true) {
+            $questions = $result['state'] === AgentThreadState::AskingForInput->value && is_array($result['questions'] ?? null) && $result['questions'] !== []
+                ? array_values(array_map(ValidatedData::object(...), $result['questions'])) : null;
+            AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)
+                ->update(['questions' => $questions === null ? null : json_encode($questions, JSON_THROW_ON_ERROR)]);
+        }
     }
 }

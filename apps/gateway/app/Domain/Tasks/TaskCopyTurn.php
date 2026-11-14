@@ -78,9 +78,14 @@ final readonly class TaskCopyTurn
         }
         $thread = $data->thread === 'new' ? null : $current;
         // An earlier turn that may still run is settled first, by this turn's own phase in the copy (docs/cli/task/copy-turn.mmd).
-        $settle = array_map(static fn (Operation $turn): array => ['operation_id' => $turn->id,
-            'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
-            'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch'])], self::unsettled($group));
+        // A reviewer's turn names the task branch and the tip its checkout must be at again; one that never detached the checkout names none.
+        $settle = array_map(static function (Operation $turn): array {
+            $tip = ($turn->input['candidate'] ?? null) === null ? null : ($turn->result['restore_tip'] ?? null);
+
+            return ['operation_id' => $turn->id, 'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
+                'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch']),
+                'tip' => is_string($tip) ? $tip : null];
+        }, self::unsettled($group));
         $candidate = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);

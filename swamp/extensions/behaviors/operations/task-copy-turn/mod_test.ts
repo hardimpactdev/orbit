@@ -1,4 +1,4 @@
-import { assertEquals } from "jsr:@std/assert@1";
+import { assert, assertEquals } from "jsr:@std/assert@1";
 import { behavior, type Evidence, shapeTurn } from "./mod.ts";
 
 const thread = "mcp:66105c2c-4331-449b-90ef-e108d0a5db3d";
@@ -17,8 +17,9 @@ const started = (status: string, error: string | null = null) =>
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
 const none = { resumed: null, review: null, detached: false, ask: null, interrupt: null, restore: null };
 // The provider instance and model as T3 showed them, and no question.
-const named = { provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
-const unnamed = { provider_instance: null, model: null, questions: [], settled: [] };
+const named = { launched: true, provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [], restore_tip: null };
+const unlaunched = { launched: false, provider_instance: null, model: null, questions: [], settled: [], restore_tip: null };
+const unnamed = { launched: true, provider_instance: null, model: null, questions: [], settled: [], restore_tip: null };
 // As `t3_copy_rpc.mjs read` printed it on a stock T3 0.1.7 server, 2026-11-14: one request with two questions.
 const request = "runtime-request:provider:claudeAgent:native-request:toolu_01TbF9dLFChexV5BVoUsSdii";
 const asked = {
@@ -27,6 +28,7 @@ const asked = {
         { id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red" }, { label: "Blue", description: "Choose blue" }], multiSelect: false },
         { id: "Which shape?", header: "Shape", question: "Which shape?", options: [{ label: "Circle", description: "Choose circle", value: "circle" }], allowCustomAnswer: true, required: true },
     ] }],
+    stoppable: true,
 };
 const questions = [
     { request_id: request, id: "Which color?", header: "Color", question: "Which color?", options: [{ label: "Red", description: "Choose red", value: null }, { label: "Blue", description: "Choose blue", value: null }],
@@ -57,17 +59,29 @@ Deno.test("a run that asks has its question stored and its run stopped: it asks 
 Deno.test("an earlier turn still running launches nothing and fails tasks.copy_turn_unended; the turns found settled are named", () => {
     const held = shapeTurn({ ...none, settle: { list_exit: 0, settled: [11], open: [12] }, launched: false, start: null, read: null });
     assertEquals(held, { state: "failed", error: "An earlier turn may still run in the copy (Operation 12); nothing was launched.", error_code: "tasks.copy_turn_unended",
-        ended: true, t3_thread_id: null, run_id: null, ...unnamed, settled: [11], transcript: [] });
+        ended: true, t3_thread_id: null, run_id: null, ...unlaunched, settled: [11], transcript: [] });
     assertEquals(turn(0, started("completed"), { settle: { list_exit: 0, settled: [11, 12], open: [] } }),
         { state: "done", error: null, ended: true, t3_thread_id: thread, run_id: run, ...named, settled: [11, 12], transcript });
 });
 
+Deno.test("a free-text question with no options is stored whole, so the run it stopped asks for input and is over", () => {
+    const free = { ...asked, requests: [{ request_id: request, kind: "user_input", questions: [{ id: "Why?", header: "", question: "Why does it fail?", options: [] }] }] };
+    const stored = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify(free) }, interrupt: stopped, read: { ...read, status: "interrupted" } });
+    assertEquals([stored.state, stored.error, stored.ended, stored.questions], ["asking_for_input", null, true, [{ request_id: request, id: "Why?", header: "",
+        question: "Why does it fail?", options: [], multi_select: false, allow_custom_answer: null, initial_answer: null, required: null }]]);
+});
+
 Deno.test("a question Orbit could not read is not stopped and not over; a stop that failed says so and is not over", () => {
     const running = { ...read, status: "running" };
-    for (const change of [{}, { ask: { ask_exit: 1, ask: "" } }, { ask: { ask_exit: 0, ask: "not json" } }, { ask: { ask_exit: 0, ask: JSON.stringify({ ...asked, requests: [] }) } }]) {
+    for (const change of [{}, { ask: { ask_exit: 1, ask: "" } }, { ask: { ask_exit: 0, ask: "not json" } }]) {
         const unread = turn(2, started("waiting"), { read: running, ...change });
         assertEquals([unread.state, unread.error_code, unread.ended, unread.questions], ["asking_for_input", "tasks.copy_question_unread", false, []], JSON.stringify(change));
+        assert(unread.error!.startsWith("Orbit could not read the agent's question"));
     }
+    // An approval, or a request with no question, is not stored whole: the phase did not stop the run, and the error says why.
+    const approval = { ...asked, requests: [{ request_id: "request:2", kind: "approval", questions: [] }], stoppable: false };
+    const kept = turn(2, started("waiting"), { read: running, ask: { ask_exit: 0, ask: JSON.stringify(approval) } });
+    assertEquals([kept.error_code, kept.ended, kept.error!.includes("approval")], ["tasks.copy_question_unread", false, true]);
     const refused = turn(2, started("waiting"), { ask, read: running,
         interrupt: { interrupt_exit: 0, interrupt: JSON.stringify({ interrupted: false, error: "The run was no longer waiting for this question.", runs: [{ id: run, status: "running" }], pending: 0 }) } });
     assertEquals([refused.state, refused.error_code, refused.ended, refused.error, refused.questions], ["asking_for_input", "tasks.copy_question_unstopped", false,
@@ -113,7 +127,7 @@ Deno.test("a continued turn reads like a new one, and one whose thread T3 does n
     for (const found of [0, 2]) {
         assertEquals(shapeTurn({ ...none, resumed: { list_exit: 0, found }, launched: false, start: null, read: null }), {
             state: "failed", error: `T3 holds ${found} threads of this title to continue, not one.`, error_code: "tasks.copy_thread_missing", ended: true,
-            t3_thread_id: null, run_id: null, ...unnamed, transcript: [],
+            t3_thread_id: null, run_id: null, ...unlaunched, transcript: [],
         });
     }
 });
@@ -122,7 +136,7 @@ Deno.test("a continued turn whose thread list failed or printed no JSON is tasks
     for (const [list_exit, detail] of [[1, "exit 1"], [null, "no JSON"]] as const) {
         assertEquals(shapeTurn({ ...none, resumed: { list_exit, found: 0 }, launched: false, start: null, read: null }), {
             state: "failed", error: `T3 could not list its threads to find the one to continue (${detail}).`, error_code: "tasks.copy_turn_failed", ended: true,
-            t3_thread_id: null, run_id: null, ...unnamed, transcript: [],
+            t3_thread_id: null, run_id: null, ...unlaunched, transcript: [],
         });
     }
 });
@@ -143,7 +157,7 @@ Deno.test("a reviewer turn fails when its checkout could not be put on the candi
     }
     assertEquals(shapeTurn({ ...none, review: { ready: false, error_code: "tasks.copy_tree_dirty" }, launched: false, start: null, read: null }), {
         state: "failed", error: "The checkout had changes or no branch, so the reviewer could not be put on the candidate.", error_code: "tasks.copy_tree_dirty",
-        ended: true, t3_thread_id: null, run_id: null, ...unnamed, transcript: [],
+        ended: true, t3_thread_id: null, run_id: null, ...unlaunched, transcript: [],
     });
     assertEquals(shapeTurn({ ...none, review: { ready: false, error_code: "tasks.copy_turn_failed" }, launched: false, start: null, read: null }).error_code,
         "tasks.copy_turn_failed");
@@ -201,9 +215,11 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         assertEquals([done.successful, done.turn.state, done.turn.ended, done.turn.transcript.length, written.length], [true, "done", true, 0, 3]);
         // A reviewer's turn is done only with its restore evidence once its checkout was detached.
         Deno.writeTextFileSync(`${folder}/review.json`, JSON.stringify({ ready: true, error_code: null }));
-        Deno.writeTextFileSync(`${folder}/detach.json`, "{}");
+        Deno.writeTextFileSync(`${folder}/detach.json`, JSON.stringify({ tip: "a".repeat(40) }));
         const unrestored = await behavior.methods.result.execute({ folder }, context);
-        assertEquals([unrestored.successful, unrestored.turn.error_code, unrestored.turn.ended], [false, "tasks.copy_review_unrestored", false]);
+        // The result names the tip the detach mark holds, so a later turn can settle this one at it.
+        assertEquals([unrestored.successful, unrestored.turn.error_code, unrestored.turn.ended, unrestored.turn.restore_tip],
+            [false, "tasks.copy_review_unrestored", false, "a".repeat(40)]);
         Deno.writeTextFileSync(`${folder}/restore.json`, JSON.stringify({ restored: true }));
         assertEquals((await behavior.methods.result.execute({ folder }, context)).successful, true);
         // A run that asked: the Operation succeeds once its question is stored and its run stopped, and fails while it is not.

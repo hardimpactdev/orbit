@@ -54,6 +54,7 @@
           - intent.turn.settle | rejectattr('operation_id', 'integer') | list | length == 0
           - intent.turn.settle | map(attribute='title') | reject('match', '^Orbit task [1-9][0-9]* thread [1-9][0-9]*$') | list | length == 0
           - intent.turn.settle | map(attribute='branch') | select('string') | reject('match', '^task-[1-9][0-9]*$') | list | length == 0
+          - intent.turn.settle | map(attribute='tip') | select('string') | reject('match', '^[0-9a-f]{40}$') | list | length == 0
         fail_msg: tasks.copy_turn_invalid
     # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
     - name: Reach the copy as agent
@@ -61,9 +62,14 @@
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
     # An earlier turn that may still run is settled first by one rule: T3 lists its thread in no active state, or none of its title, and
-    # a reviewer's checkout is clean on the task branch. While one is not, nothing is launched, and the work in the copy stays.
+    # a reviewer's checkout is clean on the task branch at the tip it had. Once no earlier run can still write, the checkout a reviewer
+    # left is restored as after its turn. While a run goes on, nothing is touched or launched, and the work in the copy stays.
     - name: Settle the earlier turns
       when: intent.turn.settle | length > 0
+      vars:
+        settle_listed: "{{ settle_threads.stdout | from_json if settle_threads.rc | default(1) == 0 else none }}"
+        settle_active: ['preparing', 'queued', 'starting', 'running', 'waiting']
+        settle_reviewer: "{{ intent.turn.settle | selectattr('branch', 'string') | list }}"
       block:
         - name: List the threads to settle
           ansible.builtin.command:
@@ -72,33 +78,52 @@
           failed_when: false
           changed_when: false
           no_log: true
-        - name: Read the checkout a reviewer left
-          when: intent.turn.settle | map(attribute='branch') | select('string') | list | length > 0
+        - name: Name the turns whose run is over
+          ansible.builtin.set_fact:
+            settle_over: >-
+              {% set over = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
+              | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 0 or (mine | length == 1
+              and mine[0].status not in settle_active) %}{% set _ = over.append(entry.operation_id) %}{% endif %}{% endfor %}{{ over }}
+          no_log: true
+        - name: Restore the checkout a reviewer left
+          when: settle_reviewer | length > 0 and settle_over | length == intent.turn.settle | length
           block:
-            - name: Read the checkout's changes
+            - name: Discard what the reviewer changed
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['reset', '--quiet', '--hard'] }}"
+              changed_when: true
+            - name: Remove the reviewer's new files
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['clean', '--quiet', '-fd'] }}"
+              changed_when: true
+            - name: Check the task branch out again
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['checkout', '--quiet', (settle_reviewer | first).branch] }}"
+              changed_when: true
+            - name: Read the restored changes
               ansible.builtin.command:
                 argv: "{{ copy_git + ['status', '--porcelain'] }}"
               register: settle_status
               changed_when: false
-            - name: Read the checkout's branch
+            - name: Read the restored branch
               ansible.builtin.command:
                 argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
               register: settle_branch
-              failed_when: false
+              changed_when: false
+            - name: Read the restored tip
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
+              register: settle_tip
               changed_when: false
         - name: Name the settled turns
-          vars:
-            settle_listed: "{{ settle_threads.stdout | from_json if settle_threads.rc == 0 else none }}"
-            settle_active: ['preparing', 'queued', 'starting', 'running', 'waiting']
           ansible.builtin.set_fact:
             settle_done: >-
-              {% set done = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
-              | selectattr('title', 'equalto', entry.title) | list %}{% if (mine | length == 0 or (mine | length == 1
-              and mine[0].status not in settle_active)) and (entry.branch is none or (settle_status.stdout | default('x') == ''
-              and settle_branch.stdout | default('') == entry.branch)) %}{% set _ = done.append(entry.operation_id) %}{% endif %}{% endfor %}{{ done }}
+              {% set done = [] %}{% for entry in intent.turn.settle if entry.operation_id in settle_over %}{% if entry.branch is none
+              or (settle_status.stdout | default('x') == '' and settle_branch.stdout | default('') == entry.branch
+              and (entry.tip is none or settle_tip.stdout | default('') == entry.tip)) %}{% set _ = done.append(entry.operation_id) %}{% endif %}{% endfor %}{{ done }}
           no_log: true
       rescue:
-        # A list that is not JSON, or a checkout Git cannot read, settles nothing.
+        # A list that is not JSON, or a checkout Git cannot restore, settles nothing.
         - name: Settle nothing
           ansible.builtin.set_fact:
             settle_done: []
@@ -199,9 +224,10 @@
           ansible.builtin.set_fact:
             review_restore: "{{ review_branch.stdout }}"
         # From here the checkout is the reviewer's until `restore.json` says it is restored: a phase cut before that holds the group.
+        # The mark holds the tip, so a later turn that settles this one can require the branch at it again.
         - name: Mark the checkout as detached
           ansible.builtin.copy:
-            content: "{}"
+            content: "{{ {'tip': review_tip.stdout} | to_json }}"
             dest: "{{ run }}/detach.json"
             mode: "0600"
           delegate_to: localhost
@@ -281,7 +307,7 @@
               no_log: true
             - name: Read the question
               ansible.builtin.command:
-                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', 'read', turn_waiting.threadId] }}"
+                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'read', turn_waiting.threadId] }}"
                 stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
               register: turn_ask
               failed_when: false
@@ -299,9 +325,13 @@
                 ansible_connection: local
                 ansible_python_interpreter: "{{ ansible_playbook_python }}"
             - name: Stop the run that asks
-              when: turn_ask.rc == 0 and (turn_ask.stdout | from_json).requests | map(attribute='questions') | flatten | length > 0
+              # Only on a read the result step stores whole: questions only, no approval. The helper stops the run only while it waits
+              # for exactly these requests.
+              when: turn_ask.rc == 0 and (turn_ask.stdout | from_json).stoppable
               ansible.builtin.command:
-                argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', 'interrupt', turn_waiting.threadId, turn_waiting.runId] }}"
+                argv: >-
+                  {{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.node, '-', intent.turn.t3, 'interrupt', turn_waiting.threadId, turn_waiting.runId,
+                     (turn_ask.stdout | from_json).requests | map(attribute='request_id') | join('\n')] }}
                 stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/t3_copy_rpc.mjs') }}"
               register: turn_interrupt
               failed_when: false

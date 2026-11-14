@@ -7,13 +7,12 @@ const ErrorChars = 2000;
 const StartBytes = 16777216;
 const ReadBytes = 16777216;
 const AskBytes = 1048576;
-const TextChars = 20000;
 const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
 // What `task-copy-turn.yml` writes, each file as soon as its command ended: `settle.json` with the earlier turns it found settled and
 // those still open, for a continued turn `continue.json` with the exit code of
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
-// the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
+// the candidate is checked out, `detach.json` with the branch's tip as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
 // `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
 // read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, `read.json` with what `t3 thread list` found and `t3 thread show`
 // read, and for a reviewer turn `restore.json` with whether the checkout is clean on its branch at its tip again.
@@ -21,24 +20,27 @@ const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.arr
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
+const Detach = z.object({ tip: z.string().regex(/^[0-9a-f]{40}$/) }).strict();
 const Start = z.object({ start_exit: z.number().int(), start: z.string() }).strict();
 const Ask = z.object({ ask_exit: z.number().int(), ask: z.string() }).strict();
 const Interrupt = z.object({ interrupt_exit: z.number().int(), interrupt: z.string() }).strict();
-const Text = z.string().max(TextChars);
-// One question as T3 holds it in its `user_input_request` item: the agent's own words and options.
+// One question as `t3_copy_rpc.mjs read` prints it from T3's `user_input_request` item: the agent's own words and options, with what T3
+// may leave out made explicit. The evidence file's bound is the only size bound, so a read the phase stopped on always parses.
 const Question = z.object({
-    id: Text,
-    header: Text,
-    question: Text,
-    options: z.array(z.object({ label: Text, description: Text, value: Text.optional() })).max(100),
+    id: z.string(),
+    header: z.string(),
+    question: z.string(),
+    options: z.array(z.object({ label: z.string(), description: z.string(), value: z.string().optional() })),
     multiSelect: z.boolean().optional(),
     allowCustomAnswer: z.boolean().optional(),
-    initialAnswer: Text.optional(),
+    initialAnswer: z.string().optional(),
     required: z.boolean().optional(),
 });
 const Run = z.object({ id: z.string(), status: z.string() });
-// What `t3_copy_rpc.mjs read` prints: the runs that are not over and every pending request with its questions.
-const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ request_id: z.string(), kind: z.string(), questions: z.array(Question).max(50) })).max(20) });
+// What `t3_copy_rpc.mjs read` prints: the runs that are not over, every pending request with its questions, and whether the phase may
+// stop the run on them (questions only, stored whole).
+const Asked = z.object({ runs: z.array(Run), requests: z.array(z.object({ request_id: z.string(), kind: z.string(), questions: z.array(Question) })),
+    stoppable: z.boolean() });
 // What `t3_copy_rpc.mjs interrupt` prints once the run ended or its wait for that did.
 const Stopped = z.object({ interrupted: z.boolean(), error: z.string().nullable(), runs: z.array(Run), pending: z.number().int() });
 const Read = z.object({
@@ -56,6 +58,8 @@ export type Evidence = {
     resumed: z.infer<typeof Resumed> | null;
     review: z.infer<typeof Review> | null;
     detached: boolean;
+    // The branch tip the detach mark holds: the commit a reviewer's checkout must be at again.
+    detach_tip?: string | null;
     launched: boolean;
     start: z.infer<typeof Start> | null;
     ask: z.infer<typeof Ask> | null;
@@ -95,13 +99,17 @@ export const Turn = z.object({
     ended: z.boolean(),
     t3_thread_id: z.string().nullable(),
     run_id: z.string().nullable(),
+    // Whether the phase launched T3 on the thread: a turn that launched nothing leaves the thread as it was.
+    launched: z.boolean(),
     // The thread's provider instance and model as T3 shows them; the Gateway adds the effort the instance carries.
     provider_instance: z.string().nullable(),
     model: z.string().nullable(),
     // What the agent asked, in its own words and options: set when the turn ends at a question.
     questions: z.array(AskedQuestion),
-    // The earlier turns whose run this turn's phase found over, with a reviewer's checkout clean on the task branch.
+    // The earlier turns whose run this turn's phase found over, with a reviewer's checkout clean on the task branch at its tip.
     settled: z.array(z.number().int()),
+    // The tip a reviewer's checkout must be at again: set once the phase detached it, so a later turn can settle this one.
+    restore_tip: z.string().nullable(),
     transcript: z.array(Entry),
 });
 export type Turn = z.infer<typeof Turn>;
@@ -161,10 +169,12 @@ function shapeRun(evidence: Evidence): Turn {
         ended,
         t3_thread_id: started?.threadId ?? shown?.thread.threadId ?? null,
         run_id: started?.runId ?? null,
+        launched: evidence.launched,
         provider_instance: shown?.thread.providerInstanceId ?? null,
         model: shown?.thread.model ?? null,
         questions: [],
         settled: evidence.settle?.settled ?? [],
+        restore_tip: evidence.detach_tip ?? null,
         transcript: transcript(shown),
     };
     if (evidence.settle && evidence.settle.open.length > 0) {
@@ -219,7 +229,11 @@ function asked(base: Omit<Turn, "state" | "error" | "error_code">, evidence: Evi
         required: question.required ?? null,
     })));
     const turn = { ...base, questions, state: "asking_for_input" as const };
-    if (questions.length === 0) {
+    if (read !== null && !read.stoppable) {
+        return { ...turn, error: "The run waits for something Orbit cannot store whole (an approval, a request without a question, or too much text), "
+            + "so Orbit did not stop the run.", error_code: "tasks.copy_question_unread" };
+    }
+    if (read === null) {
         const exit = evidence.ask === null ? "no read" : `exit ${evidence.ask.ask_exit}`;
         return { ...turn, error: `Orbit could not read the agent's question (${exit}), so it did not stop the run.`, error_code: "tasks.copy_question_unread" };
     }
@@ -260,6 +274,7 @@ export const behavior = {
                     resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
                     review: await evidence(args.folder + "/review.json", 1024, Review),
                     detached: await marked("detach.json"),
+                    detach_tip: (await evidence(args.folder + "/detach.json", 1024, Detach))?.tip ?? null,
                     launched: await marked("launch.json"),
                     start: await evidence(args.folder + "/start.json", StartBytes, Start),
                     ask: await evidence(args.folder + "/ask.json", AskBytes, Ask),

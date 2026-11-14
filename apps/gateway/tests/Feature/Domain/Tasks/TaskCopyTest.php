@@ -996,7 +996,7 @@ function copyTurnEnded(Operation $turn, string $status, array $shaped): Operatio
 /** The shaped turn of a completed run in T3 thread THREAD. */
 function copyTurnDone(string $thread): array
 {
-    return ['state' => 'done', 'error' => null, 'ended' => true, 't3_thread_id' => $thread, 'run_id' => 'run:1', 'provider_instance' => 'claudeMedium',
+    return ['state' => 'done', 'error' => null, 'ended' => true, 't3_thread_id' => $thread, 'run_id' => 'run:1', 'launched' => true, 'provider_instance' => 'claudeMedium',
         'model' => 'claude-opus-5-5', 'questions' => [], 'transcript' => []];
 }
 
@@ -1329,7 +1329,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         // The next turn is admitted and settles the earlier one in its own phase first, also on another thread.
         $next = copyTurn($group, ['thread' => 'new']);
-        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null]]);
+        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null, 'tip' => null]]);
     })->with([
         'a wait cut by the bound' => ['failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]],
         'a cancelled run' => ['cancelled', []],
@@ -1353,7 +1353,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         // T3 later completed it: the next turn settles it, runs, and the group is free.
         $next = copyTurn($group);
-        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null]]);
+        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null, 'tip' => null]]);
         copyTurnEnded($next, 'succeeded', [...copyTurnDone('mcp:1'), 'settled' => [$cut->id]]);
         expect(copyTurn($group)->input['turn']['settle'])->toBe([]);
     });
@@ -1362,10 +1362,13 @@ describe('a turn of a group that owns a copy', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
+        $tip = str_repeat('a', 40);
         $reviewer = copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'failed', ['state' => 'failed', 'error' => 'Unrestored.',
-            'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'transcript' => []]);
+            'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'restore_tip' => $tip, 'transcript' => []]);
 
-        expect(copyTurn($group)->input['turn']['settle'])->toBe([['operation_id' => $reviewer->id, 'title' => $reviewer->input['turn']['title'], 'branch' => 'task-'.$group->id]]);
+        // The settle restores the checkout and requires the branch at the tip the reviewer's detach mark held.
+        expect(copyTurn($group)->input['turn']['settle'])->toBe([['operation_id' => $reviewer->id, 'title' => $reviewer->input['turn']['title'],
+            'branch' => 'task-'.$group->id, 'tip' => $tip]]);
     });
 
     it('admits the next turn after a turn whose T3 run ended, also a failed one', function (): void {
@@ -1397,6 +1400,20 @@ describe('a turn of a group that owns a copy', function (): void {
         $fresh = copyTurn($group, ['thread' => 'new']);
         copyTurnEnded($fresh, 'succeeded', copyTurnDone('mcp:2'));
         expect(app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null)->kind)->toBe('tasks.check');
+    });
+
+    it('keeps a thread\'s question when the turn that would answer it launched nothing', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $asked = copyTurnEnded(copyTurn($group), 'succeeded', copyTurnAsked('mcp:1'));
+
+        // The answer's turn found an earlier run still going and launched nothing.
+        copyTurnEnded(copyTurn($group, ['prompt' => 'Blue.']), 'failed', ['state' => 'failed', 'error' => 'Still runs.', 'error_code' => 'tasks.copy_turn_unended',
+            'ended' => true, 't3_thread_id' => null, 'run_id' => null, 'launched' => false, 'settled' => [], 'transcript' => []]);
+
+        expect(AgentThread::query()->findOrFail($asked->input['thread_id'])->questions)->toBe(copyTurnAsked('mcp:1')['questions'])
+            ->and(copyTurn($group, ['prompt' => 'Blue.'])->input['turn']['prompt'])->toContain("You asked in your last turn:\n[Color] Which color?");
     });
 
     it('quotes the questions of a thread\'s last turn before the answer that continues it, and clears them when that turn is recorded', function (): void {

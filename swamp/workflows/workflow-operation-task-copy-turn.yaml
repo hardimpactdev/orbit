@@ -44,7 +44,7 @@ jobs:
           behaviorName: '${{ ("task-copy-turn-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}'
           methodName: execute
           inputs:
-            run: timeout 4170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"
+            run: timeout 4400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'
