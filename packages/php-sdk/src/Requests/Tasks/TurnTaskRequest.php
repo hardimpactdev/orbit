@@ -11,7 +11,7 @@ use Saloon\Enums\Method;
 use Saloon\Http\Response;
 use Saloon\Traits\Body\HasStringBody;
 
-/** Starts tasks.turn and returns the queued operation. */
+/** Starts tasks.turn and returns the queued operation. A null thread sends none: a task copy then continues the role's thread. */
 final class TurnTaskRequest extends GatewayRequest implements HasBody
 {
     use HasStringBody;
@@ -23,7 +23,7 @@ final class TurnTaskRequest extends GatewayRequest implements HasBody
         private readonly int $taskId,
         private readonly string $role,
         private readonly string $prompt,
-        private readonly string $thread,
+        private readonly ?string $thread,
         private readonly ?string $model = null,
         private readonly ?int $check = null,
         private readonly ?string $idempotencyKey = null,

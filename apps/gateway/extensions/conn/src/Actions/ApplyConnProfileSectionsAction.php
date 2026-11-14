@@ -8,6 +8,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Node;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Orbit\Extensions\Conn\Domain\ConnAttachedThreads;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 
@@ -18,13 +19,16 @@ use Orbit\Extensions\Conn\Models\ConnProfile;
  */
 final readonly class ApplyConnProfileSectionsAction
 {
+    public function __construct(private ConnAttachedThreads $attached) {}
+
     /**
      * @param  array<string, mixed>  $writes  The new value of each section by name; null removes a section. The name `devices`
      *                                        stands for every device type: it writes the types it holds and removes the others.
+     * @param  Node|null  $caller  The Node that writes; null when Orbit writes, as when it drops a destroyed Instance's threads.
      * @param  int|null  $version  The document version the client read. Null skips the check.
      * @param  array<string, int>  $sectionVersions  The version of each section the client read; a section at another version is a conflict.
      */
-    public function execute(ConnProfile $profile, Node $caller, array $writes, ?int $version = null, array $sectionVersions = []): ConnProfile
+    public function execute(ConnProfile $profile, ?Node $caller, array $writes, ?int $version = null, array $sectionVersions = []): ConnProfile
     {
         DB::transaction(function () use ($profile, $caller, $writes, $version, $sectionVersions): void {
             $locked = ConnProfile::query()->lockForUpdate()->findOrFail($profile->id);
@@ -57,6 +61,12 @@ final readonly class ApplyConnProfileSectionsAction
             }
 
             $settings = $locked->settings;
+            $attached = $writes[ConnProfileSections::AttachedThreads] ?? null;
+
+            if (is_array($attached)) {
+                $writes[ConnProfileSections::AttachedThreads] = $this->attached->admit($attached, $settings[ConnProfileSections::AttachedThreads] ?? null, $caller);
+            }
+
             $now = Carbon::now()->toIso8601String();
 
             foreach ($this->expandDevices($writes, $settings) as $section => $value) {
@@ -64,11 +74,11 @@ final readonly class ApplyConnProfileSectionsAction
                 $meta[$section] = [
                     'version' => ($meta[$section]['version'] ?? 0) + 1,
                     'updated_at' => $now,
-                    'updated_by_node_id' => $caller->id,
+                    'updated_by_node_id' => $caller?->id,
                 ];
             }
 
-            ConnProfileSections::assertWithinLimits($settings);
+            ConnProfileSections::assertWithinLimits($settings, $locked->settings);
 
             ConnProfile::query()->whereKey($locked->id)->update([
                 'settings' => json_encode($settings, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES),

@@ -258,23 +258,37 @@ def main():
         content = bundle + ("\n" if bundle and not bundle.endswith("\n") else "") + item["content"] + ("" if item["content"].endswith("\n") else "\n")
         change(project + ["file", "push", "--uid", held["uid"], "--gid", held["gid"], "--mode", held["mode"], "-", name + item["bundle"]], content)
 
-    def private_names_and_proxy():
-        """The access plan's private names in the copy's /etc/hosts, and the composed proxy bypass in its two drop-ins, before the first
-        start, so its first boot reads them. One renderer gives the same bytes env:sync writes: instance_node_services.py `hosts` and
-        `proxy-files` (docs/reference/development-containers.md#private-names-of-the-access-plan). A seed's own block goes when the plan
-        has no name. Only `clone.proxy_environment` names drop-ins; without it the seed's stay."""
-        renderer = ["python3", "-c", json.loads(sys.argv[6])["node_services"]]
-        held = file_read("/etc/hosts", "instance.clone_private_names_refused")
-        hosts = "" if held is None else held["content"]
-        composed = json.loads(run(renderer + ["hosts"], json.dumps({"hosts": hosts, "private_names": container.get("private_names", [])})).stdout)
-        if composed["content"].splitlines() != hosts.splitlines():
-            change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], composed["content"])
+    def renderer(command):
+        """The one renderer of hosts text and proxy drop-ins: the bundle's instance_node_services.py, run on the Node."""
+        return ["python3", "-c", json.loads(sys.argv[6])["node_services"], command]
+
+    def proxy_drop_ins():
+        """The composed proxy bypass in the copy's two drop-ins, before the first start, so its first boot reads them. One renderer
+        gives the same bytes `write_proxy_environment` writes: instance_node_services.py `proxy-files`. Only `clone.proxy_environment`
+        names drop-ins; without it the seed's stay."""
         proxy = container["clone"].get("proxy_environment")
         if proxy is None:
             return
-        files = json.loads(run(renderer + ["proxy-files"], json.dumps({"proxy_environment": proxy})).stdout)["files"]
+        files = json.loads(run(renderer("proxy-files"), json.dumps({"proxy_environment": proxy})).stdout)["files"]
         for path, content in files.items():
             change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/" + path], content)
+
+    def private_names_hosts():
+        """The access plan's private names in the running copy's /etc/hosts, as env:sync writes them (tasks/instance-private-names.yml):
+        read with `cat`, rendered by instance_node_services.py `hosts`, pushed as root with 0644 only when its lines change. It runs
+        after the start, because the copy's own Incus template (`/etc/hosts: when: [create, copy]`, copied from its default) rewrites
+        the file at the first start. A seed's block goes when the plan has no name. Any failure fails the create by its own name
+        (docs/reference/development-containers.md#what-a-clone-has-at-its-first-start)."""
+        try:
+            read = run(project + ["exec", name, "--", "cat", "--", "/etc/hosts"], check=False)
+            if read.returncode and "No such file or directory" not in read.stderr:
+                raise RuntimeError("instance.clone_private_names_failed")
+            hosts = read.stdout if read.returncode == 0 else ""
+            composed = json.loads(run(renderer("hosts"), json.dumps({"hosts": hosts, "private_names": container.get("private_names", [])})).stdout)
+            if composed["content"].splitlines() != hosts.splitlines():
+                change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], composed["content"])
+        except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError):
+            raise RuntimeError("instance.clone_private_names_failed") from None
 
     def installed(status, package):
         for stanza in status.split("\n\n"):
@@ -370,8 +384,30 @@ def main():
                         ]
                     ).stdout
                 )
-                if clone["snapshot"] not in [row["name"] for row in snapshots]:
+                names = [row["name"] for row in snapshots]
+                # A default with no seed at all refuses by its own code; a replaced seed means a deployment moved it, and a `next-`
+                # snapshot is a retake between its delete and its rename.
+                if not any(name.startswith(("seed-", "next-")) for name in names):
+                    raise RuntimeError("instance.default_seed_missing")
+                if clone["snapshot"] not in names:
                     raise RuntimeError("instance.default_seed_moved")
+                # A copy of a default with an inner volume copies the volume's snapshot of the same seed name first, then the container
+                # with its disk on the new volume (docs/reference/development-containers.md#the-inner-volume). Every other copy has no
+                # `inner_volume` and runs the container copy alone, as before.
+                inner = container.get("inner_volume")
+                if inner is not None:
+                    volumes = f"/1.0/storage-pools/{inner['pool']}/volumes/custom/"
+                    seeds = run(["incus", "query", volumes + clone["inner_volume"] + f"/snapshots?project={container['project']}&recursion=1"],
+                                check=False)
+                    # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part. A container seed without its
+                    # volume half is a seed taken before the pair existed: the default's next passed deployment takes the pair.
+                    if seeds.returncode or clone["snapshot"] not in [row["name"].split("/")[-1] for row in json.loads(seeds.stdout)]:
+                        raise RuntimeError("instance.default_seed_incomplete")
+                    # No container yet: a volume of this name is left from a failed copy, so it is copied again from this seed.
+                    if run(["incus", "query", volumes + inner["name"] + f"?project={container['project']}"], check=False).returncode == 0:
+                        change(project + ["storage", "volume", "delete", inner["pool"], inner["name"]])
+                    change(project + ["storage", "volume", "copy", inner["pool"] + "/" + clone["inner_volume"] + "/" + clone["snapshot"],
+                                      inner["pool"] + "/" + inner["name"]])
                 argv = project + [
                     "copy",
                     clone["source"] + "/" + clone["snapshot"],
@@ -402,7 +438,17 @@ def main():
                 # The NIC accepts only its own IPv4 and MAC address.
                 for key, value in nic_filters(network_check).items():
                     argv += ["--device", "eth0," + key + "=" + value]
-                change(argv)
+                if inner is None:
+                    change(argv)
+                else:
+                    # The seed's disk names the default's volume; the copy's names its own.
+                    argv += ["--device", inner["device"] + ",source=" + inner["name"]]
+                    try:
+                        change(argv)
+                    except Exception:
+                        # A failed container copy leaves no volume behind: the volume belongs to the copy, which does not exist.
+                        run(project + ["storage", "volume", "delete", inner["pool"], inner["name"]], check=False)
+                        raise
                 read = json.loads(
                     run(
                         [
@@ -525,7 +571,7 @@ def main():
                         continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
-                private_names_and_proxy()
+                proxy_drop_ins()
             for rule in container.get("firewall", []):
                 argv = (
                     ["ufw"]
@@ -554,7 +600,11 @@ def main():
             ).stdout
             checked = run(
                 ["python3", "-c", network_check, container["network"], "eth0"]
-                + ([json.dumps(container["allowed_devices"]), json.dumps(container["config"])] if "allowed_devices" in container else []),
+                + ([json.dumps(container["allowed_devices"]), json.dumps(container["config"])] if "allowed_devices" in container else [])
+                # The one volume besides the root that the guard admits, with exactly its keys, as the Ansible start passes it. A copy
+                # without an inner volume passes no third argument, as before, and the guard admits no volume.
+                + ([json.dumps({container["inner_volume"]["device"]: {**container["inner_volume"]["config"], "size": container["inner_volume"]["size"]}})]
+                   if "allowed_devices" in container and "inner_volume" in container else []),
                 effective,
                 check=False,
             )
@@ -564,6 +614,8 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
+            # After the start, so the copy's hosts template has already run, and before the create reports anything.
+            private_names_hosts()
             if container.get("node_services"):
                 bundle = json.loads(sys.argv[6])
                 applied = run(["python3", "-c", bundle["node_services"],

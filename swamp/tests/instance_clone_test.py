@@ -19,8 +19,12 @@ from unittest.mock import patch
 SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 NODE_SERVICES = SCRIPT.parents[1] / "ansible/instance_node_services.py"
-# The renderer's commands: the clone runs the bundle's instance_node_services.py with these before the copy's first start.
+# The renderer's commands: the clone runs the bundle's instance_node_services.py with `proxy-files` before the copy's first start
+# and with `hosts` right after it, once Incus has rendered the hosts template.
 RENDERS = ("hosts", "proxy-files")
+# The stock image's hosts.tpl, which Incus renders into /etc/hosts at a copy's first start.
+HOSTS_TEMPLATE = ("127.0.1.1\t{name}\n127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6-localhost ip6-loopback\n"
+                  "ff02::1\t\tip6-allnodes\nff02::2\t\tip6-allrouters\n")
 
 
 class BranchSelectionTest(unittest.TestCase):
@@ -50,7 +54,7 @@ class BranchSelectionTest(unittest.TestCase):
 
     def prepare(self, mode="new", target="fix-login", base="release", sha=None, legacy=False):
         overrides = {"repository": str(self.remote), "mirror": str(self.mirror), "protocols": ["file"], "branch": target,
-                     "clone": {"source": "instance-1", "snapshot": "seed", "t3": {"device": "t3"},
+                     "clone": {"source": "instance-1", "snapshot": "seed-abc", "t3": {"device": "t3"},
                                "seed_commit": self.seed, "source_mirror": str(self.remote / ".git")}}
         if not legacy:
             overrides["branch_selection"] = {"mode": mode, "target": target, "base": base, "source_sha": sha or self.tip}
@@ -121,6 +125,11 @@ class BranchSelectionTest(unittest.TestCase):
             self.prepare(sha="f" * 40)
 
 
+# NestedFleetInnerVolume::Config: the keys of a copy's inner volume.
+INNER_CONFIG = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mount_options": "user_subvol_rm_allowed,discard",
+                "security.shifted": "true"}
+
+
 class CloneTest(unittest.TestCase):
     def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None):
         calls = []
@@ -165,12 +174,17 @@ class CloneTest(unittest.TestCase):
                 "repository": "https://github.com/test/repo.git",
                 "clone": {
                     "source": "instance-1",
-                    "snapshot": "seed",
+                    "snapshot": "seed-abc",
                     "t3": {"device": "t3"},
                 },
             }
             container.update(overrides or {})
             read = existing
+            # The copy's files that change while the clone runs: /etc/hosts, which file pushes write and the copy's own Incus
+            # template rewrites at its first start, as the stock image's metadata says (`/etc/hosts: when: [create, copy]`).
+            files = container.setdefault("fixture_files", {})
+            templates = {"/etc/hosts": ["create", "copy"]} if container.get("fixture_hosts_template", True) else {}
+            copied = []
 
             def command(argv, **kwargs):
                 nonlocal read
@@ -187,6 +201,18 @@ class CloneTest(unittest.TestCase):
                 if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[3:5] == ["file", "push"] and argv[-1] == container["name"] + "/etc/hosts":
+                    files["/etc/hosts"] = kwargs.get("input")
+                if argv[3:4] == ["start"] and copied and "copy" in templates.get("/etc/hosts", []):
+                    # Incus runs the `copy` templates once, at the first start after the copy, before pid 1: hosts.tpl.
+                    copied.clear()
+                    files["/etc/hosts"] = HOSTS_TEMPLATE.format(name=container["name"])
+                if argv[3:4] == ["exec"] and argv[-3:] == ["cat", "--", "/etc/hosts"]:
+                    if container.get("fixture_hosts_read_error"):
+                        return subprocess.CompletedProcess(argv, 1, "", "Error: Failed to retrieve PID of executing child process")
+                    held = files.get("/etc/hosts")
+                    return subprocess.CompletedProcess(argv, 0 if isinstance(held, str) else 1, held if isinstance(held, str) else "",
+                                                       "" if isinstance(held, str) else "cat: /etc/hosts: No such file or directory")
                 if argv[0] == "curl" and argv[3] == "-":
                     # A file's bytes and its headers on stderr: from `fixture_files` (path: content, or the headers and content),
                     # else missing.
@@ -234,9 +260,17 @@ class CloneTest(unittest.TestCase):
                         else:
                             local.unlink()
                     return subprocess.CompletedProcess(argv, 1 if errors else 0, "", "\n".join(errors))
+                if argv[:2] == ["incus", "query"] and "/volumes/custom/" in argv[2]:
+                    # The default's inner volume and its seed snapshots, and the copy's own volume, absent unless a failed copy left it.
+                    if "snapshots?" in argv[2]:
+                        return subprocess.CompletedProcess(argv, 0, json.dumps([{"name": name} for name in container.get("fixture_volume_seeds", ["seed-abc"])]), "")
+                    return subprocess.CompletedProcess(argv, 0 if container.get("fixture_volume_left") else 1, "{}" if container.get("fixture_volume_left") else "",
+                                                       "" if container.get("fixture_volume_left") else "Error: Storage pool volume not found")
+                if argv[3:4] == ["copy"] and container.get("fixture_copy_fails"):
+                    return subprocess.CompletedProcess(argv, 1, "", "Error: Failed creating instance from snapshot")
                 if argv[:2] == ["incus", "query"]:
                     if "snapshots?" in argv[2]:
-                        output = json.dumps([{"name": "seed"}])
+                        output = json.dumps(container.get("fixture_snapshots", [{"name": "seed-abc"}]))
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
                     elif "timers.target.wants" in argv[2]:
@@ -251,7 +285,8 @@ class CloneTest(unittest.TestCase):
                         output = "[]"
                     else:
                         output, status = (json.dumps(read), 0) if read else ("", 1)
-                elif "copy" in argv:
+                elif argv[3:4] == ["copy"]:
+                    copied.append(True)
                     device = {"type": "nic", "network": "orbitinst0"}
                     for arg in argv:
                         if arg.startswith("eth0,"):
@@ -297,7 +332,23 @@ class CloneTest(unittest.TestCase):
             self.assertFalse(Path(folder + "/private/git-credential").exists())
             if transcript is not None:
                 transcript.append(output.getvalue())
+            self.hosts = files.get("/etc/hosts")
             return calls, read, error.getvalue()
+
+    def test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy(self):
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "other"}]})
+        self.assertIn("instance.default_seed_missing", error)
+        self.assertFalse(any("copy" in call for call in calls))
+        # A retake between its delete and its rename: the seed moved, and the same command takes the new one.
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "next-abc"}]})
+        self.assertIn("instance.default_seed_moved", error)
+        self.assertFalse(any("copy" in call for call in calls))
+
+    def test_a_replaced_seed_still_refuses_as_moved(self):
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-def"}]})
+        self.assertIn("instance.default_seed_moved", error)
+        self.assertNotIn("instance.default_seed_missing", error)
+        self.assertFalse(any("copy" in call for call in calls))
 
     def test_schedule_cleanup_listing_error_refuses_before_clone_boot(self):
         calls, _, error = self.clone(overrides={"fixture_schedule_listing_error": True})
@@ -347,7 +398,7 @@ class CloneTest(unittest.TestCase):
 
     def clone_with(self, clone, **kwargs):
         overrides = kwargs.pop("overrides", {})
-        return self.clone(overrides={**overrides, "clone": {"source": "instance-1", "snapshot": "seed", "t3": {"device": "t3"}, **clone}},
+        return self.clone(overrides={**overrides, "clone": {"source": "instance-1", "snapshot": "seed-abc", "t3": {"device": "t3"}, **clone}},
                           **kwargs)
 
     @staticmethod
@@ -535,43 +586,59 @@ class CloneTest(unittest.TestCase):
     def hosts_pushes(self, calls):
         return [call for call in calls if call[3:5] == ["file", "push"] and call[-1] == "instance-7/etc/hosts"]
 
-    def test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes(self):
-        seed = "127.0.0.1 localhost\n# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n10.1.1.1 operator\n"
+    def test_the_plans_private_names_survive_the_first_starts_hosts_template_with_env_syncs_bytes(self):
+        # The seed's own block, then the copy's Incus template rewrites /etc/hosts at the first start: only a write after that start
+        # stays. The clone reads the file as env:sync does, renders it with the one renderer and pushes it with root and 0644.
+        seed = "127.0.0.1 localhost\n# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n"
         calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed}})
         self.assertEqual(error, "")
+        template = HOSTS_TEMPLATE.format(name="instance-7")
+        self.assertEqual(self.hosts, template + self.BLOCK)
+        self.assertEqual(self.hosts, self.renderer("hosts", {"hosts": template, "private_names": self.NAMES})["content"])
         pushes = self.hosts_pushes(calls)
         self.assertEqual([call[3:] for call in pushes],
                          [["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", "instance-7/etc/hosts"]])
-        # The seed's block goes, the plan's comes after every other line: the bytes of the one renderer that env:sync runs.
-        expected = "127.0.0.1 localhost\n10.1.1.1 operator\n" + self.BLOCK
-        self.assertEqual(self.inputs[id(pushes[0])], expected)
-        self.assertEqual(self.renderer("hosts", {"hosts": seed, "private_names": self.NAMES})["content"], expected)
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        read = calls.index(["incus", "--project", "orbit-instances", "exec", "instance-7", "--", "cat", "--", "/etc/hosts"])
+        self.assertLess(start, read)
+        self.assertLess(read, calls.index(pushes[0]))
         # The clone runs the bundle's renderer, not a copy of it.
         render = next(call for call in calls if call[:2] == ["python3", "-c"] and call[3:] == ["hosts"])
         self.assertEqual(render[2], 'print(\'{"status":"unchanged"}\')')
-        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
-        self.assertLess(calls.index(pushes[0]), start)
 
-    def test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone(self):
-        seed = "127.0.0.1 localhost\n"
-        calls, _, error = self.clone_with({}, overrides={"fixture_files": {"/etc/hosts": seed + self.BLOCK}})
+    def test_a_clone_without_names_writes_no_block_and_drops_a_seed_block_the_template_left(self):
+        calls, _, error = self.clone_with({}, overrides={"fixture_files": {"/etc/hosts": "127.0.0.1 localhost\n" + self.BLOCK}})
         self.assertEqual(error, "")
-        self.assertEqual([self.inputs[id(call)] for call in self.hosts_pushes(calls)], [seed])
-        for case, files in (("plain", {"/etc/hosts": seed}), ("missing", {})):
-            with self.subTest(case=case):
-                calls, _, error = self.clone_with({}, overrides={"fixture_files": files})
-                self.assertEqual(error, "")
-                self.assertEqual(self.hosts_pushes(calls), [])
-        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed + self.BLOCK}})
+        self.assertEqual(self.hosts, HOSTS_TEMPLATE.format(name="instance-7"))
+        self.assertEqual(self.hosts_pushes(calls), [])
+        # A copy whose metadata has no hosts template keeps the seed's file: its block goes, every other line stays.
+        calls, _, error = self.clone_with({}, overrides={"fixture_hosts_template": False,
+                                                         "fixture_files": {"/etc/hosts": "127.0.0.1 localhost\n" + self.BLOCK}})
+        self.assertEqual(error, "")
+        self.assertEqual(self.hosts, "127.0.0.1 localhost\n")
+        # A copy without a hosts file and without names gets none.
+        calls, _, error = self.clone_with({}, overrides={"fixture_hosts_template": False})
         self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
 
-    def test_a_linked_hosts_file_refuses_the_create(self):
-        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES,
-                                                         "fixture_files": {"/etc/hosts": {"content": "/elsewhere", "type": "symlink"}}})
-        self.assertEqual(error, "instance.clone_private_names_refused\n")
+    def test_a_retry_on_a_running_copy_with_the_block_in_place_writes_nothing(self):
+        running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
+                   "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                                                 "security.acls": "orbitinst0-proxy,instance-7",
+                                                 "security.acls.default.egress.action": "reject",
+                                                 "security.acls.default.ingress.action": "reject",
+                                                 "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}}
+        held = HOSTS_TEMPLATE.format(name="instance-7") + self.BLOCK
+        calls, _, error = self.clone_with({}, existing=running, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": held}})
+        self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
-        self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+        self.assertEqual(self.hosts, held)
+
+    def test_a_failed_hosts_read_after_the_start_fails_the_create_by_its_own_name(self):
+        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_hosts_read_error": True})
+        self.assertEqual(error, "instance.clone_private_names_failed\n")
+        self.assertIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+        self.assertEqual(self.hosts_pushes(calls), [])
 
     def test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes(self):
         proxy = {"NO_PROXY": "localhost,10.253.0.1,feature.tool.test", "no_proxy": "localhost,10.253.0.1,feature.tool.test"}
@@ -949,6 +1016,76 @@ class CloneTest(unittest.TestCase):
                 else:
                     self.assertEqual(error, "instance.container_network_unsafe\n")
                     self.assertFalse(starts)
+
+    def inner_clone(self, **fixture):
+        """A copy of a nested-fleet default with an inner volume (docs/reference/development-containers.md#the-inner-volume)."""
+        allowed = {
+            "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
+            "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                     "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
+                     "security.acls.default.ingress.action": "reject",
+                     "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
+            "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},
+            "inner-pool": {"type": "disk", "pool": "orbit-instances", "source": "inner-7", "path": "/srv/inner-pool"},
+        }
+        config = {"security.idmap.isolated": "true"}
+
+        def effective(read):
+            read["expanded_config"] = {**config, "volatile.uuid": "abc-123"}
+            read["expanded_devices"] = copy.deepcopy(allowed)
+
+        inner = {"name": "inner-7", "pool": "orbit-instances", "size": "30GiB", "config": INNER_CONFIG, "device": "inner-pool",
+                 "path": "/srv/inner-pool", "inner_pool": {"name": "inner", "source": "/srv/inner-pool/pool"}}
+        overrides = {"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config, "inner_volume": inner,
+                     "clone": {"source": "instance-1", "snapshot": "seed-abc", "inner_volume": "inner-1", "t3": {"device": "t3"}}, **fixture}
+        return self.clone(effective, overrides=overrides, volumes={"custom/inner-7": {**INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}})
+
+    def test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start(self):
+        calls, _, error = self.inner_clone()
+        self.assertEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        volume_copy = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
+        container_copy = next(index for index, call in enumerate(calls) if call[3:4] == ["copy"])
+        start = calls.index(project + ["start", "instance-7"])
+        self.assertLess(volume_copy, container_copy)
+        self.assertLess(container_copy, start)
+        self.assertEqual(calls[container_copy][-2:], ["--device", "inner-pool,source=inner-7"])
+        # The guard admits the copy's volume with exactly its keys, as the Ansible start passes them.
+        guard = next(call for call in calls if call[:2] == ["python3", "-c"] and len(call) == 8)
+        self.assertEqual(json.loads(guard[7]), {"inner-pool": {**INNER_CONFIG, "size": "30GiB"}})
+        self.assertFalse(any(call[3:6] == ["storage", "volume", "delete"] for call in calls))
+
+    def test_a_copy_with_an_inner_volume_refuses_a_seed_whose_volume_half_is_gone_before_any_change(self):
+        calls, _, error = self.inner_clone(fixture_volume_seeds=["seed-older"])
+        self.assertEqual(error, "instance.default_seed_incomplete\n")
+        self.assertFalse(any("copy" in call or "storage" in call for call in calls))
+
+    def test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts(self):
+        calls, _, error = self.inner_clone(fixture_copy_fails=True)
+        self.assertNotEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        copied = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
+        self.assertIn(project + ["storage", "volume", "delete", "orbit-instances", "inner-7"], calls[copied:])
+        self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+
+    def test_a_volume_left_by_a_failed_copy_without_its_container_is_copied_again_from_the_seed(self):
+        calls, _, error = self.inner_clone(fixture_volume_left=True)
+        self.assertEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        delete = calls.index(project + ["storage", "volume", "delete", "orbit-instances", "inner-7"])
+        self.assertEqual(calls[delete + 1], project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
+
+    def test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before(self):
+        # A normal Instance's copy, and a nested-fleet copy of a default without an inner volume (Instance 2454's shape).
+        for shape, overrides in [("normal", {}), ("nested without volume", {"project": "orbit-instances-nested",
+                                                                             "allowed_devices": {}, "config": {}})]:
+            with self.subTest(shape=shape):
+                calls, _, _ = self.clone(overrides=overrides)
+                self.assertFalse(any("storage" in call or "/volumes/custom/" in " ".join(call) for call in calls))
+                container_copy = next(call for call in calls if call[3:4] == ["copy"])
+                self.assertFalse(any(arg.startswith("inner-pool") for arg in container_copy))
+                guards = [call for call in calls if call[:2] == ["python3", "-c"]]
+                self.assertTrue(all(len(call) <= 7 for call in guards))
 
     def test_nested_guard_admits_the_live_shape_of_the_first_nested_container(self):
         # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart`; the guard's

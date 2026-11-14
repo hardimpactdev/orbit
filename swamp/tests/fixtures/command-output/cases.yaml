@@ -607,6 +607,50 @@ contexts:
         -A FORWARD -j ufw-before-forward
 
         '
+  # Constructed, not recorded: no custom volume on Beast had a snapshot on 2026-11-14. The inner volume's snapshot list in both name
+  # forms the readers accept, `<snapshot>` and `<volume>/<snapshot>`.
+  seed-volume-snapshots:
+    container:
+      inner_volume:
+        name: inner-7
+    seed_volume_snapshots:
+      stdout: '[{"name":"seed-abc123"},{"name":"inner-7/seed-0ld"},{"name":"other"}]'
+  seed-no-volume:
+    container: {}
+  # The seed snapshots after a retake stopped between its delete and its rename: the new seed waits under next-.
+  seed-snapshots-next:
+    container:
+      inner_volume:
+        name: inner-7
+    seed_snapshots:
+      stdout: '[{"name":"next-abc123"},{"name":"seed-0ld"}]'
+    seed_volume_snapshots:
+      stdout: '[{"name":"inner-7/next-abc123"},{"name":"inner-7/seed-0ld"}]'
+  # Constructed from Incus 7.0.2's own messages (driver_lxc.go, instance_utils.go and findIdmap), as `incus snapshot create`
+  # prints them on stderr; refresh 21308 on 2026-11-14 kept no stderr.
+  seed-take-no-id-range:
+    ansible_failed_result:
+      msg: non-zero return code
+      stderr: 'Error: Failed creating instance snapshot record "next-abc123": Failed initializing instance: Not enough uid/gid available for the container'
+  # A default with no seed snapshot at all.
+  clone-source-no-seed:
+    source_snapshots:
+      stdout: '[{"name":"other"}]'
+  # A retake between its delete and its rename: only next-.
+  clone-source-next:
+    source_snapshots:
+      stdout: '[{"name":"next-abc123"}]'
+  clone-source-seed:
+    source_snapshots:
+      stdout: '[{"name":"seed-abc123"},{"name":"other"}]'
+  restore-volume-seeds:
+    restore_seed: seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    restore_volume_snapshots:
+      stdout: '[{"name":"inner-7/seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","created_at":"2026-11-13T12:40:00Z"}]'
+  restore-volume-half-missing:
+    restore_seed: seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    restore_volume_snapshots:
+      stdout: '[{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00Z"}]'
   restore-seeds:
     restore_snapshots:
       stdout: '[{"name":"seed-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","created_at":"2026-11-13T12:40:00.123456789Z"},{"name":"before-migrate","created_at":"2026-11-13T13:00:00Z"},{"name":"seed-ffffffffffffffffffffffffffffffffffffffff","created_at":"2026-11-13T09:53:00.5Z"}]'
@@ -1854,6 +1898,65 @@ cases:
   context: fleet-doctor-none
   expected: '000'
 - file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_volume_names
+  context: seed-volume-snapshots
+  expected:
+  - seed-abc123
+  - seed-0ld
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_volume_names
+  context: seed-no-volume
+  expected: []
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_nexts
+  context: seed-snapshots-next
+  expected:
+  - next-abc123
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_volume_nexts
+  context: seed-snapshots-next
+  expected:
+  - next-abc123
+- file: tasks/instance-container-phase.yml
+  task: Name the seed
+  field: ansible.builtin.set_fact.seed_volume_nexts
+  context: seed-no-volume
+  expected: []
+- file: tasks/instance-container-phase.yml
+  task: Name why the seed failed
+  field: vars.seed_take_error
+  context: seed-take-no-id-range
+  expected: 'Failed creating instance snapshot record "next-abc123": Failed initializing instance: Not enough uid/gid available for the container'
+- file: tasks/instance-container-phase.yml
+  task: Refuse a default without a seed
+  field: ansible.builtin.assert.that
+  context: clone-source-no-seed
+  expected: false
+- file: tasks/instance-container-phase.yml
+  task: Refuse a default without a seed
+  field: ansible.builtin.assert.that
+  context: clone-source-seed
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Refuse a default without a seed
+  field: ansible.builtin.assert.that
+  context: clone-source-next
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Require the inner volume's half of the seed
+  field: ansible.builtin.assert.that
+  context: restore-volume-seeds
+  expected: true
+- file: tasks/instance-container-phase.yml
+  task: Require the inner volume's half of the seed
+  field: ansible.builtin.assert.that
+  context: restore-volume-half-missing
+  expected: false
+- file: tasks/instance-container-phase.yml
   task: Name the newest seed
   field: ansible.builtin.set_fact.restore_seed
   context: restore-seeds
@@ -1938,15 +2041,19 @@ non_command_output:
   reason: Validates the admitted path of T3's command, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[3]
-  reason: Validates the admitted T3 provider, not command output.
-- file: task-copy-turn.yml
-  task: Validate the admitted turn
   field: ansible.builtin.assert.that[4]
-  reason: Validates the admitted model, not command output.
+  reason: Validates the admitted T3 provider instance, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[5]
+  reason: Validates the admitted model, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[6]
+  reason: Validates the admitted reviewer candidate commit, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[7]
   reason: Validates the admitted thread title, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal

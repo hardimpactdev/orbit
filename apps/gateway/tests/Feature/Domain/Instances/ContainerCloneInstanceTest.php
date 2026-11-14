@@ -153,6 +153,47 @@ describe('a clone of the container default', function (): void {
         ]);
     });
 
+    it('does not give a freed T3 port again at once: a client may still hold the destroyed server under it', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+
+        $gone = containerCreate($default->project, $node, 'gone');
+        InstanceRuntime::query()->where('instance_id', $gone->target_id)->delete();
+        $next = containerCreate($default->project, $node, 'next');
+
+        expect(InstanceRuntime::query()->where('instance_id', $next->target_id)->value('t3_port'))->toBe(3801)
+            ->and($node->fresh()?->t3_port_last)->toBe(3801);
+    });
+
+    it('wraps from 3999 to the first free port from 3800 and refuses when every T3 port is held', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $held = containerCreate($default->project, $node, 'held');
+        expect(InstanceRuntime::query()->where('instance_id', $held->target_id)->value('t3_port'))->toBe(3800);
+        $node->forceFill(['t3_port_last' => 3850])->save();
+        $after = containerCreate($default->project, $node, 'after');
+        expect(InstanceRuntime::query()->where('instance_id', $after->target_id)->value('t3_port'))->toBe(3851);
+        $node->forceFill(['t3_port_last' => 3999])->save();
+
+        $wrapped = containerCreate($default->project, $node, 'wrapped');
+        expect(InstanceRuntime::query()->where('instance_id', $wrapped->target_id)->value('t3_port'))->toBe(3801);
+
+        $source = InstanceRuntime::query()->where('instance_id', $wrapped->target_id)->firstOrFail();
+        $copy = static function (string $name) use ($wrapped): Instance {
+            $instance = Instance::query()->findOrFail($wrapped->target_id)->replicate()->fill(['name' => $name, 'checkout_path' => '/srv/'.$name]);
+            $instance->save();
+
+            return $instance;
+        };
+        foreach (array_diff(range(3802, 3999), [3851]) as $port) {
+            $instance = $copy('fill-'.$port);
+            InstanceRuntime::query()->create([...$source->only(['node_id', 'incus_project', 'runtime_version', 'agent_version', 'clone_source_instance_id', 'power_state']),
+                'instance_id' => $instance->id, 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($port - 3790), 't3_port' => $port]);
+        }
+        $none = $copy('none');
+        expect(fn () => app(InstanceContainer::class)->reserve($none, $node, $default))->toThrow(ResourceOperationException::class, 'The Node has no free T3 port.');
+    });
+
     it('runs its own records of the Project\'s development Processes, not the default\'s units from the seed', function (): void {
         $node = containerDefaultNode();
         $project = containerDefaultProject();
@@ -196,6 +237,8 @@ describe('a clone of the container default', function (): void {
             ->and($clone['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
             // Only a task copy drops the default's untracked and modified files; this clone keeps them.
             ->and($clone)->not->toHaveKey('clean_workspace')
+            // Only a task copy's T3 gets the Claude provider instances of its turns' efforts.
+            ->and(collect($clone['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true])
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
             ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
@@ -248,6 +291,18 @@ describe('a clone of the container default', function (): void {
         expect(app(InstanceEnvironmentStore::class)->values(Instance::query()->findOrFail($operation->target_id))['APP_KEY'] ?? null)->toBe('base64:default-key');
     });
 
+    it('gives a clone of a normal default no inner volume: none in its record, its intent or its clone part', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+
+        $operation = containerCreate($default->project, $node, 'feature');
+
+        $container = containerIntentOf($operation);
+        expect(InstanceRuntime::query()->where('instance_id', $operation->target_id)->sole()->inner_volume)->toBeNull()
+            ->and($container)->not->toHaveKey('inner_volume')
+            ->and(ValidatedData::object($container['clone']))->not->toHaveKey('inner_volume');
+    });
+
     it('is refused while its default runs elsewhere, has no seed yet, or Conn or the model router is off', function (Closure $arrange, string $code): void {
         $node = containerDefaultNode();
         $default = seededDefault($node);
@@ -258,8 +313,6 @@ describe('a clone of the container default', function (): void {
         'the default on another Node' => [fn (Instance $default): Node => containerDefaultNode('shark', '10.44.0.8'), 'instance.default_missing'],
         'no seed snapshot yet' => [fn (Instance $default) => InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => null]) && false ?: null, 'instance.default_missing'],
         'a failed default' => [fn (Instance $default) => $default->update(['status' => InstanceState::Reserved]) && false ?: null, 'instance.default_missing'],
-        // The clone does not copy an inner volume yet (docs/reference/development-containers.md#the-inner-volume).
-        'a default with an inner volume' => [fn (Instance $default) => InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]) && false ?: null, 'instance.inner_volume_clone_unavailable'],
         'Conn off' => [fn () => app(ExtensionStore::class)->set('conn', false) ?: null, 'operation.kind_unavailable'],
         'no model router guard' => [function (): null {
             app(TaskVmModelRoute::class)->ready = false;

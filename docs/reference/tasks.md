@@ -314,7 +314,7 @@ The package manager changes the manifest and the lock file in the workspace; not
 
 #### Run an external turn
 
-`task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT --thread=new|ID` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+`task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT [--thread=new|ID]` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Without `--thread`, a task VM turn starts a new thread and a [task copy](#task-copy) turn continues the role's thread. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
 While a group's `tasks.provision` Operation waits for a place or runs, the group is not provisioned. Every other admission on it then returns HTTP 409 `tasks.not_provisioned`. That covers a turn, a check, a publish, a script, a package install, a sync, a build, a review round, a prep fix, a maintenance run and a proof on the group's VM. `details.operation_id` names that Operation; follow it and repeat the call once it succeeds. Any other open Operation on the group still returns `operation.target_busy`.
 
@@ -961,14 +961,18 @@ A new task of a Project whose default Instance is a container, or that has [`nes
 
 The copy [starts clean](/reference/development-containers#a-task-copy-starts-clean): its tree is its start commit, the seed's commit, plus what Git ignores, so the default's modified and untracked files never reach a check or a pull request. The start's result names what the clean took as `workspace_cleaned`.
 
-[`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs a new implementer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes; the turn's thread and transcript stay on the Gateway after the copy is gone. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet. Reviewer turns, continued threads, a handoff check with hosted CI, prep and build do not run in a copy yet.
+[`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs an implementer or reviewer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. Each role keeps one ongoing T3 thread, and a turn without `--thread` continues it: the implementer's thread of the current subtask, recorded on the subtask, or the reviewer's thread, recorded on the group. The first turn of a role, or `--thread=new`, starts the thread with the role's copy model and effort.
+
+A reviewer turn works on the checked candidate, detached, and Orbit checks the task branch out again after it, at the commit it had. A checkout left unclean, off that branch or at another commit holds the group until `task:cancel`, whatever the turn's run did. A turn that ended asking for input does not hold the next turn of its own thread, so the answer can be sent. The thread and its transcript stay on the Gateway after the copy is gone.
+
+[`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
 
 The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 
 | Part | Rule |
 | --- | --- |
 | Source | The Project's default Instance, active with a seed, whose container runs: `task:start` reads it once before it admits the copy, because the power record can be stale |
-| Cap | `ORBIT_TASKS_COPIES_MAX`, default 1: the nested-fleet task copies one Node holds at once. A start over it fails with `tasks.copy_capacity_full`, with no wait. Other copies have no task cap |
+| Cap | A start needs a free [isolated ID range](/reference/development-containers#isolated-id-ranges) for the copy and one for the default's next seed, else `tasks.copy_id_range_full`. `ORBIT_TASKS_COPIES_MAX` (default 1) caps nested-fleet copies per Node: `tasks.copy_capacity_full`. Neither waits |
 | Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
@@ -1031,20 +1035,22 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 ### Drivers
 
-A driver translates Orbit's thread operations for one agent runtime. A turn in a task VM runs on the `pi` driver. A turn in a [task copy](#task-copy) runs on T3 instead: Swamp runs stock `t3 thread start` in the copy as user `agent`, and the thread records the driver `t3`. The Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) setting chooses between the two.
+A driver translates Orbit's thread operations for one agent runtime. A turn in a task VM runs on the `pi` driver. A turn in a [task copy](#task-copy) runs on T3 instead: Swamp runs stock `t3 thread start` or `t3 thread send` in the copy as user `agent`, and the thread records the driver `t3`. When the turn's projection commits, the copy's T3 thread and its title go to the [Conn thread index](/reference/conn#thread-index), so a device lists it at once. The Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) setting chooses between the two.
 
 `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the driver of each role on a task VM, and both default to `pi`. Every new task stores those values, a task copy's too. The Gateway registers `pi` and no other task-agent driver, and a copy turn does not use the registry. Any other value, `t3` included, returns `tasks.agent_driver_unavailable` and stores no task.
 
-A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads are never resumed: each copy turn starts a new thread. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
+A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads do not use the driver registry: a copy turn starts or continues them with T3's own CLI. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
 | Role | Default model | Effort |
 | --- | --- | --- |
-| Implementer | `gpt-5.6-luna`, or `ORBIT_TASKS_IMPLEMENTER_MODEL` | `high`, or `ORBIT_TASKS_IMPLEMENTER_EFFORT` |
+| Implementer | `gpt-5.6-luna`, or `ORBIT_TASKS_IMPLEMENTER_MODEL` | `medium`, or `ORBIT_TASKS_IMPLEMENTER_EFFORT` |
 | Reviewer | `gpt-5.6-luna`, or `ORBIT_TASKS_REVIEWER_MODEL` | `high`, or `ORBIT_TASKS_REVIEWER_EFFORT` |
 
-Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env` to choose each role's reasoning effort. Unset or empty keeps `high`. For example, `ORBIT_TASKS_IMPLEMENTER_EFFORT=medium` sets new implementer threads to `medium`.
+Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env` to choose each role's reasoning effort, on a task VM and in a task copy alike. Unset or empty keeps `medium` for the implementer and `high` for the reviewer. For example, `ORBIT_TASKS_IMPLEMENTER_EFFORT=high` sets new implementer threads to `high`.
 
 The Gateway reads effort when it creates a thread, not when it creates the group. A change applies to the next thread of every open group. An existing thread keeps its stored `effort`. The Gateway passes the value to the driver unchanged; the agent runtime validates it.
+
+The model settings name Pi models and apply to task VM threads. A thread in a [task copy](#task-copy) takes its model from `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` and its effort from the role's effort setting, which must be `low`, `medium`, `high`, `xhigh` or `max`. Stock T3's CLI takes no effort, so the copy's T3 settings hold one Claude provider instance per effort level, `claudeLow` to `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
 
 **Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the task's VM. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
 
@@ -1464,7 +1470,7 @@ These Gateway environment keys configure the extension.
 | --- | --- |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
 | `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
-| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads. Unset or empty keeps `high`. See [Drivers](#drivers) for when changes apply and runtime validation |
+| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads, on a task VM and in a task copy. Defaults: `medium` and `high`. See [Drivers](#drivers) for when changes apply |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
@@ -1643,7 +1649,7 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 Host T3 task threads ran as the operator's Unix user and had that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
 
-Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers on a task VM. A task copy runs its implementer turns with T3's own CLI as `agent`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
+Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers on a task VM. A task copy runs its implementer and reviewer turns with T3's own CLI as `agent`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
 
 Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
 

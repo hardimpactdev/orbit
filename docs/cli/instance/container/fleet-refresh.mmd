@@ -43,7 +43,10 @@ sequenceDiagram
   SW->>N: Keep the current seed<br/>Ansible · tags seed
   %%> What it does:
   %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
+  %%> - takes the new snapshot first, as `next-COMMIT` beside the old `seed-COMMIT`; only then does the old one go and the new one take its name (docs/reference/development-containers.md#a-retake-keeps-the-seed)
   %%> - refuses `instance.fleet_key_on_disk` first when the Club key path is a file on the container's disk; the key is never read
+  %%> On failure:
+  %%> - a snapshot Incus cannot take, such as one with no free isolated ID range: `instance.container_seed_failed`, and the error detail names why; the old seed stays, nothing else changed, and the run fails with no restore
   %%> Why:
   %%> - a failed refresh then restores a seed that holds the fleet, never one from before it
   SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
@@ -97,7 +100,10 @@ sequenceDiagram
   %%> What it does:
   %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
   %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
-  %%> - the inner fleet runs during the snapshot when the refresh kept `base`: the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut
+  %%> - at the same commit the new snapshot is `next-COMMIT` until it exists; then the old `seed-COMMIT` goes and the new one takes its name: never `--reuse`, which deletes first
+  %%> - a default with an inner volume also snapshots the volume under the same name with the Processes stopped; the pair is the seed, and the older pair goes only after both new halves exist
+  %%> - a failed half deletes only the new halves and fails `instance.container_seed_failed` or `instance.seed_volume_snapshot_failed` with the cause in the detail; the old seed stays
+  %%> - the inner fleet runs during the snapshot when the refresh kept `base`: on the directory pool the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut; on an inner volume the two halves are taken one after the other, a fraction of a second apart
   %%> - the seed holds the refresh record of the fleet it holds
   SW->>C: Check the container<br/>Ansible · tags check
   SW->>F: Start the refreshed fleet<br/>Ansible · tags fleet_resume
@@ -115,7 +121,8 @@ sequenceDiagram
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:
     %%> - stops the container and restores its newest seed by creation time: the one "Keep the current seed" took, or a newer one
-    %%> - refuses `instance.fleet_seed_missing` when no seed is left
+    %%> - a default with an inner volume restores the volume to its snapshot of the same name too; a failed volume restore fails the run with the container already restored
+    %%> - refuses `instance.fleet_seed_missing` when no seed is left, or when the inner volume lacks the seed's half; both are checked before anything is restored
     SW->>N: Start on the old seed<br/>Ansible · tags start
     %%> What it does:
     %%> - starts it through `start`, so the start delivers what every start delivers
@@ -128,4 +135,5 @@ sequenceDiagram
     %%> - the Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`
     %%> - a fleet phase's error detail names the failed task and its message, such as the Doctor body
     %%> - the old seed stays the seed; clones keep copying it, and the next release runs again
+    %%> - the release has ended: the Activity row `instance.refresh_failed` (status failed, command `instances:refresh-nested-fleets`) names the Operation, its code and its detail, so `activity:list` and the problem collector show it
   end

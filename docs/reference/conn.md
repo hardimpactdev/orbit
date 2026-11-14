@@ -9,11 +9,12 @@ covers:
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2027_02_03_000001_add_instance_to_conn_environments.php
   - apps/gateway/database/migrations/2027_02_10_000000_add_renewal_to_conn_environments.php
+  - apps/gateway/database/migrations/2027_02_15_000000_create_conn_threads_table.php
 ---
 
 # Conn layer
 
-This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, and device settings with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
+This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, device settings, and the attached threads with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
 
 The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired.
 
@@ -32,6 +33,8 @@ Conn uses the existing [node access](/cli/node/access-add) edges. It has no gran
 | Server list, pairing list, show, create and revoke | Node access to the Node that registered the server. The list shows only those servers. |
 | `GET /me`, `PUT /me/profile`, profiles and settings, Conn Operation show and cancel | Node access to at least one Node: the [collection rule](/cli/node#authority) that `node:list` uses. |
 | Project list | Node access to at least one Node. The list shows only the Projects whose default Instance runs on a Node the caller has node access to. |
+| Thread index list, `GET /threads` | Node access to at least one Node. The list covers only the container servers the server list shows the caller. |
+| Thread record, `POST /environments/{environment_id}/threads` | Node access to the Node that serves the server. |
 | Thread start, `POST /projects/{id}/instances` | Node access to the Node of the Project's default Instance. |
 | `POST /environments`, registration | No edge. |
 
@@ -51,7 +54,7 @@ Removing an edge does not revoke sessions that the consumer already paired. Revo
 
 A profile is a named set of shared settings, such as "Nick". A Node belongs to at most one profile. On first connect the device lists the profiles, lets the user pick or create one, and binds to it. Later calls read the binding from `GET /api/v1/conn/me`. Every Node that may use profiles ([Access](#access)) sees every profile.
 
-A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has three kinds of section:
+A profile holds one settings document. Its keys follow Conn's stores, so they stay camelCase. The document has four kinds of section:
 
 ```json
 {
@@ -81,11 +84,15 @@ A profile holds one settings document. Its keys follow Conn's stores, so they st
   "devices": {
     "desktop": {"schema": 1, "values": {"fontFamilySans": "Inter", "chatWidth": "wide"}},
     "iphone": {"schema": 1, "values": {"baseFontSize": 16, "codeWordBreak": false}}
+  },
+  "attachedThreads": {
+    "schema": 1,
+    "threads": [{"environmentId": "env-fix-login", "threadId": "thread-7d2a"}]
   }
 }
 ```
 
-A section is `workspaces`, `appearance`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
+A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`. The document accepts no other top-level key. Only `workspaces` is always present; a section that no device wrote is absent.
 
 | Field | Rule |
 | --- | --- |
@@ -106,6 +113,11 @@ A section is `workspaces`, `appearance`, or `devices.<type>`. The document accep
 | `devices.<type>` | Object of at most 64 KB, serialized. At most 8 types per profile. |
 | `devices.<type>.schema` | Required integer, 1 or more. |
 | `devices.<type>.values` | Required flat map of at most 128 entries. |
+| `attachedThreads` | Object of at most 64 KB, serialized. |
+| `attachedThreads.schema` | Required integer, 1 or more. |
+| `attachedThreads.threads` | Required list of at most 500; it may be empty. Each thread appears once. |
+| `attachedThreads.threads[].environmentId` | Required: the `environment_id` of a Conn environment, at most 255 characters, no spaces or colons. See [Attached threads](#attached-threads) for which environments a write may name. |
+| `attachedThreads.threads[].threadId` | Required: the T3 thread id, at most 255 characters, no spaces. |
 
 A device type is 2 to 24 lowercase letters, digits, and hyphens, and starts with a letter, such as `desktop` or `iphone`.
 
@@ -117,25 +129,87 @@ A color map has at most 80 entries. A key is a color role: a letter, then letter
 
 A device `values` map has camelCase keys of at most 64 characters. A value is a boolean, a number, `null`, a string of at most 512 characters, or a list of at most 32 of those scalars. The Gateway checks the envelope and the value types. Each client checks its own keys and keeps the ones it does not know.
 
-An empty object is refused wherever a map is expected, such as `colors`, `values`, or the `devices` map of a `PUT`. PHP cannot tell `{}` from `[]`, so the Gateway would hand it back as a list. Leave the key out. The whole document is at most 4 MB. The request stack trims every string and turns an empty string into `null`. A patch section `value` is the exception: an empty string there is refused, as [Versions](#versions) says.
+An empty object is refused wherever a map is expected, such as `colors`, `values`, or the `devices` map of a `PUT`. PHP cannot tell `{}` from `[]`, so the Gateway would hand it back as a list. Leave the key out.
+
+The whole document is at most 4 MB. These two document limits, 4 MB and 8 device types, refuse only a write that grows the document past them. A write that does not grow past what the document held still passes when the document is already over a limit. The request stack trims every string and turns an empty string into `null`. A patch section `value` is the exception: an empty string there is refused, as [Versions](#versions) says.
 
 A workspace covers its `projectRefs` and every project whose logical key is in `projectKeys`, as Conn combines them. T3 derives a logical key from the git remote by default, so devices that keep T3's default repository grouping agree on it.
+
+### Attached threads
+
+`attachedThreads` is the profile's list of threads: the sidebar of every device on the profile. A thread is attached when it is on this list. Detaching a thread removes it from the list. It never touches the T3 server or the thread, which stays as it is on its Instance.
+
+A device connects to a container T3 server only while the profile has a thread of it attached. The container servers a device connects to are the environments in `attachedThreads.threads` that `GET /environments` lists for that device with an `instance_id`. So each device keeps to its own [node access](#access). The Gateway adds no field for this set: the device derives it from the two reads it already makes.
+
+When the last thread of a container server is detached, the server leaves the set. Every device on the profile then disconnects from it at its next read. A thread of a host server may be attached too, so it shows in the profile's list. A device keeps host servers connected whether or not one of their threads is attached.
+
+Write the section with `PATCH`, as the whole set, with the section version the client read:
+
+```json
+{"sections": {"attachedThreads": {"version": 4, "value": {"schema": 1, "threads": [
+  {"environmentId": "env-fix-login", "threadId": "thread-7d2a"},
+  {"environmentId": "env-fix-login", "threadId": "thread-9b10"}
+]}}}}
+```
+
+To attach a thread, send the set with the thread added. To detach one, send the set without it; send `"threads": []` to detach every thread. The set is a list inside an object, so an empty set keeps its shape. `null` removes the section, which reads as no attached threads.
+
+The Gateway checks each entry on the locked profile, after the version check:
+
+- **Carried entry.** An entry already in the stored set, with the same `environmentId` and `threadId`, may stay, whoever writes.
+- **Merge safety.** A device may carry an entry it cannot see itself. A merge never fails on another device's access.
+- **New entry.** Any other entry is new, also a new thread of an environment that is already attached.
+- **New entry check.** Its environment must exist, and the writing Node must have node access to that environment's Node, as for `GET /environments`.
+- **Refusal.** A new entry that fails this check refuses the whole request with `validation.failed` (422). The error names the field, such as `…threads.1.environmentId`.
+- **Own patch.** A refusal also refuses every other section in the same request. Today's Conn profile sync sends its sections in one patch, so send the attached set in a patch of its own.
+- **Recovery.** The client removes the named entries from its set and retries. A refusal like this follows the removal of a server whose thread the client had just attached.
+- **Gone environment.** The Gateway drops an entry whose environment was deleted from what it stores.
+
+The check uses the writer's access, not the access of the profile's other Nodes. The writer is the only identity a request carries, and a write needs no binding to the profile. So a Node attaches only threads of servers it may reach, which are also the only ones it can pick.
+
+A host environment whose Node is removed keeps its record without a Node ([Registration stays with its Node](#registration-stays-with-its-node)). Its entries stay in the set, because the environment still exists. Only a Node with Gateway access still sees it in `GET /environments`, so it leaves the derived set of every other device. Such a device may still carry those entries, but it cannot add new ones.
+
+Two devices that change the set at the same time are handled by the section version, as for every section ([Versions](#versions)). The second write gets `conn.settings_version_conflict` (409). That client reads the section again and merges three ways: the remote set, plus the threads it added since its base, minus the threads it removed since its base. Then it retries with the new version. So an attach on one device and a detach on another both land. The Gateway needs nothing more for a set.
+
+Orbit drops the entries of an environment that is gone:
+
+- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from the profiles that hold one. It reads no profile whose document does not name the environment.
+- **Never refused.** The drop only shrinks a document, so no document limit refuses it. A document that is already over a limit cannot stop a destroy.
+- **Versions.** This drop adds 1 to the section version and to the document version, with `updated_by` `null`.
+- **Merge.** A device sees the new `settings_version` in `GET /me`. It reads the section and merges the drop as a remote change.
+- **No write-back.** A device that writes from its older version gets a conflict. It cannot write the threads back.
+- **On read.** A read leaves out the threads of an environment that was deleted. It writes nothing and adds no version. The next write of the section drops them from the store.
+
+A failure of the drop never stops the destroy:
+
+- **After the destroy.** The drop runs after the destroy commits. It cannot fail, roll back or delay the destroy.
+- **One profile at a time.** The drop writes each profile in its own transaction.
+- **Skipped profile.** The drop skips a profile it cannot read or write. This includes a document that is not valid JSON but names the environment. The other profiles still get their drop.
+- **Deleted profile.** A profile deleted while the drop runs is skipped without a report.
+- **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem. A log channel that fails is ignored.
+- **Hidden entries.** The skipped entries stay stored, and every read leaves them out.
+
+A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
+
+A profile from before this section has no `attachedThreads` key and no version for it. It reads as no attached threads, at section version 0, so the first patch sends version 0. No migration runs. A client that does not know the section keeps working: it ignores the key, `PUT` cannot send it and keeps it as it is, and a patch changes only the sections it names.
 
 ### Versions
 
 The document has a version, and so has each section. A new profile starts at document version 1 with no workspaces. Every write adds 1 to the document version. A write also adds 1 to the version of each section it changed. A section with no recorded version is at version 0. This includes a section written before sections had versions.
 
-`GET /profiles/{id}/settings` returns `sections`: for each section that was written, its `version`, the time of the last write in `updated_at`, and the name of the Node that wrote it in `updated_by`. A section that is not listed is at version 0.
+`GET /profiles/{id}/settings` returns `sections`: for each section that was written, its `version`, the time of the last write in `updated_at`, and the name of the Node that wrote it in `updated_by`. It is `null` when Orbit wrote the section, or when the Node was removed since. A section that is not listed is at version 0.
 
 There are two ways to write. Prefer `PATCH`.
 
 `PATCH /profiles/{id}/settings` changes the sections it holds, each with the version the client last read. It never touches a section it does not name. So a phone font change does not conflict with a Mac theme change.
 
-`PUT /profiles/{id}/settings` replaces the sections it holds and keeps the others. It checks the document version, as it always did. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
+`PUT /profiles/{id}/settings` replaces the sections it holds and keeps the others. It checks the document version, as it always did.
+
+A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any other section, such as `attachedThreads`, is refused with `validation.failed` (422) and writes nothing. So a client that sends back the whole document as it read it gets a refusal. A client must not send `attachedThreads` in a `PUT`; it changes the set with `PATCH`. Every installed Conn client sends only `workspaces` here, and patches the other sections. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
 
 A patch whose section is at another version is refused with `conn.settings_version_conflict` (409), and the Gateway writes nothing. `details.current_version` is the document version. `details.sections` holds the current version of each section the request named. The client reads again, merges the sections that changed, and retries.
 
-A `value` of `null` removes `appearance` or a device section. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
+A `value` of `null` removes any section but `workspaces`. Its version still goes up, so an old client cannot write it back. `workspaces` cannot be `null`: send `[]`. Only an explicit `null` removes a section. An empty or blank string is refused with `validation.failed` (422), and the error names the field, such as `sections.appearance.value`.
 
 Both run in one transaction on the locked profile row, so two writes from the same version cannot both win. A section name that Conn does not know, such as `theme`, `devices`, or `devices.Phone`, is refused with `validation.failed`. A rule error names its field with dots, such as `sections.devices.iphone.value.values.baseFontSize`.
 
@@ -176,7 +250,7 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
-Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. New pairings refuse an Instance marked removing.
+Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. After that commits, Orbit drops the environment's [attached threads](#attached-threads) from the profiles. New pairings refuse an Instance marked removing.
 
 ### Renewal of an Instance server
 
@@ -236,6 +310,76 @@ The `Orbit Swamp` session of the container is not renewed: nothing uses it yet. 
 | `conn.response_invalid` | An answer did not have T3's shape. |
 | `conn.renewal_incomplete` | The session was issued, but the run ended before it was stored. |
 | `conn.renewal_failed` | The run failed without a `conn.*` code. |
+
+## Thread index
+
+The Gateway keeps an index of the threads on each container T3 server. A device reads one list from the Gateway to find a Project's or an Instance's threads. It connects to a server only when it opens one of that server's threads, not to every server at launch. The [index chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/thread-index.mmd) has the steps. Host servers, those with no Instance, have no index.
+
+### A row
+
+The table `conn_threads` holds one row per thread: the server's environment, its Instance, T3's thread id, the title, T3's thread `status` as `state`, `needs_input`, the time of the last user message and of the last run's end, and `seen_at`. A thread needs input when T3 holds a blocking runtime request for it, such as an approval or a question; a request that says `blocking: false` does not count, as for the idle sleep. `seen_at` is when the Gateway last read the thread on its server, or heard of it through a write-through. The index lists the shell's `threads`; an archived thread leaves it.
+
+The index stores no message text. The title is the only text, and it can still leak: T3 names a thread after its first message by default, so a title can carry a customer name, a bug, a branch or a pasted secret. So the index has the same readers as the server list. A caller reads the rows of a server only through node access to that server's Node, the [rule above](#access). A write-through records the thread id in Activity, never its title.
+
+### The poll
+
+Every minute, one pass reads the shell of every container server whose Instance runs: `GET /api/orchestration/shell` with the admin session the Gateway holds and renews, and `x-t3-orchestration-protocol: 2`, the read of the [idle sleep](#the-idle-sleeps-read). It writes nothing in the container. All servers are read at once; each has 3 seconds to connect and 10 seconds in total, so one server never holds the pass. The pass is the command `conn:threads:read`, a unique job on the `problems` queue of the [Gateway queue](/reference/gateway-queue#scheduled-work). It waits behind task work and never runs on `operations`; it ends within seconds, so a release's Horizon hand-over waits at most one pass.
+
+A server's read replaces its rows: each listed thread is written, and a thread that left the shell leaves the index. A row that a write-through recorded after the read began stays.
+
+A read that began before the server's last written read is dropped, so a slow read never brings back a thread that a newer read removed. A failed try does not count for that order, and a late failure never sets the server's `read_at` back. Reads that begin within the same second are not ordered: the index stores times to the second.
+
+A server that is not read keeps its rows and their `seen_at`, and its record says why in `threads_read_error`:
+
+| Reason | Meaning |
+| --- | --- |
+| `conn.environment_asleep` | The Instance sleeps or is stopped. It is not read, and its error stays as it was. |
+| `conn.session_expired` | The Gateway's session ended; its [renewal](#renewal-of-an-instance-server) comes first. |
+| `conn.server_unreachable` | The server did not answer within its bounds. |
+| `conn.session_rejected`, `conn.request_refused` | T3 refused the read. |
+| `conn.response_invalid` | The shell did not have the shape the index reads. |
+| `conn.index_write_failed` | The Gateway could not write the server's rows, for example while SQLite stayed busy. The error is reported; the next pass tries again. |
+
+A failure of one server never ends the pass, and a failed read or write never fails its caller: the sleep, the task turn or the list.
+
+### The switch
+
+Every read of a server by the index waits for the operator's switch `ORBIT_CONN_THREAD_INDEX_POLL` (`orbit.conn.thread_index_poll`): the minute poll, the read-through of one Instance's list and the last read before a sleep. It is off by default. Turn it on in `/home/orbit/shared/gateway.env` and [apply the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed, and the next scheduler tick sees it. While it is off, the routes and the write-through still run: the list shows only written-through rows and reads no server.
+
+While the switch is off, nothing prunes the index: a thread that leaves its server stays in the index as the write-through recorded it. A thread leaves the index only through a read, so that rule holds only while the switch is on. Destroying the Instance still removes its rows.
+
+### Write-through
+
+A thread is in the index at once when Orbit or Conn starts it. Conn records a thread it started with `POST /environments/{environment_id}/threads`, after it launched the thread on the server. A task copy's turn records the thread that `t3 thread start` made, with the turn's title, when the turn's projection commits. Both go through one rule: the row is written with `seen_at` now and keeps the state of the last read, null for a new row. A thread that an agent or a user starts on the server by other means appears with the next read.
+
+The write is one upsert on the row's key, so a read that writes the same thread at the same moment does not collide with it. A title longer than 255 characters is cut; a longer one is not refused.
+
+### The list
+
+`GET /threads` returns the rows of the covered servers, the newest user message first, and `meta.environments`: every covered server with its `power_state`, `read_at` and `read_error`, also a server without threads. `project` and `instance`, both optional positive ids, narrow it.
+
+Browsing is one Gateway read. A list of every server, or of a Project, reads only the index and never a server; a device judges how fresh a server's rows are from its `read_at`.
+
+Only a list that names one `instance`, the server a device opens a thread on, reads that server through first: while the switch is on, the server runs and its last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds. So a list that names an Instance can take up to about 0.5 seconds more when its server is slow; the 300 ms target holds for the lists that read only the index.
+
+### Cost
+
+Measured on 2026-11-14 on a nested test fleet, against stock T3 0.1.7 shells of about 1.9 KB per thread, with 10 threads a server and 30 ms per answer:
+
+| Servers running | One pass | Shell payload | Gateway memory |
+| --- | --- | --- | --- |
+| 3 real T3 servers | 33 to 164 ms | 2 to 6 KB a server | — |
+| 43 | 150 to 190 ms | 0.8 MB | +12.5 MB |
+| 200 | 0.6 s, 2 s when it first writes 2,000 rows | 3.8 MB | +30.5 MB |
+| 200, 2 of them hanging | 10.6 s: the hanging ones end at their 10-second bound | 3.7 MB | +30.5 MB |
+
+A list reads only the index unless it names one Instance. Measured on the nested test fleet's Gateway over HTTPS, with 200 servers and 2,000 rows: the full list (630 KB) answers in 78 ms (median of 20; at most 139 ms), a Project's list in 86 ms, and one Instance's list in 30 to 150 ms. `GET /environments` for the same 200 servers took 123 ms. The list builds its rows straight from the table, without models. With real servers, one Instance's read-through added 70 to 130 ms on the test fleet.
+
+### Sleep and removal
+
+Before a sleep is admitted, from the idle sleep or from [`instance:sleep`](/cli/instance/sleep), the index reads the server one last time. It reads after the sleep's refusals and replay, so a refused or repeated request waits for no read, and outside the Instance lock. It waits at most 3 seconds.
+
+The sleep switch does not matter: the index's switch does. A failed read keeps the rows and does not stop the sleep. An asleep or stopped Instance keeps its last rows with their `seen_at` until it wakes and the next read runs. Destroying the Instance removes its server record, and the rows go with it.
 
 ## Threads in an Orbit Project
 
@@ -470,7 +614,7 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /profiles` | `{"name": "Nick"}` | profile (201) |
 | `GET /profiles/{id}/settings` | — | settings |
 | `PUT /profiles/{id}/settings` | `{"version": 3, "settings": {"workspaces": [...]}}`; any of `workspaces`, `appearance`, `devices` | settings |
-| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}` | settings |
+| `PATCH /profiles/{id}/settings` | `{"sections": {"appearance": {"version": 2, "value": {...}}, "devices.iphone": {"version": 0, "value": null}}}`; any of `workspaces`, `appearance`, `attachedThreads`, `devices.<type>` | settings |
 | `GET /projects` | — | list of project |
 | `GET /projects/{id}/instances/check` | `name` query string | name, available, reason, domain |
 | `POST /projects/{id}/instances` | `{"name": "fix-login-k3j9"}` | Operation (202) |
@@ -483,6 +627,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /environments/{environment_id}/pairings` | `{"renew": true}`, optional | Operation (202) |
 | `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4, "pairing_id": 7}`, both optional | Operation (202) |
 | `POST /environments/{environment_id}/renew` | — | Operation (202) |
+| `GET /threads` | `project`, `instance` query, both optional | list of thread, and `meta.environments` |
+| `POST /environments/{environment_id}/threads` | `{"thread_id": "a1b2", "title": "Fix the login"}` | thread (201, or 200 when recorded already) |
 
 The objects:
 
@@ -493,7 +639,9 @@ The objects:
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null, "renewal_error_code": null, "renewal_checked_at": null},
   "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null, "checks": [{"key": "default_instance", "label": "Default Instance", "status": "pass"}, {"key": "container", "label": "Runs in a container", "status": "pass"}, {"key": "active", "label": "Active", "status": "pass"}, {"key": "seed_snapshot", "label": "Seed snapshot", "status": "pass"}, {"key": "node_access", "label": "Node access", "status": "pass"}, {"key": "source_access", "label": "Source access", "status": "pass"}, {"key": "source_defaults", "label": "Source defaults", "status": "pass"}, {"key": "production_placement", "label": "Development placement", "status": "pass"}, {"key": "node_active_linux", "label": "Active Linux Node", "status": "pass"}, {"key": "app_dev_role", "label": "App-dev role", "status": "pass"}, {"key": "source_profile", "label": "Source metadata", "status": "pass"}, {"key": "php_readiness", "label": "PHP readiness", "status": "pass"}, {"key": "runtime_contributions", "label": "Conn runtime", "status": "pass"}, {"key": "model_route", "label": "Model router", "status": "pass"}, {"key": "native_create", "label": "Create support", "status": "pass"}]},
-  "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
+  "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null},
+  "thread": {"environment_id": "env-fix-login", "instance_id": 12, "project_id": 3, "thread_id": "a1b2", "title": "Fix the login", "state": "waiting", "needs_input": true, "last_user_message_at": "2026-11-14T11:55:00+00:00", "last_run_completed_at": null, "seen_at": "2026-11-14T12:00:00+00:00"},
+  "meta.environments": [{"environment_id": "env-fix-login", "instance_id": 12, "power_state": "running", "read_at": "2026-11-14T12:00:00+00:00", "read_error": null}]
 }
 ```
 
@@ -507,12 +655,13 @@ The objects:
 | `instance.name_taken` | 409 | Another device's create holds the name of a thread's clone. |
 | `instance.default_missing` | 409 | The Project has no default Instance in a container that is active and has a seed snapshot. |
 | `instance.complete_unavailable` | 409 | The clone is not `source_resolved` with its starting commit and a registered T3 server. |
-| `validation.failed` | 422 | The request breaks a rule; `details` names each field. |
+| `validation.failed` | 422 | The request breaks a rule; `details` names each field. This includes an attached thread whose environment is new to the set and is gone or not one the caller may see. |
 | `conn.settings_version_conflict` | 409 | The document, or a section a patch names, changed since the sent version. `details.current_version` is the document version; a patch adds `details.sections`, the current version of each section it named. |
 | `conn.environment_mismatch` | 422 | `url` serves another environment. |
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
 | `conn.session_expired` | 409 | The Gateway's admin session on that server expired. |
 | `conn.environment_not_instance` | 409 | A renewal asked for a host server; its host renews it. |
+| `conn.thread_index_unsupported` | 409 | A thread record named a host server; only container servers have an index. |
 | `conn.pairing_in_progress` | 409 | A Gateway session cleanup waits for a pairing that runs with the earlier session. |
 | `conn.pairing_revoked` | 409 | A renewal asked for a server where the Node's newest pairing was revoked. Pair without `renew` to bring it back. |
 | `conn.server_unreachable` | 502 | The T3 server did not answer. |
@@ -520,7 +669,7 @@ The objects:
 | `conn.request_refused` | 502 | The T3 server refused the call with another status; `details` has its status and reason. |
 | `conn.response_invalid` | 502 | The T3 server's answer did not have T3's shape. |
 
-Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the admin session. A settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. A replace records the document version it replaced and the names of the sections it sent. A patch records each section name with the version the client sent.
+Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the admin session. A settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. A replace records the document version it replaced and the names of the sections it sent. A patch records each section name with the version the client sent. A thread record records the thread id, never the title. The thread list is a read and records no activity.
 
 ## Why it works this way
 
@@ -553,6 +702,10 @@ Each device type has its own section for the same reason: a phone and a desktop 
 The Gateway stores the versions apart from the document, in `section_meta` on the profile. A profile from before sections has no entry, so every section of it is at version 0, and the first patch of a section sends version 0.
 
 `PUT` stays for clients that only know workspaces. It replaces just the sections it sends, so such a client cannot erase the appearance or device settings that a newer client wrote.
+
+### Why the attached set is a profile section
+
+The devices on a profile should connect to the same servers, so the set lives in the profile, beside the settings every device already reads. As a section it gets its own version, so attaching a thread never conflicts with a theme change, and it needs no new route and no client clock. A set merges three ways without loss, so the per-section version and a client retry are enough. The Gateway still checks the entries, so a device cannot attach a server it may not reach, and a removed Instance leaves no entry behind.
 
 ## Session cleanup
 

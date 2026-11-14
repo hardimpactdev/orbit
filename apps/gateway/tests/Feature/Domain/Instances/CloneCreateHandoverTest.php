@@ -30,6 +30,7 @@ use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
 use App\Models\Route;
+use App\Support\ValidatedData;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -184,6 +185,22 @@ it('ends a clone\'s create at its thread: one transaction records T3 and the bas
         ->and(array_slice($this->reader->calls[0]['arguments'], 4, 3))->toBe(['record', 'orbit-instances', 'instance-'.$instance->id])
         ->and(array_unique(array_column($this->reader->calls, 'level')))->toBe([$base])
         ->and(array_unique(array_column($this->vault->frames, 'level')))->toBe([$base]);
+});
+
+it('admits a plain clone of a nested-fleet default with an inner volume: the copy records its own volume from the default\'s seed', function (): void {
+    $node = containerDefaultNode();
+    $default = handoverDefault($node, nested: true);
+    InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
+
+    $operation = handoverCreate($default);
+
+    $container = ValidatedData::object(ValidatedData::object($operation->input['direct_provisioning'])['container']);
+    $clone = ValidatedData::object($container['clone']);
+    // docs/reference/development-containers.md#the-inner-volume: before this the create refused with instance.inner_volume_clone_unavailable.
+    expect(InstanceRuntime::query()->where('instance_id', $operation->target_id)->sole()->inner_volume)->toBe('inner-'.$operation->target_id)
+        ->and(ValidatedData::object($container['inner_volume']))->toMatchArray(['name' => 'inner-'.$operation->target_id, 'device' => 'inner-pool'])
+        ->and($clone['inner_volume'])->toBe('inner-'.$default->id)
+        ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40));
 });
 
 it('fails the create with instance.workspace_baseline_unavailable when the read fails, and keeps the clone for a retry', function (): void {

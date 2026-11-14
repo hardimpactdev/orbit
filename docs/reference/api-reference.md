@@ -41,11 +41,15 @@ bin/docs-openapi
 
 `GET /api/v1/conn/projects/{project}/branches` generates `conn-project-branches` with typed branch, pull request and Instance data, the optional `query`, and the `meta.pull_requests_unavailable` marker. [Conn branch choices](/reference/conn#threads-in-an-orbit-project) defines its bounds and partial-read behavior.
 
+`bin/docs-openapi` writes the Conn settings patch body by hand in `conn_settings_body()`, because its rules depend on the sections a request holds. It lists `workspaces`, `appearance`, `attachedThreads` and `devices.<type>`. The replace body lists only `workspaces`, `appearance` and `devices`, the sections a `PUT` accepts. `ConnProfileSettingsContractTest` compares both generated bodies and the `conn-profile-settings-patch` tool with the request rules. Change the body with the rules, then regenerate OpenAPI and the MCP manifest. [Attached threads](/reference/conn#attached-threads) owns that section's rules.
+
 `GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
 
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.
 
 The generated `conn-pairing-create` tool includes optional `renew`, and its schema answers 202, 409 and 422. [Conn renewal](/reference/conn#renewal) defines when a renewal is refused.
+
+`GET /api/v1/conn/threads` (`conn-thread-list`) and `POST /api/v1/conn/environments/{environment}/threads` (`conn-thread-record`) come from `ConnThreadData`; the script writes the list's `meta.environments` schema and the record's 201, 200 and 409 answers by hand. [Thread index](/reference/conn#thread-index) owns them.
 
 The generated `conn-environment-renew` tool has no body and answers 202 with `conn.environment_renew`. Its description in `bin/docs-openapi` names `conn.environment_not_instance` and `operation.target_busy`; [Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server) owns them. `conn-environment-list` also returns `renewal_error_code` and `renewal_checked_at`.
 

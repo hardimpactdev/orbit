@@ -574,6 +574,8 @@ The `remint` play prints no token either, so a failed renewal shows its command 
 
 No token is in a run input or output. The phase also issues the `swamp.orbit` certificate from the Gateway's CA, puts a Caddy front on port 443, and starts serve and both workers. The Swamp key is already on the machine: the operator pushes it.
 
+The phase sets no trigger override, so this Swamp Node runs neither `swamp-credential-monitor` nor `swamp-datastore-watch` until its first release Swamp load sets them. Nothing reports that gap: a run that never fires raises nothing ([Schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node)).
+
 The phase creates the control vault `orbit-control-inputs` before serve starts, and the hub step also writes the hub public key to `wireguard/public.key` in the Orbit home, which every Node peer configuration names.
 
 The phase issues the Gateway's own certificate from the same CA and installs it with the root certificate in `/etc/caddy/orbit-cert-current`, the paths the Gateway Caddyfile names. `orbit:bootstrap` records the `swamp.orbit` Route, so the first Caddyfile the Gateway publishes keeps that front. It also records the Redis Database connection `gateway-queue` for the Valkey server on the machine.

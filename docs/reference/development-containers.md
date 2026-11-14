@@ -3,12 +3,12 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -121,7 +121,9 @@ A task VM host on the build list, such as Beast, gets the container branch besid
 
 Before it changes anything, the converge refuses a bridge range that another interface of the Node holds, with `instance.host_unavailable`. The Gateway only knows the bridges it records, not one an operator made, such as a CI bridge.
 
-The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`. T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address.
+The Gateway gives each Node a bridge network, a `/24` of the fleet range `10.253.0.0/16`, and records it on the Node. It takes the first `/24` that overlaps no recorded bridge and not the VPN subnet. A Node keeps its bridge. When no `/24` is free, the allocation fails with `node.instance_bridge_exhausted` (409). A task VM host's bridges may not overlap an Instance bridge either: `node:update` refuses them with `node.settings_invalid`.
+
+T3 servers are published on ports 3800 to 3999 of the Node's WireGuard address. The Node records the last T3 port it gave. A new runtime takes the first free port after it and wraps from 3999 to 3800, so a port freed by a destroy is given again only after the Node has used every other free port. A client that saved the destroyed server under its address therefore does not meet a new server there at once. When every port is held, the reservation fails with `instance.host_unavailable` (409).
 
 ### The build list
 
@@ -680,7 +682,7 @@ Who writes the names:
 | --- | --- |
 | Create, migrate and start phases | Deploy and wake run the start phase |
 | `env:sync` | In a running container |
-| A clone's create | In the copy before its first start. It replaces the seed's block with its own, or removes it when the clone has no name, and resets the seed's proxy bypass |
+| A clone's create | Right after the copy's first start, after its hosts template ran. It replaces any block with its own, or removes it when the clone has no name |
 
 A clone holds no app of its default, so its names are its [own site](#the-own-site-from-inside) names.
 
@@ -791,6 +793,14 @@ After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the def
 A converted store replaces the same-commit seed too: an immutable old snapshot cannot inherit a later filesystem change. Until this explicit deploy, clones of an old seed still convert their own store correctly.
 
 After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. It retakes the snapshot at the same commit too, so a clone gets the default's current caches and built files. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
+
+#### A retake keeps the seed
+
+A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
+
+Incus maps a new snapshot as it maps a new container: it needs a free [isolated ID range](#isolated-id-ranges) for a moment, but a delete or a rename needs none. So the step never uses `incus snapshot create --reuse`, which deletes the old snapshot before it creates the new one. On 2026-11-14 a retake with `--reuse` on a host with no free range left Instance 2454 without a seed for seven minutes.
+
+A failed snapshot deletes only what this take made, a new name or `next-<commit>`, and fails the step with `instance.container_seed_failed`. The Operation's error detail names the cause: `No free ID range for the new seed`, or the failed command's error output. The old seed stays, and clones keep copying it. A run that stopped after its new seed was whole, but before the rename, leaves the new seed under `next-<commit>`; the next seed step gives it the seed's name. So does a volume half still under `next-` after its container half took the name. Any other `next-` snapshot goes.
 
 There are no development setup steps. The default Instance has them done already, so a clone needs none. A clone prepares its container in four direct command phases: container, workspace and Processes, T3 with the agent's files before it, and sessions.
 
@@ -986,7 +996,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | --- | --- |
 | Default | The Project's `default` runs in a container on the same Node, is active and has a seed snapshot. Otherwise `instance.default_missing` |
 | Conn and models | Conn is on, else `operation.kind_unavailable`. The model router has its guard, else the router's own code |
-| Runtime row | The next free bridge address, the lowest free T3 port from 3800, and the default as clone source |
+| Runtime row | The next free bridge address, the next free T3 port after the Node's last one ([rule](#prepare-a-node)), and the default as clone source |
 | Copy | `incus copy` of `seed-<commit>` with the clone's own address and ACL. A stopped default needs no start |
 | First start | Before it, the copy loses its `orbit-*` boot links and the default's Process units and folders. It gets its own machine-id and the [shared files](#existing-containers) |
 | ACL | The Node's Caddy reaches port 8080 and ports 1024 to 65535, any WireGuard peer reaches port 3773, and the container reaches its database server's port |
@@ -1009,17 +1019,25 @@ When the mark names this Instance, a resume skips the fetch and the checkout, an
 
 A clone's create checks no Process unit. A dead Process fails the completion's `check` step with `instance.container_process_inactive` and its `process_failure` receipt. When the Process comes from a Project definition, the completion's recovery says `retry.requires=project_process_definition`: change or remove the definition, then run `instance:complete`. Its admission installs the Project's development definitions as they are then.
 
-A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
+A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A default with no `seed-` snapshot at all refuses with `instance.default_seed_missing`: deploy the default to take a seed. A default with only a `next-` snapshot is a retake between its delete and its rename, so it refuses with `instance.default_seed_moved`. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
 #### What a clone has at its first start
 
-The clone script writes these into the copy before it starts, so its first boot reads them with no converge or `env:sync`:
+The clone script writes these, so a new clone works with no converge or `env:sync`:
 
-| Part | What the copy has |
-| --- | --- |
-| Trust | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
-| Private names | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
-| `NO_PROXY` | The composed value in the `environment.*` keys and in both drop-ins, with those names. See [proxy settings](#proxy-settings-in-a-container) |
+| Part | When | What the copy has |
+| --- | --- | --- |
+| Trust | Before the first start | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
+| `NO_PROXY` | Before the first start | The composed value in the `environment.*` keys and in both drop-ins, with the private names. See [proxy settings](#proxy-settings-in-a-container) |
+| Private names | Right after the first start | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
+
+The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
+
+Right after the start, the clone script reads `/etc/hosts` with `incus exec … cat`, as `env:sync` does. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
+
+Orbit does not change the template instead. The template lives in each container's own metadata, copied from its default. A new image would not reach existing defaults, and editing each default's metadata would add hidden state.
+
+To check a new clone, run `getent hosts <its Route name>` inside it right after the create. It answers with the bridge's gateway address.
 
 A task copy is a clone like any other, so it gets the same. So does a clone in the nested-fleet project, and a clone that an inner Gateway makes in its own fleet.
 
@@ -1084,7 +1102,9 @@ A clone refuses with `instance.database_clone_unsupported` when the default has 
 
 `orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal follows separately. A call without force refuses with `instance.container_destroy_force_required`.
 
-A container default refuses with `operation.kind_unavailable`, except a default that has an [inner volume](#the-inner-volume), whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS`, and that no Instance copies (else `instance.default_has_copies`). Such a default is a trial default of a nested fleet; the same removal deletes its container, its seed snapshots and its inner volume. The first nested-fleet default has no inner volume, and the operator never lists its Project, so it cannot be removed this way.
+A container default refuses with `operation.kind_unavailable`, except a default whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS` and that no Instance copies (else `instance.default_has_copies`). The operator lists only the Project of a nested-fleet trial default, made with an [inner volume](#the-inner-volume) or before it; the code does not check the kind of Project.
+
+The same removal deletes its container and its seed snapshots, and its inner volume when it has one; a stopped container needs no start. Only the list tells a trial default from the first nested-fleet default: the operator never lists that Project, and while any copy of it exists the copy check refuses too.
 
 A removal from Conn without acknowledgement reads the [workspace work state](#workspace-work-state) first and removes only a `clean` workspace. The CLI's rules do not change.
 
@@ -1146,6 +1166,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A Route visit wakes the Instance | Built |
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
+| The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
 | A visit gets the app without the waiting page while the container is frozen | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
@@ -1294,7 +1315,7 @@ The move is built for the Nodes of the [build list](#the-build-list).
 | Non-default | The Project default is on the same Node; source identity, T3 and model-router prerequisites still apply. No migrated default or seed is needed |
 | Deployment | An unfinished deployment refuses the move with `instance.lifecycle_busy` |
 | PHP version | A web-serving Project without a recorded version refuses with `project.source_defaults_incomplete`. Set `require.php` in its source, then run `orbit project:update PROJECT --source-access=github_app` to record it |
-| Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the lowest free T3 port. It names no clone source |
+| Runtime row | Reserved at admission: the next free bridge address and, for a non-default Instance, the next free T3 port after the Node's last one. It names no clone source |
 | While it runs | The Instance keeps its checkout path, and the reserved row does not turn its site. The run holds the Route's Node, and the Instance takes no deployment and no wake |
 | Retirement check | Checks identity before downtime and retention. Carries local branches, stash history, staging and all copied file bytes. Active clean/smudge filters, intent-to-add, submodule changes, owner dependencies and registered descendants still block |
 | Branch | The mirror fetches the recorded branch locally; the files phase imports every local branch tip and complete stash history into independent Git metadata |
@@ -1436,15 +1457,26 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 
 | Purpose | Command | What Orbit sets |
 | --- | --- | --- |
-| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the [turn model](#turn-model), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
-| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title, also when the bound cut the wait before T3 printed the thread id |
-| Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages |
+| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the provider instance of the effort and the [turn model](#turn-model-and-effort), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
+| Continue a thread and wait for its run | `t3 thread send --wait --json T3THREAD -` | The composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance, so its model and effort. |
+| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
+| Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
+| Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch and its tip, then the checked candidate, detached. Each Git command is bounded at 20 seconds |
+| Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a failed or cut one: what the reviewer changed is discarded and the task branch is checked out again, at its earlier tip |
 
-The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`. That `t3 thread send` answers a thread whose run waits for input is an assumption read from T3 0.1.7's CLI, proven only against a stand-in for T3.
 
-### Turn model
+A continued turn whose title T3 lists not exactly once launches nothing and is `failed` with `tasks.copy_thread_missing`; a list that fails or is not JSON is `failed` with `tasks.copy_turn_failed`.
 
-The Gateway's `ORBIT_TASKS_COPY_TURN_MODEL` names the provider and model of every turn, as `PROVIDER/MODEL`. The default is `claudeAgent/claude-opus-5-5`: a container reaches only the Claude model forwarder. T3 picks the effort.
+A reviewer turn on a checkout with changes or no branch launches nothing and is `failed` with `tasks.copy_tree_dirty`, and one whose checkout is not clean on its branch at its earlier tip afterwards is `failed` with `tasks.copy_review_unrestored`, whatever its run did. The phase marks the detach as soon as it is done, so a reviewer turn cut before the restore is unrestored too.
+
+### Turn model and effort
+
+The Gateway's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWER_MODEL` name the Claude model of a new thread of each role. Both default to `claude-opus-5-5`: a container reaches only the Claude model forwarder. The effort is the role's [effort setting](/reference/tasks#drivers): `ORBIT_TASKS_IMPLEMENTER_EFFORT`, default `medium`, and `ORBIT_TASKS_REVIEWER_EFFORT`, default `high`.
+
+Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
+
+A new thread starts with `--provider` set to the instance of its effort. Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
 
 ### Gaps of the CLI path
 
@@ -1453,14 +1485,13 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 - **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
-- **No effort setting.** T3 runs the model at its own default effort.
-- **One new implementer thread per turn.** A reviewer turn, a continued thread and a caller's model are refused with `tasks.copy_turn_unsupported`.
+- **No consult and no caller's model.** Both are refused with `tasks.copy_turn_unsupported`.
 
 ### Hold after a turn that may still run
 
 A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A turn cancelled before its run step reports holds the group the same way.
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A reviewer turn whose checkout is not restored is never over. A turn cancelled before its run step reports holds the group the same way.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
@@ -1659,11 +1690,27 @@ A new nested-fleet default gets its own volume for the inner fleet, as the task 
 
 On the host this is one volume and one device on one container: no pool, profile or project key, no kernel module setting and no host package. Incus formats the volume with the host's `mkfs.btrfs`. The container does not see the block device; it reaches the host's btrfs code only through file operations and the subvolume calls of its own file system, and the volume's size caps its space.
 
-A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots. The first nested-fleet default and every Instance without `inner_volume` keep today's shape; no step makes or checks a volume for them. Until the clone copies the volume too, a clone of a default with an inner volume refuses with `instance.inner_volume_clone_unavailable` (409) before any record.
+A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots.
+
+The first nested-fleet default and every Instance without `inner_volume`, its copies included, keep today's shape: no step makes, snapshots, copies or checks a volume for them.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
 In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
+
+#### The seed pair
+
+The seed of such a default is a pair: the container snapshot `seed-<commit>` and the volume snapshot of the same name. A container snapshot does not hold an attached custom volume, so the name ties the two. The [seed step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) takes the volume's half right after the container's, with the Processes still stopped, wherever it takes the seed. It retakes the pair when the volume's half is missing.
+
+A [retake](#a-retake-keeps-the-seed) takes both new halves under `next-<commit>` when the seed's name is taken. A failed volume snapshot deletes both new halves and fails with `instance.seed_volume_snapshot_failed`, so no reader finds half a pair. The old pair stays whole, also at the same commit. Older pairs go only after both new halves exist. A failed refresh checks that both halves exist before it restores anything; a failed restore of the volume after the container's fails the run.
+
+A deployment retakes the two halves one after the other. So a clone of such a default is not admitted while a deployment of the default is open (`instance.default_seed_in_flight`), as the refresh waits for an open clone (`instance.clone_in_flight`). A default without an inner volume has no such wait.
+
+#### Copies of the volume
+
+A copy of such a default, a plain clone or a task copy, gets its own volume `inner-<copy id>`, which its runtime records. The [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) checks that the default's volume holds the seed's half, else `instance.default_seed_incomplete`. It copies that snapshot to the new volume. Then it copies the container with its disk `inner-pool` set to the new volume, before the first start. Both copies are ZFS clones. Incus gives the copied volume a new btrfs fsid, so copies never share one. In the 2026-11-14 test the two copies took 3.8 to 4.2 s and the outer start about 1 s.
+
+The start guard admits the copy's volume with exactly the keys above. A failed container copy deletes the volume it copied. A volume without its container, left by a failed copy, is deleted and copied again. Destroy of the copy deletes its volume. A copy shares blocks with the default's seed until it goes, as a container copy does.
 
 ### Fleet rules
 
@@ -1778,7 +1825,9 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | Migrate before Doctor | The start checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | A passed run starts the fleet again after the seed. After a restore, the run starts the restored fleet |
 
-A Swamp step that exits nonzero keeps no output. So a failed fleet phase writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body.
+A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
+
+The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
 The checkout moves under the running nested Gateway, with its old schema and processes. So the start of the fleet checks only that the containers run and the tunnel reaches the hub. The refresh migrates and restarts the nested Gateway. When the converge is due, it waits for the three agents and converges the Nodes. Only then does it wait for Doctor.
 
@@ -1831,6 +1880,8 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that migrated or reloaded grants comes up on the new schema and grants.
 
 The nested Gateway's other two state mounts need no rule. The refresh writes nothing to `swamp/vaults`: on the live default, no file there changed during a refresh.
+
+The nested Gateway's serve loads the workflows of the checkout as they change, with no step of the refresh. It does not register the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node), `swamp-credential-monitor` and `swamp-datastore-watch`: they have no built-in trigger, and only the production release load sets them.
 
 Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
 
@@ -2090,6 +2141,20 @@ The database keeps these rules:
 
 The T3 server's record in the Conn layer names its Instance. Only the Instance's create flow registers that server; a Node that registers it itself is refused ([Registration](/reference/conn#registration)).
 
+## Isolated ID ranges
+
+Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, 101,000,000 for a nested-fleet container (`InstanceHostIntent::TaskPlaceIds`). A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
+
+On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges fit. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
+
+### The check at a task start
+
+A [task copy](/cli/task/start) start reads them. One bounded SSH call (at most about 4 s) runs a fixed reader on the default's Node. The reader reads root's range and the ID map keys of every container in every Incus project. The Gateway then places ranges as Incus 7.0.2 does (`IsolatedIdRanges`). A container that an open create admitted but has not made yet counts as held.
+
+The copy needs one range of its default's size. With the copy placed, a range must stay free for the next seed of this default and of every other default on the Node, so a small copy never fills the last nested-sized gap. Otherwise the start refuses with `tasks.copy_id_range_full`, before any record. A runtime whose container is not on the host counts only while its create is open. An unreadable host refuses with `tasks.copy_id_ranges_unreadable`: the Gateway cannot show a free range. `ORBIT_TASKS_COPIES_MAX` stays an upper bound for nested-fleet copies that an operator may lower.
+
+However, two starts within the same moment can still both pass. Then the later create or seed fails at Incus. The seed step keeps the old seed and names the cause, so the default stays copyable.
+
 ## Errors
 
 The container runtime adds these codes. The other codes of create and destroy stay as they are.
@@ -2114,9 +2179,15 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.web_unready` | 502 | FrankenPHP gave no answer within 30 seconds of a wake. The asleep marker stays |
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
-| `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore. The default stays as the run left it |
+| `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore, or the [inner volume](#the-inner-volume) lacks the seed's half. Nothing is restored, and the default stays as the run left it |
 | `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The Operation's result `fleet_drift` names each difference. Nothing changed |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
+| `instance.default_seed_missing` | 409 | The default has no seed snapshot at all. Deploy the default; its seed step takes one |
+| `instance.refresh_failed` | none | An Activity row, not an API error: a refresh that a release admitted failed. It names the Operation, its code and its detail; see [Refresh after a release](#refresh-after-a-release) |
+| `instance.container_seed_failed` | 502 | The seed step could not take the new snapshot. The error detail names why, such as `No free ID range for the new seed`. The old seed stays; see [A retake keeps the seed](#a-retake-keeps-the-seed) |
+| `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both new halves are deleted and the old pair stays; see [The seed pair](#the-seed-pair) |
+| `instance.default_seed_incomplete` | 409 | The default's seed has no half on its [inner volume](#the-inner-volume), such as a seed taken before the pair existed. Deploy the default once |
+| `instance.default_seed_in_flight` | 409 | A clone of a default with an [inner volume](#the-inner-volume) while a deployment of the default is open. Create the clone when it ends |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
 | `instance.database_clone_unsupported` | 422 | A clone names another Database server than the default's, or the default has no database on a server to clone |
@@ -2134,7 +2205,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
-| `instance.clone_private_names_refused` | 502 | A clone's copy has `/etc/hosts` as a link or another type than a file, or the file API could not read it. The create stops before the copy starts |
+| `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | The direct container Process journal read failed |

@@ -16,6 +16,7 @@ use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Problems\GatewayLogSignals;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Routes\NativeRouteMutationInput;
 use App\Domain\Routes\PrivateDnsPublicationNodes;
@@ -51,12 +52,14 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Orbit\Extensions\Conn\Models\ConnProfile;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
@@ -390,6 +393,64 @@ it('admits the forced engine and follows its Conn-owned Operation through succes
     $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->getJson('/api/v1/conn/environments')
         ->assertOk()->assertJsonCount(0, 'data');
     connRemovalCall($instance->id, ['acknowledge_unsaved' => true], 'new-key')->assertNotFound();
+});
+
+it('drops the removed clone\'s attached threads from every profile when the destroy succeeds', function (): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    ConnEnvironment::query()->create(['environment_id' => 'host-env', 'label' => 'host', 'url' => 'http://10.44.0.7:3773',
+        'node_id' => $instance->node_id, 'admin_session' => 'fixture-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    $profile = ConnProfile::query()->create(['name' => 'conn-lane-test', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->patchJson('/api/v1/conn/profiles/'.$profile->id.'/settings', ['sections' => [
+        'attachedThreads' => ['version' => 0, 'value' => ['schema' => 1, 'threads' => [
+            ['environmentId' => 'feature-env', 'threadId' => 'thread-1'], ['environmentId' => 'host-env', 'threadId' => 'thread-2'],
+        ]]],
+    ]])->assertOk();
+
+    $operation = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+    expect($profile->fresh()?->settings_version)->toBe(2);
+    connRemovalSucceed($operation->refresh());
+
+    $profile = $profile->fresh();
+    expect($instance->fresh())->toBeNull()
+        ->and($profile?->settings['attachedThreads'])->toBe(['schema' => 1, 'threads' => [['environmentId' => 'host-env', 'threadId' => 'thread-2']]])
+        ->and($profile?->section_meta['attachedThreads']['version'])->toBe(2)
+        ->and($profile?->section_meta['attachedThreads']['updated_by_node_id'])->toBeNull()
+        ->and($profile?->settings_version)->toBe(3);
+});
+
+it('finishes the destroy and drops the other profiles\' threads when a profile document is not JSON, and logs a Problem signal', function (): void {
+    $directory = sys_get_temp_dir().'/conn-drop-'.Str::random(8);
+    mkdir($directory);
+    config(['logging.channels.conn-drop' => ['driver' => 'single', 'path' => $directory.'/laravel.log', 'level' => 'debug']]);
+    app('log')->setDefaultDriver('conn-drop');
+    try {
+        $instance = connRemovalClone();
+        connRemovalResources($instance);
+        $broken = ConnProfile::query()->create(['name' => 'broken', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
+        DB::table('conn_profiles')->where('id', $broken->id)->update(['settings' => '{"attachedThreads": {"threads": [{"environmentId": "feature-env"']);
+        $profile = ConnProfile::query()->create(['name' => 'conn-lane-test', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->patchJson('/api/v1/conn/profiles/'.$profile->id.'/settings', ['sections' => [
+            'attachedThreads' => ['version' => 0, 'value' => ['schema' => 1, 'threads' => [['environmentId' => 'feature-env', 'threadId' => 'thread-1']]]],
+        ]])->assertOk();
+
+        $operation = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        connRemovalSucceed($operation->refresh());
+
+        connRemovalRead($operation)->assertOk()->assertJsonPath('data.status', 'succeeded');
+        expect($instance->fresh())->toBeNull()
+            ->and(ConnEnvironment::query()->where('environment_id', 'feature-env')->exists())->toBeFalse()
+            ->and($profile->fresh()?->settings['attachedThreads']['threads'])->toBe([])
+            ->and(DB::table('conn_profiles')->where('id', $broken->id)->value('settings'))->toStartWith('{"attachedThreads"');
+        $log = (string) file_get_contents($directory.'/laravel.log');
+        expect($log)->toContain('conn.attached_threads_drop_failed')->toContain("from profile {$broken->id}.")->toContain('feature-env');
+        $signals = app(GatewayLogSignals::class)->collect($directory, base_path(), ['path' => $directory.'/laravel.log', 'inode' => (int) fileinode($directory.'/laravel.log'), 'offset' => 0])['signals'];
+        expect($signals)->toHaveCount(1)
+            ->and($signals[0]['exception_class'])->toBe('RuntimeException')
+            ->and($signals[0]['frame'])->toStartWith('app/');
+    } finally {
+        File::deleteDirectory($directory);
+    }
 });
 
 it('keeps default and non-container refusals local to Conn', function (bool $container, string $code): void {

@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "fbf3c02af4f9195d66a35464a6616ac095160f6235492980492e751047e59de8"
+source_sha256 = "2c2961e19dc54c2b5fa56601492238b62e786dda20adf56517e96d634913f17a"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -11,6 +11,8 @@ cases = [
   "test_target_created_after_admission_is_not_silently_reused",
   "test_unreadable_remote_fails_without_creating_a_branch",
   "test_unreachable_frozen_commit_fails_without_using_current_tip",
+  "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy",
+  "test_a_replaced_seed_still_refuses_as_moved",
   "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
@@ -19,6 +21,15 @@ cases = [
   "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file",
   "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy",
   "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name",
+  "test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start",
+  "test_a_seed_bundle_with_the_root_stays_as_it_is",
+  "test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start",
+  "test_a_clone_without_the_trust_entry_reads_no_bundle",
+  "test_the_plans_private_names_survive_the_first_starts_hosts_template_with_env_syncs_bytes",
+  "test_a_clone_without_names_writes_no_block_and_drops_a_seed_block_the_template_left",
+  "test_a_retry_on_a_running_copy_with_the_block_in_place_writes_nothing",
+  "test_a_failed_hosts_read_after_the_start_fails_the_create_by_its_own_name",
+  "test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes",
   "test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start",
   "test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone",
   "test_a_copy_without_home_agent_gets_no_nss_store",
@@ -40,6 +51,11 @@ cases = [
   "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code",
   "test_normal_clone_uses_the_exact_original_checker_program_and_argv",
   "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices",
+  "test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start",
+  "test_a_copy_with_an_inner_volume_refuses_a_seed_whose_volume_half_is_gone_before_any_change",
+  "test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts",
+  "test_a_volume_left_by_a_failed_copy_without_its_container_is_copied_again_from_the_seed",
+  "test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before",
   "test_nested_guard_admits_the_live_shape_of_the_first_nested_container",
   "test_guest_and_node_command_names_stay_in_sync",
   "test_preserves_only_the_guest_command_and_exit_code",
@@ -63,17 +79,9 @@ cases = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
   "test_names_a_failed_delivery_without_its_output",
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
-  "test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start",
-  "test_a_seed_bundle_with_the_root_stays_as_it_is",
-  "test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start",
-  "test_a_clone_without_the_trust_entry_reads_no_bundle",
-  "test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes",
-  "test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone",
-  "test_a_linked_hosts_file_refuses_the_create",
-  "test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 124
+cost = 137
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -159,7 +167,15 @@ inputs = [
   "test_a_seed_bundle_with_the_root_stays_as_it_is" = 1 # estimate: local run on Beast, not a CI measurement
   "test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start" = 1 # estimate: local run on Beast, not a CI measurement
   "test_a_clone_without_the_trust_entry_reads_no_bundle" = 1 # estimate: local run on Beast, not a CI measurement
-  "test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes" = 1 # estimate: local run on Beast, not a CI measurement
-  "test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone" = 1 # estimate: local run on Beast, not a CI measurement
-  "test_a_linked_hosts_file_refuses_the_create" = 1 # estimate: local run on Beast, not a CI measurement
   "test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_the_plans_private_names_survive_the_first_starts_hosts_template_with_env_syncs_bytes" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_clone_without_names_writes_no_block_and_drops_a_seed_block_the_template_left" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_retry_on_a_running_copy_with_the_block_in_place_writes_nothing" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_failed_hosts_read_after_the_start_fails_the_create_by_its_own_name" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_copy_with_an_inner_volume_refuses_a_seed_whose_volume_half_is_gone_before_any_change" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_volume_left_by_a_failed_copy_without_its_container_is_copied_again_from_the_seed" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy" = 1
+  "test_a_replaced_seed_still_refuses_as_moved" = 1

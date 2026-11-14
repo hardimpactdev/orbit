@@ -1,0 +1,4 @@
+{
+  "swamp-credential-monitor": "0 7 * * * *",
+  "swamp-datastore-watch": "0 */15 * * * *"
+}

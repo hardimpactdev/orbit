@@ -1,9 +1,11 @@
 order = 40
-source_sha256 = "f16b3ea0ca0f421a990d028a943d514aa910d5460c5b2ddf371cdd1e4445cef0"
+source_sha256 = "5c7dae39f0fed6e8f11a3dfcd201ab97050143a97069ae1e2c60e9e7dd255976"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it",
+  "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
+  "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -77,12 +79,33 @@ cases = [
   "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value",
   "a normal container's create and deploy start run no Club key task and no Club key command",
   "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
+  "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
+  "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
+  "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
+  "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
+  "a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half",
+  "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 3989
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The seed-retake cases of slice-seed-safe, 30 to 60s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard
+  # PR limit. The PR keeps the same-commit retake order (next- first, then delete and rename, never --reuse) in "a deployment at the
+  # seed's commit retakes the seed"; these four ran in full locally before the PR.
+  "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
+  "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
+  "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
+  "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
+  # The seed pair cases of the inner volume (slice 3), 27 to 48s each locally: like the inner volume cases below, they would push the
+  # file above the 8-shard PR limit. The PR keeps the changed seed and restore tasks for a normal and a 2454-shaped default in
+  # "a deployment at the seed's commit retakes the seed" and "a failed nested-fleet deployment restores the newest seed", and the
+  # clone's volume copy in instance_clone_test.py.
+  "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
+  "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
+  "a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half",
+  "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
   # The inner volume cases, 20 to 31s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard PR limit.
   # The PR keeps the guard's volume keys in instance_clone_test.py (InnerVolumeGuardTest).
   "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",
