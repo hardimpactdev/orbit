@@ -1,11 +1,12 @@
 file = "swamp/tests/task_instance_workspace_base_cleanup_test.py"
 slices = false
-cost = 36
-source_sha256 = "73f614482569f9daae806f1a6257b20a86d4a70f64d86cf5465c285cc68cc1c7"
+cost = 57
+source_sha256 = "a682372b90ae2b503bb93f4e3f5a3b9e0c38248b3855410a286f6c3fd5be0b07"
 cases = [
   "test_a_failed_fetch_leaves_no_credential_and_no_bundle",
   "test_a_sync_cancelled_during_the_fetch_leaves_nothing_after_base_cleanup",
-  "test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup"
+  "test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup",
+  "test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left"
 ]
 inputs = [
   "tools/tests/ci-workspace-cost-evidence.json",
@@ -22,4 +23,5 @@ inputs = [
 [case_costs]
 "test_a_failed_fetch_leaves_no_credential_and_no_bundle" = 9
 "test_a_sync_cancelled_during_the_fetch_leaves_nothing_after_base_cleanup" = 11
-"test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup" = 16
+"test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup" = 18
+"test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left" = 19

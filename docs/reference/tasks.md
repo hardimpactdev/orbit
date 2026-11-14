@@ -1014,7 +1014,7 @@ A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of
 5. The Node bundles the default branch without the commits that the copy holds already. A copy that holds the head gets no bundle.
 6. In the copy, as `agent`, Git fetches the bundle into `refs/remotes/origin/<default branch>` and nothing else.
 7. The run reads the default head, the branch commit, how far the branch is behind and the copy's start commit.
-8. A cleanup step always removes the credential file and the bundles on the Node and in the copy, also after a failed or cancelled run.
+8. A cleanup step removes the credential file and the bundles on the Node and in the copy. A cancelled run may skip it, so the next sync of the copy removes them before its fetch.
 
 The sync never merges or rebases `task-<id>`. HEAD, the working tree, the index and the local branches stay as they are. The result is `{ default_branch, default_commit, branch, branch_commit, behind_by, start }`, where `behind_by` counts the commits of the default branch that `task-<id>` lacks. The agent merges or rebases in the copy, then checks again.
 

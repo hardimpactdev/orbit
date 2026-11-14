@@ -54,6 +54,29 @@ class TaskInstanceWorkspaceBaseCleanupTest(HARNESS['BaseHarness']):
         self.assertEqual(self.git('rev-parse', 'refs/remotes/origin/main'), self.seed)
         self.assertEqual(self.state(), before)
 
+    def test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left(self):
+        # An earlier sync of this copy was cancelled and its cleanup job never ran.
+        for folder in (self.node, self.guest):
+            folder.mkdir(mode=0o700)
+            (folder / 'base.bundle').write_bytes(b'stale bundle')
+        (self.node / 'credential').write_text('stale credential')
+        # At the next sync's fetch, its own credential is the only file left in the copy's Node scratch.
+        server = socket.socket()
+        server.bind(('127.0.0.1', 0))
+        server.listen(1)
+        self.addCleanup(server.close)
+        accepted = []
+        threading.Thread(target=lambda: accepted.append(server.accept()[0]), daemon=True).start()
+        self.addCleanup(lambda: [connection.close() for connection in accepted])
+        intent = {**self.intent, 'repository': f'https://127.0.0.1:{server.getsockname()[1]}/orbit.git'}
+        self.cancel(self.start('base', intent), lambda: bool(accepted))
+        self.assertEqual(sorted(path.name for path in self.node.iterdir()), ['credential'])
+        self.assertEqual(hashlib.sha256((self.node / 'credential').read_bytes()).hexdigest(), hashlib.sha256(CREDENTIAL.encode()).hexdigest())
+        self.assertEqual(list(self.guest.iterdir()), [])
+        # That sync was cancelled too; the one after it runs to its end without a base-cleanup and leaves nothing.
+        self.assertEqual(self.phase('base')['default_commit'], self.head)
+        self.assert_nothing_left()
+
 
 if __name__ == '__main__':
     unittest.main()

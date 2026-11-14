@@ -58,8 +58,10 @@ class BaseHarness(unittest.TestCase):
         (self.bin / 'incus').chmod(0o755)
         self.calls = self.root / 'calls.jsonl'
         self.snapshot_id = str(uuid.uuid4())
-        self.node = Path('/var/tmp/orbit-task-base-' + self.snapshot_id)
-        self.guest = Path('/tmp/orbit-task-base-' + self.snapshot_id)
+        # A copy's Instance id names its scratch; a random one keeps parallel runs of these tests apart.
+        self.instance_id = 900000000 + uuid.uuid4().int % 99999999
+        self.node = Path(f'/var/tmp/orbit-task-base-{self.instance_id}')
+        self.guest = Path(f'/tmp/orbit-task-base-{self.instance_id}')
         self.addCleanup(shutil.rmtree, self.node, True)
         self.addCleanup(shutil.rmtree, self.guest, True)
         # origin: the seed A, then B and C on main. The default's mirror holds the seed.
@@ -87,7 +89,7 @@ class BaseHarness(unittest.TestCase):
         (self.checkout / 'untracked.txt').write_text('untracked\n')
         self.git('add', 'untracked.txt')
         self.intent = {'runtime': {'project': 'alternate-proof', 'name': 'proof-instance'}, 'branch': 'task-42',
-                       'snapshot_id': self.snapshot_id, 'default_branch': 'main', 'repository': self.origin.as_uri(),
+                       'snapshot_id': self.snapshot_id, 'instance_id': self.instance_id, 'default_branch': 'main', 'repository': self.origin.as_uri(),
                        'mirror': str(self.mirrors / '12.git'), 'source_mirror': str(self.source_mirror), 'start': self.seed}
         self.play = self.root / 'play.yml'
         self.play.write_text(json.dumps([{'name': 'Exercise the production phase', 'hosts': 'localhost', 'connection': 'local',

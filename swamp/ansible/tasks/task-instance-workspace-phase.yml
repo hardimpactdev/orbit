@@ -24,6 +24,8 @@
         and intent.source_mirror | default('') is match('^/[^ ]+/[1-9][0-9]*[.]git$')
         and '..' not in (intent.mirror ~ '/' ~ intent.source_mirror).split('/'))
       - intent.start is not defined or intent.start is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
+      # The copy's scratch is named by its Instance, so the next sync of the copy finds what a cancelled one left.
+      - workspace_phase not in workspace_base_phases or (intent.instance_id | default(0) is integer and intent.instance_id | default(0) > 0)
     fail_msg: tasks.workspace_target_invalid
   vars:
     workspace_check_phases: [check, commit, commit-ref]
@@ -32,9 +34,10 @@
 - name: Name the guest boundary
   ansible.builtin.set_fact:
     workspace_base_phases: [base, base-cleanup]
-    # task:sync of a copy: the run's Node scratch holds the read credential and the bundle; base-cleanup removes it by name.
-    base_node: "/var/tmp/orbit-task-base-{{ intent.snapshot_id }}"
-    base_guest_bundle: "/tmp/orbit-task-base-{{ intent.snapshot_id }}/base.bundle"
+    # task:sync of a copy: the copy's Node scratch holds the read credential and the bundle. It is named by the copy's Instance, so
+    # base-cleanup and the next base find what a cancelled run left; the group lock lets one sync of a copy run at a time.
+    base_node: "/var/tmp/orbit-task-base-{{ intent.instance_id | default('') }}"
+    base_guest_bundle: "/tmp/orbit-task-base-{{ intent.instance_id | default('') }}/base.bundle"
     workspace_exec: >-
       {{ ['incus', '--project', intent.runtime.project, 'exec', '--disable-stdin', '--cwd', '/srv/workspace',
           intent.runtime.name, '--', '/usr/sbin/runuser', '-u', 'agent', '--', '/usr/bin/env', '-i', 'HOME=/home/agent',
@@ -57,7 +60,7 @@
       root = Path.cwd()
       scratch = Path('/tmp/orbit-task-workspace-' + request['snapshot_id'])
       # task:sync of a copy: the bundle the Node pushes in, in a folder only agent reads.
-      base_scratch = Path('/tmp/orbit-task-base-' + request['snapshot_id'])
+      base_scratch = Path('/tmp/orbit-task-base-' + str(request.get('instance_id', '')))
       env = {'HOME': '/home/agent', 'PATH': '/usr/local/bin:/usr/bin:/bin',
              'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
       git_argv = ['/usr/bin/git', '--literal-pathspecs', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false',
@@ -565,7 +568,11 @@
     - name: Keep the copy's refs
       ansible.builtin.set_fact:
         base_copy: "{{ base_read.stdout | from_json }}"
-    - name: Make the run's Node scratch
+    # What an earlier, cancelled sync of this copy left goes before this run writes its credential.
+    - name: Remove the copy's earlier Node scratch
+      ansible.builtin.file: { path: "{{ base_node }}", state: absent }
+      changed_when: false
+    - name: Make the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: directory, mode: "0700" }
       changed_when: false
     - name: Read the copy's mirror
@@ -657,7 +664,7 @@
       ansible.builtin.set_fact:
         workspace_result: "{{ base_import.stdout | from_json }}"
   always:
-    - name: Remove the run's Node scratch
+    - name: Remove the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
       changed_when: false
     - name: Remove the bundle in the copy as agent
@@ -675,11 +682,12 @@
         that: base_guest_cleanup.rc | default(1) == 0
         fail_msg: tasks.workspace_phase_failed
 
-# A cancelled sync stops before the base phase's `always`: this phase removes what it left, by the run's scratch names.
+# A cancelled sync stops before the base phase's `always`, and a cancelled run may skip its cleanup job too: this phase, and the
+# next base of the copy, remove what it left by the copy's scratch names.
 - name: Remove what a base phase left
   when: workspace_phase == 'base-cleanup'
   block:
-    - name: Remove the run's Node scratch and its credential
+    - name: Remove the copy's Node scratch and its credential
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
       changed_when: false
     - name: Remove the bundle folder in the copy as agent

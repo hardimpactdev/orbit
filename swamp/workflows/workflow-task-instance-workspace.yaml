@@ -57,6 +57,8 @@ inputs:
         worker_environment: {type: string, pattern: '^/tmp/orbit-task-publish-[A-Za-z0-9]+/environment$'}
         # task:sync of a copy: the default branch, the Project's repository, the copy's Node mirror, the default's mirror
         # that makes a missing one, and the copy's start commit.
+        # The copy's Instance names its Node scratch and its bundle folder, so the next sync removes what a cancelled one left.
+        instance_id: {type: integer, minimum: 1}
         default_branch: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'}
         repository: {type: string, pattern: '^https://'}
         mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
