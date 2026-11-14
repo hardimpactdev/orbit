@@ -12,6 +12,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -177,9 +178,26 @@ it('removes a container default only on the operator list and without a copy, wi
     'no --force' => ['no --force', 'instance.container_destroy_force_required'],
 ])->with(['inner volume' => true, 'no inner volume' => false]);
 
+it('keeps a listed nested-fleet default without an inner volume refused while a copy of it exists', function (): void {
+    // The shape of the first nested-fleet default: the nested Incus project, no inner volume, and task copies of it.
+    $default = destroyDefault();
+    // The database keeps a recorded project from changing, so the runtime row is made again with the nested project.
+    $row = $default->runtime()->firstOrFail()->getAttributes();
+    $default->runtime()->delete();
+    unset($row['id']);
+    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject, 'inner_volume' => null]);
+    config(['instances.default_destroy_projects' => [$default->project_id]]);
+    $copy = destroyClone($default->refresh());
+    $before = Operation::query()->count();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), true)))->toBe('instance.default_has_copies')
+        ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe(InstanceState::Active)
+        ->and($copy->fresh()->status)->toBe(InstanceState::Active)->and($copy->runtime()->value('incus_project'))->toBe(InstancePlacement::NestedProject);
+});
+
 it('destroys a listed container default without a copy and frees its records', function (bool $inner): void {
     $default = destroyDefault();
-    $default->runtime()->update(['inner_volume' => $inner ? 'inner-'.$default->id : null]);
+    // A trial default is stopped; the removal does not start it first.
+    $default->runtime()->update(['inner_volume' => $inner ? 'inner-'.$default->id : null, 'power_state' => InstanceRuntimePowerState::Stopped]);
     config(['instances.default_destroy_projects' => [$default->project_id]]);
 
     $operation = app(StartInstanceDestroyAction::class)->execute($default->refresh(), true);
