@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Http\Mcp\ToolManifest;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 use Orbit\Extensions\Conn\Http\Requests\ConnProfileSettingsRules;
+use Orbit\Extensions\Conn\Http\Requests\ReplaceConnProfileSettingsRequest;
 
 /**
  * `bin/docs-openapi` writes the settings patch body by hand, because the rules depend on the sections a request holds.
@@ -63,4 +64,16 @@ it('names the attached set in the settings show and patch descriptions', functio
     expect($path['get']['description'])->toContain('`attachedThreads`')
         ->and($path['patch']['description'])->toContain('A section is `workspaces`, `appearance`, `attachedThreads`, or `devices.<type>`')
         ->toContain('A null value removes any section but `workspaces`');
+});
+
+it('publishes the replace body with exactly the sections a replace accepts', function (): void {
+    $spec = json_decode((string) file_get_contents(base_path('../../docs/openapi.json')), true, flags: JSON_THROW_ON_ERROR);
+    $put = $spec['paths']['/api/v1/conn/profiles/{profile}/settings']['put'];
+    $settings = $put['requestBody']['content']['application/json']['schema']['properties']['settings'];
+    $rule = array_values(array_filter((new ReplaceConnProfileSettingsRequest)->rules()['settings'], static fn (mixed $rule): bool => is_string($rule) && str_starts_with($rule, 'array:')));
+
+    expect($rule)->toHaveCount(1)
+        ->and(array_keys($settings['properties']))->toBe(explode(',', substr($rule[0], strlen('array:'))))
+        ->and($settings['additionalProperties'])->toBeFalse()
+        ->and($put['description'])->toContain('A body that holds any other section, such as `attachedThreads`, returns `validation.failed` (422)');
 });

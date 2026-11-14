@@ -173,12 +173,21 @@ Two devices that change the set at the same time are handled by the section vers
 
 Orbit drops the entries of an environment that is gone:
 
-- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from the profiles that hold one, and reads no other profile.
+- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from the profiles that hold one. It reads no profile whose document does not name the environment.
 - **Never refused.** The drop only shrinks a document, so no document limit refuses it. A document that is already over a limit cannot stop a destroy.
 - **Versions.** This drop adds 1 to the section version and to the document version, with `updated_by` `null`.
 - **Merge.** A device sees the new `settings_version` in `GET /me`. It reads the section and merges the drop as a remote change.
 - **No write-back.** A device that writes from its older version gets a conflict. It cannot write the threads back.
 - **On read.** A read leaves out the threads of an environment that was deleted. It writes nothing and adds no version. The next write of the section drops them from the store.
+
+A failure of the drop never stops the destroy:
+
+- **After the destroy.** The drop runs after the destroy commits. It cannot fail, roll back or delay the destroy.
+- **One profile at a time.** The drop writes each profile in its own transaction.
+- **Skipped profile.** The drop skips a profile it cannot read or write. This includes a document that is not valid JSON but names the environment. The other profiles still get their drop.
+- **Deleted profile.** A profile deleted while the drop runs is skipped without a report.
+- **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem. A log channel that fails is ignored.
+- **Hidden entries.** The skipped entries stay stored, and every read leaves them out.
 
 A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
 
@@ -194,7 +203,9 @@ There are two ways to write. Prefer `PATCH`.
 
 `PATCH /profiles/{id}/settings` changes the sections it holds, each with the version the client last read. It never touches a section it does not name. So a phone font change does not conflict with a Mac theme change.
 
-`PUT /profiles/{id}/settings` replaces the sections it holds and keeps the others. It checks the document version, as it always did. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
+`PUT /profiles/{id}/settings` replaces the sections it holds and keeps the others. It checks the document version, as it always did.
+
+A `PUT` accepts only `workspaces`, `appearance`, and `devices`. A body with any other section, such as `attachedThreads`, is refused with `validation.failed` (422) and writes nothing. So a client that sends back the whole document as it read it gets a refusal. A client must not send `attachedThreads` in a `PUT`; it changes the set with `PATCH`. Every installed Conn client sends only `workspaces` here, and patches the other sections. `devices` replaces every device type, and the types it leaves out are removed. It must hold at least one type. To remove the last type, patch it to `null`.
 
 A patch whose section is at another version is refused with `conn.settings_version_conflict` (409), and the Gateway writes nothing. `details.current_version` is the document version. `details.sections` holds the current version of each section the request named. The client reads again, merges the sections that changed, and retries.
 
@@ -239,7 +250,7 @@ A clone of a container default runs its own T3 server. Its create flow registers
 - While Conn is off, a clone is refused with `operation.kind_unavailable`: nothing would record its server.
 - A create admitted before Conn went off still records its server.
 
-Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings, and drops the environment's [attached threads](#attached-threads) from every profile, before core deletes the Instance. New pairings refuse an Instance marked removing.
+Destroy keeps this contribution available while Conn is disabled. Admission captures its environment. The run deletes T3 with the container, retiring all sessions and unused links. Terminal projection deletes its execution copies, environment and pairings before core deletes the Instance. After that commits, Orbit drops the environment's [attached threads](#attached-threads) from the profiles. New pairings refuse an Instance marked removing.
 
 ### Renewal of an Instance server
 
