@@ -33,7 +33,7 @@ Incus hosts are configured through [Node `settings.task_vms`](/reference/node-se
 
 `ORBIT_CHECK_PROCESSES` is an internal lane or suite share passed by `bin/review-check` and `bin/test`. The shared helper derives the total budget from available CPU and memory; it is not an operator or Project setting.
 
-The Gateway's own environment is separate from an Instance's stored configuration. Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
+The Gateway's own environment is separate from an Instance's stored configuration. Set the `ORBIT_TASKS_COPY_*` keys of the [copy turn agents](/reference/tasks#copy-turn-agents), and `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` of task VM threads, in the Gateway's `.env`, not the task workspace's `.env`. See [Tasks configuration](/reference/tasks#configuration) for their defaults and when changes apply.
 
 `APP_VERSION` in the Gateway's own `.env` sets the version that `gateway:status` reports. When unset or empty, the Gateway reports the commit in its release's `REVISION` file, or `dev` outside a release. Leave it unset in the [release layout](/reference/gateway-recovery#release-layout), so every release reports its own commit. `.env.example` does not set it. It is not an Instance key.
 

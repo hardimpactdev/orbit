@@ -1490,11 +1490,11 @@ A reviewer turn on a checkout with changes or no branch launches nothing and is 
 
 ### Turn model and effort
 
-The Gateway's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWER_MODEL` name the Claude model of a new thread of each role. Both default to `claude-opus-5-5`: a container reaches only the Claude model forwarder. The effort is the role's [effort setting](/reference/tasks#drivers): `ORBIT_TASKS_IMPLEMENTER_EFFORT`, default `medium`, and `ORBIT_TASKS_REVIEWER_EFFORT`, default `high`.
+A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer: a container reaches only the Claude model forwarder.
 
 Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
 
-A new thread starts with `--provider` set to the instance of its effort. Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
+A new thread starts with `--provider` set to the instance of its provider and effort. Before it starts, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
 
 ### Gaps of the CLI path
 
