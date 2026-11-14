@@ -7,6 +7,7 @@ namespace App\Domain\Instances;
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskRuntime;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
 
@@ -47,19 +48,21 @@ final readonly class InstancePlacement
     }
 
     /**
-     * Where a task of the Project runs: a copy of its default Instance for a nested-fleet Project, a task VM for every other Project
-     * (docs/reference/development-containers.md#tasks-in-an-instance-container). The one place that reads the flag for tasks.
+     * Where a task of the Project runs: a copy of its default Instance for a nested-fleet Project or a Project whose default is a
+     * container, a task VM for a Project whose default is a host checkout (docs/reference/development-containers.md#tasks-in-an-instance-container).
+     * The one place that decides it for tasks.
      */
     public static function taskRuntime(Project $project): TaskRuntime
     {
-        return $project->nested_fleet ? TaskRuntime::Copy : TaskRuntime::Vm;
+        return $project->nested_fleet || Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->whereHas('runtime')->exists()
+            ? TaskRuntime::Copy : TaskRuntime::Vm;
     }
 
     /** A writer of a task workspace on a task VM: task provision and admission, and a proof's workspace. A task copy has no VM. */
     public static function taskWorkspace(Project $project): void
     {
         if (self::taskRuntime($project) === TaskRuntime::Copy) {
-            throw self::unavailable();
+            throw new ResourceOperationException('operation.kind_unavailable', 'A task of this Project runs in a copy of its default Instance, which has no task VM.', 503);
         }
     }
 

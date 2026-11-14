@@ -12,6 +12,7 @@ use App\Data\Tasks\TaskTurnData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -26,6 +27,7 @@ use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
@@ -108,14 +110,19 @@ beforeEach(function (): void {
     config(['orbit.tasks.copies_max' => 1]);
 });
 
-/** A nested-fleet Project and its default on a switched-on Node, as a finished create and refresh leave it: active, running, with a seed. */
-function copySource(string $slug = 'trial'): Instance
+/**
+ * A Project and its container default as a finished create (and, for a nested-fleet Project, refresh) leaves it: active, running, with
+ * a seed. A nested-fleet Project's Node has its switch on; any other Project's default is a plain container.
+ */
+function copySource(string $slug = 'trial', bool $nested = true): Instance
 {
     $node = Node::query()->where('name', 'beast')->first() ?? containerDefaultNode();
-    $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+    if ($nested) {
+        $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
+    }
     Http::fake(['api.github.com/repos/nckrtl/'.$slug => Http::response(['full_name' => 'nckrtl/'.$slug, 'private' => false])]);
     $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'node-package', 'repository_url' => 'https://github.com/nckrtl/'.$slug.'.git',
-        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => true]);
+        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => $nested]);
     $default = Instance::query()->findOrFail(containerCreate($project, $node->refresh())->target_id);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
     InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
@@ -182,13 +189,22 @@ function runningOperation(Operation $operation): Operation
 }
 
 describe('the decision point', function (): void {
-    it('starts a task of a nested-fleet Project as a copy and keeps every other Project on its task VM', function (): void {
+    it('starts a task of a nested-fleet Project as a copy and keeps a Project without a container default on its task VM', function (): void {
         $project = containerDefaultProject();
         expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Vm);
         InstancePlacement::taskWorkspace($project);
         $project->update(['nested_fleet' => true]);
         expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Copy)
             ->and(copyRefusal(fn () => InstancePlacement::taskWorkspace($project)))->toBe('operation.kind_unavailable 503');
+    });
+
+    it('starts a task of a Project whose default is a container as a copy, and a default without a container keeps the task VM', function (): void {
+        $default = copySource('app', nested: false);
+        $project = $default->project;
+        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Copy)
+            ->and(copyRefusal(fn () => InstancePlacement::taskWorkspace($project)))->toBe('operation.kind_unavailable 503');
+        InstanceRuntime::query()->where('instance_id', $default->id)->delete();
+        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Vm);
     });
 });
 
@@ -210,6 +226,28 @@ describe('a task start on the copy path', function (): void {
             ->and($runtime->incus_project)->toBe(InstancePlacement::NestedProject)
             ->and($runtime->clone_source_instance_id)->toBe($default->id)
             ->and($group->status)->toBe(TaskGroupStatus::Reserved)
+            ->and($group->taskable_id)->toBe($copy->id)
+            ->and(TaskVm::query()->count())->toBe(0);
+        Queue::assertNotPushed(AdmitTaskVm::class);
+    });
+
+    it('admits a plain clone for a Project whose default is a container: no nested project, no fleet, no Club key', function (): void {
+        $default = copySource('app', nested: false);
+        $group = copyGroup($default->project);
+
+        $operation = startCopy($group);
+
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $runtime = InstanceRuntime::query()->where('instance_id', $copy->id)->sole();
+        $container = containerIntentOf($operation);
+        expect($operation->kind)->toBe('instance.create')
+            ->and($copy->name)->toBe('task-'.$group->id)
+            ->and($copy->branch_override)->toBe('task-'.$group->id)
+            ->and($copy->task_workspace_owner_id)->toBe($group->id)
+            ->and($runtime->incus_project)->toBe(InstanceHostIntent::Project)
+            ->and($runtime->clone_source_instance_id)->toBe($default->id)
+            ->and($container)->not->toHaveKey('club_key')
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
             ->and($group->taskable_id)->toBe($copy->id)
             ->and(TaskVm::query()->count())->toBe(0);
         Queue::assertNotPushed(AdmitTaskVm::class);
@@ -287,6 +325,18 @@ describe('a task start on the copy path', function (): void {
             ->and($second->refresh()->status)->toBe(TaskGroupStatus::Todo);
         config(['orbit.tasks.copies_max' => 2]);
         expect(startCopy($second)->kind)->toBe('instance.create');
+    });
+
+    it('caps only nested-fleet copies: a copy of a plain container Project neither counts nor waits', function (): void {
+        $nested = copySource();
+        startCopy(copyGroup($nested->project));
+        $plain = copySource('app', nested: false);
+
+        expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create')
+            ->and(TaskCopyStart::live($nested->node_id))->toBe(1);
+        config(['orbit.tasks.copies_max' => 0]);
+        expect(startCopy(copyGroup($plain->project))->kind)->toBe('instance.create')
+            ->and(copyRefusal(fn () => startCopy(copyGroup($nested->project))))->toBe('tasks.copy_capacity_full 409');
     });
 
     it('refuses a group that is not todo, and a name that an Instance already holds', function (): void {
@@ -547,6 +597,18 @@ describe('a turn of a group that owns a copy', function (): void {
             // T3 issues its own session inside the copy: no vault key, no token.
             ->and(app(DirectOperation::class)->definition('tasks.copy_turn'))->not->toHaveKey('execution_copies')
             ->and(json_encode($turn->input, JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
+    });
+
+    it('admits a tasks.copy_turn in the copy of a plain container Project, in that copy\'s own Incus project', function (): void {
+        $group = copyGroup(copySource('app', nested: false)->project);
+        $copy = finishedCopy($group, startCopy($group));
+
+        $turn = copyTurn($group);
+
+        expect($turn->kind)->toBe('tasks.copy_turn')
+            ->and($turn->input['runtime'])->toBe(['project' => InstanceHostIntent::Project, 'name' => $copy->runtime->container_name])
+            ->and($turn->input['branch'])->toBe('task-'.$group->id)
+            ->and(TaskVm::query()->count())->toBe(0);
     });
 
     it('reads its model from the one setting and refuses a setting it cannot read', function (): void {
