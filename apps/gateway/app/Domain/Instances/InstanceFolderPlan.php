@@ -33,7 +33,8 @@ final readonly class InstanceFolderPlan
 
     /**
      * @param  array<string, FolderPin>  $pins
-     * @return list<array{name: string, version: string, url: string, archive: string, sha256?: string, sha512?: string, bin: array<string, string>}>
+     * @return list<array{name: string, version: string, url: string, archive: string, sha256?: string, sha512?: string, bin: array<string, string>,
+     *     trust_module?: array{source: string, path: string, library: string}}>
      */
     private static function parts(array $pins): array
     {
@@ -49,9 +50,13 @@ final readonly class InstanceFolderPlan
                 default => 'file',
             };
             $base = ['name' => (string) $name, 'version' => $pin->version, 'url' => $pin->artifact->location, 'archive' => $archive];
-            $parts[] = $pin->artifact->algorithm === 'sha256'
+            $part = $pin->artifact->algorithm === 'sha256'
                 ? [...$base, 'sha256' => $pin->artifact->digest, 'bin' => $pin->bin]
                 : [...$base, 'sha512' => $pin->artifact->digest, 'bin' => $pin->bin];
+            // The trust module's package gives the folder only that module, at `TrustModule`, and nothing in `lib` or `fonts`
+            // (docs/reference/development-containers.md#trust).
+            $parts[] = $pin->trustModule === null ? $part : [...$part, 'trust_module' => ['source' => $pin->trustModule['path'],
+                'path' => InstanceHostIntent::TrustModule, 'library' => $pin->trustModule['library']]];
         }
 
         return $parts;
