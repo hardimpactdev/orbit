@@ -959,6 +959,8 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
+A handoff check in a copy commits only a changed tree, so a check of committed work leaves nothing that blocks the cancel.
+
 The copy [starts clean](/reference/development-containers#a-task-copy-starts-clean): its tree is its start commit, the seed's commit, plus what Git ignores, so the default's modified and untracked files never reach a check or a pull request. The start's result names what the clean took as `workspace_cleaned`.
 
 [`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs an implementer or reviewer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. Each role keeps one ongoing T3 thread, and a turn without `--thread` continues it: the implementer's thread of the current subtask, recorded on the subtask, or the reviewer's thread, recorded on the group. The first turn of a role, or `--thread=new`, starts the thread with the role's copy model and effort.

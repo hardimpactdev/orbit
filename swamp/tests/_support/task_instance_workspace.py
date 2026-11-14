@@ -293,11 +293,12 @@ class CheckHarness(unittest.TestCase):
             'outputs': self.cel('local', 'outputs')}))
         return evidence, local['result']
 
-    def finished(self):
-        """The candidate, pin and finish steps by their CEL, then the parent's result read and end check."""
+    def finished(self, commits=True):
+        """The candidate, pin and finish steps by their CEL, then the parent's result read and end check. A clean checked tree
+        makes no commit."""
         if not self.cel('Commit the candidate', 'guard'):
             _, output = self.run_phase('commit', self.write_input('input'))
-            self.assertIn('changed=1', output)
+            self.assertIn(f'changed={int(commits)}', output)
             self.ran('committed', self.behavior('task-instance-workspace/assets.ts', 'result', {'folder': str(self.folder), 'phase': 'commit'}))
         candidate = self.ran('candidate', self.behavior('task-repository/check.ts', 'candidate', {
             'intent': self.check, 'local': self.cel('candidate', 'local'), 'steps': self.cel('candidate', 'steps')}))['result']

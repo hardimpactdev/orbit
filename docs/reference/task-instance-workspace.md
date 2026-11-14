@@ -56,12 +56,14 @@ The child runs three Ansible phases through this playbook. Each runs as `agent` 
 | Phase | What it does |
 | --- | --- |
 | `check` | Runs the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
-| `commit` | Stages everything, commits as Orbit with hooks off and reads back `HEAD`, its tree and its parent |
+| `commit` | Stages everything and, when the staged tree differs from `HEAD`, commits as Orbit with hooks off. Reads back `HEAD` and its tree, and the parent of a new commit |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 
 Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task check variables, `HOME=/home/agent` and the agent's login shell. They use the dependencies installed in the container. A start-commit run extracts the base commit into guest scratch, copies the installed `vendor` and `node_modules` directories and the declared test paths, then runs the command. Commands get no credentials. The admitted `checkout_path` is never a Node path: a Node directory with the same path is never read or run.
 
 Snapshots use the temporary index described above, so a staged, force-added ignored file is in the checked tree. The commit stages the same work, so its tree matches the snapshot.
+
+A clean checked tree, where the implementer committed the work, makes no commit: the candidate is the checked `HEAD` itself, with its tree. An empty commit would be work that origin lacks, and it would make a [cancel](/reference/development-containers#workspace-work-state) refuse the copy. A changed tree makes one commit on the checked `HEAD`, whose tree and parent must be the checked snapshot.
 
 Each command writes its output to a guest file. Ansible copies the output folder to the Node and fetches it into the private worker run folder; the guest and Node copies are removed on success and failure. The typed result holds only exit codes and Git evidence, within the 512 KiB result bound; a larger diff fails the phase.
 

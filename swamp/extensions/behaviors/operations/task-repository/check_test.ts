@@ -162,6 +162,19 @@ Deno.test("a committed candidate must keep the checked tree and parent", () => {
             "changed",
         );
     }
+    // A clean checked tree made no commit: the checked head is the candidate.
+    assertEquals(
+        candidateResult(input, local, read([head, tree])).commit,
+        head,
+    );
+    assertEquals(
+        candidateResult(input, local, read(["d".repeat(40), tree])).outcome,
+        "changed",
+    );
+    assertEquals(
+        candidateResult(input, local, read([head, "d".repeat(40)])).outcome,
+        "changed",
+    );
     assertEquals(
         candidateResult(input, local, read([], 128)).error_code,
         "tasks.repository_execution_unknown",

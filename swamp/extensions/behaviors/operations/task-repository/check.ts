@@ -379,6 +379,8 @@ export async function localResult(
  * A passed handoff names the commit that `git commit` made, read back with
  * `git rev-parse HEAD HEAD^{tree} HEAD^`. Its tree and parent must be the
  * checked snapshot; otherwise the workspace moved and the check is `changed`.
+ * A container check commits only a changed tree and reads no parent: a
+ * clean checked head with the checked tree is its own candidate.
  */
 export function candidateResult(
     input: Input,
@@ -393,7 +395,11 @@ export function candidateResult(
         return { ...local, error_code: "tasks.repository_execution_unknown" };
     }
     const [commit = "", tree, parent] = (read.stdout ?? "").trim().split("\n");
-    if (!Sha.test(commit) || tree !== local.tree || parent !== local.head) {
+    // A clean checked tree makes no commit: the candidate is then the checked head itself.
+    if (
+        !Sha.test(commit) || tree !== local.tree ||
+        (commit !== local.head && parent !== local.head)
+    ) {
         return { ...local, outcome: "changed" };
     }
     return { ...local, commit };
@@ -614,7 +620,7 @@ export function finish(args: Record<string, unknown>) {
 /** Public check data on Node 209; commands, Git and HTTP are placed steps. */
 export const behavior = {
     type: "@nckrtl/task-check-data",
-    version: "2026.11.03.1",
+    version: "2026.11.14.2",
     resources: {
         public: {
             description: "Public check observations",

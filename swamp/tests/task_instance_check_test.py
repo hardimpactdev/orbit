@@ -56,6 +56,19 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertEqual(json.loads(finish['result_json']), candidate)
         self.assertEqual(self.git('status', '--porcelain=v1'), '')
 
+    def test_a_clean_checked_tree_makes_no_commit_and_its_head_is_the_candidate(self):
+        # The implementer committed the work itself. An empty check commit would be unpublished work that blocks a cancel.
+        self.git('add', '--all')
+        self.git('commit', '--quiet', '-m', 'Implementer work')
+        head = self.git('rev-parse', 'HEAD')
+        _, local = self.checked()
+        self.assertEqual((local['outcome'], local['head'], local['tree']), ('passed', head, self.git('rev-parse', 'HEAD^{tree}')), local)
+        candidate, finish = self.finished(commits=False)
+        self.assertEqual(candidate['commit'], head, candidate)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
+        self.assertEqual(self.git('rev-parse', 'refs/orbit/check-operations/' + str(CHECK['operation_id'])), head)
+        self.assertEqual(json.loads(finish['result_json']), candidate)
+
     def test_failed_setup_keeps_output_skips_the_check_and_commits_nothing(self):
         self.check.update({'phase': 'baseline', 'base': '', 'deliverables': [], 'command_deliverables': [],
                            'setup': [{'name': 'install', 'command': "echo 'dependency missing'; exit 4", 'timeout_seconds': 60}]})

@@ -204,13 +204,17 @@
           identity = {'GIT_AUTHOR_NAME': 'Orbit', 'GIT_AUTHOR_EMAIL': 'orbit@users.noreply.github.com',
                       'GIT_COMMITTER_NAME': 'Orbit', 'GIT_COMMITTER_EMAIL': 'orbit@users.noreply.github.com'}
           git('add', '--all')
-          subprocess.run(git_argv + ['-c', 'commit.gpgSign=false', 'commit', '--allow-empty', '--allow-empty-message',
-                                     '--cleanup=verbatim', '--quiet', '--file=-'], input=check['message'].encode(),
-                         capture_output=True, env={**env, **identity}, check=True, timeout=60)
-          read = subprocess.run(git_argv + ['rev-parse', 'HEAD', 'HEAD^{tree}', 'HEAD^'], capture_output=True,
-                                env=env, check=False, timeout=60)
+          # A clean tree makes no commit: its candidate is the checked HEAD, and an empty commit would be unpublished work.
+          committed = subprocess.run(git_argv + ['diff', '--cached', '--quiet', 'HEAD'], capture_output=True, env=env,
+                                     check=False, timeout=60).returncode != 0
+          if committed:
+              subprocess.run(git_argv + ['-c', 'commit.gpgSign=false', 'commit', '--allow-empty-message',
+                                         '--cleanup=verbatim', '--quiet', '--file=-'], input=check['message'].encode(),
+                             capture_output=True, env={**env, **identity}, check=True, timeout=60)
+          read = subprocess.run(git_argv + ['rev-parse', 'HEAD', 'HEAD^{tree}'] + (['HEAD^'] if committed else []),
+                                capture_output=True, env=env, check=False, timeout=60)
           return {'commit_read': {'exitCode': read.returncode, 'stdout': read.stdout.decode(errors='replace')},
-                  'changed': True}
+                  'changed': committed}
 
 
       def candidate_matches(before):

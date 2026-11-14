@@ -203,6 +203,28 @@ it('counts no commit that a publish pushed, nor its history, and counts a later 
         ->and(workspaceState('instance-2', $baseline, published: ['--all', 'HEAD'])['commits']['count'])->toBe(3);
 });
 
+it('reads a published head that a clean handoff check left as it was as clean, and still counts real work after it', function (): void {
+    $baseline = workspaceRecord();
+    $clone = $this->folder.'/clone';
+    workspaceGit($clone, 'checkout', '-q', '-b', 'task-1');
+    workspaceCommit($clone, 'task.txt', "work\n");
+    $published = trim(workspaceGit($clone, 'rev-parse', 'HEAD'));
+    // A clean handoff check commits nothing (docs/reference/task-instance-workspace.md#check-phases), so the head stays published.
+    expect(workspaceState('instance-2', $baseline, published: [$published])['state'])->toBe('clean');
+
+    // An empty commit would count as unpublished work: the reason the check makes none.
+    workspaceGit($clone, 'commit', '-q', '--allow-empty', '-m', 'empty');
+    expect(workspaceState('instance-2', $baseline, published: [$published])['commits']['count'])->toBe(1);
+    workspaceGit($clone, 'reset', '-q', '--hard', $published);
+
+    file_put_contents($clone.'/task.txt', "uncommitted\n");
+    expect(workspaceState('instance-2', $baseline, published: [$published]))
+        ->toMatchArray(['state' => 'dirty', 'modified' => ['count' => 1, 'names' => ['task.txt']]]);
+    workspaceGit($clone, 'commit', '-q', '-am', 'more work');
+    expect(workspaceState('instance-2', $baseline, published: [$published]))
+        ->toMatchArray(['state' => 'dirty', 'commits' => ['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 1]]]]);
+});
+
 it('passes only hex baseline heads to rev-list and drops an untracked baseline above 2000 entries', function (): void {
     $baseline = workspaceRecord();
     $baseline['heads'][] = '--all';

@@ -84,7 +84,8 @@ sequenceDiagram
     SW->>N: Commit the candidate
     %%> How:
     %%> - `git add --all`, one `git commit` as Orbit with hooks off, `git rev-parse HEAD HEAD^{tree} HEAD^`
-    %%> - 209 checks the tree and parent equal the checked snapshot, else `changed`; then `git update-ref refs/orbit/check-operations/<operation>`
+    %%> - in a container workspace, a clean checked tree makes no commit: the candidate is the checked `HEAD`, so a cancel finds no empty commit; it reads `git rev-parse HEAD HEAD^{tree}`
+    %%> - 209 checks the tree and parent equal the checked snapshot, or that the candidate is the checked `HEAD` with its tree, else `changed`; then `git update-ref refs/orbit/check-operations/<operation>`
   end
   opt Project requires handoff CI
     SW->>GH: Push the candidate
