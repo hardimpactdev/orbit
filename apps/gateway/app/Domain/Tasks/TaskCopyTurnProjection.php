@@ -35,12 +35,11 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
             $result = is_string($captured) ? json_decode($captured, true, flags: JSON_THROW_ON_ERROR) : $captured;
             $result = is_array($result) ? ValidatedData::object($result) : [];
             if ($result !== []) {
-                // The agent the thread started with, as the admission resolved and recorded it (TaskCopyAgent); a thread recorded before
-                // the provider instance was stored keeps what T3 shows for it.
-                $thread = AgentThread::query()->find(ValidatedData::integer($operation->input['thread_id']));
-                $result['provider_instance'] = $thread->provider_instance ?? $result['provider_instance'] ?? null;
-                $result['model'] = $thread->model ?? $result['model'] ?? null;
-                $result['effort'] = $thread?->effort;
+                // The agent the thread started with, as the admission resolved and recorded it (TaskCopyAgent).
+                $thread = AgentThread::query()->findOrFail(ValidatedData::integer($operation->input['thread_id']));
+                $result['provider_instance'] = $thread->provider_instance;
+                $result['model'] = $thread->model;
+                $result['effort'] = $thread->effort;
             }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];

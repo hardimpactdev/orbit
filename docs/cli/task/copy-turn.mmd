@@ -87,7 +87,7 @@ sequenceDiagram
     %%> Result:
     %%> - the thread's state and error, T3's thread id as its external id, and the transcript in the Gateway's archive: `task:agent:show` reads it after the copy is gone
     %%> - a turn that asked keeps its question on the thread: `task:agent:list` shows it until the thread's next turn. The answer is the next `task:turn` of the role, or a message to the thread from a T3 client
-    %%> - the result names the provider instance, the model and the effort the thread started with, from its record; a thread recorded without a provider instance names what T3 shows
+    %%> - the result names the provider instance, the model and the effort the thread started with, from its record
     %%> - token metrics stay null
   else the turn failed or ran past its bound
     SW--xGW: Native failed result<br/>error code

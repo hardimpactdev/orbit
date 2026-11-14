@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -11,6 +12,9 @@ use Illuminate\Support\Facades\Schema;
  * a copy thread started on (docs/reference/tasks.md#copy-turn-agents). Every column is new and nullable, so a release that does
  * not know them keeps working on the migrated database. The group's task VM columns `implementer_model` and `reviewer_model` stay as
  * they are; a copy never reads them.
+ *
+ * A copy thread recorded before started on the instance of its effort, `claude` and the effort with its first letter upper-cased,
+ * so each is backfilled with that instance. The list is written out here, as the copies of that time held these instances.
  */
 return new class extends Migration
 {
@@ -35,6 +39,10 @@ return new class extends Migration
         Schema::table('agent_threads', function (Blueprint $table): void {
             $table->string('provider_instance', 64)->nullable();
         });
+        foreach (['low', 'medium', 'high', 'xhigh', 'max'] as $effort) {
+            DB::table('agent_threads')->where('driver', 't3')->where('runtime_key', 'like', 'instance:%')->where('effort', $effort)
+                ->whereNull('provider_instance')->update(['provider_instance' => 'claude'.ucfirst($effort)]);
+        }
     }
 
     public function down(): void

@@ -1612,16 +1612,22 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($continued->result)->toMatchArray(['provider_instance' => 'claudeXhigh', 'model' => 'claude-sonnet-5-5', 'effort' => 'xhigh']);
     });
 
-    it('names what T3 shows for a thread recorded before its provider instance was stored', function (): void {
-        Storage::fake('local');
+    it('backfills the provider instance of each copy thread recorded before it was stored: the instance of its effort', function (): void {
+        $migration = require database_path('migrations/2027_02_18_000000_add_task_copy_agents.php');
+        $migration->down();
         $group = copyGroup(copySource()->project);
-        finishedCopy($group, startCopy($group));
-        $first = copyTurnEnded(copyTurn($group), 'succeeded', copyTurnDone('mcp:1'));
-        AgentThread::query()->findOrFail($first->input['thread_id'])->update(['provider_instance' => null]);
+        $thread = static fn (string $driver, string $runtime, ?string $effort): int => DB::table('agent_threads')->insertGetId(['task_group_id' => $group->id,
+            'driver' => $driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(), 'role' => 'implementer', 'model' => 'claude-opus-5-5',
+            'effort' => $effort, 'observation_version' => 0, 'created_at' => now(), 'updated_at' => now()]);
+        $threads = ['medium' => $thread('t3', 'instance:7', 'medium'), 'xhigh' => $thread('t3', 'instance:7', 'xhigh'), 'max' => $thread('t3', 'instance:8', 'max'),
+            'task vm' => $thread('pi', 'vm:9', 'high'), 'no effort' => $thread('t3', 'instance:7', null), 'unknown effort' => $thread('t3', 'instance:7', 'minimal')];
 
-        $next = copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:1'), 'provider_instance' => 'claudeHigh']);
+        $migration->up();
 
-        expect($next->result)->toMatchArray(['provider_instance' => 'claudeHigh', 'model' => 'claude-opus-5-5', 'effort' => 'medium']);
+        expect(DB::table('agent_threads')->orderBy('id')->pluck('provider_instance', 'id')->all())->toBe([
+            $threads['medium'] => 'claudeMedium', $threads['xhigh'] => 'claudeXhigh', $threads['max'] => 'claudeMax',
+            $threads['task vm'] => null, $threads['no effort'] => null, $threads['unknown effort'] => null,
+        ]);
     });
 
     it('marks the thread failed when Swamp refuses to start the turn, so the subtask points at no silent thread', function (): void {
