@@ -540,10 +540,10 @@ def phase_main(phase, raw):
             if r.returncode == 1:
                 git("config", "--global", k, v, agent=True)
                 changes.append(k)
-        files = c["clone"]["files"] + [
-            dict(c["clone"]["model_environment"], content=private)
-        ]
-        for f in files:
+        # The container phase wrote the model environment before the copy's first start; the agent part only finds it.
+        if not root(c["clone"]["model_environment"]["path"]).is_file():
+            raise RuntimeError("model environment missing")
+        for f in c["clone"]["files"]:
             value = f.get("content")
             if "json" in f:
                 p = root(f["path"])

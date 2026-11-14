@@ -9,8 +9,10 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # The Node files a `boot_files` entry may name as its `source`: the Orbit root CA that each Node's base converge writes for its agent
@@ -73,27 +75,30 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "t3", "sessions", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "t3", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
     changes = []
     # The Club key script's own word, which the club-key phase prints for the Operation's result.
     club_outcome = None
-    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services"} else None
+    # The T3 step runs the checkout too, so the checkout's own bound holds there as well.
+    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services", "t3"} else None
     secret = sys.stdin.read()
     # Seconds per part of this phase, printed with its result; names only (docs/reference/development-containers.md#create).
     timings = {}
 
     class timed:
-        def __init__(self, part):
+        # `into`: the T3 step's checkout runs beside its T3 part and keeps its own seconds, printed as the checkout's.
+        def __init__(self, part, into=None):
             self.part = part
+            self.into = timings if into is None else into
 
         def __enter__(self):
             self.started = time.monotonic()
 
         def __exit__(self, *_):
-            timings[self.part] = round(timings.get(self.part, 0) + time.monotonic() - self.started, 2)
+            self.into[self.part] = round(self.into.get(self.part, 0) + time.monotonic() - self.started, 2)
 
     def run(argv, content=None, check=True):
         remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
@@ -151,14 +156,15 @@ def main():
         os.chmod(folder, 0o700)
         return owner
 
-    def inside(member, private=""):
+    def inside(member, private="", intent=None):
         if member in {"workspace", "services"}:
             # Install the shipped helper outside the app-owned store. Its only store
             # entry runs as orbit inside the existing workspace launch below.
             change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0",
                               "--mode", "0755", "-", name + "/usr/local/libexec/orbit-instance-node-runtime.py"],
                    json.loads(sys.argv[6])["node"])
-        payload = ["python3", "-c", guest, member, json.dumps(container)]
+        # `intent`: the checkout's own copy of the intent, so the T3 part beside it never reads a dict that it changes.
+        payload = ["python3", "-c", guest, member, json.dumps(container if intent is None else intent)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:
             if member == 'check':
@@ -393,6 +399,69 @@ def main():
                                   "--mode", "0755" if item["uid"] == 0 else "0700", name + parent])
             change(project + ["file", "push", "--uid", str(item["uid"]), "--gid", str(item["gid"]), "--mode", item["mode"], "-",
                               name + item["path"]], content)
+
+    def checkout(part, value):
+        """The checkout part of the workspace phase (`workspace` forwards the Process files too): the bundle when the mirror holds the
+        branch, then the guest's checkout. Returns the lines it prints: the commit and its JSON line with its own seconds."""
+        seconds = {}
+        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin. `workspace` forwards
+        # all of it; `checkout` and `services` read the same value and forward only their half, so two steps need no second copy.
+        workspace = json.loads(value)
+        environment = workspace["environment"]
+        processes = workspace["processes"]
+        # A value framed before the merge names existed has none; the guest then writes the render.
+        merge = workspace.get("merge")
+        private = {"environment": environment, "merge": merge}
+        if part == "workspace":
+            private = {"environment": environment, "processes": processes, "merge": merge}
+        git = [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            container["mirror"],
+        ]
+        target, from_seed = branch_commit()
+        intent = dict(container, expected_commit=target)
+        bundle = folder / "workspace.bundle"
+        try:
+            # Only a fetched branch goes in as a bundle; the seed's own repository holds a branch at the seed's commit.
+            if not from_seed:
+                intent["bundle"] = "/tmp/orbit-workspace-" + folder.name + ".bundle"
+                with timed("bundle", seconds):
+                    run(
+                        git
+                        + [
+                            "bundle",
+                            "create",
+                            "--quiet",
+                            str(bundle),
+                            "refs/heads/" + container["branch"],
+                        ]
+                    )
+                    run(
+                        project
+                        + [
+                            "file",
+                            "push",
+                            "--uid",
+                            "1000",
+                            "--gid",
+                            "2760",
+                            "--mode",
+                            "0640",
+                            str(bundle),
+                            name + intent["bundle"],
+                        ]
+                    )
+            with timed("guest", seconds):
+                output = inside(part, json.dumps(private), intent)
+            # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
+            return ["orbit-commit=" + output.pop("commit"), json.dumps({**output, "timings": seconds})]
+        finally:
+            bundle.unlink(missing_ok=True)
 
     if phase == "container":
         boot = boot_files()
@@ -862,105 +931,57 @@ def main():
         print(json.dumps(inside("check", "")))
         return
     elif phase in {"workspace", "checkout"}:
-        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin. `workspace` forwards
-        # all of it; `checkout` and `services` read the same value and forward only their half, so two steps need no second copy.
-        workspace = json.loads(secret)
-        environment = workspace["environment"]
-        processes = workspace["processes"]
-        # A value framed before the merge names existed has none; the guest then writes the render.
-        merge = workspace.get("merge")
-        private = {"environment": environment, "merge": merge}
-        if phase == "workspace":
-            private = {"environment": environment, "processes": processes, "merge": merge}
-        git = [
-            "git",
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-            "-C",
-            container["mirror"],
-        ]
-        target, from_seed = branch_commit()
-        container["expected_commit"] = target
-        bundle = folder / "workspace.bundle"
-        try:
-            # Only a fetched branch goes in as a bundle; the seed's own repository holds a branch at the seed's commit.
-            if not from_seed:
-                container["bundle"] = "/tmp/orbit-workspace-" + folder.name + ".bundle"
-                with timed("bundle"):
-                    run(
-                        git
-                        + [
-                            "bundle",
-                            "create",
-                            "--quiet",
-                            str(bundle),
-                            "refs/heads/" + container["branch"],
-                        ]
-                    )
-                    run(
-                        project
-                        + [
-                            "file",
-                            "push",
-                            "--uid",
-                            "1000",
-                            "--gid",
-                            "2760",
-                            "--mode",
-                            "0640",
-                            str(bundle),
-                            name + container["bundle"],
-                        ]
-                    )
-            with timed("guest"):
-                output = inside(phase, json.dumps(private))
-            # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
-            print("orbit-commit=" + output.pop("commit"))
-            print(json.dumps({**output, "timings": timings}))
-        finally:
-            bundle.unlink(missing_ok=True)
+        print("\n".join(checkout(phase, secret)))
         return
-    elif phase in {"t3", "sessions"}:
+    elif phase == "t3":
+        # One step until the thread is usable (docs/reference/development-containers.md#create): the checkout beside the agent part and
+        # T3's answer, then the check of both sessions against the running T3 and of the checkout. The model environment is already in
+        # the copy (the container phase wrote it before the first start); stdin is the workspace's private JSON.
         cached = folder / "t3.json"
+        failed = threading.Lock()
+        marked = []
 
-        def part(name):
-            # The part that runs now, written before it starts, so a failure or a timeout leaves it for the create result:
-            # clone-session-copy copies this file when clone-t3 fails. Success removes it before sessions reads the file.
+        def write_private(value):
             owner = private_folder()
-            cached.write_text(json.dumps({"t3_part": name}))
+            cached.write_text(json.dumps(value))
             cached.chmod(0o600)
             os.chown(cached, owner.pw_uid, owner.pw_gid)
 
-        def expected_commit():
-            container["expected_commit"] = branch_commit()[0]
+        def part(name, failure=False):
+            # The part that runs now, written before it starts, so a failure or a timeout leaves it for the create result:
+            # clone-session-copy copies this file when this step fails. The checkout writes its name only when it fails, and the
+            # first failure keeps its name. Success replaces the file with the checked sessions.
+            with failed:
+                if marked:
+                    return
+                if failure:
+                    marked.append(name)
+                write_private({"t3_part": name})
 
-        if phase == "t3":
-            # One step, two guest phases in order: the agent's files from the model key on stdin, then T3's first start, which
-            # reads no private input. The step prints only T3's receipt; a failure names its own phase.
-            part("agent")
+        container["expected_commit"] = branch_commit()[0]
+        part("agent")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            started = pool.submit(checkout, "checkout", secret)
             with timed("agent"):
-                inside("agent", secret)
+                inside("agent", "")
             part("t3")
-            expected_commit()
             with timed("t3"):
                 output = inside("t3", "")
-            # 1 when T3 already ran as the step began: the copy's boot started it.
-            timings["at_boot"] = 1 if output.pop("at_boot") else 0
-            cached.unlink()
-        else:
-            expected_commit()
-            with timed("guest"):
-                output = inside(phase, cached.read_text() if cached.exists() else "")
-        # The T3 step's reply is the two sessions it issued; the sessions step's is the checked registration, which replaces it.
-        reply = output.pop("private_reply", None)
-        if reply is not None:
-            owner = private_folder()
-            cached.write_text(json.dumps(reply))
-            cached.chmod(0o600)
-            os.chown(cached, owner.pw_uid, owner.pw_gid)
-        print(json.dumps({**output, "timings": timings}))
+            try:
+                checked_out = started.result()
+            except BaseException:
+                part("checkout", failure=True)
+                raise
+        # 1 when T3 already ran as the step began: the copy's boot started it.
+        timings["at_boot"] = 1 if output.pop("at_boot") else 0
+        issued = output.pop("private_reply")
+        part("sessions")
+        with timed("sessions"):
+            checked = inside("sessions", json.dumps(issued))
+        write_private(checked.pop("private_reply"))
+        # The checkout's two lines, then T3's receipt with the time the sessions were checked.
+        print("\n".join(checked_out))
+        print(json.dumps({**output, "checked_at": checked["checked_at"], "timings": timings}))
         return
     print(
         json.dumps(

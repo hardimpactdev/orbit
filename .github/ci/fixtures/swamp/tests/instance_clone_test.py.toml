@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "952168cc90a1c5bce127e411dc6914505fc71f8b390a46c9249d7ab33f21afa4"
+source_sha256 = "fd549d01467c04ed23f9f1f3a55f701d4f2d638e3d26539df45ba0e614a1e003"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -74,12 +74,13 @@ cases = [
   "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name",
   "test_admits_the_probe_profile_root_a_copy_and_a_grown_default",
   "test_refuses_a_size_where_none_is_allowed_a_missing_smaller_or_odd_size_and_another_key",
-  "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent",
-  "test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them",
+  "test_runs_the_checkout_beside_the_agent_and_t3_then_checks_the_sessions",
   "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
   "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
+  "test_a_failed_checkout_names_the_workspace",
+  "test_a_failed_sessions_check_names_the_registration",
   "test_a_timeout_names_the_part_that_was_running",
-  "test_the_agent_phase_alone_is_no_longer_a_step",
+  "test_the_agent_and_sessions_phases_alone_are_no_steps",
   "test_checkout_pushes_the_bundle_and_passes_only_the_env_half",
   "test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle",
   "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase",
@@ -95,7 +96,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 150
+cost = 149
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -141,11 +142,9 @@ inputs = [
   "test_preserves_only_the_guest_command_and_exit_code" = 2
   "test_rejects_private_or_mismatched_guest_diagnostics" = 2
   "test_node_command_failure_names_executable_and_exit_without_output" = 2
-  "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent" = 2
   "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 2
   "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 2
   "test_a_timeout_names_the_part_that_was_running" = 2
-  "test_the_agent_phase_alone_is_no_longer_a_step" = 2
   "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
 
 "test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate
@@ -202,8 +201,11 @@ inputs = [
 "test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout" = 1 # added 2026-11-14 (create-baked); local under 1 s
-"test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last" = 1
 "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line" = 1
 "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start" = 1
 "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files" = 1
+"test_runs_the_checkout_beside_the_agent_and_t3_then_checks_the_sessions" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
+"test_a_failed_checkout_names_the_workspace" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
+"test_a_failed_sessions_check_names_the_registration" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
+"test_the_agent_and_sessions_phases_alone_are_no_steps" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
