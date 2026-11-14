@@ -68,8 +68,9 @@
             restart_result: { answer: skipped, reason: name_not_written }
 
         # The last guard, one read before the restart: systemd's MainPID of t3.service, its descendant cgroups (cgroup.stat) and its
-        # exact members, with each one's parent, session, tty and name. Only a member that has exited may lack its line. The rule is the table in docs/reference/development-containers.md#existing-instances,
-        # applied by templates/t3-service-processes.j2. A read that fails keeps the container busy.
+        # exact members, with each one's parent, session, tty and name. Only a member that has exited may lack its line. The rule is
+        # the table in docs/reference/development-containers.md#existing-instances, applied by templates/t3-service-processes.j2.
+        # A read that fails keeps the container busy.
         - name: Read the processes of T3's service
           when: restart_result is not defined
           ansible.builtin.command:
