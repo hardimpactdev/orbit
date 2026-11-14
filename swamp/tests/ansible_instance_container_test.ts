@@ -1746,7 +1746,8 @@ Deno.test({
       assert(result.ok, result.output);
       const seen = await hostTranscript(f, result.output);
       if (Deno.env.get("ORBIT_PRINT_HOST_TRANSCRIPT")) console.log(JSON.stringify(seen));
-      // Captured by this same case from the tasks of origin/main 77f6bf5c22 (2a-local 7b9e25ba02 changes no task).
+      // Captured by this same case from the tasks of origin/main 77f6bf5c22 (2a-local 7b9e25ba02 changes no task), plus the five tasks
+      // that install the fast wake of a frozen container (#3639); its Incus calls and host files are unchanged.
       assertEquals({calls: seen.calls, tasks: seen.tasks, digest: seen.digest}, MAIN_NORMAL_HOST);
       assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances"]);
       assert(!f.has("modules-load/orbit-instances.conf"));

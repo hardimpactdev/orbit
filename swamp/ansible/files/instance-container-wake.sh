@@ -4,7 +4,7 @@
 # only root writes in that folder. systemd starts this script for each request (orbit-instance-wake.path). For each request it
 # first renames the request to app-instance-<id>.taken, then acts only when all hold: the id from the file NAME is digits, the
 # request is at most one second old, the Instance's asleep marker exists, and Incus reports instance-<id> of orbit-instances as
-# Frozen. Then it resumes the container, closes swap again, waits up to 1.5 s for FrankenPHP to answer below 500, removes the
+# Frozen. Then it resumes the container, closes swap again, asks FrankenPHP once (1.5 s at most) for an answer below 500, removes the
 # asleep marker and writes app-instance-<id>.resumed. Last it removes the .taken file. The Gateway reads these files with
 # `hibernation.times`: a request still there means no script runs; .taken means it works; neither and no .resumed means it
 # declined. Anything else changes nothing. The script never reads a request's content and builds no command from it. Every step
@@ -22,7 +22,6 @@ web_port=8080
 # a resume ends within about 6.5 s of the request. The library checks come after every pending request, each bounded to 5 s; they
 # only rebuild the cache, which ldconfig replaces atomically.
 max_age_ns=1000000000
-probe_limit_ns=1500000000
 # The same check as the wake's workflow (tasks/instance-container-power.yml, "Refresh a stale library cache after the wake"): a converge
 # cannot exec in a frozen container, so its library cache may lack the shared runtime libraries.
 # shellcheck disable=SC2016 # it runs in the container's shell, which expands it
@@ -54,18 +53,13 @@ resume() {
         log "instance $id: swap limit not written; the marker stays"
         return 0
     fi
-    while :; do
-        code=$(timeout 2 incus exec --project "$project" "$container" -- curl --silent --output /dev/null --write-out '%{http_code}' \
-            --max-time 1 "http://127.0.0.1:$web_port/" 2>/dev/null)
-        if [[ $code =~ ^[1-4][0-9][0-9]$ ]]; then
-            break
-        fi
-        if (( $(now_ns) - resumed >= probe_limit_ns )); then
-            log "instance $id: resumed, FrankenPHP gave no answer below 500; the marker stays"
-            return 0
-        fi
-        sleep 0.1
-    done
+    # A resumed FrankenPHP still holds its socket, so one request tells; a silent one is the workflow's to wait for or restart.
+    code=$(timeout 2 incus exec --project "$project" "$container" -- curl --silent --output /dev/null --write-out '%{http_code}' \
+        --max-time 1.5 "http://127.0.0.1:$web_port/" 2>/dev/null)
+    if [[ ! $code =~ ^[1-4][0-9][0-9]$ ]]; then
+        log "instance $id: resumed, FrankenPHP gave no answer below 500; the marker stays"
+        return 0
+    fi
     probed=$(now_ns)
     rm -f -- "$marker" || { log "instance $id: marker not removed"; return 0; }
     : > "$requests/app-instance-$id.resumed"

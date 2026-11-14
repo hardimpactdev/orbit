@@ -109,13 +109,14 @@ Deno.test("a silent or 5xx FrankenPHP, or a failed resume, keeps the marker and 
     }
 });
 
-Deno.test("FrankenPHP that answers after a few tries is waited for", async () => {
-    const folder = await node("5", { web: ["000", "000", "302"] });
+Deno.test("FrankenPHP is asked once: a later answer is left to the wake's workflow, with the marker kept", async () => {
+    const folder = await node("5", { web: ["000", "302"] });
     try {
         await Deno.writeTextFile(`${folder}/requests/app-instance-5.wake`, "");
         await run(folder);
-        assertEquals(calls(folder).filter((call) => call.startsWith("exec") && call.includes(" curl ")).length, 3);
-        assert(!exists(`${folder}/markers/app-instance-5.asleep`));
+        assertEquals(calls(folder).filter((call) => call.startsWith("exec") && call.includes(" curl ")).length, 1);
+        assert(exists(`${folder}/markers/app-instance-5.asleep`));
+        assert(!Deno.readTextFileSync(script).match(/\bsleep\s/), "no polling in the script (shape gate: custom-control)");
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
