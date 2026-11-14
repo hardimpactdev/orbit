@@ -27,12 +27,24 @@ Deno.test("the workflow writes only the turn's target into the phase input, runs
     assert(Number(/^timeout (\d+) /.exec(run.task.inputs.run!)![1]) > turn.seconds + 30 + 240);
     const env = Object.fromEntries(Object.entries(run.task.inputs.env!).map(([key, value]) => [key, String(evaluate(value))]));
     assertEquals([env.ANSIBLE_CONFIG, env.ORBIT_ANSIBLE, env.ORBIT_RUN], [`${shipped}/ansible.cfg`, shipped, `/tmp/orbit-ansible-${runId}`]);
-    assertEquals(String(evaluate(run.task.behaviorName)), "task-copy-turn-9");
+    assertEquals(String(evaluate(run.task.behaviorName)), "task-copy-turn-9-2685");
     assert(Deno.statSync(`${shipped}/task-copy-turn.yml`).isFile);
     assertEquals([result.task.behaviorType, evaluate(result.task.inputs.folder), result.dependsOn![0].condition.type], ["@nckrtl/task-copy-turn", `/tmp/orbit-ansible-${runId}`, "always"]);
     assertEquals(cel.evaluate(outcome.task.expr!, context), true);
     const manifest = Deno.readTextFileSync(new URL("../manifest.yaml", import.meta.url));
     assert(manifest.includes("  - ansible/task-copy-turn.yml\n"), "the playbook ships to the worker");
+});
+
+// Swamp locks a behavior by name for the whole step; a second run waits 60 s and then fails. The turn holds its lock for the whole
+// turn, so the name decides what can run at once: two turns in one copy share a lock, turns in two copies on one Node do not.
+Deno.test("the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time", () => {
+    const run = steps.find((step) => step.name === "Run the turn")!;
+    const lock = (instance: number, node = 9) => String(cel.evaluate(run.task.behaviorName!.slice(3, -2).trim(),
+        { inputs: { node_id: node, intent: { ...intent, instance_id: instance, runtime: { ...intent.runtime, name: `instance-${instance}` } }, execution_secrets: {} } }));
+    assertEquals(lock(2685), lock(2685));
+    assert(lock(2685) !== lock(2686), "two copies on one Node share no lock");
+    assert(lock(2685, 9) !== lock(2685, 17), "the Node stays in the name");
+    assert(lock(999999999).length <= 64, "Swamp names stay at 64 characters or fewer");
 });
 
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;

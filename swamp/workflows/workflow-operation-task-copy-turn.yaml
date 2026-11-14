@@ -30,6 +30,9 @@ jobs:
             intent: '${{ {"runtime": inputs.intent.runtime, "ssh_execution": inputs.intent.ssh_execution, "turn": inputs.intent.turn} }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       # The turn's own bound is intent.turn.seconds (3,600 s); this covers it, the 30 s kill grace, two 120 s reads and the SSH set-up.
+      # Swamp locks a behavior by name for the whole step, and a second run waits 60 s for that lock and then fails. The lock keeps
+      # two turns out of one copy: a turn acts only inside its copy and the run folder, so the name is the copy's, and turns in two
+      # copies on one Node run side by side (docs/cli/task/turn.mdx#in-a-task-copy).
       - name: Run the turn
         labels: {role: swamp}
         writes: true
@@ -37,7 +40,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "task-copy-turn-" + string(inputs.node_id) }}'
+          behaviorName: '${{ "task-copy-turn-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id) }}'
           methodName: execute
           inputs:
             run: timeout 4000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"

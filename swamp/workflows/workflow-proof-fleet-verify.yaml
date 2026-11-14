@@ -50,16 +50,19 @@ jobs:
         timeoutSec: 70
         argv: ['timeout', '60', 'git', '-C', '${{ inputs.intent.checkout_path }}', 'checkout', '--force', '--detach', '${{ inputs.intent.?head.orValue("") }}']
   # `runner plan --lines` prints one line a batch: `BATCH SETUP CASE...`. Keep that original interface for older heads.
+  # Swamp locks a behavior by name for the whole step, and a second run waits 60 s for it and then fails. On a task VM the steps
+  # act on the host's one fleet, so their names are the Node's. In a task copy they act only inside that copy, so the names that run
+  # there carry the copy's Instance id, and proofs in two copies on one Node run side by side (docs/cli/proof/proof.mdx#the-run).
   - name: Read the runner plan
     dependsOn: [{step: Restore the head checkout, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     labels: {role: swamp}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id)).split(".").join("-") }}'
+        name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -106,7 +109,7 @@ jobs:
   # `base` holds the Swamp tokens of its nested Gateway; the file that the provision and the re-mint write is the witness of their age. `find` prints the path only when the file is older than 20 days (28,800 minutes), so no output means the tokens are fresh.
   - name: 'Read the token age'
     labels: {role: swamp}
-    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-token-age").split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-token-age").split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]},
+    task: {type: behavior, behaviorType: '@swamp/ssh', behaviorName: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-token-age" + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}', methodName: exec, globalArgs: {name: '${{ ("proof-verify-" + string(inputs.intent.ssh_execution.target.node_id) + "-read-the-token-age" + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}', transport: {kind: ssh, user: '${{ inputs.intent.ssh_execution.target.user }}', port: '${{ inputs.intent.ssh_execution.target.port }}', identityFile: '${{ inputs.intent.ssh_execution.identity_file }}'}, hosts: [{name: target, address: '${{ inputs.intent.ssh_execution.target.host }}', transport: {hostKeys: '${{ inputs.intent.ssh_execution.target.host_keys }}'}}]},
       inputs: {hosts: 'name:target', sudo: '${{ "copy" in inputs.intent }}', argv: '${{ ("copy" in inputs.intent ? ["incus", "--project", inputs.intent.copy.project, "exec", "--disable-stdin", "--cwd", "/srv/workspace", inputs.intent.copy.name, "--", "/usr/sbin/runuser", "-u", "agent", "--"] : []) + ["timeout", "60", "incus", "exec", "nested-gateway", "--", "find", "/home/orbit/.config/swamp/serve-driver-token", "-mmin", "+28800"] }}', timeoutSec: 70}}
     dependsOn: [{step: 'Restore the base snapshot', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
   # The step of the provision, not a copy: the child `task-nested-apply` with `remint` set runs its step `Re-mint the Swamp tokens`, between its mounts and its migrations and restart, so the services run with the new tokens.
@@ -158,6 +161,7 @@ jobs:
         group_id: ${{ inputs.intent.group_id }}
         file: ${{ inputs.intent.file }}
         runner_prefix: '${{ ("copy" in inputs.intent ? ["incus", "--project", inputs.intent.copy.project, "exec", "--disable-stdin", "--cwd", "/srv/workspace", inputs.intent.copy.name, "--", "/usr/sbin/runuser", "-u", "agent", "--"] : []) }}'
+        ssh_name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
         restore: ${{ self._index > 0 }}
@@ -285,6 +289,7 @@ jobs:
         group_id: ${{ inputs.intent.group_id }}
         file: ${{ inputs.intent.file }}
         runner_prefix: '${{ ("copy" in inputs.intent ? ["incus", "--project", inputs.intent.copy.project, "exec", "--disable-stdin", "--cwd", "/srv/workspace", inputs.intent.copy.name, "--", "/usr/sbin/runuser", "-u", "agent", "--"] : []) }}'
+        ssh_name: '${{ ("proof-verify-ssh-" + string(inputs.intent.ssh_execution.target.node_id) + ("copy" in inputs.intent ? "-" + string(inputs.intent.instance_id) : "")).split(".").join("-") }}'
         batch: ${{ self.batch.batch }}
         setup: ${{ self.batch.setup }}
         restore: ${{ self._index > 0 }}

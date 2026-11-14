@@ -23,7 +23,7 @@ Orbit refuses the start at once and records nothing in these cases:
 | `tasks.copy_name_taken` (409) | An Instance named `task-<id>` exists |
 | `tasks.copy_capacity_full` (409) | Nested-fleet Project only: the default's Node holds as many nested-fleet task copies as the Gateway allows. There is no wait |
 
-The Gateway setting `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env` sets how many nested-fleet task copies one Node holds at once. The default is 1. Every nested copy that a task owns counts, also one whose create failed or that is being destroyed. A copy of any other Project is a plain clone: it does not count and has no task cap.
+The Gateway setting `ORBIT_TASKS_COPIES_MAX` in the Gateway's `.env` sets how many nested-fleet task copies one Node holds at once. The default is 1. Every nested copy that a task owns counts, also one whose create failed or that is being destroyed. A copy of any other Project is a plain clone: it does not count and has no task cap. Turns and proofs in two copies on one Node do not wait for each other ([turn](/cli/task/turn#in-a-task-copy), [proof](/cli/proof/proof#the-run)).
 
 When the create fails, is refused by Swamp, or is cancelled before its run starts, the task is `failed` and Orbit destroys the copy with force. When the create's run budget expires, the task stays `reserved` with its copy, because the run may still be stopping. If the destroy fails, the task also keeps owning the copy. Run `task:cancel` or `orbit instance:destroy <id> --yes --force` to destroy it.
 
