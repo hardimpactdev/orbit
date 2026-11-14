@@ -90,6 +90,34 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
     }
 
     /**
+     * Whether a restart of the server would cut work ([Restart for the machine name](/reference/conn#restart-for-the-machine-name)): a run
+     * that works by this class's rule, or any pending runtime request, blocking or not, because T3 ends every pending request when it
+     * stops. Null when the shell cannot be read.
+     *
+     * @param  array<array-key, mixed>  $shell
+     */
+    public static function restartBlocked(array $shell): ?bool
+    {
+        $activity = self::fromShell($shell);
+        if (! $activity->readable) {
+            return null;
+        }
+        if ($activity->turnRuns) {
+            return true;
+        }
+        // fromShell read both lists and every thread as arrays.
+        $threads = is_array($shell['threads']) ? $shell['threads'] : [];
+        $archived = is_array($shell['archivedThreads'] ?? null) ? $shell['archivedThreads'] : [];
+        foreach ([...$threads, ...$archived] as $thread) {
+            if (is_array($thread) && is_array($thread['pendingRuntimeRequest'] ?? null)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * Only a blocking request waits for the user. A run that waits without one waits for its own work: a delegated thread, a
      * background command or a monitor. That run works, as does a run past an async question.
      *

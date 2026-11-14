@@ -426,6 +426,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-conn-environment-restart": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-sleep": {
    "result": "read-only",
    "cleanup": "idempotent"

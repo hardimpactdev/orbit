@@ -65,6 +65,13 @@ final readonly class ContainerResume
             || Cache::has(self::missingScriptKey($instance->node_id))) {
             return false;
         }
+
+        return self::frozenBySleep($instance);
+    }
+
+    /** Whether the Instance's last sleep froze its container, rather than stopping it or failing: the one rule for a frozen container. */
+    public static function frozenBySleep(Instance $instance): bool
+    {
         $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
             ->orderByDesc('id')->first();
 

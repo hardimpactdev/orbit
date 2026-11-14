@@ -31,8 +31,37 @@ final readonly class HttpT3ServerClient implements T3ServerClient
 
     public function describe(string $baseUrl): T3EnvironmentDescriptor
     {
-        $body = $this->json($baseUrl, 'describe', fn (): Response => $this->request()->get($this->endpoint($baseUrl, '/.well-known/t3/environment')));
+        return $this->descriptor($baseUrl, $this->json($baseUrl, 'describe', fn (): Response => $this->request()->get($this->endpoint($baseUrl, '/.well-known/t3/environment'))));
+    }
 
+    public function describes(array $baseUrls, float $timeoutSeconds): array
+    {
+        if ($baseUrls === []) {
+            return [];
+        }
+        $timeout = min($timeoutSeconds, self::TIMEOUT_SECONDS);
+        $responses = Http::pool(function (Pool $pool) use ($baseUrls, $timeout): void {
+            foreach ($baseUrls as $key => $url) {
+                $this->request(null, $pool->as((string) $key), $timeout)->get($this->endpoint($url, '/.well-known/t3/environment'));
+            }
+        }, concurrency: 0);
+        $descriptors = [];
+        foreach ($baseUrls as $key => $url) {
+            $response = $responses[(string) $key] ?? null;
+            try {
+                $descriptors[$key] = $response instanceof Response ? $this->descriptor($url, $this->json($url, 'describe', static fn (): Response => $response))
+                    : T3ServerException::unreachable($url, $response instanceof Throwable ? $response : null);
+            } catch (T3ServerException $exception) {
+                $descriptors[$key] = $exception;
+            }
+        }
+
+        return $descriptors;
+    }
+
+    /** @param array<array-key, mixed> $body */
+    private function descriptor(string $baseUrl, array $body): T3EnvironmentDescriptor
+    {
         $environmentId = $body['environmentId'] ?? null;
         $label = $body['label'] ?? null;
         $serverVersion = $body['serverVersion'] ?? null;
