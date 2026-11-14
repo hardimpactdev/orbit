@@ -9,7 +9,10 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskPlaces;
+use App\Domain\Tasks\TaskPrMode;
+use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
@@ -66,6 +69,9 @@ final class TaskGroupData extends Data
         public ?string $lastActivityAt = null,
         public ?string $previewUrl = null,
         public ?TaskPlaceWaitData $capacityWait = null,
+        public ?TaskPrMode $prMode = null,
+        public ?string $prModeSource = null,
+        public ?TaskPublicationData $publication = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -84,6 +90,11 @@ final class TaskGroupData extends Data
         $group->loadMissing(['project', 'tasks']);
         $taskable = $group->taskable;
         $status = $group->groupStatus();
+        try {
+            $mode = TaskPrModeChoice::of($group);
+        } catch (ResourceOperationException) {
+            $mode = null;
+        }
 
         return new self(
             lastActivityAt: ($activity ?? TaskGroupActivity::ofGroup($group->id))['last_activity_at'],
@@ -96,6 +107,9 @@ final class TaskGroupData extends Data
             currentRecipe: $group->current_recipe ?? false,
             review: $group->review_mode,
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
+            prMode: $mode?->mode,
+            prModeSource: $mode?->source,
+            publication: TaskPublicationData::fromModel($group),
 
             id: $group->id,
             parentId: null,
