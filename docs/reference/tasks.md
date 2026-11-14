@@ -1057,7 +1057,7 @@ One group never runs two of these at once, because the Gateway admits one task O
 
 ### Bring main into a copy
 
-A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of a group with a task copy makes the default branch's newest head available in the copy as `refs/remotes/origin/<default branch>`. It is one `tasks.sync` Operation, and its run takes the [copy path](/cli/task/sync#how-it-works):
+A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of a group with a task copy makes the default branch's newest head available in the copy as `refs/remotes/origin/<default branch>`. It is one `tasks.sync` Operation, whose run is the copy's own workflow, [`operation-task-sync-copy`](/cli/task/sync#how-it-works):
 
 1. The Gateway mints the sync's read token as the run starts, as a Git header, the same as for a task VM.
 2. On the Node, Git fetches the default branch into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`.
@@ -1078,7 +1078,7 @@ The source is the Project's repository, for every Project. The trial Project's r
 | Check or publish | The group lock refuses the sync with `operation.target_busy` while either runs |
 | Container | Refused with `tasks.instance_not_running` when the copy's container does not run |
 | Credential | Minted per run; it is the environment of the Node's one fetch and is never written, so a killed run leaves none |
-| Older Gateway | Only an intent with the `copy` key takes the copy path. An older Gateway's run takes the task VM path, whose steps read no new key |
+| Workflow | The Gateway starts `operation-task-sync-copy` for a copy and `operation-task-sync` for a task VM. Swamp resolves every step's inputs at run start, so each reads only its intent's keys |
 
 A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.
 
@@ -1254,7 +1254,7 @@ The admission checks an open external group with its own task VM workspace and w
 
 On Node 209 the run makes a bare clone of the default branch, fetches the task branch and writes one bundle of both. It copies the bundle to a private directory on the VM with official SSH, runs `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-<group>`, and reads the two commits. HEAD, the working tree and the local branches stay as they are. A clean up step removes both scratch directories on success and on failure. The result holds the two commits.
 
-A group whose workspace is a task copy takes the copy path instead: [bring main into a copy](#bring-main-into-a-copy).
+A group whose workspace is a task copy runs `operation-task-sync-copy` instead: [bring main into a copy](#bring-main-into-a-copy).
 
 ## Project check
 
