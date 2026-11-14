@@ -157,7 +157,7 @@ The Gateway records the run's terminal result. The Gateway reads the snapshot pa
 
 A run that switched back is `switched_back`: it raises a `release_failed` alert, and the next green commit releases. Any other failure from Migrate on pauses automatic releases with reason `migration_failure` and names the snapshot, such as a failed switch-back. The record carries the failed step's own code when the step printed one, such as `gateway.release_downgrade`; otherwise it carries the step's code from the [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/gateway/release-deploy.mmd).
 
-A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,600 seconds, including the 600-second busy guard. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. Read the run before you resume.
+A cancelled or interrupted run may have migrated, so it pauses with `gateway.release_run_failed`. The run budget is 3,600 seconds, including the 600-second busy guard. A run that outlives it pauses with `gateway.release_run_timed_out`, even when Swamp later reports an end. A run that ends without a readable result (`operation.result_unreadable`) pauses with `gateway.release_run_failed`. Read the run before you resume.
 
 While the run is active, every release path refuses with `gateway.release_in_progress`: manual releases, automatic releases and rollbacks use the same admission path. Settling dead records skips the run's record. Admission holds the release lock until the run owns its record.
 
