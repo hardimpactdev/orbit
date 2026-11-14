@@ -4,6 +4,7 @@
 One nonblocking attempt only; a busy writer refuses without applying intent.
 Every writer holds the same lock while reading and replacing records and ACL rules.
 The refresh only adds rules. Reconciliation removes endpoint rules or intent.
+A confirmed record replaces the older records of its host and port; it never withdraws an admission.
 """
 import argparse
 import fcntl
@@ -262,7 +263,7 @@ def confirm_records(root, current, staged, retiring, resolved, config):
         wanted = endpoint_rule(target['host'], target['port'], config['cidr'], endpoint['admitted_at'])
         if any(owned_endpoint(rule, config['cidr']) and same_endpoint(rule, wanted)
                and rule_admission(rule) >= endpoint['admitted_at'] for rule in current.get('egress', [])):
-            changed += state_file(root, 'endpoint', endpoint, host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'])
+            changed += commit_record(root, endpoint)
     for path, endpoint, target in retiring:
         if not path.exists():
             continue
@@ -274,6 +275,25 @@ def confirm_records(root, current, staged, retiring, resolved, config):
         # Keep truthful health across a crash or a later failed removal.
         changed += state_file(root, 'pending', {'admitted_at': capture})
         changed += state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=endpoint['admitted_at'], remove=True)
+    return changed
+
+
+def commit_record(root, endpoint):
+    """Commit a confirmed endpoint as the only record of its host and port.
+
+    Every reader takes only the newest record of a host and port, so an older one decides nothing. A record exists only after
+    its ACL rule was confirmed, so the newest one always stays: an attach admitted earlier that runs later writes nothing.
+    """
+    prefix = str(ipaddress.IPv4Address(endpoint['host'])) + '-' + str(endpoint['port']) + '-'
+    stamps = [int(name) for name in (path.name[len(prefix):-len('.json')] for path in (Path(root) / 'endpoints').glob(prefix + '*.json'))
+              if re.fullmatch(r'[0-9]+', name)]
+    newest = max([endpoint['admitted_at'], *stamps])
+    changed = 0
+    if endpoint['admitted_at'] == newest:
+        changed += state_file(root, 'endpoint', endpoint, host=endpoint['host'], port=endpoint['port'], capture=newest)
+    for stamp in stamps:
+        if stamp < newest:
+            changed += state_file(root, 'endpoint', host=endpoint['host'], port=endpoint['port'], capture=stamp, remove=True)
     return changed
 
 

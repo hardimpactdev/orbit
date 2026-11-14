@@ -569,7 +569,7 @@ class BridgePolicy(unittest.TestCase):
             bridge.apply(root, intent(1, '10.44.0.7'), True)
             bridge.apply(root, intent(2, '10.44.0.7'))
             bridge.apply(root, intent(4, '10.44.0.7'))
-            self.assertEqual(len(list((root / 'endpoints').glob('*.json'))), 3)
+            self.assertEqual(len(list((root / 'endpoints').glob('*.json'))), 1)  # Each confirmed attach replaces the older record.
             bridge.apply(root, intent(3, '10.44.0.7'), True)
             self.assertEqual([json.loads(p.read_text())['admitted_at'] for p in (root / 'endpoints').glob('*.json')], [1800000000000004])
             version = incus.version
@@ -577,6 +577,75 @@ class BridgePolicy(unittest.TestCase):
             self.assertEqual(incus.version, version)
             bridge.apply(root, intent(5, '10.44.0.7'), True)
             self.assertEqual([json.loads(p.read_text())['admitted_at'] for p in (root / 'endpoints').glob('*.json')], [1800000000000005])
+
+    MAIL_NAT = '-A DOCKER ! -i docker0 -p tcp -m tcp --dport 1025 -j DNAT --to-destination 172.17.0.4:1025\n'
+
+    @staticmethod
+    def mail_intent(stamp, *extra):
+        return {**intent(stamp, *extra), 'endpoints': [{'host': '10.253.0.1', 'port': 1025, 'docker': True},
+                                                       *intent(stamp, *extra)['endpoints']]}
+
+    @staticmethod
+    def stamps(root):
+        return sorted(p.name for p in (root / 'endpoints').glob('*.json'))
+
+    def test_attach_replaces_older_records_of_its_host_and_port_and_keeps_other_keys(self):
+        # The create, clone and env:sync attach: --intent without --reconcile, as instance-bridge-rules.yml runs it.
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api), \
+                patch.object(bridge.subprocess, 'check_output', return_value=self.MAIL_NAT):
+            root = Path(directory)
+            bridge.apply(root, self.mail_intent(1, '10.44.0.3'), True)
+            for stamp in (2, 3, 4):
+                bridge.apply(root, self.mail_intent(stamp))
+            self.assertEqual(self.stamps(root), ['10.253.0.1-1025-1800000000000004.json', '10.44.0.3-3306-1800000000000001.json'])
+            self.assertEqual(sorted((r['destination'], r['description']) for r in incus.current['egress']),
+                             [('10.44.0.3/32', 'orbit:endpoint:1800000000000001'), ('172.17.0.4/32', 'orbit:endpoint:1800000000000004')])
+            self.assertEqual(bridge.apply(root, None), 0)
+
+    def test_refresh_drops_records_an_older_helper_left(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api), \
+                patch.object(bridge.subprocess, 'check_output', return_value=self.MAIL_NAT):
+            root = Path(directory)
+            bridge.apply(root, self.mail_intent(1), True)
+            old = {'admitted_at': 1800000000000000, 'docker': True, 'host': '10.253.0.1', 'port': 1025,
+                   'translated': {'host': '172.17.0.4', 'port': 1025}}
+            bridge.state_file(root, 'endpoint', old, host='10.253.0.1', port=1025, capture=old['admitted_at'])
+            version = incus.version
+            self.assertEqual(bridge.apply(root, None), 1)
+            self.assertEqual(self.stamps(root), ['10.253.0.1-1025-1800000000000001.json'])
+            self.assertEqual(incus.version, version)
+
+    def test_older_attach_run_after_a_newer_one_keeps_the_newest_record(self):
+        # Creates run side by side: the writer lock refuses the second, its retry runs after the first, with an older stamp.
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api), \
+                patch.object(bridge.subprocess, 'check_output', return_value=self.MAIL_NAT):
+            root = Path(directory)
+            bridge.apply(root, self.mail_intent(1), True)
+            self.interleave_writers(root, lambda: bridge.apply(root, self.mail_intent(5)),
+                                    lambda: bridge.apply(root, self.mail_intent(3)), 'resolve')
+            self.assertEqual(self.stamps(root), ['10.253.0.1-1025-1800000000000005.json'])
+            self.assertEqual([r['description'] for r in incus.current['egress']], ['orbit:endpoint:1800000000000005'])
+            self.assertEqual(bridge.apply(root, self.mail_intent(3)), 0)  # A late attach writes and removes nothing.
+            self.assertEqual(self.stamps(root), ['10.253.0.1-1025-1800000000000005.json'])
+
+    def test_unconfirmed_acl_write_keeps_the_older_record(self):
+        incus = Incus()
+        with tempfile.TemporaryDirectory() as directory, patch.object(bridge, 'api', side_effect=incus.api), \
+                patch.object(bridge.subprocess, 'check_output', return_value=self.MAIL_NAT):
+            root = Path(directory)
+            bridge.apply(root, self.mail_intent(1), True)
+
+            def lost_put(name, value=None, etag=None, deadline=None):
+                if value is not None:
+                    raise bridge.PolicyError('412 Precondition Failed')
+                return incus.api(name)
+
+            with patch.object(bridge, 'api', side_effect=lost_put), self.assertRaises(bridge.PolicyError):
+                bridge.apply(root, self.mail_intent(2))
+            self.assertEqual(self.stamps(root), ['10.253.0.1-1025-1800000000000001.json'])
 
     def test_rechecks_newer_rule_without_a_record_before_removing_and_preserves_unknown_descriptions(self):
         incus = Incus()
