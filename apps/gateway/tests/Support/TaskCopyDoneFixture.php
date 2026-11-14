@@ -70,6 +70,14 @@ final class TaskCopyDoneFixture
         return $check;
     }
 
+    /** A succeeded publish from a task copy that opened pull request `$number`: the record that outlives the copy. */
+    public static function copyPublish(Task $group, int $number): Operation
+    {
+        return Operation::query()->create(['kind' => OperationKinds::TasksPublish, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+            'input' => ['check' => 1, 'commit' => self::Commit, 'workspace' => ['branch' => 'task-'.$group->id]], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
+            'result' => ['branch' => 'task-'.$group->id, 'commit' => self::Commit, 'pull_request_number' => $number, 'pull_request_url' => 'https://github.com/example/trial/pull/'.$number]]);
+    }
+
     /** A finished copy turn of the reviewer thread on the candidate. */
     public static function reviewerTurn(Task $group, Task $subtask, AgentThread $reviewer, string $candidate, mixed $finished, string $state = 'done'): Operation
     {
