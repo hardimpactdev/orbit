@@ -985,7 +985,7 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 
 #### A failed completion
 
-A failed, cancelled or unadmitted `instance.complete` of a copy keeps the copy, and the task stays `reserved`. Its create succeeded, so its thread was usable and an agent may have worked in it.
+A failed, cancelled, interrupted or unadmitted `instance.complete` of a copy keeps the copy, and the task stays `reserved`. Its create succeeded, so its thread was usable and an agent may have worked in it.
 
 The task asks for assistance with kind `failure`, unless a direction request is open. The reason names the completion Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>`. `task:show` and `task:status` show it.
 
@@ -995,7 +995,11 @@ Until a completion succeeds, a turn, a check and a publish answer `tasks.copy_co
 
 Orbit removes a task copy by itself only after a failed create, through one queued job that admits the copy's `instance:destroy` with force. A failed completion never removes the copy: its create succeeded, so its thread was usable and an agent may have worked in it.
 
-The job destroys the copy at once only when the records prove that no agent could have worked in it: the create did not succeed and no T3 server is registered for the copy. Otherwise it first reads the copy's work, as [`task:cancel`](/cli/task/cancel) does. It destroys a copy that holds no work origin lacks. A copy with such work, or a read that does not answer, stays, and the task asks for assistance with the counts. `task:cancel` and `task:complete` are a person's removals and keep their own rules.
+The job destroys the copy at once only when the records prove that no agent could have worked in it: the create did not succeed and no T3 server is registered for the copy. Otherwise it first reads the copy's work, as [`task:cancel`](/cli/task/cancel) does. It destroys a copy that holds no work origin lacks.
+
+A copy with such work, or a read that does not answer, stays. The failed task then asks for assistance with kind `removal_failure`, the kind that an ended task keeps. The reason names the unpushed commits, the uncommitted files and how many of them are untracked, or why the read did not answer. It ends with `orbit task:cancel <task-id>`, with `--discard` if the work is not wanted.
+
+`task:cancel` and `task:complete` are a person's removals and keep their own rules.
 
 A held publish leaves the checked commit in the copy. An operator adds a Project to `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` once the publish guard for `.env` content is live; a copy of any other Project is a plain clone, so the nested-fleet cap does not count it.
 

@@ -20,6 +20,8 @@ use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceLifecycleContribution;
+use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
@@ -247,6 +249,20 @@ function copyCompletion(Instance $copy): Operation
         'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
 }
 
+function destroyTaskCopy(Instance $copy): void
+{
+    app()->call([new DestroyTaskCopy($copy->id), 'handle']);
+}
+
+/** Every create and destroy contribution counts a T3 server as registered. */
+function copyT3Registered(): void
+{
+    $contribution = Mockery::mock(InstanceLifecycleContribution::class);
+    $contribution->shouldReceive('registered')->andReturn(true);
+    $contribution->shouldIgnoreMissing();
+    app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
+}
+
 function runningOperation(Operation $operation): Operation
 {
     $operation->forceFill(['status' => 'running', 'finished_at' => null, 'error_code' => null, 'result' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
@@ -325,7 +341,7 @@ describe('a task start on the copy path', function (): void {
 
         $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
         $group->update(['status' => TaskGroupStatus::Failed]);
-        new DestroyTaskCopy($copy->id)->handle(app(StartInstanceDestroyAction::class));
+        destroyTaskCopy($copy);
         expect(Operation::query()->where('kind', 'instance.destroy')->sole()->input['container_destroy'])
             ->toMatchArray(['name' => 'instance-'.$copy->id, 'inner_volume' => 'inner-'.$copy->id]);
     });
@@ -832,13 +848,77 @@ describe('the end of the copy\'s create', function (): void {
         $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
 
         $group->update(['status' => TaskGroupStatus::Running]);
-        new DestroyTaskCopy($copy->id)->handle(app(StartInstanceDestroyAction::class));
+        $calls = $this->ssh->calls;
+        destroyTaskCopy($copy);
         expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(0);
 
         $group->update(['status' => TaskGroupStatus::Failed]);
-        new DestroyTaskCopy($copy->id)->handle(app(StartInstanceDestroyAction::class));
+        $calls = $this->ssh->calls;
+        destroyTaskCopy($copy);
         $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
-        expect($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()->and($destroy->triggered_by)->toBe('tasks');
+        expect($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()->and($destroy->triggered_by)->toBe('tasks')
+            // The records prove that no agent worked in the copy: its create failed and no T3 server is registered, so nothing is read.
+            ->and($this->ssh->calls)->toBe($calls);
+    });
+
+    it('reads a failed group\'s copy first when the records do not prove it unused, and keeps one that holds work', function (Closure $usable): void {
+        $group = copyGroup(copySource()->project);
+        $operation = startCopy($group);
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
+        $usable($operation);
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
+            'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 2, 'names' => ['b', 'c']],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 4, 'branch_count' => 1, 'branches' => [['name' => $copy->name, 'count' => 4]]]];
+
+        $calls = $this->ssh->calls;
+        destroyTaskCopy($copy);
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+            ->and($this->ssh->calls)->toBe($calls + 1)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
+            ->and($group->taskable_id)->toBe($copy->id)
+            ->and($group->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+            ->and($group->assistance_reason)->toBe(DestroyTaskCopy::KeptReason.'it holds work that origin lacks: 4 unpushed commits, 3 uncommitted files, 2 of them untracked. '
+                ."End it with `orbit task:cancel {$group->id}`, with `--discard` if the work is not wanted.");
+    })->with([
+        'a registered T3 server' => [fn () => copyT3Registered()],
+        'a create that succeeded' => [fn (Operation $create) => $create->forceFill(['status' => 'succeeded'])->save()],
+    ]);
+
+    it('keeps a failed group\'s registered copy whose workspace cannot be read', function (): void {
+        $group = copyGroup(copySource()->project);
+        $operation = startCopy($group);
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
+        copyT3Registered();
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
+
+        $calls = $this->ssh->calls;
+        destroyTaskCopy($copy);
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+            ->and($group->refresh()->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
+            ->and($group->assistance_reason)->toBe(DestroyTaskCopy::KeptReason.'its workspace could not be read: stopped. '
+                ."End it with `orbit task:cancel {$group->id}`, with `--discard` if the work is not wanted.");
+    });
+
+    it('destroys a failed group\'s registered copy whose read is clean', function (): void {
+        $group = copyGroup(copySource()->project);
+        $operation = startCopy($group);
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
+        copyT3Registered();
+        $group->update(['status' => TaskGroupStatus::Failed]);
+
+        $calls = $this->ssh->calls;
+        destroyTaskCopy($copy);
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->sole()->target_id)->toBe($copy->id)
+            ->and($this->ssh->calls)->toBe($calls + 1)
+            ->and($group->refresh()->assistance_requested)->toBeFalse();
     });
 });
 
