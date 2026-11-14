@@ -10,26 +10,17 @@
   changed_when: false
   failed_when: private_names_hosts.rc != 0 and 'No such file or directory' not in private_names_hosts.stderr
 
+# instance_node_services.py `hosts` is the one renderer of the block; the clone renders it the same way before its copy's first start.
 - name: Compose the hosts file with the plan's private names
-  vars:
-    private_names_newline: "\n"
-    private_names_begin: "# BEGIN Orbit private names"
-    private_names_end: "# END Orbit private names"
-  ansible.builtin.set_fact:
-    private_names_content: >-
-      {%- set kept = namespace(lines=[], inside=false) -%}
-      {%- for line in private_names_hosts.stdout.splitlines() -%}
-        {%- if line == private_names_begin -%}{%- set kept.inside = true -%}
-        {%- elif line == private_names_end -%}{%- set kept.inside = false -%}
-        {%- elif not kept.inside -%}{%- set kept.lines = kept.lines + [line] -%}
-        {%- endif -%}
-      {%- endfor -%}
-      {%- set names = private_names | default([]) -%}
-      {%- set block = [private_names_begin] + (names | map(attribute='host') | zip(names | map(attribute='name')) | map('join', ' ') | list)
-         + [private_names_end] if names | length > 0 else [] -%}
-      {{ ((kept.lines + block) | join(private_names_newline) ~ private_names_newline) if (kept.lines + block) else '' }}
+  ansible.builtin.command:
+    argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_node_services.py') }}", hosts]
+    stdin: "{{ {'hosts': private_names_hosts.stdout, 'private_names': private_names | default([])} | to_json }}"
+  register: private_names_composed
+  changed_when: false
 
 - name: Write the changed hosts file
+  vars:
+    private_names_content: "{{ (private_names_composed.stdout | from_json).content }}"
   when: private_names_content.splitlines() != private_names_hosts.stdout.splitlines()
   ansible.builtin.command:
     argv: >-

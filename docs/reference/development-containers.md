@@ -488,11 +488,15 @@ A container holds the root as a local CA file, `/usr/local/share/ca-certificates
 | --- | --- |
 | Image | The build pushes the Node's root; the image definition runs `update-ca-certificates`. A later root reaches its containers at the converge |
 | Clone | `boot_files` names the Node file as a source. The clone script reads it before the copy and writes the file and its links |
+| Clone bundle before the first start | The clone script adds the root to the copy's bundle when the bundle lacks it |
 | Clone source | Only that one Node path may be a source. A missing or unreadable file fails the create with `instance.clone_trust_unavailable` |
+| Clone without a bundle | A copy without a regular bundle file fails the create with `instance.clone_trust_bundle_refused`. A bundle of the root alone would drop every public root |
 | Running container | The converge writes the file and its links. When the bundle lacks the root, it runs `update-ca-certificates` |
 | Stopped or frozen container | The converge writes the file and its links through the file API. The wake rebuilds a bundle that lacks the root |
 
 A new root on the Node reaches every container at the next converge. The converge and the clone script remove the old root's hashed name. A stopped or frozen container's bundle keeps the old root until its wake.
+
+A seed taken before the root reached its bundle gives a copy that trusts the root through the links, but not through the bundle. So the clone script reads the copy's `/etc/ssl/certs/ca-certificates.crt` through the file API before the first start. It appends the root, the same Node file as the trust entry, when no certificate in the bundle is the root. The push keeps the bundle's owner and mode. A bundle that already holds the root stays as it is, so the root is never there twice. An older root in the seed's bundle stays until the next `update-ca-certificates`.
 
 #### Chromium
 
@@ -665,12 +669,20 @@ A container cannot reach the Gateway: its traffic would leave as its Node's Wire
 A target of the access plan can carry a fleet private name. Two kinds do: an attached private websocket app, `reverb.orbit` at port 8443, and a clone's [own site](#the-own-site-from-inside), each private Route name at the bridge's gateway address and port 443. The plan lists each one under `private_names`, with the exact address and port it admits; the key is absent for every other Instance, so their plans stay as they were.
 
 - **Hosts file.** The container has no DNS server, and the egress proxy refuses private names. So Orbit writes each name with its address into the container's `/etc/hosts`.
-- **When.** The create, migrate and start phases write the names; deploy and wake run the start phase. `env:sync` writes them in a running container.
-- **Clones.** A clone holds no app of its default, so its create writes no name.
-- **Seed leftovers.** A clone resets the seed's proxy bypass before its first start. Its first start phase removes a hosts block from the seed.
 - **Owned lines.** Orbit owns only the lines between `# BEGIN Orbit private names` and `# END Orbit private names`. With no name, it removes them.
-- **No proxy.** Each name goes into `NO_PROXY` through the one place that composes the container's proxy settings, so the client connects on the exact path and not through the proxy.
+- **One renderer.** The command `hosts` of `instance_node_services.py` renders the hosts text from the current file and the names. Every writer below uses it, so all write the same bytes.
+- **No proxy.** Each name goes into `NO_PROXY` through the one place that composes the container's proxy settings. The client then connects on the exact path, not through the proxy.
 - **Env check.** The migrate's env check admits a name only at the port the plan gives it. Every other private name stays refused.
+
+Who writes the names:
+
+| Writer | When |
+| --- | --- |
+| Create, migrate and start phases | Deploy and wake run the start phase |
+| `env:sync` | In a running container |
+| A clone's create | In the copy before its first start. It replaces the seed's block with its own, or removes it when the clone has no name, and resets the seed's proxy bypass |
+
+A clone holds no app of its default, so its names are its [own site](#the-own-site-from-inside) names.
 
 ## Egress and DNS
 
@@ -750,7 +762,9 @@ A normal container without these keeps the image's value only. Every writer of t
 | Units: T3, its agents, each Process | `/etc/systemd/system.conf.d/99-orbit-node-services.conf`, and systemd's manager environment | A unit's next start |
 | Login shells | `/etc/profile.d/99-orbit-node-services.sh` | The next login shell |
 
-A create and a clone write the keys. A clone of a nested-fleet default also writes both files before its first start, so its first boot, T3 included, reads the value. `instance_node_services.py` is the one writer of the files and the manager environment, through its function `write_proxy_environment` and its command `proxy`. The Node service apply calls it when a target changes. The [start of a stopped clone](#a-stopped-nested-fleet-clone-starts) also calls it.
+A create and a clone write the keys. A clone also writes both files before its first start, so its first boot, T3 included, reads the value. The intent's `clone.proxy_environment` carries the value when it is not the base, or when the default's seed holds another bypass.
+
+`instance_node_services.py` renders the two files once, in its function `proxy_files`. Its function `write_proxy_environment` and command `proxy` write them and the manager environment in a running container. The clone script pushes the same text, from the command `proxy-files`, into the stopped copy. The Node service apply calls the writer when a target changes. The [start of a stopped clone](#a-stopped-nested-fleet-clone-starts) also calls it.
 
 A nested-fleet container made before these keys, such as the Orbit default, keeps the image's value until a start phase writes the composed value. Its copies do not wait for that: each copy gets the keys and the files at its create.
 
@@ -997,6 +1011,18 @@ A clone's create checks no Process unit. A dead Process fails the completion's `
 
 A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
+#### What a clone has at its first start
+
+The clone script writes these into the copy before it starts, so its first boot reads them with no converge or `env:sync`:
+
+| Part | What the copy has |
+| --- | --- |
+| Trust | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
+| Private names | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
+| `NO_PROXY` | The composed value in the `environment.*` keys and in both drop-ins, with those names. See [proxy settings](#proxy-settings-in-a-container) |
+
+A task copy is a clone like any other, so it gets the same. So does a clone in the nested-fleet project, and a clone that an inner Gateway makes in its own fleet.
+
 ### Complete a clone
 
 [`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([why](#a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, the Route and a check. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
@@ -1082,7 +1108,10 @@ Work is what lies beyond the Instance's baseline:
 
 - `modified`: tracked files that are changed, staged or deleted. They always count.
 - `untracked`: files that are not ignored and not in the baseline. Orbit writes `.env` and `.env.testing` at the workspace root, so an untracked copy there is left out. A nested `.env` and a change to a tracked one count.
-- `commits`: commits on local branches that no remote-tracking ref and no baseline head reaches. The read compares with the remote refs as last fetched. A branch without an upstream gets no special case.
+- `commits`: commits on local branches that no remote-tracking ref, baseline head or published commit reaches.
+- **Remote refs.** The read compares with the remote refs as last fetched.
+- **Published commits.** A task copy never fetches. Its read names the commits that the task's publishes pushed.
+- **No upstream.** A branch without an upstream gets no special case.
 - `stashes`: stash entries that are not in the baseline.
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
@@ -2101,6 +2130,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.browser_trust_mismatch` | 409 | The image build found another `libp11-kit0` than the trust module needs. The image is not published ([Trust](#trust)) |
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
+| `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
+| `instance.clone_private_names_refused` | 502 | A clone's copy has `/etc/hosts` as a link or another type than a file, or the file API could not read it. The create stops before the copy starts |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | The direct container Process journal read failed |

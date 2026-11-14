@@ -6,12 +6,15 @@ use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
+use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -21,6 +24,7 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCancelIntent;
@@ -54,6 +58,7 @@ use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
@@ -94,9 +99,13 @@ beforeEach(function (): void {
 
         public int $calls = 0;
 
+        /** @var list<?string> */
+        public array $inputs = [];
+
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $this->calls++;
+            $this->inputs[] = $command->input;
 
             return new CommandResult(0, json_encode($this->answer, JSON_THROW_ON_ERROR), '', 5, false);
         }
@@ -505,14 +514,33 @@ describe('the end of the copy\'s create', function (): void {
 });
 
 describe('a cancel of a group that owns a copy', function (): void {
-    it('records what the copy holds, admits the copy\'s destroy with force and cancels the group when the destroy succeeds', function (): void {
+    it('refuses a copy that holds work origin lacks, with its counts, and changes nothing', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
             'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 2, 'names' => ['b', 'c']],
             'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 3, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 3]]]];
 
-        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        try {
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+            $this->fail('The cancel destroyed unpublished work.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_unpublished_work')->and($error->status)->toBe(409)
+                ->and($error->details)->toBe(['head' => str_repeat('e', 40), 'unpushed' => 3, 'uncommitted' => 3, 'modified' => 1, 'untracked' => 2, 'stashes' => 0]);
+        }
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse()
+            ->and(Instance::query()->find($copy->id))->not->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+
+    it('records what the copy holds, admits the copy\'s destroy with force on discard and cancels the group when the destroy succeeds', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
+            'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 2, 'names' => ['b', 'c']],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 3, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 3]]]];
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true);
 
         $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
         expect($cancel->kind)->toBe('tasks.cancel')
@@ -523,7 +551,7 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
             // The group runs on until the copy is gone.
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
-        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409');
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true)))->toBe('operation.target_busy 409');
 
         destroySucceeded($destroy);
 
@@ -533,12 +561,20 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Cancelled);
     });
 
-    it('records a stopped copy as unknown and still admits its destroy', function (): void {
+    it('refuses a copy it cannot read unless the caller discards it, then records it as unknown and admits its destroy', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $this->ssh->answer = ['state' => 'unknown', 'reason' => 'stopped'];
 
-        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        try {
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+            $this->fail('The cancel destroyed an unread copy.');
+        } catch (ResourceOperationException $error) {
+            expect($error->errorCode)->toBe('tasks.copy_workspace_unknown')->and($error->status)->toBe(409)->and($error->details)->toBe(['reason' => 'stopped']);
+        }
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true);
 
         expect($cancel->result['workspace'])->toMatchArray(['state' => 'unknown', 'reason' => 'stopped', 'unpushed' => null])
             ->and(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
@@ -568,6 +604,103 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($held->refresh()->lock_key)->not->toBeNull();
     });
 
+    it('names only the commits the group published with success to the read, so a published copy with no later work cancels without discard', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $published = str_repeat('f', 40);
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'input' => [], 'result' => ['branch' => $copy->name, 'commit' => $published], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
+        // A failed publish of this group and a publish of another group pushed nothing of this copy: neither commit reaches the read.
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'input' => [], 'result' => ['branch' => $copy->name, 'commit' => str_repeat('a', 40)], 'status' => OperationStatus::Failed, 'sequence' => 2, 'attempts' => 1]);
+        $other = copyGroup($group->project);
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $other->id, 'node_id' => $copy->node_id,
+            'input' => [], 'result' => ['branch' => 'other', 'commit' => str_repeat('b', 40)], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+
+        expect($cancel->result['workspace']['state'])->toBe('clean')
+            ->and(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue()
+            ->and(last($this->ssh->inputs))->toContain('PUBLISHED = json.loads(base64.b64decode("'.base64_encode(json_encode([$published])).'"))');
+    });
+
+    it('reads the copy, its replication slots and its Schedules outside the transaction that records the cancel and the destroy', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $outside = DB::transactionLevel();
+        $levels = new ArrayObject;
+        app()->instance(InstanceDestroyReplicationSlots::class, new class($levels)
+        {
+            public function __construct(private ArrayObject $levels) {}
+
+            public function assertNone(array $input): void
+            {
+                $this->levels['slots'] = DB::transactionLevel();
+            }
+        });
+        app()->instance(NativeSchedules::class, new class($levels)
+        {
+            public function __construct(private ArrayObject $levels) {}
+
+            public function removeForInstances(array $instanceIds): void
+            {
+                $this->levels['schedules'] = DB::transactionLevel();
+            }
+        });
+        Operation::creating(function (Operation $operation) use ($levels): void {
+            $levels[$operation->kind] = DB::transactionLevel();
+        });
+
+        app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+
+        expect($levels['slots'])->toBe($outside)->and($levels['schedules'])->toBe($outside)
+            ->and($levels['tasks.cancel'])->toBeGreaterThan($outside)
+            ->and(Operation::query()->where('kind', 'instance.destroy')->sole()->id)
+            ->toBe(Operation::query()->where('kind', 'tasks.cancel')->sole()->result['destroy_operation_id']);
+    });
+
+    it('refuses a dirty copy over HTTP with its counts, and admits its destroy when the request discards it', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => 'task-1',
+            'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 0, 'names' => []],
+            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 2, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 2]]]];
+
+        $this->withHeader('Idempotency-Key', 'cancel-dirty')->postJson("/api/v1/tasks/{$group->id}/cancel")
+            ->assertStatus(409)->assertJsonPath('error.code', 'tasks.copy_unpublished_work')
+            ->assertJsonPath('error.details.unpushed', 2)->assertJsonPath('error.details.uncommitted', 1);
+        expect(Operation::query()->whereIn('kind', ['instance.destroy', 'tasks.cancel'])->exists())->toBeFalse();
+
+        $this->withHeader('Idempotency-Key', 'cancel-discard')->postJson("/api/v1/tasks/{$group->id}/cancel", ['discard' => true])
+            ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.cancel');
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
+    });
+
+    it('admits no destroy when another Operation takes the group lock after the cancel\'s checks', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        // The race: the first Operation the cancel writes after its checks finds the group lock taken by another Operation.
+        $raced = false;
+        Operation::creating(function (Operation $operation) use ($group, $copy, &$raced): void {
+            if ($raced || $operation->kind === 'tasks.publish') {
+                return;
+            }
+            $raced = true;
+            Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+                'lock_key' => OperationStore::lockKey('task_group', $group->id), 'input' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1]);
+        });
+
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409')
+            ->and($raced)->toBeTrue()
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'tasks.cancel')->exists())->toBeFalse()
+            ->and(Instance::query()->find($copy->id))->not->toBeNull();
+    });
+
     it('leaves the destroy of a clone that no group owns as it was', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);
@@ -576,6 +709,62 @@ describe('a cancel of a group that owns a copy', function (): void {
         destroySucceeded(app(StartInstanceDestroyAction::class)->execute($clone, true));
 
         expect(Instance::query()->find($clone->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+});
+
+describe('a complete of a group that owns a copy', function (): void {
+    it('admits the copy\'s destroy with force, completes the group and lets go of the copy when the destroy succeeds', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+
+        $completed = app(CompleteTaskGroupAction::class)->execute($group->refresh());
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
+            ->and($completed->status)->toBe(TaskGroupStatus::Completed)
+            ->and($completed->taskable_id)->toBe($copy->id)
+            ->and($completed->assistance_reason)->toBeNull();
+        // A repeated complete reuses the open destroy.
+        app(CompleteTaskGroupAction::class)->execute($group->refresh());
+        expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+
+        destroySucceeded($destroy);
+
+        expect(Instance::query()->find($copy->id))->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and($group->taskable_id)->toBeNull();
+    });
+
+    it('keeps the copy of a completed group when its destroy fails, and admits a new destroy on the next complete', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+        app(CompleteTaskGroupAction::class)->execute($group->refresh());
+        Operation::query()->where('kind', 'instance.destroy')->sole()->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
+
+        app(CompleteTaskGroupAction::class)->execute($group->refresh());
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe(2)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and($group->taskable_id)->toBe($copy->id);
+    });
+});
+
+describe('a stop of a subtask in a copy', function (): void {
+    it('sends no interrupt to a t3 thread, which has none, and does not fail; the subtask stays as it was', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'node_id' => $copy->node_id, 'driver' => 't3',
+            'runtime_key' => 'instance:'.$copy->id, 'external_id' => (string) Str::uuid(), 'role' => 'implementer', 'model' => 'gpt-5.6-luna', 'effort' => null]);
+        $subtask->update(['status' => TaskStatus::Running, 'implementer_agent_thread_id' => $thread->id]);
+
+        app(StopTaskSubtaskAction::class)->execute($group->refresh(), $subtask->refresh());
+
+        expect($subtask->refresh()->status)->toBe(TaskStatus::Running);
     });
 });
 

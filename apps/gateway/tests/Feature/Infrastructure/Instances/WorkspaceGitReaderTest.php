@@ -62,7 +62,7 @@ function workspaceCommit(string $repository, string $file, string $content): voi
  * @param  list<string>  $arguments
  * @return array<string, mixed>
  */
-function workspaceRead(array $arguments, mixed $baseline = null, float $budget = 2.0): array
+function workspaceRead(array $arguments, mixed $baseline = null, float $budget = 2.0, array $published = []): array
 {
     $folder = test()->folder;
     file_put_contents($folder.'/containers.json', json_encode(test()->containers, JSON_THROW_ON_ERROR));
@@ -70,7 +70,7 @@ function workspaceRead(array $arguments, mixed $baseline = null, float $budget =
     $read = new LocalProcess(['timeout', '3', 'python3', '-', ...$arguments], env: [
         'PATH' => $folder.':/usr/bin:/bin', 'WORKSPACE_READ_FIXTURE' => $folder,
     ]);
-    $read->setInput("import base64\nimport json\nINSTANCE_PROJECTS = ".$literal(InstancePlacement::projects())."\nBASELINE = ".$literal($baseline)."\nBUDGET = ".$budget."\n"
+    $read->setInput("import base64\nimport json\nINSTANCE_PROJECTS = ".$literal(InstancePlacement::projects())."\nBASELINE = ".$literal($baseline)."\nPUBLISHED = ".$literal($published)."\nBUDGET = ".$budget."\n"
         .file_get_contents(resource_path('instances/workspace-git-read.py')));
     $read->mustRun();
 
@@ -84,10 +84,10 @@ function workspaceRecord(string $container = 'instance-2'): array
 }
 
 /** @return array<string, mixed> */
-function workspaceState(string $container, mixed $baseline = null, bool $withDefault = false): array
+function workspaceState(string $container, mixed $baseline = null, bool $withDefault = false, array $published = []): array
 {
     return workspaceRead(['read', 'orbit-instances', $container, test()->folder.'/no-asleep-marker',
-        ...($withDefault ? ['orbit-instances', 'instance-1'] : [])], $baseline);
+        ...($withDefault ? ['orbit-instances', 'instance-1'] : [])], $baseline, published: $published);
 }
 
 it('reads a clone of a default with local-only branches a stash and an untracked file as clean against its baseline', function (): void {
@@ -182,6 +182,25 @@ it('keeps workspace names out of every command line and returns them only as cap
     foreach (file($this->folder.'/argv.log', FILE_IGNORE_NEW_LINES) as $line) {
         expect($line)->not->toContain('pwned')->not->toContain('line\nbreak')->not->toContain('x$(id)');
     }
+});
+
+it('counts no commit that a publish pushed, nor its history, and counts a later one', function (): void {
+    $baseline = workspaceRecord();
+    $clone = $this->folder.'/clone';
+    workspaceGit($clone, 'checkout', '-q', '-b', 'task-1');
+    workspaceCommit($clone, 'task.txt', "one\n");
+    workspaceCommit($clone, 'task.txt', "two\n");
+    // The publish pushed task-1 from a bundle: the copy holds no remote ref for it.
+    $published = trim(workspaceGit($clone, 'rev-parse', 'HEAD'));
+
+    expect(workspaceState('instance-2', $baseline)['commits']['count'])->toBe(2)
+        ->and(workspaceState('instance-2', $baseline, published: [$published])['state'])->toBe('clean');
+
+    workspaceCommit($clone, 'task.txt', "three\n");
+    expect(workspaceState('instance-2', $baseline, published: [$published])['commits'])
+        ->toBe(['count' => 1, 'branch_count' => 1, 'branches' => [['name' => 'task-1', 'count' => 1]]])
+        // Only a hex id joins rev-list.
+        ->and(workspaceState('instance-2', $baseline, published: ['--all', 'HEAD'])['commits']['count'])->toBe(3);
 });
 
 it('passes only hex baseline heads to rev-list and drops an untracked baseline above 2000 entries', function (): void {

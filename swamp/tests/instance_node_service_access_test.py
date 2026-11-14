@@ -148,6 +148,34 @@ class RemoteAccessTest(unittest.TestCase):
         self.assertEqual(seen, [{'NO_PROXY': 'secretless', 'no_proxy': 'secretless'}])
         self.assertEqual(json.loads(out.getvalue()), {'changed': True})
 
+    def test_the_one_renderer_gives_the_drop_ins_that_the_writer_writes_and_its_command_prints_them(self):
+        fleet = self.base + ',feature.tool.test'
+        environment = {'NO_PROXY': fleet, 'no_proxy': fleet}
+        with patch.object(services.os, 'chown'):
+            services.write_proxy_environment(environment, self.root / 'guest', self.guest_run)
+        files = services.proxy_files(environment)
+        self.assertEqual({path: (self.root / 'guest' / path).read_text() for path in files}, files)
+        printed = subprocess.run([sys.executable, '-c', (ROOT / 'ansible/instance_node_services.py').read_text(), 'proxy-files'],
+                                 input=json.dumps({'proxy_environment': environment}), text=True, capture_output=True, check=True)
+        self.assertEqual(json.loads(printed.stdout), {'files': files})
+
+    def test_the_hosts_renderer_keeps_other_lines_replaces_orbits_block_and_drops_it_without_names(self):
+        names = [{'name': 'feature.tool.test', 'host': '10.253.0.1', 'port': 443}, {'name': 'reverb.orbit', 'host': '10.44.0.3', 'port': 8443}]
+        block = '# BEGIN Orbit private names\n10.253.0.1 feature.tool.test\n10.44.0.3 reverb.orbit\n# END Orbit private names\n'
+        old = '# BEGIN Orbit private names\n10.1.1.9 gone.test\n# END Orbit private names\n'
+        for case, hosts, plan, expected in (
+                ('a plain file gets the block last', '127.0.0.1 localhost\n', names, '127.0.0.1 localhost\n' + block),
+                ('an older block goes, other lines stay', '127.0.0.1 localhost\n' + old + '10.1.1.1 operator', names,
+                 '127.0.0.1 localhost\n10.1.1.1 operator\n' + block),
+                ('no name drops the block', '127.0.0.1 localhost\n' + old, [], '127.0.0.1 localhost\n'),
+                ('nothing at all', '', [], ''),
+                ('a missing file gets only the block', '', names, block)):
+            with self.subTest(case=case):
+                self.assertEqual(services.private_names_hosts(hosts, plan), expected)
+                printed = subprocess.run([sys.executable, '-c', (ROOT / 'ansible/instance_node_services.py').read_text(), 'hosts'],
+                                         input=json.dumps({'hosts': hosts, 'private_names': plan}), text=True, capture_output=True, check=True)
+                self.assertEqual(json.loads(printed.stdout), {'content': expected})
+
     def test_attached_remote_probe_failure_has_public_target_identity(self):
         self.reachable = False
         with self.assertRaises(services.TargetFailure) as error:

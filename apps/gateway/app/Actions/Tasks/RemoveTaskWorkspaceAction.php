@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
+use App\Actions\Instances\StartInstanceDestroyAction;
+use App\Domain\Instances\InstanceDestroyKind;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\LifecyclePhase;
 use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Shared\ResourceOperationException;
@@ -20,6 +23,7 @@ use App\Domain\TaskVms\TaskVmException;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
+use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
@@ -34,9 +38,9 @@ use Throwable;
  * every path that ends a group finds its workspace through that owner, attached or not. An Instance without that
  * owner is never a task workspace, whatever its name or branch.
  *
- * A workspace on a task VM goes with its VM: the slot release deletes both. A workspace with no live task VM is
- * refused with `operation.kind_unavailable` and stays, named by its record; the caller records assistance and returns
- * the error.
+ * A workspace on a task VM goes with its VM: the slot release deletes both. A task copy goes through its
+ * `instance.destroy`. Any other workspace is refused with `operation.kind_unavailable` and stays, named by its record;
+ * the caller records assistance and returns the error.
  */
 final readonly class RemoveTaskWorkspaceAction
 {
@@ -90,6 +94,9 @@ final readonly class RemoveTaskWorkspaceAction
         if ($vm instanceof TaskVm) {
             $this->removeWithTaskVm($instance, $vm);
         }
+        if ($instance->runtime()->exists()) {
+            $this->removeCopy($instance);
+        }
 
         throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace removal requires its native ending DAG.', 503);
     }
@@ -111,6 +118,22 @@ final readonly class RemoveTaskWorkspaceAction
         app(TaskVmSlotRuns::class)->startRelease($vm, 'tasks-complete');
 
         throw new TaskWorkspaceWaiting("The release of task VM [{$vm->name}] removes the workspace of Instance [{$instance->name}] when it ends.");
+    }
+
+    /**
+     * A task copy goes through its normal `instance.destroy` with force, the destroy that `task:cancel` admits (docs/cli/task/complete.mmd).
+     * Origin has the approved work, so what else the copy holds goes with it. An open destroy of the copy is reused. When the destroy
+     * succeeds, the group lets go of the copy (TaskCopyLifecycle::destroyed); when it fails, the group keeps it and a later complete retries.
+     */
+    private function removeCopy(Instance $instance): never
+    {
+        $open = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)->where('kind', InstanceDestroyKind::forInstance($instance))
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists();
+        if (! $open) {
+            app(StartInstanceDestroyAction::class)->execute($instance, true, 'tasks');
+        }
+
+        throw new TaskWorkspaceWaiting("The destroy of task copy [{$instance->name}] removes the workspace when it ends.");
     }
 
     /** Asks the group for assistance and keeps the checkout and Instance row for a later retry. */

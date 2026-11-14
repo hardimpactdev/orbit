@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "cf212490d02194e5ef3340491b3d84e373a01e416e679c01d4f8d6494253492a"
+source_sha256 = "fbf3c02af4f9195d66a35464a6616ac095160f6235492980492e751047e59de8"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -63,9 +63,17 @@ cases = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
   "test_names_a_failed_delivery_without_its_output",
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
+  "test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start",
+  "test_a_seed_bundle_with_the_root_stays_as_it_is",
+  "test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start",
+  "test_a_clone_without_the_trust_entry_reads_no_bundle",
+  "test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes",
+  "test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone",
+  "test_a_linked_hosts_file_refuses_the_create",
+  "test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 116
+cost = 124
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -147,3 +155,11 @@ inputs = [
   "test_admits_exactly_the_keys_with_incus_own_and_empty_values" = 1 # estimate: local run on Beast, not a CI measurement
   "test_refuses_a_changed_missing_or_added_key_and_names_it" = 1 # estimate: local run on Beast, not a CI measurement
   "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_seed_bundle_with_the_root_stays_as_it_is" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_clone_without_the_trust_entry_reads_no_bundle" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_a_linked_hosts_file_refuses_the_create" = 1 # estimate: local run on Beast, not a CI measurement
+  "test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes" = 1 # estimate: local run on Beast, not a CI measurement

@@ -11,6 +11,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Operation;
+use Closure;
 
 /** Records validated intent, then submits its single native workflow after commit, or records a no-run success (R1). */
 final readonly class StartOperationAction
@@ -39,12 +40,14 @@ final readonly class StartOperationAction
 
     /**
      * R1: validated intent that needs no Node work becomes a succeeded Operation at once, with no native run.
-     * The caller writes the record change in the same transaction.
+     * The caller writes the record change in the same transaction. `$with` runs once for a new record, after its create took the lock
+     * key and before its success; its answer joins the result.
      *
      * @param  array<string,mixed>  $input
      * @param  array<string,mixed>  $result
+     * @param  (Closure(): array<string,mixed>)|null  $with
      */
-    public function record(string $kind, string $targetType, int $targetId, int $nodeId, array $input, array $result, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null): Operation
+    public function record(string $kind, string $targetType, int $targetId, int $nodeId, array $input, array $result, ?string $triggeredBy, ?string $requestId, ?string $lockKey = null, ?Closure $with = null): Operation
     {
         app(DirectOperation::class)->writer($kind);
         if (($existing = $this->idempotency->replay($kind)) !== null) {
@@ -53,6 +56,7 @@ final readonly class StartOperationAction
         // The lock key refuses a busy target, as a run would; the success releases it at once.
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
         if ($operation->wasRecentlyCreated) {
+            $result = $with === null ? $result : [...$result, ...$with()];
             $this->store->change($operation, ['status' => OperationStatus::Succeeded, 'result' => $result, 'started_at' => now(), 'finished_at' => now(), 'lock_key' => null]);
         }
 
