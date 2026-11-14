@@ -1601,7 +1601,7 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.syscalls.intercept.mknod` | `true` | The inner Incus makes device nodes for its containers |
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
-| `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner range below must fit inside |
+| `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner Incus takes its range from it: the outer size minus 1,000,000 |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
 | `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
@@ -1663,7 +1663,7 @@ It is the normal image with these changes:
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
 | Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
-| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:65536` |
+| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000`. The inner Incus does not read them: see [The ID map size](#the-id-map-size) |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
@@ -1714,7 +1714,7 @@ The first nested-fleet default and every Instance without `inner_volume`, its co
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:65536`, plus `1000:1` for the [workspace mapping](#fleet-rules). The first nested-fleet default, and every default made from a nested-fleet image built before the release that brought the ID map size, gives `1000000:100000000` until its [conversion](#convert-a-default). Either range fits inside the outer map.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The inner Incus does not read them, because the image has no `newuidmap`. It takes its range from its own map instead: base 1,000,000, size the outer size minus 1,000,000 ([The ID map size](#the-id-map-size)).
 
 ### The ID map size
 
@@ -1724,10 +1724,12 @@ Each nested-fleet runtime records the size of its isolated ID map in `idmap_size
 | --- | --- |
 | A new nested-fleet default, or a migrated nested Instance | 101,000,000 |
 | A copy, a plain clone or a task copy | Its default's size at the copy's reservation |
-| A converted default | 1,165,536: the inner Incus's base of 1,000,000, its range of 65,536 and 100,000 spare |
+| A converted default | 1,165,536, which gives the inner fleet 165,536 IDs |
 | A normal container | None: Incus's 65,536 |
 
-The inner fleet's three containers share one range of the outer container. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
+The inner range is the outer size minus 1,000,000, at base 1,000,000. The nested image has no `newuidmap`, so the inner Incus ignores `/etc/subuid` and takes this range from its own process map. The floor is 1,065,536. Below it the inner base moves to 65,536 and every inner file is remapped; below 131,072 the inner Incus gets no map at all and runs only privileged containers.
+
+The inner fleet's three containers share that range. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough; a converted default gives them 165,536. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
 
 A copy keeps its size for its whole life. So copies made before a conversion keep 101,000,000 and still match their start guard, beside new copies of 1,165,536. The [task start check](#the-check-at-a-task-start) and the converge's [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting) read the recorded sizes.
 
@@ -1737,17 +1739,16 @@ An operator converts a nested-fleet default once, outside any task turn. The ste
 
 1. Stop the default. Its copies keep running; their ranges do not change.
 2. Take a container snapshot `pre-idmap-<time>`. Incus needs a free range of the old size for it, for a moment.
-3. Write `/etc/subuid` and `/etc/subgid` in the container: `root:1000000:65536` and `root:1000:1`.
-4. Set `security.idmap.size` to `1165536` on the container.
-5. Run `php artisan gateway:instance-idmap-size <id> 1165536` on the Gateway host. It records the size and clears the default's seed, so clones refuse until a new seed exists.
-6. Start the outer container and its inner containers once by hand. The inner Incus then rewrites the owners of their files on its pool, once.
-7. Deploy the default. Its start passes the guard with the new size, and the deployment takes a new seed. New copies get the small size.
+3. Set `security.idmap.size` to `1165536` on the container.
+4. Run `php artisan gateway:instance-idmap-size <id> 1165536` on the Gateway host. It records the size and clears the default's seed, so clones refuse until a new seed exists.
+5. Start the outer container and its inner containers once by hand. The inner Incus then rewrites the owners of their files on its pool, once.
+6. Deploy the default. Its start passes the guard with the new size, and the deployment takes a new seed. New copies get the small size.
 
-At step 6 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
+At step 5 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
 
-The command refuses a size other than the two above with `instance.idmap_size_invalid`. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone. It holds the default's row lock, as a task copy's admission does.
+The command refuses a size other than the two above with `instance.idmap_size_invalid`, and its message names the floor of 1,065,536. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone. It holds the default's row lock, as a task copy's admission does.
 
-A rollback destroys the copies made after the conversion, restores `pre-idmap-<time>`, which brings back the old config and the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more.
+A rollback destroys the copies made after the conversion, restores `pre-idmap-<time>`, which brings back the old size and so the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more.
 
 #### The seed pair
 
