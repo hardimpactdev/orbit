@@ -23,8 +23,9 @@ use Throwable;
 /**
  * One tick of `task:pr-when-done` (docs/cli/task/pr-when-done.mmd): each task copy group in `pr_when_done` whose work is done, and whose
  * done check recorded `pr_when_done`, gets the publish of that check through the same admission as `task:publish`. A check whose publish
- * failed or was cancelled, by any caller, is not started again. A refusal at admission is kept on the group; only a busy group or a turn
- * that may still run is a quiet skip.
+ * failed or was cancelled, by any caller, is not started again, unless it timed out on a Swamp behavior lock and attempts remain: the
+ * retry is keyed with its attempt. A refusal at admission is kept on the group; only a busy group or a turn that may still run is a quiet
+ * skip.
  *
  * @phpstan-type Result array{group: int, check: int|null, result: string, code: string|null, operation: int|null}
  */
@@ -84,15 +85,18 @@ final readonly class RunTaskPublishWhenDoneAction
         if (($group->publish_refusal['check_id'] ?? null) === $check->id) {
             return self::result($group, $check->id, 'skipped', $group->publish_refusal['code'] ?? null);
         }
-        // A publish of this check that failed or was cancelled, whoever started it, is not started again by the tick.
+        // A publish of this check that failed or was cancelled, whoever started it, is not started again by the tick; one that timed out
+        // on a lock is, with attempts left, under the key of the attempt. An open retry replays under its key; admission refuses any other
+        // open publish of the group as busy.
         $failed = TaskDonePublication::unsuccessful($group, $check);
         if ($failed !== null) {
             return self::result($group, $check->id, 'skipped', TaskDonePublication::code($failed), $failed->id);
         }
-        $key = "pr-when-done:{$group->id}:{$check->id}";
+        $attempt = TaskDonePublication::attempt($group, $check);
+        $suffix = $attempt === 1 ? '' : ':'.$attempt;
         $before = self::lastPublish($group);
         try {
-            $operation = $this->idempotency->under('tasks.publish', $key, hash('sha256', "tasks.publish|{$group->id}|{$check->id}"),
+            $operation = $this->idempotency->under('tasks.publish', "pr-when-done:{$group->id}:{$check->id}{$suffix}", hash('sha256', "tasks.publish|{$group->id}|{$check->id}".($attempt === 1 ? '' : '|'.$attempt)),
                 fn () => $this->publish->execute($group, TaskDonePublication::for($group, $check), self::Caller, (string) Str::uuid(), doneCheck: $check->id, byItself: true));
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, self::QuietCodes, true)) {
