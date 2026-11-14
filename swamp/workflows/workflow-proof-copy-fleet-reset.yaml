@@ -50,7 +50,8 @@ jobs:
               ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
-      # The phase's result file, with the reset's seconds when it ran.
+      # The phase's result file, with the reset's seconds when it ran, then one line `reason=` that the batch report shows when the reset
+      # failed: the play's `detail` or code, already safe to show, at most 300 characters, with no quote, backslash or control character.
       - name: result
         labels: {role: swamp}
         dependsOn: [{step: Reset the inner fleet, condition: {type: always}}]
@@ -60,7 +61,7 @@ jobs:
           behaviorName: ${{ "proof-copy-fleet-reset-result" }}
           methodName: execute
           inputs:
-            run: timeout 5 /opt/orbit/ansible/venv/bin/python -I -c 'import json,os,sys; r=os.environ["ORBIT_RUN"]; d=json.load(open(r+"/result.json")); f=r+"/reset_ms"; d.update({"reset_seconds":round(int(open(f).read())/1000,1)} if os.path.exists(f) else {}); sys.stdout.write(json.dumps(d))'
+            run: timeout 5 /opt/orbit/ansible/venv/bin/python -I -c 'import json,os,sys; r=os.environ["ORBIT_RUN"]; d=json.load(open(r+"/result.json")); f=r+"/reset_ms"; d.update({"reset_seconds":round(int(open(f).read())/1000,1)} if os.path.exists(f) else {}); why=str(d.get("detail") or d.get("error_code") or ""); why="".join(" " if c<" " else "/" if c=="\\" else chr(39) if c==chr(34) else c for c in why)[:300].strip(); sys.stdout.write(json.dumps(d)+("\nreason="+why if why else ""))'
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
       - name: cleanup

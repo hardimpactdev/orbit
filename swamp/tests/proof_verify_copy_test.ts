@@ -183,13 +183,42 @@ Deno.test("every batch of a copy resets the fleet, then runs its setup and cases
     });
 });
 
-Deno.test("a failed reset stops the batch and reports its cases unrun", () => {
+Deno.test("a failed reset stops the batch and reports its cases unrun with the reason of the reset", () => {
     const inputs = childInputs(prefix, true, reset);
-    const failed = { restore: { status: "skipped", outputs: {} }, reset: { status: "failed", outputs: {} }, setup: { status: "skipped", outputs: {} } };
-    assertEquals(guard("batch", inputs, failed), true);
-    const lines = String(cel((step(child, "report").task.inputs!.env as unknown as Record<string, string>).LINES, { inputs, steps: failed })).split("\n").map((line) => JSON.parse(line));
+    const report = (resetOutputs: Record<string, unknown>) => {
+        const failed = { restore: { status: "skipped", outputs: {} }, reset: { status: "failed", outputs: resetOutputs }, setup: { status: "skipped", outputs: {} } };
+        assertEquals(guard("batch", inputs, failed), true);
+        return String(cel((step(child, "report").task.inputs!.env as unknown as Record<string, string>).LINES, { inputs, steps: failed })).split("\n").map((line) => JSON.parse(line));
+    };
+    // The child's result step prints the result file, then the safe reason (proof-copy-fleet-reset, `result`).
+    const result = { stdout: JSON.stringify({ error_code: "instance.container_fleet_reset_failed", detail: "x" }) +
+        "\nreason=Check the restores: nested-app-prod did not restore base: Error: Snapshot not found" };
+    const lines = report({ result });
     assertEquals(lines.map((line) => [line.id, line.verdict, line.cause]),
         [["new-restricted-allow", "unrun", "infrastructure"], ["already-applied", "unrun", "infrastructure"]]);
+    assertEquals(lines.map((line) => line.failed),
+        Array(2).fill(["run stopped: the fleet reset failed: Check the restores: nested-app-prod did not restore base: Error: Snapshot not found"]));
+    // A child that kept no output still names the reset.
+    assertEquals(report({}).map((line) => line.failed[0]), Array(2).fill("run stopped: the fleet reset failed"));
+    // A batch whose own setup failed keeps its message.
+    const setupFailed = { restore: { status: "skipped", outputs: {} }, reset: { status: "succeeded", outputs: {} }, setup: { status: "succeeded", outputs: { stdout: '{"setup": "failed"}' } } };
+    const setupLines = String(cel((step(child, "report").task.inputs!.env as unknown as Record<string, string>).LINES, { inputs, steps: setupFailed })).split("\n");
+    assertEquals(JSON.parse(setupLines[0]).failed, ["run stopped: the batch setup did not succeed"]);
+});
+
+Deno.test("the reset child prints the reason of a failure on a line of its own, safe inside a JSON string", () => {
+    const folder = Deno.makeTempDirSync();
+    try {
+        Deno.writeTextFileSync(`${folder}/result.json`, JSON.stringify({ error_code: "instance.container_fleet_reset_failed", detail: 'Check the restores: "x" a\\b\nnext' }));
+        Deno.writeTextFileSync(`${folder}/reset_ms`, "15900");
+        const run = String(step(resetFlow, "result").task.inputs!.run).replace("/opt/orbit/ansible/venv/bin/python", "python3");
+        const done = new Deno.Command("sh", { args: ["-c", run], env: { ORBIT_RUN: folder } }).outputSync();
+        const [first, reason] = new TextDecoder().decode(done.stdout).split("\n");
+        assertEquals(JSON.parse(first).reset_seconds, 15.9);
+        assertEquals(reason, "reason=Check the restores: 'x' a/b next");
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
 });
 
 Deno.test("a later batch of a task VM restores, then runs its setup as the SSH user", () => {

@@ -159,6 +159,8 @@ jobs:
   steps:
   # The verdict lines of the batch. A case with no line gets one of its own, so every case has one: unrun when the batch step printed nothing (the batch was
   # stopped before it), failed when it printed lines but none for the case (the runner stopped, or the output was cut).
+  # When the reset of a copy's fleet failed, the line says so with the reset's reason (its `reason=` line: safe to show, at most 300
+  # characters, no quote or backslash), so the author sees why the batch did not run.
   - name: report
     labels: {role: swamp}
     task:
@@ -170,4 +172,4 @@ jobs:
         run: |
           printf '%s\n' "$LINES"
         env:
-          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? "run stopped: the batch setup did not succeed" : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'
+          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? (steps.?reset.?status.orValue("") == "failed" ? "run stopped: the fleet reset failed" + [steps.?reset.?outputs.?result.?stdout.orValue("").split("\n").filter(l, l.startsWith("reason="))].map(r, size(r) > 0 ? ": " + r[0].split("reason=", 2)[1] : "")[0] : "run stopped: the batch setup did not succeed") : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'

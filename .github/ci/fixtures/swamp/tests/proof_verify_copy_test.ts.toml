@@ -1,5 +1,5 @@
 order = 1430
-source_sha256 = "24c268e8bd5ab8eb3f703e8f5e8c5b45175920fd6fed5d2bd3d95111edb0c34d"
+source_sha256 = "d413a8a98a5ace800764695a15560c7cdaf80fc860ce680b9e60dbe9f834fd89"
 cases = [
   "a copy reads its plan and token age as agent in the copy, through root on its Node",
   "the copy prefix is the fixed shape of a copy turn, names from the intent only, and closed stdin",
@@ -10,7 +10,8 @@ cases = [
   "a task VM still restores first and last and passes no prefix",
   "in a copy the steps that run there lock on the copy; on a task VM they keep the Node's lock",
   "every batch of a copy resets the fleet, then runs its setup and cases as agent in the copy",
-  "a failed reset stops the batch and reports its cases unrun",
+  "a failed reset stops the batch and reports its cases unrun with the reason of the reset",
+  "the reset child prints the reason of a failure on a line of its own, safe inside a JSON string",
   "a later batch of a task VM restores, then runs its setup as the SSH user",
   "the reset child writes the intent, runs fleet_reset under a timeout on the copy's lock, records its seconds and cleans up",
   "the intent of the reset holds what the play of the fleet reads",
