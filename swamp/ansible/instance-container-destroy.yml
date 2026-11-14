@@ -48,6 +48,21 @@
               when: present | length > 0
               ansible.builtin.command: { argv: "{{ incus + ['delete', '--force', container.name] }}", stdin: "" }
               changed_when: true
+            # Only a removal whose runtime recorded an inner volume names one (docs/reference/development-containers.md#the-inner-volume).
+            - name: Read the inner volume
+              when: container.inner_volume is defined
+              ansible.builtin.command:
+                argv: [incus, query, --, "/1.0/storage-pools/{{ container.pool }}/volumes/custom/{{ container.inner_volume }}?project={{ container.project }}"]
+                stdin: ""
+              register: destroy_inner_volume
+              changed_when: false
+              failed_when: false
+            - name: Delete the inner volume with its snapshots
+              when: container.inner_volume is defined and destroy_inner_volume.rc == 0
+              ansible.builtin.command:
+                argv: "{{ incus + ['storage', 'volume', 'delete', container.pool, container.inner_volume] }}"
+                stdin: ""
+              changed_when: true
             - name: Read the ACL inventory in the default project
               ansible.builtin.command: { argv: [incus, query, --, "/1.0/network-acls?project=default&recursion=1"], stdin: "" }
               register: destroy_acls
@@ -94,6 +109,9 @@
                   - >-
                     destroy_volumes.stdout | from_json | selectattr('name', 'equalto', container.name)
                     | selectattr('type', 'equalto', 'container') | list | length == 0
+                  - >-
+                    container.inner_volume is not defined or destroy_volumes.stdout | from_json
+                    | selectattr('name', 'equalto', container.inner_volume) | selectattr('type', 'equalto', 'custom') | list | length == 0
                 fail_msg: instance.removal_incomplete
                 quiet: true
         - name: Write the phase result

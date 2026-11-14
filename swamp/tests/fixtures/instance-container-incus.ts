@@ -49,8 +49,16 @@ if (args[0] === "query") {
   const parts = route.split("/");
   if (parts[0] === "network-acls") {
     console.log(JSON.stringify(parts[1] ? state["network-acls"].find((acl: {name: string}) => acl.name === parts[1]) : state["network-acls"]));
+  } else if (parts[0] === "storage-pools" && parts[3] === "container") {
+    // A container's root volume: the keys a test gives it in `volume_config`.
+    if (!state.containers[parts[4]]) fail("Storage pool volume not found");
+    console.log(JSON.stringify({ name: parts[4], type: "container", config: state.containers[parts[4]].volume_config ?? {} }));
+  } else if (parts[0] === "storage-pools" && parts[3] === "custom") {
+    if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
+    console.log(JSON.stringify({ name: parts[4], type: "custom", config: state.volumes[parts[4]].config }));
   } else if (parts[0] === "storage-pools") {
-    console.log(JSON.stringify(Object.keys(state.containers).map((name) => ({ name, type: "container" }))));
+    console.log(JSON.stringify([...Object.keys(state.containers).map((name) => ({ name, type: "container" })),
+      ...Object.keys(state.volumes ?? {}).map((name) => ({ name, type: "custom" }))]));
   } else if (parts[0] === "instances") {
     const container = state.containers[parts[1]];
     if (!container) fail("Instance not found");
@@ -75,7 +83,12 @@ if (args[0] === "query") {
         devices[name] ??= {};
         devices[name][device.slice(comma + 1, equal)] = device.slice(equal + 1);
       }
-      Object.assign(devices, container.added ?? {});
+      // A device added with `config device add`, with its keys as Incus shows them.
+      // A test may also give a device its keys directly.
+      for (const [added, device] of Object.entries(container.added ?? {}) as [string, {type: string; settings?: string[]}][]) {
+        devices[added] = device.settings === undefined ? device as unknown as Record<string, string> : {type: device.type,
+          ...Object.fromEntries(device.settings.map((setting) => [setting.slice(0, setting.indexOf("=")), setting.slice(setting.indexOf("=") + 1)]))};
+      }
       console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
         expanded_devices: devices, expanded_config: {...Object.fromEntries((container.config ?? []).map((value: string) => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; })), ...(container.inherited_config ?? {})}, config: { "volatile.uuid": container.uuid } }));
     }
@@ -155,6 +168,20 @@ if (family === "list") {
   state.containers[name] = { project, source: from, status: "Stopped",
     devices: Object.entries(local).flatMap(([device, settings]) => Object.entries(settings).map(([key, value]) => `${device},${key}=${value}`)),
     config, snapshots: [], uuid: uuid(name) };
+} else if (family === "storage" && args[1] === "volume" && args[2] === "create") {
+  // A custom volume: its keys, and the `volatile.uuid` Incus writes itself.
+  const [, , , pool, name, ...settings] = args;
+  state.volumes ??= {};
+  if (state.volumes[name]) fail("Volume by that name already exists");
+  state.volumes[name] = { pool, project, config: {"volatile.uuid": uuid(name),
+    ...Object.fromEntries(settings.map((setting) => [setting.slice(0, setting.indexOf("=")), setting.slice(setting.indexOf("=") + 1)]))} };
+} else if (family === "storage" && args[1] === "volume" && args[2] === "delete") {
+  // Incus deletes a custom volume with its snapshots; a volume that a container still uses stays.
+  const name = args[4];
+  if (!state.volumes?.[name]) fail("Storage pool volume not found");
+  if (Object.values(state.containers).some((row) => Object.values((row as {added?: Record<string, {settings?: string[]}>}).added ?? {})
+    .some((device) => device.settings?.includes(`source=${name}`)))) fail("Storage volume is still in use");
+  delete state.volumes[name];
 } else if (family === "config" && args[1] === "device" && args[2] === "add") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};
@@ -358,6 +385,15 @@ if (family === "list") {
     if (command.includes("seed-complete")) state.node_seed_pending = false;
     save();
     console.log(JSON.stringify({status: converted ? "converted" : "unchanged", versions: ["24.22.1"], pins: [], seed_refresh_required: state.node_seed_pending === true}));
+    Deno.exit(0);
+  }
+  // The inner Incus of a nested-fleet container: its pools, which the create makes on the inner volume.
+  if (command[0] === "incus" && ["admin", "storage"].includes(command[1])) {
+    state.inner_pools ??= {};
+    state.inner_pools[name] ??= {};
+    if (command[1] === "storage" && command[2] === "show" && !state.inner_pools[name][command[3]]) fail("Storage pool not found");
+    if (command[1] === "storage" && command[2] === "create") state.inner_pools[name][command[3]] = command.slice(4);
+    save();
     Deno.exit(0);
   }
   if (command[0] === "findmnt" && command.at(-1) === "/run") {

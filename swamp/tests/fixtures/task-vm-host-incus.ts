@@ -146,6 +146,9 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
         environment: { server_version: state.server_version ?? "7.0.1", server_name: state.server_name ?? "fixture-node", server_pid: state.cli_server_pid ?? Number(Deno.readTextFileSync(`${folder}/daemon.pid`)) },
       }),
     );
+  } else if (resource === "storage-pools" && route.split("/")[2] === "volumes" && route.split("/")[3] === "container") {
+    // A container's root volume, which the nested start guard reads: the keys a test gives it, none by default.
+    console.log(JSON.stringify({ name: route.split("/")[4], type: "container", config: state.root_volume_config ?? {} }));
   } else if (resource === "images") {
     const alias = decodeURIComponent(path.split("?")[0].split("/").at(-1)!);
     const bodyIndex = args.indexOf("--data");

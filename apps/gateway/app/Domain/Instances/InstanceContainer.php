@@ -162,6 +162,9 @@ final readonly class InstanceContainer
             'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port,
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
+            // Only a new nested-fleet default gets an inner volume; a clone copies its default (docs/reference/development-containers.md#the-inner-volume).
+            'inner_volume' => $source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject
+                ? NestedFleetInnerVolume::name(self::name($instance)) : null,
         ]);
     }
 
@@ -220,6 +223,8 @@ final readonly class InstanceContainer
             'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
             ...($runtime->incus_project === InstancePlacement::NestedProject
                 ? ['allowed_devices' => $this->allowedDevices($instance, $runtime), 'club_key' => NestedFleetClubKey::intent()] : []),
+            // Only a runtime that records an inner volume names it; absent, every step keeps the directory pool of Instance 2454.
+            ...(NestedFleetInnerVolume::intent($runtime) === null ? [] : ['inner_volume' => NestedFleetInnerVolume::intent($runtime)]),
             'acl' => $runtime->container_name, 'nic_acl' => InstanceHostIntent::NicAcl,
             'bridge_cidr' => ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')),
             'bridge_admitted_at' => $admittedAt,
@@ -270,7 +275,7 @@ final readonly class InstanceContainer
 
     /**
      * The exact effective devices that the start guard of a nested-fleet container permits: its root disk, NIC, the two read-only
-     * shared folders and a clone's T3 proxy (docs/reference/development-containers.md#the-container).
+     * shared folders, a clone's T3 proxy and the disk of an inner volume (docs/reference/development-containers.md#the-container).
      *
      * @return array<string, array<string, string>>
      */
@@ -288,6 +293,7 @@ final readonly class InstanceContainer
             ...($runtime->t3_port === null ? [] : [self::T3Device => ['type' => 'proxy',
                 'listen' => 'tcp:'.ValidatedData::string($instance->node->wireguard_ip).':'.$runtime->t3_port,
                 'connect' => 'tcp:'.$runtime->bridge_address.':'.InstanceHostIntent::T3Port, 'nat' => 'true']]),
+            ...NestedFleetInnerVolume::allowedDevice($runtime),
         ];
     }
 

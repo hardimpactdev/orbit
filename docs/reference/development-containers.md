@@ -1590,7 +1590,7 @@ While that record exists, the create of a nested-fleet default refuses with `ins
 The fleet runs under the inner Incus:
 
 - three nested containers, `nested-gateway`, `nested-app-dev` and `nested-app-prod`;
-- the inner storage pool, btrfs on the [inner volume](#the-inner-volume). Instance 2454 is older: its directory pool `topology-seed` is in the outer root disk;
+- the inner storage pool: today the directory pool `topology-seed` in the outer root disk of Instance 2454. A new nested-fleet default gets the empty btrfs pool `inner` on its [inner volume](#the-inner-volume); the fleet moves there in a later step;
 - the inner bridge `oe-nested` and the fleet's WireGuard network, which the nested Gateway leads; the outer container joins it as the operator.
 
 A delegated ZFS dataset is not used: a copy would need one host clone per child dataset, and the inner Incus records the dataset's host name, which a copy changes. [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers) has the decision.

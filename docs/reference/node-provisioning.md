@@ -28,7 +28,7 @@ On a Node with nested-fleet hosting on, a failed build of the [nested-fleet imag
 
 A deployment of a nested-fleet default compares its inner fleet with the [fleet rules](/reference/development-containers#fleet-rules) before it changes anything, and refuses with `instance.container_fleet_drift` where they differ in a rule Orbit does not write. The create of its clone runs the same check, then starts the fleet and brings up the operator tunnel; a failed fleet start names only why, because a clone took no seed.
 
-In the nested-fleet project the clone probe also passes the [nested start guard](/reference/development-containers#the-container), an allowlist of its config and devices.
+In the nested-fleet project the clone probe also passes the [nested start guard](/reference/development-containers#the-container), an allowlist of its config and devices. The guard also reads the probe's root volume and refuses it when it is delegated to the container. The converge itself makes no volume: an [inner volume](/reference/development-containers#the-inner-volume) belongs to one Instance and its create.
 
 Migration retirement protects the Node's remaining checkouts: an owner with dependents other than the moving worktree or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
 

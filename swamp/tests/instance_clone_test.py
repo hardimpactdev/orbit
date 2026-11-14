@@ -119,13 +119,24 @@ class BranchSelectionTest(unittest.TestCase):
 
 
 class CloneTest(unittest.TestCase):
-    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None):
+    def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None):
         calls = []
         self.inputs = {}
         self.decoding = {}
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "rootfs"
+            # The nested guard reads the volumes of its disks with `incus query`: this fake answers from `volumes`, by
+            # `<kind>/<name>`, and gives any other volume no keys.
+            (Path(folder) / "bin").mkdir()
+            (Path(folder) / "volumes.json").write_text(json.dumps(volumes or {}))
+            (Path(folder) / "bin" / "incus").write_text(
+                "#!/usr/bin/env python3\nimport json, sys\n"
+                f"volumes = json.load(open({str(Path(folder) / 'volumes.json')!r}))\n"
+                "route = sys.argv[-1].split('?')[0].split('/volumes/')[1]\n"
+                "print(json.dumps({'config': volumes.get(route, {})}))\n")
+            (Path(folder) / "bin" / "incus").chmod(0o755)
+            guard_env = {**os.environ, "PATH": str(Path(folder) / "bin") + os.pathsep + os.environ["PATH"]}
             for path, content in (rootfs or {}).items():
                 (root / path).parent.mkdir(parents=True, exist_ok=True)
                 if content.startswith("->"):
@@ -165,7 +176,9 @@ class CloneTest(unittest.TestCase):
                 self.decoding[id(argv)] = kwargs.get("errors")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
-                if argv[:2] == ["python3", "-c"] or argv[0] == "openssl":
+                if argv[:2] == ["python3", "-c"]:
+                    return real_run(argv, **{**kwargs, "env": {**kwargs.get("env", os.environ), "PATH": guard_env["PATH"]}})
+                if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
                 if argv[0] == "curl":
@@ -753,7 +766,10 @@ class CloneTest(unittest.TestCase):
             "autostart": ("boot.autostart", "true"),
             "user-key": ("user.note", "x"),
         }
-        for damage in ["clean", *damages, "missing-isolation", "extra-device", "changed-host-path", "writable-share"]:
+        # A seed copied from a default with an inner volume carries its disk: a clone has no inner volume, so the guard refuses it.
+        inner = {"type": "disk", "pool": "orbit-instances", "source": "inner-1", "path": "/srv/inner-pool"}
+        for damage in ["clean", *damages, "missing-isolation", "extra-device", "changed-host-path", "writable-share",
+                       "delegated-root", "inner-volume"]:
             def inherited(read):
                 # What Incus adds itself, and the project profile's environment.
                 read["expanded_config"] = {**config, "volatile.uuid": "abc-123", "image.os": "ubuntu",
@@ -770,8 +786,13 @@ class CloneTest(unittest.TestCase):
                     read["expanded_devices"]["host"] = {"type": "disk", "source": "/fast", "path": "/host"}
                 elif damage == "writable-share":
                     del read["expanded_devices"]["orbit-runtime"]["readonly"]
+                elif damage == "inner-volume":
+                    read["expanded_devices"]["inner-pool"] = dict(inner)
             with self.subTest(damage=damage):
-                calls, _, error = self.clone(inherited, overrides={"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config})
+                # The root volume read by the guard; delegated, it would hand the container ZFS on its dataset.
+                volumes = {"container/instance-7": {"zfs.delegate": "true"}} if damage == "delegated-root" else {}
+                calls, _, error = self.clone(inherited, overrides={"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config},
+                                                  volumes=volumes)
                 starts = [call for call in calls if "start" in call]
                 # The copy writes the same config that the guard admits.
                 copied = next(call for call in calls if "copy" in call)
@@ -937,6 +958,41 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
             self.invoke("PRIVATE-STDERR", phase="t3", fail="git"),
             "instance.container_t3_failed: command git exited 7\n",
         )
+
+
+class InnerVolumeGuardTest(unittest.TestCase):
+    """The nested guard's volume check (docs/reference/development-containers.md#the-inner-volume), with the volumes it reads given."""
+
+    INNER = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mount_options": "user_subvol_rm_allowed,discard",
+             "security.shifted": "true", "size": "30GiB"}
+
+    def check(self, inner=None, root=None, allowed=True):
+        namespace = {}
+        exec(compile((NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], "instance_nested.py", "exec"), namespace)
+        devices = {"root": {"type": "disk", "path": "/", "pool": "orbit-instances"},
+                   "orbit-runtime": {"type": "disk", "source": "/opt/orbit-runtime", "path": "/opt/orbit-runtime"},
+                   "inner-pool": {"type": "disk", "pool": "orbit-instances", "source": "inner-7", "path": "/srv/inner-pool"}}
+        volumes = {"container/instance-7": root or {}, "custom/inner-7": inner}
+        read = lambda container, device: volumes.get(("container/" + container["name"]) if device["path"] == "/" else "custom/" + device["source"])
+        return namespace["nested_unsafe_volume"]({"name": "instance-7", "project": "orbit-instances-nested", "expanded_devices": devices},
+                                                 {"inner-pool": self.INNER} if allowed else {}, read)
+
+    def test_admits_exactly_the_keys_with_incus_own_and_empty_values(self):
+        self.assertEqual(self.check({**self.INNER, "volatile.uuid": "x", "volatile.idmap.last": "[]", "block.create_options": ""}), "")
+
+    def test_refuses_a_changed_missing_or_added_key_and_names_it(self):
+        changed = {**self.INNER, "block.mount_options": "discard"}
+        missing = {key: value for key, value in self.INNER.items() if key != "security.shifted"}
+        cases = [(changed, "block.mount_options"), (missing, "security.shifted"), ({**self.INNER, "block.create_options": "-O no-holes"}, "block.create_options"),
+                 ({**self.INNER, "size": "300GiB"}, "size"), ({**self.INNER, "zfs.delegate": "true"}, "zfs.delegate")]
+        for inner, key in cases:
+            with self.subTest(key=key):
+                self.assertEqual(self.check(inner), "volume inner-pool " + key)
+
+    def test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name(self):
+        self.assertEqual(self.check(self.INNER, root={"zfs.delegate": "true"}), "volume root zfs.delegate")
+        self.assertEqual(self.check(None), "volume inner-pool unreadable")
+        self.assertEqual(self.check(self.INNER, allowed=False), "volume inner-pool")
 
 
 class T3PhaseTest(unittest.TestCase):
