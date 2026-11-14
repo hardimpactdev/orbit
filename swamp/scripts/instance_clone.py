@@ -659,6 +659,8 @@ def main():
                 own_units = {unit["name"] for unit in container.get("processes", [])}
                 own_ids = {str(unit["id"]) for unit in container.get("processes", [])}
                 links, remove = [], []
+                # What each folder held: the mail units below are pushed only where the copy lacks them.
+                listed = {}
                 for index, directory in enumerate(
                     [
                         "/etc/systemd/system/multi-user.target.wants",
@@ -675,7 +677,8 @@ def main():
                             "Error: file does not exist", "Error: not found", "Error: Not Found", "Error: Path not found"):
                             raise RuntimeError("schedule.container_clone_cleanup_failed")
                         continue
-                    for item in json.loads(response.stdout):
+                    listed[directory] = json.loads(response.stdout)
+                    for item in listed[directory]:
                         if (
                             (
                                 index == 0
@@ -751,6 +754,21 @@ def main():
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
                 proxy_drop_ins()
+                # The Node's mail units and their socket links, the same for every copy, before the first start: a copy of a default that
+                # has none (made before mail) then starts its sockets at boot, and the mail part below reads them as in place
+                # (docs/reference/development-containers.md#development-mail). A unit the copy holds is left to that part's compare.
+                units_folder = "/etc/systemd/system"
+                wants_folder = units_folder + "/sockets.target.wants"
+                for unit in container.get("mail_units", []):
+                    if unit["name"] not in listed.get(units_folder, []):
+                        change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + units_folder + "/" + unit["name"]],
+                               unit["content"])
+                sockets = [unit["name"] for unit in container.get("mail_units", []) if unit["name"].endswith(".socket")]
+                if sockets and wants_folder not in listed:
+                    change(project + ["file", "create", "--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755", name + wants_folder])
+                for socket in sockets:
+                    if socket not in listed.get(wants_folder, []):
+                        change(project + ["file", "create", "--type=symlink", name + wants_folder + "/" + socket, units_folder + "/" + socket])
             boot_timer.__exit__()
             # 1 when the copy's boot starts T3: this run carried the model environment and the copy was not running yet.
             timings["t3_files"] = 0

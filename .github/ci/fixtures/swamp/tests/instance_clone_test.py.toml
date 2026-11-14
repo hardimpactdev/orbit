@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "4ffb47ef84bda81b65e5c9b0f962a7f70f159f0daa2ae9d1c763f248140804ef"
+source_sha256 = "c1d1db14c38dc1686b5ff2f268a6269a98142091d2e85f0a5b1cb566a5a2f198"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -20,6 +20,8 @@ cases = [
   "test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl",
   "test_the_container_phase_prints_the_seconds_of_each_part",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
+  "test_mail_units_and_socket_links_reach_a_copy_without_them_before_its_first_start",
+  "test_a_copy_that_holds_the_mail_units_and_links_gets_no_mail_write",
   "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last",
   "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line",
   "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start",
@@ -96,7 +98,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 149
+cost = 151
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -209,3 +211,5 @@ inputs = [
 "test_a_failed_command_names_what_ran_and_keeps_only_public_stderr" = 1 # added 2026-11-14 (clone-services); local under 0.1 s
 "test_the_phase_is_one_guest_exec_and_a_failure_names_its_command_and_the_end_of_its_stderr" = 1 # added 2026-11-14 (clone-services); local under 0.1 s
 "test_the_detail_holds_no_private_value_and_the_end_of_a_long_stderr" = 1 # added 2026-11-14 (clone-services); local under 0.1 s
+"test_mail_units_and_socket_links_reach_a_copy_without_them_before_its_first_start" = 1 # added 2026-11-14 (create-baked-2); local under 1 s
+"test_a_copy_that_holds_the_mail_units_and_links_gets_no_mail_write" = 1 # added 2026-11-14 (create-baked-2); local under 1 s

@@ -543,6 +543,37 @@ class CloneTest(unittest.TestCase):
         return [call for call in calls if call[3:5] in (["file", "push"], ["file", "create"])
                 and any(call[-1] == "instance-7" + path for path in self.T3_TARGETS)]
 
+    MAIL_UNITS = [{"name": "orbit-mail-1025.socket", "content": "[Socket]\nListenStream=127.0.0.1:1025\n"},
+                  {"name": "orbit-mail-1025.service", "content": "[Service]\nExecStart=proxy 1025\n"},
+                  {"name": "orbit-mail-2525.socket", "content": "[Socket]\nListenStream=127.0.0.1:2525\n"},
+                  {"name": "orbit-mail-2525.service", "content": "[Service]\nExecStart=proxy 2525\n"}]
+
+    def test_mail_units_and_socket_links_reach_a_copy_without_them_before_its_first_start(self):
+        # Project 68's shape: a default made before mail holds no mail units, and no sockets.target.wants folder.
+        calls, _, error = self.clone_with({}, rootfs={"etc/systemd/system/.keep": ""}, overrides={"mail_units": self.MAIL_UNITS})
+        self.assertEqual(error, "")
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        writes = [call for call in calls if call[3:5] in (["file", "push"], ["file", "create"]) and "orbit-mail-" in call[-1] + call[-2]
+                  or call[3:5] == ["file", "create"] and call[-1].endswith("sockets.target.wants")]
+        self.assertEqual([call[-1] if call[5] != "--type=symlink" else call[-2] for call in writes], [
+            "instance-7/etc/systemd/system/orbit-mail-1025.socket", "instance-7/etc/systemd/system/orbit-mail-1025.service",
+            "instance-7/etc/systemd/system/orbit-mail-2525.socket", "instance-7/etc/systemd/system/orbit-mail-2525.service",
+            "instance-7/etc/systemd/system/sockets.target.wants",
+            "instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket",
+            "instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket"])
+        self.assertEqual([self.inputs[id(call)] for call in writes[:4]], [unit["content"] for unit in self.MAIL_UNITS])
+        self.assertEqual(writes[4][5:12], ["--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755"])
+        self.assertEqual([call[-1] for call in writes[5:]], ["/etc/systemd/system/orbit-mail-1025.socket", "/etc/systemd/system/orbit-mail-2525.socket"])
+        self.assertTrue(all(calls.index(call) < start for call in writes))
+
+    def test_a_copy_that_holds_the_mail_units_and_links_gets_no_mail_write(self):
+        held = {"etc/systemd/system/" + unit["name"]: unit["content"] for unit in self.MAIL_UNITS}
+        held |= {"etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket": "->/etc/systemd/system/orbit-mail-1025.socket",
+                 "etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket": "->/etc/systemd/system/orbit-mail-2525.socket"}
+        calls, _, error = self.clone_with({}, rootfs=held, overrides={"mail_units": self.MAIL_UNITS})
+        self.assertEqual(error, "")
+        self.assertEqual([call for call in calls if call[3:5] in (["file", "push"], ["file", "create"]) and "orbit-mail-" in " ".join(call)], [])
+
     def test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last(self):
         # A Gateway that frames the model environment after the credential line: the copy's boot starts T3.
         transcript = []
