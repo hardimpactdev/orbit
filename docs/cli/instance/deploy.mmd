@@ -109,7 +109,7 @@ sequenceDiagram
     end
     SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
     %%> What it does:
-    %%> - fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle
+    %%> - fetches into the Node's mirror with the read token and pushes the branch into the container as a bundle that holds only what the workspace lacks
     %%> - a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
     SW->>N: Check out in the container<br/>Ansible · tags checkout
     %%> What it does:

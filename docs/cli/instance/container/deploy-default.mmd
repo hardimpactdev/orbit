@@ -37,6 +37,7 @@ sequenceDiagram
   SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
   %%> What it does:
   %%> - fetches into the Node's mirror and pushes the branch into the container as a bundle; the token never enters the container
+  %%> - the bundle holds only what the workspace lacks: its prerequisite is the newest commit the branch shares with the workspace's HEAD, or the tip's parent when the workspace already holds the tip; a workspace whose HEAD the mirror does not hold (local commits) or that has none (a first deploy) gets the whole branch; the checkout sees the same refs as with the whole branch, so its refusals stay as they are
   %%> - a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
