@@ -218,7 +218,8 @@ jobs:
         node_id: ${{ inputs.intent.node_id }}
         group_id: ${{ inputs.intent.group_id }}
         phase: preflight
-        intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} }}'
+        # Swamp resolves this at run start also for a task VM, whose intent has no workspace: the map is empty then.
+        intent: '${{ "workspace" in inputs.intent ? {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} : {} }}'
     dependsOn:
     - step: Create publication scratch
       condition:
@@ -587,8 +588,9 @@ jobs:
           GIT_CONFIG_GLOBAL: /dev/null
           GIT_CONFIG_NOSYSTEM: '1'
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
-          ORBIT_START: ${{ inputs.intent.workspace.start }}
-          ORBIT_PATH: ${{ inputs.intent.workspace.environment_path }}
+          # Resolved at run start also for a task VM, whose intent has no workspace.
+          ORBIT_START: '${{ "workspace" in inputs.intent ? inputs.intent.workspace.start : "" }}'
+          ORBIT_PATH: '${{ "workspace" in inputs.intent ? inputs.intent.workspace.environment_path : "" }}'
     dependsOn:
     - step: Check imported commit
       condition:
@@ -728,11 +730,13 @@ jobs:
           ORBIT_REPOSITORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/repository.git" }}
           ORBIT_DIRECTORY: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
           ORBIT_FILE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/environment" }}
-          ORBIT_START: ${{ inputs.intent.workspace.start }}
-          ORBIT_ENVIRONMENT: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+          # Resolved at run start also for a task VM, whose intent has no workspace and whose run has no environment copy: it names
+          # the push header's key instead, which only a run of this skipped step would read.
+          ORBIT_START: '${{ "workspace" in inputs.intent ? inputs.intent.workspace.start : "" }}'
+          ORBIT_ENVIRONMENT: '${{ vault.get(inputs.execution_secrets.git_authorization.vault, "workspace" in inputs.intent ? inputs.execution_secrets.environment.key : inputs.execution_secrets.git_authorization.key) }}'
           # Without a Club key the step reads the render again and ORBIT_NESTED is empty, so it adds nothing.
-          ORBIT_NESTED: '${{ has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
-          ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.environment.vault, has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
+          ORBIT_NESTED: '${{ "workspace" in inputs.intent && has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
+          ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.git_authorization.vault, !("workspace" in inputs.intent) ? inputs.execution_secrets.git_authorization.key : has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
           ORBIT_PULL: '${{ inputs.intent.pull_request == null ? "" : "1" }}'
         ignoreExitCode: true
     dependsOn:

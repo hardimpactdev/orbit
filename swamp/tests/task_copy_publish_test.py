@@ -284,8 +284,10 @@ class TaskCopyPublishTest(unittest.TestCase):
                    step: {'status': 'succeeded', 'outputs': {'exitCode': 3}}}
         self.assertEqual(self.cel(read, 'directory', self.copy, outputs), '/tmp/orbit-task-publish-abc')
         self.assertEqual(self.cel(read, 'exit_code', self.copy, outputs), 3)
+        # One whole vault.get; a task VM's run, which has no .env render, names the push header's copy, which its skipped step never reads.
         self.assertEqual(steps[step]['task']['inputs']['env']['ORBIT_ENVIRONMENT'],
-                         '${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}')
+                         '${{ vault.get(inputs.execution_secrets.git_authorization.vault, "workspace" in inputs.intent'
+                         ' ? inputs.execution_secrets.environment.key : inputs.execution_secrets.git_authorization.key) }}')
 
     ENV = 'APP_NAME=Orbit\nAPP_DEBUG=true\nDB_PORT=8080\nexport APP_KEY="base64:c2VjcmV0LWtleS1ub3QtcmVhbA=="\r\nDB_PASSWORD=\'pa55-w0rd-xyz\'\nPEM="line-one-abcdefgh\\nline-two-ijklmnop"\n# old token-in-a-comment-123\n'
 
@@ -461,12 +463,15 @@ class TaskCopyPublishTest(unittest.TestCase):
         probe = self.root / 'probe.yaml'
         probe.write_text(yaml.safe_dump({'jobs': [{'name': 'j', 'steps': [{'name': 'probe', 'task': {'inputs': {
             'arguments': '${{ [' + raw[len('${{ vault.get('):-len(') }}')] + '] }}'}}}]}]}))
-        secrets = {'environment': {'vault': 'orbit-control-inputs', 'key': 'task-publish-environment-7'},
+        # Every publish run has the push header's copy; a copy's also has its .env render, a nested copy's the Club key.
+        header = {'vault': 'orbit-control-inputs', 'key': 'task-publish-token-0b8a4c1e-5d1f-4c55-9d35-1c0f6a2b7e10'}
+        secrets = {'git_authorization': header, 'environment': {'vault': 'orbit-control-inputs', 'key': 'task-publish-environment-7'},
                    'club_key': {'vault': 'orbit-control-inputs', 'key': 'nested-fleet-club-api-key'}}
 
         def arguments(workspace, execution_secrets):
             file = self.root / 'probe.json'
-            file.write_text(json.dumps({'inputs': {'intent': {**self.copy, 'workspace': workspace}, 'execution_secrets': execution_secrets}}))
+            intent = self.vm if workspace is None else {**self.copy, 'workspace': workspace}
+            file.write_text(json.dumps({'inputs': {'intent': intent, 'execution_secrets': execution_secrets}}))
             done = subprocess.run(['deno', 'run', '-A', str(self.root / 'cel.ts'), str(probe), 'probe', 'arguments', str(file)],
                                   capture_output=True, text=True, check=False, timeout=60)
             self.assertEqual(done.returncode, 0, done.stderr)
@@ -474,8 +479,10 @@ class TaskCopyPublishTest(unittest.TestCase):
 
         nested = {**self.copy['workspace'], 'club_key': True}
         self.assertEqual(arguments(nested, secrets), ['orbit-control-inputs', 'nested-fleet-club-api-key'])
-        normal = {'environment': secrets['environment']}
+        normal = {'git_authorization': header, 'environment': secrets['environment']}
         self.assertEqual(arguments(self.copy['workspace'], normal), ['orbit-control-inputs', 'task-publish-environment-7'])
+        # A task VM's run skips the step; Swamp resolves its arguments at the start, so they name a copy that every run has.
+        self.assertEqual(arguments(None, {'git_authorization': header}), ['orbit-control-inputs', header['key']])
         self.assertEqual(self.cel('Check the .env content', 'env.ORBIT_NESTED', {**self.copy, 'workspace': nested}, {}), '1')
         self.assertEqual(self.cel('Check the .env content', 'env.ORBIT_NESTED', self.copy, {}), '')
 
