@@ -110,18 +110,47 @@ def working_tree(root):
         return subprocess.check_output(['git', '-C', str(root), 'write-tree'], env=environment, text=True).strip()
 
 
-def candidate_paths(root, head, committed, base_override=None):
-    """Return the main merge base and the paths the candidate changes since it; none without a main branch."""
-    for base in ((base_override,) if base_override else BASES):
-        merge_base = subprocess.run(['git', '-C', str(root), 'merge-base', base, head], capture_output=True, text=True)
+def start_commit(root, head, base_override=None):
+    """Return the candidate's start commit and the ref that gives it; (None, None) without a main branch.
+
+    The start commit is the newest of the merge bases of HEAD with origin/main and with main: the one the other is an
+    ancestor of. A branch that merged or rebased onto a newer main holds that main, so its start commit is that main once
+    either ref names it. Unrelated merge bases are refused: neither is the start commit."""
+    found = []
+    for ref in ((base_override,) if base_override else BASES):
+        merge_base = subprocess.run(['git', '-C', str(root), 'merge-base', ref, head], capture_output=True, text=True)
         if merge_base.returncode == 0:
-            base_sha = merge_base.stdout.strip()
-            if committed:
-                return base_sha, git(root, 'diff', '--name-only', base_sha, head).splitlines()
-            changed = git(root, 'diff', '--name-only', base_sha).splitlines()
-            untracked = git(root, 'ls-files', '--others', '--exclude-standard').splitlines()
-            return base_sha, sorted(set(changed) | set(untracked))
-    return None, []
+            found.append((merge_base.stdout.strip(), ref))
+    if not found:
+        return None, None
+    newest = found[0]
+    for sha, ref in found[1:]:
+        if sha == newest[0] or ancestor(root, sha, newest[0]):
+            continue
+        if not ancestor(root, newest[0], sha):
+            raise RuntimeError(f'The merge bases with {newest[1]} ({newest[0][:12]}) and {ref} ({sha[:12]}) are unrelated; '
+                               'pass --base REF.')
+        newest = (sha, ref)
+    return newest
+
+
+def ancestor(root, commit, descendant):
+    return subprocess.run(['git', '-C', str(root), 'merge-base', '--is-ancestor', commit, descendant]).returncode == 0
+
+
+def changed_paths(root, base, head, committed):
+    """The paths the candidate changes since its start commit, with uncommitted and untracked files."""
+    if committed:
+        return git(root, 'diff', '--name-only', base, head).splitlines()
+    changed = git(root, 'diff', '--name-only', base).splitlines()
+    untracked = git(root, 'ls-files', '--others', '--exclude-standard').splitlines()
+    return sorted(set(changed) | set(untracked))
+
+
+def candidate_paths(root, head, committed, base_override=None):
+    """Return the start commit and the paths the candidate changes since it; none without a main branch."""
+    base, _ref = start_commit(root, head, base_override)
+    return (base, changed_paths(root, base, head, committed)) if base else (None, [])
 
 
 def selected_projects(paths, root, base=None):

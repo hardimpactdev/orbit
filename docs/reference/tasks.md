@@ -1161,7 +1161,22 @@ Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's 
 
 Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
 
-The check runs at the repository root, as every task check does. The start commit is the merge base with `origin/main`, else with `main`. A copy's branch starts at the seed commit, which is `origin/main` in the copy, so the merge base is the start commit. [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
+The check runs at the repository root, as every task check does.
+
+#### Start commit
+
+The start commit is the newer of two merge bases: HEAD's merge base with `origin/main` and HEAD's merge base with `main`. Newer means the other one is its ancestor. When the two are unrelated, the check fails, names both, and asks for `--base REF`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
+
+A copy's branch starts at the seed commit, which is `origin/main` and `main` in the copy, so a branch at its start is checked against the seed. A copy never fetches. A driver that brings a newer main into the branch first moves `origin/main` to it, from a bundle made from the real `main`, then merges or rebases:
+
+```bash
+git fetch /tmp/main.bundle +main:refs/remotes/origin/main
+git merge origin/main        # or: git rebase origin/main
+```
+
+The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths.
+
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
 
 ## Review a subtask
 

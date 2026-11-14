@@ -236,21 +236,62 @@ class StartCommitTest(unittest.TestCase):
         self.assertEqual(self.git('worktree', 'list', '--porcelain').count('worktree '), 1)
         self.assertFalse((self.repo / '.git/worktrees').exists() and any((self.repo / '.git/worktrees').iterdir()))
 
-    def test_the_default_start_commit_is_the_merge_base_with_origin_main_else_main(self):
-        first = self.commit('first')
-        self.git('checkout', '--quiet', '-b', 'task')
-        self.commit('task')
-        (self.repo / 'untracked').write_text('')
-        self.assertEqual(check['changes'](self.repo, None), (False, first, ['task', 'untracked']))
-        self.git('checkout', '--quiet', 'main')
+    def test_a_branch_at_its_start_starts_at_the_seed(self):
         seed = self.commit('seed')
         self.git('update-ref', 'refs/remotes/origin/main', seed)
-        self.git('checkout', '--quiet', '-b', 'copy')
+        self.git('checkout', '--quiet', '-b', 'task')
         self.commit('work')
-        (self.repo / 'untracked').unlink()
-        self.git('update-ref', 'refs/heads/main', first)
-        self.assertEqual(check['changes'](self.repo, None), (True, seed, ['work']))
-        self.assertEqual(check['changes'](self.repo, first)[1:], (first, ['seed', 'work']))
+        (self.repo / 'untracked').write_text('')
+        self.assertEqual(check['changes'](self.repo, None), (False, seed, 'origin/main', ['untracked', 'work']))
+
+    def newer_main(self):
+        """A copy whose task branch did work on the seed, then a newer main fetched into origin/main from a bundle."""
+        seed = self.commit('seed')
+        self.git('update-ref', 'refs/remotes/origin/main', seed)
+        self.git('checkout', '--quiet', '-b', 'task')
+        self.commit('work')
+        self.git('checkout', '--quiet', '--detach', 'main')
+        newer = self.commit('newer')
+        self.git('update-ref', 'refs/remotes/origin/main', newer)
+        self.git('checkout', '--quiet', 'task')
+        return seed, newer
+
+    def test_a_branch_that_merged_a_newer_main_starts_at_that_main(self):
+        _seed, newer = self.newer_main()
+        self.git('merge', '--quiet', '--no-edit', 'origin/main')
+        self.assertEqual(check['changes'](self.repo, None), (True, newer, 'origin/main', ['work']))
+
+    def test_a_branch_rebased_on_a_newer_main_starts_at_that_main(self):
+        _seed, newer = self.newer_main()
+        self.git('rebase', '--quiet', 'origin/main')
+        self.assertEqual(check['changes'](self.repo, None), (True, newer, 'origin/main', ['work']))
+
+    def test_a_newer_main_wins_over_a_stale_origin_main(self):
+        seed, newer = self.newer_main()
+        self.git('update-ref', 'refs/remotes/origin/main', seed)
+        self.git('update-ref', 'refs/heads/main', newer)
+        self.git('merge', '--quiet', '--no-edit', 'main')
+        self.assertEqual(check['changes'](self.repo, None), (True, newer, 'main', ['work']))
+
+    def test_unrelated_merge_bases_are_refused_and_named(self):
+        seed = self.commit('seed')
+        self.git('update-ref', 'refs/remotes/origin/main', seed)
+        self.git('checkout', '--quiet', '-b', 'task')
+        self.commit('work')
+        self.git('checkout', '--quiet', '--orphan', 'other')
+        other = self.commit('other')
+        self.git('checkout', '--quiet', 'task')
+        self.git('merge', '--quiet', '--no-edit', '--allow-unrelated-histories', 'other')
+        self.git('update-ref', 'refs/heads/main', other)
+        with self.assertRaisesRegex(RuntimeError, rf'origin/main \({seed[:12]}\) and main \({other[:12]}\) are unrelated; pass --base REF'):
+            check['changes'](self.repo, None)
+
+    def test_an_explicit_start_commit_is_used_as_given(self):
+        first = self.commit('first')
+        self.commit('seed')
+        self.git('checkout', '--quiet', '-b', 'task')
+        self.commit('work')
+        self.assertEqual(check['changes'](self.repo, first), (True, first, first, ['seed', 'work']))
 
 
 class ReportTest(unittest.TestCase):

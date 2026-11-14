@@ -482,7 +482,7 @@ The gate checks the working tree as it is, including uncommitted and untracked f
 
 API ownership matching removes the shared `api/v1` prefix, so a Form Request used by a grouped route maps to its versioned OpenAPI operation. The command map of `bin/docs-impact` names the commands that exist; it has no entry for `orbit:gateway-web`. It has no entry for `task:lease:release` either: the command left with the workspace lease.
 
-1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
+1. It runs `bin/docs-impact --gate` against the [start commit](/reference/tasks#start-commit). Without a merge base, this check fails.
 2. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 2 to 5 share the machine.
 3. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
 4. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
@@ -580,13 +580,13 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 `bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks only what the task changed since its start commit, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
 
 ```bash
-bin/task-check                    # against the merge base with origin/main, else main
+bin/task-check                    # against the start commit
 bin/task-check --base REF         # against another start commit
 bin/task-check --budget 200       # seconds for the whole run (default 270)
 bin/task-check --only pest,phpstan
 ```
 
-The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
+The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |

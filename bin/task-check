@@ -7,7 +7,7 @@ names for changed SDK fixtures, and the whole SDK suite, which takes seconds. Th
 are left to CI and named as skipped. Every part gets the time left as its limit; a part the budget stops or
 leaves out is named as skipped. One line per part ends the output.
 
---base REF        the start commit (default: the merge base with origin/main, else main)
+--base REF        the start commit (default: the newer of the merge bases with origin/main and main)
 --budget SECONDS  wall time of the whole run (default 270)
 --only PARTS      comma-separated part names, such as pest,phpstan"""
 import argparse
@@ -115,10 +115,12 @@ def timed(name, commands, deadline, cwd=ROOT, env=None):
 
 
 def changes(root, base):
-    """Whether the tree is committed, the start commit, and the paths changed since it, as the candidate gate reads them."""
+    """Whether the tree is committed, the start commit, the ref that gives it, and the paths changed since it, as the
+    candidate gate reads them."""
     committed = not review['git'](root, 'status', '--porcelain')
-    start, paths = review['candidate_paths'](root, review['git'](root, 'rev-parse', 'HEAD'), committed, base)
-    return committed, start, paths
+    head = review['git'](root, 'rev-parse', 'HEAD')
+    start, ref = review['start_commit'](root, head, base)
+    return committed, start, ref, review['changed_paths'](root, start, head, committed) if start else []
 
 
 def candidate_head(committed):
@@ -375,11 +377,12 @@ def main(argv=None):
     started = time.monotonic()
     deadline = started + args.budget
     selected = set(args.only or PARTS) | {'ci-plan'}
-    committed, base, paths = changes(ROOT, args.base)
+    committed, base, ref, paths = changes(ROOT, args.base)
     if base is None:
         print('Task check FAILED: no start commit. There is no merge base with origin/main or main; pass --base REF.')
         return 1
-    print(f'Task check against {base[:12]}: {len(paths)} changed paths; budget {args.budget:g}s', flush=True)
+    print(f'Task check against {base[:12]}, the merge base with {ref}: {len(paths)} changed paths; budget {args.budget:g}s',
+          flush=True)
     parts = []
 
     def record(part):
