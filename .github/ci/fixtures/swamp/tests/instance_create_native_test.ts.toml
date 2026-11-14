@@ -1,5 +1,5 @@
 order = 860
-source_sha256 = "598ee410d2050f9a2683ee98ce33e450b316d2542bd52baf5339407cbe717447"
+source_sha256 = "d4f547fa029574a6ff9fad01a17cd6dae80d6d88137823b7ff862cd7013f4af5"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
   "pinned create: a failed checkout in the T3 step registers nothing, stops the container and removes the private folder",

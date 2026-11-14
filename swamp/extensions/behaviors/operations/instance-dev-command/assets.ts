@@ -17,6 +17,16 @@ async function t3Part(folder: string): Promise<"agent" | "t3" | "checkout" | "se
     }
 }
 
+/** Removes the run folder (it may hold a clone's checked T3 sessions); true when it is gone. Any failure leaves it to the cleanup step. */
+async function removeFolder(folder: string): Promise<boolean> {
+    try {
+        await Deno.remove(folder, { recursive: true });
+        return true;
+    } catch (error) {
+        return error instanceof Deno.errors.NotFound;
+    }
+}
+
 /** The run folder's result file, or null when no phase wrote one. */
 async function resultFile(folder: string): Promise<unknown> {
     try {
@@ -29,7 +39,7 @@ async function resultFile(folder: string): Promise<unknown> {
 
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.14.2",
+    version: "2026.11.14.3",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -100,8 +110,13 @@ export const behavior = {
                     const failure = containerFailure(file ?? await resultFile(args.folder));
                     if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
                 }
-                await ctx.writeResource("result", "create", value);
-                return value;
+                // A ready create's run folder goes here, so no cleanup step runs after the result (docs/cli/instance/container/create.mmd).
+                // The step's outputs are the stored receipt, so `removed` is known before it is stored. A failed create keeps the folder:
+                // stop-container reads it, and the cleanup step removes it after.
+                const removed = value.ready ? await removeFolder(args.folder) : false;
+                const done = {...value, removed};
+                await ctx.writeResource("result", "create", done);
+                return done;
             },
         },
         complete_result: {
