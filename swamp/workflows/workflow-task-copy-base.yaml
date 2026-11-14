@@ -1,0 +1,138 @@
+id: 895c585f-a7ac-43f7-9701-62d71be8edb7
+name: task-copy-base
+description: >-
+  task:sync of a task copy: the workspace phase base brings the Project's default branch into the copy through its Node mirror, and
+  base-cleanup removes what a base left. Only the sync's copy path calls it; the read credential is a Git header that reaches only
+  the Node's one fetch, through a pipelined task's stdin.
+queueTimeout: 30
+labels: {role: swamp}
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    node_id: {type: integer, minimum: 1}
+    # The task group: the base phase, up to 600 s, locks a behavior of its group, so copies of two groups on one Node never wait for
+    # each other's lock (docs/reference/tasks.md#two-groups-on-one-node).
+    group_id: {type: integer, minimum: 1}
+    phase: {type: string, enum: [base, base-cleanup]}
+    intent:
+      type: object
+      properties:
+        runtime:
+          type: object
+          properties:
+            project: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+            name: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,62}$'}
+          required: [project, name]
+          additionalProperties: false
+        branch: {type: string, minLength: 1}
+        snapshot_id: {type: string, format: uuid}
+        # The copy's Instance names its Node scratch and its bundle folder, so the next sync and the copy's destroy find a leftover.
+        instance_id: {type: integer, minimum: 1}
+        default_branch: {type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]*$'}
+        repository: {type: string, pattern: '^https://'}
+        mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
+        # Makes a missing mirror of the copy; empty when the default is gone.
+        source_mirror: {type: string, pattern: '^(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?$'}
+        start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+        # The shared address-node tasks own the pinned SSH descriptor contract.
+        ssh_execution: {type: object}
+      required: [runtime, branch, snapshot_id, instance_id, ssh_execution]
+      additionalProperties: false
+    # The sync's own read token as a Git header, minted when the run started. Every call names it, so no expression of this
+    # workflow reads a missing input; only "Bring in the base" reads its value.
+    git_authorization:
+      type: object
+      properties:
+        vault: {type: string, enum: [orbit-control-inputs]}
+        key: {type: string, pattern: '^task-sync-token-[a-f0-9-]{36}$'}
+      required: [vault, key]
+      additionalProperties: false
+  required: [node_id, group_id, phase, intent, git_authorization]
+  additionalProperties: false
+jobs:
+  - name: base
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: '${{ "ansible-input" }}'
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      - name: Bring in the base
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ inputs.phase != "base" }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ ("task-copy-base-" + string(inputs.node_id) + "-" + string(inputs.group_id)).split(".").join("-") }}'
+          methodName: execute
+          inputs:
+            run: timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags base "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              # No SSH master outlives this run: the header is in this step's environment, which a lingering master would keep.
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=no -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ORBIT_GIT_AUTHORIZATION: '${{ vault.get(inputs.git_authorization.vault, inputs.git_authorization.key) }}'
+      - name: Discard the base scratch
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        guard: '${{ inputs.phase != "base-cleanup" }}'
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-copy-base-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags base-cleanup "$ORBIT_ANSIBLE/task-instance-workspace.yml"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_FORCE_COLOR: '0'
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+      - name: evidence
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: Bring in the base, condition: {type: always}}
+          - {step: Discard the base scratch, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-instance-workspace'
+          behaviorName: '${{ "task-workspace-evidence" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+            phase: '${{ inputs.phase }}'
+      - name: cleanup
+        labels: {role: swamp}
+        writes: true
+        dependsOn:
+          - {step: input, condition: {type: always}}
+          - {step: Bring in the base, condition: {type: always}}
+          - {step: Discard the base scratch, condition: {type: always}}
+          - {step: evidence, condition: {type: always}}
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-workspace-cleanup" }}'
+          methodName: execute
+          inputs:
+            run: timeout 10 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

@@ -1,0 +1,29 @@
+file = "swamp/tests/task_instance_workspace_base_cleanup_test.py"
+slices = false
+cost = 42
+source_sha256 = "2bcef30cda6f9702e6083e733893ca4f14c82cdf3a873957abab6b817e7720b4"
+cases = [
+  "test_a_failed_fetch_leaves_no_credential_and_no_bundle",
+  "test_a_sync_cancelled_during_the_fetch_leaves_no_credential_and_no_bundle",
+  "test_a_sync_cancelled_after_the_push_leaves_no_credential_and_base_cleanup_removes_the_bundle",
+  "test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/_support/task_instance_workspace_base.py",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/task-copy-base-names.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/workflows/workflow-task-copy-base.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_failed_fetch_leaves_no_credential_and_no_bundle" = 8
+"test_a_sync_cancelled_during_the_fetch_leaves_no_credential_and_no_bundle" = 10
+"test_a_sync_cancelled_after_the_push_leaves_no_credential_and_base_cleanup_removes_the_bundle" = 13
+"test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left" = 11

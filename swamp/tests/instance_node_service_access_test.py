@@ -309,6 +309,9 @@ class RemoteAccessTest(unittest.TestCase):
                     production = (ROOT / 'ansible/instance-container-destroy.yml').read_text().replace(
                         '/var/lib/orbit/instance-mail', str(folder / 'mail-state'))
                     tasks = yaml.safe_load(production)[1]['tasks']
+                    # The rule that names a task copy's base scratch, which the destroy imports beside the playbook.
+                    (folder / 'tasks').mkdir(exist_ok=True)
+                    shutil.copyfile(ROOT / 'ansible/tasks/task-copy-base-names.yml', folder / 'tasks/task-copy-base-names.yml')
                 else:
                     tasks = yaml.safe_load((ROOT / 'ansible/tasks/instance-migrate-discard.yml').read_text())
                     modules = folder / 'collections/ansible_collections/community/general/plugins/modules'
@@ -323,7 +326,8 @@ class RemoteAccessTest(unittest.TestCase):
                         'm.exit_json(changed=True)\n')
                 proof = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
                           'vars': {'container': container, 'phase': 'remove', 'incus': ['incus', '--project', 'orbit-instances'],
-                                   'run': str(folder / 'run'), 'ansible_python_interpreter': sys.executable},
+                                   'run': str(folder / 'run'), 'ansible_python_interpreter': sys.executable,
+                                   'task_base_root': str(folder / 'task-base')},
                           'tasks': tasks}]
                 (folder / 'proof.yml').write_text(yaml.safe_dump(proof))
                 environment = dict(os.environ, HOST_FIXTURE=str(folder), ANSIBLE_STDOUT_CALLBACK='default',

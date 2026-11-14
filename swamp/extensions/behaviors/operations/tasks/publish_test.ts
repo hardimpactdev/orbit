@@ -1,11 +1,16 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
+    BASE_BYTES,
+    BASE_MARK,
+    BASE_PATHS,
+    baseFacts,
     BodyLimit,
     imported,
     PublishInput,
     pullPlan,
     pushed,
     verify,
+    withBase,
     withWaivers,
 } from "./publish.ts";
 
@@ -198,6 +203,132 @@ Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
     assertEquals(plan(JSON.stringify([other])).method, "POST");
 });
 
+const files = (
+    overrides: Partial<
+        Record<"head" | "base" | "behind" | "overlap" | "merge", string>
+    > = {},
+) => ({
+    head: "c".repeat(40) + "\n",
+    base: "a".repeat(40) + "\n",
+    behind: "2\n",
+    overlap: "",
+    merge: "",
+    ...overrides,
+});
+
+Deno.test("a copy's base is stated, behind or not, and only a real conflict refuses", () => {
+    assertEquals(baseFacts(0, files({ behind: "0\n" })).facts?.behind_by, 0);
+    assertEquals(baseFacts(0, files()), {
+        facts: {
+            base_commit: "a".repeat(40),
+            default_commit: "c".repeat(40),
+            behind_by: 2,
+            overlapping_paths: [],
+            overlapping_more: 0,
+        },
+        error_code: "",
+    });
+    assertEquals(
+        baseFacts(0, files({ overlap: "app/a.php\0docs/b.md\0" })).facts
+            ?.overlapping_paths,
+        ["app/a.php", "docs/b.md"],
+    );
+    assertEquals(
+        baseFacts(
+            3,
+            files({ merge: "d".repeat(40) + "\0app/a.php\0app/a.php\0x\ny\0" }),
+        ),
+        {
+            facts: null,
+            error_code: 'tasks.publish_conflict: "app/a.php", "x\\ny"',
+        },
+    );
+    // A read that failed, or a conflict code without its reply, is an error, never a pass or a conflict.
+    assertEquals(baseFacts(2, files()).error_code, "tasks.publish_failed");
+    assertEquals(
+        baseFacts(3, files({ merge: "d".repeat(40) + "\0" })).error_code,
+        "tasks.publish_failed",
+    );
+    assertEquals(
+        baseFacts(0, files({ head: "" })).error_code,
+        "tasks.publish_failed",
+    );
+});
+
+Deno.test("the base path lists stop at their bound and count the rest", () => {
+    const many = Array.from(
+        { length: BASE_PATHS + 5 },
+        (_, index) => `f${index}`,
+    );
+    const stated =
+        baseFacts(0, files({ overlap: many.join("\0") + "\0" })).facts;
+    assertEquals([stated?.overlapping_paths.length, stated?.overlapping_more], [
+        BASE_PATHS,
+        5,
+    ]);
+    const refused = baseFacts(
+        3,
+        files({ merge: ["d".repeat(40), ...many].join("\0") + "\0" }),
+    ).error_code;
+    assertEquals(refused.endsWith('"f99" and 5 more'), true);
+});
+
+Deno.test("the body ends with one Base section, also on a re-publish", () => {
+    const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
+    const once = withBase("Adds the export.", facts);
+    assertEquals(
+        once,
+        [
+            "Adds the export.",
+            "",
+            BASE_MARK,
+            "## Base",
+            "",
+            "- Checked base: `" + "a".repeat(40) + "`",
+            "- Default branch head: `" + "c".repeat(40) + "`",
+            "- Behind by: 2 commits",
+            "- Overlapping paths:",
+            "  - `app/a.php`",
+            "",
+        ].join("\n"),
+    );
+    assertEquals(withBase(once, facts), once);
+    assertEquals(
+        withBase(
+            "Adds the export.",
+            baseFacts(0, files({ behind: "1\n" })).facts,
+        ).includes("- Behind by: 1 commit\n- Overlapping paths: none"),
+        true,
+    );
+    // A task VM publish, or a run before the base step, leaves the caller's body as it is.
+    assertEquals(withBase("Adds the export.", null), "Adds the export.");
+});
+
+Deno.test("the planned pull request carries the Base section on creation and update", () => {
+    const facts = baseFacts(0, files()).facts;
+    const statement = JSON.stringify(facts);
+    for (const rows of [[], [open()]]) {
+        const plan = pullPlan({
+            input: publishInput(),
+            steps: { read_pull: out(0, JSON.stringify(rows)) },
+            base: statement,
+        });
+        assertEquals(
+            JSON.parse(plan.body).body,
+            withBase("Adds the export. $(touch inert)", facts),
+        );
+    }
+    const plain = pullPlan({
+        input: publishInput(),
+        steps: { read_pull: out(0, "[]") },
+        base: "",
+    });
+    assertEquals(
+        JSON.parse(plain.body).body,
+        "Adds the export. $(touch inert)",
+    );
+});
+
 Deno.test("a copy's publish appends the proposed body's waiver lines that the body lacks", () => {
     const proposed = [
         "Docs-unaffected: docs/reference/mcp.mdx: the tool schemas follow the request rules.",
@@ -229,4 +360,71 @@ Deno.test("the waiver lines stop where the body would pass the publish limit", (
     const result = withWaivers(body, `${short}\n${long}`);
     assertEquals(result, `${body}\n\n${short}`);
     assertEquals(result.length <= BodyLimit, true);
+});
+
+Deno.test("waiver lines after an earlier Base section stay, before the one new section", () => {
+    const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
+    const waiver = "Docs-unaffected: docs/reference/x.md: no change.";
+    const earlier = withBase("Adds the export.", facts);
+    // A re-publish: the caller's body carries the earlier section, and withWaivers appends a line after it.
+    const body = withWaivers(earlier, waiver);
+    assertEquals(body.endsWith(waiver), true);
+    const republished = withBase(body, facts);
+    assertEquals(republished, withBase("Adds the export.\n\n" + waiver, facts));
+    assertEquals(republished.split(BASE_MARK).length, 2);
+    assertEquals(
+        republished.indexOf(waiver) < republished.indexOf(BASE_MARK),
+        true,
+    );
+});
+
+Deno.test("the Base section keeps the body within its limit", () => {
+    const paths = Array.from(
+        { length: 5 },
+        (_, index) => `apps/gateway/app/Domain/Tasks/Changed${index}.php`,
+    );
+    const facts = baseFacts(0, files({ overlap: paths.join("\0") + "\0" }))
+        .facts;
+    const full = withBase("x", facts);
+    // A body that leaves no room for the path list states their count instead.
+    const tight = "x".repeat(BodyLimit - (full.length - 1) + 1);
+    const counted = withBase(tight, facts);
+    assertEquals(counted.length <= BodyLimit, true);
+    assertEquals(
+        counted.endsWith(
+            "- Overlapping paths: 5, listed in the publish result\n",
+        ),
+        true,
+    );
+    // A body at the limit gets no section; the publish result still states the base.
+    const limit = "x".repeat(BodyLimit);
+    assertEquals(withBase(limit, facts), limit);
+});
+
+Deno.test("a long conflict or overlap stays within its byte bound and counts the rest", () => {
+    const paths = Array.from(
+        { length: 300 },
+        (_, index) =>
+            `apps/gateway/app/Domain/Tasks/Long/Folder/Name/Changed${index}.php`,
+    );
+    const bytes = (text: string) => new TextEncoder().encode(text).length;
+    const refused = baseFacts(
+        3,
+        files({ merge: ["d".repeat(40), ...paths].join("\0") + "\0" }),
+    ).error_code;
+    assertEquals(refused.startsWith('tasks.publish_conflict: "apps/'), true);
+    assertEquals(bytes(refused) <= BASE_BYTES, true);
+    const shown = refused.split('", "').length;
+    assertEquals(refused.endsWith(` and ${300 - shown} more`), true);
+    const stated = baseFacts(0, files({ overlap: paths.join("\0") + "\0" }))
+        .facts;
+    assertEquals(
+        bytes(JSON.stringify(stated?.overlapping_paths)) <= BASE_BYTES,
+        true,
+    );
+    assertEquals(
+        (stated?.overlapping_paths.length ?? 0) +
+            (stated?.overlapping_more ?? 0),
+        300,
+    );
 });

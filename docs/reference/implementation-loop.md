@@ -602,9 +602,19 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
+| `ci-policy` | A path that the CI policy tests read changed (see below) | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, the CI policy tests that CI's `changes` job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | The planned units that fit the budget, through `bin/ci-units run`. A unit whose declared host program is missing does not run |
+
+A changed path selects `ci-policy` when the CI policy tests read it:
+
+- the CI registry and its fixture tomls, under `.github/ci/`, and the workflows under `.github/workflows/`;
+- the CI policy tests themselves, `tools/test_ci_*.py`, their evidence under `tools/tests/`, and `tools/ci*`;
+- the CI scripts `bin/ci-*` and `bin/task-check`;
+- a Swamp test file, `swamp/tests/*_test.py` or `*_test.ts`, whose cases and source the registry pins.
+
+A Pest test, an extension's own Deno test or a Swamp test helper does not select it: the CI policy tests do not read them. Such a change, and any other, leaves the part `not selected`. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a clean `main` it takes about 40 seconds.
 
 The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the docs app. For a selected job:
 
@@ -624,7 +634,7 @@ The population check catches a Deno fixture whose registered cases differ from t
 
 The budget is wall time from the start of the run. Each part gets the time left as a hard limit. A part that reaches the end of the budget is stopped and reported as `skipped (budget: stopped after Ns)`. A part with no time left does not start and is reported as skipped.
 
-A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
+A fixture collection starts only with at least 15 seconds left; a collection that outlasts its 15-second limit, such as with a cold Deno cache, is a named budget skip. Units join cheapest first, by their declared cost, so a quick source check of the change runs before a long suite can take the budget. A unit joins only when the units chosen so far still fit the time left, by the `pack` rule of `bin/ci-units`.
 
 The fixture units run with as many workers as `bin/check-processes` gives, not CI's `shard_workers`. Orbit's value of 1 runs one unit at a time on the shared host. The check packs the units into that many lanes and passes the count to `bin/ci-units run --workers`. Every file and unit that did not start or was stopped is named, with the reason. A budget skip does not fail the check; CI still runs it.
 

@@ -92,6 +92,15 @@
               ansible.builtin.file: {path: "{{ container.asleep_marker }}", state: absent}
             - name: Remove the Node repository mirror
               ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
+            # A task copy's base scratch, which a cancelled task:sync may leave; it holds no credential. The intent names no Instance id,
+            # and a new key would not reach a run that an older Gateway admitted: the mirror's file name is the Instance id
+            # (InstanceContainer::mirror).
+            - name: Name the copy's base scratch by its Instance
+              ansible.builtin.import_tasks: tasks/task-copy-base-names.yml
+              vars:
+                task_base_instance: "{{ container.mirror | basename | regex_replace('[.]git$', '') }}"
+            - name: Remove the Node task base scratch
+              ansible.builtin.file: { path: "{{ base_node }}", state: absent }
             - name: Read the remaining containers
               ansible.builtin.command: { argv: "{{ incus + ['list', '--format=json'] }}", stdin: "" }
               register: destroy_remaining
