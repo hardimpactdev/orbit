@@ -12,6 +12,10 @@ Volume keys do not show in the container's config, so the guard reads every volu
 root volume must not be delegated to the container. Any other volume must be one of the allowed volumes, the inner volume of
 docs/reference/development-containers.md#the-inner-volume, with exactly its keys; Incus writes `volatile.*` itself, and an empty value is an unset key. The devices are
 compared first, so a disk can only name the volume that the intent names.
+
+The root disk's `size` is the one value that may be larger than the intent's: Orbit writes it only as `<n>GiB`, the start grows a
+smaller one, and a quota that is larger stays safe when the setting goes down or an older release runs
+(docs/reference/development-containers.md#the-root-disk).
 """
 
 import json
@@ -38,13 +42,30 @@ def without_filters(device):
     return {key: value for key, value in device.items() if key not in globals()["FILTERS"]}
 
 
+def gib(size):
+    """The whole GiB of a size that Orbit writes, `<n>GiB`, or None for any other form."""
+    return int(size[:-3]) if size.endswith("GiB") and size[:-3].isdigit() and not size.startswith("0") else None
+
+
+def root_fits(device, allowed):
+    """The root disk is the allowed one, with a size of at least the allowed size."""
+    own, want = gib(device.get("size", "")), gib(allowed.get("size", ""))
+    rest = {key: value for key, value in without_filters(device).items() if key != "size"}
+    return own is not None and want is not None and own >= want and rest == {k: v for k, v in allowed.items() if k != "size"}
+
+
 def nested_unsafe_device(container, allowed, allowed_config):
     unsafe = nested_unsafe_config(container["expanded_config"], allowed_config)
     if unsafe:
         return unsafe
     devices = container["expanded_devices"]
     for name, device in devices.items():
-        if name not in allowed or without_filters(device) != without_filters(allowed[name]):
+        if name not in allowed:
+            return name
+        if name == "root" and device.get("path") == "/":
+            if not root_fits(device, allowed[name]):
+                return name
+        elif without_filters(device) != without_filters(allowed[name]):
             return name
     for name in allowed:
         if name not in devices:

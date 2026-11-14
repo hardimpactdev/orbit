@@ -564,10 +564,15 @@ def phase_main(phase, raw):
                 changes.append(str(p))
     elif phase == "t3":
         t = c["clone"]["t3"]
-        active = (
-            run(["systemctl", "is-active", "--quiet", t["unit"]], False).returncode == 0
-        )
-        if not active:
+        # The copy's boot starts T3 when the container phase wrote its files before the first start. A copy without them (an older
+        # Gateway's run, a retry on a running copy) starts it here. A unit that failed at boot is started again once and named
+        # (docs/reference/development-containers.md#t3-starts-with-the-copy).
+        active = run(["systemctl", "is-active", "--quiet", t["unit"]], False).returncode == 0
+        if not active and run(["systemctl", "is-failed", "--quiet", t["unit"]], False).returncode == 0:
+            run(["systemctl", "reset-failed", t["unit"]])
+            run(["systemctl", "start", t["unit"]])
+            changes.append("restart:t3")
+        elif not active:
             run(["systemctl", "start", t["unit"]])
             changes.append("start:t3")
         # While T3 starts, its own CLI issues the two sessions: stock T3's CLI writes its sessions before and during the server's
@@ -617,6 +622,7 @@ def phase_main(phase, raw):
                     )
                     .isoformat(),
                     "environment_id": environment["environmentId"],
+                    "at_boot": active,
                     "private_reply": {name: {"token": issued[name]} for name, _ in SESSIONS},
                 }
             )

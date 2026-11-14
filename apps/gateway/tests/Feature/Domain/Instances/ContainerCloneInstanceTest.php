@@ -265,9 +265,9 @@ describe('a clone of the container default', function (): void {
             ->and(collect(InstanceImage::shared())->pluck('path')->intersect(['/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh'])->all())->toBe([])
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID={$default->project_id}\nORBIT_PROJECT_NAME=\"tool\"\nORBIT_NODE={$node->name}\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
-            ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])
-            ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
-            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600'])
+            ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])
+            ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
+            ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
             ->and($container['firewall'])->toBe([
@@ -395,6 +395,27 @@ it('starts the run with the placeholder model key in the vault and the template 
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and($fill[13])->toStartWith('DROP DATABASE IF EXISTS')
         ->and($fill[14])->toContain(' TEMPLATE ');
+});
+
+it('frames the model environment after the credential line on the copy step stdin, so the copy boot starts T3', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+    $vault = vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    // clone-container reads `git_credential`; for a clone it names the copy that also holds the model environment after the frame line.
+    $framed = collect($vault->puts)->firstWhere('key', 'instance-create-clone-'.$operation->id);
+    $model = collect($vault->puts)->firstWhere('key', 'instance-create-model-'.$operation->id);
+    expect($run['execution_secrets']['git_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-clone-'.$operation->id])
+        ->and($framed['value'])->toEndWith(InstanceContainer::ModelEnvironmentFrame."\n".$model['value'])
+        ->and($run['intent']['container']['clone']['model_environment']['frame'])->toBe(InstanceContainer::ModelEnvironmentFrame)
+        ->and($run['intent']['container']['clone']['t3']['condition'])->toBe(InstanceContainer::InstanceFile)
+        ->and(collect($run['intent']['container']['clone']['files'])->where('before_start', true)->pluck('path')->all())
+        ->toBe([InstanceContainer::InstanceFile, '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json'])
+        ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
+        // The clone's run reads only the framed copy: no second copy of the credential line.
+        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-git-credential-'.$operation->id);
 });
 
 describe('a clone of a default with a Valkey target', function (): void {

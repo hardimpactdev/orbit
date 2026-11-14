@@ -228,13 +228,15 @@
                         "url": "http://10.44.0.7:3800",
                         "label": "tool / fix-login",
                         "t3": "/opt/orbit-agent/current/agent/bin/t3",
-                        "project_mark": "/home/agent/.config/orbit/t3-project"
+                        "project_mark": "/home/agent/.config/orbit/t3-project",
+                        "condition": "/etc/orbit/instance"
                     },
                     "model_environment": {
                         "path": "/home/agent/.config/orbit/model.env",
                         "uid": 2750,
                         "gid": 2750,
-                        "mode": "0600"
+                        "mode": "0600",
+                        "frame": "#orbit-model-environment"
                     },
                     "boot_files": [
                         {
@@ -306,6 +308,7 @@
                     "files": [
                         {
                             "path": "/etc/orbit/instance",
+                            "before_start": true,
                             "uid": 0,
                             "gid": 0,
                             "mode": "0644",
@@ -313,6 +316,7 @@
                         },
                         {
                             "path": "/home/agent/.codex/config.toml",
+                            "before_start": true,
                             "uid": 2750,
                             "gid": 2750,
                             "mode": "0600",
@@ -320,6 +324,7 @@
                         },
                         {
                             "path": "/home/agent/.claude.json",
+                            "before_start": true,
                             "uid": 2750,
                             "gid": 2750,
                             "mode": "0600",
@@ -329,6 +334,7 @@
                         },
                         {
                             "path": "/home/agent/.t3/userdata/settings.json",
+                            "before_start": true,
                             "uid": 2750,
                             "gid": 2750,
                             "mode": "0600",
@@ -619,13 +625,15 @@
                         "url": "http://10.44.0.7:3800",
                         "label": "tool / fix-login",
                         "t3": "/opt/orbit-agent/current/agent/bin/t3",
-                        "project_mark": "/home/agent/.config/orbit/t3-project"
+                        "project_mark": "/home/agent/.config/orbit/t3-project",
+                        "condition": "/etc/orbit/instance"
                     },
                     "model_environment": {
                         "path": "/home/agent/.config/orbit/model.env",
                         "uid": 2750,
                         "gid": 2750,
-                        "mode": "0600"
+                        "mode": "0600",
+                        "frame": "#orbit-model-environment"
                     },
                     "boot_files": [
                         {
@@ -697,6 +705,7 @@
                     "files": [
                         {
                             "path": "/etc/orbit/instance",
+                            "before_start": true,
                             "uid": 0,
                             "gid": 0,
                             "mode": "0644",
@@ -704,6 +713,7 @@
                         },
                         {
                             "path": "/home/agent/.codex/config.toml",
+                            "before_start": true,
                             "uid": 2750,
                             "gid": 2750,
                             "mode": "0600",
@@ -711,6 +721,7 @@
                         },
                         {
                             "path": "/home/agent/.claude.json",
+                            "before_start": true,
                             "uid": 2750,
                             "gid": 2750,
                             "mode": "0600",
@@ -720,6 +731,7 @@
                         },
                         {
                             "path": "/home/agent/.t3/userdata/settings.json",
+                            "before_start": true,
                             "uid": 2750,
                             "gid": 2750,
                             "mode": "0600",
