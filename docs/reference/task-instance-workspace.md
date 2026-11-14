@@ -28,6 +28,8 @@ The caller supplies the recorded Incus project and container name, expected bran
 | `receipt` | Original digest and candidate head/tree | At most 65,536 UTF-8 bytes from the guest scratch receipt; reject a symlink, oversized data or a different snapshot/candidate |
 | `export` | Preflight identity and candidate head/tree | Create and verify the exact candidate bundle as `agent`; transfer it to Node scratch and verify its checksum, or with `worker_bundle` fetch it to the worker |
 | `discard` | Preflight identity | Remove only this snapshot's guest scratch after its users have stopped |
+| `base` | Branch, default branch, repository and mirror | Fetch the default branch into the copy's Node mirror and import only what the copy lacks into `refs/remotes/origin/<default branch>`; return the default head, branch commit, `behind_by` and start |
+| `base-cleanup` | The run's scratch names | Remove the run's credential file and bundle on the Node and the bundle in the guest |
 
 Snapshots use a temporary Git index. They include unignored untracked files, staged files (including force-added ignored paths), spaces and symlinks, and leave the real index unchanged. Guest scratch contains all indexes and evidence. Git hooks and fsmonitor are disabled. Commands isolate global and system Git configuration and trust only the exact checkout. Evidence does not execute project setup, checks or scripts.
 
@@ -38,6 +40,10 @@ The receipt lives at `/tmp/orbit-task-workspace-SNAPSHOT/receipt.json`, outside 
 Worker input and result files are private and removed after the phase settles, including failure. A failed phase retains guest evidence for diagnosis. A successful export returns its Node scratch path to the caller, which removes it after use.
 
 [`task:publish`](/reference/tasks#publish-an-external-group) of a task copy names `worker_bundle`, a path in its own publication scratch on the worker: the export fetches the bundle there, checks its checksum, and leaves no Node scratch. It also names `environment_path` and `worker_environment`: the Node pulls the copy's `.env` from `/srv/workspace/<environment_path>`, requires a regular file, and fetches it to that worker path for the publish content check. Its bytes enter no phase result or log. A missing file or a link fails the export.
+
+[`task:sync`](/reference/tasks#bring-main-into-a-copy) of a task copy runs `base`, then always `base-cleanup`. `base` is the one phase that holds a credential: the read credential of the Project's repository, which the run passes as an environment value. The Node writes it to a run-scoped file, mode `0600`, readable by root only, uses it for one fetch into the copy's mirror, `/var/lib/orbit/instance-repositories/<instance>.git`, and removes it in an `always` block. A missing mirror is first made from the default's mirror. The guest never receives the credential.
+
+The Node bundles the default branch with the copy's `origin/<default branch>` and branch heads as prerequisites, where the mirror holds them, and pushes the bundle into guest scratch owned by `agent`. As `agent`, the guest fetches it into `refs/remotes/origin/<default branch>` only. HEAD, the working tree, the index and the local branches stay as they are. When the copy holds the head already, no bundle is made. `base-cleanup` removes what a failed or cancelled `base` left, and a test proves that neither leaves a credential file on the Node or a bundle in the copy.
 
 Transfer or guest-cleanup failure removes Node scratch before returning failure. Export removes its guest bundle after transfer, including failure. The parent calls `discard` after all guest evidence users stop, on success or failure. Interrupted cleanup can leave scratch for explicit recovery; it never justifies deleting user files.
 

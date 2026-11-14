@@ -598,9 +598,18 @@ The [start commit](/reference/tasks#start-commit) has one rule, which the tasks 
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
 | `phpstan <project>` | The plan selects the project's static job | `vendor/bin/phpstan analyse` with the project's `phpstan.neon`, on the changed PHP files inside the paths that config analyses |
 | `swamp-shape` | The plan selects the Swamp checks | `bin/swamp-shape-gate --only control`, the static controls that CI's shape job runs, in a checkout of the candidate |
+| `ci-policy` | A test file, a fixture toml or a CI file changed (see below) | `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, the CI policy tests that CI's `changes` job runs on every PR |
 | `fixture-population` | `bin/ci-units plan` plans Deno fixture units for the PR | `bin/ci-units` collection of each such Deno fixture, compared with the cases stored for it |
 | `pest <project>` | The plan selects the project's Pest job | See below |
 | `fixtures` | `bin/ci-units plan` plans units | The planned units that fit the budget, through `bin/ci-units run`. A unit whose declared host program is missing does not run |
+
+A changed path selects `ci-policy` when it is:
+
+- a test file: a path with a `tests` folder, or a file named `test_*.py`, `*_test.py`, `*_test.ts` or `*Test.php`;
+- a fixture toml: a `.toml` file with a `tests` or `fixtures` folder in its path;
+- a CI file: a path under `.github/`, a `tools/ci*` path, `bin/ci-*` or `bin/task-check`.
+
+Otherwise it is `not selected`. The part runs before Pest and the fixtures, so the budget never leaves it out for them. On a clean `main` it takes about 40 seconds.
 
 The Pest jobs are `gateway-tests`, `cli-tests`, `sdk-tests` and `docs` for the docs app. For a selected job:
 
