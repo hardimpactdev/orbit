@@ -1081,7 +1081,7 @@ The levels and their measured seconds, with about 1.2 s of dispatch in each step
 | `publication` | `clone-route-csr-<i>` · `clone-route` (with its TLS probe), beside the `clone` job | 3 to 4 · 5 to 7 |
 | `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure · `accepted`, and the run-folder cleanup after a failure | 1.3 · 0 · 0 |
 
-A ready create's `finish` removes the run folder itself, which can hold the clone's checked T3 sessions. The cleanup step then skips, and the run ends one Swamp level sooner (0.8-0.9 s in release 2071). A failed create keeps the folder for the container stop; the cleanup step removes it after. If `finish` cannot remove it, its `removed` output is false and the cleanup step runs.
+A ready create's `finish` removes the run folder itself, which can hold the clone's checked T3 sessions. The cleanup step then skips, and the run ends with `accepted`, without the cleanup's own 0.8-0.9 s (release 2071). A failed create keeps the folder for the container stop; the cleanup step removes it after. If `finish` cannot remove it, its `removed` output is false and the cleanup step runs.
 
 A plain clone's create succeeds about 24 seconds after the click. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
 

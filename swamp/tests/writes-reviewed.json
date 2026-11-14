@@ -15,7 +15,6 @@
   "@nckrtl/development-deploy#cleanup": "Builds cleanup argv as Swamp data without running or deleting anything.",
   "@nckrtl/firewall-plan#check": "Checks supplied UFW output and writes only the Swamp result.",
   "@nckrtl/firewall-plan#plan": "Builds UFW argv from supplied output without executing it.",
-  "@nckrtl/instance-dev-command#create_result": "Combines supplied phase outcomes into a Swamp receipt.",
   "@nckrtl/instance-dev-command#migrate_result": "Reads saved migration failure files and writes only the Swamp receipt.",
   "@nckrtl/instance-route-workload#prepared": "Checks supplied workload outcomes and writes only Swamp readiness.",
   "@nckrtl/instance-route-workload#verifyPool": "Compares supplied pool digests and writes only Swamp readiness.",
@@ -332,6 +331,7 @@
    "server-valkey-check": "read-only"
   },
   "operation-instance-create": {
+   "finish": "idempotent",
    "server-database-check": "unreviewed"
   },
   "operation-instance-deploy-direct": {
