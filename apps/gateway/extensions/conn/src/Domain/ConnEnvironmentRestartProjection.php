@@ -11,6 +11,7 @@ use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 
 /**
  * Records a T3 restart for the machine name from the run's one report: `restarted`, `skipped` when the container stopped or froze after
@@ -38,7 +39,7 @@ final readonly class ConnEnvironmentRestartProjection implements DirectOperation
             $answer = $raw['answer'] ?? null;
             $reason = $raw['reason'] ?? null;
             $result = match (true) {
-                $answer === 'restarted' => ['answer' => 'restarted'],
+                $answer === 'restarted' => ['answer' => 'restarted', ...self::window($operation, $raw['restart_at'] ?? null)],
                 $answer === 'skipped' && in_array($reason, ['frozen', 'stopped'], true) => ['answer' => 'skipped', 'reason' => $reason],
                 default => throw new ResourceOperationException('operation.result_invalid', 'The restart report names no answer.', 422),
             };
@@ -50,5 +51,21 @@ final readonly class ConnEnvironmentRestartProjection implements DirectOperation
         }
 
         return $this->direct->project($operation, $data, $result);
+    }
+
+    /**
+     * The window from the Gateway's thread read to the try-restart (docs/reference/development-containers.md#the-restart-window).
+     *
+     * @return array{read_at: string, restart_at: string, window_ms: int}
+     */
+    private static function window(Operation $operation, mixed $restartAt): array
+    {
+        $readAt = ValidatedData::string(ValidatedData::object($operation->input['intent'])['read_at']);
+        if (! is_string($restartAt) || preg_match('/\A\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z\z/D', $restartAt) !== 1) {
+            throw new ResourceOperationException('operation.result_invalid', 'The restart report has no restart time.', 422);
+        }
+
+        return ['read_at' => $readAt, 'restart_at' => $restartAt,
+            'window_ms' => (int) round(CarbonImmutable::parse($readAt)->diffInMilliseconds(CarbonImmutable::parse($restartAt), false))];
     }
 }

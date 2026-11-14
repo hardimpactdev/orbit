@@ -23,12 +23,15 @@ use Orbit\Extensions\Conn\Domain\ConnEnvironmentRestartProjection;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
+
+afterEach(fn () => Carbon\Carbon::setTestNow());
 require_once __DIR__.'/../../Domain/Instances/ContainerInstanceHelpers.php';
 
 const RestartRun = '6a0f3c2e-1b4d-4e8a-9c7f-5d2e8b1a0c43';
 
 beforeEach(function (): void {
     Queue::fake();
+    Carbon\Carbon::setTestNow('2026-11-14 12:00:00.250');
     Http::preventStrayRequests();
     app(ExtensionStore::class)->set('conn', true);
     $this->node = containerDefaultNode();
@@ -160,7 +163,7 @@ it('admits one restart on the Instance lock with an intent that holds no session
         ->and($operation->lock_key)->toBe('instance:'.$clone->id)
         ->and($operation->triggered_by)->toBe('node:1')
         ->and($operation->input)->toBe(['instance_id' => $clone->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $clone->id, 'url' => 'http://10.44.0.7:3840', 'name' => 'clone.shop',
+            'intent' => ['instance_id' => $clone->id, 'url' => 'http://10.44.0.7:3840', 'name' => 'clone.shop', 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]]])
         ->and(json_encode($operation->input))->not->toContain('gateway-session');
 });
@@ -199,7 +202,7 @@ it('walks a Node by Instance ID and reads each container right before its own ad
         ]);
 });
 
-it('records a run that ends with T3 inactive as failed with its code, and a good report as restarted', function (string $status, array $report, array $result, ?string $code): void {
+it('records a run that ends with T3 inactive as failed with its code, and a good report as restarted', function (string $status, array $report, array|string $result, ?string $code): void {
     $clone = restartServer($this->default, 'clone', 3840);
     Http::fake(restartT3(3840, 'instance-'.$clone->id));
     $operation = Operation::query()->findOrFail(restartOne($clone)['operation']['id']);
@@ -209,10 +212,13 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
         'started_at' => now()->subSeconds(20)->toIso8601String(), 'finished_at' => now()->toIso8601String(),
         'error_code' => $status === 'succeeded' ? null : 'operation.native_failed', 'result' => $report]);
 
+    $read = $operation->input['intent']['read_at'];
+    $result = $result === 'window' ? ['answer' => 'restarted', 'read_at' => $read, 'restart_at' => '2026-11-14T12:00:07.500000Z',
+        'window_ms' => (int) round(Carbon\CarbonImmutable::parse($read)->diffInMilliseconds(Carbon\CarbonImmutable::parse('2026-11-14T12:00:07.500000Z'), false))] : $result;
     expect($projected->status->value)->toBe($status)->and($projected->result)->toBe($result)->and($projected->error_code)->toBe($code);
 })->with([
     'T3 inactive' => ['failed', ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], 'conn.t3_inactive'],
     'no code of its own' => ['failed', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
-    'restarted' => ['succeeded', ['answer' => 'restarted'], ['answer' => 'restarted'], null],
+    'restarted, with its window from the read' => ['succeeded', ['answer' => 'restarted', 'restart_at' => '2026-11-14T12:00:07.500000Z'], 'window', null],
     'stopped after the read' => ['succeeded', ['answer' => 'skipped', 'reason' => 'stopped'], ['answer' => 'skipped', 'reason' => 'stopped'], null],
 ]);

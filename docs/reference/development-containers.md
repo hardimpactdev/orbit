@@ -539,7 +539,7 @@ A frozen or stopped container is skipped. T3 reads the name at its next start.
 
 The thread read and the restart are two steps. The Gateway holds the session, and a run may not call back for it. So the Gateway admits the Operation right after the read. The Node form reads each container right before its own admission.
 
-About 5 to 15 seconds pass from the read to the restart: the dispatch, the run's input step and the start of its Ansible phase. The proof of the command measures it.
+About 5 to 15 seconds pass from the read to the restart: the dispatch, the run's input step and the start of its Ansible phase. The proof of the command measures it. The intent carries `read_at`, the end of the Gateway's read. The run notes `restart_at` just before the restart. A restarted Operation's result keeps both and `window_ms`, the time between them.
 
 What a user sees:
 

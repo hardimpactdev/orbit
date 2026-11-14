@@ -62,6 +62,7 @@ final readonly class ConnEnvironmentRestart
                 return ConnEnvironmentRestartDecision::current($instance);
             }
             $blocked = ConnAgentActivity::restartBlocked($this->client->shell($environment->url, $environment->admin_session));
+            $readAt = now()->toImmutable();
         } catch (T3ServerException) {
             return ConnEnvironmentRestartDecision::skipped($instance, 't3_unreadable');
         }
@@ -72,7 +73,7 @@ final readonly class ConnEnvironmentRestart
             return ConnEnvironmentRestartDecision::busy($instance, 't3_working');
         }
         try {
-            return ConnEnvironmentRestartDecision::restarting($instance, $this->admit->execute($instance, $runtime, $environment, $name, $triggeredBy, $requestId));
+            return ConnEnvironmentRestartDecision::restarting($instance, $this->admit->execute($instance, $runtime, $environment, $name, $readAt, $triggeredBy, $requestId));
         } catch (ResourceOperationException $refused) {
             return ConnEnvironmentRestartDecision::busy($instance, $refused->errorCode);
         }

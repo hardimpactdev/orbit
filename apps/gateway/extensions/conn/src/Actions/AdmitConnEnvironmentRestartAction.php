@@ -12,11 +12,12 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Carbon\CarbonImmutable;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 /**
  * Admits the T3 restart of one container Instance for its machine name ([Restart for the machine name](/reference/conn#restart-for-the-machine-name)).
- * It holds the Instance's lock, so no sleep, wake or other lifecycle work runs beside it. No credential enters the intent: the run
+ * `read_at` is when the Gateway's thread read ended; the run's `restart_at` measures the window from it. It holds the Instance's lock, so no sleep, wake or other lifecycle work runs beside it. No credential enters the intent: the run
  * restarts T3 and reads only its public label.
  */
 final readonly class AdmitConnEnvironmentRestartAction
@@ -25,7 +26,7 @@ final readonly class AdmitConnEnvironmentRestartAction
 
     public function __construct(private StartOperationAction $operations) {}
 
-    public function execute(Instance $instance, InstanceRuntime $runtime, ConnEnvironment $environment, string $name, ?string $triggeredBy, ?string $requestId): Operation
+    public function execute(Instance $instance, InstanceRuntime $runtime, ConnEnvironment $environment, string $name, CarbonImmutable $readAt, ?string $triggeredBy, ?string $requestId): Operation
     {
         IntegrationAvailability::assertKind(self::Kind);
         if ($instance->status !== InstanceState::Active) {
@@ -34,7 +35,7 @@ final readonly class AdmitConnEnvironmentRestartAction
 
         return $this->operations->execute(self::Kind, 'instance', $instance->id, $runtime->node_id, [
             'instance_id' => $instance->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $instance->id, 'url' => $environment->url, 'name' => $name,
+            'intent' => ['instance_id' => $instance->id, 'url' => $environment->url, 'name' => $name, 'read_at' => $readAt->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]],
         ], $triggeredBy, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
     }
