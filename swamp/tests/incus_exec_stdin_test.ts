@@ -2,14 +2,14 @@ import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 
 /**
- * A command behind `incus exec` never opens /dev/stdin or /proc/self/fd/0 by path. An Instance container has an isolated id map:
+ * A command behind `incus exec` never opens /dev/stdin, /dev/fd/0 or /proc/self/fd/0 by path. An Instance container has an isolated id map:
  * the Node's stdin pipe shows there as owned by nobody, mode 0600, so the open is refused ("install: Permission denied"). The refresh
  * record write failed so on its first live run (Operation 20393) and the refresh rolled back. A command reads the open stream instead
  * (`cat > file`). The fake `incus` of the unit tests cannot show the refusal for every caller, so this check reads the source.
  */
 const root = new URL("../", import.meta.url);
 const folders = ["ansible", "workflows"];
-const stdinPath = /\/dev\/stdin|\/proc\/self\/fd\/0/;
+const stdinPath = /\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0/;
 const incusExec = /\bincus\b[\s\S]*\bexec\b/;
 const commandKeys = ["argv", "cmd", "command", "shell", "ansible.builtin.command", "ansible.builtin.shell"];
 const varKeys = ["vars", "set_fact", "ansible.builtin.set_fact"];

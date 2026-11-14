@@ -59,7 +59,7 @@ if (command[0] === "rm" && command[1] === "-f") {
 }
 // The Instance container's id map is isolated: the Node's stdin pipe shows there as owned by nobody, mode 0600, so an open of
 // /dev/stdin or /proc/self/fd/0 by path is refused, as on a real container. A command reads the open stream instead.
-if (command.some((part) => /\/dev\/stdin|\/proc\/self\/fd\/0/.test(part))) fail(`${command[0]}: Permission denied`);
+if (command.some((part) => /\/dev\/stdin|\/dev\/fd\/0|\/proc\/self\/fd\/0/.test(part))) fail(`${command[0]}: Permission denied`);
 // The record write: `cat` the stream into a file beside the record, set owner and mode, rename it over the record.
 if (command[0] === "sh" && command[1] === "-c" && command[2].includes('cat > "$1.tmp"') && command[3] === "sh") {
   const path = command[4];
