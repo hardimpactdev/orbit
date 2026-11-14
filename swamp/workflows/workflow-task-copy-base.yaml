@@ -78,7 +78,8 @@ jobs:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
-              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              # No SSH master outlives this run: the header is in this step's environment, which a lingering master would keep.
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=no -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ORBIT_GIT_AUTHORIZATION: '${{ vault.get(inputs.git_authorization.vault, inputs.git_authorization.key) }}'
