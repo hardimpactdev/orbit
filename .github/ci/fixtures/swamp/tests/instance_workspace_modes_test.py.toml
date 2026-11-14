@@ -1,0 +1,28 @@
+order = 1480
+source_sha256 = "2a1329fde964d08f461b58148b7743b445561c932170440d6d4ce7435d778289"
+cases = [
+  "test_a_failed_checkout_names_its_task_and_the_end_of_its_stderr_in_4096_characters",
+  "test_a_folder_the_pass_cannot_read_fails_it",
+  "test_a_link_in_the_workspace_never_changes_what_it_points_at",
+  "test_a_missing_workspace_fails_the_pass",
+  "test_a_mode_change_that_is_refused_still_fails_the_pass_and_names_the_path",
+  "test_a_refusal_and_other_phases_write_no_checkout_detail",
+  "test_entries_that_vanish_during_the_pass_are_skipped_and_the_rest_gets_the_group_bits",
+  "test_the_workspace_fetch_starts_no_automatic_maintenance",
+]
+file = "swamp/tests/instance_workspace_modes_test.py"
+cost = 10
+# The files it reads: the container phase (its group mode pass and workspace Git options) and the play's rescue (the checkout detail).
+inputs = [
+  "swamp/ansible/instance-container.yml",
+  "swamp/ansible/tasks/instance-container-phase.yml",
+]
+[case_costs]
+"test_a_failed_checkout_names_its_task_and_the_end_of_its_stderr_in_4096_characters" = 2
+"test_a_folder_the_pass_cannot_read_fails_it" = 1
+"test_a_link_in_the_workspace_never_changes_what_it_points_at" = 1
+"test_a_missing_workspace_fails_the_pass" = 1
+"test_a_mode_change_that_is_refused_still_fails_the_pass_and_names_the_path" = 1
+"test_a_refusal_and_other_phases_write_no_checkout_detail" = 2
+"test_entries_that_vanish_during_the_pass_are_skipped_and_the_rest_gets_the_group_bits" = 1
+"test_the_workspace_fetch_starts_no_automatic_maintenance" = 1

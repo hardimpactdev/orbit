@@ -94,7 +94,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(failure_checkout_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried)
                   | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
                             if phases is defined else {}))) | to_json }}
@@ -129,6 +129,15 @@
             failure_fleet_detail: >-
               {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume'] or failure_code == failure_message
                  else {'detail': failure_reason} }}
+            # A checkout that fails other than by a refusal names its task and the end of the command's stderr, at most 4096
+            # characters in all: on 2026-11-14 a refresh failed in the group mode pass, and the Operation said only "Command exited
+            # with code 2".
+            failure_checkout_head: "{{ ansible_failed_task.name | default('A checkout task') }}: {{ failure_message }}"
+            failure_checkout_stderr: "{{ ansible_failed_result.stderr | default('') | string | trim }}"
+            failure_checkout_detail: >-
+              {{ {} if failure_phase != 'checkout' or failure_code == failure_message
+                 else {'detail': (failure_checkout_head ~ ': ' ~ failure_checkout_stderr[failure_checkout_stderr | length - [4094 - failure_checkout_head | length, 0] | max:])
+                                 if failure_checkout_stderr != '' else failure_checkout_head} }}
         - name: Fail the phase
           tags: [always]
           ansible.builtin.fail:
