@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node. A clone's create ends when its thread is usable: the checkout, T3 and its registration (docs/reference/development-containers.md#a-clone-create-is-two-operations); its terminal projection admits `instance.complete` for the database, a nested fleet, the Processes and the Route (docs/cli/instance/complete.mmd). Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
-  %% status: reviewed
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#create): every new Instance is a ZFS clone of the Project's default Instance on its Node. A clone's create ends when its thread is usable: the checkout, T3 and its registration (docs/reference/development-containers.md#a-clone-create-is-two-operations); its terminal projection admits `instance.complete` for the database, a nested fleet and the Processes (docs/cli/instance/complete.mmd). The create publishes the address beside the copy when the Route Nodes are free at its admission; else the completion publishes it. Built for the Nodes of the build list. The kind and its step names follow docs/cli/instance/create.mmd; the intent's `container.clone` marks a clone. The Project's first default Instance is container/create-default.mmd; when the charts move into place, it becomes the first-default branch of this chart.
+  %% Decided by the owner (2026-11-14) and the orchestrator (c3): the address is published during the create, beside the copy, in job `publication` (`clone-route-csr-<i>`, `clone-route`). The admission takes the Route Nodes only when they are free and never waits for them; the Gateway frees them when `clone-route` ends, not at the create's end. Nodes held by another Route write leave the publication to the completion, as before.
+  %% status: draft
   %% command: instance:create
   %% kind: instance.create
   autonumber
@@ -34,13 +35,37 @@ sequenceDiagram
   %%> - each attachment of the default marked shared is attached to the clone as it is (same connection, prefix and network, still shared) before `.env` renders, so `.env` holds its keys and the container intent its network path
   %%> - the clone workspace reads one private JSON vault value with `.env`, the Process environment files and the names of the keys the clone owns, of the default's connection keys, of its credential keys and of the shared connections' keys, and the default's Route host with the clone's; SSH stdin takes the whole value
   %%> - a task is recorded with the full intent and `container.clone`
-  %%> - the Route record and the database records are reserved here, but the create publishes no Route, takes no Route publication hold and creates no database: the completion does
-  %%> - the Route publication is captured as the completion will capture it and then dropped: a Route the capture refuses (for example `cluster.router_required`) refuses the create before any record
+  %%> - the Route record and the database records are reserved here; the create creates no database: the completion does
+  %%> - the Route publication is captured from the current site catalog: a Route the capture refuses (for example `cluster.router_required`) refuses the create before any record
+  %%> Route Nodes:
+  %%> - free (no Route write holds a serving Node and none waits for one): the create takes them in this transaction, so its render is fresh, and it publishes the address
+  %%> - held: the create never waits; its intent carries no publication, and the completion publishes the address as before
+  %%> - the decision is one insert per Node into the hold table, whose key is the Node: of two creates admitted together, exactly one takes the Nodes
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
   %%> - each Process takes its desired state from the default's copy of the same definition: stopped on the default stays stopped (installed, not started, startable by `process:start`); failed, absent or running runs
   Note over GW: Commit, push copies<br/>queue start · answer 202
   GW-->>CLI: 202 Accepted<br/>task ID
   GW->>SW: Start run from queue<br/>operation-instance-create
+  opt a Route, its Nodes taken at admission
+    SW->>N: Publish the address<br/>clone-route-csr · clone-route
+    %%> When:
+    %%> - in its own job, `publication`, at the first level after `input`: beside `clone-input` and the copy; no clone step waits for it
+    %%> What it does:
+    %%> - per leaf, the key and CSR on the Node and the signature (`clone-route-csr-<i>`); then the Route create children (`clone-route`): the site in the Node's Caddy, the private DNS, the Ingress edge of a public Route and the TLS probe
+    %%> - the site step skips the Route access and `APP_URL` (`prepared` names this Node): the copy's root disk does not exist yet, and `.env` comes with the checkout
+    %%> - Caddy proxies to the bridge address reserved at admission; until the completion starts the units, the address answers TLS and then 502
+    %%> On failure:
+    %%> - the create goes on; `result.route_publication` is `failed`, the Route records `instance.create_route_failed`, and the completion publishes it again
+    SW-->>GW: clone-route ended<br/>native progress event
+    Note over GW: Route active, free Nodes<br/>one transaction
+    %%> When:
+    %%> - the run's progress event of `clone-route` succeeded; no step calls the Gateway
+    %%> In one transaction:
+    %%> - the Route turns `active` with its sites published, so the next Route writer's render keeps this site
+    %%> - the create's Route Nodes are freed, and waiting Route writes start oldest first
+    %%> Otherwise:
+    %%> - a failed or skipped `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them
+  end
     SW->>N: Stage clone helpers<br/>native clone-input
     %%> What it does:
     %%> - stages the release's helpers and intent from stdin in a private folder for this run; later phases run its launcher by path
@@ -126,6 +151,8 @@ sequenceDiagram
     %%> - checks no Process unit: the units start in the completion, whose check refuses a dead one with `instance.container_process_inactive`
   alt all steps pass in budget
     C-->>SW: T3 answers
+    %%> When:
+    %%> - `finish` starts when the clone steps and the publication have both ended; at the measured times the publication ends first
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Read baseline, record T3<br/>admit instance.complete
     %%> Before the transaction:
@@ -136,8 +163,10 @@ sequenceDiagram
     %%> - after the create row is terminal, admits `instance.complete` with the Instance lock, so nothing takes the Instance in between; the result's `completion_operation_id` names it
     %%> - the completion's vault copy and its Swamp start run after the commit
     %%> - a completion that is refused all the same (the Route capture again, after a change to the fleet) is recorded as a failed `instance.complete` with that code, `failed_step: complete` and the recovery `instance:complete`; another error is recorded as `operation.admission_failed`; the create still succeeds and names it
+    %%> - a `route_publication` of `published` turns the Route `active` here too, when its progress event was lost; `failed` marks the Route `failed_step: native-create`, `instance.create_route_failed`
     %%> Result:
-    %%> - the user can pair with T3 and work; the Processes, the database, a nested fleet and the Route follow in the completion
+    %%> - the user can pair with T3 and work; the Processes, the database and a nested fleet follow in the completion
+    %%> - `route_publication`: `published` (the address answers TLS), `deferred` (the Route Nodes were held at admission: the completion publishes) or `failed` (the completion publishes again); absent without a Route
     %%> - "fully set up" is only the Instance's `status: active`, which a succeeded completion sets ([instance:complete](docs/cli/instance/complete.mmd))
     %%> - the result's `processes_stopped` names the Processes the completion installs but leaves stopped, as on the default
     %%> - the receipt includes when T3 answered and when its sessions passed
@@ -150,7 +179,8 @@ sequenceDiagram
     C--xSW: exit ≠ 0 or timeout
     SW->>N: Attempt container stop<br/>incus stop
     %%> What stays:
-    %%> - the reservation, runtime, and any container, workspace and owned database records stay until the owner acts; the create made no Route publication and no database
+    %%> - the reservation, runtime, and any container, workspace and owned database records stay until the owner acts; the create made no database
+    %%> - a published address stays `active` (502 until a retry or `instance:destroy`); a publication that started and did not succeed is withdrawn by `withdraw-route`, under the Nodes the create still holds
     %%> - a refused retry removes none of them; stop is attempted; failed compensation leaves its step failed
     %%> - shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live
     %%> - failed and cancelled creates, including cancellation before work starts, report retained_for_retry, the same create command with a new idempotency key, and forced destroy

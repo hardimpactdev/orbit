@@ -941,15 +941,39 @@ The levels and their measured seconds, with about 1.2 s of dispatch in each step
 | (start) | Gateway admission, Swamp start | 3.8 |
 | `input` | the intent | 1.3 |
 | `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-workspace` beside `clone-t3` · `clone-sessions` · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.2 · 2.6 · 1.4 · 1.3 |
+| `publication` | `clone-route-csr-<i>` · `clone-route` (with its TLS probe), beside the `clone` job | 3 to 4 · 5 to 7 |
 | `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure, and the run-folder cleanup · `accepted` | 1.3 · 0.3 · 0 |
 
 A plain clone's create succeeds about 24 seconds after the click. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
 
 When the run succeeds, the Gateway reads the [workspace baseline](#workspace-work-state) over SSH, before its transaction. Then, in one transaction, it records the T3 server, writes the baseline and turns the create `succeeded`. The clone stays `source_resolved` with its `starting_commit`, and its runtime is `running`. In the same transaction, after the create row is terminal, the Gateway admits `instance.complete` with the Instance lock. The create's result names it in `completion_operation_id`. The completion's vault copy and its Swamp start run after the commit.
 
-The create's admission captures the clone's Route publication as the completion will, and keeps nothing of it: a Route that the capture refuses, such as a Cluster Route without a recorded Router (`cluster.router_required`), refuses the create before anything is recorded.
+#### The address during the create
 
-The same capture runs again at the completion's admission, because fleet state can change in between: a Cluster's Router, the stored environment, an Ingress firewall. If it refuses then, the projection records a failed `instance.complete` with that code, `failed_step: complete` and the recovery `instance:complete`; any other error at that point is recorded the same way with `operation.admission_failed`. The create still succeeds and names that completion, so Conn, the failure alerts and a task copy see an ordinary failed completion.
+Decided on 2026-11-14 by the owner: the create publishes the clone's address beside the copy, so the address row of a create is not the last to finish. The create's admission captures the Route publication from the current site catalog. A Route that the capture refuses, such as a Cluster Route without a recorded Router (`cluster.router_required`), refuses the create before anything is recorded.
+
+The admission then looks at the Route publication hold of the Route's serving Nodes ([coordinate publication](/reference/routes#coordinate-publication)):
+
+- **Free.** No Route write holds one of the Nodes, and none waits for one. The create takes the hold in its admission transaction, so its Caddy render is fresh. Its job `publication` runs `clone-route-csr-<i>` and `clone-route`, the Route create child with its TLS probe, beside the clone steps.
+- **Held.** The create never waits. Its intent carries no publication, and the completion publishes the address, as before.
+
+The hold table's key is the Node, so of two creates admitted in the same second exactly one takes the hold. The other gets the completion path, and its thread never waits for the first create.
+
+The Gateway frees the hold when `clone-route` ends, not at the create's end. When the run's progress event says `clone-route` succeeded, the Gateway turns the Route `active` with its sites published and frees the Nodes in one transaction, so the next Route writer's render keeps the site. No step calls the Gateway. A failed `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them.
+
+No publication step needs the running app. The site step skips the Route access and `APP_URL`, because the copy's root disk does not exist yet; `.env` comes with the checkout. Caddy proxies to the bridge address that the admission reserved. The TLS probe is a handshake with the Node's Caddy and sends no request. So when the create succeeds, the address answers TLS, but the app answers 502 until the completion's `clone-services` starts the units, about 10 to 20 seconds later.
+
+`finish` waits for both jobs. At the measured times the publication ends first: 8 to 13 seconds against 14 to 18 seconds from `clone-input` to `clone-register`. The create's result says what happened in `route_publication`:
+
+| Value | Meaning |
+| --- | --- |
+| `published` | The create published the address. The completion publishes nothing. |
+| `deferred` | The Route Nodes were held at admission. The completion publishes the address. |
+| `failed` | The publication failed in the create, which still succeeds. The Route records `instance.create_route_failed`, and the completion publishes it again. |
+
+A clone without a Route has no `route_publication`. A create that fails after `clone-route` succeeded keeps the address up; a publication that started and did not succeed is withdrawn by the create's `withdraw-route`, under the Nodes it still holds.
+
+The completion captures the Route again only when its sites are not published, because fleet state can change in between: a Cluster's Router, the stored environment, an Ingress firewall. If it refuses then, the projection records a failed `instance.complete` with that code, `failed_step: complete` and the recovery `instance:complete`; any other error at that point is recorded the same way with `operation.admission_failed`. The create still succeeds and names that completion, so Conn, the failure alerts and a task copy see an ordinary failed completion.
 
 A clone is fully set up only when its `status` is `active`. Only a succeeded completion sets it. Every reader of `active` keeps its meaning: deploy, migrate, sleep, renewal and task copies. `orbit instance:create --wait-active` follows both Operations and exits 0 only on `active`.
 
@@ -1015,7 +1039,7 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | T3 | Its first start, a check of `/.well-known/t3/environment` within 30 seconds, and the T3 project `/srv/workspace` |
 | Registration | [T3 registration](#t3-registration-and-pairing), from the run's result |
 
-A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container. A clone's create publishes no Route and creates no database, so there is nothing to withdraw. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
+A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container. A clone's create creates no database. It withdraws a publication that started and did not succeed; an address it published stays until a retry or `instance:destroy`. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
 A run that succeeded can still fail the create in the Gateway: when the baseline read fails, the create fails with `instance.workspace_baseline_unavailable` and `failed_step: register`. The T3 server is not recorded and no completion starts. The run already ended without its container stop, so the container keeps running; a retry runs the create again over it, and every phase of the create accepts a running copy.
 
@@ -1051,9 +1075,9 @@ A task copy is a clone like any other, so it gets the same. So does a clone in t
 
 ### Complete a clone
 
-[`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([why](#a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, the Route and a check. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
+[`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([why](#a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, a check, and the Route when the create did not publish it. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
 
-The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing. The input is the create's admitted database plan and Processes, and a Route publication captured again from the current site catalog. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
+The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing. The input is the create's admitted database plan and Processes. A Route whose sites are not published gets a publication captured again from the current site catalog: its Nodes were held at the create's admission, its publication failed in the create, or an earlier completion failed to publish it. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
 
 The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md):
 
@@ -1061,14 +1085,14 @@ The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob
 | --- | --- |
 | `input` | the intent |
 | `complete` | stage the folder, and the database starts · the Valkey user, the database check, the fleet start · the fill · `clone-services` · `clone-check` |
-| `publication` | the CSRs · the Route create child |
+| `publication` | the CSRs · the Route create child, only when the input captured the Route |
 | `result` | `finish` and the private-folder cleanup · `withdraw-route` on failure, and the run-folder cleanup · `accepted` |
 
 `clone-services` runs the `services` part of the workspace phase: PHP settings, file rights, Process files, web config, the Node store and the units. It refuses when the checkout mark names another Instance. It writes no tracked file, so the user's work in the checkout stays as it is. `clone-check` runs the `check` phase. A dead unit gives `instance.container_process_inactive`; the phase prints its `process_failure` receipt as its output, and the step keeps that output, because the step accepts the phase's refusal exit and `finish` reads the receipt from it.
 
-Success turns the Route `active`, then the Instance `active` with `provisioning_step=active` and `first_setup_pending=false`, in one transaction. A failed or cancelled run withdraws a Route that it published, and keeps the clone `source_resolved` with `failed_step` and `error_code`. The runtime stays `running` and the Conn environment stays registered, so the user keeps the thread. The result's `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone as for a failed create.
+Success turns the Route `active`, then the Instance `active` with `provisioning_step=active` and `first_setup_pending=false`, in one transaction. A failed or cancelled run withdraws a Route that it published. An address the create published stays up and answers 502 until a retry or `instance:destroy`, which withdraws it; a retry that succeeds keeps it as it is. The run keeps the clone `source_resolved` with `failed_step` and `error_code`. The runtime stays `running` and the Conn environment stays registered, so the user keeps the thread. The result's `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone as for a failed create.
 
-The completion holds the Route publication Nodes for the whole run. A clone's create captures no Route publication, so it holds no Node, and two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
+A completion that publishes the Route holds its Nodes for the whole run; a completion with no publication holds none. A clone's create holds the Nodes only when they are free at its admission, and only until `clone-route` ends, so two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
 The create's terminal projection admits the first completion. A completion that ends `succeeded` or `failed` moves a [task copy](/reference/tasks#task-copy) on, as a create's end does: `active` makes its task run, and a failure fails it.
 
@@ -2266,7 +2290,7 @@ A step may call the Gateway only to sign or to mint. A container that could call
 
 ### A clone create is two Operations
 
-Decided on 2026-11-13 by the owner of the create experience. The user needs only the checkout, `.env` and T3 to start work; the Processes, the database fill, a nested fleet and the Route can follow.
+Decided on 2026-11-13 by the owner of the create experience. The user needs only the checkout, `.env` and T3 to start work; the Processes, the database fill and a nested fleet can follow. Since 2026-11-14 the create publishes the address beside the copy when its Route Nodes are free ([the address during the create](#the-address-during-the-create)).
 
 One Operation has one run, one budget and one terminal projection ([How an operation runs](/reference/operations#how-an-operation-runs)). So the part that can follow is a second Operation of its own kind, `instance.complete`. The create's terminal projection admits it in the same transaction, with the Instance lock. One field, `active`, means fully set up for every reader, and one action admits the completion for every caller.
 
