@@ -484,7 +484,7 @@ The gate checks the working tree as it is, including uncommitted and untracked f
 
 API ownership matching removes the shared `api/v1` prefix, so a Form Request used by a grouped route maps to its versioned OpenAPI operation. The command map of `bin/docs-impact` names the commands that exist; it has no entry for `orbit:gateway-web`. It has no entry for `task:lease:release` either: the command left with the workspace lease.
 
-1. It runs `bin/docs-impact --gate` against the merge base with `origin/main`. The fallback is the merge base with local `main`. Without a merge base, this check fails.
+1. It runs `bin/docs-impact --gate` against the [start commit](/reference/tasks#start-commit). Without a merge base, this check fails.
 2. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 2 to 5 share the machine.
 3. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
 4. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
@@ -582,17 +582,17 @@ Before it writes, the gate removes the `review-*` directories its own Unix user 
 `bin/task-check` is the [scoped task check](/reference/tasks#scoped-task-check) of the Orbit Project in a task copy. It checks only what the task changed since its start commit, so it catches in the copy what CI would otherwise catch after the push. It runs in under five minutes.
 
 ```bash
-bin/task-check                    # against the merge base with origin/main, else main
+bin/task-check                    # against the start commit
 bin/task-check --base REF         # against another start commit
 bin/task-check --budget 200       # seconds for the whole run (default 270)
 bin/task-check --only pest,phpstan
 ```
 
-The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
+The [start commit](/reference/tasks#start-commit) has one rule, which the tasks reference states. The changed paths are those since the start commit, with uncommitted and untracked files, as the candidate gate reads them. The command asks `bin/ci-build-plan --pull-request` which CI jobs those paths select, and `bin/ci-units plan` which Swamp fixture units. When the tree has uncommitted work, both plans read a commit of the working tree that no branch holds. Inside a selected Pest job, it reuses the file-level mapping that the repository already has, `bin/cli-contract`, and adds none. The parts run in this order.
 
 | Part | Runs when | What it runs |
 | --- | --- | --- |
-| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the proposed PR body as the candidate gate passes it |
+| `docs-impact` | Always | `bin/docs-impact --gate` against the start commit, with the branch's [waiver file](/reference/tasks#docs-impact-waivers-in-a-copy) as the candidate gate passes it |
 | `check-flows` | The plan selects the Docs job | `node bin/check-flows`, with `BASE` set to the start commit, as CI runs it |
 | `docs-lint` | The plan selects the Docs job | `bin/docs-openapi` when the plan selects the API reference job, as root `composer check` does, then `composer docs-build` and `composer docs-lint`, which is strict |
 | `pint <project>` | A PHP file of the project changed | `vendor/bin/pint --test` on the changed PHP files of that project |
@@ -630,11 +630,11 @@ Measure the check with `ORBIT_CHECK_PROCESSES=1`. Orbit sets that value for ever
 
 #### Output
 
-Each part prints its output when it fails. The run ends with one line per part: `passed`, `FAILED`, `skipped` with its reason, or `not selected`. The last line names the start commit and the total seconds. The command exits 1 when a part failed.
+Each part prints its output when it fails. The run ends with a summary of at most 12 KiB: one line per part, `passed`, `FAILED`, `skipped` with its reason, or `not selected`, then the last lines of each failed part. The last line names the start commit and the total seconds. The command exits 1 when a part failed. [Stored result](/reference/tasks#stored-result) states the bounds and why the summary always reaches the stored output.
 
 A part whose program is missing fails with `<program>: required tool not found`. The command installs nothing.
 
-A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it, for example `1 skipped: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. A Pest test that needs a program the copy lacks still fails as its test fails.
+A fixture unit whose fixture declares a host program in `host_programs` does not run when the copy lacks that program. The `fixtures` line counts and names it as not runnable, with the missing program, for example `1 not runnable here: zip missing in this copy (swamp/tests/ansible_instance_host_runtime_test.ts#0/2)`. Such a skip does not fail the check. The [fleet refresh](/reference/development-containers#the-pinned-shape-tools) installs `zip`, `unzip` and `jq` in the default, so a copy of a refreshed seed has them. In an older copy without `jq`, `swamp/tests/swamp_node_schedules_test.ts` is named not runnable this way: its release load script needs `jq` and `timeout`. A Pest test that needs a program the copy lacks still fails as its test fails.
 
 #### What it leaves to CI
 
@@ -647,7 +647,7 @@ Two files test the command:
 - `tools/test_ci_task_check.py` needs no vendor folder. CI's "Check CI scope and import fixtures" step runs it with the other `tools/test_ci_*.py` files.
 - `tools/test_task_check.py` needs a task copy or a seeded checkout. CI does not run it. Run it with `python3 tools/test_task_check.py`.
 
-The CI file covers Pest selection and the `skipped` and `not selected` labels. It also covers budget stops, a failed fixture tool setup, the fixture worker count, a capacity row, a collection timeout, a unit whose host program is missing, the worktree cleanup on SIGTERM, the default start commit and the summary format.
+The CI file covers Pest selection and the `skipped` and `not selected` labels. It also covers budget stops, a failed fixture tool setup, the fixture worker count, a capacity row, a collection timeout, a unit whose host program is missing and the worktree cleanup on SIGTERM. It covers the start commit after a merged or rebased main, the summary format, and the summary's byte bound with a very long line.
 
 The seeded file holds one change set for each real failure that CI caught after a task's own checks passed:
 

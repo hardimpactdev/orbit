@@ -77,6 +77,22 @@ Deno.test("a tail keeps whole lines within its bound and drops a cut first line"
     });
 });
 
+Deno.test("a line longer than the bound is named and the lines before it are kept", () => {
+    // Check 21615: a summary line over 16 KiB left only the last two lines of the output.
+    const long = "  passed       fixtures (budget skipped: " + "unit, ".repeat(4000) + ")";
+    const raw = "Task check summary\n  FAILED       pest (40.0s)\n" + long +
+        "\nNot in this check: CI runs them.\nTask check FAILED in 206.6s\n";
+    const { output } = publicTail(raw, 16384);
+    assertEquals(
+        output,
+        "Task check summary\n  FAILED       pest (40.0s)\n" +
+            `[a line of ${encoder.encode(long).length} bytes omitted]\n` +
+            "Not in this check: CI runs them.\nTask check FAILED in 206.6s\n",
+    );
+    // A marker that no longer fits ends the tail.
+    assertEquals(publicTail("x".repeat(100) + "\nlast\n", 12).output, "last\n");
+});
+
 Deno.test("a known value split at the tail boundary never appears even partly", () => {
     const secret = "straddle-secret-0123456789abcdef";
     for (let offset = 0; offset < secret.length + 12; offset++) {

@@ -99,12 +99,13 @@ class HandoffBodyTest(unittest.TestCase):
                     env=env, text=True, timeout=10))
 
             expected = [str(root / 'bin/docs-impact'), '--gate', '--base', 'HEAD']
-            self.assertEqual(command(), expected + ['--pr-body-file', str(body)])
+            self.assertEqual(command(), expected + ['--waiver-file', str(body)])
             env['ORBIT_DOCS_PR_BODY_FILE'] = '/explicit/proposed-body.md'
             self.assertEqual(command(), expected)  # PHP reads the explicit input; no implicit file overrides it.
             env.pop('ORBIT_DOCS_PR_BODY_FILE')
             subprocess.run(['git', 'switch', '-qc', 'other'], cwd=root, check=True)
-            self.assertEqual(command(), expected)
+            # The gate names the branch's waiver file even when it is absent.
+            self.assertEqual(command(), expected + ['--waiver-file', str(common / 'orbit/proposed-pr-bodies/other.md')])
             subprocess.run(['git', 'checkout', '-q', '--detach'], cwd=root, check=True)
             self.assertEqual(command(), expected)
 

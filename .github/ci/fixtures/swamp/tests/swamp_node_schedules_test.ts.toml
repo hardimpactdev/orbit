@@ -12,6 +12,8 @@ cases = [
 ]
 file = "swamp/tests/swamp_node_schedules_test.ts"
 cost = 1
+# The release load script that the tests run pipes each swamp call through jq under timeout.
+host_programs = ["jq", "timeout"]
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/bin/gate-test-support.ts",

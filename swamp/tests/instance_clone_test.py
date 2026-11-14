@@ -713,6 +713,13 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
         self.assertEqual(self.hosts, held)
+        # The phase did not start this copy: its mail part may not read a silent systemd as a boot (instance_mail.py).
+        calls, _, error = self.clone(mail={"port": 1025}, existing=running)
+        self.assertEqual(error, "")
+        mail_call = next(call for call in calls if call[:2] == ["python3", "-c"] and '"status":"unchanged"' in call[2]
+                         and call[-1] not in RENDERS)
+        self.assertNotEqual(mail_call[-1], "started")
+        self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
 
     def test_a_failed_hosts_read_after_the_start_fails_the_create_by_its_own_name(self):
         calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_hosts_read_error": True})
@@ -908,6 +915,8 @@ class CloneTest(unittest.TestCase):
                                      and call[-1] not in RENDERS)
                     start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
                     self.assertLess(start, mail_call)
+                    # The phase started this copy, so the mail part may leave linked sockets to the copy's boot (instance_mail.py).
+                    self.assertEqual(calls[mail_call][-1], "started")
             self.assertEqual(fixture.git("-C", str(fixture.mirror), "rev-parse", "refs/heads/mail-branch").stdout.strip(), fixture.tip)
         finally:
             fixture.doCleanups()

@@ -3,10 +3,10 @@ title: "orbit project:update"
 sidebarTitle: "project:update"
 ---
 
-Change a Project's display name, type, source access, source defaults, task check, task workspace routing, or merge check. Review and merge has its own commands: [`project:review-and-merge:enable`](/cli/project/review-and-merge-enable) and [`project:review-and-merge:disable`](/cli/project/review-and-merge-disable). Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
+Change a Project's display name, type, source access, source defaults, task check, task workspace routing, merge check, or the default copy turn agents of its tasks. Review and merge has its own commands: [`project:review-and-merge:enable`](/cli/project/review-and-merge-enable) and [`project:review-and-merge:disable`](/cli/project/review-and-merge-disable). Omitted fields stay unchanged. The Gateway reconciles affected development sources, checkouts, Routes, inherited web roots, and runtimes before publishing the change. It does not start a production deployment. See [Update a Project](/reference/projects#update-a-project) for validation, rollback, and retry behavior.
 
 ```bash
-orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--merge-check=NAME] [--clear-merge-check]
+orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repository=URL] [--source-access=VALUE] [--default-branch=BRANCH] [--root=PATH] [--task-check=COMMAND] [--clear-task-check] [--task-workspace-routed=true|false] [--merge-check=NAME] [--clear-merge-check] [--task-implementer-provider=NAME] [--task-implementer-model=MODEL] [--task-implementer-effort=LEVEL] [--task-reviewer-provider=NAME] [--task-reviewer-model=MODEL] [--task-reviewer-effort=LEVEL] [--clear-task-implementer-agent] [--clear-task-reviewer-agent]
 ```
 
 | Option | Meaning |
@@ -23,5 +23,15 @@ orbit project:update <project> [--name=NAME] [--type=TYPE] [--slug=SLUG] [--repo
 | `--task-workspace-routed=true\|false` | Change routing for future task workspaces. Invalid values return `project.task_workspace_routed_invalid` before a request. Existing workspaces keep their mode. |
 | `--merge-check=NAME` | The check that must pass on a head before Orbit merges it, such as `Required checks`. |
 | `--clear-merge-check` | Remove the merge check. Combining it with `--merge-check` fails with `project.merge_check_conflict`. The Gateway refuses it while the flow is on. |
+| `--task-implementer-provider=NAME` | The default implementer provider of the Project's [task copies](/reference/tasks#copy-turn-agents), such as `claude`. A task that names its own value keeps it. |
+| `--task-implementer-model=MODEL` | The default implementer model, such as `claude-opus-5-5`. |
+| `--task-implementer-effort=LEVEL` | The default implementer effort: `low`, `medium`, `high`, `xhigh` or `max`. |
+| `--task-reviewer-provider=NAME` | The default reviewer provider. |
+| `--task-reviewer-model=MODEL` | The default reviewer model. |
+| `--task-reviewer-effort=LEVEL` | The default reviewer effort. |
+| `--clear-task-implementer-agent` | Clear the three implementer defaults, so the Gateway's apply. Combining it with an implementer default fails with `project.agent_conflict`; an empty value fails with `project.agent_invalid`. |
+| `--clear-task-reviewer-agent` | The same for the reviewer. |
+
+A changed default applies to the next new copy thread of every task that names no value of its own. A thread keeps the values it started with. A provider or effort the copy does not offer, or a model that is no model name, fails with `validation.failed`.
 
 The API-only JSON boolean `nested_fleet` is stored and returned in Project replies. While it is on, the Project's Instances are containers in the nested Incus project, which only `instance:create` makes, on a Node with nested-fleet hosting on. Every other path refuses with `operation.kind_unavailable` (503). Do not set the flag on a real Project. Enabling it requires operator trial allow-list membership and no Instances; see [Nested fleet setting](/reference/projects#nested-fleet-setting).

@@ -56,12 +56,16 @@ The child runs three Ansible phases through this playbook. Each runs as `agent` 
 | Phase | What it does |
 | --- | --- |
 | `check` | Runs the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
-| `commit` | Stages everything, commits as Orbit with hooks off and reads back `HEAD`, its tree and its parent |
+| `commit` | Stages everything and commits as Orbit with hooks off, unless `HEAD` is a clean recorded candidate. Reads back `HEAD`, its tree and a new commit's parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 
 Commands run as `env -C <directory> … /bin/bash -lc <command>` with the task check variables, `HOME=/home/agent` and the agent's login shell. They use the dependencies installed in the container. A start-commit run extracts the base commit into guest scratch, copies the installed `vendor` and `node_modules` directories and the declared test paths, then runs the command. Commands get no credentials. The admitted `checkout_path` is never a Node path: a Node directory with the same path is never read or run.
 
 Snapshots use the temporary index described above, so a staged, force-added ignored file is in the checked tree. The commit stages the same work, so its tree matches the snapshot.
+
+Every check makes a fresh Orbit commit on the checked `HEAD`, with the checked tree as its tree, also an empty one when the implementer committed the work. Its message is the Gateway's cleaned handoff message, so a candidate never carries a skip directive from the implementer's message.
+
+The one exception is a clean tree whose `HEAD` an earlier check recorded under `refs/orbit/check-operations/`, such as a published head that is checked again. That check makes no commit: its candidate is that `HEAD`. Another empty commit would be work that origin lacks, and it would make a [cancel](/reference/development-containers#workspace-work-state) refuse the copy. A task VM check always commits.
 
 Each command writes its output to a guest file. Ansible copies the output folder to the Node and fetches it into the private worker run folder; the guest and Node copies are removed on success and failure. The typed result holds only exit codes and Git evidence, within the 512 KiB result bound; a larger diff fails the phase.
 

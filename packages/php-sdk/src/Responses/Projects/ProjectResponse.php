@@ -24,6 +24,8 @@ final readonly class ProjectResponse
         public ?bool $reviewAndMerge = null,
         public ?string $mergeCheck = null,
         public ?bool $maintenance = null,
+        /** @var array<string, string|null> the copy turn agent defaults, keyed `implementer_provider` … without the `task_` prefix; empty from a Gateway that sends none */
+        public array $taskAgents = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -52,6 +54,7 @@ final readonly class ProjectResponse
             reviewAndMerge: is_bool($data['review_and_merge'] ?? null) ? $data['review_and_merge'] : null,
             mergeCheck: is_string($data['merge_check'] ?? null) ? $data['merge_check'] : null,
             maintenance: is_bool($data['maintenance'] ?? null) ? $data['maintenance'] : null,
+            taskAgents: self::taskAgents($data),
         );
     }
 
@@ -71,7 +74,37 @@ final readonly class ProjectResponse
             ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
             ...($this->reviewAndMerge === null ? [] : ['review_and_merge' => $this->reviewAndMerge, 'merge_check' => $this->mergeCheck]),
             ...($this->maintenance === null ? [] : ['maintenance' => $this->maintenance]),
+            ...array_combine(array_map(static fn (string $key): string => 'task_'.$key, array_keys($this->taskAgents)), $this->taskAgents),
             'request_id' => $this->requestId,
         ];
+    }
+
+    /** The role's default as `claude / claude-opus-5-5 / medium`; unset values read `-`, and a role with none set is null. */
+    public function taskAgentLabel(string $role): ?string
+    {
+        $values = array_map(fn (string $value): ?string => $this->taskAgents[$role.'_'.$value] ?? null, ['provider', 'model', 'effort']);
+
+        return array_filter($values, static fn (?string $value): bool => $value !== null) === []
+            ? null
+            : implode(' / ', array_map(static fn (?string $value): string => $value ?? '-', $values));
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @return array<string, string|null>
+     */
+    private static function taskAgents(array $data): array
+    {
+        $agents = [];
+        foreach (['implementer', 'reviewer'] as $role) {
+            foreach (['provider', 'model', 'effort'] as $value) {
+                $key = $role.'_'.$value;
+                if (array_key_exists('task_'.$key, $data)) {
+                    $agents[$key] = is_string($data['task_'.$key]) ? $data['task_'.$key] : null;
+                }
+            }
+        }
+
+        return $agents;
     }
 }

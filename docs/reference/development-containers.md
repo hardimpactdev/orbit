@@ -591,6 +591,10 @@ Updated endpoint settings rewrite the proxy services and restart active proxies,
 
 A clone keeps the seed's mail socket links. Its default's mail units are the Node's, the same for every copy, so the container launch finds them in place and reports `unchanged`. A seed taken before mail existed gets them as `applied`. The launch rewrites and restarts them only when the Node's endpoint changed after the seed.
 
+A socket's link in `sockets.target.wants`, absolute or relative, is its enablement. The preflight reads it on disk, because a clone's mail part runs right after `incus start`, often before the copy's systemd answers. A missing link is a change: the install enables and starts the socket. A linked socket that does not listen is started, which is no change; `enable` would reload systemd in the middle of the boot.
+
+The install reads the sockets again after its reload, so a booting copy whose units changed still ends with both sockets listening. A silent systemd means a boot only in a copy that the clone's container phase has just started. That boot starts the linked sockets itself, so a clone of a seed with the right units runs no install and reports `unchanged`. Anywhere else a silent systemd fails the install, as before.
+
 Destroy deletes the container, its private Node activation state and its own ACL, including the SMTP rule. It does not withdraw the shared bridge tuple: that stays for ordinary host reconciliation, like database tuples, and remains needed while other Instances use Mailpit. There is no new helper withdrawal.
 
 The mailer rule edits `/srv/workspace/.env` only when the byte string `MAIL_MAILER` occurs exactly once in the whole file and that occurrence forms exactly `MAIL_MAILER=log`, with or without matching single or double quotes, as a whole line. It replaces only `log` with `smtp`, preserving the quote style. It keeps LF or CRLF, all other bytes, and the file's owner, group, mode, POSIX ACLs and extended attributes.
@@ -1170,6 +1174,7 @@ Work is what lies beyond the Instance's baseline:
 - `commits`: commits on local branches that no remote-tracking ref, baseline head or published commit reaches.
 - **Remote refs.** The read compares with the remote refs as last fetched.
 - **Published commits.** A task copy never fetches. Its read names the commits that the task's publishes pushed.
+- **Check commits.** A check of a clean head that an earlier check recorded adds no commit. A published head that is checked again still reads `clean`; a commit with a changed tree after it counts.
 - **No upstream.** A branch without an upstream gets no special case.
 - `stashes`: stash entries that are not in the baseline.
 
@@ -1542,11 +1547,13 @@ This was tried on a throwaway T3 0.1.7 server on 2026-11-14. A run that asked tw
 
 ### Turn model and effort
 
-The Gateway's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` and `ORBIT_TASKS_COPY_REVIEWER_MODEL` name the Claude model of a new thread of each role. Both default to `claude-opus-5-5`: a container reaches only the Claude model forwarder. The effort is the role's [effort setting](/reference/tasks#drivers): `ORBIT_TASKS_IMPLEMENTER_EFFORT`, default `medium`, and `ORBIT_TASKS_REVIEWER_EFFORT`, default `high`.
+A new thread of each role takes the role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, as [copy turn agents](/reference/tasks#copy-turn-agents) describes. The Gateway ships `claude` and `claude-opus-5-5` for both roles, at `medium` effort for the implementer and `high` for the reviewer: a container reaches only the Claude model forwarder.
 
 Stock T3's CLI takes no effort, but T3's settings can hold several provider instances of one driver, each with its own environment. The create of a task copy writes `/home/agent/.t3/userdata/settings.json` with one `claudeAgent` instance per effort level: `claudeLow`, `claudeMedium`, `claudeHigh`, `claudeXhigh` and `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` set to its level.
 
-A new thread starts with `--provider` set to the instance of its effort. A turn's result names the provider instance and the model that `t3 thread show` gives, and the effort that instance carries. Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
+A new thread starts with `--provider` set to the instance of its provider and effort. Before it starts, Orbit refuses a provider and effort with no instance (`tasks.copy_turn_unoffered`), and the turn checks the model against T3's cached model catalog (`tasks.copy_turn_model_unoffered`). A turn's result names the provider instance, the model and the effort the thread started with.
+
+Claude Code takes `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` that T3 passes from its model catalog, so the thread runs at that effort. This was verified with Claude Code 2.1.311 and T3 0.1.7; a newer version may change it. A continued thread stays on its instance, so it keeps its model and effort. A copy made before these instances existed refuses new threads; cancel it and start the task again.
 
 ### Gaps of the CLI path
 
@@ -2233,7 +2240,9 @@ The fleet step never reads, prints or copies the Club key file. Without the file
 
 ## Git in and out
 
-A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
+A container holds no GitHub credentials. It can read public repositories through the [egress proxy](#egress-and-dns), but it cannot push. Orbit moves the Instance's branches from the Node, as it does for [task VMs](/reference/compute-drivers#git-on-a-task-vm): it fetches with a minted read token and pushes the branch into the container's repository as a Git bundle.
+
+The bundle holds only what the workspace lacks: its prerequisite is the newest commit the branch shares with the workspace's HEAD, or the tip's parent when the workspace already holds the tip. A workspace whose HEAD the mirror does not hold, or that has none, gets the whole branch. On the Orbit Project the whole branch was 89 MB and took 4 s to bundle; a release's bundle is a few kilobytes. Publishing a branch is an Orbit operation: Swamp reads the branch out of the container and pushes it with a minted write token. The tokens never enter the container.
 
 ## Production Instances
 
