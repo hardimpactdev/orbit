@@ -109,6 +109,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
 | `App\Domain\Instances\InstanceThreadContribution` | A task copy's turn and the admission of a container sleep | `recordThread()` and `beforeSleep()` |
 | `App\Domain\Nodes\NodeAccessRemovalHook` | [`node:access:remove`](/cli/node/access-remove), after it deleted an edge | `removed()` |
+| `App\Domain\Nodes\NodeRemovalHook` | [`node:remove`](/cli/node/remove), in its last transaction before it deletes the Node row | `removing()` |
 
 `DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
 

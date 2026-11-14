@@ -68,7 +68,8 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $wasTerminal = $operation->status->terminal();
             $projected = $this->direct->project($operation, $data, $result);
-            $pairing = ConnPairing::query()->where('held', true)->where('node_id', $operation->input['caller_node_id'])
+            // Not by its Node: a deleted Node's pairing passed to the Gateway Node, and its session must still be withdrawn.
+            $pairing = ConnPairing::query()->where('held', true)
                 ->where('conn_environment_id', $operation->input['conn_environment_id'])->lockForUpdate()->find($operation->target_id);
             if ($wasTerminal || ! $pairing instanceof ConnPairing) {
                 return $projected;

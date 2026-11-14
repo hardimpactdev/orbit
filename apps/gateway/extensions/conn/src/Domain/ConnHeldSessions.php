@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Orbit\Extensions\Conn\Domain;
 
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Operations\OperationOutcome;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -73,6 +74,35 @@ final readonly class ConnHeldSessions
                 if (! $this->access->allows($node, $pairing->environment)) {
                     $this->withdraw($pairing);
                 }
+            }
+        });
+    }
+
+    /**
+     * Before its Node row goes, withdraws each held session of the Node that is not settled and hands it to the Gateway Node, so the
+     * row survives the delete and its revoke by pairing id still runs. A hold that still runs revokes at its end. The caller holds the
+     * transaction; each server's next owed revoke is admitted after its commit, and the hourly sweep or a wake admits the rest.
+     */
+    public function handOver(Node $node): void
+    {
+        $gateway = app(NodeAccessAuthorizer::class)->activeGatewayId();
+        $pairings = ConnPairing::query()->where('node_id', $node->id)->where('held', true)
+            ->where(static fn ($query) => $query->whereNull('revoked_at')->orWhereNotNull('withdrawn_at'))->lockForUpdate()->get();
+        if ($pairings->isEmpty()) {
+            return;
+        }
+        if ($gateway === null || $gateway === $node->id) {
+            Log::warning('conn.held_handover_skipped', ['node_id' => $node->id, 'pairings' => $pairings->count()]);
+
+            return;
+        }
+        foreach ($pairings as $pairing) {
+            $pairing->forceFill(['node_id' => $gateway, 'session' => null, 'withdrawn_at' => $pairing->withdrawn_at ?? Carbon::now()])->save();
+        }
+        $environments = $pairings->pluck('conn_environment_id')->unique()->values()->all();
+        DB::afterCommit(function () use ($environments): void {
+            foreach ($environments as $environment) {
+                $this->revokeNext($environment);
             }
         });
     }

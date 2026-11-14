@@ -6,6 +6,8 @@ use App\Actions\Nodes\RemoveNodeAccessAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\NodeAccessRemovalHook;
+use App\Domain\Nodes\NodeRemovalHook;
+use App\Domain\Nodes\NodeRemovalRecords;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
@@ -28,6 +30,7 @@ use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessionSweep;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
+use Orbit\Extensions\Conn\Domain\ConnNodeRemoval;
 use Orbit\Extensions\Conn\Domain\ConnRevocationProjection;
 use Orbit\Extensions\Conn\Domain\ConnSessionHoldProjection;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
@@ -540,6 +543,35 @@ describe('revoke and removal', function (): void {
     it('contributes the grant-removal hook', function (): void {
         expect(collect(app()->tagged(NodeAccessRemovalHook::class))->map(fn (object $hook): string => $hook::class)->all())
             ->toContain(ConnNodeAccessRemoval::class);
+    });
+
+    it('keeps the held sessions of a deleted Node until their revoke by pairing id ran, also one whose hold still runs', function (): void {
+        $laptop = heldNode('laptop', '10.44.0.78');
+        NodeAccess::query()->create(['consumer_node_id' => $laptop->id, 'serving_node_id' => $this->host->id]);
+        $second = heldServer($this->project, $this->host, 'second');
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($laptop, $this->environment));
+        $live = ConnPairing::query()->where('held', true)->sole();
+        $running = app(AdmitConnSessionHoldAction::class)->hold($laptop, $second);
+        $gateway = SwampNodeFixture::ensure();
+
+        app(NodeRemovalRecords::class)->remove(['node_id' => $laptop->id, 'name' => 'laptop', 'task_vm_id' => null, 'route_ids' => []], [], ['routes' => []]);
+
+        expect(Node::query()->find($laptop->id))->toBeNull()
+            ->and($live->fresh())->node_id->toBe($gateway->id)->session->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(ConnPairing::query()->findOrFail($running->target_id))->node_id->toBe($gateway->id)->withdrawn_at->not->toBeNull();
+        // One revoke per server: the live session's now; the running hold's at its end.
+        expect(collect(revokes())->map(fn (Operation $revoke): array => $revoke->input['pairing_ids'])->all())->toBe([[$live->id]]);
+        endHold($running);
+        expect(collect(revokes())->map(fn (Operation $revoke): array => $revoke->input['pairing_ids'])->all())->toBe([[$live->id], [$running->target_id]])
+            ->and(ConnPairing::query()->findOrFail($running->target_id)->session)->toBeNull();
+
+        endRevoke(revokes()[0]);
+        expect($live->fresh())->withdrawn_at->toBeNull()->revoked_at->not->toBeNull();
+    });
+
+    it('contributes the Node removal hook', function (): void {
+        expect(collect(app()->tagged(NodeRemovalHook::class))->map(fn (object $hook): string => $hook::class)->all())
+            ->toContain(ConnNodeRemoval::class);
     });
 
     it('removes the held sessions with their Instance', function (): void {

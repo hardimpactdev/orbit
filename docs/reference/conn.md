@@ -654,6 +654,7 @@ A held session ends in two steps. The Gateway withdraws it: it stops serving it 
 
 - Removing a Node's node access withdraws its held sessions on the servers that the Node now cannot reach. Core calls Conn through the `NodeAccessRemovalHook` plug-in point of `node:access:remove`.
 - The hourly tick also withdraws a held session whose Node lost access another way.
+- Deleting a Node ([`node:remove`](/cli/node/remove)) withdraws its held sessions that are not settled, just before the Node row goes. Core calls Conn through the `NodeRemovalHook` plug-in point. The Gateway made those pairings, so each passes to the Gateway Node: the row survives the delete, and the owed revoke by `pairing_id` runs as above. The first revoke on each server starts at once; one whose hold still runs revokes at that hold's end. A server that is asleep or down gets its revoke at its wake or from the hourly tick.
 - Destroying the Instance deletes its held pairings with its other pairings. T3 goes with the container, so nothing is left to revoke.
 
 `GET /environments/{environment_id}/pairings` keeps its default answer: device pairings only. `include_held=1` or `include_held=true` adds the held pairings, and then each row has `held`. The optional `include_held` accepts only `1`, `true`, `0` or `false`, else `validation.failed` (422). A device's `renew: true` pairing looks only at the device's own pairings, so a revoked held pairing never refuses it.
@@ -668,7 +669,7 @@ T3 0.1.7 does not bind the session to a client. It checks only the signature, th
 
 - it ends, at most 30 days after it was issued;
 - the next renewal revokes it, at most 23 days after it was issued;
-- a revoke by `pairing_id`, or removing the Node's node access, ends it at once.
+- a revoke by `pairing_id`, removing the Node's node access, or deleting the Node ends it as soon as the server takes the revoke. A server that is asleep or down takes it at its wake or the next hourly tick.
 
 Binding would need a DPoP proof key that the client presents when the link is redeemed. The Gateway redeems for the client, so it cannot present the client's key. Stock T3 also issues a bound token for one hour only.
 
