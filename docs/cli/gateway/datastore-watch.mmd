@@ -13,8 +13,10 @@ sequenceDiagram
   participant N as Node 209<br/>serve datastore
   Note over SW: Schedule fires<br/>every 15 min · 0 */15 * * * *
   %%> When:
-  %%> - every 15 minutes, from the native trigger of `swamp-datastore-watch`
+  %%> - every 15 minutes, from the native trigger of `swamp-datastore-watch`, merged on Node 209's serve with the same override that the release Swamp load sets from `swamp/config/swamp-node-schedules.json`
   %%> - serve loads the workflow from the repository with each release, like every workflow
+  %%> Not yet:
+  %%> - a nested fleet's serve still registers the built-in trigger and the run fails there; a later change removes it, so only the release load sets the schedule
   %%> Not included:
   %%> - no command: no person starts it, and the swamp role installs nothing for it
   %%> - one fire is one task (ADR 0244)
