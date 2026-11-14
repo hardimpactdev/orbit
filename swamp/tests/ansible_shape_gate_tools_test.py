@@ -252,7 +252,7 @@ class InstanceShapeToolsTest(unittest.TestCase):
         self.log.write_text('')
         result, calls = self.keep(STUB_VENV_FAIL='1')
         self.assertEqual((result['tools'], result['reason']), ('present', 'current'))
-        self.assertEqual(calls, [])
+        self.assertEqual([call for call in calls if not call.startswith(f'{self.bin}/dpkg-query')], [])
         # A cleanup that failed in an earlier refresh: the tools of other pins go now, so they do not stay in every seed.
         (self.tools / 'venv-0000000000000000').mkdir()
         self.assertEqual(self.keep(STUB_VENV_FAIL='1')[0]['tools'], 'present')
@@ -270,7 +270,39 @@ class InstanceShapeToolsTest(unittest.TestCase):
         result, calls = self.keep()
         self.assertEqual(result['tools'], 'built')
         apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
-        self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update', '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv'])
+        self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update',
+                               '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv zip unzip jq'])
+
+    def test_host_programs_missing_beside_ready_tools_are_installed_once_then_only_read(self):
+        self.keep()
+        # zip and jq, which fixture units run, are missing; python3-venv and unzip are installed.
+        self.stub('dpkg-query', 'case "${@: -1}" in zip|jq) exit 1;; esac\nprintf \'install ok installed\'\n')
+        self.log.write_text('')
+        result, calls = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('built', 'missing'))
+        apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
+        self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update', '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- zip jq'])
+        self.assertFalse([call for call in calls if call.startswith(str(self.tools))], 'ready tools are not built again')
+        self.stub('dpkg-query', "printf 'install ok installed'\n")
+        self.log.write_text('')
+        result, calls = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('present', 'current'))
+        self.assertFalse([call for call in calls if 'apt-get' in call])
+
+    def test_a_failed_package_read_is_the_package_step(self):
+        # dpkg-query prints bytes that are not UTF-8: the read raises, and the step still names itself in the one result line.
+        self.stub('dpkg-query', "printf '\\377'\n")
+        result, _ = self.keep()
+        self.assertEqual(result, {'tools': 'failed', 'reason': 'package', 'venv': 'venv-aaaaaaaaaaaaaaaa',
+                                  'collections': 'collections-bbbbbbbbbbbbbbbb'})
+
+    def test_a_failed_host_program_install_is_reported_and_keeps_ready_tools(self):
+        self.keep()
+        self.stub('dpkg-query', 'case "${@: -1}" in zip) exit 1;; esac\nprintf \'install ok installed\'\n')
+        self.stub('apt-get', 'exit 100\n')
+        result, _ = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('failed', 'package'))
+        self.assertTrue((self.tools / 'venv-aaaaaaaaaaaaaaaa/.complete').is_file())
 
     def test_each_failed_step_is_named_and_leaves_nothing_complete(self):
         self.stub('dpkg-query', 'exit 1\n')

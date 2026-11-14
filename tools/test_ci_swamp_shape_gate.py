@@ -59,20 +59,21 @@ class PlanTest(unittest.TestCase):
     def test_the_shape_group_runs_ci_s_checks_in_ci_s_order(self):
         names = [step.name for step in steps('shape')]
         self.assertEqual(names[:2], ['ansible collections', 'ansible-lint'])
-        self.assertEqual(names[-4:], ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands'])
+        self.assertEqual(names[-5:], ['check-swamp-shape', 'check-swamp-base-policy', 'lint-behavior-names', 'frozen agent commands',
+                                     'workflow placement'])
         # Eight named suites plus the file commands, with three Instance-host groups.
         self.assertEqual(len([name for name in names if name.startswith('deno test')]),
                          8 + len(gate['deno_test_files']()) + len(gate['DENO_CONTROL_TESTS']))
         self.assertTrue(any('tests/ansible_instance_host_test.ts' in name for name in names))
-        for step in steps('shape')[-4:-1]:
+        for step in steps('shape')[-5:-2]:
             self.assertEqual(step.argv[step.argv.index('--base') + 1], BASE)
-        self.assertIn('/reports/shape.json', steps('shape')[-4].argv)
+        self.assertIn('/reports/shape.json', steps('shape')[-5].argv)
 
     def test_control_runs_the_writes_audit_and_all_static_rules_without_fixtures(self):
         control = [step for step in steps('shape') if not step.parallel and step.name != 'ansible collections']
         self.assertEqual([step.name for step in control],
                          ['deno test tests/writes_declared_test.ts', 'check-swamp-shape', 'check-swamp-base-policy',
-                          'lint-behavior-names', 'frozen agent commands'])
+                          'lint-behavior-names', 'frozen agent commands', 'workflow placement'])
         code, calls, output = ExitCodeTest().run_gate(['--only', 'control', '--base', BASE], [])
         self.assertEqual(code, 0, output)
         self.assertEqual(len(calls), len(control))
@@ -104,7 +105,9 @@ class PlanTest(unittest.TestCase):
         self.assertEqual(needs['validate-swamp-workflows'], ('credentials',))
         self.assertEqual(needs['node enrollment trust'], ('credentials',))
         self.assertEqual(needs['check-grant-patterns'], ('credentials', 'php'))
-        self.assertEqual(needs['workflow placement'], ())
+        self.assertNotIn('workflow placement', needs)
+        # It needs no credential, so the static controls of the shape job run it.
+        self.assertEqual(next(step for step in steps('shape') if step.name == 'workflow placement').needs, ())
 
     def test_credentials_decide_the_skip(self):
         validate = next(step for step in steps('validate') if step.name == 'validate-swamp-workflows')
@@ -115,7 +118,7 @@ class PlanTest(unittest.TestCase):
 class ParallelTest(unittest.TestCase):
     def test_prerequisites_and_ratchets_stay_serial(self):
         shape = steps('shape')
-        control_count = 4 + len(gate['DENO_CONTROL_TESTS'])
+        control_count = 5 + len(gate['DENO_CONTROL_TESTS'])
         self.assertFalse(shape[0].parallel)
         self.assertTrue(all(step.parallel for step in shape[1:-control_count]))
         self.assertTrue(all(not step.parallel for step in shape[-control_count:]))

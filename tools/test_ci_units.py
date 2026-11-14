@@ -365,6 +365,27 @@ class TableTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
                     units.configuration(path)
 
+    def test_run_takes_its_worker_count(self):
+        import signal
+        handlers = {sig: signal.getsignal(sig) for sig in (signal.SIGTERM, signal.SIGINT)}
+        self.addCleanup(lambda: [signal.signal(sig, handler) for sig, handler in handlers.items()])
+        for extra, workers in (([], BUDGET['shard_workers']), (['--workers', '1'], 1)):
+            with self.subTest(workers=workers):
+                with patch.object(sys, 'argv', ['ci-units', 'run', '--units', '[]', *extra]), \
+                        patch.object(units, 'run', return_value=0) as run:
+                    self.assertEqual(units.main(), 0)
+                self.assertEqual(run.call_args.args[1]['shard_workers'], workers)
+
+    def test_host_programs_list_unique_program_names(self):
+        for programs in ([], 'zip', ['zip', 'zip'], ['zip; rm'], [1]):
+            with self.subTest(programs=programs):
+                config, inventory = units.registry.load(ROOT)
+                config['fixture'][0]['host_programs'] = programs
+                with patch.object(units.registry, 'load', return_value=(config, inventory)):
+                    with self.assertRaisesRegex(ValueError, 'host_programs must list unique program names'):
+                        units.configuration()
+        self.assertEqual(units.configuration()[1]['swamp/tests/gateway_swamp_load_test.ts']['host_programs'], ['jq'])
+
     def test_case_exclusions_cannot_survive_a_test_rename(self):
         config, inventory = units.registry.load(ROOT)
         entry = next(f for f in config['fixture'] if f.get('after_merge_cases'))

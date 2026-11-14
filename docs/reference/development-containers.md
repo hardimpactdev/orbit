@@ -2,13 +2,13 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -955,6 +955,14 @@ A clone is fully set up only when its `status` is `active`. Only a succeeded com
 
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It copies no development deploy commands to the execution vault and runs no deploy step. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
 
+A branch that the seed already holds needs no network. A new branch at the seed's commit fetches nothing and fills no Node mirror. The guest checks it out from the seed's own repository, with no bundle.
+
+An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no `ls-remote` in the clone, because its admission read GitHub. Only an existing branch, or a new branch from another commit, is fetched. A create by name only still reads GitHub once, to learn whether the origin has the branch.
+
+Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
+
+The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
+
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
 Its `.env` is a copy of the default's, except the keys it must own: see [the environment of a clone](#the-environment-of-a-clone). When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
@@ -1583,7 +1591,7 @@ An Instance container with a nested fleet lives in its own Incus project on the 
 | `security.syscalls.intercept.mknod` | `true` | The inner Incus makes device nodes for its containers |
 | `security.syscalls.intercept.setxattr` | `true` | The inner Incus and Docker set trusted extended attributes |
 | `security.idmap.isolated` | `true` | The container has its own ID range, as every Instance container |
-| `security.idmap.size` | `101000000` | The inner range below must fit inside |
+| `security.idmap.size` | The runtime's [recorded size](#the-id-map-size): `101000000`, or `1165536` after a conversion | The inner range below must fit inside |
 | `limits.memory` | `12GiB` | The inner fleet shares the container's memory |
 | `boot.autostart` | `false` | Incus never starts it at host boot, without the guard below |
 | `user.max_user_namespaces` | Not set to zero | The inner Incus needs user namespaces |
@@ -1645,7 +1653,7 @@ It is the normal image with these changes:
 | Inner Incus | `incus-base` and `incus-client` from the recipe's pinned artifacts, checked by SHA-256 |
 | Packages | `wireguard-tools`, `sqlite3`, `sudo`, `zstd` and `btrfs-progs` too. `zstd` reads the `.tar.zst` archives of the inner fleet's containers; the inner Incus's btrfs driver needs `btrfs-progs` for the pool on the [inner volume](#the-inner-volume) |
 | User namespaces | No `/etc/sysctl.d/90-orbit-no-userns.conf` |
-| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:100000000` |
+| Subordinate IDs | `/etc/subuid` and `/etc/subgid` give root `1000:1` and `1000000:65536` |
 | AppArmor marker | `/etc/orbit/apparmor-off` holds `N` |
 | `agent` | A member of the inner `incus-admin` group, with passwordless sudo from `/etc/sudoers.d/orbit-agent` (root:root, mode 0440) |
 | `orbit` | Neither the group nor sudo. The first rule of the firewall's output chain drops its traffic to the inner fleet's networks, `10.45.0.0/24` and `10.232.2.0/24`. The other rules stay the same |
@@ -1696,7 +1704,40 @@ The first nested-fleet default and every Instance without `inner_volume`, its co
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:65536`, plus `1000:1` for the [workspace mapping](#fleet-rules). The first nested-fleet default, and every default made from a nested-fleet image built before the release that brought the ID map size, gives `1000000:100000000` until its [conversion](#convert-a-default). Either range fits inside the outer map.
+
+### The ID map size
+
+Each nested-fleet runtime records the size of its isolated ID map in `idmap_size`. The create and the clone write it as `security.idmap.size`, and the start guard requires that value.
+
+| Runtime | Size |
+| --- | --- |
+| A new nested-fleet default, or a migrated nested Instance | 101,000,000 |
+| A copy, a plain clone or a task copy | Its default's size at the copy's reservation |
+| A converted default | 1,165,536: the inner Incus's base of 1,000,000, its range of 65,536 and 100,000 spare |
+| A normal container | None: Incus's 65,536 |
+
+The inner fleet's three containers share one range of the outer container. They use IDs up to 65,534 (`nobody`), and Docker in them runs without user namespaces, so 65,536 IDs are enough. Every nested container mounts its root disk idmapped (`volatile.last_state.idmap` is `[]`), so a changed outer size moves no file on the host.
+
+A copy keeps its size for its whole life. So copies made before a conversion keep 101,000,000 and still match their start guard, beside new copies of 1,165,536. The [task start check](#the-check-at-a-task-start) and the converge's [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting) read the recorded sizes.
+
+#### Convert a default
+
+An operator converts a nested-fleet default once, outside any task turn. The steps:
+
+1. Stop the default. Its copies keep running; their ranges do not change.
+2. Take a container snapshot `pre-idmap-<time>`. Incus needs a free range of the old size for it, for a moment.
+3. Write `/etc/subuid` and `/etc/subgid` in the container: `root:1000000:65536` and `root:1000:1`.
+4. Set `security.idmap.size` to `1165536` on the container.
+5. Run `php artisan gateway:instance-idmap-size <id> 1165536` on the Gateway host. It records the size and clears the default's seed, so clones refuse until a new seed exists.
+6. Start the outer container and its inner containers once by hand. The inner Incus then rewrites the owners of their files on its pool, once.
+7. Deploy the default. Its start passes the guard with the new size, and the deployment takes a new seed. New copies get the small size.
+
+At step 6 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
+
+The command refuses a size other than the two above with `instance.idmap_size_invalid`. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone. It holds the default's row lock, as a task copy's admission does.
+
+A rollback destroys the copies made after the conversion, restores `pre-idmap-<time>`, which brings back the old config and the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more.
 
 #### The seed pair
 
@@ -1847,7 +1888,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | Agent delivery, grants, state mounts, fleet files, readiness | None | Every run. The delivery writes into the checkout. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens | With the Club key: a token is missing, older than 20 days or unreadable. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
-| Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate` | The tools of these pins are not complete. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
+| Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate`, and four packages | The tools of these pins are not complete, or a package is missing. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
@@ -1922,24 +1963,29 @@ The remint takes about 1 to 3 minutes. A refresh that does not remint reads the 
 
 The proof runner in a copy needs the pinned Ansible controller of `bin/swamp-shape-gate`: a venv and the Ansible collections, about 160 MB. A copy gets the default's seed, not the image, and the default is never rebuilt from a new image. So every refresh keeps the tools in the default itself, after `base` and before the seed. Each copy then holds the tools of its own commit. No copy builds them, and no copy needs `python3-venv`.
 
+The same step keeps three host programs that Swamp fixture units run: `zip`, `unzip` and `jq`. A [task check](/reference/implementation-loop#the-scoped-task-check) in a copy runs those units, so the copy needs them too.
+
 The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
-| The venv has `.complete` and the collections folder has `ansible_collections` | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| The venv has `.complete`, the collections folder has `ansible_collections`, and the four packages are installed | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| The tools are ready, but a package is missing | Installs the missing packages with one `apt-get install` | `tools: built`, `tools_reason: missing` |
 | Anything else | Builds the tools, as the list below says | `tools: built`, `tools_reason: missing` |
+
+The four packages are `python3-venv`, `zip`, `unzip` and `jq`. The step reads each one with `dpkg-query`. The image lacks `zip`, `unzip` and `jq`. So the first refresh after this change installs five packages, with `libjq1` and `libonig5`, about 0.75 MB. The `apt-get update` and the install add an estimated 10 to 20 s, once. The step changes no image and moves no image alias.
 
 A build does five things:
 
-1. It installs `python3-venv` when it is missing.
+1. It installs the missing packages with one `apt-get install`.
 2. It builds the venv with the gate's own `tool_path`.
 3. It installs the collections into a `.partial` folder and renames it. Collections that are complete already stay.
 4. It writes the venv's `.complete`, the marker of ready tools.
 5. It removes the `venv-*` and `collections-*` folders of other pins.
 
-The build reaches three services: the Ubuntu mirror (apt, for `python3-venv`), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
+The build reaches three services: the Ubuntu mirror (apt, for the packages), the Python package index (pip) and Ansible Galaxy (`ansible-galaxy`). All three go through the Node's egress proxy: apt by its own setting in the image, pip and `ansible-galaxy` by `HTTPS_PROXY` from the Instance profile. The first build in a copy took about 30 s. The folders are mode 0755 and the files 0644, so `agent` reads them. The runner's own `ansible-galaxy collection install` then finds every collection and writes nothing.
 
-A failed build never fails the refresh. The refresh goes on and takes the seed. The result says `tools: failed`, and `tools_reason` names the step: `names` (the checkout's gate cannot be read), `package`, `venv`, `collections` or `cleanup`, `timeout` after 600 s, or `unreadable` when the script printed no result line. The run's log then shows the end of the step's error output.
+A failed build or package install never fails the refresh. The refresh goes on and takes the seed. The result says `tools: failed`, and `tools_reason` names the step: `names` (the checkout's gate cannot be read), `package`, `venv`, `collections` or `cleanup`, `timeout` after 600 s, or `unreadable` when the script printed no result line. The run's log then shows the end of the step's error output.
 
 The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
 
@@ -2142,9 +2188,9 @@ The T3 server's record in the Conn layer names its Instance. Only the Instance's
 
 ## Isolated ID ranges
 
-Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, 101,000,000 for a nested-fleet container (`InstanceHostIntent::TaskPlaceIds`). A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
+Each container takes an isolated ID map from root's one subordinate range in `/etc/subuid` and `/etc/subgid`: 65,536 IDs for an Instance container, and the [recorded size](#the-id-map-size) for a nested-fleet container, 101,000,000 or 1,165,536. A stopped container keeps its range. Incus places a new range in the first gap that fits, from 65,536 IDs past root's base, and a new snapshot needs one for a moment.
 
-On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges fit. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
+On a host with 1,000,000,000 subordinate IDs, nine nested-fleet ranges of 101,000,000 fit, and about 850 of 1,165,536. A small range can sit in a gap a destroyed copy left, so only the bases that Incus chose say which gaps are free.
 
 ### The check at a task start
 
@@ -2153,6 +2199,12 @@ A [task copy](/cli/task/start) start reads them. One bounded SSH call (at most a
 The copy needs one range of its default's size. With the copy placed, a range must stay free for the next seed of this default and of every other default on the Node, so a small copy never fills the last nested-sized gap. Otherwise the start refuses with `tasks.copy_id_range_full`, before any record. A runtime whose container is not on the host counts only while its create is open. An unreadable host refuses with `tasks.copy_id_ranges_unreadable`: the Gateway cannot show a free range. `ORBIT_TASKS_COPIES_MAX` stays an upper bound for nested-fleet copies that an operator may lower.
 
 However, two starts within the same moment can still both pass. Then the later create or seed fails at Incus. The seed step keeps the old seed and names the cause, so the default stays copyable.
+
+### The Doctor warning
+
+Each read is kept on the Node: how many full-size ranges of 101,000,000 are free (up to 2), how many normal containers still fit before one would land in a full-size gap and split it (up to 10), and when it was read. Doctor reads it without reaching the Node.
+
+While the Node records a nested-fleet default of 101,000,000, it warns with `node.id_ranges_low` when fewer than 2 full-size ranges or fewer than 4 normal slots are free. The warning names the read's time, so an old read shows. Copies keep their size but retake no seed, so a Node whose nested defaults are all converted does not warn, even while old copies of 101,000,000 remain. Only a task copy start refreshes the read, so the warning can stay until the next one.
 
 ## Errors
 

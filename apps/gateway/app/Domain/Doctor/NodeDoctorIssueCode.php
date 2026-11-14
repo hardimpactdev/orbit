@@ -25,6 +25,7 @@ enum NodeDoctorIssueCode: string implements DoctorIssueCode
     case AgentSecretMismatch = 'node.agent_secret_mismatch';
     case ReleaseLag = 'node.release_lag';
     case RebootDue = 'node.reboot_due';
+    case IdRangesLow = 'node.id_ranges_low';
     case RouteResidueRetained = 'node.route_residue_retained';
     case CliForeign = 'node.cli_foreign';
     case TaskVmOrphaned = 'node.task_vm_orphaned';

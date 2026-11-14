@@ -37,6 +37,7 @@ use Illuminate\Database\Eloquent\Relations\MorphMany;
  * @property int|null $t3_port_last
  * @property string|null $ssh_host_fingerprint
  * @property array<string, mixed>|null $settings
+ * @property array<string, mixed>|null $id_ranges
  * @property string|null $agent_secret_hash
  * @property int|null $ssh_jump_node_id
  * @property-read Collection<int, NodeRole> $roles
@@ -221,6 +222,7 @@ final class Node extends Model
             'status' => LifecycleStatus::class,
             'public_ssh_port' => 'integer',
             'settings' => 'array',
+            'id_ranges' => 'array',
             'reboot_hold' => 'boolean',
             'image_refresh_hold' => 'boolean',
             'agent_secret_hash' => NodeAgentSecretHash::class,

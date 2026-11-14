@@ -19,6 +19,7 @@ cases = [
   "conservative DNS ownership can withdraw after not-started",
 ]
 file = "swamp/tests/ansible_task_vm_fleet_build_test.ts"
+host_programs = ["jq"]
 cost = 677
 slices = 16
 inputs = [

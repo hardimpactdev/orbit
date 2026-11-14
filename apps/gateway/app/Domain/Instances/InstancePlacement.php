@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use LogicException;
 
 /**
  * The one placement rule that every writer of an Instance or its runtime passes before it writes anything
@@ -104,21 +105,21 @@ final readonly class InstancePlacement
     }
 
     /**
-     * The extra container keys of a recorded Incus project. A nested-fleet container runs an inner Incus whose own range of
-     * 1,000,000 reserved and 100,000,000 subordinate IDs must fit in its isolated map, the size of a task container place. It never
+     * The extra container keys of a recorded Incus project. A nested-fleet container runs an inner Incus whose own range must fit in
+     * its isolated map, of the size its runtime records (docs/reference/development-containers.md#the-id-map-size). It never
      * starts at host boot, so only an Orbit start, behind the start guard, starts it. The start guard admits exactly these keys
      * with the common limits: it reads them from the intent's `config` (docs/reference/development-containers.md#the-container).
      *
      * @return array<string, string>
      */
-    public static function config(string $incusProject): array
+    public static function config(string $incusProject, ?int $idmapSize): array
     {
         return $incusProject === self::NestedProject ? [
             'security.nesting' => 'true',
             'security.syscalls.intercept.mknod' => 'true',
             'security.syscalls.intercept.setxattr' => 'true',
             'security.idmap.isolated' => 'true',
-            'security.idmap.size' => (string) InstanceHostIntent::TaskPlaceIds,
+            'security.idmap.size' => (string) ($idmapSize ?? throw new LogicException('A nested-fleet runtime records its ID map size.')),
             'limits.memory' => '12GiB',
             'boot.autostart' => 'false',
         ] : [];

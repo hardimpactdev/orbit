@@ -247,10 +247,10 @@ A failed nested-fleet build does not fail the converge. The rest of the role com
 
 The converge checks root's largest subordinate range in both `/etc/subuid` and `/etc/subgid` before any nesting change on the host. It refuses with `instance.host_unavailable` when either range is smaller than the demand, and then leaves no nesting preparation behind. It never enlarges a range. The demand is:
 
-`13,172,736 + task IDs + (N + 2) × 101,000,000`
+`13,172,736 + task IDs + S + 2 × 101,000,000`
 
-`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `N` is the number of nested Instance runtimes that the Node records. The two spare maps leave room for a new nested container before the next converge.
+`13,172,736` is the normal Instance demand. Task IDs come from the task container places in `settings.task_vms.containers`, never from the task VM places: `(containers.task_places + containers.ci_places + 1) × 101,000,000`, or 0 when the Node has no `containers` block. `S` is the sum of the [ID map sizes](/reference/development-containers#the-id-map-size) that the Node's nested Instance runtimes record. The two spare maps leave room for a new nested default before the next converge.
 
-So a Node with no `containers` block needs `13,172,736 + (N + 2) × 101,000,000` IDs: 215,172,736 with no nested Instance yet, and 101,000,000 more for each one. Incus reads the ranges when its daemon starts; the converge reads the files.
+So a Node with no `containers` block needs `13,172,736 + S + 2 × 101,000,000` IDs: 215,172,736 with no nested Instance yet, then 101,000,000 more for each full-size runtime and 1,165,536 for each converted one. Incus reads the ranges when its daemon starts; the converge reads the files.
 
 Clearing the switch removes nothing: the nested project, its profile and the module file stay. Runtimes that record `orbit-instances-nested` keep their ID maps in the demand and their project in the shared-folder refresh. Only the two spare maps leave the demand.
