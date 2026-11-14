@@ -133,7 +133,7 @@ The Node must meet the host requirements of ADR 0250: current kernel, SCTP off a
 
 ## Inside a container
 
-Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool. It has 8 GiB of memory, or 12 GiB in the [nested-fleet project](#nested-fleet).
+Every Instance container, default or clone, has 4 CPUs, 4,096 processes and a 40 GiB root disk on the `orbit-instances` ZFS pool. A nested-fleet default has a [larger root disk](#the-root-disk). It has 8 GiB of memory, or 12 GiB in the [nested-fleet project](#nested-fleet).
 
 Clone phases stage their release's helpers and intent once in a private folder for the run. Later phases run them by path. This keeps scripts off the SSH command and avoids its size limit. The repository credential stays on stdin. Cleanup removes the folder on success or failure, including a failed first launch.
 
@@ -1701,6 +1701,8 @@ The refusal names the volume and its key, for example `volume inner-pool block.m
 
 The clone probe writes only `security.idmap.isolated=true`, so its guard admits only that key. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
 
+The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused.
+
 After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
 
 The outer container is only the operator of its fleet. It runs no fleet service itself. It holds:
@@ -1713,13 +1715,29 @@ The tunnel has no unit: `wg-quick` fails under the outer container's AppArmor pr
 
 ### Capacity
 
-Nested and normal Instances share the Node's address pool, T3 ports and storage pool. A `/24` bridge has 252 Instance addresses, `.2` to `.253`: the bridge takes `.1` and the image build `.254`. Each non-default Instance also takes one of the 200 T3 ports, `3800` to `3999`. Every root disk is 40 GiB on the `orbit-instances` pool.
+Nested and normal Instances share the Node's address pool, T3 ports and storage pool. A `/24` bridge has 252 Instance addresses, `.2` to `.253`: the bridge takes `.1` and the image build `.254`. Each non-default Instance also takes one of the 200 T3 ports, `3800` to `3999`. Every root disk is on the `orbit-instances` pool. It has 40 GiB, or for a nested-fleet default the size that [The root disk](#the-root-disk) names. A root size is a ZFS quota, not a reservation, and no admission or Doctor check adds root sizes up.
 
 At reservation, the placement rule refuses first, then a full bridge, then a full T3 port range; the last two refuse with `instance.host_unavailable` (409). So one Project with a default and 200 clones runs out of T3 ports first, and many Projects with defaults can run out of addresses first. Free pool space and the [subordinate-ID demand](/reference/node-settings#nested-fleet-instance-hosting), which the converge checks, can limit a Node earlier.
 
 ### Readers of the recorded project
 
 Each runtime records its Incus project once. Every step that reaches the container reads that record: create, deploy, clone, destroy, Processes, Schedules, mail, Node services, migration and T3 setup. The shared-folder refresh restarts running containers in every project that the Node's runtimes record, before it clears the folder's restart mark, also after the switch is off. With no nested runtime, it runs the same command as before.
+
+### The root disk
+
+The root disk of a nested-fleet default has the size of the Gateway setting [`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`](/reference/gateway-environment), 80 GiB by default. Every other container, a copy of a default among them, keeps 40 GiB.
+
+Incus sets the size as the ZFS `quota` of the container's dataset. A quota counts the dataset's snapshots. A default's seeds stay on its dataset while a copy made from them lives, as hidden `deleted-*` snapshots, and each one that a `base` retake replaced holds about 1.7 GiB. A copy's quota counts only its own blocks. The inner Doctor wants 2 GiB and 10% of the disk free, and a [refresh](#refresh-after-a-release) checks that room first. At 40 GiB, six living copies on old seeds left too little room on Instance 2454.
+
+The size reaches a container two ways:
+
+- A create and a clone write the intent's size.
+- An existing default grows at its next start, such as a deploy. The start reads a smaller `<n>GiB` and sets the intent's size before the guard.
+- Incus sets the quota on the running container, without a restart.
+
+A start never shrinks a root disk. On ZFS, a quota below the used space fails, and Incus then leaves the dataset without a quota. So a lowered setting changes no existing default, and the guard admits a root size that is larger than the intent's. That also keeps a default's start working after a rollback to a release that writes a smaller size. A rollback to a release before this rule refuses a grown default at its start (`instance.container_network_unsafe`, device `root`): roll forward instead.
+
+A setting that is not a whole number of GiB of at least 40 GiB, such as `80GB`, refuses every intent of a nested-fleet default with `instance.nested_root_size_invalid` (503).
 
 ### The nested-fleet image
 
@@ -2348,6 +2366,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |
 | `instance.host_unavailable` | 409 | A build-list Node cannot be prepared: it lacks the pool `orbit-instances` or enough subordinate IDs, or the recipe has no pin for it. |
+| `instance.nested_root_size_invalid` | 503 | `ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE` is not a size in GiB of at least 40 GiB (see [The root disk](#the-root-disk)). Nothing changed |
 | `instance.nested_fleet_host_unavailable` | 409 | A new nested-fleet Instance on a Node whose nested-fleet switch is off. Not reachable yet |
 | `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
 | `instance.nested_fleet_image_unavailable` | 502 | The create of a nested-fleet default while the Node records a failed build of the [nested-fleet image](#the-nested-fleet-image). Orbit makes no container; converge the Node again |

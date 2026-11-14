@@ -36,6 +36,7 @@ sequenceDiagram
   GW-->>CL: 202 Accepted<br/>Operation ID
   SW->>N: Start the container<br/>Ansible · tags start
   %%> What it does:
+  %%> - a nested-fleet default's root disk grows to the intent's size first; it never shrinks
   %%> - the start guard: `boot.autostart=false`, the egress gates of every bridge NIC
   %%> - `incus start`, then the Club key into the container's /run (tmpfs) on stdin, the same script as the create's `clone-club-key`
   %%> - waits until each desired-running unit is active; T3 starts with the container, and the start does not wait for it
