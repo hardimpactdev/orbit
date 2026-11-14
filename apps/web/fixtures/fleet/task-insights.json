@@ -294,8 +294,8 @@
             "breakdowns": {
                 "model": [
                     {
-                        "key": "gpt-5.6-luna",
-                        "label": "gpt-5.6-luna",
+                        "key": "claude-opus-5-5",
+                        "label": "claude-opus-5-5",
                         "tasks": 24,
                         "merged": 18,
                         "tokens_per_merged_pr": 40100000,
@@ -303,8 +303,8 @@
                         "yield": 0.75
                     },
                     {
-                        "key": "gpt-5.5",
-                        "label": "gpt-5.5",
+                        "key": "claude-sonnet-5-5",
+                        "label": "claude-sonnet-5-5",
                         "tasks": 7,
                         "merged": 4,
                         "tokens_per_merged_pr": 55200000,

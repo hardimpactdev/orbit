@@ -42,7 +42,7 @@ it("opens the details, remembers the choice, and switches the breakdown", async 
     expect(page.getByTestId("insights-weekly").element().querySelectorAll("line")).toHaveLength(1);
     await expect
         .element(page.getByTestId("insights-breakdown"))
-        .toMatchTextContent(/gpt-5\.6-luna/);
+        .toMatchTextContent(/claude-opus-5-5/);
     await userEvent.click(page.getByRole("button", { name: "Release" }));
     await expect.element(page.getByTestId("insights-breakdown")).toMatchTextContent(/9e13f78/);
     expect(window.localStorage.getItem(INSIGHTS_EXPANDED_KEY)).toBe("1");

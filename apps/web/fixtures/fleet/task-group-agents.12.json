@@ -33,7 +33,7 @@
                 "task_id": 31,
                 "node_id": 2,
                 "role": "implementer",
-                "model": "gpt-5.5-codex",
+                "model": "claude-sonnet-5-5",
                 "effort": "medium",
                 "driver": "t3",
                 "external_id": "thread-implement-31",
