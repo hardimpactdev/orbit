@@ -476,3 +476,17 @@ it('keeps a refusal after a lock timeout a refusal: the tick does not start that
         ->and(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('refused')
         ->and(TaskPublicationData::fromModel($world->group)?->errorCode)->toBe($code);
 })->with(['tasks.publish_secret_content', 'tasks.push_failed', 'tasks.publish_failed']);
+
+it('keeps a refused check refused when a later publish of it timed out on a lock', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    whenDoneTick();
+    $refused = whenDoneEndPublish($world->group, 'tasks.publish_secret_content');
+    app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null);
+    whenDoneEndPublish($world->group);
+
+    expect(whenDoneTick())->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'skipped', 'code' => 'tasks.publish_secret_content', 'operation' => $refused->id]])
+        ->and(whenDonePublishes($world->group))->toBe(2)
+        ->and(TaskPublicationData::fromModel($world->group->refresh())?->state)->toBe('refused')
+        ->and(TaskPublicationData::fromModel($world->group)?->errorCode)->toBe('tasks.publish_secret_content');
+});

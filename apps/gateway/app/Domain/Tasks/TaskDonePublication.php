@@ -25,6 +25,9 @@ final class TaskDonePublication
     /** The limit of a pull request body that the publish request accepts. */
     public const int BodyLimit = 65536;
 
+    /** How many publishes of one done check may time out on a lock, the first and its retries, before the check shows as refused. */
+    public const int LockTimeoutAttempts = 3;
+
     public static function for(Task $group, TaskCheck $check): StartTaskPublishData
     {
         $group->loadMissing('tasks');
@@ -42,23 +45,22 @@ final class TaskDonePublication
         return new StartTaskPublishData($check->id, ['title' => $group->title, 'body' => $body, 'draft' => false]);
     }
 
-    /** How many publishes of one done check may time out on a lock, the first and its retries, before the check shows as refused. */
-    public const int LockTimeoutAttempts = 3;
-
     /**
-     * The newest publish of this done check, by any caller, that ended without success: Orbit does not start that check again by itself,
-     * and the group shows it as refused (docs/reference/tasks.md#a-refused-automatic-publish). A newest publish that timed out on a lock is
-     * none while fewer than three publishes of the check did: the tick starts the check again.
+     * The publish of this done check, by any caller, that ended without success and keeps the check refused: Orbit does not start the check
+     * again by itself, and the group shows it as refused (docs/reference/tasks.md#a-refused-automatic-publish). The newest publish that
+     * failed with another code than {@see self::LockTimeoutCode}, or was cancelled or interrupted without one, refuses the check whatever
+     * came after. Lock timeouts alone refuse it once {@see self::LockTimeoutAttempts} publishes of the check timed out on a lock.
      */
     public static function unsuccessful(Task $group, TaskCheck $check): ?Operation
     {
-        $failed = self::publishes($group, $check)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value])
+        $ended = self::publishes($group, $check)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Cancelled->value, OperationStatus::Interrupted->value]);
+        $refused = (clone $ended)->where(static fn (Builder $query): Builder => $query->whereNull('error_code')->orWhere('error_code', '!=', self::LockTimeoutCode))
             ->orderByDesc('id')->first();
-        if ($failed?->error_code === self::LockTimeoutCode && self::lockTimeouts($group, $check) < self::LockTimeoutAttempts) {
-            return null;
+        if ($refused instanceof Operation || self::lockTimeouts($group, $check) < self::LockTimeoutAttempts) {
+            return $refused;
         }
 
-        return $failed;
+        return $ended->orderByDesc('id')->first();
     }
 
     /** The attempt of the tick's next publish of this check: one more than its publishes that timed out on a lock, by any caller. */
