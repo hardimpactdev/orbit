@@ -1,8 +1,9 @@
 ---
 # The tested CLI still runs from source. This published binary supplies the installable release that a real Gateway has.
+# In an Instance container the checkout belongs to `agent`, not to the Gateway user, so Git trusts this one checkout for this one call.
 - name: Read the tested Gateway revision
   ansible.builtin.command:
-    argv: [timeout, "60", git, -C, "{{ control.repository | dirname }}", rev-parse, HEAD]
+    argv: [timeout, "60", git, -c, "safe.directory={{ control.repository | dirname }}", -C, "{{ control.repository | dirname }}", rev-parse, HEAD]
   become_user: "{{ control.user }}"
   become: true
   register: proof_gateway_revision

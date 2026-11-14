@@ -276,7 +276,11 @@ def prepare():
     # One subprocess gives controller bootstrap, downloads and report readiness a single hard deadline.
     done = Fleet.must(['timeout', '330', sys.executable, str(Path(__file__).resolve())],
                       'cannot prepare the proof fleet', timeout=340)
-    return Fleet(json.loads(done.stdout))
+    try:
+        return Fleet(json.loads(done.stdout))
+    except ValueError as error:
+        # Stray text comes before the fleet's line, so the start of the output names it.
+        raise FleetError('cannot prepare the proof fleet: its output is not the fleet: ' + done.stdout.strip()[:200]) from error
 
 
 def from_environment():
