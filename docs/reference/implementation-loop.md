@@ -71,7 +71,9 @@ Saved refresh records keep the code and converge digests. Their `converged` time
 
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
 
-The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. It runs two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
+
+[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its independent deferred receiver also runs each main push’s omitted cases at that push SHA, so newer pushes cannot replace their coverage. Both receivers run two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 
@@ -612,7 +614,7 @@ The Swamp checkers read committed `HEAD` and the tracked files. When the tree ha
 
 Only the Swamp shape steps need that worktree. The other parts, fixture units included, run on the working tree, which already holds the uncommitted work.
 
-The population check catches a Deno fixture whose registered cases differ from the `cases` in its `.github/ci/fixtures` file. CI fails such a fixture before it runs any case. It checks each fixture whose units the plan runs on the PR, so a changed shared helper that registers tests is caught too. A unit the plan defers runs in the main full set, which collects its cases live, so the check leaves it out. The check also loads the fixture table, which refuses a Python fixture whose `case_costs` name other cases than its tests.
+The population check catches a Deno fixture whose registered cases differ from the `cases` in its `.github/ci/fixtures` file. CI fails such a fixture before it runs any case. It checks each fixture whose units the plan runs on the PR, so a changed shared helper that registers tests is caught too. A unit the plan defers runs in the exact-push deferred receiver and the main full set, which collect its cases live, so this pre-merge check leaves it out. The check also loads the fixture table, which refuses a Python fixture whose `case_costs` name other cases than its tests.
 
 #### Budget
 
