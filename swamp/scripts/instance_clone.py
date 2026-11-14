@@ -26,36 +26,26 @@ GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
 
 
-def select_branch(container, git, remote_git, run):
-    """Populate the mirror from the admitted source; never use the seed for explicit selection."""
+def select_branch(container, git, remote_git, run, mirror):
+    """The admitted source commit in the mirror. The admission read GitHub, so the clone runs no `ls-remote`. A new branch at the seed's
+    commit needs no fetch: the seed's own repository holds it, and `branch_commit` names it (docs/reference/development-containers.md#create)."""
     selection = container["branch_selection"]
     target = "refs/heads/" + selection["target"]
     source = "refs/heads/" + (selection["base"] or selection["target"])
-    remote = run(
-        remote_git + ["ls-remote", "--heads", "--", container["repository"], source, target],
-        check=False,
-    )
-    if remote.returncode:
-        raise RuntimeError("instance.clone_source_unavailable")
-    heads = {}
-    for line in remote.stdout.splitlines():
-        fields = line.split("\t")
-        if len(fields) != 2 or not re.fullmatch(r"[0-9a-f]{40}(?:[0-9a-f]{24})?", fields[0]):
-            raise RuntimeError("instance.clone_source_unavailable")
-        heads[fields[1]] = fields[0]
-    if selection["mode"] == "new" and target in heads:
-        raise RuntimeError("instance.clone_branch_exists")
-    if source not in heads:
-        raise RuntimeError("instance.clone_branch_not_found")
+    commit = selection["source_sha"]
+    if selection["mode"] == "new" and commit == container["clone"].get("seed_commit"):
+        return
+    mirror()
     fetched = run(
         remote_git + ["fetch", "--quiet", "--no-tags", "--", container["repository"],
                       "+" + source + ":refs/orbit/clone-source"],
         check=False,
     )
     if fetched.returncode:
-        raise RuntimeError("instance.clone_source_unavailable")
-    # Fetch the named source, then retain the exact observed commit even when it advanced since admission.
-    commit = selection["source_sha"]
+        # Git's own words for a ref the origin lacks (LC_ALL=C); the stderr itself never leaves.
+        raise RuntimeError("instance.clone_branch_not_found" if "couldn't find remote ref" in fetched.stderr
+                           else "instance.clone_source_unavailable")
+    # Retain the exact admitted commit even when the source advanced since admission.
     observed = run(git + ["cat-file", "-e", commit + "^{commit}"], check=False)
     if observed.returncode:
         raise RuntimeError("instance.clone_source_unavailable")
@@ -92,6 +82,18 @@ def main():
     club_outcome = None
     workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services"} else None
     secret = sys.stdin.read()
+    # Seconds per part of this phase, printed with its result; names only (docs/reference/development-containers.md#create).
+    timings = {}
+
+    class timed:
+        def __init__(self, part):
+            self.part = part
+
+        def __enter__(self):
+            self.started = time.monotonic()
+
+        def __exit__(self, *_):
+            timings[self.part] = round(timings.get(self.part, 0) + time.monotonic() - self.started, 2)
 
     def run(argv, content=None, check=True):
         remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
@@ -119,6 +121,23 @@ def main():
                 + str(result.returncode)
             )
         return result
+
+    def branch_commit():
+        """The clone's start commit and whether it comes from the seed: the mirror's branch when a fetch put it there, else the seed's
+        commit, which the seed's own repository holds. Every phase reads it the same way, so no phase passes it on. Only a branch the
+        mirror lacks (`rev-parse` exit 1) starts at the seed; any other Git failure fails the phase."""
+        mirror = Path(container["mirror"])
+        if (mirror / "HEAD").exists():
+            held = run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(mirror), "rev-parse", "--verify",
+                        "--quiet", "refs/heads/" + container["branch"] + "^{commit}"], check=False)
+            if held.returncode == 0:
+                return held.stdout.strip(), False
+            if held.returncode != 1:
+                raise RuntimeError("instance.container_" + phase + "_failed: command git exited " + str(held.returncode))
+        seed = container.get("clone", {}).get("seed_commit")
+        if not seed:
+            raise RuntimeError("instance.clone_source_unavailable")
+        return seed, True
 
     def change(argv, content=None):
         result = run(argv, content)
@@ -338,12 +357,14 @@ def main():
                 check=False,
             )
             read = json.loads(current.stdout) if current.returncode == 0 else None
-            acls = json.loads(
-                run(
-                    ["incus", "query", "/1.0/network-acls?project=default&recursion=1"]
-                ).stdout
-            )
-            found = next((row for row in acls if row["name"] == container["acl"]), None)
+            # The copy's own ACL by its name; the list of every ACL on the Node took about a second.
+            acl_timer = timed("acl")
+            acl_timer.__enter__()
+            held = run(["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"], check=False)
+            # Incus answers a missing ACL with 404 "Network ACL not found"; anything else refuses before the copy.
+            if held.returncode and "network acl not found" not in held.stderr.lower():
+                raise RuntimeError("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode))
+            found = json.loads(held.stdout) if held.returncode == 0 else None
             if found is None:
                 change(
                     [
@@ -373,6 +394,9 @@ def main():
                     ],
                     json.dumps(container["acl_rules"]),
                 )
+            acl_timer.__exit__()
+            copy_timer = timed("copy")
+            copy_timer.__enter__()
             if read is None:
                 clone = container["clone"]
                 snapshots = json.loads(
@@ -458,6 +482,7 @@ def main():
                         ]
                     ).stdout
                 )
+            copy_timer.__exit__()
             t3 = container["clone"]["t3"]
             if t3["device"] not in read.get("devices", {}):
                 change(
@@ -477,6 +502,8 @@ def main():
                         "nat=true",
                     ]
                 )
+            boot_timer = timed("units")
+            boot_timer.__enter__()
             if read["status"] != "Running":
                 files = (
                     f"/1.0/instances/{name}/files?project={container['project']}&path="
@@ -528,6 +555,9 @@ def main():
                     change(project + ["file", "delete"] + links)
                 if remove:
                     change(project + ["file", "delete", "--force"] + remove)
+                boot_timer.__exit__()
+                boot_timer = timed("boot_files")
+                boot_timer.__enter__()
                 change(
                     project
                     + [
@@ -572,6 +602,9 @@ def main():
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
                 proxy_drop_ins()
+            boot_timer.__exit__()
+            firewall_timer = timed("firewall")
+            firewall_timer.__enter__()
             for rule in container.get("firewall", []):
                 argv = (
                     ["ufw"]
@@ -595,6 +628,9 @@ def main():
                 result = run(argv)
                 if "Rule added" in result.stdout or "Rules updated" in result.stdout:
                     changes.append("firewall")
+            firewall_timer.__exit__()
+            check_timer = timed("network_check")
+            check_timer.__enter__()
             effective = run(
                 ["incus", "query", f"/1.0/instances/{name}?project={container['project']}"]
             ).stdout
@@ -612,10 +648,15 @@ def main():
                 raise RuntimeError("instance.nic_filters_missing")
             if checked.returncode:
                 raise RuntimeError("instance.container_network_unsafe")
-            if read["status"] != "Running":
-                change(project + ["start", name])
+            check_timer.__exit__()
+            with timed("start"):
+                if read["status"] != "Running":
+                    change(project + ["start", name])
             # After the start, so the copy's hosts template has already run, and before the create reports anything.
-            private_names_hosts()
+            with timed("private_names"):
+                private_names_hosts()
+            services_timer = timed("node_services")
+            services_timer.__enter__()
             if container.get("node_services"):
                 bundle = json.loads(sys.argv[6])
                 applied = run(["python3", "-c", bundle["node_services"],
@@ -640,6 +681,9 @@ def main():
                         "process.target_inactive", "instance.host_unavailable", "instance.bridge_busy",
                         "instance.node_service_port_in_use", "instance.node_service_unit_conflict",
                         "instance.node_service_unreachable"} else "instance.node_service_apply_failed")
+            services_timer.__exit__()
+            mail_timer = timed("mail")
+            mail_timer.__enter__()
             if container.get("mail") is not None:
                 try:
                     bundle = json.loads(sys.argv[6])
@@ -658,11 +702,18 @@ def main():
                 except Exception:  # noqa: BLE001 - mail is advisory; keep arbitrary tool output private.
                     mail = {"status": "failed", "reason": "instance.mail_update_failed"}
                 print("orbit-mail=" + mail["status"] + (":" + mail["reason"] if "reason" in mail else ""))
-            # Git credentials remain on the Node, and leave even when a read/fetch fails.
+            mail_timer.__exit__()
+            # Git credentials remain on the Node, and leave even when a read/fetch fails. The Node's mirror is made only for a fetch:
+            # a branch the seed holds needs none.
             mirror = Path(container["mirror"])
-            mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            if not (mirror / "HEAD").exists():
-                change(["git", "init", "--quiet", "--bare", str(mirror)])
+
+            def make_mirror():
+                mirror.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if not (mirror / "HEAD").exists():
+                    change(["git", "init", "--quiet", "--bare", str(mirror)])
+
+            branch_timer = timed("branch")
+            branch_timer.__enter__()
             git = [
                 "git",
                 "-c",
@@ -699,17 +750,18 @@ def main():
                 ]
             )
             if "branch_selection" in container:
-                select_branch(container, git, remote_git, run)
+                select_branch(container, git, remote_git, run, make_mirror)
             else:
+                # A create by name only: GitHub says whether the origin has the branch. A branch it lacks starts at the seed's commit.
                 branch = "refs/heads/" + container["branch"]
+                # `ls-remote` needs no repository: it runs with the same options outside the mirror, which may not exist.
+                outside = remote_git[: remote_git.index("-C")] + remote_git[remote_git.index("-C") + 2 :]
                 remote = run(
-                    remote_git
+                    outside
                     + ["ls-remote", "--heads", "--", container["repository"], branch]
                 ).stdout.strip()
-                before = run(
-                    git + ["rev-parse", "--verify", "--quiet", branch], check=False
-                )
                 if remote:
+                    make_mirror()
                     run(
                         remote_git
                         + [
@@ -721,22 +773,7 @@ def main():
                             "+" + branch + ":" + branch,
                         ]
                     )
-                elif before.returncode:
-                    run(
-                        git
-                        + [
-                            "fetch",
-                            "--quiet",
-                            "--no-tags",
-                            "--",
-                            container["clone"]["source_mirror"],
-                            "+refs/heads/*:refs/seed/*",
-                        ]
-                    )
-                    change(
-                        git
-                        + ["branch", container["branch"], container["clone"]["seed_commit"]]
-                    )
+            branch_timer.__exit__()
         finally:
             credential.unlink(missing_ok=True)
     elif phase == "club-key":
@@ -782,42 +819,44 @@ def main():
             "-C",
             container["mirror"],
         ]
-        target = run(
-            git + ["rev-parse", "--verify", "refs/heads/" + container["branch"]]
-        ).stdout.strip()
+        target, from_seed = branch_commit()
         container["expected_commit"] = target
         bundle = folder / "workspace.bundle"
-        container["bundle"] = "/tmp/orbit-workspace-" + folder.name + ".bundle"
         try:
-            run(
-                git
-                + [
-                    "bundle",
-                    "create",
-                    "--quiet",
-                    str(bundle),
-                    "refs/heads/" + container["branch"],
-                ]
-            )
-            run(
-                project
-                + [
-                    "file",
-                    "push",
-                    "--uid",
-                    "1000",
-                    "--gid",
-                    "2760",
-                    "--mode",
-                    "0640",
-                    str(bundle),
-                    name + container["bundle"],
-                ]
-            )
-            output = inside(phase, json.dumps(private))
+            # Only a fetched branch goes in as a bundle; the seed's own repository holds a branch at the seed's commit.
+            if not from_seed:
+                container["bundle"] = "/tmp/orbit-workspace-" + folder.name + ".bundle"
+                with timed("bundle"):
+                    run(
+                        git
+                        + [
+                            "bundle",
+                            "create",
+                            "--quiet",
+                            str(bundle),
+                            "refs/heads/" + container["branch"],
+                        ]
+                    )
+                    run(
+                        project
+                        + [
+                            "file",
+                            "push",
+                            "--uid",
+                            "1000",
+                            "--gid",
+                            "2760",
+                            "--mode",
+                            "0640",
+                            str(bundle),
+                            name + container["bundle"],
+                        ]
+                    )
+            with timed("guest"):
+                output = inside(phase, json.dumps(private))
             # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
             print("orbit-commit=" + output.pop("commit"))
-            print(json.dumps(output))
+            print(json.dumps({**output, "timings": timings}))
         finally:
             bundle.unlink(missing_ok=True)
         return
@@ -833,35 +872,30 @@ def main():
             os.chown(cached, owner.pw_uid, owner.pw_gid)
 
         def expected_commit():
-            container["expected_commit"] = run(
-                [
-                    "git",
-                    "-C",
-                    container["mirror"],
-                    "rev-parse",
-                    "refs/heads/" + container["branch"],
-                ]
-            ).stdout.strip()
+            container["expected_commit"] = branch_commit()[0]
 
         if phase == "t3":
             # One step, two guest phases in order: the agent's files from the model key on stdin, then T3's first start, which
             # reads no private input. The step prints only T3's receipt; a failure names its own phase.
             part("agent")
-            inside("agent", secret)
+            with timed("agent"):
+                inside("agent", secret)
             part("t3")
             expected_commit()
-            output = inside("t3", "")
+            with timed("t3"):
+                output = inside("t3", "")
             cached.unlink()
         else:
             expected_commit()
-            output = inside(phase, cached.read_text() if cached.exists() else "")
+            with timed("guest"):
+                output = inside(phase, cached.read_text() if cached.exists() else "")
         reply = output.pop("private_reply", None)
         if reply is not None and not cached.exists():
             owner = private_folder()
             cached.write_text(json.dumps(reply))
             cached.chmod(0o600)
             os.chown(cached, owner.pw_uid, owner.pw_gid)
-        print(json.dumps(output))
+        print(json.dumps({**output, "timings": timings}))
         return
     print(
         json.dumps(
@@ -869,6 +903,7 @@ def main():
                 "phase": phase,
                 "changed": bool(changes),
                 **({"club_key": club_outcome} if club_outcome is not None else {}),
+                **({"timings": timings} if phase == "container" else {}),
                 "completed_at": datetime.datetime.now(datetime.UTC).isoformat(),
             }
         )
