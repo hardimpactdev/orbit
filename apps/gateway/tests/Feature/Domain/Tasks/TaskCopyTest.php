@@ -1284,7 +1284,7 @@ describe('a turn of a group that owns a copy', function (): void {
         }, [], 'tasks.copy_not_ready 409'],
         'a consult' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'consult'], 'tasks.copy_turn_unsupported 422'],
         'a reviewer turn on no checked candidate' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.commit_not_checked 422'],
-        'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'gpt-5.6-luna'], 'tasks.copy_turn_unsupported 422'],
+        'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'claude-sonnet-5-5'], 'tasks.copy_turn_unsupported 422'],
     ]);
 
     it('refuses a nested-fleet group without a copy instead of reaching for a task VM', function (): void {
