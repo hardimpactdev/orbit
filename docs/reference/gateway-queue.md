@@ -40,7 +40,9 @@ Laravel Horizon runs eight queues on the connection with six supervisors. The `t
 
 A pass on `operations` neither drops nor holds back a job on `operations-prompt`.
 
-A start waits for Swamp's confirmation for up to 120 seconds. On one worker such a wait held every other start, and every job on `operations`, behind it. Four start workers, one for each CPU of the Swamp Node, let other starts go on while one waits. Running side by side is safe: the status change at the start of a submission admits one job per Operation, and the target hold refuses a second Operation for the same target until the first ends. The order of the queue therefore never ordered two starts for one target.
+A start waits for Swamp's confirmation for up to 120 seconds. On one worker such a wait held every other start, and every job on `operations`, behind it. Four start workers, one for each CPU of the Swamp Node, let other starts go on while one waits.
+
+Running side by side is safe: the status change at the start of a submission admits one job per Operation, and a target hold refuses a second Operation for the same held target until the first ends. Kinds that take no target hold, such as `process.*` and `schedule.*`, never had an ordered start: a deferred start could already run after a later one.
 
 Each start worker uses at most 256 MB. To change the count, change `maxProcesses` and `minProcesses` of `operation-starts` in `apps/gateway/config/horizon.php`; the next release starts Horizon with it.
 
@@ -141,6 +143,8 @@ The switch also restarts other running services whose working directory is under
 `orbit process:restart`, `orbit process:stop` and `bin/gateway-rollback` wait for running jobs up to the drain, because the unit carries the stop policy. To restart Horizon on the current release without a wait, run `php artisan horizon:terminate`.
 
 ### Switch back to an older release
+
+A release from before the `operation-starts` supervisor does not work that queue. Starts queued there wait in Redis, with their Operations `queued` and their target holds kept, until a release with the supervisor runs again. To start them on the older release, run one worker by hand as `orbit` in `/home/orbit/orbit/apps/gateway` until the queue is empty: `php artisan queue:work gateway --queue=operation-starts --stop-when-empty --tries=1 --timeout=150`.
 
 A release from before Horizon has no `horizon` command. If the rollback script restarts Horizon on that release, the Process fails at each start until systemd gives up. The Process shows the failure in `orbit process:list`. Stop it with `orbit process:stop <id>`. The older release's scheduler runs its own workers on the database queues meanwhile, and jobs left in Redis wait. The next release with Horizon starts the Process again, and Horizon works the jobs left in Redis.
 

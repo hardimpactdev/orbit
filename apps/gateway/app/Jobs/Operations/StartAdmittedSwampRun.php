@@ -20,7 +20,7 @@ use Throwable;
 /**
  * Starts committed intent once. Admission copies are acknowledged before queuing; run-time copies are prepared from the committed intent.
  * Starts run on their own workers, side by side: the status transition in StartSwampRun::begin admits one submission per Operation,
- * and the target hold keeps a second Operation for the same target from being admitted until the first ends.
+ * and a target hold keeps a second Operation for the same held target from being admitted until the first ends.
  */
 final class StartAdmittedSwampRun implements ShouldQueue
 {
