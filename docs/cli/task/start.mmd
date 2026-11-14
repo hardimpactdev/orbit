@@ -17,7 +17,7 @@ sequenceDiagram
   Note over GW: Decide where the task runs<br/>copy or task VM
   %%> What it does:
   %%> - `InstancePlacement::taskRuntime` decides once: a Project with `nested_fleet` on, or whose default Instance is a container, starts the task as a copy of that default; a Project whose default is a host checkout takes a task VM
-  %%> - no other step decides it; the task VM steps refuse a copy Project as before
+  %%> - no other step decides it; later steps follow the group's own workspace, and the task VM steps still refuse only a nested-fleet Project
   alt the Project's tasks run as copies
     Note over GW: Admit the copy's create<br/>instance.create · task-TASK
     %%> Requirements:

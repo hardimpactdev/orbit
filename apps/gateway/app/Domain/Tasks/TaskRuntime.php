@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-/** Where a task group runs, as InstancePlacement::taskRuntime() decides from its Project. */
+/** Where a new task group starts, as InstancePlacement::taskRuntime() decides from its Project. */
 enum TaskRuntime: string
 {
     /** A copy of the Project's default Instance container, named task-<id>, that the group owns. */
