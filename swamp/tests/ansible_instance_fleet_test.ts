@@ -687,6 +687,32 @@ Deno.test({
   },
 });
 
+Deno.test({
+  name: "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command",
+  ignore: !hasAnsible,
+  fn() {
+    for (const clone of [null, undefined]) {
+      const f = fixture(ruled(), { base: true });
+      try {
+        assert(f.run("start").ok);
+        f.calls();
+        // A default's intent has `clone` null (InstanceContainer::intent); a hand-made one may lack it.
+        f.intent((intent) => {
+          if (clone === null) intent.container.clone = null;
+          else delete intent.container.clone;
+        });
+        const refused = f.run("reset");
+        assert(!refused.ok, refused.output);
+        assertStringIncludes(refused.output, '"msg": "instance.fleet_reset_not_clone"');
+        assertEquals(f.calls(), []);
+        assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      } finally {
+        f.cleanup();
+      }
+    }
+  },
+});
+
 // The three nested containers of the first inner fleet as they run (read from Instance 2454 on 2026-11-13, without volatile keys and
 // cloud-init data), with the `club-key` device as the key move to /run sets it. step8/runbook.sh built them by hand.
 const live = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-live.json", import.meta.url)));

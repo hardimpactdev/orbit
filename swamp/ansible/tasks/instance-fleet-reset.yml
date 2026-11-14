@@ -9,6 +9,13 @@
 # 30.7 s (measured by hand in a task copy, 2026-11-14). Each wait is an include, so its `fleet_ready_delay` wins over the fact that
 # instance-fleet.yml sets.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
+# Only a clone's fleet is reset. A default's fleet is the seed of every copy, so the play refuses it before any command, also when someone
+# runs it by hand; the Gateway refuses it first with `proof.copy_fleet_missing`.
+- name: Refuse an Instance that is not a clone
+  ansible.builtin.assert:
+    that: intent.container.clone is defined and intent.container.clone is not none
+    fail_msg: instance.fleet_reset_not_clone
+    quiet: true
 - name: Read the state of the nested containers
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
   register: fleet_reset_list

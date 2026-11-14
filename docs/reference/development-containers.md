@@ -2350,7 +2350,7 @@ Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-contai
 
 A reset stops the three nested containers in one `incus stop --force` and restores `base` of each stopped container. It starts them and waits for the nested Gateway's state mounts. It migrates the nested Gateway to its checkout, and restarts its services when a migration applied. Then it waits for the same Doctor check. Its waits poll every second; the refresh's poll every 5 seconds.
 
-Its one caller is the [proof of a task copy](/cli/proof/proof#the-run): Swamp runs the phase `fleet_reset` of `instance-container.yml` from the copy's Node, before every batch, the first included, and not after the last. The Gateway admits it only for a clone that keeps its nested fleet. A Project's default Instance is refused with `proof.copy_fleet_missing`, so its fleet, the seed of every copy, is never reset.
+Its one caller is the [proof of a task copy](/cli/proof/proof#the-run): Swamp runs the phase `fleet_reset` of `instance-container.yml` from the copy's Node, before every batch, the first included, and not after the last. The Gateway admits it only for a clone that keeps its nested fleet. A Project's default Instance is refused with `proof.copy_fleet_missing`, so its fleet, the seed of every copy, is never reset. The play refuses it too, before any command and also when run by hand: an intent whose container is not a clone fails with `instance.fleet_reset_not_clone`.
 
 A restore of a running container stops it and boots it again, so the reset stops the three first. On the [inner volume](#the-inner-volume), measured by hand in a task copy on 2026-11-14:
 
