@@ -52,12 +52,13 @@ A turn in a task copy adds these answers and Operation errors:
 | `tasks.thread_role_mismatch` (422) | `--thread=ID` is not the role's thread that the turn would continue in this copy. |
 | `tasks.commit_not_checked` (422) | A reviewer turn's `--check` is not the subtask's checked candidate. |
 | `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy, or a reviewer turn left the checkout unrestored; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
+| `tasks.copy_turn_unoffered` (422) | A new thread's provider and effort, from the group, the Project or the Gateway, name no provider instance that the copy's T3 has. `details.offered` lists each provider with its efforts. Nothing is recorded. |
 | `tasks.copy_turn_model_invalid` (503) | The role's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` is not a model name. |
-| `tasks.copy_turn_effort_invalid` (503) | The role's `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT` is not `low`, `medium`, `high`, `xhigh` or `max`. |
+| `tasks.copy_turn_model_unoffered` | The Operation's error: T3's cached model catalog in the copy does not list a new thread's model for its provider. The error lists the models it offers. Nothing was launched. Without the cached catalog the check is skipped. |
 | `tasks.copy_thread_missing` | The Operation's error: T3 in the copy holds no single thread of the title to continue. Nothing was launched. A first turn that T3 refused leaves such a thread recorded: `--thread=new` starts a new one. |
 | `tasks.copy_tree_dirty` | The Operation's error: the copy's checkout had uncommitted changes or no branch before a reviewer turn. Nothing was launched. |
 | `tasks.copy_review_unrestored` | The Operation's error: after a reviewer turn, the checkout is not clean on its branch at the commit it had before. The group holds until `task:cancel`. |
 | `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. |
 | `tasks.turn_failed` | The Operation's error: T3's run ended with a status other than `completed` or `waiting`. |
-| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down, or could not list its threads to find the one to continue. |
+| `tasks.copy_turn_failed` | The Operation's error: T3 did not report the turn's end, for example while its server was down or when it refused the start, or could not list its threads to find the one to continue. A refused start ends the error with T3's own message. |
 
