@@ -1,0 +1,32 @@
+file = "swamp/tests/task_instance_check_test.py"
+slices = false
+cost = 48
+source_sha256 = "21efb1f232c25d305d3fce233c7af0e768b172396a19da97b632334655ffea09"
+cases = [
+  "test_check_runs_in_the_guest_and_commits_the_exact_candidate",
+  "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing",
+  "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch",
+  "test_task_vm_intents_keep_the_task_vm_steps",
+  "test_check_phases_need_their_check_and_candidate"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/extensions/behaviors/operations/task-repository/check.ts",
+  "swamp/workflows/workflow-task-instance-check.yaml",
+  "swamp/workflows/workflow-operation-task-check.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_check_runs_in_the_guest_and_commits_the_exact_candidate" = 25
+"test_failed_setup_keeps_output_skips_the_check_and_commits_nothing" = 12
+"test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch" = 5
+"test_task_vm_intents_keep_the_task_vm_steps" = 2
+"test_check_phases_need_their_check_and_candidate" = 4

@@ -1,6 +1,6 @@
 """A task copy's publication: the export to the worker, the check commit without .env, and the publish workflow's copy steps.
 
-Real Ansible/Jinja, Git and the pinned CEL engine on the harness of task_instance_workspace_test.py; never live containers.
+Real Ansible/Jinja, Git and the pinned CEL engine on the harness in _support/task_instance_workspace.py; never live containers.
 """
 import hashlib
 import importlib.util
@@ -14,7 +14,7 @@ import uuid
 from pathlib import Path
 
 # The runner starts this file as `python3 -I`, which keeps its folder off the import path: load the harness by its path.
-_spec = importlib.util.spec_from_file_location('task_instance_workspace_harness', Path(__file__).with_name('task_instance_workspace_test.py'))
+_spec = importlib.util.spec_from_file_location('task_instance_workspace_harness', Path(__file__).parent / '_support/task_instance_workspace.py')
 base = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(base)
 
@@ -29,9 +29,9 @@ assert CEL != base.CEL
 class CopyExportTest(unittest.TestCase):
     """The export phase with `worker_bundle`, on the workspace harness."""
 
-    setUp = base.TaskInstanceWorkspaceTest.setUp
-    git = base.TaskInstanceWorkspaceTest.git
-    phase = base.TaskInstanceWorkspaceTest.phase
+    setUp = base.WorkspaceHarness.setUp
+    git = base.WorkspaceHarness.git
+    phase = base.WorkspaceHarness.phase
 
     def test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch(self):
         self.git('add', '--all')
@@ -67,18 +67,18 @@ class CopyExportTest(unittest.TestCase):
 class CopyCheckTest(unittest.TestCase):
     """The container check child, on the check harness."""
 
-    setUp = base.TaskInstanceCheckTest.setUp
-    git = base.TaskInstanceCheckTest.git
-    phase = base.TaskInstanceCheckTest.phase
-    cel = base.TaskInstanceCheckTest.cel
-    ran = base.TaskInstanceCheckTest.ran
-    write_input = base.TaskInstanceCheckTest.write_input
-    ansible_intent = base.TaskInstanceCheckTest.ansible_intent
-    behavior = base.TaskInstanceCheckTest.behavior
-    run_phase = base.TaskInstanceCheckTest.run_phase
-    evidence = base.TaskInstanceCheckTest.evidence
-    checked = base.TaskInstanceCheckTest.checked
-    finished = base.TaskInstanceCheckTest.finished
+    setUp = base.CheckHarness.setUp
+    git = base.CheckHarness.git
+    phase = base.CheckHarness.phase
+    cel = base.CheckHarness.cel
+    ran = base.CheckHarness.ran
+    write_input = base.CheckHarness.write_input
+    ansible_intent = base.CheckHarness.ansible_intent
+    behavior = base.CheckHarness.behavior
+    run_phase = base.CheckHarness.run_phase
+    evidence = base.CheckHarness.evidence
+    checked = base.CheckHarness.checked
+    finished = base.CheckHarness.finished
 
     def test_the_candidate_holds_no_environment_file_that_the_create_excluded(self):
         # As the create leaves a copy: the .env Orbit wrote, and its line in info/exclude; the Project's .gitignore does not name it.
@@ -98,7 +98,7 @@ PUBLISH = ROOT / 'workflows/workflow-operation-task-publish.yaml'
 class TaskCopyPublishTest(unittest.TestCase):
     """A task copy's publication: the workflow's own CEL picks the copy steps, and its own script checks the .env Orbit wrote."""
 
-    git = base.TaskInstanceWorkspaceTest.git
+    git = base.WorkspaceHarness.git
 
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='copy-publish-')

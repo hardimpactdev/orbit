@@ -59,6 +59,8 @@ Migration Git fixtures use real temporary repositories to compare branches, comp
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
 
+When a host task changes persistent state, regenerate the affected saved boundaries from the shipped stages, including replacement and failure states. Keep the producer comparisons and zero-change repeat assertions; do not repair expected state by hand.
+
 Default-remote replacement and failure cases rerun full preparation, including stock reconciliation, the clone probe and local-daemon identity checks. The five repeat-stage cases cover the complete host role and each require zero changes.
 
 The nested fleet step fixture runs the rules, start, refresh and reset of an Instance container's fleet against an Incus stand-in. The stand-in holds the device and configuration shape exported from the three nested containers of a task base.
@@ -191,7 +193,11 @@ For example, `swamp/tests/ansible_instance_fleet_test.ts` declares one slice per
 
 A slice takes every n-th case, so a new case can move two long cases into one slice; then raise the slice count until no slice is above the lane budget. A slice count equal to the number of retained cases always meets this: each case gets its own slice.
 
-A file without its own command in the shape gate runs with Deno only while it is sliceable; `slices = false` makes the runner start it with `python3`. So register a Deno file that the gate does not list without `slices = false`. A Deno file of at most 60 seconds runs as one unit anyway.
+A new Python fixture needs its own `.github/ci/fixtures/<source>.toml`, with `slices = false`, measured whole-file cost, inputs, ordered cases and source hash. It does not need a shape-gate listing: the PR and full-set planners read the registry, and the runner uses `python3 -I` for a registered unsliceable file. A new Deno fixture remains sliceable. A listing adds the file to the broad local gate and its Ruff audit. Editing that shared list selects all fixtures, so work beyond the PR budget is deferred; registry-only additions avoid that effect.
+
+The Instance workspace proof runs in five independent Python files: target and identity, snapshots, receipts, export, and check workflow. Each file keeps its complete assertions and uses the test-free `swamp/tests/_support/task_instance_workspace.py` harness. Load it with `runpy.run_path` using a path relative to the test file, then subclass `WorkspaceHarness` or `CheckHarness`; this also works with Python isolated mode.
+
+Register new cases in their own file without editing the shared gate. The four copy-publication cases use the same harness from their separate registry-only file. These five split files also stay in the broad local gate and its Ruff audit. Python costs cover the whole file, including all its cases; their regression reserves six extra seconds below the 90-second target.
 
 Measured container and fleet files declare costs by exact case name, with run IDs for completed measurements and explicit estimates for unmeasured cases. Their file cost equals the retained case total. Packing includes six seconds of startup per slice. Slice counts never exceed the retained case count.
 
