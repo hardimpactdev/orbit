@@ -134,8 +134,8 @@ after_merge_cases = [
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
 # Cases with fewer than five hosted runs keep an estimate. The 190-second shard deadline is the headroom above p90.
-# 72 slices give each of the 72 retained cases its own slice, so no two long cases share the 150-second lane.
-slices = 72
+# 71 slices give each of the 71 retained cases its own slice, so no two long cases share the 150-second lane.
+slices = 71
 inputs = [
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
@@ -169,7 +169,7 @@ inputs = [
 ]
 
 [case_costs]
-  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start and before a stopped container's boot, never into a running one" = 81 # ESTIMATE: local time * 2.1, rounded up + 1s
+  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start and before a stopped container's boot, never into a running one" = 81 # ESTIMATE: local 38s * 2.1, rounded up + 1s (the machine name steps joined this case: a 72nd case needs 9 shards)
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 72 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 43.6-73.7s
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 135 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s; plus 11s ESTIMATE for three workspace runs of the .env exclude (local 5s x 2.1, rounded up)
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s
