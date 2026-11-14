@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceCompleteAction;
+use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
@@ -624,6 +625,47 @@ describe('a cancel of a group that owns a copy', function (): void {
         destroySucceeded(app(StartInstanceDestroyAction::class)->execute($clone, true));
 
         expect(Instance::query()->find($clone->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+});
+
+describe('a complete of a group that owns a copy', function (): void {
+    it('admits the copy\'s destroy with force, completes the group and lets go of the copy when the destroy succeeds', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+
+        $completed = app(CompleteTaskGroupAction::class)->execute($group->refresh());
+
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($destroy->target_id)->toBe($copy->id)->and($destroy->input['force'])->toBeTrue()
+            ->and($completed->status)->toBe(TaskGroupStatus::Completed)
+            ->and($completed->taskable_id)->toBe($copy->id)
+            ->and($completed->assistance_reason)->toBeNull();
+        // A repeated complete reuses the open destroy.
+        app(CompleteTaskGroupAction::class)->execute($group->refresh());
+        expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(1);
+
+        destroySucceeded($destroy);
+
+        expect(Instance::query()->find($copy->id))->toBeNull()
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and($group->taskable_id)->toBeNull();
+    });
+
+    it('keeps the copy of a completed group when its destroy fails, and admits a new destroy on the next complete', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $group->update(['status' => TaskGroupStatus::Settling]);
+        $group->tasks()->update(['status' => TaskStatus::Completed]);
+        app(CompleteTaskGroupAction::class)->execute($group->refresh());
+        Operation::query()->where('kind', 'instance.destroy')->sole()->forceFill(['status' => 'failed', 'finished_at' => now(), 'lock_key' => null])->save();
+
+        app(CompleteTaskGroupAction::class)->execute($group->refresh());
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->count())->toBe(2)
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Completed)
+            ->and($group->taskable_id)->toBe($copy->id);
     });
 });
 
