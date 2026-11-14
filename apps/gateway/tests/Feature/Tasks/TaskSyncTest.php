@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\StartTaskSyncAction;
+use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
@@ -11,6 +12,11 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskSyncProjection;
+use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\TaskVms\TaskVmProviderKind;
+use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\TaskVms\TaskVmSize;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -25,6 +31,7 @@ use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
+use Tests\Support\WorkflowStartIntents;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -241,4 +248,57 @@ it('records no base field for a copy run whose base phase left no evidence', fun
     ]);
 
     expect($projected->status)->toBe(OperationStatus::Succeeded)->and($projected->result)->toBe([]);
+});
+
+/**
+ * An external group on a ready task VM, as the task VM sync admits it: its Instance owns the workspace on the VM's Node.
+ *
+ * @return array{Task, TaskVm}
+ */
+function syncVmWorld(): array
+{
+    SwampNodeFixture::ensure();
+    Queue::fake([StartAdmittedSwampRun::class]);
+    app(TaskExtensionState::class)->enable();
+    $node = static fn (string $name, string $address): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
+        'wireguard_ip' => $address, 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
+    ]));
+    $host = $node('shark', '10.44.0.11');
+    $guest = $node('tvm-598', '10.44.0.137');
+    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main']);
+    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.251.77.0/24', 5, 4, '8GiB', '40GiB')],
+        '/pi', str_repeat('a', 64), ['gpt-6']));
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'orchestration' => 'external', 'status' => TaskGroupStatus::Running]);
+    $vm = TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-598',
+        'state' => TaskVmState::Ready, 'address' => '10.251.78.33', 'wireguard_ip' => '10.44.0.137', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('p', 64)]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
+        'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
+    $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
+
+    return [$group->refresh(), $vm];
+}
+
+it('starts operation-task-sync-copy for a task copy and operation-task-sync for a task VM', function (): void {
+    [$copyGroup] = syncCopyWorld();
+    $copy = app(StartTaskSyncAction::class)->execute($copyGroup, 'test', null);
+    [$vmGroup] = syncVmWorld();
+    $vm = app(StartTaskSyncAction::class)->execute($vmGroup, 'test', null);
+
+    expect(app(DirectOperation::class)->workflowFor($copy))->toBe('operation-task-sync-copy')
+        ->and($copy->state['swamp_start']['workflow'])->toBe('operation-task-sync-copy')
+        ->and(app(DirectOperation::class)->workflowFor($vm))->toBe('operation-task-sync')
+        ->and($vm->state['swamp_start']['workflow'])->toBe('operation-task-sync')
+        ->and($vm->input)->toHaveKey('checkout_path')
+        ->and($copy->input)->not->toHaveKey('checkout_path');
+});
+
+it('keeps the Swamp start fixture equal to the inputs a copy sync and a task VM sync start with', function (): void {
+    app()->instance(WebSocketClient::class, WorkflowStartIntents::vault());
+    [$copyGroup] = syncCopyWorld();
+    $copy = app(StartTaskSyncAction::class)->execute($copyGroup, 'test', null);
+    WorkflowStartIntents::match('sync_copy', app(DirectOperation::class)->workflowInputs($copy));
+    [$vmGroup] = syncVmWorld();
+    $vm = app(StartTaskSyncAction::class)->execute($vmGroup, 'test', null);
+    WorkflowStartIntents::match('sync_vm', app(DirectOperation::class)->workflowInputs($vm));
 });

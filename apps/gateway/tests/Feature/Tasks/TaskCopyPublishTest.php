@@ -33,6 +33,7 @@ use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
+use Tests\Support\WorkflowStartIntents;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -361,4 +362,16 @@ it('keeps a long conflict through the stored step failure, with its code and its
         ->and($projected->error_code)->toBe('tasks.publish_conflict')
         ->and($projected->result)->toBe(['error_code' => 'tasks.publish_conflict', 'conflicting_paths' => $shown, 'conflicting_more' => 300 - count($shown)])
         ->and($group->refresh()->pr_url)->toBeNull();
+});
+
+it('keeps the Swamp start fixture equal to the inputs a copy publish and a task VM publish start with', function (): void {
+    app()->instance(WebSocketClient::class, WorkflowStartIntents::vault());
+    [$group, $check] = copyPublishWorld();
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id,
+        'pull_request' => ['title' => 'Export orders', 'body' => 'Adds the export.']]), 'test', null);
+    WorkflowStartIntents::match('publish_copy', app(DirectOperation::class)->workflowInputs($operation));
+    // TaskPublishIntent builds a task VM's intent the same way, without `workspace`.
+    $vm = $operation->replicate();
+    $vm->input = array_diff_key($operation->input, ['workspace' => true]);
+    WorkflowStartIntents::match('publish_vm', app(DirectOperation::class)->workflowInputs($vm));
 });
