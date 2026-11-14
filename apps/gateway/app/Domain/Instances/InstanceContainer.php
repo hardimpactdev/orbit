@@ -222,7 +222,7 @@ final readonly class InstanceContainer
         // One rule for Node services, an inner fleet and private names alike: a value other than the base is written into the container.
         $ownProxy = $proxy !== InstanceNodeServiceTargets::proxyEnvironment($gateway, [], false, []);
         $environment = [...$environment, ...$proxy];
-        $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url);
+        $clone = $runtime->t3_port === null ? null : $this->clone($instance, $runtime, $gateway, $url, $proxy, $ownProxy);
         ['vite' => $vitePort, 'server' => $devServerPort] = app(ContainerProcesses::class)->ports($instance);
 
         return [
@@ -339,16 +339,16 @@ final readonly class InstanceContainer
     /**
      * The part of the intent of an Instance with T3: T3's published port and the files the agent and T3 need, and for a clone the
      * default's container and seed snapshot it copies. A checkout Instance that moved in copies none. The model key is not here: it
-     * comes through the vault.
+     * comes through the vault. `$proxy` is the container's composed proxy value; `$ownProxy` says it is not the image's base.
      *
+     * @param  array<string, string>  $proxy
      * @return array<string, mixed>
      */
-    private function clone(Instance $instance, InstanceRuntime $runtime, string $gateway, ?string $url): array
+    private function clone(Instance $instance, InstanceRuntime $runtime, string $gateway, ?string $url, array $proxy, bool $ownProxy): array
     {
         $source = $runtime->clone_source_instance_id === null ? null
             : InstanceRuntime::query()->where('instance_id', $runtime->clone_source_instance_id)->firstOrFail();
         $node = Node::query()->findOrFail($runtime->node_id);
-        $nestedFleet = $runtime->incus_project === InstancePlacement::NestedProject;
         // The seed carries the default's proxy bypass: a remote Node service host, or the private name of its websocket app.
         $resetProxy = $source !== null && (InstanceNodeServiceTarget::query()->where('instance_id', $source->instance_id)
             ->where('node_id', '!=', $source->node_id)->exists()
@@ -374,12 +374,13 @@ final readonly class InstanceContainer
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
                 't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
-            // A copy of a default with a Node service elsewhere drops that host, and a nested-fleet copy keeps its inner fleet.
-            ...($resetProxy || $nestedFleet ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [], $nestedFleet, [])] : []),
+            // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py
+            // `proxy-files`): the composed one, with the copy's private names and a nested fleet's inner fleet. A copy of a default with a
+            // Node service elsewhere gets it even at the base, so that host goes. Absent, the seed's drop-ins stay.
+            ...($ownProxy || $resetProxy ? ['proxy_environment' => $proxy] : []),
             // The container phase writes these before a copy's first start, so its first boot, T3 included, reads them: the files every
-            // container needs, which a seed taken before them lacks, then the proxy value of a copy whose default had attached Node
-            // services or that runs a nested fleet. A container that a migrate builds from the image has the files already.
-            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), ...($resetProxy || $nestedFleet ? $this->proxyFiles($gateway, $nestedFleet) : [])]]),
+            // container needs, which a seed taken before them lacks. A container that a migrate builds from the image has the files already.
+            ...($source === null ? [] : ['boot_files' => self::bootFiles()]),
             'files' => [
                 ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
@@ -421,22 +422,6 @@ final readonly class InstanceContainer
             InstanceImage::browserTrust(),
             ['path' => self::BrowserUnitFile, 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment={$browser}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['path' => self::BrowserShellFile, 'content' => "# Managed by Orbit.\nexport {$browser}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-        ];
-    }
-
-    /** A clone has no inherited Node service attachments.
-     * @return list<array{path:string,content:string,uid:int,gid:int,mode:string}>
-     */
-    private function proxyFiles(string $gateway, bool $nestedFleet): array
-    {
-        $environment = InstanceNodeServiceTargets::proxyEnvironment($gateway, [], $nestedFleet, []);
-        $assignments = implode(' ', array_map(static fn (string $key, string $value): string => $key.'='.$value, array_keys($environment), $environment));
-
-        return [
-            ['path' => '/etc/systemd/system.conf.d/99-orbit-node-services.conf',
-                'content' => "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment=".$assignments."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-            ['path' => '/etc/profile.d/99-orbit-node-services.sh',
-                'content' => "# Managed by Orbit: attached Node service.\nexport ".$assignments."\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
         ];
     }
 
