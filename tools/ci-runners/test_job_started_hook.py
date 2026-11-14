@@ -97,7 +97,7 @@ class JobStartedHookTest(unittest.TestCase):
 
     def test_setup_installs_the_hook_through_the_runner_environment(self):
         self.assertIn('ACTIONS_RUNNER_HOOK_JOB_STARTED=/home/runner/actions-runner/job-started-hook.sh', SETUP)
-        self.assertIn('container | actions | hook | proof_hook | register | verify', SETUP)
+        self.assertIn('container | actions | hook | proof_hook | register | user_manager | verify', SETUP)
         container = SETUP.split('\ncontainer() {', 1)[1].split('\n}\n', 1)[0]
         self.assertTrue(container.rstrip().endswith('hook "$name"'))
 

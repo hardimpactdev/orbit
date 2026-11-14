@@ -5,6 +5,7 @@
 # Run container operations on the host as a member of incus-admin with sudo. Every step is idempotent.
 #
 #   tools/ci-runners/setup.sh container NAME [AGENT SHA256] # optional source-built agent for rollout
+#   tools/ci-runners/setup.sh user_manager NAME     # start the runner user manager without restarting a runner
 #   tools/ci-runners/setup.sh register NAME [TOKEN]  # ORBIT_RUNNER_TOKEN in the environment, or TOKEN
 #   tools/ci-runners/setup.sh actions NAME           # cache pinned actions; restart the service only when idle
 #   tools/ci-runners/setup.sh hook NAME              # job-started hook that resets the checkout; restart only when idle
@@ -75,6 +76,7 @@ container() {
   incus file push "$REPOSITORY/tools/ci-runners/javascript.py" "$name$tree/tools/ci-runners/javascript.py" --project "$PROJECT"
   incus file push "$REPOSITORY/apps/gateway/resources/machine-software/vite-plus-package-lock.json" \
     "$name$tree/apps/gateway/resources/machine-software/vite-plus-package-lock.json" --project "$PROJECT"
+  incus file push "$REPOSITORY/tools/ci-runners/user-manager.sh" "$name$tree/tools/ci-runners/user-manager.sh" --project "$PROJECT"
   # Root runs the adapters, so root owns them.
   in_ct "$name" chown -R root:root "$tree"
 
@@ -96,7 +98,7 @@ apt-get update -qq
 # hosted runners misses.
 apt-get install -y -qq --no-install-recommends --no-upgrade \
   git curl ca-certificates jq unzip zip rsync sqlite3 python3 python3-venv openssh-client socat netcat-openbsd bind9-dnsutils \
-  acl attr wireguard-tools openssl sudo caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
+  acl attr wireguard-tools openssl sudo dbus-user-session caddy tar gzip xz-utils zstd libkrb5-3 zlib1g gpgv >/dev/null
 # Project checks run cargo fmt; APT verifies these exact packages against signed repository checksums.
 apt-get install -y -qq --no-install-recommends --allow-downgrades cargo=1.93.1ubuntu1 rustfmt=1.93.1ubuntu1 >/dev/null
 # Jobs start their own PostgreSQL cluster as runner; never create or start a system cluster.
@@ -128,6 +130,7 @@ id runner >/dev/null 2>&1 || useradd -m -U -s /bin/bash runner
 # The image grants its default user passwordless sudo in 90-incus.
 rm -f /etc/sudoers.d/runner /etc/sudoers.d/90-incus
 install -d -o runner -g runner /home/runner/work
+bash /root/orbit-php-build/tools/ci-runners/user-manager.sh
 
 # These dedicated containers retire the distro Node stack before installing the recipe tools.
 # Refuse a removal that reaches outside that stack; never autoremove unrelated packages.
@@ -272,6 +275,14 @@ register() {
   in_ct "$name" bash -c "cd /home/runner/actions-runner && { [ -f .service ] || ./svc.sh install runner >/dev/null; } && ./svc.sh start >/dev/null && systemctl is-active \$(cat .service)"
 }
 
+user_manager() {
+  local name=$1
+  # Apply only this prerequisite to existing runners; no packages or listener restart.
+  in_ct "$name" install -d -m 0700 /root/orbit-ci-prerequisites
+  incus file push "$REPOSITORY/tools/ci-runners/user-manager.sh" "$name/root/orbit-ci-prerequisites/user-manager.sh" --project "$PROJECT"
+  in_ct "$name" bash /root/orbit-ci-prerequisites/user-manager.sh
+}
+
 verify() {
   local name=$1 targets=() ip
   for ip in $(ip -4 -o addr show | awk '$2 != "lo" {split($4,a,"/"); print a[1]}'); do
@@ -293,6 +304,6 @@ verify() {
 }
 
 case "${1:-}" in
-  container | actions | hook | proof_hook | register | verify) "$@" ;;
+  container | actions | hook | proof_hook | register | user_manager | verify) "$@" ;;
   *) sed -n '2,19p' "$0" >&2; exit 2 ;;
 esac

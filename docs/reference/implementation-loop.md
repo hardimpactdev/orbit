@@ -7,7 +7,7 @@ covers:
   - "{swamp/bin/{check-grant-patterns,validate-swamp-workflows,check-swamp-base-policy,swamp-shape-python,swamp_shape_host_tools}.py,swamp/bin/{check-swamp-shape,gate-test-support}.ts,swamp/config/swamp-shape-baseline.json,tools/check-processes.php}"
   - "{tools/check_budget.py,swamp/tests/_support/slice.ts}"
   - "{apps/*,packages/php-sdk}/rector.php"
-  - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py},agent_command.py}
+  - tools/{phpstan/**,ci-runners/{setup.sh,javascript.py,user-manager.sh},agent_command.py}
   - .github/{ci/**,workflows/*.yml,actions/php/action.yml}
   - apps/gateway/{phpunit.xml,database/migrations/2026_12_04_000000_seed_schema_baseline_reference_rows.php,tests/Support/TestDatabaseEnvironment.php,tests/Support/TestDatabaseGuard.php,tests/Support/PythonPrograms.php,tests/Support/FixtureProcessRunner.php,tests/Support/GatewayReleaseFixture.php,tests/Support/TaskSchedulerTickFixtures.php,tests/Feature/Domain/TaskWorkspaceTmpdirTest.php,tests/Feature/Infrastructure/Instances/DevelopmentSourceRemovalCommandTest.php}
 ---
@@ -391,7 +391,9 @@ Gateway Pest runs in one hosted job with four workers and no shards. Gateway sta
 
 During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
-Sabre and Shark run CI runners in unprivileged Incus containers. With Nick's approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
+Sabre and Shark run CI runners in unprivileged Incus containers.
+
+The container setup enables the runner’s user systemd manager with lingering. Apply that prerequisite alone to an existing container with `tools/ci-runners/setup.sh user_manager NAME`; it does not restart the Actions listener or grant sudo to jobs. With operator approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
 
 Public repositories use GitHub-hosted runners, with self-hosted runners available when configured. Private repositories use self-hosted runners.
 

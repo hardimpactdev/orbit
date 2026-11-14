@@ -1,5 +1,5 @@
 order = 100
-source_sha256 = "0920e41e9d405ab744b7bfab08c5d59da5de40b31417f89c4a02975e31597d73"
+source_sha256 = "92febe3fcc292a22eb5e0960d2bf60b66bcc6ef4591761132a21269fc543abf9"
 cases = [
   "bridge remains reject after late unsafe attachments, and profile NICs use only the proxy ACL",
   "host reconciles the endpoint union without wiping other rules and moves existing NICs without an open gate",
