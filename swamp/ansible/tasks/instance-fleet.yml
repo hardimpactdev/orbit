@@ -13,7 +13,9 @@
 #   intent.fleet.checkout.path            Where the nested Gateway and app-dev see the workspace (TaskVmNestedFleet::CheckoutPath).
 #   intent.fleet.proxy                    The egress proxy environment, name to value: HTTP_PROXY, HTTPS_PROXY, http_proxy,
 #                                         https_proxy, NO_PROXY and no_proxy. The fleet's own names and networks are in NO_PROXY.
-# A caller may set `fleet_ready_seconds` (default 300): the bound of the readiness wait.
+#   intent.container.config               Its `environment.NO_PROXY` and `environment.no_proxy`, and
+#   intent.container.clone.t3.unit        T3's unit: read only when the caller sets `fleet_proxy_restart_t3` (instance.start).
+# A caller may set `fleet_ready_seconds` (default 300): the bound of the readiness wait, and `fleet_proxy_restart_t3` (default false).
 #
 # The paths below are facts of the image variant `orbit-instance-nested`, not of the intent. The Swamp Club key is a file that
 # Orbit delivers into the container's /run; these tasks name its folder as the source of the `club-key` device and test that it is there.

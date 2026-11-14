@@ -41,6 +41,17 @@ final readonly class RuntimeActivationPage
         );
     }
 
+    /**
+     * The wake ended within the activation call: the visitor's browser sends the same request again, with its method and body
+     * (307), and the site now serves the app. The page's own poll follows it the same way.
+     */
+    public function again(string $originalUri): Response
+    {
+        return response('', 307)
+            ->header('Location', $this->safeOriginalUri($originalUri))
+            ->header('Cache-Control', 'no-store, private');
+    }
+
     public function ready(): Response
     {
         return response('', 200);
@@ -191,11 +202,15 @@ final readonly class RuntimeActivationPage
         return implode('; ', $directives);
     }
 
+    /**
+     * The visitor's own path and query, never another origin: browsers drop control characters and read `/\` as `//`, so both are
+     * removed or refused before the check.
+     */
     private function safeOriginalUri(string $uri): string
     {
-        $uri = trim($uri);
+        $uri = (string) preg_replace('/[\x00-\x1F\x7F]/', '', trim($uri));
 
-        if ($uri === '' || ! str_starts_with($uri, '/') || str_starts_with($uri, '//')) {
+        if ($uri === '' || ! str_starts_with($uri, '/') || in_array($uri[1] ?? '', ['/', '\\'], true)) {
             return '/';
         }
 

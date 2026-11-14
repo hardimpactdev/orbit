@@ -32,7 +32,7 @@ Removing a [Node service target record](/reference/processes-and-schedules#node-
 
 ## Instance failure alerts
 
-Every `instance.create` or `instance.deploy` Operation that enters `failed` or `interrupted` sends an immediate notification after the state transaction commits. This includes failures before source resolution and automatic deployments. A terminal replay does not send another notification. Cancelled and successful Operations do not alert.
+Every `instance.create`, `instance.complete` or `instance.deploy` Operation that enters `failed` or `interrupted` sends an immediate notification after the state transaction commits. This includes failures before source resolution and automatic deployments. A terminal replay does not send another notification. Cancelled and successful Operations do not alert.
 
 The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
 
@@ -148,7 +148,7 @@ Operation shows return recorded state without remote reads, expiry or projection
 
 Instance migration settles [deferred Schedule fires](/reference/schedules#checkout-migration) in the transaction that first marks its Operation terminal. It locks the Instance, then queues each fire against the recorded runtime or explicitly fails it if admission remains closed.
 
-An `instance.create` moves the task that owns its Instance, a [task copy](/reference/tasks#task-copy), in the same transaction that first marks it terminal. So a run's report, a start that Swamp refuses and a cancel before the run all count. An expired budget leaves the task `reserved`, because its run may still be stopping. A create of an Instance that no task owns changes no task.
+An `instance.create` or `instance.complete` moves the task that owns its Instance, a [task copy](/reference/tasks#task-copy), in the same transaction that first marks it terminal. So a run's report, a start that Swamp refuses and a cancel before the run all count. Success makes the task run only when the copy is `active`, so a clone's create leaves it `reserved` and its completion starts it. A failure of either fails the task. An expired budget leaves the task `reserved`, because its run may still be stopping. An Operation on an Instance that no task owns changes no task.
 
 The submission boundary records whether a native start was sent or explicitly refused; proven no-start outcomes, including failed execution-copy preparation, free a new runtime reservation.
 
@@ -412,13 +412,15 @@ Reverb can lose an event, for example while the socket reconnects, so a client t
 
 ## Cancel an operation
 
-`operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway asks Swamp to cancel that run. The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
+`operation:cancel` asks an operation to stop. The Gateway records the request first. An operation that no workflow has started becomes `cancelled` at once and releases its target. Once a native run is bound, the Gateway records the request and answers; it asks Swamp to cancel that run right after the answer, through the same send path as the reconciler, which stays the retry. So the caller reads the Operation still `running`, with `cancel_requested: true`.
+
+The workflow owns the end: the operation becomes `cancelled` when its terminal result says so, and a workflow may finish its running step first. A cancel request for a terminal operation changes nothing and returns the record.
 
 A cancelled container create with its original Instance still retained for retry reports `recovery.state=retained_for_retry`, even before work starts. Its result names the [retry and destroy paths](/cli/instance/create#on-a-container-node); destroy remains unavailable for a container default.
 
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
-A cancel does not cut a database copy that already runs. A clone's database fill (`server-database-fill` and `clone-server-database-fill` of `instance.create`, `server-database-fill` of `instance.complete`) runs on the database server; Swamp's cancel would end only its SSH client, and the copy would run on. So while that step runs, the Gateway records the request and does not send it. The step's end event (succeeded or failed) asks the reconciler for a pass at once; when a pass already runs or waits, the next pass sends it, within about a minute.
+A cancel does not cut a database copy that already runs. A database fill (`server-database-fill` of `instance.create` and of `instance.complete`, which fills a clone's database) runs on the database server; Swamp's cancel would end only its SSH client, and the copy would run on. So while that step runs, the Gateway records the request and does not send it. The step's end event (succeeded or failed) asks the reconciler for a pass at once; when a pass already runs or waits, the next pass sends it, within about a minute.
 
 The fill ends by itself within its 600-second limit. A step that still shows `running` 60 seconds past that limit has lost its end event: the Gateway then sends the cancel anyway and logs `operation.cancel_copy_bound_passed`. The window of one hour in which the reconciler forwards a request still counts from the request. An operator's cancel follows the same rule: it cannot cut the copy.
 
@@ -446,7 +448,7 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### One Route write per Node
 
-A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). A clone's `instance.create` captures no Route publication, so it holds no Node; its `instance.complete` holds them. The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
 `instance.destroy` gives its Nodes back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
 
@@ -525,6 +527,8 @@ MCP has an experimental Tasks primitive for long tool calls. An operation alread
 Author native workflows under `swamp/` in this repository. Converted kinds use the shared [direct-start intent and result projection](#direct-swamp-starts), without a generated family artifact or Gateway compiler loader.
 
 A kind declared with `executor: swamp` is admitted through the same Operation store and idempotency boundary. Admission returns `202`. The Gateway queues one PHP starter job after commit to submit the native run. Swamp owns its steps and retries; the Gateway keeps intent, target exclusion, steps, output and the final receipt.
+
+One kind starts differently: the `instance.wake` of a frozen container is recorded without the job, and the Gateway first asks the Instance's Node to resume it ([the Node resumes a frozen container](/reference/development-containers#the-node-resumes-a-frozen-container)). It then ends the Operation itself or queues the starter job; a delayed job 15 seconds later covers a worker lost in between.
 
 ### Protected inputs
 
@@ -748,6 +752,6 @@ Development `instance.sleep` and `instance.wake` hold the Instance lock. Their r
 
 Container `instance.node_service_detach` uses one `node-service` Ansible phase with a 90-second execution bound and a 120-second Operation budget. It removes only the detached Instance access, retaining a shared port for other attachments; terminal success removes the record. A checkout detach still completes immediately without Node work.
 
-`instance.complete` finishes the setup of a container clone and makes it `active` ([Complete a clone](/reference/development-containers#complete-a-clone)). It holds the Instance lock and the Route publication Nodes. Its run budget is 1,800 seconds: the 600-second database fill and the 900-second fleet start, with margin; no run has a measured time yet. A failed or cancelled run keeps the clone `source_resolved`; `instance:complete` repeats it.
+`instance.complete` finishes the setup of a container clone and makes it `active` ([Complete a clone](/reference/development-containers#complete-a-clone)). The terminal projection of a succeeded clone `instance.create` admits it in its own transaction, after the create row is terminal, and the create's result names it in `completion_operation_id`. It holds the Instance lock and the Route publication Nodes. Its run budget is 1,800 seconds: the 600-second database fill and the 900-second fleet start, with margin; no run has a measured time yet. A failed or cancelled run keeps the clone `source_resolved`; `instance:complete` repeats it.
 
 `instance.restore` returns a host development Instance whose removal failed to `active` ([Restore a failed removal](/reference/instance-removal#restore-a-failed-removal)). A failed run leaves the Instance removing and its failed removal live; a new request repeats the command.

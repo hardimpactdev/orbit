@@ -128,9 +128,9 @@ final readonly class OperationStore
             if ($operation->kind === InstanceMigration::Kind && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(InstanceMigrateProjection::class)->terminal($operation, $current);
             }
-            // Every end of a create reaches here: a run's report, a refused start, a cancel before the run, an expired budget. A task's copy
-            // moves its group on; an Instance that no task owns changes nothing.
-            if ($operation->kind === 'instance.create' && ! $current->status->terminal() && $operation->status->terminal()) {
+            // Every end of a create or of a clone's completion reaches here: a run's report, a refused start, a cancel before the run, an
+            // expired budget. A task's copy moves its group on when it is active or failed; an Instance that no task owns changes nothing.
+            if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(TaskCopyLifecycle::class)->createEnded($operation);
             }
         });

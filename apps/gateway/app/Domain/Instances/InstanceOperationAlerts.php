@@ -22,7 +22,7 @@ final readonly class InstanceOperationAlerts
 
     public function changed(Operation $operation): void
     {
-        if (! in_array($operation->kind, ['instance.create', 'instance.deploy'], true)
+        if (! in_array($operation->kind, ['instance.create', 'instance.complete', 'instance.deploy'], true)
             || ! $operation->wasChanged('status')
             || ! in_array($operation->status, [OperationStatus::Failed, OperationStatus::Interrupted], true)
             || OperationStatus::from(ValidatedData::string($operation->getRawOriginal('status')))->terminal()) {

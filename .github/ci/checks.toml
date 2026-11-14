@@ -194,14 +194,15 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 1742
-slices = 41
+cost = 1804
+slices = 43
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-fleet*.yml",
+  "swamp/ansible/instance_node_services.py",
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
@@ -252,6 +253,8 @@ inputs = [
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 46
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 31
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 24
+  "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
+  "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"
@@ -1126,6 +1129,7 @@ inputs = [
   "swamp/workflows/workflow-operation-instance-sleep.yaml",
   "swamp/workflows/workflow-operation-instance-wake.yaml",
   "swamp/workflows/workflow-operation-instance-start.yaml",
+  "swamp/workflows/workflow-operation-instance-complete.yaml",
   "swamp/workflows/workflow-operation-instance-create.yaml",
 ]
 
@@ -1911,7 +1915,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 96
+cost = 91
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1928,6 +1932,11 @@ inputs = [
 
 # Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
 [fixture.case_costs]
+  "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 1
+  "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 1
+  "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start" = 1
+  "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy" = 1
+  "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start" = 1
   "test_legacy_new_branch_still_uses_seed_without_selection" = 2
   "test_legacy_existing_remote_branch_still_uses_its_tip" = 2
   "test_new_branch_uses_fetched_base_tip_not_seed" = 2
@@ -1973,11 +1982,6 @@ inputs = [
   "test_services_install_the_node_helper_and_pass_only_the_process_files" = 2
   "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 2
   "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 2
-  "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start" = 2
-  "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start" = 2
-  "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 2
-  "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy" = 2
-  "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"
@@ -2010,6 +2014,21 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/instance_create_native_test.ts"
+cost = 30
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/tests/fixtures/instance-create-16210-t3-register.json",
 ]
 
 [[fixture]]
@@ -3152,7 +3171,7 @@ inputs = ["swamp/extensions/behaviors/operations/instance-dev-command/result.ts"
 "a Node without the main Mailpit gets no mail warning or failure" = 1
 "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else" = 1
 "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it" = 1
-"only a nested-fleet clone runs the fleet phase; it is ready only after its fleet, and a failure keeps the fleet phase's code" = 1
+"the fleet phase's result file gives its own code, detail and drift lines to the completion's receipt" = 1
 
 [[fixture]]
 file = "swamp/tests/ansible_route_site_test.py"
@@ -3332,7 +3351,7 @@ inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json
 "Route update workflows place every step on the swamp role and keep mutation parents small" = 1
 "restore keeps the observed candidate serving, then withdraws it after DNS grace" = 1
 "Route primitive and shared publication children use one209selector" = 1
-"a clone publishes its prepared Route beside workspace without waiting for app startup" = 1
+"a clone's completion publishes its prepared Route beside the services without waiting for app startup" = 1
 "a captured same-Node move retains its first live DNS child and omits only the redundant final child" = 1
 "a captured replacement with real record changes runs both DNS stages and completes" = 1
 "mixed captured Nodes keep dense final child indexes and exact contribution completeness" = 1

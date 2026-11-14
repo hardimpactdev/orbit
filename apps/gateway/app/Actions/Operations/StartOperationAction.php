@@ -19,8 +19,10 @@ final readonly class StartOperationAction
 
     /** @param array<string,mixed> $input
      * @param  list<string>  $supersedes
+     * @param  bool  $start  False records the Operation queued without its run: the caller then ends it, or starts the run with
+     *                       SwampDispatch::start (the wake's agent resume, InstanceWake).
      */
-    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null, ?string $lockKey = null): Operation
+    public function execute(string $kind, string $targetType, int $targetId, ?int $nodeId, array $input, ?string $triggeredBy, ?string $requestId, array $supersedes = [], ?string $expectedWriter = null, ?string $lockKey = null, bool $start = true): Operation
     {
         app(DirectOperation::class)->writer($kind);
         if (($existing = $this->idempotency->replay($kind)) !== null) {
@@ -28,7 +30,7 @@ final readonly class StartOperationAction
         }
         $operation = $this->store->create($kind, $targetType, $targetId, $nodeId, $input, $triggeredBy, $requestId, $lockKey);
         // A Route write that finds one of its Nodes held waits (status waiting) and starts when the Nodes are free.
-        if ($operation->wasRecentlyCreated && app(RoutePublicationHolds::class)->admit($operation)) {
+        if ($start && $operation->wasRecentlyCreated && app(RoutePublicationHolds::class)->admit($operation)) {
             app(SwampDispatch::class)->start($operation);
         }
 

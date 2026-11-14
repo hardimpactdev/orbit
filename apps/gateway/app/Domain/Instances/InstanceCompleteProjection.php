@@ -66,7 +66,7 @@ final readonly class InstanceCompleteProjection implements DirectOperationProjec
                 if (($result['failed_step'] ?? null) === 'route') {
                     $route?->update(['failed_step' => 'native-create', 'error_code' => $result['error_code'] ?? 'instance.create_route_failed']);
                 }
-                $result['recovery'] = self::recovery($instance);
+                $result['recovery'] = self::recovery($instance, self::requiresDefinition($container, $result));
             }
             if (in_array($status, ['succeeded', 'failed', 'cancelled'], true)) {
                 app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $status === 'succeeded',
@@ -97,14 +97,30 @@ final readonly class InstanceCompleteProjection implements DirectOperationProjec
     }
 
     /**
+     * A dead Process of the Project's definitions needs a changed definition first: the retry installs the definitions as they are
+     * (StartInstanceCompleteAction). A built-in unit's failure keeps the plain retry.
+     *
+     * @param  array<string, mixed>  $container
+     * @param  array<string, mixed>  $result
+     */
+    private static function requiresDefinition(array $container, array $result): bool
+    {
+        $failure = is_array($result['process_failure'] ?? null) ? $result['process_failure'] : [];
+
+        return ($result['error_code'] ?? null) === 'instance.container_process_inactive' && is_int($failure['process_id'] ?? null)
+            && in_array($failure['process_id'], array_column(is_array($container['processes'] ?? null) ? $container['processes'] : [], 'id'), true);
+    }
+
+    /**
      * The clone stays for a retry of the completion alone: the container runs and T3 keeps its thread.
      *
      * @return array<string, mixed>
      */
-    public static function recovery(Instance $instance): array
+    public static function recovery(Instance $instance, bool $requiresDefinition = false): array
     {
         return ['state' => 'retained_for_retry',
-            'retry' => ['command' => 'instance:complete', 'instance_id' => $instance->id, 'new_idempotency_key' => true],
+            'retry' => ['command' => 'instance:complete', 'instance_id' => $instance->id, 'new_idempotency_key' => true,
+                ...($requiresDefinition ? ['requires' => 'project_process_definition'] : [])],
             'destroy' => ['command' => 'instance:destroy', 'instance_id' => $instance->id, 'available' => true, 'options' => ['yes' => true, 'force' => true]]];
     }
 }

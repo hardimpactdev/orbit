@@ -113,6 +113,8 @@ function writeTasks(folder: string) {
     Deno.copyFileSync(new URL("instance_folder_debs.py", root), `${folder}/instance_folder_debs.py`);
     Deno.copyFileSync(new URL("instance_folder_same.py", root), `${folder}/instance_folder_same.py`);
     Deno.copyFileSync(new URL("instance_container_files.py", root), `${folder}/instance_container_files.py`);
+    Deno.mkdirSync(`${folder}/files`, { recursive: true });
+    Deno.copyFileSync(new URL("files/instance-container-wake.sh", root), `${folder}/files/instance-container-wake.sh`);
     for (
         const name of [
             "instance-host.yml",

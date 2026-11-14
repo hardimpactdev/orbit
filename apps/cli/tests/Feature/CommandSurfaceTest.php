@@ -729,6 +729,7 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'branch' => null,
                 'database-server' => null,
                 'idempotency-key' => null,
+                'wait-active' => false,
                 'json' => false,
             ],
         ],

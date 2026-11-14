@@ -59,8 +59,9 @@ jobs:
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
               ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.club_key.vault, inputs.execution_secrets.club_key.key) }}'
-      # The clone's fleet start (clone-fleet of the create): the fleet rules, the nested containers, the tunnel wg-nested, Doctor and the
-      # three agents (docs/reference/development-containers.md#a-clone-starts-its-fleet). It records its own seconds for the result.
+      # The clone's fleet start (clone-fleet of the create): the fleet rules, the nested containers, the tunnel wg-nested, the proxy
+      # bypass, Doctor and the three agents (docs/reference/development-containers.md#a-clone-starts-its-fleet). T3 booted before the
+      # bypass when the copy was made without its drop-ins, so this start alone may restart it once. It records its own seconds.
       - name: Start the inner fleet
         labels: {role: swamp}
         writes: true
@@ -71,7 +72,7 @@ jobs:
           behaviorName: '${{ "instance-start-fleet-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: s=$(date +%s%N); timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"; rc=$?; echo $(( ($(date +%s%N) - s) / 1000000 )) > "$ORBIT_RUN/fleet_ms"; exit $rc
+            run: s=$(date +%s%N); timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume -e fleet_proxy_restart_t3=true "$ORBIT_ANSIBLE/instance-container.yml"; rc=$?; echo $(( ($(date +%s%N) - s) / 1000000 )) > "$ORBIT_RUN/fleet_ms"; exit $rc
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'

@@ -130,7 +130,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "1bc36a247d2cec6c5412adce648eff0748ea7efab451cd9bbcec1486a12b197f",
+    "source_sha256": "362d3613a9516b4b386a6a8ec43597265345489ef6afbb6249154228b296339d",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -172,7 +172,9 @@
       "a failed digest read runs every part and never fails the refresh",
       "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
       "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
-      "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing"
+      "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
+      "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it",
+      "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code"
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
@@ -1520,7 +1522,7 @@
     ]
   },
   "swamp/tests/instance_clone_guest_test.py": {
-    "source_sha256": "4194ca0a2b928f820516144b204f46f2bb9866c543ff3b310f4527860734a2f5",
+    "source_sha256": "c94eaff3f43ecd76c30e38e725c57f35396622dca6b9ecf705a22f7055a4cf0b",
     "cases": [
       "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
       "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -1548,7 +1550,8 @@
       "test_check_passes_after_the_users_own_commit_and_refuses_without_the_mark",
       "test_sessions_check_only_loopback_t3_and_reject_http_and_scope_failures",
       "test_workspace_forwards_one_json_vault_value_without_printing_secrets",
-      "test_inactive_process_names_unit_states_and_exit_without_private_log",
+      "test_sessions_never_check_units_but_keep_the_branch_and_mark_checks",
+      "test_the_check_names_unit_states_of_a_dead_process_and_exits_without_private_log",
       "test_check_passes_a_good_clone_and_refuses_a_dead_unit_with_the_sessions_code",
       "test_non_php_sessions_keep_both_authenticated_sessions_without_php",
       "test_non_php_check_has_no_php_probe",
@@ -1567,7 +1570,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "c327c31ecd2ecff92412da8865fca49f7bc86912b7bedce5e241bc2ed5c6f9f2",
+    "source_sha256": "784cc9b70d5e469d7b42cf219c4954642aaf9cee398467b6532ecb282b3230b1",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -2013,7 +2016,7 @@
     ]
   },
   "swamp/tests/workflow_absent_secrets_test.ts": {
-    "source_sha256": "0d825fc070ce21cc1ff015b4444fd6cb5c6c05622ebe0e3cb1ea5eb117810523",
+    "source_sha256": "956535739bd1b98c767252bbaa39f3f1632d897395d287ae920c634c4d0f0cbb",
     "cases": [
       "a checkout create reads no key that only a container create has",
       "a container default's create and a clone's create read their own keys",
@@ -2024,17 +2027,15 @@
       "a container deployment reads the Club key copy only for a nested-fleet container that has it",
       "a container process:start, stop and restart read no `read` section, which only a migrated Schedule log read has",
       "create finalization evaluates checkout, default and clone receipts with Swamp's CEL types",
-      "only a clone whose intent has `fleet` starts its fleet; a normal clone skips the step and finishes as before",
+      "a clone's create delivers a nested clone's Club key and has no fleet, database or Route step: the completion owns them",
       "deploy VP workspace reads retain step names for the capture schema",
       "guarded withdrawal resolves the same child when cleanup is needed and stays deferred during parent preflight",
       "the scheduler imports the level sort of the Swamp release that the repository pins",
-      "the workspace and T3 share one step level of the clone job in every clone shape",
-      "a normal clone starts the workspace and T3 together when the copy ends, and sessions waits for both",
-      "a clone with a database starts the workspace and T3 together when the database steps end",
-      "a nested-fleet clone starts T3 after the fleet step, beside the workspace",
-      "a clone whose workspace fails while T3 runs registers nothing and stops the container",
-      "a clone whose T3 step fails, early or late, registers nothing, stops the container and names T3",
-      "a clone whose database step fails skips the workspace, registers nothing and names the database",
+      "a clone's create ends at the registration: the workspace and T3 share one level, by the pinned engine's sort",
+      "a normal clone succeeds at the registration in about 24 s, with the workspace and T3 together after the copy",
+      "a clone with a database or a Route ends at the registration as fast: its completion makes them",
+      "a nested-fleet clone gets its Club key before the workspace and T3, and starts no fleet in its create",
+      "each failure before the end names its step, registers nothing and stops the container",
       "a nested-fleet clone's start reads only the Club key, and every wake reads no key"
     ]
   },
@@ -2271,7 +2272,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/instance-dev-command/result_test.ts": {
-    "source_sha256": "9ae43c90130ee2d54c50ea01a514bfb8cf54b2ee513020229d00483de49010b3",
+    "source_sha256": "0d72054aca82600352c35d7afcb9fdb985755a9c94de0af14361a5d43e57468e",
     "cases": [
       "create returns only the commit when every step finished",
       "create names the first unfinished phase",
@@ -2291,7 +2292,7 @@
       "a Node without the main Mailpit gets no mail warning or failure",
       "a failed container phase keeps a Node service target refusal and the nested-fleet image refusal, nothing else",
       "a nested-fleet create carries what its start did with the Club key, from the run, and a normal create never names it",
-      "only a nested-fleet clone runs the fleet phase; it is ready only after its fleet, and a failure keeps the fleet phase's code"
+      "the fleet phase's result file gives its own code, detail and drift lines to the completion's receipt"
     ]
   },
   "swamp/tests/instance_destroy_git_test.py": {
@@ -2426,10 +2427,12 @@
     ]
   },
   "swamp/tests/instance_node_service_access_test.py": {
-    "source_sha256": "e3c10315c29ca3366c115e376c2eee573e98f144be2c57d4c1947246daa727ab",
+    "source_sha256": "386cdf317e4d00bc170871e404d5f2b7190c51e9d6d8de8beac62a9632c9ce1b",
     "cases": [
       "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
       "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",
+      "test_fleet_proxy_writes_the_same_drop_ins_and_manager_value_once_and_refuses_a_foreign_file",
+      "test_the_proxy_command_reads_its_value_from_stdin_and_prints_only_whether_it_changed",
       "test_attached_remote_probe_failure_has_public_target_identity",
       "test_detach_removes_acl_endpoint_forward_and_all_managed_proxy_hosts",
       "test_multiple_hosts_on_one_port_keep_distinct_rules_without_sockets",
@@ -2441,7 +2444,7 @@
     ]
   },
   "swamp/extensions/behaviors/operations/ansible-input/write_test.ts": {
-    "source_sha256": "554c473877cbb09ba2599b6be051c158a831c27b8d6b9744f77d40a7d3ea5ff7",
+    "source_sha256": "8da0d7075f7bb856055341c1f867a7ab2d4405337f368727fb05d6c688ce9331",
     "cases": [
       "the full intent reaches a private file beyond the environment size limit",
       "an intent write refuses paths outside its run folder",
@@ -2468,12 +2471,12 @@
     ]
   },
   "swamp/extensions/behaviors/operations/routes/update-command/workflow_test.ts": {
-    "source_sha256": "6b22dcc8017f45e10c51264d65055be1b7f285857ef8d1abbb75cd3a1a2f6d9d",
+    "source_sha256": "eadf8cae203253a968a5b5d38bd8d9e4e19a3a46120625d2c751ff9a109aab29",
     "cases": [
       "Route update workflows place every step on the swamp role and keep mutation parents small",
       "restore keeps the observed candidate serving, then withdraws it after DNS grace",
       "Route primitive and shared publication children use one209selector",
-      "a clone publishes its prepared Route beside workspace without waiting for app startup",
+      "a clone's completion publishes its prepared Route beside the services without waiting for app startup",
       "a captured same-Node move retains its first live DNS child and omits only the redundant final child",
       "a captured replacement with real record changes runs both DNS stages and completes",
       "mixed captured Nodes keep dense final child indexes and exact contribution completeness",
@@ -2511,7 +2514,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_power_test.ts": {
-    "source_sha256": "dbaebfb9784899082aa0c3c62168571dfb766f69f823f3ec6c7391bb177e5df1",
+    "source_sha256": "ee0f3d708c170f2b055adada6234ec90bc1303714a23ae8c19edc8779d8ee888",
     "cases": [
       "each sleep and wake step runs its charted part with the shipped Ansible settings; the wake is one playbook",
       "a nested-fleet clone's start runs the deployment's start with the Club key, then the clone's fleet check and resume, and times the fleet",
@@ -2563,6 +2566,13 @@
     "cases": [
       "no command behind incus exec opens stdin by path",
       "the check finds the record write of Operation 20393, through the variable that holds incus exec"
+    ]
+  },
+  "swamp/tests/instance_create_native_test.ts": {
+    "source_sha256": "3d746426191ac5ac05598bb92f78be3226b3f7f22892e218a2d47cbece87d288",
+    "cases": [
+      "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
+      "pinned create: a failed workspace registers nothing, stops the container and removes the private folder"
     ]
   }
 }

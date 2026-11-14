@@ -8,7 +8,9 @@ const folder = Deno.env.get("HOST_FIXTURE")!;
 const file = `${folder}/state.json`;
 const state = JSON.parse(Deno.readTextFileSync(file));
 const args = [...Deno.args];
-Deno.writeTextFileSync(`${folder}/calls`, JSON.stringify(args) + "\n", { append: true });
+// A script sent with `python3 -c` is recorded by its name.
+const recorded = args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)] : args;
+Deno.writeTextFileSync(`${folder}/${args[0] === "--project" ? "calls" : "node-calls"}`, JSON.stringify(recorded) + "\n", { append: true });
 const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
 const fail = (message: string, code = 1): never => {
   save();
@@ -23,6 +25,11 @@ const done = (output?: unknown): never => {
 const pairs = (values: string[]) =>
   Object.fromEntries(values.map((value) => [value.slice(0, value.indexOf("=")), value.slice(value.indexOf("=") + 1)]));
 const copy = <T>(value: T): T => structuredClone(value);
+
+// The Node's own read of the Instance container (instance-fleet-proxy.yml): `lastUsedAt` is its last start.
+if (args[0] === "query" && args[1] === "--" && args[2] === `/1.0/instances/${state.outer.name}?project=${state.outer.project}`) {
+  done({ name: state.outer.name, last_used_at: state.outer.lastUsedAt ?? "2026-11-13T23:00:00.000000000Z" });
+}
 
 // The Node's call: `incus --project <project> exec <container> -- <command>`.
 if (args[0] !== "--project" || args[1] !== state.outer.project || args[2] !== "exec" || args[3] !== state.outer.name || args[4] !== "--") {
@@ -39,6 +46,21 @@ const containers: Record<string, {
 }> = state.containers;
 const container = (name: string) => containers[name] ?? fail(`Instance not found: ${name}`);
 const tunnel = state.tunnel as null | { addresses: string[]; up: boolean; key?: string; port?: string; peer?: string; endpoint?: string; allowed?: string };
+
+// instance_node_services.py `proxy`: the drop-ins and the manager environment, changed when the value differs.
+if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
+  const wanted = JSON.parse(await new Response(Deno.stdin.readable).text()).proxy_environment;
+  // A foreign file of the same name: the writer fails with its public code and changes nothing.
+  if (state.outer.proxyConflict) {
+    save();
+    console.error("instance.node_service_unit_conflict");
+    Deno.exit(1);
+  }
+  const changed = JSON.stringify(state.outer.proxy ?? null) !== JSON.stringify(wanted);
+  state.outer.proxy = wanted;
+  done({ changed });
+}
+if (command[0] === "systemctl" && command[1] === "try-restart") done();
 
 if (command[0] === "test" && command[1] === "-s") {
   save();

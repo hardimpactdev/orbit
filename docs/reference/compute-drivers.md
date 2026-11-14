@@ -1107,6 +1107,8 @@ The branch shares the two task files of a [container host](#prepare-a-container-
 | Clone probe | Always | On a ZFS pool only; a directory pool makes full copies |
 | Error code | `task_vm.setup_failed` | `instance.host_unavailable` |
 
+An Instance container host also gets the [fast wake](/reference/development-containers#the-node-resumes-a-frozen-container): the script `/usr/local/libexec/orbit-instance-wake`, `orbit-instance-wake.service` and the enabled path unit `orbit-instance-wake.path`. Writing them changes no running unit.
+
 The role repeats the [read-only NIC audit](/reference/development-containers#prepare-a-node) at its end. An unsafe NIC fails convergence; bridge egress stays reject. No NIC may reference the bridge union ACL.
 
 The bridge ACL admits the Node's preview and development connections and T3's clients:

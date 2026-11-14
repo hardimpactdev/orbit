@@ -16,6 +16,7 @@ use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -321,6 +322,8 @@ function ownedPostgresClone(): array
     $defaultCreate->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
     $create = containerCreate($default->project, $node, 'feature');
     app(DevelopmentInstanceCreateProjection::class)->input($create);
+    // The clone's completion mints its database copies from the create's plan (NativeInstanceCompleteInput).
+    app(NativeDevelopmentInstanceInput::class)->serverDatabase($create, $create->input['direct_provisioning']['server_database']);
     $clone = Instance::query()->findOrFail($create->target_id);
     $clone->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'feature', 'starting_commit' => str_repeat('c', 40)]);
     $create->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();
@@ -383,6 +386,8 @@ it('deletes a clone\'s own Valkey user and its copies, never the default\'s shar
     DatabaseConnectionTarget::query()->create(['instance_id' => $default->id, 'prefix' => 'REDIS', 'database_connection_id' => $shared->id, 'network' => 'wireguard']);
     $create = containerCreate($default->project, $node, 'feature');
     app(DevelopmentInstanceCreateProjection::class)->input($create);
+    // The clone's completion mints its Valkey user's copies from the create's plan (NativeInstanceCompleteInput).
+    app(NativeDevelopmentInstanceInput::class)->serverDatabase($create, $create->input['direct_provisioning']['server_valkey']);
     $clone = Instance::query()->findOrFail($create->target_id);
     $clone->update(['status' => InstanceState::Active, 'first_setup_pending' => false, 'branch' => 'feature', 'starting_commit' => str_repeat('c', 40)]);
     $create->forceFill(['status' => 'succeeded', 'finished_at' => now()])->save();

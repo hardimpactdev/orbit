@@ -229,7 +229,8 @@ Deno.test("real clone launch preserves stdin and cleanup works after an early co
         });
         assertEquals(noInput, clean);
         assertEquals((await execute(clean)).code, 0);
-        assertEquals(cleanup.dependsOn, [{ step: "stop-container", condition: { type: "always" } }]);
+        // The private folder goes beside finish: neither finish nor the container stop reads it.
+        assertEquals(cleanup.dependsOn, []);
     } finally {
         await execute(clean);
         await Deno.remove(folder, { recursive: true });

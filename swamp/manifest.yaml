@@ -45,6 +45,7 @@ additionalFiles:
   - ansible/tasks/fleet-reboot-ci-start.yml
   - ansible/tasks/fleet-reboot-rerun.yml
   - ansible/files/fleet-reboot-planned.sh
+  - ansible/files/instance-container-wake.sh
   - ansible/files/fleet-reboot-ci-drain.sh
   - ansible/tasks/node-converge-replace.yml
   - ansible/tasks/node-converge-software.yml
@@ -85,6 +86,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-start.yml
   - ansible/tasks/instance-fleet-reach.yml
   - ansible/tasks/instance-fleet-ready.yml
+  - ansible/tasks/instance-fleet-proxy.yml
   - ansible/tasks/instance-fleet-refresh.yml
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-files.yml

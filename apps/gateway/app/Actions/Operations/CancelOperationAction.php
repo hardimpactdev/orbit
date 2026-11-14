@@ -6,7 +6,6 @@ namespace App\Actions\Operations;
 
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -14,12 +13,15 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
-use App\Infrastructure\Swamp\CancelSwampRun;
+use App\Domain\Shared\ResourceOperationException;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+use function Illuminate\Support\defer;
 
 /** Cancels unstarted intent; a bound native workflow owns its terminal result, and Swamp stops it. */
 final readonly class CancelOperationAction
@@ -70,20 +72,20 @@ final readonly class CancelOperationAction
                 DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
             }
         }
-        if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
-            if (DirectOperation::owns($operation) && app(DirectOperation::class)->usesNativeTerminal($operation)) {
-                // While a database copy runs, the request is recorded and the reconciler forwards it when the copy has ended.
-                if (app(NativeRunCancellation::class)->holdsForCopy($operation)) {
-                    // Recorded again, so an earlier request whose forward window has closed cannot swallow this one.
-                    app(NativeRunCancellation::class)->request($operation, again: true);
-                } else {
-                    app(NativeRunCancellation::class)->logBoundPassed($operation);
-                    app(CancelSwampRun::class)->execute($operation);
-                }
+        // A bound run, or one the Gateway timed out that may still be going: the request is recorded (again, so an earlier request whose
+        // forward window has closed cannot swallow it) and the caller gets its answer. Swamp is asked after the response, through the
+        // one send path and its rule; while a database copy runs that path holds it, and the reconciler stays the retry.
+        if ((! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) || app(NativeRunCancellation::class)->outlivesTimeout($operation)) {
+            $cancellation = app(NativeRunCancellation::class);
+            if ($cancellation->request($operation, again: true, reconcile: false)) {
+                defer(static function () use ($operation, $cancellation): void {
+                    try {
+                        $cancellation->forward($operation);
+                    } catch (ResourceOperationException $exception) {
+                        Log::warning('operation.cancel_forward_deferred', ['operation_id' => $operation->id, 'error_code' => $exception->errorCode]);
+                    }
+                }, always: true);
             }
-        } elseif (app(NativeRunCancellation::class)->outlivesTimeout($operation)) {
-            // The Gateway ended it at its budget; the native run may still be going. Ask Swamp again.
-            app(NativeRunCancellation::class)->request($operation, again: true);
         }
 
         return $operation;

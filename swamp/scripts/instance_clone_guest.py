@@ -570,11 +570,11 @@ def phase_main(phase, raw):
                 )
         assert replies[0]["token"] != replies[1]["token"]
         assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
-        # The workspace phase checked the commit before it wrote the mark; after that, commits on the branch are the user's.
+        # The checkout checked the commit before it wrote the mark; after that, commits on the branch are the user's.
         assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
         if c["php"] is not None:
             run(["php", "-v"], agent=True)
-        require_units()
+        # No unit check: the Processes start in the completion, whose `check` phase refuses a dead unit.
         reply = {
             "environment": json.dumps(env),
             "gateway": replies[0],

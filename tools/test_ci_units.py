@@ -738,7 +738,9 @@ class PopulationTest(unittest.TestCase):
                 cases = units.case_names(unit, fixtures)
                 self.assertEqual(len(cases), 1, unit)
                 seen.extend(cases)
-                seconds = sum(math.ceil(evidence['case_seconds'][name] * evidence['estimate_factor']) + 1 for name in cases)
+                # Later main cases retain their own table estimates; replay measured split cases from evidence.
+                seconds = sum(math.ceil(evidence['case_seconds'][name] * evidence['estimate_factor']) + 1
+                              if name in evidence['case_seconds'] else fixtures[file]['case_costs'][name] for name in cases)
                 heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
             self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
         self.assertCountEqual(seen, fixtures[file]['cases'])
