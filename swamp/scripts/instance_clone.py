@@ -968,6 +968,8 @@ def main():
         # 1 when T3 already ran as the step began: the copy's boot started it.
         timings["at_boot"] = 1 if output.pop("at_boot") else 0
         issued = output.pop("private_reply")
+        # The sessions check gets its own bound, as its own step had: a slow checkout never leaves it without time.
+        workspace_deadline = time.monotonic() + 55
         part("sessions")
         with timed("sessions"):
             checked = inside("sessions", json.dumps(issued))

@@ -1011,7 +1011,7 @@ On a throwaway clone (2026-11-14, load 12-31), T3's unit started 0.35-0.43 s aft
 
 The model environment reaches only the copy step, on its one SSH stdin. The T3 step's stdin is the workspace's private JSON; its agent part finds the model environment in place and fails without it. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
 
-The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started. A copy that a release before 2065 started holds no model environment, so its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again. A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
+The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started. A failed create stops its copy, and a retry writes the model environment again into a copy that is not running. Only a copy that a release before 2065 started and that still runs holds none: its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again. A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
 
 Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). The T3 step is in the level after the copy and the Club key, so it starts when the Club key step ends or skips.
 
@@ -1493,7 +1493,7 @@ In the container, as `agent`:
 3. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
 4. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
 5. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
-6. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+6. The T3 step's sessions check, after the checkout and T3's answer, reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
 
 Stock T3's CLI writes its sessions before and during the server's first start. So the two issues run while T3 starts and add no time of their own.
 
