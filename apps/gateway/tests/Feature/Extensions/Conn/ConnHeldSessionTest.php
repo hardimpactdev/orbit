@@ -19,6 +19,7 @@ use App\Models\NodeAccess;
 use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
@@ -31,6 +32,7 @@ use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 use Orbit\Extensions\Conn\Models\ConnProfile;
 use Orbit\Extensions\Conn\Models\ConnProfileBinding;
+use Symfony\Component\Yaml\Yaml;
 use Tests\Support\SwampNodeFixture;
 
 use function Pest\Laravel\freezeTime;
@@ -157,6 +159,40 @@ function revokes(): array
     return Operation::query()->where('kind', 'conn.pairing_revoke')->orderBy('id')->get()->all();
 }
 
+/**
+ * Serve refuses a run whose input breaks its workflow's schema, so the Gateway's input must fit it: required keys present, closed
+ * objects without extra keys, list items alike.
+ *
+ * @param  array<string, mixed>  $schema
+ */
+function assertFitsWorkflowSchema(mixed $value, array $schema, string $path = 'inputs'): void
+{
+    if (($schema['type'] ?? null) === 'object') {
+        expect($value)->toBeArray("{$path} is an object");
+        foreach ($schema['required'] ?? [] as $key) {
+            expect(array_key_exists($key, $value))->toBeTrue("{$path}.{$key} is required");
+        }
+        foreach ($value as $key => $item) {
+            $child = $schema['properties'][$key] ?? null;
+            expect($child !== null || ($schema['additionalProperties'] ?? true) !== false)->toBeTrue("{$path}.{$key} is not in the workflow schema");
+            if (is_array($child)) {
+                assertFitsWorkflowSchema($item, $child, "{$path}.{$key}");
+            }
+        }
+    }
+    if (($schema['type'] ?? null) === 'array' && isset($schema['items'])) {
+        foreach ($value as $index => $item) {
+            assertFitsWorkflowSchema($item, $schema['items'], "{$path}[{$index}]");
+        }
+    }
+}
+
+/** @return array<string, mixed> */
+function workflowInputs(string $workflow): array
+{
+    return Yaml::parseFile(base_path("../../swamp/workflows/workflow-operation-{$workflow}.yaml"))['inputs'];
+}
+
 describe('the session handle', function (): void {
     it('makes the held session with one Operation, then answers it with no Operation', function (): void {
         $first = readHeld($this->phone, $this->environment)->assertStatus(202)
@@ -166,6 +202,7 @@ describe('the session handle', function (): void {
         expect(Operation::query()->where('kind', 'conn.session_hold')->count())->toBe(1);
 
         $operation = holdOperation($this->phone, $this->environment);
+        assertFitsWorkflowSchema(['operation_id' => $operation->id, 'node_id' => 1, 'kind' => $operation->kind, ...Arr::only($operation->input, ['intent', 'execution_secrets'])], workflowInputs('conn-session-hold'));
         // Neither the admin session nor any later secret is in the Operation's input.
         expect(json_encode($operation->input))->not->toContain('private-admin')
             ->and($operation->input['execution_secrets']['admin_session']['key'])->toStartWith('conn-session-hold-');
@@ -226,6 +263,7 @@ describe('the session handle', function (): void {
         expect($unknown->error_code)->toBe('conn.session_outcome_unknown')
             ->and(ConnPairing::query()->findOrFail($unknown->target_id)->withdrawn_at)->not->toBeNull();
         $revoke = revokes()[0];
+        assertFitsWorkflowSchema(['operation_id' => $revoke->id, 'node_id' => 1, 'kind' => $revoke->kind, ...Arr::only($revoke->input, ['intent', 'execution_secrets'])], workflowInputs('conn-pairing-revoke'));
         expect($revoke->input['pairing_ids'])->toBe([$unknown->target_id])
             ->and($revoke->input['intent']['pairings'][0])->toMatchArray(['id' => $unknown->target_id, 'held' => true]);
         // Nothing of it was on the server: the unmatched revoke settles it.
