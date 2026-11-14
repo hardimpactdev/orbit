@@ -12,6 +12,10 @@ state['calls'] += 1
 state.setdefault('argv', []).append(sys.argv[1:])
 (folder / 'ssh.json').write_text(json.dumps(state))
 if state['calls'] <= state['failures']:
+    # Ansible writes its pipelined module before reading the SSH diagnostic.
+    # Drain it so this synthetic refusal cannot become a local BrokenPipeError.
+    while sys.stdin.buffer.read(65536):
+        pass
     print('ssh: connect to host 192.0.2.9 port 22: Connection timed out', file=sys.stderr)
     print('Authorization: Bearer fixture-private-credential', file=sys.stderr)
     sys.exit(255)
