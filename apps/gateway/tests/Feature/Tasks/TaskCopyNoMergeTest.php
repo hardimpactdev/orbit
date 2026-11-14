@@ -113,6 +113,16 @@ it('refuses project:pr-merge for a pull request on the task branch of a copy gro
         ->and(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($world->group->project, 7, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::Code);
 });
 
+it('still merges the task branch pull request of a group that never had a task copy', function (): void {
+    $world = noMergeWorld();
+    $vm = Task::query()->create(['project_id' => $world->group->project_id, 'title' => 'VM group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Completed]);
+    noMergeGitHub(headRef: 'task-'.$vm->id);
+
+    $operation = app(StartProjectPullRequestMergeAction::class)->execute($world->group->project, 8, NO_MERGE_HEAD, 'test', (string) Str::uuid());
+
+    expect($operation->kind)->toBe(OperationKinds::ProjectPrMerge);
+});
+
 it('still merges another pull request of the same Project through project:pr-merge', function (): void {
     $world = noMergeWorld();
     noMergeGitHub();

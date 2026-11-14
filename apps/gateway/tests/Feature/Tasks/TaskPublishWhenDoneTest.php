@@ -6,6 +6,7 @@ use App\Actions\Tasks\RunTaskPublishWhenDoneAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskPublicationData;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -20,6 +21,7 @@ use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
@@ -360,4 +362,21 @@ it('reads an empty ORBIT_TASKS_PR_MODE as the default', function (): void {
     }
 
     expect(data_get($config, 'tasks.pr_mode'))->toBe('review_before_pr');
+});
+
+it('takes a raw empty JSON object over HTTP as the release, and keeps the 422 on check for a group without a task copy', function (): void {
+    $gateway = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit',
+    ]));
+    $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+    $world = TaskCopyDoneFixture::make(TaskPrMode::ReviewBeforePr);
+    $post = fn (Task $group, string $key) => $this->call('POST', '/api/v1/tasks/'.$group->id.'/publish', [], [], [],
+        ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json', 'HTTP_IDEMPOTENCY_KEY' => $key], '{}');
+
+    $post($world->group, 'release-1')->assertStatus(202);
+    expect(Operation::query()->where('kind', OperationKinds::TasksPublish)->sole()->input['check'])->toBe($world->check->id);
+
+    $plain = Task::query()->create(['project_id' => $world->group->project_id, 'title' => 'VM group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
+    $post($plain, 'release-2')->assertStatus(422)->assertJsonPath('error.code', 'validation.failed')->assertJsonStructure(['error' => ['details' => ['check']]]);
 });
