@@ -1,0 +1,38 @@
+{
+  "file": "swamp/tests/ansible_task_copy_turn_test.ts",
+  "source_sha256": "f3d528e69c0d525d53726552f182a03e9ae308fbb7e82d7e986be09ab7572e41",
+  "runs": [
+    43621397546,
+    43633174432
+  ],
+  "completed_max_seconds": {
+    "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result": 0.008619939999999986,
+    "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time": 0.006388389999999987,
+    "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back": 14.720263371000001,
+    "a continued turn finds its thread by title and sends the prompt to it, with no model and no title": 12.359177428,
+    "a continued turn whose thread T3 does not hold launches nothing and says so": 6.871754544999996,
+    "a continued turn whose thread list fails launches nothing and names T3's failure, not a missing thread": 7.117125531999998,
+    "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn": 41.498273403999995,
+    "a reviewer turn on a checkout with changes launches nothing and touches nothing; a restore that leaves changes says so": 76.450515089,
+    "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing": 25.318359347,
+    "an intent outside the admitted shape runs nothing in the copy": 24.363835797999986,
+    "a thread list that is not JSON reads as no thread, and the start's end is still written": 13.882075465000002,
+    "a new thread reads T3's catalog first and runs a model it offers, by slug or alias": 25.58896859700003,
+    "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout": 10.811610819000023,
+    "without T3's cached catalog the check is skipped and the turn runs": 12.544401972999971,
+    "a continued thread keeps its model: the catalog is not read": 12.21898611899995,
+    "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check": 43.566895796,
+    "the start evidence keeps stderr only when the start failed, and only its last 4096 characters": 16.57080657799996,
+    "a run that asks has its question stored before the run is stopped, and the thread is read back after": 20.787183503,
+    "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored": 72.575296485,
+    "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing": 52.38123937799997,
+    "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing": 3.133063962
+  },
+  "censored_seconds": {
+    "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing": 26.394,
+    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 66.547
+  },
+  "estimates": {
+    "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched": 120
+  }
+}
