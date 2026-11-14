@@ -368,7 +368,7 @@ After cleanup removes scratch, start a fresh command. Its push step mints a fres
 
 Token revocation (`gh api --method DELETE installation/token`) and scratch cleanup on the VM and on 209 are separate native steps. Publication requests no reviewers and runs no brief coverage. A native assert confirms publication and worker cleanup. The Gateway projects the PR step’s public metadata into `pr_url` and the watched PR fields and releases the VM after successful publication. Raw Git and GitHub replies stay in the private scratch directory. Typed data readers preserve public refusal codes without retaining those replies in run history.
 
-A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
+A group whose workspace is a [task copy](#task-copy) publishes the same way, with the same result. The Gateway admits it without a task VM, while its last completion did not fail (`tasks.copy_completion_failed`), its container runs (`tasks.instance_not_running`) and no earlier copy turn may still run (`tasks.copy_turn_unended`). The intent adds the copy's container, its start commit and the path of its `.env`, from the Instance's record.
 
 When the run starts, the Gateway also renders the `.env` from the Instance's stored values and passes it as a vault copy (`execution_secrets.environment`, key `task-publish-environment-<operation>`), never as a run input. The agent cannot change that copy, unlike the file in the copy. It holds the copy's own keys as Orbit stored them; it is not the copy's file byte for byte, because a clone keeps the default's file from the seed and rewrites only its own keys ([the environment of a clone](/reference/development-containers#the-environment-of-a-clone)). When the copy is destroyed, these copies are deleted with the Instance's other execution copies.
 
@@ -978,9 +978,24 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
-| Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too, and so does a failed or cancelled completion |
-| Kept copy | After an expired run budget or a failed destroy, the task keeps the copy until `task:cancel`, `task:complete` or `instance:destroy --force` |
+| Failed create | The task is `failed`. A refused start or a cancel before the run counts too. Orbit removes the copy as [Removal by Orbit](#removal-by-orbit) describes |
+| Failed completion | The copy stays and the task stays `reserved`, with an assistance request and the retry. See [a failed completion](#a-failed-completion) |
+| Kept copy | After an expired run budget, a failed completion, a failed destroy or a copy that Orbit would not remove, the task keeps the copy until `task:cancel`, `task:complete` or `instance:destroy --force` |
 | End | When the copy's destroy succeeds, a running task is `cancelled`, a failed task stays `failed` and a completed task stays `completed`. All let go of the copy |
+
+#### A failed completion
+
+A failed, cancelled or unadmitted `instance.complete` of a copy keeps the copy, and the task stays `reserved`. Its create succeeded, so its thread was usable and an agent may have worked in it.
+
+The task asks for assistance with kind `failure`, unless a direction request is open. The reason names the completion Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>`. `task:show` and `task:status` show it.
+
+Until a completion succeeds, a turn, a check and a publish answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn answers `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
+
+#### Removal by Orbit
+
+Orbit removes a task copy by itself only after a failed create, through one queued job that admits the copy's `instance:destroy` with force. A failed completion never removes the copy: its create succeeded, so its thread was usable and an agent may have worked in it.
+
+The job destroys the copy at once only when the records prove that no agent could have worked in it: the create did not succeed and no T3 server is registered for the copy. Otherwise it first reads the copy's work, as [`task:cancel`](/cli/task/cancel) does. It destroys a copy that holds no work origin lacks. A copy with such work, or a read that does not answer, stays, and the task asks for assistance with the counts. `task:cancel` and `task:complete` are a person's removals and keep their own rules.
 
 A held publish leaves the checked commit in the copy. An operator adds a Project to `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` once the publish guard for `.env` content is live; a copy of any other Project is a plain clone, so the nested-fleet cap does not count it.
 

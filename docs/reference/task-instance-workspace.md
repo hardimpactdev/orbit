@@ -43,7 +43,7 @@ Transfer or guest-cleanup failure removes Node scratch before returning failure.
 
 ## Check phases
 
-`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. A [task copy](/cli/task/start) creates that state. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
+`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. A [task copy](/cli/task/start) creates that state. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a task copy whose last completion did not fail (`tasks.copy_completion_failed`), a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
 
 Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
 
@@ -82,6 +82,7 @@ A failed phase returns one of these codes.
 | `tasks.workspace_snapshot_mismatch` | Snapshot digest or candidate does not match |
 | `tasks.workspace_receipt_invalid` | Receipt is missing, oversized, unsafe, malformed or bound to other evidence |
 | `tasks.workspace_phase_failed` | A tool, command time limit, transfer or cleanup failed |
+| `tasks.copy_completion_failed` | The check admission found a task copy whose last completion failed; the details name the Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>` |
 | `tasks.instance_not_running` | The check admission found a stopped container runtime |
 | `tasks.instance_hosted_check_unavailable` | A container handoff needs hosted CI, which needs the Node push |
 

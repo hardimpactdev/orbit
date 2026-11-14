@@ -179,7 +179,9 @@ Operation shows return recorded state without remote reads, expiry or projection
 
 Instance migration settles [deferred Schedule fires](/reference/schedules#checkout-migration) in the transaction that first marks its Operation terminal. It locks the Instance, then queues each fire against the recorded runtime or explicitly fails it if admission remains closed.
 
-An `instance.create` or `instance.complete` moves the task that owns its Instance, a [task copy](/reference/tasks#task-copy), in the same transaction that first marks it terminal. So a run's report, a start that Swamp refuses and a cancel before the run all count. Success makes the task run only when the copy is `active`, so a clone's create leaves it `reserved` and its completion starts it. A failure of either fails the task. An expired budget leaves the task `reserved`, because its run may still be stopping. An Operation on an Instance that no task owns changes no task.
+An `instance.create` or `instance.complete` moves the task that owns its Instance, a [task copy](/reference/tasks#task-copy), in the same transaction that first marks it terminal. So a run's report, a start that Swamp refuses and a cancel before the run all count.
+
+Success makes the task run only when the copy is `active`, so a clone's create leaves it `reserved` and its completion starts it. A failed create fails the task. A failed completion keeps the copy and leaves the task `reserved` with an assistance request ([failed completion](/reference/tasks#task-copy)). An expired budget leaves the task `reserved`, because its run may still be stopping. An Operation on an Instance that no task owns changes no task.
 
 The submission boundary records whether a native start was sent or explicitly refused; proven no-start outcomes, including failed execution-copy preparation, free a new runtime reservation.
 
