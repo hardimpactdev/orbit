@@ -424,30 +424,33 @@ it('finishes the destroy and drops the other profiles\' threads when a profile d
     mkdir($directory);
     config(['logging.channels.conn-drop' => ['driver' => 'single', 'path' => $directory.'/laravel.log', 'level' => 'debug']]);
     app('log')->setDefaultDriver('conn-drop');
-    $instance = connRemovalClone();
-    connRemovalResources($instance);
-    $broken = ConnProfile::query()->create(['name' => 'broken', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
-    DB::table('conn_profiles')->where('id', $broken->id)->update(['settings' => '{"attachedThreads": {"threads": [{"environmentId": "feature-env"']);
-    $profile = ConnProfile::query()->create(['name' => 'conn-lane-test', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
-    $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->patchJson('/api/v1/conn/profiles/'.$profile->id.'/settings', ['sections' => [
-        'attachedThreads' => ['version' => 0, 'value' => ['schema' => 1, 'threads' => [['environmentId' => 'feature-env', 'threadId' => 'thread-1']]]],
-    ]])->assertOk();
+    try {
+        $instance = connRemovalClone();
+        connRemovalResources($instance);
+        $broken = ConnProfile::query()->create(['name' => 'broken', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
+        DB::table('conn_profiles')->where('id', $broken->id)->update(['settings' => '{"attachedThreads": {"threads": [{"environmentId": "feature-env"']);
+        $profile = ConnProfile::query()->create(['name' => 'conn-lane-test', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
+        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->patchJson('/api/v1/conn/profiles/'.$profile->id.'/settings', ['sections' => [
+            'attachedThreads' => ['version' => 0, 'value' => ['schema' => 1, 'threads' => [['environmentId' => 'feature-env', 'threadId' => 'thread-1']]]],
+        ]])->assertOk();
 
-    $operation = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
-    connRemovalSucceed($operation->refresh());
+        $operation = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+        connRemovalSucceed($operation->refresh());
 
-    connRemovalRead($operation)->assertOk()->assertJsonPath('data.status', 'succeeded');
-    expect($instance->fresh())->toBeNull()
-        ->and(ConnEnvironment::query()->where('environment_id', 'feature-env')->exists())->toBeFalse()
-        ->and($profile->fresh()?->settings['attachedThreads']['threads'])->toBe([])
-        ->and(DB::table('conn_profiles')->where('id', $broken->id)->value('settings'))->toStartWith('{"attachedThreads"');
-    $log = (string) file_get_contents($directory.'/laravel.log');
-    expect($log)->toContain('conn.attached_threads_drop_failed')->toContain("from profile {$broken->id}.")->toContain('feature-env');
-    $signals = app(GatewayLogSignals::class)->collect($directory, base_path(), ['path' => $directory.'/laravel.log', 'inode' => (int) fileinode($directory.'/laravel.log'), 'offset' => 0])['signals'];
-    expect($signals)->toHaveCount(1)
-        ->and($signals[0]['exception_class'])->toBe('RuntimeException')
-        ->and($signals[0]['frame'])->toStartWith('app/');
-    File::deleteDirectory($directory);
+        connRemovalRead($operation)->assertOk()->assertJsonPath('data.status', 'succeeded');
+        expect($instance->fresh())->toBeNull()
+            ->and(ConnEnvironment::query()->where('environment_id', 'feature-env')->exists())->toBeFalse()
+            ->and($profile->fresh()?->settings['attachedThreads']['threads'])->toBe([])
+            ->and(DB::table('conn_profiles')->where('id', $broken->id)->value('settings'))->toStartWith('{"attachedThreads"');
+        $log = (string) file_get_contents($directory.'/laravel.log');
+        expect($log)->toContain('conn.attached_threads_drop_failed')->toContain("from profile {$broken->id}.")->toContain('feature-env');
+        $signals = app(GatewayLogSignals::class)->collect($directory, base_path(), ['path' => $directory.'/laravel.log', 'inode' => (int) fileinode($directory.'/laravel.log'), 'offset' => 0])['signals'];
+        expect($signals)->toHaveCount(1)
+            ->and($signals[0]['exception_class'])->toBe('RuntimeException')
+            ->and($signals[0]['frame'])->toStartWith('app/');
+    } finally {
+        File::deleteDirectory($directory);
+    }
 });
 
 it('keeps default and non-container refusals local to Conn', function (bool $container, string $code): void {

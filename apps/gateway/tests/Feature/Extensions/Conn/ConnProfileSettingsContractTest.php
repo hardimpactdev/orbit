@@ -75,5 +75,5 @@ it('publishes the replace body with exactly the sections a replace accepts', fun
     expect($rule)->toHaveCount(1)
         ->and(array_keys($settings['properties']))->toBe(explode(',', substr($rule[0], strlen('array:'))))
         ->and($settings['additionalProperties'])->toBeFalse()
-        ->and($put['description'])->toContain('Any other section, such as `attachedThreads`, returns `validation.failed` (422)');
+        ->and($put['description'])->toContain('A body that holds any other section, such as `attachedThreads`, returns `validation.failed` (422)');
 });

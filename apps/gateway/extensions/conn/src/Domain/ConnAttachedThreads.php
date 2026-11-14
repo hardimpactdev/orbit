@@ -135,7 +135,14 @@ final readonly class ConnAttachedThreads
     public function drop(array $environmentIds): void
     {
         if ($environmentIds !== []) {
-            DB::afterCommit(fn () => $this->dropNow($environmentIds));
+            // Laravel skips the after-commit callbacks registered later when one throws, such as the destroy's broadcasts.
+            DB::afterCommit(function () use ($environmentIds): void {
+                try {
+                    $this->dropNow($environmentIds);
+                } catch (Throwable) {
+                    // dropNow() logs each failure itself; nothing of it may reach the destroy.
+                }
+            });
         }
     }
 
@@ -143,7 +150,14 @@ final readonly class ConnAttachedThreads
     private function dropNow(array $environmentIds): void
     {
         try {
-            foreach (DB::table('conn_profiles')->whereRaw('NOT json_valid(settings)')->orderBy('id')->pluck('id') as $id) {
+            // A document that is not JSON cannot be read; log only one whose text names a dropped environment.
+            $unreadable = DB::table('conn_profiles')->whereRaw('NOT json_valid(settings)')->where(static function (Builder $query) use ($environmentIds): void {
+                foreach ($environmentIds as $environmentId) {
+                    $query->orWhereRaw('instr(settings, ?) > 0', [$environmentId]);
+                }
+            });
+
+            foreach ($unreadable->orderBy('id')->pluck('id') as $id) {
                 $this->dropFailed(StoredInteger::from($id), $environmentIds, new RuntimeException('The settings are not valid JSON.'));
             }
 
@@ -161,7 +175,12 @@ final readonly class ConnAttachedThreads
         foreach ($holders as $id) {
             try {
                 DB::transaction(function () use ($id, $environmentIds): void {
-                    $profile = ConnProfile::query()->lockForUpdate()->findOrFail($id);
+                    $profile = ConnProfile::query()->lockForUpdate()->find($id);
+
+                    if (! $profile instanceof ConnProfile) {
+                        return;
+                    }
+
                     $section = $profile->settings[ConnProfileSections::AttachedThreads] ?? null;
                     $entries = self::entries($section);
                     $kept = array_values(array_filter($entries, static fn (array $entry): bool => ! in_array($entry['environmentId'], $environmentIds, true)));
@@ -178,18 +197,23 @@ final readonly class ConnAttachedThreads
 
     /**
      * Logs a profile the drop skipped. The wrapping exception has an integer code, so the log collector keeps it as a
-     * signal; a database error's own code is an SQLSTATE string.
+     * signal; a database error's own code is an SQLSTATE string. A log channel that fails is ignored.
      *
      * @param  list<string>  $environmentIds
      */
     private function dropFailed(?int $profileId, array $environmentIds, Throwable $error): void
     {
         $profile = $profileId !== null ? "profile {$profileId}" : 'the profiles';
-        Log::error('conn.attached_threads_drop_failed', [
-            'profile_id' => $profileId,
-            'environment_ids' => $environmentIds,
-            'exception' => new RuntimeException('Conn could not drop the attached threads of environments '.implode(', ', $environmentIds)." from {$profile}.", 0, $error),
-        ]);
+
+        try {
+            Log::error('conn.attached_threads_drop_failed', [
+                'profile_id' => $profileId,
+                'environment_ids' => $environmentIds,
+                'exception' => new RuntimeException('Conn could not drop the attached threads of environments '.implode(', ', $environmentIds)." from {$profile}.", 0, $error),
+            ]);
+        } catch (Throwable) {
+            // The log is the only report; a failing channel must not reach the destroy.
+        }
     }
 
     /**

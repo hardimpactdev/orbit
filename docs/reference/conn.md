@@ -170,7 +170,7 @@ Two devices that change the set at the same time are handled by the section vers
 
 Orbit drops the entries of an environment that is gone:
 
-- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from the profiles that hold one, and reads no other profile.
+- **At removal.** The terminal projection of an Instance's destroy deletes its environment. It also removes that environment's threads from the profiles that hold one. It reads no profile whose document does not name the environment.
 - **Never refused.** The drop only shrinks a document, so no document limit refuses it. A document that is already over a limit cannot stop a destroy.
 - **Versions.** This drop adds 1 to the section version and to the document version, with `updated_by` `null`.
 - **Merge.** A device sees the new `settings_version` in `GET /me`. It reads the section and merges the drop as a remote change.
@@ -181,8 +181,9 @@ A failure of the drop never stops the destroy:
 
 - **After the destroy.** The drop runs after the destroy commits. It cannot fail, roll back or delay the destroy.
 - **One profile at a time.** The drop writes each profile in its own transaction.
-- **Skipped profile.** The drop skips a profile it cannot read or write, such as a document that is not valid JSON. The other profiles still get their drop.
-- **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem.
+- **Skipped profile.** The drop skips a profile it cannot read or write. This includes a document that is not valid JSON but names the environment. The other profiles still get their drop.
+- **Deleted profile.** A profile deleted while the drop runs is skipped without a report.
+- **Problem.** The Gateway logs `conn.attached_threads_drop_failed` with the profile and the environments. Its log collector records that error as a Problem. A log channel that fails is ignored.
 - **Hidden entries.** The skipped entries stay stored, and every read leaves them out.
 
 A device learns of a change from `profile.settings_version` in `GET /me`, which moves with every write. The Gateway sends no event: how quickly another device follows is the interval at which it reads `GET /me`.
