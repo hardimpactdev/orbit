@@ -175,6 +175,9 @@ def main():
         hashed name in `hash_directory`, where OpenSSL looks a CA up: a missing or unreadable source fails the create by name."""
         files = []
         for item in container["clone"].get("boot_files", []):
+            if "entry" in item:
+                files.append({key: item[key] for key in ("home", "directories", "path", "entry", "uid", "gid", "mode", "directory_mode")})
+                continue
             if "source" not in item:
                 files.append({key: item[key] for key in ("path", "content", "uid", "gid", "mode")})
                 continue
@@ -197,6 +200,23 @@ def main():
                 files.append({"link": item["hash_directory"] + "/" + subject.stdout.strip() + ".0", "target": linked,
                               "replaces": item["path"]})
         return files
+
+    def nss_store(item, files):
+        """`agent`'s NSS store names the runtime folder's trust module (docs/reference/development-containers.md#trust). A copy
+        without the home gets nothing. A missing store gets only the entry; a store without it gets it appended after a blank line,
+        and its own text stays as it is."""
+        if run(["incus", "query", files + item["home"]], check=False).returncode:
+            return
+        owner = ["--uid", str(item["uid"]), "--gid", str(item["gid"])]
+        for directory in item["directories"]:
+            if run(["incus", "query", files + directory], check=False).returncode:
+                change(project + ["file", "create", "--type=directory"] + owner + ["--mode", item["directory_mode"], name + directory])
+        held = run(project + ["file", "pull", name + item["path"], "-"], check=False)
+        store = held.stdout if held.returncode == 0 else None
+        if store is not None and item["entry"].splitlines()[0] in store.splitlines():
+            return
+        content = item["entry"] if not store else store + ("" if store.endswith("\n\n") else "\n" if store.endswith("\n") else "\n\n") + item["entry"]
+        change(project + ["file", "push"] + owner + ["--mode", item["mode"], "-", name + item["path"]], content)
 
     if phase == "container":
         boot = boot_files()
@@ -406,6 +426,9 @@ def main():
                 for item in boot:
                     if "link" in item:
                         change(project + ["file", "create", "--type=symlink", "--force", name + item["link"], item["target"]])
+                        continue
+                    if "entry" in item:
+                        nss_store(item, files)
                         continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])

@@ -196,6 +196,20 @@ async function artifacts(folder: string, version: string) {
             "package",
         ],
     }).outputSync();
+    // The trust module's package as Ubuntu ships it: the trust and client modules, and a proxy link to the library it needs. Built
+    // once per fixture, so every version of the parts pins the same bytes.
+    const deb = `${folder}/artifacts/p11-kit-modules_0.26.2-2_amd64.deb`;
+    if (!new Deno.Command("test", { args: ["-f", deb] }).outputSync().success) {
+        const p11 = `${work}/p11-kit-modules`;
+        Deno.mkdirSync(`${p11}/DEBIAN`, { recursive: true });
+        Deno.writeTextFileSync(`${p11}/DEBIAN/control`, "Package: p11-kit-modules\nVersion: 0.26.2-2\nArchitecture: amd64\nMaintainer: fixture\nDescription: fixture\n");
+        Deno.mkdirSync(`${p11}/usr/lib/x86_64-linux-gnu/pkcs11`, { recursive: true });
+        Deno.writeTextFileSync(`${p11}/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so`, "trust module");
+        Deno.writeTextFileSync(`${p11}/usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-client.so`, "client module");
+        Deno.symlinkSync("libp11-kit.so.0.4.8", `${p11}/usr/lib/x86_64-linux-gnu/p11-kit-proxy.so`);
+        const built = new Deno.Command("dpkg-deb", { args: ["--root-owner-group", "-b", p11, deb] }).outputSync();
+        assert(built.success, new TextDecoder().decode(built.stderr));
+    }
     Deno.removeSync(work, { recursive: true });
     return {
         runtime: [{
@@ -212,6 +226,14 @@ async function artifacts(folder: string, version: string) {
             archive: "file",
             sha256: await sha256(`${folder}/artifacts/single-1.0.phar`),
             bin: { single: "single-1.0.phar" },
+        }, {
+            name: "browser-p11-kit-modules",
+            version: "0.26.2-2",
+            url: "https://example.test/pool/p11-kit-modules_0.26.2-2_amd64.deb",
+            archive: "deb",
+            sha256: await sha256(deb),
+            bin: {},
+            trust_module: { source: "usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so", path: "pkcs11/p11-kit-trust.so", library: "libp11-kit0" },
         }],
         agent: [{
             name: "claude-code",
@@ -257,6 +279,18 @@ function gatewayImage() {
     assert(!prepare.includes("$agent") && finish.length > 0);
     return { prepare, finish };
 }
+
+/** `agent`'s NSS store as InstanceImage::browserTrust gives it. */
+export const browserTrust = {
+    home: "/home/agent",
+    directories: ["/home/agent/.pki", "/home/agent/.pki/nssdb"],
+    path: "/home/agent/.pki/nssdb/pkcs11.txt",
+    entry: "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+    uid: 2750,
+    gid: 2750,
+    mode: "0600",
+    directory_mode: "0700",
+};
 
 type Rule = {
     action: string;
@@ -510,6 +544,7 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
                 gid: 0,
                 mode: "0640",
             }],
+            browser_trust: browserTrust,
         },
         folders: {
             runtime: {

@@ -1,7 +1,7 @@
 /** Exercise the shipped Instance host tasks against disposable local boundaries. */
 import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 import { parse } from "jsr:@std/yaml@1";
-import { fixture as rawFixture, hasAnsible } from "./_support/instance_host.ts";
+import { browserTrust, fixture as rawFixture, hasAnsible } from "./_support/instance_host.ts";
 
 import { capture, restore, stages, type Boundary, type Stage } from "./_support/host_image_boundary.ts";
 // Store only changed entries between boundaries; restore still creates each test's complete independent filesystem.
@@ -164,6 +164,55 @@ Deno.test({
     },
 });
 
+Deno.test({
+    name: "the image names the trust module in agent's NSS store, after it checked the module's library in the build container",
+    ignore: !hasAnsible,
+    async fn() {
+        const f = await fixture({ pool: "dir" });
+        try {
+            const result = await f.run();
+            assert(result.ok, result.output);
+            const calls = f.calls();
+            const check = calls.findIndex((call) => call[0] === "exec" && call.includes("orbit-instance-build") && call.includes("dpkg-query"));
+            assertEquals(calls[check].slice(-4), ["dpkg-query", "--show", "--showformat=${Version}", "libp11-kit0"]);
+            const store = calls.findIndex((call) => call[0] === "exec" && call.includes("install") && call.includes("/home/agent/.pki/nssdb"));
+            assertEquals(calls[store].slice(calls[store].indexOf("install")), ["install", "-d", "-o", "2750", "-g", "2750", "-m", "0700", ...browserTrust.directories]);
+            const push = calls.findIndex((call) => call[0] === "file" && call.at(-1) === `orbit-instance-build${browserTrust.path}`);
+            assertEquals(calls[push], ["file", "push", "--project", "orbit-instances", "--uid", "2750", "--gid", "2750", "--mode", "0600", "-",
+                `orbit-instance-build${browserTrust.path}`]);
+            assertEquals(f.state().files[`orbit-instance-build${browserTrust.path}`].content, browserTrust.entry);
+            const publish = calls.findIndex((call) => call.includes("publish") && call.includes("orbit-instance-build"));
+            assert(check < store && store < push && push < publish, JSON.stringify([check, store, push, publish]));
+        } finally {
+            f.cleanup();
+        }
+    },
+});
+
+for (const [held, shown] of [["0.25.5-3", "0.25.5-3"], [null, "not installed"]] as const) {
+    Deno.test({
+        name: `an image whose libp11-kit0 is ${shown} is never published and gets no NSS store`,
+        ignore: !hasAnsible,
+        async fn() {
+            const f = await fixture();
+            try {
+                const state = f.state();
+                state.packages = { "orbit-instance-build": { "libp11-kit0": held } };
+                Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+                const result = await f.run();
+                assert(!result.ok);
+                assertStringIncludes(result.output.replace(/\s+/g, " "),
+                    `instance.browser_trust_mismatch: the image has libp11-kit0 ${shown}; the trust module needs exactly 0.26.2-2`);
+                assert(!f.calls().some((call) => call.at(-1)?.endsWith("/.pki/nssdb/pkcs11.txt") || call.includes("/home/agent/.pki")));
+                assert(!f.calls().some((c) => c.includes("publish") && c.includes("orbit-instance-build")));
+                assertEquals(f.state().instances, []);
+            } finally {
+                f.cleanup();
+            }
+        },
+    });
+}
+
 for (const [pool, temporary] of [["dir", "orbit-instance-build"], ["zfs", "orbit-clone-probe-copy"]]) {
     Deno.test({
         name: `${temporary} refuses an inherited unguarded profile NIC before starting`,
@@ -316,8 +365,9 @@ Deno.test({
             // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape; and
             // again when the image removed its linker cache last and the converge read the existing containers (two calls more), and
             // when the image took the Node's Orbit root CA (one push, and `update-ca-certificates` in the definition's finish: two calls more);
-            // and when the build container's init took the NIC address filters (the same 57 calls, its init has two `--device` keys more).
-            assertEquals([f.calls().length, digest], [57, "12d18278a10e4a104895b9397bf43806cf2899844de911354c607c99525150bc"]);
+            // and when the build container's init took the NIC address filters (the same 57 calls, its init has two `--device` keys more);
+            // and when the image named the trust module in agent's NSS store (the library check, the store's folders and its file: three calls more).
+            assertEquals([f.calls().length, digest], [60, "c1591708ab8621124e4131130dcd33a209f0e3ad7d3a38c4bca1242c9fd105ad"]);
             assert(f.calls().some((call) => call.includes("exec") && call.at(-1) === "update-ca-certificates"));
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));

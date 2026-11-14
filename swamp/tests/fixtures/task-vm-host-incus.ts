@@ -54,6 +54,15 @@ const fail = (message: string) => {
 };
 const instance = (named: string) =>
   state.instances.find((r: { name: string }) => r.name === named);
+/**
+ * The installed version of a package in a container, as its dpkg status holds it: the stock Ubuntu 26.04 image's libp11-kit0 unless
+ * the state names another (`null`: not installed).
+ */
+const installedVersion = (named: string, pkg: string): string | null =>
+  state.packages?.[named]?.[pkg] !== undefined ? state.packages[named][pkg] : ({"libp11-kit0": "0.26.2-2"} as Record<string, string>)[pkg] ?? null;
+const dpkgStatus = (named: string) => [["libc6", "2.42-0ubuntu1"], ["libp11-kit0", installedVersion(named, "libp11-kit0")]]
+  .filter(([, version]) => version !== null)
+  .map(([pkg, version]) => `Package: ${pkg}\nStatus: install ok installed\nArchitecture: amd64\nVersion: ${version}\n`).join("\n");
 /** Incus splits `key=value` at the first `=`: a value such as `port=0` holds one itself. */
 const pair = (argument: string) => {
   const at = argument.indexOf("=");
@@ -119,7 +128,11 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   const link = state.links?.[key];
   if (link !== undefined) console.log(link.startsWith("/") ? link : `${query.get("path")!.replace(/\/[^/]*$/, "")}/${link}`);
   else if (state.files?.[key] !== undefined) Deno.stdout.writeSync(new TextEncoder().encode(state.files[key].content));
-  else fail("not found");
+  // A directory answers with its entries.
+  else if (state.dirs?.[key] !== undefined) {
+    console.log(JSON.stringify([...Object.keys(state.files ?? {}), ...Object.keys(state.dirs ?? {}), ...Object.keys(state.links ?? {})]
+      .filter((path) => path.startsWith(`${key}/`) && !path.slice(key.length + 1).includes("/")).map((path) => path.slice(key.length + 1))));
+  } else fail("not found");
 } else if (family === "query") {
   const path = args.at(-1)!;
   const [route, query = ""] = path.slice(5).split("?");
@@ -328,6 +341,12 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
       for (const name of state.ldcache[action] ?? []) console.log(`\t${name} (libc6,x86-64) => ${lib}/${name}`);
     }
   }
+  // `dpkg-query --show --showformat=${Version} <package>`: the package's version, or exit 1 when it is not installed.
+  if (command[0] === "dpkg-query") {
+    const version = installedVersion(action, command.at(-1)!);
+    if (version === null) fail(`dpkg-query: no packages found matching ${command.at(-1)}`);
+    Deno.stdout.writeSync(new TextEncoder().encode(version!));
+  }
   if (command[0] === "sh" && command[1] === "-c" && instance(action).groups) {
     accounts(instance(action), command[2]);
   }
@@ -342,11 +361,18 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   }
 } else if (family === "file" && action === "pull") {
   // The files the converge wrote, by `<instance>/<path>`; any other path is missing, as `incus file pull` reports it.
-  const pulled = state.files?.[args[2]];
+  const pulled = state.files?.[args[2]] ?? (args[2].endsWith("/var/lib/dpkg/status") && instance(args[2].split("/")[0])
+    ? { content: dpkgStatus(args[2].split("/")[0]) } : undefined);
   if (pulled === undefined) fail("Error: not found");
   Deno.stdout.writeSync(new TextEncoder().encode(pulled.content));
+} else if (family === "file" && action === "create" && args.includes("--type=directory")) {
+  // `incus file create --type=directory --uid U --gid G --mode M <instance>/<path>`: it refuses a path that exists.
+  const path = args.at(-1)!;
+  if (state.dirs?.[path] !== undefined || state.files?.[path] !== undefined) fail("File already exists");
+  state.dirs ??= {};
+  state.dirs[path] = { mode: args[args.indexOf("--mode") + 1], uid: args[args.indexOf("--uid") + 1], gid: args[args.indexOf("--gid") + 1] };
 } else if (family === "file" && action === "create") {
-  // Only symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.
+  // Symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.
   state.links ??= {};
   state.links[args.at(-2)!] = args.at(-1)!;
 } else if (family === "file" && action === "delete") {

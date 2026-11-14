@@ -1,7 +1,8 @@
 ---
 # The image's shared files in every existing Instance container (docs/reference/development-containers.md#existing-containers):
 # the linker and font configuration that reach the runtime folder's `lib` and `fonts`, the system Git setting for the workspace, and the
-# Node's Orbit root CA (docs/reference/development-containers.md#trust).
+# Node's Orbit root CA, and the runtime folder's trust module in `agent`'s NSS store, which Chromium reads
+# (docs/reference/development-containers.md#trust). The module's library must be the part's exact version in each container.
 # A container made from an older image gets them here, running, stopped or frozen, in the Instance project and the nested-fleet one.
 # Nothing restarts: T3, the agents and the Processes keep running, and each later process reads the files by itself.
 - name: Write the image's shared files into each existing container
@@ -16,12 +17,16 @@
               | map('selectattr', 'key', 'in', ['path', 'content', 'mode']) | map('items2dict') | list,
             'trust': {'source': instance_trust_source, 'path': '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                       'directory': '/etc/ssl/certs'},
+            'browser_trust': instances.image.browser_trust
+              | combine({'library': instance_trust_part.trust_module.library, 'version': instance_trust_part.version}),
             'libraries': instances.folders.runtime.path ~ '/current/lib',
             'state': '/var/lib/orbit/instance-container-libraries'} | to_json }}
     stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
   vars:
     # The Orbit root CA that the Node's base converge writes for its agent (InstanceHostIntent::TrustSource).
     instance_trust_source: /etc/orbit/agent/ca.pem
+    # The runtime folder's one part with the trust module: its version is the one its library must have in a container.
+    instance_trust_part: "{{ instances.folders.runtime.parts | selectattr('trust_module', 'defined') | first }}"
   register: container_files
   changed_when: >-
     {{ ((container_files.stdout | from_json).written + (container_files.stdout | from_json).removed + (container_files.stdout | from_json).ldconfig

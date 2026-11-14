@@ -32,12 +32,29 @@ function nestedImageIncus(): array
 it('keeps the normal image definition byte-identical to the one before the nested-fleet variant', function (): void {
     $normal = InstanceImage::for('10.253.0.1');
 
-    // Captured at 2a-local 7b9e25ba02, again when the image gained the files every container needs (InstanceImage::shared), and again
-    // when its finish ran `update-ca-certificates` for the Orbit root CA. The alias is a digest of the rest of the definition, and the
-    // second value of the whole of it.
-    expect($normal['alias'])->toBe('orbit-instance-1cd7c8e83e40')
+    // Captured at 2a-local 7b9e25ba02, again when the image gained the files every container needs (InstanceImage::shared), again
+    // when its finish ran `update-ca-certificates` for the Orbit root CA, and again when it gained `agent`'s NSS store for Chromium
+    // (`browser_trust`). The alias is a digest of the rest of the definition, and the second value of the whole of it.
+    expect($normal['alias'])->toBe('orbit-instance-211f27c02b82')
         ->and(hash('sha256', json_encode($normal, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)))
-        ->toBe('5217d517581887d0c272f62a82cf167844f867793b6db3c8434fedfcbe09690a');
+        ->toBe('b9b243275a6f166faafb037680a8d53fa153ef6911811ad0f516ddfe2ea0b8df');
+});
+
+it('names the runtime folder\'s trust module in agent\'s NSS store of both images, so Chromium trusts the Orbit root CA', function (): void {
+    $normal = InstanceImage::for('10.253.0.1');
+    $nested = InstanceImage::for('10.253.0.1', nestedImageIncus());
+
+    // docs/reference/development-containers.md#trust: Chromium on Linux takes local roots only from ~/.pki/nssdb. The entry names the
+    // module by its path under the runtime folder's `current`; NSS makes its own databases at first use.
+    expect($normal['browser_trust'])->toBe([
+        'home' => '/home/agent', 'directories' => ['/home/agent/.pki', '/home/agent/.pki/nssdb'], 'path' => '/home/agent/.pki/nssdb/pkcs11.txt',
+        'entry' => "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+        'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'directory_mode' => '0700',
+    ])
+        ->and($normal['browser_trust']['entry'])->toStartWith('library='.InstanceHostIntent::RuntimeFolder.'/current/'.InstanceHostIntent::TrustModule."\n")
+        ->and($nested['browser_trust'])->toBe($normal['browser_trust'])
+        // The store is part of the definition, so an image without it gets a new name and is built again.
+        ->and(InstanceImage::for('10.253.0.1')['alias'])->toBe($normal['alias']);
 });
 
 it('gives a Node without the switch the same host intent members as before, and a switched-on Node only the nested image more', function (): void {

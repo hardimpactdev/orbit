@@ -11,6 +11,10 @@ Nothing restarts: every later process reads the files by itself.
 - The root CA goes in as the Node holds it and under its hashed name in the CA directory, where OpenSSL, curl and PHP look it up.
   A container that trusted an older root loses that root's hashed name. A running container whose CA bundle lacks the root runs
   `update-ca-certificates`; a stopped or frozen one gets the bundle at its wake.
+- Chromium reads local roots only from the user's NSS store. `agent`'s store, `~/.pki/nssdb`, gets the runtime folder's trust
+  module in `pkcs11.txt`: a missing store is made with only that entry, and a store without the entry gets it appended; nothing
+  else in the file changes. A container without `/home/agent` gets nothing and is listed in `no_agent_home`. A container whose
+  library of the module (read from its dpkg status) is not the exact version the module needs gets no entry, and fails the run.
 - `incus exec` refuses a frozen container, so a frozen one gets only file writes and deletes.
 
 The Node keeps a digest of the library names it last applied to every container, so a changed folder reaches stopped containers
@@ -59,6 +63,45 @@ def pull(project, name, path):
     return result.stdout if result.returncode == 0 else None
 
 
+def exists(project, name, path):
+    """Whether a path exists in the container, as the files API answers it: a directory with its entries, a file with its content."""
+    return incus("query", f"/1.0/instances/{name}/files?project={project}&path={path}", ok=(0, 1)).returncode == 0
+
+
+def installed(status, package):
+    """The version of an installed amd64 package in a dpkg status file, or None."""
+    for stanza in (status or "").split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in stanza.splitlines() if ": " in line and not line.startswith(" "))
+        if fields.get("Package") == package and fields.get("Architecture") == "amd64" and fields.get("Status") == "install ok installed":
+            return fields.get("Version")
+    return None
+
+
+def browser_trust(project, name, label, trust, summary):
+    """`agent`'s NSS store names the trust module (docs/reference/development-containers.md#trust)."""
+    if not exists(project, name, trust["home"]):
+        summary["no_agent_home"].append(label)
+        return
+    held = installed(pull(project, name, "/var/lib/dpkg/status"), trust["library"])
+    if held != trust["version"]:
+        summary["browser_trust_mismatch"].append(
+            f"{label}: {trust['library']} is {held or 'not installed'}; the trust module needs exactly {trust['version']}")
+        return
+    owner = ["--uid", str(trust["uid"]), "--gid", str(trust["gid"])]
+    for directory in trust["directories"]:
+        if not exists(project, name, directory):
+            incus("file", "create", "--project", project, "--type=directory", *owner, "--mode", trust["directory_mode"], name + directory)
+            summary["written"].append(label + directory)
+    store = pull(project, name, trust["path"])
+    entry = trust["entry"]
+    if store is not None and entry.splitlines()[0] in store.splitlines():
+        return
+    # Appended after a blank line, as NSS separates its module entries; the store's own text stays as it is.
+    content = entry if not store else store + ("" if store.endswith("\n\n") else "\n" if store.endswith("\n") else "\n\n") + entry
+    incus("file", "push", "--project", project, *owner, "--mode", trust["mode"], "-", name + trust["path"], stdin=content)
+    summary["written"].append(label + trust["path"])
+
+
 def link_target(project, name, path):
     """Where a symlink in the container points, or None when the path is missing or is no link. The files API answers a link
     with its target as an absolute path."""
@@ -74,7 +117,7 @@ def delete(project, name, path):
         raise IncusFailure(f"incus file delete {path}: {result.stderr.strip()[:200]}")
 
 
-def container(project, row, files, trust, libraries, names, libraries_changed, summary):
+def container(project, row, files, trust, browser, libraries, names, libraries_changed, summary):
     name, status = row["name"], row["status"]
     label = f"{project}/{name}"
     if status not in ("Running", "Stopped", "Frozen"):
@@ -102,6 +145,7 @@ def container(project, row, files, trust, libraries, names, libraries_changed, s
                 continue
             incus("file", "create", "--project", project, "--type=symlink", "--force", name + path, target)
             summary["written"].append(label + path)
+        browser_trust(project, name, label, browser, summary)
         if status == "Running":
             if names or LINKER_CONFIGURATION in written:
                 cache = incus("exec", "--project", project, name, "--", "ldconfig", "-p").stdout
@@ -123,13 +167,13 @@ def container(project, row, files, trust, libraries, names, libraries_changed, s
         summary["failed"].append(f"{label}: {failure}")
 
 
-def converge(projects, files, trust_spec, libraries, state):
+def converge(projects, files, trust_spec, browser, libraries, state):
     names = library_names(libraries)
     digest = hashlib.sha256("\n".join(names).encode()).hexdigest()
     state_file = Path(state)
     libraries_changed = (state_file.read_text().strip() if state_file.is_file() else "") != digest
     summary = {"written": [], "removed": [], "ldconfig": [], "ca_bundle": [], "cache_dropped": [], "frozen": [], "skipped": [],
-               "failed": []}
+               "no_agent_home": [], "browser_trust_mismatch": [], "failed": []}
     try:
         pem = Path(trust_spec["source"]).read_text()
     except OSError:
@@ -149,12 +193,16 @@ def converge(projects, files, trust_spec, libraries, state):
     # One list of every project, as the folder's restart reads it: a project that does not exist yet has no containers.
     rows = json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)
     for row in sorted((row for row in rows if row.get("project") in projects), key=lambda row: (row["project"], row["name"])):
-        container(row["project"], row, files, trust, libraries, names, libraries_changed, summary)
+        container(row["project"], row, files, trust, browser, libraries, names, libraries_changed, summary)
     if summary["failed"]:
         print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
         return 1
+    if summary["browser_trust_mismatch"]:
+        print(json.dumps({"error_code": "instance.browser_trust_mismatch",
+                          "message": "; ".join(summary["browser_trust_mismatch"]), **summary}))
+        return 1
     # The digest serves stopped containers. A skipped one has not seen these libraries, so the next converge drops a stopped cache
-    # again; a frozen one keeps its cache and gets the check at its wake.
+    # again; a frozen one keeps its cache and gets the check at its wake. A container without `/home/agent` has seen them.
     if not summary["skipped"]:
         state_file.parent.mkdir(parents=True, exist_ok=True)
         state_file.write_text(digest + "\n")
@@ -164,4 +212,4 @@ def converge(projects, files, trust_spec, libraries, state):
 
 if __name__ == "__main__":
     spec = json.loads(sys.argv[1])
-    sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["libraries"], spec["state"]))
+    sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"]))

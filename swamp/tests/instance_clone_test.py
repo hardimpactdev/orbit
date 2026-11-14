@@ -424,6 +424,45 @@ class CloneTest(unittest.TestCase):
         self.assertLess(calls.index(delete), first_push)
         self.assertIn(f"instance-7/etc/ssl/certs/{new_digest}.0", [call[-2] for call in calls if call[3:5] == ["file", "create"]])
 
+    STORE = {"home": "/home/agent", "directories": ["/home/agent/.pki", "/home/agent/.pki/nssdb"], "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+             "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+             "uid": 2750, "gid": 2750, "mode": "0600", "directory_mode": "0700"}
+
+    def store_calls(self, calls):
+        return [call for call in calls if call[3:5] in (["file", "create"], ["file", "push"]) and "/home/agent/.pki" in call[-1]]
+
+    def test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start(self):
+        calls, _, error = self.clone_with({"boot_files": [self.STORE]}, rootfs={"home/agent/.bashrc": ""}, overrides={"fixture_pull": {}})
+        self.assertEqual(error, "")
+        writes = self.store_calls(calls)
+        self.assertEqual([call[3:] for call in writes], [
+            ["file", "create", "--type=directory", "--uid", "2750", "--gid", "2750", "--mode", "0700", "instance-7/home/agent/.pki"],
+            ["file", "create", "--type=directory", "--uid", "2750", "--gid", "2750", "--mode", "0700", "instance-7/home/agent/.pki/nssdb"],
+            ["file", "push", "--uid", "2750", "--gid", "2750", "--mode", "0600", "-", "instance-7/home/agent/.pki/nssdb/pkcs11.txt"],
+        ])
+        self.assertEqual(self.inputs[id(writes[-1])], self.STORE["entry"])
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertTrue(all(calls.index(call) < start for call in writes))
+
+    def test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone(self):
+        own = "library=\nname=NSS Internal PKCS #11 Module\nNSS=Flags=internal\n"
+        rootfs = {"home/agent/.pki/nssdb/cert9.db": ""}
+        calls, _, error = self.clone_with({"boot_files": [self.STORE]}, rootfs=rootfs, overrides={"fixture_pull": {self.STORE["path"]: own}})
+        self.assertEqual(error, "")
+        writes = self.store_calls(calls)
+        self.assertEqual([call[-1] for call in writes], ["instance-7/home/agent/.pki/nssdb/pkcs11.txt"])
+        self.assertEqual(self.inputs[id(writes[0])], own + "\n" + self.STORE["entry"])
+        calls, _, error = self.clone_with({"boot_files": [self.STORE]}, rootfs=rootfs,
+                                          overrides={"fixture_pull": {self.STORE["path"]: own + "\n" + self.STORE["entry"]}})
+        self.assertEqual(error, "")
+        self.assertEqual(self.store_calls(calls), [])
+
+    def test_a_copy_without_home_agent_gets_no_nss_store(self):
+        calls, _, error = self.clone_with({"boot_files": [self.STORE]}, rootfs={"etc/hostname": "copy\n"}, overrides={"fixture_pull": {}})
+        self.assertEqual(error, "")
+        self.assertEqual(self.store_calls(calls), [])
+        self.assertIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
     def test_a_running_copy_and_a_clone_without_boot_files_push_none(self):
         running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
                    "expanded_devices": {"eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",

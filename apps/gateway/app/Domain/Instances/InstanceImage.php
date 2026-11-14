@@ -55,7 +55,8 @@ final readonly class InstanceImage
      *
      * @param  array{line: string, packages: list<array{name: string, sha256: string, urls: list<string>}>}|null  $incus
      * @return array{alias: string, packages: list<string>, incus?: list<array{name: string, sha256: string, urls: list<string>}>, prepare: string,
-     *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, finish: list<list<string>>}
+     *     files: list<array{path: string, content: string, uid: int, gid: int, mode: string}>, browser_trust: array<string, mixed>,
+     *     finish: list<list<string>>}
      */
     public static function for(string $gateway, ?array $incus = null): array
     {
@@ -85,6 +86,8 @@ final readonly class InstanceImage
                 ['path' => '/home/agent/.codex/config.toml', 'content' => "check_for_update_on_startup = false\n",
                     'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600'],
             ],
+            // The build writes it after it checked the module's library in the image (docs/reference/development-containers.md#trust).
+            'browser_trust' => self::browserTrust(),
             'finish' => [
                 ['systemctl', 'enable', 'nftables.service', 't3.service'],
                 // The build has pushed the Node's Orbit root CA (docs/reference/development-containers.md#trust): the bundle and the
@@ -150,6 +153,24 @@ final readonly class InstanceImage
             $file('/etc/fonts/fonts.conf', self::fonts("{$runtime}/fonts")),
             $file('/etc/gitconfig', "# Managed by Orbit.\n[safe]\n\tdirectory = ".InstanceHostIntent::Workspace."\n"),
         ];
+    }
+
+    /**
+     * Chromium's trust of the Orbit root CA (docs/reference/development-containers.md#trust). Chromium on Linux takes local roots only
+     * from the user's NSS store, `~/.pki/nssdb`, never from `/etc/ssl/certs`. So `agent`'s store names the runtime folder's p11-kit
+     * trust module, which reads the system bundle that already holds the root; NSS makes its own databases at first use. `entry` is
+     * the module's block in `pkcs11.txt`. The image, a clone and the converge write a missing store with only that block, and append
+     * it to a store that lacks it; nothing else in the file changes. A container without `home` gets nothing.
+     *
+     * @return array{home: string, directories: list<string>, path: string, entry: string, uid: int, gid: int, mode: string, directory_mode: string}
+     */
+    public static function browserTrust(): array
+    {
+        $home = '/home/agent';
+
+        return ['home' => $home, 'directories' => ["{$home}/.pki", "{$home}/.pki/nssdb"], 'path' => "{$home}/.pki/nssdb/pkcs11.txt",
+            'entry' => 'library='.InstanceHostIntent::RuntimeFolder.'/current/'.InstanceHostIntent::TrustModule."\nname=Orbit system trust\n\n",
+            'uid' => InstanceHostIntent::AgentUid, 'gid' => InstanceHostIntent::AgentUid, 'mode' => '0600', 'directory_mode' => '0700'];
     }
 
     private static function fonts(string $folder): string
