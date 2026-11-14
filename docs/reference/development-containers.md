@@ -444,6 +444,7 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 - **Sandbox.** A container has no user namespaces, so Chromium runs without its own sandbox. Playwright starts it so by default. No setting of the Node changes.
 - **The browser.** It is no part of the folder. Each Playwright version pins its own browser build.
 - **The download.** The Project's own Playwright downloads that build through the [egress proxy](#egress-and-dns) into the user's `~/.cache/ms-playwright`, such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
+- **The trust module.** One more package, `browser-p11-kit-modules`, gives only p11-kit's trust module, at `pkcs11/p11-kit-trust.so`. It adds nothing to `lib` or `fonts`. [Trust](#trust) says why.
 
 ### Existing containers
 
@@ -476,6 +477,42 @@ A container holds the root as a local CA file, `/usr/local/share/ca-certificates
 | Stopped or frozen container | The converge writes the file and its links through the file API. The wake rebuilds a bundle that lacks the root |
 
 A new root on the Node reaches every container at the next converge. The converge and the clone script remove the old root's hashed name. A stopped or frozen container's bundle keeps the old root until its wake.
+
+#### Chromium
+
+Chromium on Linux takes local roots only from the user's NSS store, `~/.pki/nssdb`. It never reads `/etc/ssl/certs`. So `agent`'s store names p11-kit's trust module, and that module reads `/etc/ssl/certs/ca-certificates.crt`, the bundle above. Chromium then trusts the Orbit root, still trusts the public roots, and still refuses an untrusted certificate. Only `agent` gets the store, because only `agent` runs the agents and their browsers.
+
+The module:
+
+- The runtime folder holds it once per Node, at `/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so`.
+- The recipe pins its Debian package, `p11-kit-modules`, as the part `browser-p11-kit-modules`.
+- The folder takes only the module from that package. It sits outside `lib`, so the dynamic linker never caches its name.
+- A new folder version only adds the module, so nothing restarts.
+
+The store:
+
+- `/home/agent/.pki` and `/home/agent/.pki/nssdb` are `0700`. `pkcs11.txt` is `0600`. `agent` owns all three (uid and gid 2750).
+- A new store holds one entry: `library=` with the module's path, `name=Orbit system trust`, and a blank line.
+- NSS makes `cert9.db` and `key4.db` itself at first use.
+- Orbit never replaces or rewrites an existing store. A store without the entry gets the entry appended after a blank line. A store with the entry stays as it is.
+
+A container without `/home/agent` gets nothing. The converge names it in `no_agent_home` in its summary and passes. The Node still keeps its library digest. A clone without the folder gets nothing too.
+
+The version check:
+
+- The module needs the container's `libp11-kit0` at exactly the part's version, `0.26.2-2`. The recipe holds that version once.
+- The image build reads the version with `dpkg-query`. On a mismatch it fails before it writes the store, and the image is not published.
+- The converge reads `/var/lib/dpkg/status` through the file API, so a frozen container gets the check too.
+- A container with another version, or without the package, gets no store. Its browser keeps its built-in roots.
+- The converge still writes every other file and every other container. Then it fails with `instance.browser_trust_mismatch`. The message names the container, its version and the version the module needs.
+
+| Where | What Orbit does |
+| --- | --- |
+| Image | The build checks the library, then makes the store with only the entry |
+| Clone | `boot_files` names the store. The clone script makes it, or appends the entry, before the copy's first start |
+| Running, stopped or frozen container | The converge checks the library, then makes the store or appends the entry, through the file API. Nothing restarts |
+
+A new Orbit root needs nothing here. It flows into the bundle as above, and the module reads the bundle, so no store needs a new seed.
 
 ## Environment notes
 
@@ -1976,6 +2013,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.nested_fleet_container_required` | 409 | A new nested-fleet Instance would not be a container: the Node is off the build list, or the default is a host checkout. Not reachable yet |
 | `instance.nested_fleet_image_unavailable` | 502 | The create of a nested-fleet default while the Node records a failed build of the [nested-fleet image](#the-nested-fleet-image). Orbit makes no container; converge the Node again |
 | `instance.host_unavailable` | 409 | A container default cannot be placed: the Node has no bridge, the bridge is full, or the runtime folder lacks the Project's PHP build |
+| `instance.browser_trust_mismatch` | 409 | A container or the image holds another `libp11-kit0` than the trust module needs. That container gets no NSS store, and the image is not published. The message names both versions ([Trust](#trust)) |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | The direct container Process journal read failed |
