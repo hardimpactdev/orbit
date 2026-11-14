@@ -93,7 +93,7 @@ When a command is missing or not executable on that Node (exit 127 or 126), Orbi
 
 ## Development deploy steps
 
-A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project/dev-deploy-step-list) to list, create, update, or remove a step. Each step stores a name, command, timeout, and `required` boolean, which defaults to true. These operations change configuration only; they never start a deployment.
+A Project owns an ordered [development deploy list](/reference/deployments#development-deploy-steps), separate from setup and teardown and from production's per-Instance deploy steps. Use [`project:dev-deploy-step`](/cli/project/dev-deploy-step-list) to list, create, update, or remove a step. Each step stores a name, command, timeout, a `required` boolean, which defaults to true, and optional `inputs`, the paths that let a container deployment [skip an unchanged step](/reference/deployments#step-inputs). These operations change configuration only; they never start a deployment.
 
 ## Project types
 

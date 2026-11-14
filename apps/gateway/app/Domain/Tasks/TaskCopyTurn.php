@@ -6,7 +6,6 @@ namespace App\Domain\Tasks;
 
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -58,9 +57,7 @@ final readonly class TaskCopyTurn
         $group->load('taskable', 'project');
         $workspace = TaskInstanceWorkspace::forGroup($group)
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
-        if ($workspace->instance->status !== InstanceState::Active) {
-            throw new ResourceOperationException('tasks.copy_not_ready', 'The task copy is not active yet.', 409);
-        }
+        $workspace->requireReady();
         if ($data->role === 'consult' || $data->model !== null) {
             throw new ResourceOperationException('tasks.copy_turn_unsupported', 'A turn in a task copy is an implementer or reviewer turn with its role\'s model.', 422);
         }

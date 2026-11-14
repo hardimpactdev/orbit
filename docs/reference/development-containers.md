@@ -1132,7 +1132,7 @@ Success turns the Route `active`, then the Instance `active` with `provisioning_
 
 A completion that publishes the Route holds its Nodes for the whole run; a completion with no publication holds none. A clone's create holds the Nodes only when they are free at its admission, and only until `clone-route` ends, so two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
-The create's terminal projection admits the first completion. A completion that ends `succeeded` or `failed` moves a [task copy](/reference/tasks#task-copy) on, as a create's end does: `active` makes its task run, and a failure fails it.
+The create's terminal projection admits the first completion. A completion that ends moves a [task copy](/reference/tasks#task-copy) on: `active` makes its task run. A failure keeps the copy, and its task stays `reserved` and asks for assistance with the retry.
 
 ### Clone the database
 

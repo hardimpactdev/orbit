@@ -19,6 +19,7 @@ final class CreateProjectDevelopmentDeployStepRequest extends GatewayRequest imp
     #[\Override]
     protected Method $method = Method::POST;
 
+    /** @param list<string>|null $inputs null omits the field; a list sets the inputs */
     public function __construct(
         private readonly int $projectId,
         private readonly string $name,
@@ -28,6 +29,7 @@ final class CreateProjectDevelopmentDeployStepRequest extends GatewayRequest imp
         private readonly ?string $before = null,
         private readonly ?string $after = null,
         private readonly ?bool $required = null,
+        private readonly ?array $inputs = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -40,7 +42,7 @@ final class CreateProjectDevelopmentDeployStepRequest extends GatewayRequest imp
         return DevelopmentDeployStepResponse::fromData($this->unwrapData($response), $this->successRequestId($response));
     }
 
-    /** @return array<string, int|string|bool> */
+    /** @return array<string, int|string|bool|list<string>> */
     protected function defaultBody(): array
     {
         $body = [
@@ -62,6 +64,10 @@ final class CreateProjectDevelopmentDeployStepRequest extends GatewayRequest imp
 
         if ($this->required !== null) {
             $body['required'] = $this->required;
+        }
+
+        if ($this->inputs !== null) {
+            $body['inputs'] = $this->inputs;
         }
 
         return $body;

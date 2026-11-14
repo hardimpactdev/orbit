@@ -13,19 +13,19 @@ use App\Models\Project;
 use App\Support\ValidatedData;
 
 /**
- * A Project's development deploy steps as an admission freezes them: names, timeouts and command digests, never the commands. When
+ * A Project's development deploy steps as an admission freezes them: names, timeouts, inputs and command digests, never the commands. When
  * the run starts, each command goes to an Operation-scoped vault key, and only if the list still matches what was admitted.
  */
 final readonly class DevelopmentDeploySteps
 {
     public function __construct(private ProjectDevelopmentDeployStepStore $steps, private SwampCommandStep $copies) {}
 
-    /** @return list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string}> */
+    /** @return list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string,inputs:list<string>}> */
     public function capture(Project $project): array
     {
         return array_map(static fn (DevelopmentDeployStep $step): array => [
             'name' => $step->name, 'phase' => 'before_activation', 'required' => $step->required,
-            'timeout_seconds' => $step->timeoutSeconds, 'command_digest' => hash('sha256', $step->command),
+            'timeout_seconds' => $step->timeoutSeconds, 'command_digest' => hash('sha256', $step->command), 'inputs' => $step->inputs,
         ], $this->steps->ordered($project));
     }
 
