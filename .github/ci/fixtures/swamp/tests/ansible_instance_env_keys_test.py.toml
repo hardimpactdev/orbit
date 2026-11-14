@@ -1,0 +1,9 @@
+order = 1240
+file = "swamp/tests/ansible_instance_env_keys_test.py"
+cost = 3
+slices = false
+inputs = [
+  "swamp/ansible/instance_env_keys.py",
+  "swamp/ansible/instance-connection-environment.yml",
+  "swamp/workflows/workflow-operation-instance-connection-environment.yaml",
+]

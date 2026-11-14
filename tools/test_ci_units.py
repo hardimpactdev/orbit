@@ -112,7 +112,7 @@ class PlanningTest(unittest.TestCase):
         for path in ('swamp/tests/a.ts', 'swamp/tests/_support/helper.ts', 'swamp/ansible/tasks/a-b.yml'):
             self.assertEqual(names(planned([path], fixtures)), ['swamp/tests/a.ts'])
         self.assertEqual(names(planned(['swamp/ansible/tasks/a-sub/file.yml'], fixtures)), [])
-        for path in ('bin/ci-units', units.PRELOAD):
+        for path in ('bin/ci-units', 'bin/ci-registry', units.PRELOAD):
             result = planned([path], fixtures)
             self.assertEqual(set(names(result)), {'swamp/tests/a.ts', 'swamp/tests/b.py'})
             self.assertEqual(result['deferred'], ['swamp/tests/c.ts'])
@@ -150,13 +150,13 @@ class InventorySelectionTest(unittest.TestCase):
         return self.git('rev-parse', 'HEAD')
 
     def changed(self, base, head):
-        with patch.object(units, 'ROOT', self.root):
+        with contextlib.chdir(self.root):
             return units.inventory_changes(base, head)
 
     def test_population_edit_selects_only_its_fixture_through_cli(self):
         head = self.commit({**self.initial, self.a: {'cases': ['old', 'new']}})
         fixtures = {file: fixture(file) for file in (self.a, self.b)}
-        with patch.object(units, 'ROOT', self.root), \
+        with contextlib.chdir(self.root), patch.object(units, 'ROOT', self.root), \
              patch.object(units, 'configuration', return_value=(BUDGET, fixtures, [])), \
              patch.object(units.gate, 'resolve_base', return_value=self.base), \
              patch.object(units.selection, 'changed_inputs', return_value=(self.base, [
@@ -301,7 +301,7 @@ class TableTest(unittest.TestCase):
         budget, fixtures, defaults = units.configuration()
         self.assertNotIn(file, units.fixture_steps())
         self.assertNotIn(file, fixtures)
-        self.assertNotIn(file, json.loads(units.INVENTORY.read_text()))
+        self.assertNotIn(file, units.registry.load(ROOT)[1])
         for path in (file, 'swamp/tests/writes-reviewed.json',
                      'swamp/workflows/workflow-operation-instance-mail-update.yaml',
                      'swamp/models/@nckrtl/orbit-gateway/orbit-gateway.yaml', 'bin/ci-units'):
@@ -359,23 +359,19 @@ class TableTest(unittest.TestCase):
             with patch.object(units, 'fixture_steps', return_value=steps):
                 with self.assertRaisesRegex(ValueError, 'Invalid fixture file'):
                     units.configuration(path)
-            path.write_text(source + '\n[[fixture]]\nfile = \"swamp/tests/_support/fixture_supervisor.py\"\ncost = 151\ninputs = []\n')
-            with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
-                units.configuration(path)
+            config, inventory = units.registry.load(ROOT)
+            config['fixture'].append(fixture('swamp/tests/_support/fixture_supervisor.py', cost=151))
+            with patch.object(units.registry, 'load', return_value=(config, inventory)):
+                with self.assertRaisesRegex(ValueError, 'unsliceable cost exceeds'):
+                    units.configuration(path)
 
     def test_case_exclusions_cannot_survive_a_test_rename(self):
-        with tempfile.TemporaryDirectory() as scratch:
-            path = Path(scratch) / 'checks.toml'
-            source = (ROOT / '.github/ci/checks.toml').read_text()
-            entry = next(f for f in tomllib.loads(source)['fixture']
-                         if f.get('after_merge_cases'))
-            excluded = entry['after_merge_cases'][0]
-            changed = source.replace(json.dumps(excluded), json.dumps('renamed case no longer in source'))
-            self.assertNotEqual(source, changed)
-            source = changed
-            path.write_text(source)
+        config, inventory = units.registry.load(ROOT)
+        entry = next(f for f in config['fixture'] if f.get('after_merge_cases'))
+        entry['after_merge_cases'][0] = 'renamed case no longer in source'
+        with patch.object(units.registry, 'load', return_value=(config, inventory)):
             with self.assertRaisesRegex(ValueError, 'every after_merge_cases name must be registered'):
-                units.configuration(path)
+                units.configuration()
 
     def test_container_dependency_closure_selects_the_affected_files(self):
         budget, fixtures, defaults = units.configuration()
@@ -500,7 +496,7 @@ class ExecutionTest(unittest.TestCase):
             self.assertEqual(result['status'], 'OVER BUDGET')
             self.assertLess(result['seconds'], 3)
             self.assertIn('==> fake#0/2: OVER BUDGET', output.getvalue())
-            self.assertIn('ceiling 0.3 s. Raise its cost in .github/ci/checks.toml (the plan adds a slice) or make it faster.', output.getvalue())
+            self.assertIn('ceiling 0.3 s. Raise its cost in .github/ci/fixtures (the plan adds a slice) or make it faster.', output.getvalue())
             child = int(pid.read_text())
             try:
                 deadline = time.monotonic() + 2
@@ -691,12 +687,10 @@ class PopulationTest(unittest.TestCase):
 
     def test_fixture_hashes_do_not_gate_docs_or_unrelated_inputs(self):
         with tempfile.TemporaryDirectory() as scratch:
-            inventory = json.loads(units.INVENTORY.read_text())
+            config, inventory = units.registry.load(ROOT)
             file = 'swamp/tests/ansible_instance_migrate_test.ts'
             inventory[file]['source_sha256'] = 'stale'
-            path = Path(scratch) / 'inventory.json'
-            path.write_text(json.dumps(inventory))
-            with patch.object(units, 'INVENTORY', path):
+            with patch.object(units.registry, 'load', return_value=(config, inventory)):
                 budget, fixtures, defaults = units.configuration()
                 self.assertEqual(units.plan(['docs/mission.md'], budget, fixtures, defaults)['shards'], [])
                 selected = units.plan(['swamp/tests/ansible_instance_container_test.ts'], budget, fixtures, defaults)

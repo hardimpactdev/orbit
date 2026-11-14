@@ -1,0 +1,92 @@
+#!/usr/bin/env python3
+"""One reader for shared CI policy and per-fixture metadata, including Git history."""
+import hashlib
+import json
+from pathlib import Path, PurePosixPath
+import subprocess
+import tomllib
+
+TABLE = '.github/ci/checks.toml'
+DIRECTORY = '.github/ci/fixtures'
+LEGACY_INVENTORY = 'tools/tests/ci-fixture-cases.json'
+POPULATION = ('source_sha256', 'cases')
+
+
+def metadata_path(file):
+    path = PurePosixPath(file)
+    if path.is_absolute() or '..' in path.parts or not file.startswith('swamp/'):
+        raise ValueError(f'Invalid fixture path: {file}')
+    return f'{DIRECTORY}/{file}.toml'
+
+
+def metadata_changed(paths):
+    return any(path in (TABLE, LEGACY_INVENTORY) or path.startswith(DIRECTORY + '/') for path in paths)
+
+
+def decode(blobs, historical=False):
+    config = tomllib.loads(blobs.get(TABLE, b'').decode())
+    records = []
+    inventory = {}
+    paths = sorted(path for path in blobs if path.startswith(DIRECTORY + '/') and path.endswith('.toml'))
+    if 'fixture' in config or LEGACY_INVENTORY in blobs:
+        if not historical or paths:
+            raise ValueError('Current fixture metadata belongs only in ' + DIRECTORY)
+        return config, json.loads(blobs.get(LEGACY_INVENTORY, b'{}'))
+    seen = set()
+    for path in paths:
+        entry = tomllib.loads(blobs[path].decode())
+        file = entry.get('file')
+        if not isinstance(file, str) or path != metadata_path(file):
+            raise ValueError(f'{path}: metadata path must match its fixture file')
+        if file in seen:
+            raise ValueError(f'Duplicate fixture: {file}')
+        seen.add(file)
+        order = entry.pop('order', 2**63)
+        if type(order) is not int or order < 0:
+            raise ValueError(f'{path}: order must be a non-negative integer')
+        population = {key: entry.pop(key) for key in POPULATION if key in entry}
+        if population:
+            inventory[file] = population
+        records.append((order, file, entry))
+    # Preserve admission order. New entries without an explicit priority follow
+    # the migrated entries in path order, without editing a central index.
+    config['fixture'] = [entry for _, _, entry in sorted(records)]
+    return config, inventory
+
+
+def load(root, table=None):
+    root = Path(root)
+    blobs = {TABLE: (Path(table) if table is not None else root / TABLE).read_bytes()}
+    if (root / LEGACY_INVENTORY).exists():
+        raise ValueError('Remove the combined inventory; use ' + DIRECTORY)
+    for path in (root / DIRECTORY).rglob('*.toml'):
+        blobs[path.relative_to(root).as_posix()] = path.read_bytes()
+    return decode(blobs)
+
+
+def read_revision(root, revision):
+    """Read data only, never execute code from a compared revision."""
+    args = ['git', '-C', str(root)]
+    paths = subprocess.check_output([*args, 'ls-tree', '-rz', '--name-only', revision, '--',
+                                     TABLE, DIRECTORY, LEGACY_INVENTORY], timeout=60).decode().split('\0')
+    paths = [path for path in paths if path and (path in (TABLE, LEGACY_INVENTORY) or path.endswith('.toml'))]
+    if any('\n' in path for path in paths):
+        raise ValueError('CI metadata paths cannot contain newlines')
+    requests = ''.join(f'{revision}:{path}\n' for path in paths).encode()
+    result = subprocess.check_output([*args, 'cat-file', '--batch'], input=requests, timeout=60)
+    blobs, offset = {}, 0
+    for path in paths:
+        end = result.index(b'\n', offset)
+        header = result[offset:end].split()
+        if len(header) != 3 or header[1] != b'blob':
+            raise ValueError(f'Cannot read CI metadata: {revision}:{path}')
+        size = int(header[2])
+        offset = end + 1
+        blobs[path] = result[offset:offset + size]
+        offset += size + 1
+    return decode(blobs, historical=True)
+
+
+def digest(config, inventory):
+    """Bind the complete normalized registry, including fixture admission order."""
+    return hashlib.sha256(json.dumps([config, inventory], sort_keys=True, separators=(',', ':')).encode()).hexdigest()

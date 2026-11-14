@@ -1,0 +1,41 @@
+order = 1320
+source_sha256 = "989b8c8d5db8e56b27c08efa3691947ac7255f740b1dcd318655b1836bff6227"
+cases = [
+  "test_conversion_keeps_running_executable_and_is_unchanged_on_repeat",
+  "test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download",
+  "test_cloned_user_planted_links_never_change_their_external_target",
+  "test_vite_alone_resolves_and_fetches_once_as_the_app_user",
+  "test_recipe_pin_and_unpinned_projects_need_no_install",
+  "test_download_integrity_and_timeout_failures_name_the_pin",
+  "test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default",
+  "test_download_failures_keep_specific_safe_reasons",
+  "test_shasums_download_failures_are_transport_errors_not_verification_errors",
+  "test_non_vite_projects_do_not_resolve_or_download_unused_pins",
+  "test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin",
+  "test_clone_fetch_shares_sixty_seconds_across_resolution_and_install",
+  "test_opaque_process_commands_still_prepare_a_writable_clone_store",
+  "test_seed_refresh_pending_survives_conversion_until_snapshot_completion",
+  "test_deploy_fetch_refuses_legacy_store_even_with_a_helper",
+  "test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected",
+  "test_production_phase_removes_read_only_source_mount_after_failure_without_downtime",
+]
+file = "swamp/tests/instance_node_runtime_test.py"
+cost = 21
+[case_costs]
+  "test_empty_clone_prepares_store_for_a_later_process_with_an_uncached_pin" = 1 # completed local fixture, 2026-11-12
+  "test_clone_fetch_shares_sixty_seconds_across_resolution_and_install" = 1 # completed local fixture, 2026-11-12
+  "test_opaque_process_commands_still_prepare_a_writable_clone_store" = 1 # completed local fixture, 2026-11-12
+  "test_seed_refresh_pending_survives_conversion_until_snapshot_completion" = 1 # completed local fixture, 2026-11-12
+"test_conversion_keeps_running_executable_and_is_unchanged_on_repeat" = 1
+"test_recipe_copy_survives_current_flip_and_shared_pruning_and_seed_keeps_download" = 1
+"test_cloned_user_planted_links_never_change_their_external_target" = 1
+"test_vite_alone_resolves_and_fetches_once_as_the_app_user" = 1
+"test_recipe_pin_and_unpinned_projects_need_no_install" = 1
+"test_download_integrity_and_timeout_failures_name_the_pin" = 1
+"test_malformed_and_ambiguous_pins_refuse_instead_of_using_the_default" = 1
+"test_download_failures_keep_specific_safe_reasons" = 1
+"test_shasums_download_failures_are_transport_errors_not_verification_errors" = 1
+"test_non_vite_projects_do_not_resolve_or_download_unused_pins" = 1
+"test_deploy_fetch_refuses_legacy_store_even_with_a_helper" = 1
+"test_nested_ignored_pin_refuses_even_when_a_parent_pin_is_selected" = 1
+"test_production_phase_removes_read_only_source_mount_after_failure_without_downtime" = 5

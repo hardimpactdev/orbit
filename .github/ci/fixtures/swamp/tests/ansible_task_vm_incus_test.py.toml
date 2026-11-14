@@ -1,0 +1,16 @@
+order = 1200
+source_sha256 = "b02d6482cecb5185102f721cc92c34c4494bb914e9334c9778949d6df09d689b"
+cases = [
+  "test_the_ssh_users_client_config_is_prepared_before_the_fleet",
+  "test_the_role_includes_it_in_the_tools_phase",
+  "test_a_fresh_task_vm_gets_the_pool_the_root_disk_and_the_nested_network",
+  "test_an_initialised_task_vm_is_left_alone",
+  "test_a_missing_network_is_added_to_an_initialised_incus",
+  "test_a_blank_seed_disk_gets_the_seed_pool",
+  "test_a_seed_disk_with_a_file_system_the_vm_does_not_know_is_refused_and_not_imported",
+  "test_a_seed_disk_of_a_known_pool_is_left_alone",
+  "test_an_image_gets_a_pool_and_no_network",
+]
+file = "swamp/tests/ansible_task_vm_incus_test.py"
+cost = 30
+inputs = ["swamp/ansible/tasks/task-vm-incus.yml", "swamp/ansible/task-vm-role.yml", "swamp/ansible/tasks/task-vm-tools.yml"]

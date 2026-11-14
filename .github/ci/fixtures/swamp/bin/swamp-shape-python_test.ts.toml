@@ -1,0 +1,33 @@
+order = 160
+source_sha256 = "2270f8f5ec52e8a009a953edb24c1336791571a5921f181ef4b5d3a4e7106441"
+cases = [
+  "python_secret_flow_is_from_environment_not_internal_argument_names",
+  "fixed_external_origin_with_dynamic_path_is_not_gateway_http",
+  "httpx_gateway_reads_share_the_external_origin_boundary",
+  "only_proven_named_host_tool_flocks_are_not_workflow_mutexes",
+  "late_outer_fd_rebinding_is_not_a_proven_tool_lock",
+  "outer_lock_and_origin_bindings_include_loop_and_destructuring_writes",
+  "agent_executable_context_in_python_subprocesses_and_remote_commands",
+  "validated_parameterized_host_tool_transaction",
+  "path_guard_custody_or_acquisition_changes_are_not_proven",
+  "mutated_or_untyped_callers_cannot_claim_constructor_provenance",
+  "native_certificate_signer_has_only_the_scoped_post_and_checked_numeric_operation",
+]
+file = "swamp/bin/swamp-shape-python_test.ts"
+cost = 5
+after_merge = true
+reason = "Repository scanner fixtures create dynamic source inventories; their complete input closure needs a separate mapping."
+inputs = [
+  "swamp/bin/bounded-phase-scripts.ts",
+  "swamp/bin/check-swamp-shape.ts",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/bin/native-host-start.py",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-shape-python.py",
+  "swamp/bin/swamp-shape-relocations.ts",
+  "swamp/bin/swamp_shape_host_tools.py",
+  "swamp/bin/swamp_shape_polling.py",
+  "swamp/bin/workflow-placement.ts",
+  "swamp/config/agent-command-kinds.json",
+  "swamp/config/swamp-shape-baseline.json",
+]

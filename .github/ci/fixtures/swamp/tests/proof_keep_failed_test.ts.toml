@@ -1,0 +1,25 @@
+order = 1020
+source_sha256 = "069ad5b7c3b521e18e5e49c69a758293dd21b4448c85e549232a941b37cd285d"
+cases = [
+  "anchor: a guard that is true skips the step, as a guard of the repository already relies on",
+  "the proof run takes keep_failed as an optional boolean",
+  "without keep_failed the release runs, whatever the cases did",
+  "with keep_failed a run whose cases did not all pass skips the release, so its slot stays",
+  "with keep_failed a run that printed no verdict, or whose verify step failed, skips the release",
+  "with keep_failed a run that failed in its claim, before any case ran, skips the release too (M5 try 11)",
+  "with keep_failed a run that succeeded in every part, with every verdict passed, still releases the slot",
+  "with keep_failed a run that failed the check of the workspace commit, so that its proof step was skipped, skips the release",
+]
+file = "swamp/tests/proof_keep_failed_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/proof/batches.yaml",
+  "swamp/proof/runner/spec.py",
+  "swamp/workflows/workflow-operation-proof-run.yaml",
+  "swamp/workflows/workflow-proof-fleet-verify.yaml",
+]

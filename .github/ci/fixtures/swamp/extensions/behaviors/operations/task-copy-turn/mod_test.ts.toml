@@ -1,0 +1,18 @@
+order = 370
+source_sha256 = "5c87967b8076b9eb7bfca727477f142ca880b9b80c9f9d4bce1cf78243424eaa"
+cases = [
+  "a completed run is done and over, and records the message transcript and the T3 thread",
+  "a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status",
+  "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
+  "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
+  "a message without a run id keeps the transcript",
+  "transcript text is redacted and bounded to the newest entries",
+  "the method reads each evidence file on its own, so an oversized read keeps the start's end",
+]
+file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
+cost = 2
+# Local Deno case times on Beast rounded up; not CI measurements.
+inputs = [
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/task-copy-turn/mod.ts",
+]

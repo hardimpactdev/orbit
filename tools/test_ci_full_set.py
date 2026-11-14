@@ -84,7 +84,7 @@ class PlanningTest(unittest.TestCase):
         files = ['swamp/tests/node_worker_systemd_cleanup_test.ts',
                  'swamp/tests/fleet_reboot_unreachable_test.ts']
         budget, configured, defaults = self.api.configuration()
-        inventory = json.loads((ROOT / 'tools/tests/ci-fixture-cases.json').read_text())
+        inventory = self.api.registry.load(ROOT)[1]
         fixtures = [configured[file] for file in files]
         for fixture in fixtures:
             excluded = fixture['after_merge_cases']

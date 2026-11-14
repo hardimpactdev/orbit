@@ -1,0 +1,42 @@
+order = 20
+source_sha256 = "62bacd94623271e53d0eb5d9b7b15eb3112ce493251fcbb94713772e8225cfb9"
+cases = [
+  "test_linked_child_passes_preflight_and_retirement_with_other_branch_and_shared_stashes",
+  "test_child_own_unpushed_branch_passes_without_changing_shared_git_state",
+  "test_owner_keeps_branches_and_shared_stashes_after_the_child_leaves",
+  "test_owner_with_another_worktree_still_refuses_and_keeps_everything",
+  "test_a_linked_checkout_still_refuses_changed_submodule_metadata",
+  "test_intent_to_add_refuses_the_real_retirement_preflight",
+  "test_a_clean_filter_refuses_the_real_retirement_preflight",
+  "test_carries_divergent_local_branches_complete_stashes_and_staged_and_unstaged_changes",
+  "test_a_staged_only_deletion_keeps_the_untracked_working_file",
+  "test_surviving_stash_ref_with_expired_reflog_keeps_its_objects_without_inventing_entries",
+  "test_materializes_alternate_objects_and_keeps_a_linked_worktree_independent",
+  "test_corrupt_pack_cannot_publish_refs_and_a_repeated_import_recovers",
+  "test_branch_refs_are_atomic_when_one_expected_ref_changes",
+  "test_an_invalid_checkout_root_cannot_export_its_parent_repository",
+  "test_export_refuses_a_changed_selected_branch",
+  "test_partial_reflog_failure_is_retryable_without_source_changes",
+  "test_index_flags_cannot_hide_uncopied_tracked_bytes_from_verification",
+  "test_changed_source_and_wrong_copied_bytes_refuse_before_cutover",
+  "test_clean_checkout_records_cost_without_rewriting_source_or_destination",
+  "test_repository_drivers_never_run_and_filters_refuse_before_export",
+  "test_staged_removal_of_filter_attributes_cannot_bypass_preflight",
+  "test_every_carried_untracked_and_ignored_byte_is_verified",
+  "test_source_recheck_fences_edited_new_and_deleted_ignored_files",
+  "test_intent_to_add_is_named_before_export_or_source_writes",
+  "test_wrong_staged_blob_with_identical_status_is_rejected",
+  "test_fsck_roots_include_older_stash_reflog_entries",
+  "test_missing_off_branch_tree_requires_fsck_even_on_identical_snapshot",
+]
+file = "swamp/tests/instance_migrate_git_scope_test.py"
+cost = 30 # conservative; completed local file body rounded up plus 1s
+inputs = [
+  "swamp/ansible/instance_migrate_git.py",
+  "swamp/ansible/instance_migrate_links.py",
+  "swamp/ansible/tasks/instance-migrate-retirement-check.yml",
+  "swamp/ansible/tasks/instance-migrate-retire.yml",
+  "swamp/tests/fixtures/instance-migrate-retention.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/ansible.cfg",
+]

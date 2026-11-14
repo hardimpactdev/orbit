@@ -1,0 +1,17 @@
+order = 1070
+source_sha256 = "17ced613131dfaf21831053721df1b06fe2734edc95c344bb3a24f9d71e6909c"
+cases = [
+  "every Route-publish step is wrapped in the same hold and release calls, and runs only after its hold succeeded",
+  "the hold command asks again while the Gateway answers busy, and sends only the run",
+  "a busy retire hold or a failed release does not revert a Router that was switched, and the retire hold follows the first release",
+]
+file = "swamp/tests/route_hold_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-route-*.yaml",
+]

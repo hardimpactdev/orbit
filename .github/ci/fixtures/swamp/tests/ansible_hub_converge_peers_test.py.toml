@@ -1,0 +1,24 @@
+order = 320
+source_sha256 = "2aaabed7f28d5b315531b0bb183de89113dd43c305e612e703b6cd3fdfd55fc5"
+cases = [
+  "test_offline_recorded_peers_do_not_fail_the_hub_converge",
+  "test_a_peer_that_was_live_before_the_change_must_handshake_again",
+  "test_a_recorded_peer_missing_from_the_hub_fails",
+  "test_the_live_peers_are_those_with_a_handshake_in_the_last_120_seconds",
+  "test_a_hub_without_its_interface_has_no_live_peer",
+  "test_the_network_phase_reads_the_live_peers_before_it_changes_the_hub_and_waits_only_for_them",
+  "test_the_check_phase_requires_the_recorded_peers_without_waiting_for_a_handshake",
+]
+file = "swamp/tests/ansible_hub_converge_peers_test.py"
+cost = 12
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-converge.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-converge-handshake.yml",
+  "swamp/ansible/tasks/node-converge-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-network.yml",
+]

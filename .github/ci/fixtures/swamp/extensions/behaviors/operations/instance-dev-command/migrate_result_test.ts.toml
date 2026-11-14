@@ -1,0 +1,74 @@
+order = 1270
+source_sha256 = "e80a89b3af356be731ae0fc7929ac135706b7198dddd3f122eac8c52ffaf27db"
+cases = [
+  "a default that moved reports its commit and no T3 server",
+  "a non-default Instance that moved reports its T3 server, and needs its registration",
+  "a move that failed and restored names the failed phase with its own refusal, and says restored",
+  "a Route that did not move fails the move, and a failed restore is not restored",
+  "a failed removal after the Route moved keeps the Instance moved, and is no restore",
+  "an Instance without a Route needs no Route step, and a first phase that never ran is the failure",
+  "the code a phase wrote is read from the run folder",
+  "instance.migrate_retirement_blocked keeps the public message and preflight marker before and after cutover",
+  "instance.migrate_unpushed_commits keeps the public message and preflight marker before and after cutover",
+  "instance.migrate_stashes_present keeps the public message and preflight marker before and after cutover",
+  "instance.migrate_env_service_unreachable keeps the public message and preflight marker before and after cutover",
+  "retained Git is recorded after success and after a later retirement failure",
+  "the migration prepares and probes the container before quiesce and builds the workspace after it",
+  "symlink refusals keep every path and target and the preflight flag in the public receipt",
+  "retirement pending does not claim the container moved",
+  "Route restoration pending does not prove the checkout restored",
+  "retirement unknown does not claim the container moved",
+  "Route restoration unknown does not prove the checkout restored",
+  "a moved worker readiness failure keeps its Process name and restored outcome before cutover",
+  "the receipt lists every projected Process command translation on success and restoration",
+  "mail failure is an advisory warning and cannot fail or restore a completed migration",
+  "migration retains each exact-line outcome and the named path conflict without values",
+  "missing or malformed successful mail receipts become advisory warnings",
+  "Node preparation fails before quiesce with its pin reason and restores only the new container",
+  "the copied untracked count includes zero, excludes paths and survives later failure",
+  "invalid or incomplete copied-file receipts do not claim a count",
+  "carried Schedule activation failures and missing receipts warn without failing completed migration",
+  "environment warning receipts survive later phase results and remain generic",
+  "a failed clear of the old path's caches warns beside the environment warnings and does not fail the move",
+  "a failed removal of the old path's tool caches warns before the Laravel clear and does not fail the move",
+]
+file = "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result_test.ts"
+cost = 31
+inputs = [
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/tasks/instance-node-runtime.yml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
+]
+[case_costs]
+  "environment warning receipts survive later phase results and remain generic" = 1 # completed local receipt fixture
+  "a failed clear of the old path's caches warns beside the environment warnings and does not fail the move" = 1 # ESTIMATE: local under 1 ms, like the other receipt cases
+  "a failed removal of the old path's tool caches warns before the Laravel clear and does not fail the move" = 1 # ESTIMATE: local under 1 ms, like the other receipt cases
+"a default that moved reports its commit and no T3 server" = 1
+"a non-default Instance that moved reports its T3 server, and needs its registration" = 1
+"a move that failed and restored names the failed phase with its own refusal, and says restored" = 1
+"a Route that did not move fails the move, and a failed restore is not restored" = 1
+"a failed removal after the Route moved keeps the Instance moved, and is no restore" = 1
+"an Instance without a Route needs no Route step, and a first phase that never ran is the failure" = 1
+"the code a phase wrote is read from the run folder" = 1
+"instance.migrate_retirement_blocked keeps the public message and preflight marker before and after cutover" = 1
+"instance.migrate_unpushed_commits keeps the public message and preflight marker before and after cutover" = 1
+"instance.migrate_stashes_present keeps the public message and preflight marker before and after cutover" = 1
+"instance.migrate_env_service_unreachable keeps the public message and preflight marker before and after cutover" = 1
+"retained Git is recorded after success and after a later retirement failure" = 1
+"the migration prepares and probes the container before quiesce and builds the workspace after it" = 1
+"symlink refusals keep every path and target and the preflight flag in the public receipt" = 1
+"retirement pending does not claim the container moved" = 1
+"Route restoration pending does not prove the checkout restored" = 1
+"retirement unknown does not claim the container moved" = 1
+"Route restoration unknown does not prove the checkout restored" = 1
+"a moved worker readiness failure keeps its Process name and restored outcome before cutover" = 1
+"the receipt lists every projected Process command translation on success and restoration" = 1
+"mail failure is an advisory warning and cannot fail or restore a completed migration" = 1
+"migration retains each exact-line outcome and the named path conflict without values" = 1
+"missing or malformed successful mail receipts become advisory warnings" = 1
+"the copied untracked count includes zero, excludes paths and survives later failure" = 1
+"invalid or incomplete copied-file receipts do not claim a count" = 1
+"Node preparation fails before quiesce with its pin reason and restores only the new container" = 1
+
+"carried Schedule activation failures and missing receipts warn without failing completed migration" = 2 # local completed under 2 s; conservative CI estimate

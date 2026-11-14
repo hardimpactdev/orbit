@@ -1,0 +1,18 @@
+order = 470
+source_sha256 = "839e40d277907338658e6031ddd1a282525e5515b1532747f67c73e8f0fc05dc"
+cases = [
+  "the node phase gives an existing start cache to the swamp account, and the check phase asserts it",
+  "no Ansible task runs the swamp binary without naming a user other than root",
+]
+file = "swamp/tests/ansible_swamp_start_cache_test.ts"
+cost = 3
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-role-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-role-runtime.yml",
+  "swamp/ansible/tasks/swamp-start-cache.yml",
+]

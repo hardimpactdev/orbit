@@ -1,0 +1,21 @@
+order = 870
+source_sha256 = "015fbefaae1bc9e91ff14e455722bdd6dce7ffa968697ba706cd4203d6817ae3"
+cases = [
+  "the completion's jobs and steps sit in the levels the plan names, by the pinned engine's sort",
+  "a plain clone, a clone with a database and a nested-fleet clone read only the keys they have",
+  "a plain clone starts the services when the stage ends, checks them, and is ready",
+  "a clone with a database starts the services only after the fill and the Valkey check",
+  "a nested-fleet clone starts its fleet before the services; a failed fleet names the fleet and withdraws the Route",
+  "each failure names its step and code, and a published Route is withdrawn",
+]
+file = "swamp/tests/instance_complete_workflow_test.ts"
+cost = 1
+inputs = [
+  "swamp/workflows/workflow-operation-instance-complete.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+]

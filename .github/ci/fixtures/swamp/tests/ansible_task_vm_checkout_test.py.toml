@@ -1,0 +1,15 @@
+order = 520
+source_sha256 = "20f95089ce5fd5431c4c0b7b50583bb6c621e51d5ffb40b20d63b910a1229885"
+cases = [
+  "test_a_fresh_clone_at_the_tip_of_main_has_the_files_of_the_commit",
+]
+file = "swamp/tests/ansible_task_vm_checkout_test.py"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-checkout.yml",
+]

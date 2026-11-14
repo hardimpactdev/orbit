@@ -1,0 +1,17 @@
+order = 590
+source_sha256 = "57ec14aee7ab2a4dc30f752e0f6b4395e5032e99df2e76eb4587127b3b72a760"
+cases = [
+  "a task VM mounts its identity share without waiting: the kernel found the tag before the unit runs",
+  "a base VM has no identity share and ends after 1 s",
+  "a parked task VM keeps its applied identity without waiting or mounting",
+]
+file = "swamp/tests/ansible_task_vm_identity_boot_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-boot.yml",
+]

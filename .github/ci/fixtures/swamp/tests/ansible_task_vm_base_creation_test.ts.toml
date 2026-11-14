@@ -1,0 +1,17 @@
+order = 510
+source_sha256 = "27fdfd6d1889c6f8f1286d15c14f5d3871a09d65a8f15c9b924a8e1877160c6c"
+cases = [
+  "an unpromoted failed base and seed are replaced from stock",
+  "a recorded base stays intact unless rebuilding from stock is explicit",
+  "a new host with no leftovers builds from stock despite not-found deletions",
+]
+file = "swamp/tests/ansible_task_vm_base_creation_test.ts"
+cost = 14
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-host.yml",
+]

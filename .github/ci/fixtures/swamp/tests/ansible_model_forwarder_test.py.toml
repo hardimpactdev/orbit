@@ -1,0 +1,25 @@
+order = 430
+source_sha256 = "8c361cb5bc9c1646c24ce74cf7e9245d3efa30926a969fee085f2a82eada4b0f"
+cases = [
+  "test_table_unit_loads_after_nftables_and_reloads_in_place",
+  "test_forwarder_runs_only_with_its_table",
+  "test_table_comes_before_the_forwarder",
+  "test_readiness_observes_the_listener_without_a_connection",
+  "test_readiness_refuses_a_listener_on_another_address",
+  "test_readiness_refuses_a_bound_port_that_is_not_listening",
+  "test_counter_checks_accept_the_live_nft_increment",
+  "test_counter_checks_compare_multiple_digits_as_numbers",
+  "test_counter_checks_refuse_unchanged_or_falling_counters",
+  "test_checks_cover_every_path",
+  "test_temporary_probe_setup_and_cleanup_report_no_configuration_change",
+]
+file = "swamp/tests/ansible_model_forwarder_test.py"
+cost = 10
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ai-router-model-forwarder.yml",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+]

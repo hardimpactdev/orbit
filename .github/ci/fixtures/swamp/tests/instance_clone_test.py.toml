@@ -1,0 +1,131 @@
+order = 830
+source_sha256 = "d44db346646501fb9f5a83fd42d67378c590861da8f2c27961788d9a33de2417"
+cases = [
+  "test_legacy_new_branch_still_uses_seed_without_selection",
+  "test_legacy_existing_remote_branch_still_uses_its_tip",
+  "test_new_branch_uses_fetched_base_tip_not_seed",
+  "test_existing_branch_uses_its_remote_tip",
+  "test_resume_keeps_admitted_commit_when_remote_advances",
+  "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref",
+  "test_deleted_base_is_not_a_new_branch_at_seed",
+  "test_target_created_after_admission_is_not_silently_reused",
+  "test_unreadable_remote_fails_without_creating_a_branch",
+  "test_unreachable_frozen_commit_fails_without_using_current_tip",
+  "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
+  "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+  "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
+  "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start",
+  "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start",
+  "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file",
+  "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy",
+  "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name",
+  "test_a_running_copy_and_a_clone_without_boot_files_push_none",
+  "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
+  "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry",
+  "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output",
+  "test_clone_launch_applies_mail_without_another_playbook",
+  "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
+  "test_clone_uses_the_admitted_common_acl_name",
+  "test_clone_refuses_unsafe_effective_nics_before_start",
+  "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address",
+  "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start",
+  "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code",
+  "test_the_three_holders_of_the_nic_filters_are_equal",
+  "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code",
+  "test_normal_clone_uses_the_exact_original_checker_program_and_argv",
+  "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices",
+  "test_nested_guard_admits_the_live_shape_of_the_first_nested_container",
+  "test_guest_and_node_command_names_stay_in_sync",
+  "test_preserves_only_the_guest_command_and_exit_code",
+  "test_rejects_private_or_mismatched_guest_diagnostics",
+  "test_node_command_failure_names_executable_and_exit_without_output",
+  "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent",
+  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
+  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
+  "test_a_timeout_names_the_part_that_was_running",
+  "test_the_agent_phase_alone_is_no_longer_a_step",
+  "test_checkout_pushes_the_bundle_and_passes_only_the_env_half",
+  "test_services_install_the_node_helper_and_pass_only_the_process_files",
+  "test_workspace_still_passes_the_whole_value_in_one_guest_call",
+  "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt",
+  "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
+  "test_the_same_key_changes_nothing",
+  "test_a_key_written_while_the_inner_incus_was_not_ready_says_so",
+  "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
+  "test_names_a_failed_delivery_without_its_output",
+  "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
+]
+file = "swamp/tests/instance_clone_test.py"
+cost = 101
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/instance_nested.py",
+  "swamp/ansible/instance_nested_club_key.sh",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+]
+
+# Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
+[case_costs]
+  "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 1
+  "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 1
+  "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start" = 1
+  "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy" = 1
+  "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start" = 1
+  "test_legacy_new_branch_still_uses_seed_without_selection" = 2
+  "test_legacy_existing_remote_branch_still_uses_its_tip" = 2
+  "test_new_branch_uses_fetched_base_tip_not_seed" = 2
+  "test_existing_branch_uses_its_remote_tip" = 2
+  "test_resume_keeps_admitted_commit_when_remote_advances" = 2
+  "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref" = 2
+  "test_deleted_base_is_not_a_new_branch_at_seed" = 2
+  "test_target_created_after_admission_is_not_silently_reused" = 2
+  "test_unreadable_remote_fails_without_creating_a_branch" = 2
+  "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
+  "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
+  "test_clone_launch_applies_mail_without_another_playbook" = 2
+  "test_clone_uses_the_admitted_common_acl_name" = 2
+  "test_clone_refuses_unsafe_effective_nics_before_start" = 2
+  "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
+  "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address" = 2
+  "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start" = 2
+  "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code" = 2
+  "test_the_three_holders_of_the_nic_filters_are_equal" = 2
+  "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 2
+  "test_guest_and_node_command_names_stay_in_sync" = 2
+  "test_preserves_only_the_guest_command_and_exit_code" = 2
+  "test_rejects_private_or_mismatched_guest_diagnostics" = 2
+  "test_node_command_failure_names_executable_and_exit_without_output" = 2
+  "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent" = 2
+  "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code" = 2
+  "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code" = 2
+  "test_a_timeout_names_the_part_that_was_running" = 2
+  "test_the_agent_phase_alone_is_no_longer_a_step" = 2
+  "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful" = 2
+
+"test_schedule_cleanup_listing_error_refuses_before_clone_boot" = 2 # local completed under 2 s; conservative CI estimate
+
+  "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply" = 2
+  "test_a_running_copy_and_a_clone_without_boot_files_push_none" = 2
+  "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
+  "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
+  "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry" = 2
+  "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check" = 2
+  "test_names_a_failed_delivery_without_its_output" = 2
+  "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices" = 2
+  "test_nested_guard_admits_the_live_shape_of_the_first_nested_container" = 2
+  "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value" = 2
+  "test_refuses_without_a_vault_copy_or_value_and_runs_nothing" = 2
+  "test_the_same_key_changes_nothing" = 2
+  "test_a_key_written_while_the_inner_incus_was_not_ready_says_so" = 2
+  "test_checkout_pushes_the_bundle_and_passes_only_the_env_half" = 2
+  "test_services_install_the_node_helper_and_pass_only_the_process_files" = 2
+  "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 2
+  "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 2

@@ -1,0 +1,15 @@
+order = 530
+source_sha256 = "3fdabaf07d443822c8efc899501de55b58bf43f71980aa7ff844f1b005df9bb5"
+cases = [
+  "the boot enables containerd, Docker and its socket, and disables none of them",
+]
+file = "swamp/tests/ansible_task_vm_docker_boot_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-boot.yml",
+]

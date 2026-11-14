@@ -1,0 +1,18 @@
+order = 730
+source_sha256 = "83fbcb2821765b479b280e76c2d96149e78924b457d03ed685be8f58423377ef"
+cases = [
+  "retention keeps latest index and exact reports of all retained versions, removes seven-day orphans",
+]
+file = "swamp/tests/dependency_retention_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_retention.ts",
+  "swamp/tests/fixtures/dependency-results-v1/success.json",
+]

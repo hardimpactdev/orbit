@@ -1,0 +1,25 @@
+order = 500
+source_sha256 = "cace6f0927db4905dda287a805064a9b55cbb8d16fce24c2fb79918d15371d75"
+cases = [
+  "the software phase starts with the cache, before any read of the snapshot",
+  "the index read goes through the cache over plain http; the packages stay a direct download",
+  "the cache installs from the own sources of the VM and keeps indexes, not packages",
+  "the cache opens on the nested bridge and stays in the image",
+  "the end check reads the cache",
+]
+file = "swamp/tests/ansible_task_vm_apt_cache_test.ts"
+cost = 2
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/task-vm-apt-cache.yml",
+  "swamp/ansible/tasks/task-vm-apt-config.yml",
+  "swamp/ansible/tasks/task-vm-apt.yml",
+  "swamp/ansible/tasks/task-vm-check.yml",
+  "swamp/ansible/tasks/task-vm-image-cache.yml",
+  "swamp/ansible/tasks/task-vm-nested-firewall.yml",
+  "swamp/ansible/tasks/task-vm-software.yml",
+]

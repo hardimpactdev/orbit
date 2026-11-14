@@ -1,0 +1,20 @@
+order = 330
+source_sha256 = "5e615ffaeba1613d641be4bb4e6a6ada5de870c85e4c5bd276143e88a0cf5844"
+cases = [
+  "test_a_node_created_after_the_intent_keeps_its_peer_file",
+  "test_the_hub_converge_runs_this_prune",
+  "test_node_add_loads_the_peer_files_the_hub_has_when_it_applies",
+]
+file = "swamp/tests/ansible_hub_prune_test.py"
+cost = 4
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/operation-node-add.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/node-add-hub-peers.yml",
+  "swamp/ansible/tasks/node-converge-hub-prune.yml",
+  "swamp/ansible/tasks/node-converge-hub.yml",
+]

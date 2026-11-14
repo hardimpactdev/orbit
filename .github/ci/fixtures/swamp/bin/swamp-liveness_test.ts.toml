@@ -1,0 +1,26 @@
+order = 150
+source_sha256 = "d5a01001f4cb56025f5633f11b6a72ae956a1309bf5ba48434b5b24d2cccbb21"
+cases = [
+  "malformed probe responses are refused",
+  "duplicate summary kinds are refused",
+  "partial or invalid state is preserved and rebaselines without restart",
+  "failed state publication keeps previous cooldown",
+  "old but draining backlog does not restart",
+  "three minutes without claim progress restarts",
+  "transient health failure is not a restart",
+  "inode exhaustion alerts and does not restart",
+  "inode warning is visible before exhaustion",
+  "unavailable Gateway does not prove a stall",
+  "startup and restart cooldown",
+]
+file = "swamp/bin/swamp-liveness_test.ts"
+cost = 5
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/bin/swamp-liveness.py",
+  "swamp/bin/swamp-liveness_fixture_test.ts",
+]

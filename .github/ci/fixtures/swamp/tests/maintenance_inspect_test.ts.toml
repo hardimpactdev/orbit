@@ -1,0 +1,36 @@
+order = 880
+source_sha256 = "1e56811f602057834bac8bb56ea44421b71218dc9b43dae33efa9095e4c68717"
+cases = [
+  "manifests selects each source's manifest, lockfile and workspace manifests only",
+  "changed sources are those whose file set or blob SHAs differ",
+  "declared reads direct constraints and refuses a malformed section",
+  "updates proposes a major only past the declared range and the release age",
+  "updates fixes an advisory with the lowest eligible unaffected release, for transitive packages too",
+  "updates treats a 0.x minor as a major, as the version rules do",
+  "updates keeps the highest fix and every advisory for copies of one package",
+  "updates skips a package under a running exception",
+  "composer facts expand Packagist's minified releases and read advisories",
+  "npm facts refuse a foreign document and read bulk advisories",
+]
+file = "swamp/tests/maintenance_inspect_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/extensions/behaviors/_lib/canonical_json.ts",
+  "swamp/extensions/behaviors/_lib/dependency_project_schema.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results.ts",
+  "swamp/extensions/behaviors/_lib/dependency_results_schema.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/batch.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/environment.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/exceptions.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/inspect.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/io.ts",
+  "swamp/extensions/behaviors/_lib/maintenance/policy_schema.ts",
+  "swamp/extensions/behaviors/_lib/project_schedule.ts",
+  "swamp/extensions/behaviors/_lib/versions.ts",
+  "swamp/extensions/behaviors/operations/_lib/local-worker.ts",
+]

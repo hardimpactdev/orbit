@@ -1,0 +1,20 @@
+order = 600
+source_sha256 = "2c532d8168059897d9aade6432b7d62558b98b0ab85ea9a4b8b13e6f6412ba5e"
+cases = [
+  "test_the_save_intent_is_reached_with_its_pinned_host_key",
+  "test_a_dirty_workspace_is_committed_and_its_head_bundled",
+  "test_a_clean_workspace_keeps_its_head_and_makes_no_commit",
+  "test_a_workspace_that_stays_dirty_after_the_commit_fails_the_save_and_fetches_nothing",
+  "test_a_workspace_that_cannot_be_read_fails_the_save_and_fetches_nothing",
+]
+file = "swamp/tests/ansible_task_vm_idle_save_test.py"
+cost = 14
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/build_vars.py",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/task-vm-idle-save.yml",
+]

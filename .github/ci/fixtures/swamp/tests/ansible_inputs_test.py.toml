@@ -1,0 +1,23 @@
+order = 340
+source_sha256 = "3b675ae68761c049ce7800ffdbfc18a5973400e69417c8c04afc14fa834a261b"
+cases = [
+  "test_admitted_identity_and_secret_file_custody",
+  "test_metrics_container_plan_preserves_the_admitted_state",
+  "test_every_ansible_step_sends_its_failed_task_to_stderr",
+  "test_required_machine_phases_use_the_existing_ansible_entry_point",
+  "test_observations_precede_pure_composition_and_machine_application",
+  "test_chart_exposes_each_observe_compose_variables_and_apply_step",
+  "test_removal_waits_for_every_job_including_failed_and_skipped_container_cleanup",
+  "test_composed_observations_keep_literal_jinja_and_private_modes",
+  "test_tool_manager_keeps_mirrors_and_both_admitted_checksum_algorithms",
+  "test_analytics_and_swamp_resources_keep_the_admitted_pins_and_order",
+  "test_commands_and_runtime_copies_run_only_for_a_changed_pin_or_lock_and_retry_failure",
+]
+file = "swamp/tests/ansible_inputs_test.py"
+cost = 24
+inputs = [
+  "bin/swamp-shape-gate",
+  "docs/cli/node/role-add.mmd",
+  "swamp/ansible/**",
+  "swamp/workflows/workflow-operation-node-role-add.yaml",
+]

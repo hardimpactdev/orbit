@@ -1,0 +1,49 @@
+order = 80
+source_sha256 = "21ebb39ff6c2e7b17f9dc96e0a272198a2c163f6e5cdb979a1f4f7d5320b13a3"
+cases = [
+  "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin",
+  "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused",
+  "the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links",
+]
+file = "swamp/tests/ansible_instance_host_runtime_test.ts"
+# 180.025s, hosted four-worker run 43000765953 (unit cutoff; case unfinished).
+after_merge_cases = ["the runtime folder builds its Vite+ home once, links vp and the home into each version, and drops a home no version links"]
+cost = 205
+# Completed Deno case times rounded up by one second; startup is added per slice.
+# Unmeasured cases use the observed maximum (115s); these are estimates, not completed measurements.
+slices = 2
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "the runtime installs the recipe's Deno ZIP and exposes its executable through current/bin" = 90 # completed body 65.337s, run 43010311414; larger completed history retained
+  "a static PHP build is installed as php/<version> with no link in bin, and a build whose extensions differ is refused" = 115 # completed body 85.653s, run 43010311414; larger completed history retained

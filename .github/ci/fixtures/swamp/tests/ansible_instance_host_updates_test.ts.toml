@@ -1,0 +1,52 @@
+order = 90
+source_sha256 = "64791fe490c4f78bb5dcc4f4e69b0261f31dd41401d2a3e4ea67dff462c22e22"
+cases = [
+  "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old",
+  "a Squid configuration that does not parse never replaces the live one, and the run fails",
+  "a project that lists disk paths loses the list, so a container with the idmapped folders starts",
+  "an old folder version that a process still maps stays; a restart that failed runs again on the next converge",
+]
+file = "swamp/tests/ansible_instance_host_updates_test.ts"
+after_merge = true
+reason = "The two remaining PR cases already run alone: runtime update reached 166.761s and Squid rollback 152.639s (run 43227699901), leaving about 7% and 15% of the 180s ceiling. Each requires two consecutive converges. All four cases remain in Main full set pending a measured faster fixture."
+# 159.349s, hosted four-worker run 43000765953 (completed unit).
+# 168.762s, hosted four-worker run 43000765953 (completed unit).
+after_merge_cases = ["a project that lists disk paths loses the list, so a container with the idmapped folders starts", "an old folder version that a process still maps stays; a restart that failed runs again on the next converge"]
+cost = 222
+# Completed Deno case times rounded up by one second; startup is added per slice.
+# Unmeasured cases use the observed maximum (111s); these are estimates, not completed measurements.
+slices = 2
+inputs = [
+  "apps/gateway/app/Domain/Instances/InstanceImage.php",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_container_files.py",
+  "swamp/ansible/instance_folder_debs.py",
+  "swamp/ansible/instance_folder_same.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance-nic-filters.json",
+  "swamp/ansible/library/**",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-bridge-*.yml",
+  "swamp/ansible/tasks/instance-egress.yml",
+  "swamp/ansible/tasks/instance-container-files.yml",
+  "swamp/ansible/tasks/instance-folder.yml",
+  "swamp/ansible/tasks/instance-host.yml",
+  "swamp/ansible/tasks/instance-image.yml",
+  "swamp/ansible/tasks/instance-network-*.yml",
+  "swamp/ansible/tasks/instance-vite-plus-home.yml",
+  "swamp/ansible/tasks/task-container-host-prepare.yml",
+  "swamp/ansible/tasks/task-container-host-system.yml",
+  "swamp/ansible/transport-exit-codes.json",
+  "swamp/tests/_support/fixture_supervisor.py",
+  "swamp/tests/_support/instance_host.ts",
+  "swamp/tests/fixtures/instance-bridge-curl.ts",
+  "swamp/tests/fixtures/task-vm-host-incus.ts",
+]
+
+[case_costs]
+  "a new runtime version installs beside the old one, flips current, restarts each running container's Processes and drops the old" = 117 # completed body 116.727s, run 43010311414; larger completed history retained
+  "a Squid configuration that does not parse never replaces the live one, and the run fails" = 105 # completed body 97.442s, run 43010311414; larger completed history retained

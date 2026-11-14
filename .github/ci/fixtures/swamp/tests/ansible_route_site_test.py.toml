@@ -1,0 +1,46 @@
+order = 1290
+source_sha256 = "6f4dbe4ea2789f037a25d58b772ccf044528799415da8ef4b3826c404ae1544f"
+cases = [
+  "test_certificate_links_account_copy_modes_and_literal_caddy_text",
+  "test_existing_file_mode_drift_clears_unwanted_special_bits",
+  "test_same_content_destination_symlinks_are_replaced_without_touching_targets",
+  "test_failed_validation_keeps_live_bytes_and_metadata_and_cleans_candidate",
+  "test_site_publish_renames_the_validated_inode_with_final_metadata_before_interruption",
+  "test_retry_after_reload_failure_completes_without_rewriting_public_files",
+  "test_php_only_publication_needs_no_caddy_group",
+  "test_production_workspace_app_url_links_and_php_tasks_are_unchanged",
+  "test_csr_action_owns_folder_and_key_before_public_request_returns",
+  "test_real_production_phase_keeps_access_app_url_php_links_and_reload",
+  "test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root",
+  "test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content",
+  "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder",
+]
+file = "swamp/tests/ansible_route_site_test.py"
+cost = 23
+slices = false
+inputs = [
+  "swamp/tests/fixtures/route-access.json",
+  "apps/gateway/app/Domain/Routes/RouteWebRootCommands.php",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/library/orbit_route_site.py",
+  "swamp/ansible/route-create-site.yml",
+  "swamp/ansible/tasks/route-access.yml",
+  "swamp/workflows/workflow-route-create-csr.yaml",
+  "swamp/workflows/workflow-route-create-site.yaml",
+]
+[case_costs]
+"test_certificate_links_account_copy_modes_and_literal_caddy_text" = 1
+"test_failed_validation_keeps_live_bytes_and_metadata_and_cleans_candidate" = 1
+"test_retry_after_reload_failure_completes_without_rewriting_public_files" = 1
+"test_php_only_publication_needs_no_caddy_group" = 1
+"test_production_workspace_app_url_links_and_php_tasks_are_unchanged" = 1
+"test_csr_action_owns_folder_and_key_before_public_request_returns" = 1
+"test_real_production_phase_keeps_access_app_url_php_links_and_reload" = 5
+"test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder" = 1
+"test_existing_file_mode_drift_clears_unwanted_special_bits" = 1
+"test_same_content_destination_symlinks_are_replaced_without_touching_targets" = 1
+
+"test_site_publish_renames_the_validated_inode_with_final_metadata_before_interruption" = 1
+
+"test_real_site_phase_skips_missing_optional_storage_but_requires_the_web_root" = 7
+"test_route_ansible_failures_reach_stderr_and_module_diagnostics_never_expose_content" = 1

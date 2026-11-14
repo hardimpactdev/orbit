@@ -1,0 +1,13 @@
+order = 1340
+source_sha256 = "dff80fd9b009168e93fa1e938c88d503184d0b1fcb3605c18ab7788c8aabbfc4"
+cases = [
+  "destroy skips withdrawal without publications including old admission without mutation keys",
+  "Route-less checkout and linked worktree skip the child and still remove the real source",
+]
+file = "swamp/tests/instance_destroy_routeless_test.ts"
+cost = 2
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
+[case_costs]
+"destroy skips withdrawal without publications including old admission without mutation keys" = 1
+"Route-less checkout and linked worktree skip the child and still remove the real source" = 1

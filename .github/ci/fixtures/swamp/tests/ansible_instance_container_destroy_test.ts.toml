@@ -1,0 +1,27 @@
+order = 360
+source_sha256 = "31082dae6c4e042f090cb0fdb802adef7931a9372323f80472995a96b6ff0b19"
+cases = [
+  "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
+  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing",
+]
+file = "swamp/tests/ansible_instance_container_destroy_test.ts"
+cost = 13
+# Completed Deno case times rounded up by one second; startup is added per slice.
+# Unmeasured cases use the observed maximum (12s); these are estimates, not completed measurements.
+slices = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container-destroy.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/tests/fixtures/instance-container-ufw.ts",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]
+
+[case_costs]
+  "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
+  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement

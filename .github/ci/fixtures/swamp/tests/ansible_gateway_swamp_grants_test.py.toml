@@ -1,0 +1,24 @@
+order = 310
+source_sha256 = "aa4810516b7fa7a14ca9bad67a08ac6a5936d54116da5f6f7710b757e75105cc"
+cases = [
+  "test_proof_release_setup_repairs_a_restored_gateway_and_is_idempotent",
+  "test_restored_grants_are_replaced_from_the_candidate_and_a_failed_reload_is_retried",
+  "test_the_grants_tag_uses_the_candidate_renderer_not_the_saved_plan_grants",
+]
+file = "swamp/tests/ansible_gateway_swamp_grants_test.py"
+cost = 150 # Conservative estimate: hosted 105.128s completed (43296678604); cut at 111.132s by shard deadline (43321083193), not a completed measurement.
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/gateway-bootstrap.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/gateway-ansible-collections.yml",
+  "swamp/ansible/tasks/gateway-swamp-grants.yml",
+  "swamp/ansible/tasks/proof-gateway-release.yml",
+  "swamp/ansible/tasks/task-vm-fleet.yml",
+  "swamp/ansible/task-vm-role.yml",
+  "swamp/workflows/workflow-task-nested-apply.yaml",
+  "swamp/proof/cli-release.json",
+]
