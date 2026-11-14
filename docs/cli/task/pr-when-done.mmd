@@ -32,6 +32,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - every guard of a manual publish: the group lock, the copy publish allow list, the eligible candidate, the running container
   %%> - the key `pr-when-done:GROUP:CHECK` was not admitted before, and no publish of this check failed or was cancelled; a repeat tick starts nothing
+  %%> - after a lock timeout, the key adds its attempt, `pr-when-done:GROUP:CHECK:2` or `:3`, while fewer than 3 publishes of this check timed out on a lock
   %%> - inside the admission's transaction, after the group's row lock, the group is still done with this check and still in `pr_when_done`, else `tasks.not_done`
   %%> Result:
   %%> - task #TASK recorded, kind `tasks.publish`, caller `gateway:pr-when-done`
@@ -41,6 +42,7 @@ sequenceDiagram
   SW->>N: Export the copy<br/>workspace phase · bundle
   %%> How:
   %%> - the copy's checkout HEAD must be the done check's commit; the bundle comes to the worker and the copy never holds a token
+  %%> - the workspace phase is the behavior `task-workspace-NODE-GROUP`, and every publish step names its group too, so the publish of another group on this Node never waits for its lock
   Note over SW: Check the .env content
   %%> How:
   %%> - the `.env` path and content checks, with the Club key of a nested-fleet copy, run before any token exists; the title and body Orbit wrote are checked too
@@ -54,10 +56,21 @@ sequenceDiagram
     %%> Result:
     %%> - the group's `publication` state is `published`; the group keeps its status and its task copy
     %%> - Orbit never merges this pull request (`tasks.copy_pr_no_merge` on every merge path); a person merges it on GitHub
+  else lock timed out
+    SW--xGW: Run failed<br/>a step's lock timed out
+    %%> When:
+    %%> - a step waited 60 s for a behavior lock that another run held: `Lock "…/.lock" held by … — timed out after …ms`
+    Note over GW: Retry the done check<br/>attempt 2 or 3 · next tick
+    %%> Result:
+    %%> - the Operation keeps `tasks.publish_lock_timeout`; the group's `publication` stays `publishing`
+    %%> - the next tick admits the same done check again under the key with its attempt, behind every guard of the first
+    %%> - after the third lock timeout the publication shows `refused` with `tasks.publish_lock_timeout`; `task:publish GROUP` tries again
+    %%> Why:
+    %%> - nothing on the copy or on GitHub was wrong; a lock timeout says only that a step was busy
   else refused
     SW--xGW: Run failed<br/>error_code, failed step
     %%> When:
-    %%> - a step failed, such as `tasks.publish_secret_content` or `tasks.push_failed`
+    %%> - a step failed, such as `tasks.publish_secret_content` or `tasks.push_failed`; any failure but a lock timeout
     %%> - an admission refusal, such as `tasks.copy_publish_held` or `tasks.commit_not_checked`, starts no run and ends here too
     %%> - a stopped task copy refuses at admission with `tasks.instance_not_running` and is stored too
     %%> - only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal: the next tick reads the group again and stores nothing
@@ -68,4 +81,5 @@ sequenceDiagram
     %%> - the group keeps its status, and the task copy and its checked commit stay
     %%> Retry:
     %%> - the tick does not start the same done check again; a new handoff check or `task:publish GROUP` tries again
+    %%> - a hand `task:publish GROUP` of the same check is admitted at any time no Operation of the group runs
   end

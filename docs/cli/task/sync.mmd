@@ -41,6 +41,7 @@ sequenceDiagram
   SW->>SW: Bundle the refs<br/>git bundle create
   %%> What it does:
   %%> - one bundle of the default branch and `task-42`
+  %%> - the clone and the bundle run as the behaviors `task-sync-clone-42` and `task-sync-bundle-42`, up to 120 s each, so a sync of another group never waits for their lock
   SW->>VM: Copy the bundle<br/>official SSH copy
   %%> What it does:
   %%> - prepares a private directory on the VM and copies the bundle into it; no token and no script reaches the VM
