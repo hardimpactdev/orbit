@@ -52,9 +52,16 @@ final readonly class TaskCopyTurn
             : $start();
     }
 
-    /** @return array<string,mixed> */
+    /**
+     * Runs inside the admission's transaction. It first takes the group's row lock, which a subtask's completion takes too
+     * (UpdateTaskAction), so "a subtask completes only after its turns ended" holds on any database, not only through SQLite's
+     * BEGIN IMMEDIATE: a completion and a turn admission on one group never interleave.
+     *
+     * @return array<string,mixed>
+     */
     public function capture(Task $group, TaskTurnData $data): array
     {
+        Task::topLevel()->whereKey($group->id)->lockForUpdate()->firstOrFail();
         $group->load('taskable', 'project');
         $workspace = TaskInstanceWorkspace::forGroup($group)
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
@@ -139,9 +146,7 @@ final readonly class TaskCopyTurn
      */
     public static function refuseCompletionWhileRunning(Task $group): void
     {
-        if (TaskInstanceWorkspace::forGroup($group) === null) {
-            return;
-        }
+        // A group without a task copy has no copy turns, so the query alone is the rule.
         $running = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->where('kind', OperationKinds::TasksCopyTurn)->whereNotIn('status', OperationStatus::terminalValues())->orderBy('id')->first();
         if ($running instanceof Operation) {
