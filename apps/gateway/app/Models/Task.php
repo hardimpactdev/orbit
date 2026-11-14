@@ -104,8 +104,14 @@ use LogicException;
  * @property bool|null $preview
  * @property bool|null $current_recipe
  * @property TaskReviewMode $review_mode
- * @property string $implementer_model
+ * @property string $implementer_model the task VM path's model; a task copy reads implementer_agent_model
  * @property string $reviewer_model
+ * @property string|null $implementer_agent_provider the copy turn agent values the group names (TaskCopyAgent); null takes the Project's or the Gateway's
+ * @property string|null $implementer_agent_model
+ * @property string|null $implementer_agent_effort
+ * @property string|null $reviewer_agent_provider
+ * @property string|null $reviewer_agent_model
+ * @property string|null $reviewer_agent_effort
  * @property int|null $reviewer_agent_thread_id
  * @property string|null $capacity_wait_reason
  * @property string $implementer_agent_driver
@@ -164,6 +170,12 @@ final class Task extends Model
         'review_mode',
         'implementer_model',
         'reviewer_model',
+        'implementer_agent_provider',
+        'implementer_agent_model',
+        'implementer_agent_effort',
+        'reviewer_agent_provider',
+        'reviewer_agent_model',
+        'reviewer_agent_effort',
         'reviewer_agent_thread_id',
         'implementer_agent_driver',
         'reviewer_agent_driver',
@@ -299,6 +311,12 @@ final class Task extends Model
         'review_mode',
         'implementer_model',
         'reviewer_model',
+        'implementer_agent_provider',
+        'implementer_agent_model',
+        'implementer_agent_effort',
+        'reviewer_agent_provider',
+        'reviewer_agent_model',
+        'reviewer_agent_effort',
         'reviewer_agent_thread_id',
         'implementer_agent_driver',
         'reviewer_agent_driver',

@@ -71,6 +71,9 @@ final readonly class InstanceContainer
     /** The Claude Code efforts of a task copy's T3: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
     public const array ClaudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
 
+    /** What a task copy's T3 offers: the efforts of each provider, one provider instance per pair, as the copy's T3 settings hold them. */
+    public const array CopyProviders = ['claude' => self::ClaudeEfforts];
+
     /**
      * Playwright keeps its browsers beside its own package, in `node_modules/playwright-core/.local-browsers`
      * (docs/reference/development-containers.md#playwright-browsers). The default's deploy steps run as `orbit` and a task
@@ -427,10 +430,10 @@ final readonly class InstanceContainer
         ];
     }
 
-    /** The T3 provider instance of a Claude Code effort in a task copy: `claudeMedium` for `medium`. */
-    public static function claudeInstance(string $effort): string
+    /** The T3 provider instance of a provider and effort in a task copy: `claudeMedium` for `claude` at `medium`. */
+    public static function providerInstance(string $provider, string $effort): string
     {
-        return 'claude'.ucfirst($effort);
+        return $provider.ucfirst($effort);
     }
 
     /**
@@ -441,7 +444,7 @@ final readonly class InstanceContainer
      */
     private static function claudeInstances(): array
     {
-        return array_combine(array_map(self::claudeInstance(...), self::ClaudeEfforts), array_map(static fn (string $effort): array => [
+        return array_combine(array_map(static fn (string $effort): string => self::providerInstance('claude', $effort), self::ClaudeEfforts), array_map(static fn (string $effort): array => [
             'driver' => 'claudeAgent', 'displayName' => 'Claude, '.$effort.' effort', 'environment' => [['name' => 'CLAUDE_CODE_EFFORT_LEVEL', 'value' => $effort]],
         ], self::ClaudeEfforts));
     }

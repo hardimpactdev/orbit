@@ -7,6 +7,7 @@ namespace App\Http\Requests\Tasks;
 use App\Data\Tasks\CreateTaskData;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -18,6 +19,7 @@ use App\Models\Task;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
+use App\Rules\NotBlank;
 use App\Rules\TaskTopologyList;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -31,7 +33,7 @@ final class CreateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList|NotBlank>> */
     public function rules(): array
     {
         if ($this->has('parent_id')) {
@@ -44,7 +46,7 @@ final class CreateTaskGroupRequest extends FormRequest
         return $this->parentRules();
     }
 
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList|NotBlank>> */
     public function parentRules(): array
     {
         return [
@@ -56,6 +58,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'review' => ['sometimes', 'string', Rule::enum(TaskReviewMode::class)],
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
+            ...TaskCopyAgent::rules(),
             'subtasks' => ['sometimes', 'array', 'max:50'],
             'subtasks.*.title' => ['required', 'string', 'max:160'],
             'subtasks.*.brief' => ['required', 'string', 'max:8000'],
@@ -91,6 +94,7 @@ final class CreateTaskGroupRequest extends FormRequest
                     'review',
                     'preview',
                     'current_recipe',
+                    ...TaskCopyAgent::fields(),
                     'subtasks',
                 ]);
         } catch (UnexpectedValueException $exception) {
@@ -126,6 +130,7 @@ final class CreateTaskGroupRequest extends FormRequest
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
             review: TaskReviewMode::from($this->string('review', TaskReviewMode::Manual->value)->toString()),
+            agents: TaskCopyAgent::provided($this->validated()),
         );
     }
 

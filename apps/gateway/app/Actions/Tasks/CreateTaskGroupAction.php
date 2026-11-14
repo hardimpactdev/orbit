@@ -10,10 +10,11 @@ use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentDriverException;
 use App\Domain\Tasks\AgentDriverRegistry;
-use App\Domain\Tasks\TaskAgentDefaults;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTopology;
 use App\Models\Node;
 use App\Models\Project;
@@ -57,7 +58,7 @@ final readonly class CreateTaskGroupAction
         TaskGroupGuard::supportOrchestration($data->orchestration, Project::query()->findOrFail($data->projectId)->reviewsAndMerges(), array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
         TaskTopology::assertFits(array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
 
-        $group = Task::topLevel()->create([
+        $group = Task::topLevel()->make([
             'orchestration' => $data->orchestration,
             'review_mode' => $data->review,
             'created_by_node_id' => $creator?->id,
@@ -69,9 +70,13 @@ final readonly class CreateTaskGroupAction
             'status' => $data->status,
             'preview' => $data->preview,
             'current_recipe' => $data->currentRecipe,
-            'implementer_model' => $this->model('implementer_model', TaskAgentDefaults::ImplementerModel),
-            'reviewer_model' => $this->model('reviewer_model', TaskAgentDefaults::ReviewerModel),
+            ...TaskCopyAgent::groupColumns($data->agents),
         ]);
+        // The task VM columns are not null, and a release before the copy turn agent reads them: each holds the model its role
+        // resolves to now. A copy turn never reads them.
+        $group->implementer_model = TaskCopyAgent::resolve($group, TaskThreadRole::Implementer)['model']['value'];
+        $group->reviewer_model = TaskCopyAgent::resolve($group, TaskThreadRole::Reviewer)['model']['value'];
+        $group->save();
 
         foreach ($data->tasks as $index => $task) {
             Task::query()->create([
@@ -86,13 +91,6 @@ final readonly class CreateTaskGroupAction
         }
 
         return $group->refresh()->load(['project', 'tasks', 'taskable']);
-    }
-
-    private function model(string $key, string $default): string
-    {
-        $model = config('orbit.tasks.'.$key);
-
-        return is_string($model) && $model !== '' ? $model : $default;
     }
 
     private function configuredDriver(string $key): string

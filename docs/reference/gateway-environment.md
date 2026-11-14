@@ -177,8 +177,10 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_COPIES_MAX` | How many nested-fleet [task copies](/reference/tasks#task-copy) one Node holds at once; default 1, minimum 0. `task:start` counts at admission. A copy of any other Project does not count. |
 | `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` | A JSON list of Project ids whose [task copies](/reference/tasks#task-copy) may publish, besides nested-fleet trial Projects; default `[]`. Any other copy publish fails with `tasks.copy_publish_held`. Malformed JSON or an object holds every Project. |
-| `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` | The Claude model of a new implementer thread in a [task copy](/cli/task/turn#a-task-that-runs-in-a-copy); default `claude-opus-5-5`. Any other value refuses each new implementer copy thread with `tasks.copy_turn_model_invalid`. |
-| `ORBIT_TASKS_COPY_REVIEWER_MODEL` | The same for a new reviewer thread in a task copy; default `claude-opus-5-5`. Its effort comes from `ORBIT_TASKS_REVIEWER_EFFORT`. |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_REVIEWER_PROVIDER` | The provider of a new implementer or reviewer thread in a [task copy](/reference/tasks#copy-turn-agents) when neither the task nor its Project names one; default `claude`. |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_REVIEWER_MODEL` | The same for the model; default `claude-opus-5-5`. A value that is no model name refuses each new copy thread that falls back to it with `tasks.copy_turn_model_invalid`. |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_COPY_REVIEWER_EFFORT` | The same for the effort; defaults `medium` and `high`. A provider and effort that the copy's T3 has no instance for refuse the turn with `tasks.copy_turn_unoffered`. |
+| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of a new task VM thread; defaults `medium` and `high`. A task copy does not read them. |
 | `ORBIT_TASKS_PULL_REQUEST_AUTHORS` | Parsed Gateway configuration for repository/account IDs; Swamp owns merge decisions. |
 | `ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS` | Workspace claim lifetime for cleanup, in seconds; default 3600, minimum 60. |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | GitHub logins requested as reviewers on a task pull request. See [Tasks](/reference/tasks). |

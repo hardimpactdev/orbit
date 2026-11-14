@@ -59,7 +59,9 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `implementer_agent_thread_id` | subtask | The subtask's implementer thread |
 | `reviewer_agent_thread_id` | task | The current reviewer thread. A shared reviewer thread is stored here, and [Review a subtask](#review-a-subtask) points it at the fresh reviewer |
 | `taskable_type`, `taskable_id` | task | The task workspace Instance. Null until a provision operation creates it |
-| `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
+| `implementer_agent_provider`, `implementer_agent_model`, `implementer_agent_effort` | task | The [copy turn agent](#copy-turn-agents) the group names for its implementer. Null takes the Project's default, then the Gateway's |
+| `reviewer_agent_provider`, `reviewer_agent_model`, `reviewer_agent_effort` | task | The same for the reviewer |
+| `implementer_model`, `reviewer_model` | task | The task VM path's models. A new task stores each role's resolved copy model here, so an earlier Gateway release can read the row. No read shows them |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#ready-and-merge-a-task-pull-request) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
 | `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
@@ -1041,16 +1043,39 @@ A driver translates Orbit's thread operations for one agent runtime. A turn in a
 
 A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads do not use the driver registry: a copy turn starts or continues them with T3's own CLI. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
-| Role | Default model | Effort |
-| --- | --- | --- |
-| Implementer | `gpt-5.6-luna`, or `ORBIT_TASKS_IMPLEMENTER_MODEL` | `medium`, or `ORBIT_TASKS_IMPLEMENTER_EFFORT` |
-| Reviewer | `gpt-5.6-luna`, or `ORBIT_TASKS_REVIEWER_MODEL` | `high`, or `ORBIT_TASKS_REVIEWER_EFFORT` |
+A task VM thread takes its effort from `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, default `medium` and `high`, and its model from the task's `implementer_model` or `reviewer_model`. The Gateway reads the effort when it creates a thread, so a change applies to the next thread of every open task; an existing thread keeps its stored `effort`. A thread in a [task copy](#task-copy) takes its [copy turn agent](#copy-turn-agents) instead.
 
-Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env` to choose each role's reasoning effort, on a task VM and in a task copy alike. Unset or empty keeps `medium` for the implementer and `high` for the reviewer. For example, `ORBIT_TASKS_IMPLEMENTER_EFFORT=high` sets new implementer threads to `high`.
+### Copy turn agents
 
-The Gateway reads effort when it creates a thread, not when it creates the group. A change applies to the next thread of every open group. An existing thread keeps its stored `effort`. The Gateway passes the value to the driver unchanged; the agent runtime validates it.
+Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. A new copy thread resolves each of the three values on its own:
 
-The model settings name Pi models and apply to task VM threads. A thread in a [task copy](#task-copy) takes its model from `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` and its effort from the role's effort setting, which must be `low`, `medium`, `high`, `xhigh` or `max`. Stock T3's CLI takes no effort, so the copy's T3 settings hold one Claude provider instance per effort level, `claudeLow` to `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+1. the task's value, set with [`task:create`](/cli/task/create) or [`task:update`](/cli/task/update);
+2. else the Project's default, set with [`project:update`](/cli/project/update) and shown by [`project:show`](/cli/project/show);
+3. else the Gateway's setting.
+
+| Gateway setting | Shipped default |
+| --- | --- |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_REVIEWER_PROVIDER` | `claude` |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_REVIEWER_MODEL` | `claude-opus-5-5` |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT` | `medium` |
+| `ORBIT_TASKS_COPY_REVIEWER_EFFORT` | `high` |
+
+The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project` or `gateway`.
+
+A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
+
+Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its provider and effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+
+A new thread's values are checked against what the copy's T3 offers, in two places:
+
+| Value | Where | Against | Refusal |
+| --- | --- | --- | --- |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
+
+Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
+
+Without the cache file, T3 uses the catalog it ships, which no file holds; the check is then skipped, and a model Claude Code does not know fails in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
 
 **Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the task's VM. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
 
@@ -1373,7 +1398,9 @@ The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
 - `daily`: merged and not merged tasks for each day of the period.
-- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each implementer model, each Project, and each [Gateway release](/reference/gateway-recovery). A task belongs to the last verified release that began before the task's `started_at`.
+- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery).
+- A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
+- A task's release is the last verified release that began before its `started_at`.
 
 ### On the board
 
@@ -1469,8 +1496,8 @@ These Gateway environment keys configure the extension.
 | Environment key | Meaning |
 | --- | --- |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
-| `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
-| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads, on a task VM and in a task copy. Defaults: `medium` and `high`. See [Drivers](#drivers) for when changes apply |
+| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new task VM threads, default `medium` and `high`; a task copy does not read them. See [Drivers](#drivers) for when changes apply |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT`, and the same three for `REVIEWER` | The Gateway's [copy turn agent](#copy-turn-agents) of each role, the last fallback after the task and the Project. Defaults: `claude`, `claude-opus-5-5`, and `medium` for the implementer or `high` for the reviewer |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
@@ -1653,7 +1680,7 @@ Anthropic permits Claude subscription credentials only in its own applications, 
 
 Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
 
-Both roles default to `gpt-5.6-luna` at `high` effort. Keeping `claude-opus-5` as the reviewer default would make each new review fail on Pi. Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
+Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
 
 Finishing an open T3 task turn would preserve the second runtime, so a managed task that records a driver other than `pi` never starts or resumes an agent turn. The operator cancels or replaces it. Deleting its thread row, metrics, or `t3_*` columns would erase the record of work that already ran, so that history stays. A transcript request returns HTTP 409 `tasks.agent_transcript_unavailable` rather than contacting T3. Pi session files stay on the Node; Orbit keeps their thread rows and metrics too.
 

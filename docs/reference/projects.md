@@ -66,6 +66,8 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
 | `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
+| `task_implementer_provider`, `task_implementer_model`, `task_implementer_effort` | The default implementer agent of the Project's [task copies](/reference/tasks#copy-turn-agents). A task that names its own value keeps it. Null takes the Gateway's |
+| `task_reviewer_provider`, `task_reviewer_model`, `task_reviewer_effort` | The same for the reviewer |
 
 A parent task started with `task:start <id>` receives a workspace from the newest default-branch commit that passed the `merge_check`; see [`task:start`](/cli/task/start).
 
@@ -146,7 +148,7 @@ The Gateway derives a repository identity from the host and path of the URL. Equ
 
 [`instance:register`](/domains/applications#register-an-existing-checkout) adopts a checkout only for an existing Project. It finds the Project by repository identity, or uses `--project`. When no Project owns the repository, it fails with `instance.project_missing` and changes nothing. Create the Project with `project:create` first. Registration inherits its root unless an explicit Instance override is sent; it does not search the checkout for nested apps.
 
-SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, source access, default branch, root, task check, `task_workspace_routed`, `review_and_merge`, and `merge_check`. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
+SDK Project responses and the `project:list` and `project:show` commands expose the stored type, repository, source access, default branch, root, task check, `task_workspace_routed`, `review_and_merge`, `merge_check`, and the six task agent defaults. The task check is an ordinary setting, like setup steps, so activity records it as sent. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` compatibility name.
 
 ## Retry creation safely
 
@@ -162,7 +164,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its display name, type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, or review and merge. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its display name, type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, review and merge, or the task agent defaults. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -183,6 +185,8 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
 | `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges, and on each handoff commit. Send null or `--clear-merge-check` to clear it. |
+| `task_implementer_*` and `--task-implementer-*` | Set the implementer defaults of the Project's [copy turn agents](/reference/tasks#copy-turn-agents). Send null or `--clear-task-implementer-agent` to clear them. |
+| `task_reviewer_*` and `--task-reviewer-*` | The same for the reviewer. |
 
 A type change must keep a valid root. When the stored root is `.` and the new type does not allow it, validation fails on `root`. Send a web root with the type change. A type or root change that leaves a Route target with root `.` returns `route.target_web_root_unsupported`.
 

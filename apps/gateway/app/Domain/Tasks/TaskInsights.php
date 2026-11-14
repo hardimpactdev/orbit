@@ -25,7 +25,7 @@ use Illuminate\Support\Collection;
  * handoff checks, and questions. Every number is defined here and nowhere else.
  *
  * @phpstan-type Row array{
- *     model: string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
+ *     model: ?string, project: string, release: ?string, ended_at: CarbonImmutable, merged: bool,
  *     tokens: int, cost: ?float, input: int, cached: int, wasted: int, lines: int,
  *     lead: ?int, queue: ?int, work: ?int, merge_wait: ?int, first_pass: bool,
  *     verdict_subtasks: int, first_approved: int, verdicts: int, handoff_subtasks: int, handoff_passed: int,
@@ -158,7 +158,8 @@ final class TaskInsights
             $mergedAt = $merged ? $group->merged_at : null;
 
             $rows[] = [
-                'model' => $group->implementer_model,
+                // The model the group's first implementer thread ran; a group with no implementer thread counts as Unknown.
+                'model' => collect($groupThreads)->where('role', 'implementer')->sortBy('id')->first()?->model,
                 'project' => $group->project->code,
                 'release' => $this->releaseAt($releases, $group->started_at),
                 'ended_at' => $group->ended_at ?? throw new \LogicException('The query selects ended tasks only.'),

@@ -10,13 +10,15 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
 // What `task-copy-turn.yml` writes, each file as soon as its command ended: for a continued turn `continue.json` with the exit code of
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
-// the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
-// `t3 thread send` with `--wait --json`, `read.json` with what `t3 thread list` found and `t3 thread show` read, and for a reviewer
+// the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, for a new thread `model.json` with the
+// model, the slugs T3's catalog offers (null when it was not read) and whether it offers the model, `launch.json` before the start,
+// `start.json` with the exit code, stdout and stderr of `t3 thread start` or `t3 thread send` with `--wait --json`, `read.json` with what `t3 thread list` found and `t3 thread show` read, and for a reviewer
 // turn `restore.json` with whether the checkout is clean on its branch at its tip again.
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
-const Start = z.object({ start_exit: z.number().int(), start: z.string() }).strict();
+const Start = z.object({ start_exit: z.number().int(), start: z.string(), error: z.string().optional() }).strict();
+const Model = z.object({ model: z.string(), offered: z.array(z.string()).nullable(), accepted: z.boolean() }).strict();
 const Read = z.object({
     list_exit: z.number().int().nullable(),
     found: z.number().int(),
@@ -30,6 +32,7 @@ const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]
 export type Evidence = {
     resumed: z.infer<typeof Resumed> | null;
     review: z.infer<typeof Review> | null;
+    model: z.infer<typeof Model> | null;
     detached: boolean;
     launched: boolean;
     start: z.infer<typeof Start> | null;
@@ -128,6 +131,10 @@ function shapeRun(evidence: Evidence): Turn {
     if (evidence.start !== null && [124, 137].includes(evidence.start.start_exit)) {
         return { ...base, state: "failed", error: "The turn ran longer than its bound; T3 may still run it until the copy is destroyed.", error_code: "tasks.turn_timeout" };
     }
+    if (evidence.model !== null && !evidence.model.accepted) {
+        const offered = (evidence.model.offered ?? []).join(", ").slice(0, ErrorChars);
+        return { ...base, state: "failed", error: `The copy's T3 does not offer the model ${evidence.model.model}; it offers: ${offered}.`, error_code: "tasks.copy_turn_model_unoffered" };
+    }
     if (evidence.resumed !== null && evidence.resumed.list_exit !== 0) {
         const exit = evidence.resumed.list_exit === null ? "no JSON" : `exit ${evidence.resumed.list_exit}`;
         return { ...base, state: "failed", error: `T3 could not list its threads to find the one to continue (${exit}).`, error_code: "tasks.copy_turn_failed" };
@@ -145,7 +152,9 @@ function shapeRun(evidence: Evidence): Turn {
         };
     }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
-    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit}).`, error_code: "tasks.copy_turn_failed" };
+    // T3's message ends its stderr; a long one keeps its end.
+    const refusal = redactText(evidence.start?.error?.trim() ?? "").slice(-ErrorChars);
+    return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${refusal === "" ? "" : `: ${refusal}`}.`, error_code: "tasks.copy_turn_failed" };
 }
 
 /** One evidence file, bounded and typed; a missing, oversized or malformed file reads as absent. */
@@ -164,7 +173,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.14.4",
+    version: "2026.11.14.5",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -175,6 +184,7 @@ export const behavior = {
                 const turn = Turn.parse(shapeTurn({
                     resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
                     review: await evidence(args.folder + "/review.json", 1024, Review),
+                    model: await evidence(args.folder + "/model.json", 65536, Model),
                     detached: await marked("detach.json"),
                     launched: await marked("launch.json"),
                     start: await evidence(args.folder + "/start.json", StartBytes, Start),

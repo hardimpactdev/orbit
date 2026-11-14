@@ -15,7 +15,7 @@ const transcript: { id: string; kind: "message"; label: string; text: string; at
 const started = (status: string, error: string | null = null) =>
     JSON.stringify({ threadId: thread, runId: run, status, reply: status === "completed" ? "Committed d867aba2." : null, error });
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
-const none = { resumed: null, review: null, detached: false, restore: null };
+const none = { resumed: null, review: null, model: null, detached: false, restore: null };
 const turn = (start_exit: number, start: string, change: Partial<Evidence> = {}) => shapeTurn({ ...none, launched: true, start: { start_exit, start }, read, ...change });
 
 Deno.test("a completed run is done and over, and records the message transcript and the T3 thread", () => {
@@ -62,6 +62,29 @@ Deno.test("a continued turn reads like a new one, and one whose thread T3 does n
             t3_thread_id: null, run_id: null, transcript: [],
         });
     }
+});
+
+Deno.test("a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered with the offered slugs, and nothing launched", () => {
+    const offered = ["claude-opus-5-5", "claude-sonnet-5-5"];
+    assertEquals(shapeTurn({ ...none, model: { model: "claude-opus-9", offered, accepted: false }, launched: false, start: null, read: null }), {
+        state: "failed", error: "The copy's T3 does not offer the model claude-opus-9; it offers: claude-opus-5-5, claude-sonnet-5-5.",
+        error_code: "tasks.copy_turn_model_unoffered", ended: true, t3_thread_id: null, run_id: null, transcript: [],
+    });
+    // An offered model, or a catalog the phase could not read, runs the turn.
+    assertEquals(turn(0, started("completed"), { model: { model: "claude-opus-5-5", offered, accepted: true } }).state, "done");
+    assertEquals(turn(0, started("completed"), { model: { model: "claude-opus-9", offered: null, accepted: true } }).state, "done");
+});
+
+Deno.test("a long refusal keeps the end of T3's message, where T3 names the refusal", () => {
+    const refused = shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "", error: "x".repeat(4000) + "Provider instance is disabled." },
+        read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } });
+    assertEquals([refused.error!.endsWith("Provider instance is disabled.."), refused.error!.length < 2100], [true, true]);
+});
+
+Deno.test("a start T3 refused on stderr names T3's own message", () => {
+    const refused = shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "", error: 'Provider instance "claudeMinimal" is disabled for project p.\n' },
+        read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } });
+    assertEquals([refused.error, refused.error_code], ['T3 did not report the turn\'s end (exit 1): Provider instance "claudeMinimal" is disabled for project p..', "tasks.copy_turn_failed"]);
 });
 
 Deno.test("a continued turn whose thread list failed or printed no JSON is tasks.copy_turn_failed, not a missing thread", () => {
@@ -148,6 +171,20 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         assertEquals([unrestored.successful, unrestored.turn.error_code, unrestored.turn.ended], [false, "tasks.copy_review_unrestored", false]);
         Deno.writeTextFileSync(`${folder}/restore.json`, JSON.stringify({ restored: true }));
         assertEquals((await behavior.methods.result.execute({ folder }, context)).successful, true);
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+});
+
+Deno.test("the method reads the model evidence: a model the catalog does not offer fails with what it offers", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    Deno.mkdirSync(folder);
+    try {
+        const context = { writeResource: () => Promise.resolve() };
+        Deno.writeTextFileSync(`${folder}/model.json`, JSON.stringify({ model: "claude-opus-9", offered: ["claude-opus-5-5"], accepted: false }));
+        const refused = await behavior.methods.result.execute({ folder }, context);
+        assertEquals([refused.successful, refused.turn.error_code, refused.turn.ended], [false, "tasks.copy_turn_model_unoffered", true]);
+        assertEquals(refused.turn.error, "The copy's T3 does not offer the model claude-opus-9; it offers: claude-opus-5-5.");
     } finally {
         Deno.removeSync(folder, { recursive: true });
     }

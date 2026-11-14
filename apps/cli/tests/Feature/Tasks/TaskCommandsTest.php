@@ -926,6 +926,41 @@ it('declares the current recipe on task group creation only when asked', functio
     expect($current ? $body['current_recipe'] : array_key_exists('current_recipe', $body))->toBe($current);
 })->with([true, false]);
 
+describe('the copy turn agent of a task group', function (): void {
+    it('sends the agent values task:create names and nothing for the rest', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+        expect(Artisan::call('task:create', ['title' => 'Agent', '--project' => '1', '--brief' => 'Work', '--implementer-model' => 'claude-sonnet-5-5',
+            '--reviewer-effort' => 'max', '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['project_id' => 1, 'title' => 'Agent', 'brief' => 'Work', 'implementer_model' => 'claude-sonnet-5-5', 'reviewer_effort' => 'max']);
+    });
+
+    it('sets one role and clears the other on task:update', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-update/updated'));
+        expect(Artisan::call('task:update', ['task' => '1', '--implementer-provider' => 'claude', '--implementer-effort' => 'low', '--clear-reviewer-agent' => true, '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))->toBe([
+            'implementer_provider' => 'claude', 'implementer_effort' => 'low', 'reviewer_provider' => null, 'reviewer_model' => null, 'reviewer_effort' => null,
+        ]);
+    });
+
+    it('refuses a value and a clear of the same role, and an empty value, before a Gateway request', function (array $options, string $code): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('task:update', ['task' => '1', ...$options, '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+        $mock->assertNothingSent();
+    })->with([
+        'a value and a clear' => [['--reviewer-model' => 'claude-haiku-5-5', '--clear-reviewer-agent' => true], 'task.agent_conflict'],
+        'an empty value' => [['--implementer-model' => ' '], 'task.agent_invalid'],
+    ]);
+
+    it('refuses agent options on a subtask', function (): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call('task:create', ['--parent' => '1', 'title' => 'Step', '--brief' => 'Work', '--implementer-effort' => 'low', '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe('task.option_invalid');
+        $mock->assertNothingSent();
+    });
+});
+
 describe('declared topology', function (): void {
     it('sends a declaration and an explicit empty update', function (): void {
         $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/child-created'));

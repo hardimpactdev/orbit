@@ -17,5 +17,7 @@ final class UpdateTaskGroupData extends Data
         public ?string $brief,
         public ?TaskGroupStatus $status,
         public ?bool $preview = null,
+        /** @var array<string, string|null> the copy turn agent values to change, keyed by field; null clears one (TaskCopyAgent) */
+        public array $agents = [],
     ) {}
 }

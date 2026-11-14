@@ -50,6 +50,12 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
         public ?string $lastActivityAt = null,
         public ?string $previewUrl = null,
         public ?TaskPlaceWaitResponse $capacityWait = null,
+        public ?string $implementerProvider = null,
+        public ?string $implementerEffort = null,
+        public ?string $reviewerProvider = null,
+        public ?string $reviewerEffort = null,
+        public ?TaskCopyAgentResponse $implementerAgent = null,
+        public ?TaskCopyAgentResponse $reviewerAgent = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -95,6 +101,12 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             lastActivityAt: TaskFields::nullableText($data, 'last_activity_at'),
             previewUrl: TaskFields::nullableText($data, 'preview_url'),
             capacityWait: TaskPlaceWaitResponse::fromGatewayData($data['capacity_wait'] ?? null, $requestId),
+            implementerProvider: TaskFields::nullableText($data, 'implementer_provider'),
+            implementerEffort: TaskFields::nullableText($data, 'implementer_effort'),
+            reviewerProvider: TaskFields::nullableText($data, 'reviewer_provider'),
+            reviewerEffort: TaskFields::nullableText($data, 'reviewer_effort'),
+            implementerAgent: TaskCopyAgentResponse::fromGatewayData(is_array($data['resolved_agents'] ?? null) ? ($data['resolved_agents']['implementer'] ?? null) : null),
+            reviewerAgent: TaskCopyAgentResponse::fromGatewayData(is_array($data['resolved_agents'] ?? null) ? ($data['resolved_agents']['reviewer'] ?? null) : null),
         );
     }
 
@@ -132,8 +144,14 @@ final readonly class TaskGroupResponse implements TaskRecordResponse
             'assistance_kind' => $this->assistanceKind,
             'assistance_question' => $this->assistanceQuestion,
             'assistance_reason' => $this->assistanceReason,
+            'implementer_provider' => $this->implementerProvider,
             'implementer_model' => $this->implementerModel,
+            'implementer_effort' => $this->implementerEffort,
+            'reviewer_provider' => $this->reviewerProvider,
             'reviewer_model' => $this->reviewerModel,
+            'reviewer_effort' => $this->reviewerEffort,
+            ...($this->implementerAgent === null || $this->reviewerAgent === null ? [] : ['resolved_agents' => [
+                'implementer' => $this->implementerAgent->toArray(), 'reviewer' => $this->reviewerAgent->toArray()]]),
             'tokens' => $this->tokens,
             'line_diff' => $this->lineDiff,
             'lines_added' => $this->linesAdded,

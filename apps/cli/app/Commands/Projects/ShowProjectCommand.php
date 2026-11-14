@@ -66,6 +66,8 @@ final class ShowProjectCommand extends GatewayCommand
             'Default branch' => $project->defaultBranch,
             'Web root' => $project->root,
             'Task check' => $project->taskCheck,
+            'Implementer agent' => $project->taskAgentLabel('implementer') ?? 'Gateway default',
+            'Reviewer agent' => $project->taskAgentLabel('reviewer') ?? 'Gateway default',
             'Task workspace routed' => $project->taskWorkspaceRouted,
             ...($project->reviewAndMerge === null ? [] : ['Review and merge' => $project->reviewAndMerge, 'Merge check' => $project->mergeCheck]),
             ...($project->maintenance === null ? [] : ['Maintenance' => $project->maintenance]),

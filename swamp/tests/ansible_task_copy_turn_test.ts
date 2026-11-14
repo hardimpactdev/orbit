@@ -79,6 +79,24 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
     else:
         assert git in (['checkout', '--quiet', '--detach', 'c' * 40], ['reset', '--quiet', '--hard'], ['clean', '--quiet', '-fd'], ['checkout', '--quiet', 'task-4970']), git
     sys.exit(0)
+if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
+    catalog = os.environ.get('T3_CATALOG', 'cached')
+    if rest[3] == '/home/agent/.t3/userdata/settings.json':
+        print(json.dumps({'providerInstances': {'claudeMedium': {'driver': 'claudeAgent', 'displayName': 'Claude, medium effort'}}}))
+        sys.exit(0)
+    assert rest[3:] == ['/home/agent/.t3/userdata/model-manifest.json'], rest
+    if catalog == 'missing':
+        sys.stderr.write('No such file or directory')
+        sys.exit(1)
+    models = [{'slug': 'claude-opus-5-5', 'aliases': ['opus']}, {'slug': 'claude-sonnet-5-5', 'aliases': ['sonnet']}, {'slug': 'claude-haiku-5-5'}]
+    if catalog == 'noslug':
+        models = [{'name': 'No slug'}, 'claude-fable-5-2', {'slug': 7}] + models
+    if catalog == 'notlist':
+        models = {'claude-opus-5-5': {}}
+    if catalog == 'noentry':
+        models = [{'name': 'No slug'}, 'claude-fable-5-2']
+    print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}]}}}}))
+    sys.exit(0)
 if rest == ['/usr/bin/true']:
     sys.exit(1 if os.environ['T3_START'] == 'unreachable' else 0)
 if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
@@ -90,8 +108,14 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     if mode == 'timeout':
         sys.exit(124)
     if mode == 'refused':
-        sys.stderr.write('server not running')
+        sys.stderr.write('Provider instance "claudeMedium" is disabled for project p.')
         sys.exit(1)
+    if mode == 'refusedlong':
+        sys.stderr.write('x' * 10000 + 'the end')
+        sys.exit(1)
+    if mode == 'chatty':
+        sys.stderr.write('progress\\n' * 2000)
+        mode = 'completed'
     print(json.dumps({'threadId': thread, 'runId': 'run:1', 'status': mode, 'reply': 'done', 'error': None}))
     sys.exit(0 if mode == 'completed' else 1)
 assert rest[0] == '/usr/bin/timeout' and rest[1] == '60' and rest[2] == '/opt/orbit-agent/current/agent/bin/t3', rest
@@ -109,9 +133,9 @@ assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
-type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; detached: boolean; launched: boolean;
+type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; model: Record<string, unknown> | null; detached: boolean; launched: boolean;
     start: Record<string, unknown> | null; read: Record<string, unknown> | null; restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] };
-async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean"): Promise<Phase> {
+async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", catalog = "cached"): Promise<Phase> {
     const folder = Deno.makeTempDirSync();
     try {
         Deno.mkdirSync(`${folder}/bin`);
@@ -123,7 +147,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_become=false", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
                 `${shipped}/task-copy-turn.yml`],
-            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree,
+            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_CATALOG: catalog,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const read = (path: string) => { try { return Deno.readTextFileSync(path); } catch { return null; } };
@@ -133,6 +157,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
             resumed: json("continue.json"),
             review: json("review.json"),
+            model: json("model.json"),
             detached: read(`${folder}/run/detach.json`) !== null,
             launched: read(`${folder}/run/launch.json`) !== null,
             start: json("start.json"),
@@ -148,8 +173,8 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
 Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back", ignore: !available, async fn() {
     const done = await phase("completed");
     assert(done.ok, done.output);
-    assertEquals(done.calls.length, 4);
-    const start = done.calls[1];
+    assertEquals(done.calls.length, 6);
+    const start = done.calls[3];
     assertEquals(start.stdin, turn.prompt);
     assertEquals(start.args.slice(21, 29), ["--provider", "claudeMedium", "--model", "claude-opus-5-5", "--title", turn.title, "--wait", "--json"]);
     // An implementer's turn leaves the checkout to the agent: no Git command, no review or restore evidence.
@@ -226,7 +251,9 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
     assertEquals([cut.launched, cut.start!.start_exit, cut.start!.start, cut.read!.found, cut.read!.show_exit], [true, 124, "", 1, 0]);
     const refused = await phase("refused");
     assert(refused.ok, refused.output);
-    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 3]);
+    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.status, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, null, 5]);
+    // T3 refuses a start on stderr only; the evidence keeps it.
+    assertEquals(refused.start!.error, 'Provider instance "claudeMedium" is disabled for project p.');
     // A copy the phase cannot reach launches nothing, so no turn can hold its group.
     const unreachable = await phase("unreachable");
     assert(!unreachable.ok, unreachable.output);
@@ -246,5 +273,64 @@ Deno.test({ name: "a thread list that is not JSON reads as no thread, and the st
     const garbled = await phase("garbled");
     assert(garbled.ok, garbled.output);
     assertEquals([JSON.parse(garbled.start!.start as string).status, garbled.read!.list_exit, garbled.read!.found, garbled.read!.show_exit, garbled.calls.length],
-        ["completed", null, 0, null, 3]);
+        ["completed", null, 0, null, 5]);
+} });
+
+const reads = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).filter((args) => args[2] === "/usr/bin/cat").map((args) => args[3]);
+
+Deno.test({ name: "a new thread reads T3's catalog first and runs a model it offers, by slug or alias", ignore: !available, async fn() {
+    for (const model of ["claude-sonnet-5-5", "opus"]) {
+        const done = await phase("completed", { model });
+        assert(done.ok, done.output);
+        assertEquals(reads(done.calls), ["/home/agent/.t3/userdata/settings.json", "/home/agent/.t3/userdata/model-manifest.json"]);
+        assertEquals(done.model, { model, offered: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], accepted: true });
+        assertEquals(done.launched, true);
+    }
+} });
+
+Deno.test({ name: "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout", ignore: !available, async fn() {
+    // The other driver's model is not one the instance's driver offers.
+    for (const model of ["claude-opus-9", "other-model"]) {
+        const refused = await phase("completed", { model, candidate });
+        assert(!refused.ok, refused.output);
+        assert(refused.output.includes("tasks.copy_turn_model_unoffered"), refused.output);
+        assertEquals(refused.model, { model, offered: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], accepted: false });
+        assertEquals([refused.review, refused.detached, refused.launched, refused.start, git(refused.calls)], [null, false, false, null, []]);
+    }
+} });
+
+Deno.test({ name: "without T3's cached catalog the check is skipped and the turn runs", ignore: !available, async fn() {
+    const done = await phase("completed", { model: "claude-opus-9" }, "clean", "missing");
+    assert(done.ok, done.output);
+    assertEquals([done.model, done.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true]);
+} });
+
+Deno.test({ name: "a continued thread keeps its model: the catalog is not read", ignore: !available, async fn() {
+    const done = await phase("completed", { thread: "continue", provider: null, model: "claude-opus-9" });
+    assert(done.ok, done.output);
+    assertEquals([reads(done.calls), done.model], [[], null]);
+} });
+
+Deno.test({ name: "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check", ignore: !available, async fn() {
+    const offered = await phase("completed", { model: "claude-opus-5-5" }, "clean", "noslug");
+    assert(offered.ok, offered.output);
+    assertEquals(offered.model, { model: "claude-opus-5-5", offered: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], accepted: true });
+    const refused = await phase("completed", { model: "claude-fable-5-2" }, "clean", "noslug");
+    assert(!refused.ok && refused.output.includes("tasks.copy_turn_model_unoffered"), refused.output);
+    // A list without one valid entry is no catalog either.
+    for (const catalog of ["notlist", "noentry"]) {
+        const skipped = await phase("completed", { model: "claude-opus-9" }, "clean", catalog);
+        assert(skipped.ok, skipped.output);
+        assertEquals([skipped.model, skipped.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true], catalog);
+    }
+} });
+
+Deno.test({ name: "the start evidence keeps stderr only when the start failed, and only its last 4096 characters", ignore: !available, async fn() {
+    const chatty = await phase("chatty");
+    assert(chatty.ok, chatty.output);
+    assertEquals([chatty.start!.start_exit, chatty.start!.error], [0, ""]);
+    const refused = await phase("refusedlong");
+    assert(refused.ok, refused.output);
+    const error = refused.start!.error as string;
+    assertEquals([refused.start!.start_exit, error.length, error.endsWith("the end")], [1, 4096, true]);
 } });
