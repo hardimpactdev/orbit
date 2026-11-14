@@ -583,7 +583,8 @@ describe('revoke and removal', function (): void {
     });
 });
 
-it('pre-mints held sessions for the creating profile\'s Nodes that reach a new clone\'s server', function (): void {
+it('pre-mints held sessions for the creating profile\'s Nodes that reach a new clone\'s server while the switch is on, and none while it is off', function (bool $on): void {
+    config(['orbit.conn.held_session_premint' => $on]);
     $desk = heldNode('desk', '10.44.0.80');
     $away = heldNode('away', '10.44.0.81');
     NodeAccess::query()->create(['consumer_node_id' => $desk->id, 'serving_node_id' => $this->host->id]);
@@ -601,5 +602,5 @@ it('pre-mints held sessions for the creating profile\'s Nodes that reach a new c
 
     $environment = ConnEnvironment::query()->where('environment_id', 'env-new-clone')->sole();
     expect(Operation::query()->where('kind', 'conn.session_hold')->where('input->conn_environment_id', $environment->id)->pluck('input')->pluck('caller_node_id')->sort()->values()->all())
-        ->toBe([$this->phone->id, $desk->id]);
-});
+        ->toBe($on ? [$this->phone->id, $desk->id] : []);
+})->with(['on' => true, 'off' => false]);

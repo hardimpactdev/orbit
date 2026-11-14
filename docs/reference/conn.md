@@ -16,7 +16,7 @@ covers:
 
 This page is for the person who builds the Conn client, and for the Gateway maintainer. Conn is the fork of T3 Code that works with Orbit. The Gateway gives Conn one central layer: a device signs in as its Node, sees every registered T3 server, and shares workspaces, appearance, device settings, and the attached threads with the other devices of its profile. T3 traffic does not pass through the Gateway. A device talks to each T3 server directly over WireGuard.
 
-The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired. On the T3 server of a container Instance it pairs itself for each Node and holds that Node's session, so a device never pairs there: see [Held sessions](#held-sessions).
+The Gateway answers lists, profiles, and pairing. It mints T3 pairing links with an admin session that each T3 server hands it at registration, and it revokes the sessions it paired. On the T3 server of a container Instance it pairs itself for a Node when that Node first asks, and holds that Node's session, so a device never pairs there: see [Held sessions](#held-sessions).
 
 The Conn layer is the `conn` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/conn`. While the switch is off, every endpoint below refuses with `extension.disabled` (409), including registration by a T3 server, and the MCP server hides the Conn tools. Profiles, servers, and pairings stay. New installs start with the switch off. Upgrades preserve its stored value. Activity keeps admin sessions and settings documents out through the `ActivityInputRedaction` plug-in point, also while the switch is off.
 
@@ -593,7 +593,7 @@ To revoke, Orbit reads the initial `payload.clientSessions` snapshot from upstre
 
 ## Held sessions
 
-On the T3 server of a container Instance, a device never pairs. The Gateway pairs itself for each Node with node access to the server, holds the resulting session, renews it, and hands it to the Node when the Node asks. The Node then talks to the server directly; the Gateway is not in that path. Container servers stay stock T3. The [session chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/session-hold.mmd) has the steps.
+On the T3 server of a container Instance, a device never pairs. The Gateway pairs itself on demand: for a Node with node access to the server, at that Node's first read of its session, or earlier by the optional pre-mint below. It holds the resulting session, renews it, and hands it to the Node when the Node asks. The Node then talks to the server directly; the Gateway is not in that path. Container servers stay stock T3. The [session chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/session-hold.mmd) has the steps.
 
 A held session is a held pairing: a pairing row with `held` set, whose link the Gateway minted and redeemed itself. So it has a `pairing_id`, and revoke works per pairing as for a device pairing.
 
@@ -636,7 +636,7 @@ The Gateway reads the session key once, stores the session encrypted on the pair
 
 When T3 answered, no session exists. The Operation ends with that answer's code, and the pairing is settled with a revoke time: `conn.session_rejected` (the admin session got 401), `conn.request_refused` (another status), `conn.response_invalid` (a link reply without T3's shape) or `conn.redeem_refused` (T3 refused the link at `/oauth/token`). Any other failure is `conn.session_outcome_unknown`: a session may exist, so the Gateway withdraws the pairing and revokes it by its label. The next read starts a new Operation with a new label.
 
-The New-instance flow holds sessions before the first attach. When a clone's server is recorded, the Gateway admits a `conn.session_hold` for each Node of the creating Node's profile that has node access to the server, or for the creating Node alone when it has no profile.
+**Pre-mint.** The operator's switch `ORBIT_CONN_HELD_SESSION_PREMINT` (`orbit.conn.held_session_premint`) makes sessions before the first read. It is off by default, because it adds Swamp runs to every container create. The Gateway operator turns it on in `/home/orbit/shared/gateway.env` and [applies the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed. While it is on, the Gateway pre-mints each time it records a container Instance's T3 server: at the end of `instance:create` of a development container, from Conn's New-instance flow or any other caller, and at the end of `instance:migrate`. It admits a `conn.session_hold` for each Node of the creating Node's profile that has node access to the server, or for the creating Node alone when it has no profile. The creating Node is the Node that started the Instance's first `instance.create`; an Instance that no Node created gets none. A refused admission is logged as `conn.held_premint_deferred`, and that Node's first read makes its session. While the switch is off, the first read makes it. The handle, renewal and revoke do not depend on the switch.
 
 ### Renewal of a held session
 

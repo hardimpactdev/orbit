@@ -43,6 +43,8 @@ sequenceDiagram
     %%> - takes ENV's row lock: an open hold of the same Node answers instead, so concurrent first reads start one task
     %%> - records held pairing 7 with a unique label, such as `phone via Orbit k3j9x0qa`
     %%> - pushes the admin session to the Swamp vault after commit (R3)
+    %%> Pre-mint:
+    %%> - the same admission runs without a read when the switch `ORBIT_CONN_HELD_SESSION_PREMINT` is on (off by default) and the Gateway records a container server at the end of instance:create or instance:migrate: once for each Node of the creating Node's profile that reaches ENV
     GW->>SW: Start run, full intent<br/>operation-conn-session-hold
     %%> Inputs:
     %%> - the server URL, the label, T3's administrative scopes, and the vault key name; never a session

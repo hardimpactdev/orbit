@@ -14,6 +14,7 @@ use App\Models\Operation;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
@@ -133,9 +134,15 @@ final readonly class ConnHeldSessions
         }
     }
 
-    /** A new clone's server: hold a session for each Node of the creating Node's profile that reaches it, so the first attach is one read. */
+    /**
+     * A new clone's server: hold a session for each Node of the creating Node's profile that reaches it, so the first attach is one read.
+     * It runs only while the operator's switch is on.
+     */
     public function preMint(Instance $instance, ConnEnvironment $environment): void
     {
+        if (! Config::boolean('orbit.conn.held_session_premint')) {
+            return;
+        }
         $creator = Operation::query()->where('kind', 'instance.create')->where('target_type', 'instance')->where('target_id', $instance->id)
             ->oldest('id')->value('triggered_by');
         if (! is_string($creator) || preg_match('/\Anode:([1-9][0-9]*)\z/D', $creator, $match) !== 1) {
