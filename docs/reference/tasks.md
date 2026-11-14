@@ -1238,24 +1238,24 @@ The title is the group title. The body holds the group brief, the completed subt
 
 ### Release a waiting group
 
-`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the same title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes.
+`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the same title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`. The admission reads done again under the group lock, so a subtask added in between refuses with `tasks.not_done`.
 
 ### A refused automatic publish
 
-A refusal at admission, such as `tasks.copy_publish_held` or `tasks.commit_not_checked`, starts no Operation. Orbit stores its code on the group, and `publication` shows `refused` with that code. A failed run, such as `tasks.publish_secret_content` or `tasks.push_failed`, keeps its code on its Operation, and `publication` shows it the same way. Orbit does not try the same done check again. A new handoff check or `task:publish <group>` tries again.
+A refusal at admission, such as `tasks.copy_publish_held`, `tasks.commit_not_checked` or `tasks.instance_not_running` for a stopped task copy, starts no Operation. Orbit stores its code on the group, and `publication` shows `refused` with that code. A publish of the done check that failed, was interrupted or was cancelled, whoever started it, keeps its code on its Operation, such as `tasks.push_failed`, or `operation.cancelled` and `operation.interrupted` when it has none; `publication` shows it the same way. Orbit does not start that done check again by itself. A new handoff check or `task:publish <group>` tries again; start a stopped copy first.
 
-`operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again.
+Only `operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again and stores nothing. A fault of one group is reported and the tick goes on with the next.
 
 A refused publish changes nothing else. The group keeps its status, and the task copy and its checked commit stay until `task:cancel` or `task:complete`.
 
 ### No merge
 
-Orbit never merges the pull request of a group whose workspace is a task copy, also after the group has ended. A pull request counts as such when a `tasks.publish` from a task copy opened it. Every merge path refuses it with `tasks.copy_pr_no_merge` (409):
+Orbit never merges the pull request of a group whose workspace is a task copy, also after the group has ended. A pull request counts as such when a `tasks.publish` from a task copy opened it. It also counts when its branch is `task-<id>` of a group that is or was such a group: that covers a publish that ended before it recorded the number. Every merge path refuses it with `tasks.copy_pr_no_merge` (409):
 
 | Path | Behavior |
 | --- | --- |
 | [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read |
-| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group, open or ended, before any GitHub read |
+| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group, open or ended: by its number before any GitHub read, or by its `task-<id>` branch once read |
 | [`task:pr-gate`](#gate-check) | Skips the group with `tasks.copy_pr_no_merge`: no ready step, no review round, no merge |
 | [Review and merge](#review-and-merge) | Acts only through `task:pr-gate` and `project:pr-merge`, so it merges no such pull request |
 | [Dependency merge](#dependency-batch-squash-admission) | Refused for a batch group whose publish came from a task copy |

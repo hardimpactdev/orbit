@@ -16,7 +16,7 @@ curl -X POST "$GATEWAY/api/v1/projects/7/pr-merge" \
 
 The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. The reply is `202` with the operation; follow it with `operation:show` until it ends. A refusal at admission starts nothing, so a caller can call the command again every few seconds until the merge check is green. The Gateway has no webhooks.
 
-The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. The pull request must target the default branch of the Project and come from a branch of the repository itself: a fork can define its own workflow that reports a passing merge check, so a fork PR is refused. A Task group that has ended does not hold its PR, except a group whose workspace was a task copy: Orbit never merges a pull request that a task copy's publish opened, whether its group is open or has ended. A person merges it on GitHub. See [No merge](/reference/tasks#no-merge).
+The call is the approval: no review is read, because the caller is the reviewer. The gate is the green merge check on the exact head. The pull request must target the default branch of the Project and come from a branch of the repository itself: a fork can define its own workflow that reports a passing merge check, so a fork PR is refused. A Task group that has ended does not hold its PR, except a group whose workspace was a task copy: Orbit never merges a pull request that a task copy's publish opened, or one on the `task-<id>` branch of a group that is or was a task copy group, whether its group is open or has ended. A person merges it on GitHub. See [No merge](/reference/tasks#no-merge).
 
 | Input | Meaning |
 | --- | --- |
@@ -36,7 +36,7 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | --- | --- | --- |
 | `project.review_and_merge_disabled` | 409 | The Project does not take part in review and merge. |
 | `project.pr_in_task_group` | 409 | An open Task group watches the PR. Use `task:pr-merge`. |
-| `tasks.copy_pr_no_merge` | 409 | A task copy's publish opened the PR. A person merges it on GitHub. |
+| `tasks.copy_pr_no_merge` | 409 | A task copy's publish opened the PR, or its branch is `task-<id>` of a copy group. A person merges it on GitHub. |
 | `operation.target_busy` | 409 | Another merge of the Project is running. |
 | `tasks_pr.no_pull_request` | 409 | The Project has no GitHub repository, or the PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. |

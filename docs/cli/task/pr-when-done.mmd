@@ -1,8 +1,8 @@
 sequenceDiagram
-  %% Target design: ADR 0257 (task group modes), docs/reference/tasks.md#task-group-modes. A scheduled Gateway command like task:pr-gate: it reads the Gateway's own records and admits the existing tasks.publish (docs/cli/task/publish.mmd) behind every guard of a manual publish. It starts no other work and merges nothing.
+  %% Target design: ADR 0257 (task group modes), docs/reference/tasks.md#task-group-modes. A scheduled Gateway command like task:pr-gate: it reads the Gateway's own records and admits the existing tasks.publish (docs/cli/task/publish.mmd) behind every guard of a manual publish. It starts no other work and merges nothing. The tick is a scheduled command, not an Operation kind: like instance/container/thread.mmd it names `kind: none`, and the Operation it admits is `tasks.publish`.
   %% status: draft
   %% command: none · task:pr-when-done schedule
-  %% kind: tasks.pr_when_done
+  %% kind: none
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane SW icon=workflow pill=executes tone=green
@@ -31,7 +31,8 @@ sequenceDiagram
   %%> - starts the `tasks.publish` admission of `task:publish` with the done check, the group title, a body of the brief, the completed subtasks and the checked commit, and a ready pull request
   %%> Requirements:
   %%> - every guard of a manual publish: the group lock, the copy publish allow list, the eligible candidate, the running container
-  %%> - the key `pr-when-done:GROUP:CHECK` was not admitted before; a repeat tick replays and starts nothing
+  %%> - the key `pr-when-done:GROUP:CHECK` was not admitted before, and no publish of this check failed or was cancelled; a repeat tick starts nothing
+  %%> - the group is still done under the group lock, else `tasks.not_done`
   %%> Result:
   %%> - task #TASK recorded, kind `tasks.publish`, caller `gateway:pr-when-done`
   GW->>SW: Start run, full intent<br/>operation-task-publish
@@ -58,10 +59,11 @@ sequenceDiagram
     %%> When:
     %%> - a step failed, such as `tasks.publish_secret_content` or `tasks.push_failed`
     %%> - an admission refusal, such as `tasks.copy_publish_held` or `tasks.commit_not_checked`, starts no run and ends here too
-    %%> - `operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again
+    %%> - a stopped task copy refuses at admission with `tasks.instance_not_running` and is stored too
+    %%> - only `operation.target_busy` and `tasks.copy_turn_unended` are no refusal: the next tick reads the group again and stores nothing
     Note over GW: Show the refusal<br/>state refused · error_code
     %%> Result:
-    %%> - an admission refusal is stored on the group; a run failure keeps its code on its Operation; `task:show` and `task:status` show `refused` with the code
+    %%> - an admission refusal is stored on the group; a failed, interrupted or cancelled publish of the done check, by any caller, keeps its code on its Operation (`operation.cancelled` when it has none); `task:show` and `task:status` show `refused` with the code
     %%> - the group keeps its status, and the task copy and its checked commit stay
     %%> Retry:
     %%> - the tick does not start the same done check again; a new handoff check or `task:publish GROUP` tries again
