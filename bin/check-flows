@@ -6,7 +6,7 @@ const { readdirSync, readFileSync } = require('node:fs')
 const { execFileSync } = require('node:child_process')
 const root = `${__dirname}/..`, dir = `${root}/docs/cli`
 const list = (text) => text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
-const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt)\b/, /^else\b/, /^end$/,
+const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt|par)\b/, /^(else|and)\b/, /^end$/,
   /^Note over [\w, ]+: .+$/, /^\w+\s*(-->>|->>|--x|-x)\s*\w+\s*:\s*.+$/]
 const files = readdirSync(dir, { recursive: true }).filter((n) => n.split('/').length === 2)
 let bad = 0

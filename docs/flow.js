@@ -1,7 +1,7 @@
 // Draws each chart a page places with <div className="flow-at" data-chart="<family>/<name>">, with a step-detail panel.
 // Mintlify loads every .js file in docs/ on every page. bin/docs-flows writes window.orbitFlows to
 // flows-data.js from the docs/cli/<family>/<name>.mmd charts that pages place.
-// renderFlow is the migration dashboard's renderer, unchanged; the panel ports its FlowPage.
+// renderFlow is the migration dashboard's renderer, with `par … and … end` frames added; the panel ports its FlowPage.
 (() => {
   // Renders a Mermaid sequenceDiagram subset as a static lane chart in the pr-lens style.
   // Lane options are Mermaid comments, so the source stays valid Mermaid:
@@ -17,9 +17,9 @@
       if(m=l.match(/^%%>\s?(.*)$/)){if(rows.length){const r=rows.at(-1);r.info=(r.info?r.info+'\n':'')+m[1]}continue}
       if(!l||l.startsWith('%%')||l==='sequenceDiagram')continue;
       if(m=l.match(/^participant\s+(\w+)(?:\s+as\s+(.+))?$/)){const[t,s]=(m[2]||m[1]).split('<br/>');lanes.push({id:m[1],title:t,sub:s||''});continue}
-      if(m=l.match(/^(alt|loop|opt)\s*(.*)$/)){stack.push({type:m[1],label:m[2],start:rows.length,sections:[],depth:stack.length});continue}
-      if(m=l.match(/^else\s*(.*)$/)){stack.at(-1).sections.push({at:rows.length,label:m[1]});continue}
-      if(l==='end'){const f=stack.pop();f.end=rows.length;frames.push(f);continue}
+      if(m=l.match(/^(alt|loop|opt|par)\s*(.*)$/)){stack.push({type:m[1],label:m[2],start:rows.length,sections:[],depth:stack.length});continue}
+      if(m=l.match(/^(else|and)\b\s*(.*)$/)){stack.at(-1)?.sections.push({at:rows.length,word:m[1],label:m[2]});continue}
+      if(l==='end'){const f=stack.pop();if(f){f.end=rows.length;frames.push(f)}continue}
       if(m=l.match(/^Note\s+over\s+([\w,\s]+):\s*(.+)$/)){rows.push({kind:'note',lanes:m[1].split(',').map(s=>s.trim()),text:m[2]});continue}
       if(m=l.match(/^(\w+)\s*(-->>|->>|--x|-x)\s*(\w+)\s*:\s*(.+)$/)){rows.push({kind:'msg',from:m[1],to:m[3],arrow:m[2],text:m[4]});continue}
     }
@@ -61,7 +61,7 @@
       out.push(`<rect class="frame" x="${x1}" y="${f.y1}" width="${x2-x1}" height="${f.y2-f.y1}" rx="10"/>`);
       const tag=(yy,t,lbl)=>{const w=tw(t,9.5)+t.length*1;out.push(`<text class="ftag" x="${x1+12}" y="${yy+19}">${t}</text><text class="flbl" x="${x1+20+w}" y="${yy+19}">${esc(lbl)}</text>`)};
       tag(f.y1,f.type.toUpperCase(),f.label);
-      for(const s of f.sections){out.push(`<line class="frame" x1="${x1}" y1="${s.y}" x2="${x2}" y2="${s.y}"/>`);tag(s.y,'ELSE',s.label)}
+      for(const s of f.sections){out.push(`<line class="frame" x1="${x1}" y1="${s.y}" x2="${x2}" y2="${s.y}"/>`);tag(s.y,s.word.toUpperCase(),s.label)}
     }
     // rows
     rows.forEach((r,i)=>{const n=numbered?`${i+1}`:'';out.push(`<g class="step" data-step="${i}">`);
