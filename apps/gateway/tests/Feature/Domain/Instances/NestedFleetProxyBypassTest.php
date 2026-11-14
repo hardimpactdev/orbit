@@ -52,7 +52,7 @@ it('builds one proxy bypass from the base, the Node service hosts, the inner fle
     'a normal container' => [[], false, [], ProxyBase],
 ]);
 
-it('gives a nested-fleet default and its clone the bypass as container keys, the run environment and the clone\'s boot files', function (): void {
+it('gives a nested-fleet default and its clone the bypass as container keys, the run environment and the clone\'s proxy value', function (): void {
     [$default, $clone] = bypassPair(true);
     $containers = app(InstanceContainer::class);
     $value = ProxyBase.','.ProxyFleet;
@@ -63,17 +63,10 @@ it('gives a nested-fleet default and its clone the bypass as container keys, the
             ->and([$intent['config']['environment.NO_PROXY'], $intent['config']['environment.no_proxy']])->toBe([$value, $value])
             ->and($intent['environment'])->toContain('NO_PROXY='.$value, 'no_proxy='.$value);
     }
-    $assignments = "NO_PROXY={$value} no_proxy={$value}";
-    $files = $containers->intent($clone, $clone->runtime()->firstOrFail())['clone']['boot_files'];
-    // The files every copy needs come first, then the proxy drop-ins, as for a copy whose default had attached Node services.
-    expect(array_column(array_slice($files, 0, -2), 'path'))->not->toBeEmpty()
-        ->and(array_filter(array_column(array_slice($files, 0, -2), 'path'), static fn (string $path): bool => str_contains($path, '99-orbit-node-services')))->toBe([])
-        ->and(array_slice($files, -2))->toBe([
-            ['path' => '/etc/systemd/system.conf.d/99-orbit-node-services.conf',
-                'content' => "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment={$assignments}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-            ['path' => '/etc/profile.d/99-orbit-node-services.sh',
-                'content' => "# Managed by Orbit: attached Node service.\nexport {$assignments}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-        ]);
+    // The clone script renders the copy's drop-ins from this value (instance_node_services.py `proxy-files`); no boot file holds them.
+    $copy = $containers->intent($clone, $clone->runtime()->firstOrFail())['clone'];
+    expect($copy['proxy_environment'])->toBe(['NO_PROXY' => $value, 'no_proxy' => $value])
+        ->and(array_filter(array_column($copy['boot_files'], 'path'), static fn (string $path): bool => str_contains($path, '99-orbit-node-services')))->toBe([]);
 });
 
 it('keeps a normal default and clone without container keys or proxy drop-ins, as before', function (): void {
@@ -85,6 +78,7 @@ it('keeps a normal default and clone without container keys or proxy drop-ins, a
         expect($intent['config'])->not->toHaveKey('environment.NO_PROXY')
             ->and($intent['environment'])->toContain('NO_PROXY='.ProxyBase);
     }
+    expect($containers->intent($clone, $clone->runtime()->firstOrFail())['clone'])->not->toHaveKey('proxy_environment');
     expect(array_filter(array_column($containers->intent($clone, $clone->runtime()->firstOrFail())['clone']['boot_files'], 'path'),
         static fn (string $path): bool => str_contains($path, '99-orbit-node-services')))->toBe([]);
 });

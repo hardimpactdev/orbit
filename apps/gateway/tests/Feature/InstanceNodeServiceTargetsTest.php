@@ -687,18 +687,14 @@ it('projects only the exact remote path and proxy host and withdraws the complet
     expect($cloneIntent['acl_rules']['egress'])->toBe([])
         ->and($cloneIntent['config']['environment.NO_PROXY'])->not->toContain('10.44.0.11')
         ->and($cloneIntent['environment'])->not->toContain('NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.44.0.11');
-    // The default's two proxy files are reset before the copy's first start, so the agent phase does not write them.
-    $reset = 'NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1 no_proxy=localhost,127.0.0.1,::1,10.253.0.1';
-    // The browser files, the empty linker cache, the Node root CA, agent's NSS store and the Playwright browser setting come first in every clone (InstanceContainer::bootFiles).
-    expect(array_column(array_slice($cloneIntent['clone']['boot_files'], 0, -2), 'path'))
+    // The default's two proxy files are reset before the copy's first start: the clone script renders them from the base value.
+    $reset = 'localhost,127.0.0.1,::1,10.253.0.1';
+    expect($cloneIntent['clone']['proxy_environment'])->toBe(['NO_PROXY' => $reset, 'no_proxy' => $reset]);
+    // The browser files, the empty linker cache, the Node root CA, agent's NSS store and the Playwright browser setting are every clone's boot files (InstanceContainer::bootFiles).
+    expect(array_column($cloneIntent['clone']['boot_files'], 'path'))
         ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-            '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh']);
-    expect(array_slice($cloneIntent['clone']['boot_files'], -2))->toBe([
-        ['path' => '/etc/systemd/system.conf.d/99-orbit-node-services.conf',
-            'content' => "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment={$reset}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-        ['path' => '/etc/profile.d/99-orbit-node-services.sh',
-            'content' => "# Managed by Orbit: attached Node service.\nexport {$reset}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
-    ])->and(collect($cloneIntent['clone']['files'])->pluck('path')->filter(fn (string $path): bool => str_contains($path, '99-orbit-node-services'))->all())->toBe([]);
+            '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh'])
+        ->and(collect($cloneIntent['clone']['files'])->pluck('path')->filter(fn (string $path): bool => str_contains($path, '99-orbit-node-services'))->all())->toBe([]);
     captureNodeServiceAdmission($instance);
     $operation = app(NodeServiceTargetOperation::class)->start($instance, $target);
     expect($operation->input['container']['node_service_withdraw_endpoint'])->toBe(['host' => '10.44.0.11', 'port' => 8094, 'docker' => false])

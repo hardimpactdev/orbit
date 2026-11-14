@@ -207,20 +207,74 @@ def main():
                 files.append({"link": linked, "target": item["path"]})
                 files.append({"link": item["hash_directory"] + "/" + subject.stdout.strip() + ".0", "target": linked,
                               "replaces": item["path"]})
+                # The bundle that `update-ca-certificates` writes in the same folder, the one file p11-kit's trust module reads.
+                files.append({"bundle": item["hash_directory"] + "/ca-certificates.crt", "content": content})
         return files
+
+    def files_url(path):
+        return (f"http://incus/1.0/instances/{urllib.parse.quote(name)}/files?project={urllib.parse.quote(container['project'])}"
+                f"&path={urllib.parse.quote(path)}")
 
     def file_type(path):
         """What a path is in the copy, from the files API's `X-Incus-Type` header, or None when it is missing."""
-        url = (f"http://incus/1.0/instances/{urllib.parse.quote(name)}/files?project={urllib.parse.quote(container['project'])}"
-               f"&path={urllib.parse.quote(path)}")
         result = run(["curl", "--silent", "--output", "/dev/null", "--write-out", "%{http_code} %header{x-incus-type}", "--unix-socket",
-                      INCUS_SOCKET, url], check=False)
+                      INCUS_SOCKET, files_url(path)], check=False)
         code, _, kind = result.stdout.strip().partition(" ")
         if code == "404":
             return None
         if result.returncode or code != "200":
             raise RuntimeError("instance.clone_browser_trust_refused")
         return kind or "unknown"
+
+    def file_read(path, refused):
+        """A regular file of the copy with its owner and mode, from the files API, or None when it is missing. The headers go to stderr,
+        the bytes to stdout. A link is never followed: it, any other type and a failed read refuse with `refused`."""
+        result = run(["curl", "--silent", "--output", "-", "--write-out",
+                      "%{stderr}%{http_code} %header{x-incus-type} %header{x-incus-uid} %header{x-incus-gid} %header{x-incus-mode}",
+                      "--unix-socket", INCUS_SOCKET, files_url(path)], check=False)
+        fields = result.stderr.split()
+        if fields[:1] == ["404"]:
+            return None
+        if (result.returncode or len(fields) != 5 or fields[:2] != ["200", "file"] or not fields[2].isdigit() or not fields[3].isdigit()
+                or not re.fullmatch(r"0?[0-7]{3,4}", fields[4])):
+            raise RuntimeError(refused)
+        return {"content": result.stdout, "uid": fields[2], "gid": fields[3], "mode": fields[4].zfill(4)[-4:]}
+
+    def certificates(text):
+        return {re.sub(r"\s", "", body) for body in re.findall(r"-----BEGIN CERTIFICATE-----(.*?)-----END CERTIFICATE-----", text, re.DOTALL)}
+
+    def trust_bundle(item):
+        """The copy's CA bundle holds the Orbit root once (docs/reference/development-containers.md#trust). Chromium's trust module reads
+        only this file, and a seed taken before the root reached it lacks the root: the root goes at its end, with the bundle's own
+        owner and mode. The copy has not started, so nothing changes the file between the read and the push. A bundle that already
+        holds the root stays as it is. A copy without a regular bundle refuses the create: a bundle of the root alone would drop every
+        public root."""
+        held = file_read(item["bundle"], "instance.clone_trust_bundle_refused")
+        if held is None:
+            raise RuntimeError("instance.clone_trust_bundle_refused")
+        if certificates(item["content"]) <= certificates(held["content"]):
+            return
+        bundle = held["content"]
+        content = bundle + ("\n" if bundle and not bundle.endswith("\n") else "") + item["content"] + ("" if item["content"].endswith("\n") else "\n")
+        change(project + ["file", "push", "--uid", held["uid"], "--gid", held["gid"], "--mode", held["mode"], "-", name + item["bundle"]], content)
+
+    def private_names_and_proxy():
+        """The access plan's private names in the copy's /etc/hosts, and the composed proxy bypass in its two drop-ins, before the first
+        start, so its first boot reads them. One renderer gives the same bytes env:sync writes: instance_node_services.py `hosts` and
+        `proxy-files` (docs/reference/development-containers.md#private-names-of-the-access-plan). A seed's own block goes when the plan
+        has no name. Only `clone.proxy_environment` names drop-ins; without it the seed's stay."""
+        renderer = ["python3", "-c", json.loads(sys.argv[6])["node_services"]]
+        held = file_read("/etc/hosts", "instance.clone_private_names_refused")
+        hosts = "" if held is None else held["content"]
+        composed = json.loads(run(renderer + ["hosts"], json.dumps({"hosts": hosts, "private_names": container.get("private_names", [])})).stdout)
+        if composed["content"].splitlines() != hosts.splitlines():
+            change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], composed["content"])
+        proxy = container["clone"].get("proxy_environment")
+        if proxy is None:
+            return
+        files = json.loads(run(renderer + ["proxy-files"], json.dumps({"proxy_environment": proxy})).stdout)["files"]
+        for path, content in files.items():
+            change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/" + path], content)
 
     def installed(status, package):
         for stanza in status.split("\n\n"):
@@ -466,8 +520,12 @@ def main():
                     if "entry" in item:
                         nss_store(item)
                         continue
+                    if "bundle" in item:
+                        trust_bundle(item)
+                        continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
+                private_names_and_proxy()
             for rule in container.get("firewall", []):
                 argv = (
                     ["ufw"]
