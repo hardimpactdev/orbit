@@ -15,6 +15,7 @@ use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Instance;
 use App\Models\Operation;
+use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
@@ -58,6 +59,7 @@ final readonly class TaskPublishIntent
             throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
         }
         if ($copy !== null) {
+            self::refuseHeld($group->project);
             TaskCopyTurn::refuseUnended($group);
         }
         $workspace = $copy?->publication();
@@ -98,6 +100,20 @@ final readonly class TaskPublishIntent
 
             return $operation;
         });
+    }
+
+    /**
+     * A task copy publishes only for a nested-fleet trial Project or a Project on `orbit.tasks.copy_publish_projects`: the list holds every
+     * other Project's repository back until an operator releases it (docs/reference/tasks.md#task-copy). The checked commit stays in the copy.
+     */
+    public static function refuseHeld(Project $project): void
+    {
+        $listed = config('orbit.tasks.copy_publish_projects');
+        if ($project->nested_fleet || (is_array($listed) && array_is_list($listed) && in_array($project->id, $listed, true))) {
+            return;
+        }
+        throw new ResourceOperationException('tasks.copy_publish_held',
+            "Project [{$project->slug}] is not released for publishing from task copies yet. The checked commit stays in the task copy; publish it once the Project is released.", 409);
     }
 
     /**

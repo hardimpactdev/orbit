@@ -51,6 +51,7 @@ function copyPublishWorld(?string $root = 'public'): array
     ]));
     $node->forceFill(['instance_bridge' => '10.253.0.0/24'])->saveQuietly();
     $project = Project::query()->create(['name' => 'Trial', 'slug' => 'trial', 'repository_url' => 'https://github.com/example/trial.git', 'default_branch' => 'main', 'root' => $root]);
+    config(['orbit.tasks.copy_publish_projects' => [$project->id]]);
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/var/lib/incus/rootfs/srv/workspace',
         'status' => InstanceState::Active, 'branch' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'starting_commit' => str_repeat('a', 40)]);
@@ -165,6 +166,21 @@ it('refuses a copy publish without a start commit or a running container, before
     'no start commit' => [fn (Instance $instance) => $instance->update(['starting_commit' => null]), 'tasks.no_workspace'],
     'stopped container' => [fn (Instance $instance, InstanceRuntime $runtime) => $runtime->update(['power_state' => 'stopped']), 'tasks.instance_not_running'],
 ]);
+
+it('holds a copy publish for a Project that is not released for it, before any Operation; a listed or nested-fleet Project publishes', function (): void {
+    [$group, $check] = copyPublishWorld();
+    $publish = fn (): Operation => app(TaskPublishIntent::class)->start($group->refresh(), StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+
+    foreach ([[], [$group->project_id + 1], (object) [], null, [(string) $group->project_id]] as $listed) {
+        config(['orbit.tasks.copy_publish_projects' => $listed]);
+        expect($publish)->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.copy_publish_held')
+            ->and($exception->status)->toBe(409)->and($exception->getMessage())->toContain('The checked commit stays in the task copy'));
+    }
+    expect(Operation::query()->where('kind', 'tasks.publish')->count())->toBe(0);
+
+    $group->project->forceFill(['nested_fleet' => true])->saveQuietly();
+    expect($publish()->kind)->toBe('tasks.publish');
+});
 
 it('keeps the task VM path for a group without a container: no VM workspace refuses as before', function (): void {
     [$group, $check, $instance, $runtime] = copyPublishWorld();

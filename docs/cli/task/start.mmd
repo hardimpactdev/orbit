@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design (agreed with Nick, 2026-11-07): a task start copies the host's base VM snapshot and gives the copy a fresh identity. There are no fixed VM identities: a place is only room under the host's capacity (`task_places`), and the VM is named `<host>-tvm-<n>` by its place number.
   %% Orchestrator 2026-11-13: a task of a nested-fleet Project starts as a copy of its default Instance instead: a clone `task-<id>` that the task owns. Task VMs stay off in the live fleet.
+  %% Nick 2026-11-14: every Project whose default Instance is a container gets task groups as copies too; a plain clone, with no inner fleet.
   %% status: draft
   %% command: task:start
   %% kind: tasks.provision
@@ -15,8 +16,8 @@ sequenceDiagram
   participant VM as Task VM<br/>shark-tvm-3
   Note over GW: Decide where the task runs<br/>copy or task VM
   %%> What it does:
-  %%> - `InstancePlacement::taskRuntime` reads the Project's `nested_fleet` flag once: on, the task starts as a copy of the Project's default Instance; off, it takes a task VM
-  %%> - no other step reads the flag; the task VM steps refuse a copy Project as before
+  %%> - `InstancePlacement::taskRuntime` decides once: a Project with `nested_fleet` on, or whose default Instance is a container, starts the task as a copy of that default; a Project whose default is a host checkout takes a task VM
+  %%> - no other step decides it; later steps follow the group's own workspace, and the task VM steps still refuse only a nested-fleet Project
   alt the Project's tasks run as copies
     Note over GW: Admit the copy's create<br/>instance.create · task-TASK
     %%> Requirements:
@@ -24,12 +25,12 @@ sequenceDiagram
     %%> - the Project's default Instance is active and running, with a seed snapshot; otherwise HTTP 409 `tasks.copy_source_unavailable`, also for a stopped default, and nothing is recorded
     %%> - before the transaction, one bounded read of the default's container (at most about 6 s) confirms it runs: its power record can be stale after a stop by hand; a stopped, asleep or unreachable container refuses the same way
     %%> - no Instance is named `task-TASK` yet; otherwise `tasks.copy_name_taken`
-    %%> - the default's Node holds fewer task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait
+    %%> - for a nested-fleet Project only: the default's Node holds fewer nested-fleet task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every nested copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait. A copy of any other Project is a plain clone: it neither counts nor waits
     %%> What it does:
     %%> - one transaction: the clone `task-TASK` on branch `task-TASK`, owned by the task and bound to it, the task `reserved`, and the `instance.create` Operation that `task:start` returns and follows
     %%> - Swamp starts the run only after that commit: a Gateway that stops before it leaves no record and no run
     %%> Result:
-    %%> - the create runs as every clone's does: the copy of the default's seed, its inner fleet when the Project has one, its T3 server registered with Conn (the container create chart)
+    %%> - the create runs as every clone's does: the copy of the default's seed, its own database, Route and Processes, its inner fleet when the Project has one, its T3 server registered with Conn (the container create chart)
     %%> - the copy's agent gets the fixed task model key, as every clone does: it is not per task
     GW->>SW: Start run, full intent<br/>operation-instance-create
     alt the create succeeds
@@ -46,7 +47,7 @@ sequenceDiagram
       %%> - an expired budget changes nothing: the run may still be stopping, so the task stays `reserved` with its copy
       %%> - while the task keeps the copy, `task:cancel` admits its destroy, and `orbit instance:destroy ID --yes --force` does too
     end
-  else every other Project
+  else the Project's default is a host checkout
     Note over GW: Claim a task place<br/>mint an identity · database only
     %%> Started by:
     %%> - `task:start` for a todo group, from proof CI or feature work

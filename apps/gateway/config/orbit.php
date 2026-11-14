@@ -109,6 +109,10 @@ return [
         'reserved_timeout_seconds' => max(60, (int) env('ORBIT_TASKS_RESERVED_TIMEOUT_SECONDS', 3600)),
         // How many task copies (docs/cli/task/start.mmd) one Node holds at once, counted at each task start. Set in the Gateway's .env.
         'copies_max' => max(0, (int) env('ORBIT_TASKS_COPIES_MAX', 1)),
+        // The Projects, besides nested-fleet trial Projects, whose task copies may publish (docs/reference/tasks.md#task-copy): a JSON list
+        // of positive integer Project ids. An operator adds a Project once the publish guard for .env content is live. Malformed JSON or a
+        // JSON object stays as decoded and refuses every Project but a nested-fleet one.
+        'copy_publish_projects' => json_decode((string) (env('ORBIT_TASKS_COPY_PUBLISH_PROJECTS') ?: '[]')),
     ],
     // Release alerts always write Activity and a problem. The signed webhook is skipped unless both values are set.
     'releases' => [
