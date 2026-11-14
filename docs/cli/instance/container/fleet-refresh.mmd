@@ -49,7 +49,9 @@ sequenceDiagram
   %%> - changes no device or configuration key: on a running fleet it only reads
   %%> - reads no fleet file: every file rule is owned and never refuses; the refresh reads the files when they matter
   %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`), or a nested container or the inner bridge cannot be read; the Operation's result `fleet_drift` names each difference
-  %%> - an owned rule that differs passes: the refresh writes it
+  %%> - an owned rule that differs or a build rule that is absent passes because this deployment follows with refresh; the refresh writes it with the fleet stopped before retaking `base`
+  %%> - a build rule with a conflicting value still refuses; a standalone start or proof reset also refuses an absent build rule
+  %%> - after a later failure, deployment rollback also admits absent build rules when it resumes the restored seed; it changes no map and leaves the upgrade to the next deployment
   %%> fleet_start · why:
   %%> - the fleet keeps running between releases, so the run checks it once, before it changes anything; a refusal or a failed start restores no seed
   %%> - a refresh that cannot end above the inner Doctor's floor would fail only at its last readiness wait, after minutes of work and a restore: refresh 21617 did that on `node.disk_low`

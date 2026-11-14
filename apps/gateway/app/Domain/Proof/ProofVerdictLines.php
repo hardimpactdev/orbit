@@ -31,4 +31,22 @@ final class ProofVerdictLines
 
         return $rows;
     }
+
+    /** @return list<array{batch:string,reset_seconds:int|float}> Reset timings are evidence only, separate from case verdicts. */
+    public static function batches(string $report): array
+    {
+        $rows = [];
+        foreach (explode("\n", $report) as $text) {
+            $line = json_decode(trim($text), true);
+            if (! is_array($line) || ! is_string($line['batch'] ?? null) || $line['batch'] === '' || ! is_array($line['reset'] ?? null)) {
+                continue;
+            }
+            $seconds = $line['reset']['reset_seconds'] ?? null;
+            if ((is_int($seconds) || is_float($seconds)) && is_finite((float) $seconds) && $seconds >= 0) {
+                $rows[] = ['batch' => $line['batch'], 'reset_seconds' => $seconds];
+            }
+        }
+
+        return $rows;
+    }
 }
