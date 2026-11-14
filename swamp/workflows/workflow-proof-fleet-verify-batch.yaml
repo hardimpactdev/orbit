@@ -20,6 +20,12 @@ inputs:
       type: array
       items:
         type: string
+    # The name of the SSH behavior that runs the setup and the batch. Swamp locks a behavior by name for the whole step, and a
+    # second run waits 60 s for it and then fails. On a task VM the fleet is the host's one fleet, so the name is the Node's. In a
+    # task copy the steps act only inside that copy, so the name is the copy's and proofs in two copies on one Node run side by side.
+    ssh_name:
+      type: string
+      pattern: '^[a-z0-9][a-z0-9-]{0,63}$'
     batch:
       type: string
     setup:
@@ -37,6 +43,7 @@ inputs:
   - group_id
   - file
   - runner_prefix
+  - ssh_name
   - batch
   - setup
   - cases
@@ -69,10 +76,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      behaviorName: '${{ inputs.ssh_name }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+        name: '${{ inputs.ssh_name }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
@@ -106,10 +113,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+      behaviorName: '${{ inputs.ssh_name }}'
       methodName: exec
       globalArgs:
-        name: '${{ ("proof-verify-ssh-" + string(inputs.ssh_execution.target.node_id)).split(".").join("-") }}'
+        name: '${{ inputs.ssh_name }}'
         transport:
           kind: ssh
           user: ${{ inputs.ssh_execution.target.user }}
