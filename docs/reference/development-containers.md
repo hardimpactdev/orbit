@@ -1469,8 +1469,8 @@ The phase uses these commands, as `agent` in `/srv/workspace`.
 | Continue a thread and wait for its run | `t3 thread send --wait --json T3THREAD -` | The composed prompt on stdin and a 3,600-second `timeout`. The thread keeps its provider instance, so its model and effort. |
 | Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title: before a continued turn, and after every turn, also when the bound cut the wait before T3 printed the thread id. Bounded at 60 seconds |
 | Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages. Bounded at 60 seconds |
-| Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch and its tip, then the checked candidate, detached. Each Git command is bounded at 20 seconds |
-| Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a failed or cut one: what the reviewer changed is discarded and the task branch is checked out again, at its earlier tip |
+| Put a reviewer on the candidate | `git status --porcelain`, `git symbolic-ref --short HEAD`, `git rev-parse HEAD`, `git checkout --detach CANDIDATE` | Before a reviewer turn: a clean checkout on a branch, its tip, the detach mark at it, then the candidate, detached. Each bounded at 20 seconds |
+| Restore the checkout after a reviewer | `git reset --hard`, `git clean -fd`, `git checkout BRANCH`, then the status, branch and tip reads again | After a reviewer turn, also a cut one: the reviewer's changes go and the task branch is back at its earlier tip. A verified restore clears the detach mark |
 | Read the question of a run that asks | `node - T3 read T3THREAD`, with `t3_copy_rpc.mjs` on stdin | When the start exits 2. Prints the open runs, the pending requests with their questions, and whether Orbit may stop on them. Bounded at 60 seconds |
 | Stop the run that asks | `node - T3 interrupt T3THREAD RUN REQUESTS`, with `t3_copy_rpc.mjs` on stdin | After the question's evidence is written. Stops the run only while it waits for exactly the stored requests, then waits up to 30 seconds. Bounded at 60 seconds |
 
@@ -1522,16 +1522,17 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 
 A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports.
 
-One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title. For a reviewer's turn, the checkout must also be clean on the task branch, at the tip it had before the detach. Only a turn's phase can read that, so the next turn settles it:
+One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title. For a reviewer's turn, its detach must also be undone. Only a turn's phase can read that, so the next turn settles it:
 
-- The Gateway puts every turn that is not settled into the next turn's intent, with its title. A reviewer's turn adds the task branch and the tip its detach mark held.
-- The phase lists T3's threads first.
-- While any earlier run goes on, the phase touches nothing.
-- Once every earlier run is over, the phase restores a reviewer's checkout as after its turn: reset, clean, and the task branch.
-- It then reads the checkout's changes, branch and tip.
+- The Gateway puts every turn that is not settled into the next turn's intent, with its title. A reviewer's turn adds the task branch.
+- The phase lists T3's threads first. It touches nothing as long as an earlier run goes on.
 - The phase writes which turns it found settled.
-- While one is not, the phase launches nothing and fails with `tasks.copy_turn_unended`. The work in the copy stays.
-- The result names the settled turns, and the Gateway counts them settled from then on.
+- While one is not settled, the phase launches nothing and fails with `tasks.copy_turn_unended`. The work in the copy stays.
+- The result names the settled turns. The Gateway counts them settled from then on.
+
+A reviewer's detach marks the copy with the ref `refs/orbit/review-detach`, at the tip the branch had. Only a verified restore clears the mark. The phase restores the checkout only when the mark is set, every earlier run is over, and the checkout is still detached. The restore is a reset, a clean and a checkout of the task branch. The checkout must then be clean on that branch at the mark's tip, and the phase clears the mark.
+
+Without the mark, the phase never touches the tree. The reviewer's turn is then settled once its run is over, so an implementer's uncommitted work stays.
 
 A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled. Only a turn settles it. When no turn can run, because the subtask is completed or a reviewer turn needs a check first, `task:cancel` is the only way out: it ends the copy, its work and any run with it.
 

@@ -1329,7 +1329,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         // The next turn is admitted and settles the earlier one in its own phase first, also on another thread.
         $next = copyTurn($group, ['thread' => 'new']);
-        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null, 'tip' => null]]);
+        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null]]);
     })->with([
         'a wait cut by the bound' => ['failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]],
         'a cancelled run' => ['cancelled', []],
@@ -1353,7 +1353,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         // T3 later completed it: the next turn settles it, runs, and the group is free.
         $next = copyTurn($group);
-        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null, 'tip' => null]]);
+        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null]]);
         copyTurnEnded($next, 'succeeded', [...copyTurnDone('mcp:1'), 'settled' => [$cut->id]]);
         expect(copyTurn($group)->input['turn']['settle'])->toBe([]);
     });
@@ -1362,13 +1362,12 @@ describe('a turn of a group that owns a copy', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
-        $tip = str_repeat('a', 40);
         $reviewer = copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'failed', ['state' => 'failed', 'error' => 'Unrestored.',
-            'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'restore_tip' => $tip, 'transcript' => []]);
+            'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'transcript' => []]);
 
-        // The settle restores the checkout and requires the branch at the tip the reviewer's detach mark held.
+        // The settle restores the checkout to the task branch only while the copy still holds the reviewer's detach.
         expect(copyTurn($group)->input['turn']['settle'])->toBe([['operation_id' => $reviewer->id, 'title' => $reviewer->input['turn']['title'],
-            'branch' => 'task-'.$group->id, 'tip' => $tip]]);
+            'branch' => 'task-'.$group->id]]);
     });
 
     it('admits the next turn after a turn whose T3 run ended, also a failed one', function (): void {

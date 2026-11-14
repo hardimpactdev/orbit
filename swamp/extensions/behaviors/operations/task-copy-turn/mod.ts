@@ -12,7 +12,7 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 // What `task-copy-turn.yml` writes, each file as soon as its command ended: `settle.json` with the earlier turns it found settled and
 // those still open, for a continued turn `continue.json` with the exit code of
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
-// the candidate is checked out, `detach.json` with the branch's tip as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
+// the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
 // `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
 // read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, `read.json` with what `t3 thread list` found and `t3 thread show`
 // read, and for a reviewer turn `restore.json` with whether the checkout is clean on its branch at its tip again.
@@ -20,7 +20,6 @@ const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.arr
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
-const Detach = z.object({ tip: z.string().regex(/^[0-9a-f]{40}$/) }).strict();
 const Start = z.object({ start_exit: z.number().int(), start: z.string() }).strict();
 const Ask = z.object({ ask_exit: z.number().int(), ask: z.string() }).strict();
 const Interrupt = z.object({ interrupt_exit: z.number().int(), interrupt: z.string() }).strict();
@@ -58,8 +57,6 @@ export type Evidence = {
     resumed: z.infer<typeof Resumed> | null;
     review: z.infer<typeof Review> | null;
     detached: boolean;
-    // The branch tip the detach mark holds: the commit a reviewer's checkout must be at again.
-    detach_tip?: string | null;
     launched: boolean;
     start: z.infer<typeof Start> | null;
     ask: z.infer<typeof Ask> | null;
@@ -106,10 +103,8 @@ export const Turn = z.object({
     model: z.string().nullable(),
     // What the agent asked, in its own words and options: set when the turn ends at a question.
     questions: z.array(AskedQuestion),
-    // The earlier turns whose run this turn's phase found over, with a reviewer's checkout clean on the task branch at its tip.
+    // The earlier turns whose run this turn's phase found over, with a reviewer's detach undone.
     settled: z.array(z.number().int()),
-    // The tip a reviewer's checkout must be at again: set once the phase detached it, so a later turn can settle this one.
-    restore_tip: z.string().nullable(),
     transcript: z.array(Entry),
 });
 export type Turn = z.infer<typeof Turn>;
@@ -174,7 +169,6 @@ function shapeRun(evidence: Evidence): Turn {
         model: shown?.thread.model ?? null,
         questions: [],
         settled: evidence.settle?.settled ?? [],
-        restore_tip: evidence.detach_tip ?? null,
         transcript: transcript(shown),
     };
     if (evidence.settle && evidence.settle.open.length > 0) {
@@ -274,7 +268,6 @@ export const behavior = {
                     resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
                     review: await evidence(args.folder + "/review.json", 1024, Review),
                     detached: await marked("detach.json"),
-                    detach_tip: (await evidence(args.folder + "/detach.json", 1024, Detach))?.tip ?? null,
                     launched: await marked("launch.json"),
                     start: await evidence(args.folder + "/start.json", StartBytes, Start),
                     ask: await evidence(args.folder + "/ask.json", AskBytes, Ask),

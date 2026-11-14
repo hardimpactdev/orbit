@@ -11,7 +11,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", candidate: null, settle: [] as { operation_id: number; title: string; branch: string | null; tip: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", candidate: null, settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -69,11 +69,26 @@ thread = 'mcp:66105c2c'
 if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
     git = rest[5:]
     tree = os.environ.get('T3_TREE', 'clean')
-    restored = any('reset' in json.loads(line)['args'] for line in open(os.environ['T3_CALLS']))
+    earlier = [json.loads(line)['args'][20:] for line in open(os.environ['T3_CALLS'])][:-1]
+    restored = any('reset' in args for args in earlier)
+    # The copy's detach mark: T3_MARK sets one before the phase; the phase's own update-ref calls set and clear it.
+    mark = os.environ.get('T3_MARK', '')
+    for args in earlier:
+        if args[:1] == ['update-ref']:
+            mark = '' if args[1] == '-d' else args[2]
     if git == ['status', '--porcelain']:
         print(' M app.php' if (tree == 'dirty' and not restored) or (tree == 'stuck' and restored) else '', end='')
     elif git == ['symbolic-ref', '--quiet', '--short', 'HEAD']:
+        # T3_DETACHED leaves the checkout detached until the phase checks the task branch out.
+        if os.environ.get('T3_DETACHED') and ['checkout', '--quiet', 'task-4970'] not in earlier:
+            sys.exit(1)
         print('task-4970')
+    elif git == ['rev-parse', '--verify', '--quiet', 'refs/orbit/review-detach']:
+        if mark == '':
+            sys.exit(1)
+        print(mark)
+    elif git in (['update-ref', 'refs/orbit/review-detach', 'a' * 40], ['update-ref', '-d', 'refs/orbit/review-detach']):
+        pass
     elif git == ['rev-parse', '--verify', 'HEAD']:
         print('e' * 40 if tree == 'moved' and restored else 'a' * 40)
     elif git == ['reset', '--quiet', '--hard'] and tree == 'locked':
@@ -130,10 +145,10 @@ assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
-type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; detached: boolean; detach: Record<string, unknown> | null; launched: boolean;
+type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; detached: boolean; launched: boolean;
     start: Record<string, unknown> | null; settle: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null; read: Record<string, unknown> | null;
     restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] };
-async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", ask = "questions", settle = ""): Promise<Phase> {
+async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", ask = "questions", settle = "", copy: Record<string, string> = {}): Promise<Phase> {
     const folder = Deno.makeTempDirSync();
     try {
         Deno.mkdirSync(`${folder}/bin`);
@@ -145,7 +160,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_become=false", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
                 `${shipped}/task-copy-turn.yml`],
-            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle,
+            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, ...copy,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
@@ -157,7 +172,6 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
             resumed: json("continue.json"),
             review: json("review.json"),
             detached: read(`${folder}/run/detach.json`) !== null,
-            detach: json("detach.json"),
             launched: read(`${folder}/run/launch.json`) !== null,
             start: json("start.json"),
             ask: json("ask.json"),
@@ -216,15 +230,15 @@ const git = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).
 Deno.test({ name: "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn", ignore: !available, async fn() {
     const done = await phase("completed", { candidate });
     assert(done.ok, done.output);
-    assertEquals(git(done.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", `checkout --quiet --detach ${candidate}`,
-        "reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970", "status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD"]);
+    // The copy holds a detach mark at the branch's tip from before the detach until a verified restore clears it.
+    assertEquals(git(done.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", `update-ref refs/orbit/review-detach ${"a".repeat(40)}`,
+        `checkout --quiet --detach ${candidate}`, "reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970", "status --porcelain",
+        "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", "update-ref -d refs/orbit/review-detach"]);
     // The candidate is checked out before the launch, and the branch only after the read.
     const order = done.calls.map((call) => call.args.slice(15).join(" "));
     assert(order.findIndex((args) => args.includes("--detach")) < order.findIndex((args) => args.includes("--kill-after=30")));
     assert(order.findIndex((args) => args.includes("thread show")) < order.findIndex((args) => args.includes("reset --quiet --hard")));
     assertEquals([done.review, done.detached, done.launched, done.restore], [{ ready: true, error_code: null }, true, true, { restored: true }]);
-    // The detach mark holds the tip, so a later turn can settle this one at it.
-    assertEquals(done.detach, { tip: "a".repeat(40) });
     // A run cut by its bound is restored too.
     const cut = await phase("timeout", { candidate });
     assert(cut.ok, cut.output);
@@ -265,8 +279,7 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
     for (const change of [{ t3: "/tmp/t3" }, { node: "/usr/bin/node" }, { title: "Something else" }, { seconds: 7200 }, { model: "a b" }, { thread: "resume" }, { provider: null }, { model: null },
         { candidate: "HEAD" }, { settle: [{ operation_id: "9", title: "Orbit task 4970 thread 76", branch: null }] },
-        { settle: [{ operation_id: 9, title: "Orbit task 4970 thread 76", branch: "main; rm", tip: null }] }, { settle: null },
-        { settle: [{ operation_id: 9, title: "Orbit task 4970 thread 76", branch: "task-4970", tip: "HEAD" }] }]) {
+        { settle: [{ operation_id: 9, title: "Orbit task 4970 thread 76", branch: "main; rm" }] }, { settle: null }]) {
         const refused = await phase("completed", change);
         assert(!refused.ok, JSON.stringify(change));
         assertEquals([refused.launched, refused.start, refused.read, refused.calls.length], [false, null, null, 0]);
@@ -312,7 +325,7 @@ Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer t
     assertEquals([reviewer.interrupt!.interrupt_exit, reviewer.restore], [0, { restored: true }]);
 } });
 
-const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null, tip: null };
+const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null };
 
 Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing", ignore: !available, async fn() {
     // A cut wait whose run T3 later completed, and a run whose stop failed and that later ended, are settled; the turn runs.
@@ -335,20 +348,34 @@ Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the
     assertEquals([unread.ok, unread.settle, unread.launched], [false, { list_exit: 1, settled: [], open: [9] }, false]);
 } });
 
-Deno.test({ name: "an earlier reviewer turn is restored once its run is over, and settled only clean on the task branch at its tip", ignore: !available, async fn() {
-    const reviewer = { ...earlier, branch: "task-4970", tip: "a".repeat(40) };
-    const restore = ["reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970", "status --porcelain", "symbolic-ref --quiet --short HEAD",
-        "rev-parse --verify HEAD"];
-    // A reviewer cut by its bound whose run went on writing files: once T3 shows the run over, the restore cleans the checkout.
-    const written = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "completed");
+Deno.test({ name: "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched", ignore: !available, async fn() {
+    const reviewer = { ...earlier, branch: "task-4970" };
+    const mark = { T3_MARK: "a".repeat(40), T3_DETACHED: "1" };
+    // A reviewer cut by its bound whose run went on writing files: the restore cleans the checkout, checks it, and clears the mark.
+    const written = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "completed", mark);
     assert(written.ok, written.output);
-    assertEquals([written.settle!.settled, git(written.calls).slice(0, 6)], [[9], restore]);
-    // Changes the restore cannot remove, or the branch at another commit, keep the turn open; nothing is launched.
+    assertEquals([written.settle!.settled, git(written.calls).slice(0, 9)], [[9], ["rev-parse --verify --quiet refs/orbit/review-detach",
+        "symbolic-ref --quiet --short HEAD", "reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970", "status --porcelain",
+        "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", "update-ref -d refs/orbit/review-detach"]]);
+    // Changes the restore cannot remove, or the branch at another commit than the mark's, keep the turn open and the mark set.
     for (const tree of ["stuck", "moved"]) {
-        const held = await phase("completed", { settle: [reviewer] }, tree, "questions", "completed");
-        assertEquals([held.ok, held.settle!.open, held.launched], [false, [9], false], tree);
+        const held = await phase("completed", { settle: [reviewer] }, tree, "questions", "completed", mark);
+        assertEquals([held.ok, held.settle!.open, held.launched, git(held.calls).includes("update-ref -d refs/orbit/review-detach")], [false, [9], false, false], tree);
     }
     // While the run goes on, the checkout is not touched.
-    const running = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "running");
+    const running = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "running", mark);
     assertEquals([running.ok, git(running.calls), running.settle!.open], [false, [], [9]]);
+    // (A) A reviewer turn that never detached, cancelled before its result, beside an implementer's uncommitted work: no mark, so the
+    // settle touches nothing, the work stays, and the turn is settled once its run is over.
+    const kept = await phase("completed", { settle: [earlier, reviewer] }, "dirty", "questions", "completed");
+    assert(kept.ok, kept.output);
+    assertEquals([kept.settle!.settled, git(kept.calls).slice(0, 2)], [[9, 9], ["rev-parse --verify --quiet refs/orbit/review-detach", "symbolic-ref --quiet --short HEAD"]]);
+    assertEquals(git(kept.calls).some((call) => call.startsWith("reset") || call.startsWith("clean") || call.startsWith("checkout")), false);
+    // (B) A later turn already undid the detach and moved the branch on: no mark, no old tip to meet, and the turn is settled.
+    const moved = await phase("completed", { settle: [reviewer] }, "moved", "questions", "completed");
+    assertEquals([moved.ok, moved.settle!.settled], [true, [9]]);
+    // A mark left by a detach cut before the checkout: the checkout is on its branch, so it is only checked, and the mark cleared.
+    const undetached = await phase("completed", { settle: [reviewer] }, "clean", "questions", "completed", { T3_MARK: "a".repeat(40) });
+    assertEquals([undetached.settle!.settled, git(undetached.calls).slice(0, 6)], [[9], ["rev-parse --verify --quiet refs/orbit/review-detach",
+        "symbolic-ref --quiet --short HEAD", "status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", "update-ref -d refs/orbit/review-detach"]]);
 } });

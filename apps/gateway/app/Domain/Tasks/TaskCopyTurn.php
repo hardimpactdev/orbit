@@ -78,14 +78,10 @@ final readonly class TaskCopyTurn
         }
         $thread = $data->thread === 'new' ? null : $current;
         // An earlier turn that may still run is settled first, by this turn's own phase in the copy (docs/cli/task/copy-turn.mmd).
-        // A reviewer's turn names the task branch and the tip its checkout must be at again; one that never detached the checkout names none.
-        $settle = array_map(static function (Operation $turn): array {
-            $tip = ($turn->input['candidate'] ?? null) === null ? null : ($turn->result['restore_tip'] ?? null);
-
-            return ['operation_id' => $turn->id, 'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
-                'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch']),
-                'tip' => is_string($tip) ? $tip : null];
-        }, self::unsettled($group));
+        // A reviewer's turn names the task branch its checkout goes back to, should the copy still hold its detach.
+        $settle = array_map(static fn (Operation $turn): array => ['operation_id' => $turn->id,
+            'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
+            'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch'])], self::unsettled($group));
         $candidate = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
@@ -138,7 +134,7 @@ final readonly class TaskCopyTurn
 
     /**
      * The group's copy turns that started a run and are not settled. One rule settles a turn: T3 shows its thread with no active run,
-     * and a reviewer's checkout is clean on the task branch. The turn's own result records that as `ended`; a later turn's phase that
+     * and a reviewer's detach is undone (docs/cli/task/copy-turn.mmd). The turn's own result records that as `ended`; a later turn's phase that
      * found it so names it in its result's `settled`. A turn that asked and whose run Orbit stopped ended.
      *
      * @return list<Operation>

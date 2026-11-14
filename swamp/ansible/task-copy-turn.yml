@@ -54,7 +54,6 @@
           - intent.turn.settle | rejectattr('operation_id', 'integer') | list | length == 0
           - intent.turn.settle | map(attribute='title') | reject('match', '^Orbit task [1-9][0-9]* thread [1-9][0-9]*$') | list | length == 0
           - intent.turn.settle | map(attribute='branch') | select('string') | reject('match', '^task-[1-9][0-9]*$') | list | length == 0
-          - intent.turn.settle | map(attribute='tip') | select('string') | reject('match', '^[0-9a-f]{40}$') | list | length == 0
         fail_msg: tasks.copy_turn_invalid
     # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
     - name: Reach the copy as agent
@@ -62,8 +61,9 @@
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
     # An earlier turn that may still run is settled first by one rule: T3 lists its thread in no active state, or none of its title, and
-    # a reviewer's checkout is clean on the task branch at the tip it had. Once no earlier run can still write, the checkout a reviewer
-    # left is restored as after its turn. While a run goes on, nothing is touched or launched, and the work in the copy stays.
+    # a reviewer's detach is undone. The copy's ref `refs/orbit/review-detach` marks a detach in effect, at the tip the branch had: only
+    # with it, and once no earlier run can still write, is the checkout restored as after a reviewer's turn. Without it nothing in the
+    # tree is touched. While a run goes on, nothing is touched or launched, and the work in the copy stays.
     - name: Settle the earlier turns
       when: intent.turn.settle | length > 0
       vars:
@@ -85,42 +85,67 @@
               | selectattr('title', 'equalto', entry.title) | list %}{% if mine | length == 0 or (mine | length == 1
               and mine[0].status not in settle_active) %}{% set _ = over.append(entry.operation_id) %}{% endif %}{% endfor %}{{ over }}
           no_log: true
-        - name: Restore the checkout a reviewer left
+        - name: Undo a reviewer's detach
           when: settle_reviewer | length > 0 and settle_over | length == intent.turn.settle | length
           block:
-            - name: Discard what the reviewer changed
+            - name: Read the detach mark
               ansible.builtin.command:
-                argv: "{{ copy_git + ['reset', '--quiet', '--hard'] }}"
-              changed_when: true
-            - name: Remove the reviewer's new files
-              ansible.builtin.command:
-                argv: "{{ copy_git + ['clean', '--quiet', '-fd'] }}"
-              changed_when: true
-            - name: Check the task branch out again
-              ansible.builtin.command:
-                argv: "{{ copy_git + ['checkout', '--quiet', (settle_reviewer | first).branch] }}"
-              changed_when: true
-            - name: Read the restored changes
-              ansible.builtin.command:
-                argv: "{{ copy_git + ['status', '--porcelain'] }}"
-              register: settle_status
+                argv: "{{ copy_git + ['rev-parse', '--verify', '--quiet', 'refs/orbit/review-detach'] }}"
+              register: settle_mark
+              failed_when: false
               changed_when: false
-            - name: Read the restored branch
+            - name: Read whether the checkout is on a branch
               ansible.builtin.command:
                 argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
-              register: settle_branch
+              register: settle_head
+              failed_when: false
               changed_when: false
-            - name: Read the restored tip
-              ansible.builtin.command:
-                argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
-              register: settle_tip
-              changed_when: false
+            - name: Restore the checkout the reviewer left detached
+              when: settle_mark.rc == 0 and settle_head.rc != 0
+              block:
+                - name: Discard what the reviewer changed
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['reset', '--quiet', '--hard'] }}"
+                  changed_when: true
+                - name: Remove the reviewer's new files
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['clean', '--quiet', '-fd'] }}"
+                  changed_when: true
+                - name: Check the task branch out again
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['checkout', '--quiet', (settle_reviewer | first).branch] }}"
+                  changed_when: true
+            - name: Verify the restore and clear the mark
+              when: settle_mark.rc == 0
+              block:
+                - name: Read the restored changes
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['status', '--porcelain'] }}"
+                  register: settle_status
+                  changed_when: false
+                - name: Read the restored branch
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
+                  register: settle_branch
+                  failed_when: false
+                  changed_when: false
+                - name: Read the restored tip
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
+                  register: settle_tip
+                  changed_when: false
+                - name: Clear the detach mark
+                  when: settle_status.stdout == '' and settle_branch.stdout == (settle_reviewer | first).branch and settle_tip.stdout == settle_mark.stdout
+                  ansible.builtin.command:
+                    argv: "{{ copy_git + ['update-ref', '-d', 'refs/orbit/review-detach'] }}"
+                  register: settle_cleared
+                  changed_when: true
         - name: Name the settled turns
           ansible.builtin.set_fact:
             settle_done: >-
-              {% set done = [] %}{% for entry in intent.turn.settle if entry.operation_id in settle_over %}{% if entry.branch is none
-              or (settle_status.stdout | default('x') == '' and settle_branch.stdout | default('') == entry.branch
-              and (entry.tip is none or settle_tip.stdout | default('') == entry.tip)) %}{% set _ = done.append(entry.operation_id) %}{% endif %}{% endfor %}{{ done }}
+              {% set undone = settle_mark.rc is defined and (settle_mark.rc != 0 or settle_cleared.rc | default(1) == 0) %}{% set done = [] %}{%
+              for entry in intent.turn.settle if entry.operation_id in settle_over %}{% if entry.branch is none or undone %}{%
+              set _ = done.append(entry.operation_id) %}{% endif %}{% endfor %}{{ done }}
           no_log: true
       rescue:
         # A list that is not JSON, or a checkout Git cannot restore, settles nothing.
@@ -216,18 +241,23 @@
             argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
           register: review_tip
           changed_when: false
+        # Named before the mark, so a set mark is always followed by the restore that clears it.
+        - name: Name the branch to restore
+          ansible.builtin.set_fact:
+            review_restore: "{{ review_branch.stdout }}"
+        # The copy keeps the mark until a verified restore clears it: a later turn restores the checkout only while it is set.
+        - name: Mark the detach in the copy
+          ansible.builtin.command:
+            argv: "{{ copy_git + ['update-ref', 'refs/orbit/review-detach', review_tip.stdout] }}"
+          changed_when: true
         - name: Check the candidate out
           ansible.builtin.command:
             argv: "{{ copy_git + ['checkout', '--quiet', '--detach', intent.turn.candidate] }}"
           changed_when: true
-        - name: Name the branch to restore
-          ansible.builtin.set_fact:
-            review_restore: "{{ review_branch.stdout }}"
         # From here the checkout is the reviewer's until `restore.json` says it is restored: a phase cut before that holds the group.
-        # The mark holds the tip, so a later turn that settles this one can require the branch at it again.
         - name: Mark the checkout as detached
           ansible.builtin.copy:
-            content: "{{ {'tip': review_tip.stdout} | to_json }}"
+            content: "{}"
             dest: "{{ run }}/detach.json"
             mode: "0600"
           delegate_to: localhost
@@ -433,6 +463,12 @@
                 argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
               register: restored_tip
               changed_when: false
+            - name: Clear the detach mark of a verified restore
+              when: restored_status.stdout == '' and restored_branch.stdout == review_restore and restored_tip.stdout == review_tip.stdout
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['update-ref', '-d', 'refs/orbit/review-detach'] }}"
+              register: restored_cleared
+              changed_when: true
           rescue:
             - name: Name the failed restore
               ansible.builtin.set_fact:
@@ -441,9 +477,7 @@
             - name: Write the restore evidence
               ansible.builtin.copy:
                 content: >-
-                  {{ {'restored': not review_unrestored | default(false) and restored_status.stdout | default('x') == ''
-                      and restored_branch.stdout | default('') == review_restore
-                      and restored_tip.stdout | default('') == review_tip.stdout} | to_json }}
+                  {{ {'restored': not review_unrestored | default(false) and restored_cleared.rc | default(1) == 0} | to_json }}
                 dest: "{{ run }}/restore.json"
                 mode: "0600"
               delegate_to: localhost

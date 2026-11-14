@@ -17,9 +17,9 @@ const started = (status: string, error: string | null = null) =>
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
 const none = { resumed: null, review: null, detached: false, ask: null, interrupt: null, restore: null };
 // The provider instance and model as T3 showed them, and no question.
-const named = { launched: true, provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [], restore_tip: null };
-const unlaunched = { launched: false, provider_instance: null, model: null, questions: [], settled: [], restore_tip: null };
-const unnamed = { launched: true, provider_instance: null, model: null, questions: [], settled: [], restore_tip: null };
+const named = { launched: true, provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
+const unlaunched = { launched: false, provider_instance: null, model: null, questions: [], settled: [] };
+const unnamed = { launched: true, provider_instance: null, model: null, questions: [], settled: [] };
 // As `t3_copy_rpc.mjs read` printed it on a stock T3 0.1.7 server, 2026-11-14: one request with two questions.
 const request = "runtime-request:provider:claudeAgent:native-request:toolu_01TbF9dLFChexV5BVoUsSdii";
 const asked = {
@@ -215,11 +215,9 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         assertEquals([done.successful, done.turn.state, done.turn.ended, done.turn.transcript.length, written.length], [true, "done", true, 0, 3]);
         // A reviewer's turn is done only with its restore evidence once its checkout was detached.
         Deno.writeTextFileSync(`${folder}/review.json`, JSON.stringify({ ready: true, error_code: null }));
-        Deno.writeTextFileSync(`${folder}/detach.json`, JSON.stringify({ tip: "a".repeat(40) }));
+        Deno.writeTextFileSync(`${folder}/detach.json`, "{}");
         const unrestored = await behavior.methods.result.execute({ folder }, context);
-        // The result names the tip the detach mark holds, so a later turn can settle this one at it.
-        assertEquals([unrestored.successful, unrestored.turn.error_code, unrestored.turn.ended, unrestored.turn.restore_tip],
-            [false, "tasks.copy_review_unrestored", false, "a".repeat(40)]);
+        assertEquals([unrestored.successful, unrestored.turn.error_code, unrestored.turn.ended], [false, "tasks.copy_review_unrestored", false]);
         Deno.writeTextFileSync(`${folder}/restore.json`, JSON.stringify({ restored: true }));
         assertEquals((await behavior.methods.result.execute({ folder }, context)).successful, true);
         // A run that asked: the Operation succeeds once its question is stored and its run stopped, and fails while it is not.
