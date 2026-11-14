@@ -240,6 +240,18 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertTrue(self.cel('Discard the copy scratch', 'guard', self.copy, {'Preflight the copy': {'status': 'failed'}}))
         self.assertFalse(self.cel('Discard the copy scratch', 'guard', self.copy, {'Preflight the copy': {'status': 'succeeded'}}))
 
+    def test_the_export_names_the_task_branch_proposed_body_and_its_worker_path(self):
+        intent = {**self.copy, 'branch': 'task-42', 'ssh_execution': {'target': {'name': 'target'}}}
+        steps = {'Create publication scratch': {'status': 'succeeded', 'outputs': {'stdout': '/tmp/orbit-task-publish-abc\n'}},
+                 'Preflight the copy': {'status': 'succeeded', 'outputs': {'evidence': {'evidence': {'checkout_fingerprint': {}}}}}}
+        exported = self.cel('Export the copy', 'intent', intent, steps)
+        self.assertEqual(exported['proposed_body_path'], '.git/orbit/proposed-pr-bodies/task-42.md')
+        self.assertEqual(exported['worker_proposed_body'], '/tmp/orbit-task-publish-abc/proposed-body')
+        # Both values pass the phase's own input schema, so the export takes them.
+        schema = yaml.safe_load((ROOT / 'workflows/workflow-task-instance-workspace.yaml').read_text())['inputs']['properties']['intent']['properties']
+        for key in ['proposed_body_path', 'worker_proposed_body']:
+            self.assertRegex(exported[key], schema[key]['pattern'], key)
+
     def environment_check(self, repository, start, path='.env'):
         run = self.cel('Check the environment file', 'run', self.copy, {})
         return subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=60,
