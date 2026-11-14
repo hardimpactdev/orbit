@@ -538,7 +538,7 @@ No Orbit path rewrites the `eth0` of an existing container. Incus applies the tw
 
 The NIC check refuses a bridge NIC that holds its own `ipv4.address` but lacks either key, with `instance.nic_filters_missing`. An unguarded NIC keeps its own code. The check runs before the start of a create, a clone, a migrate and the image build container, and at the end of the host converge. The nested guard compares the other keys only, so a nested-fleet container without the filters gets the same code.
 
-A NIC without its own address takes a DHCP lease, and Incus can pin no address there, so it carries no filter. That is the project profile's `eth0`, which the converge's clone probe uses: the check does not ask it for the filters. Every Instance NIC holds its address, because create, clone and migrate write it with the filters.
+A NIC without its own address takes a DHCP lease and carries no filter: the clone probe is a copy of a copy, so a fixed address would be held twice, and no second address is reserved for it. That is the project profile's `eth0`, which the converge's clone probe uses: the check does not ask it for the filters. Every Instance NIC holds its address, because create, clone and migrate write it with the filters.
 
 **Open after the filters.** The egress proxy and the model forwarder admit the whole bridge range without identity. A container that can only send from its own address still reaches both, and neither tells one container from another.
 

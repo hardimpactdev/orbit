@@ -45,8 +45,9 @@ def unfiltered_device(container, network):
     """The first bridge NIC with its own `ipv4.address` that lacks a filter key, or None.
 
     Every Instance NIC holds its own address: create, clone and migrate write it with the filters. A NIC without one takes a DHCP
-    lease from the bridge: the project profile's `eth0`, which the host converge's clone probe uses. Incus can pin no address there,
-    so it carries no filter and this rule does not apply to it; its ACL rules above still do.
+    lease from the bridge: the project profile's `eth0`, which the host converge's clone probe uses. The probe is a copy of a copy, so
+    a fixed address would be held twice, and no address is reserved for it: it carries no filter and this rule does not apply to it;
+    its ACL rules above still do.
     """
     for name, device in container["expanded_devices"].items():
         if (
