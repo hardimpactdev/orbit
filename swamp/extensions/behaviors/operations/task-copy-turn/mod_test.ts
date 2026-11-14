@@ -17,8 +17,8 @@ const started = (status: string, error: string | null = null) =>
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
 const none = { resumed: null, review: null, detached: false, ask: null, interrupt: null, restore: null };
 // The provider instance and model as T3 showed them, and no question.
-const named = { provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [] };
-const unnamed = { provider_instance: null, model: null, questions: [] };
+const named = { provider_instance: "claudeMedium", model: "claude-opus-5-5", questions: [], settled: [] };
+const unnamed = { provider_instance: null, model: null, questions: [], settled: [] };
 // As `t3_copy_rpc.mjs read` printed it on a stock T3 0.1.7 server, 2026-11-14: one request with two questions.
 const request = "runtime-request:provider:claudeAgent:native-request:toolu_01TbF9dLFChexV5BVoUsSdii";
 const asked = {
@@ -52,6 +52,14 @@ Deno.test("a run that asks has its question stored and its run stopped: it asks 
     const leaked = { ...asked, requests: [{ ...asked.requests[0], questions: [{ ...asked.requests[0].questions[0], question: `Use ${secret}?` }] }] };
     const redacted = turn(2, started("waiting"), { ask: { ask_exit: 0, ask: JSON.stringify(leaked) }, interrupt: stopped, read: { ...read, status: "interrupted" } });
     assertEquals([redacted.questions.length, redacted.questions[0].question.includes(secret)], [1, false]);
+});
+
+Deno.test("an earlier turn still running launches nothing and fails tasks.copy_turn_unended; the turns found settled are named", () => {
+    const held = shapeTurn({ ...none, settle: { list_exit: 0, settled: [11], open: [12] }, launched: false, start: null, read: null });
+    assertEquals(held, { state: "failed", error: "An earlier turn may still run in the copy (Operation 12); nothing was launched.", error_code: "tasks.copy_turn_unended",
+        ended: true, t3_thread_id: null, run_id: null, ...unnamed, settled: [11], transcript: [] });
+    assertEquals(turn(0, started("completed"), { settle: { list_exit: 0, settled: [11, 12], open: [] } }),
+        { state: "done", error: null, ended: true, t3_thread_id: thread, run_id: run, ...named, settled: [11, 12], transcript });
 });
 
 Deno.test("a question Orbit could not read is not stopped and not over; a stop that failed says so and is not over", () => {

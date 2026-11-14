@@ -30,8 +30,9 @@ A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it.
 - A question ends the turn. Orbit first stores the question, then stops the run. The Operation succeeds with the state `asking_for_input`. Its result holds each question with its header and options, in the agent's words, and `task:agent:list` shows them on the thread until its next turn.
 - The role's next turn answers the question. Its prompt quotes the questions first, then your prompt as the answer. A message to the thread from a T3 client answers it too.
 - A question Orbit could not read, or a run that Orbit could not stop, fails the Operation and holds the group like a turn that may still run.
-- The turn ends after one hour with `tasks.turn_timeout`. Orbit does not stop that run, so it may go on in the copy.
-- While an earlier turn may still run, a turn or a check of the group answers `tasks.copy_turn_unended`. `task:cancel` ends the run with the copy.
+- The turn ends after one hour with `tasks.turn_timeout`. Orbit does not stop that run, so it may go on in the copy, and its work stays there.
+- The next turn settles an earlier turn that may still run. Its phase first reads T3 in the copy: the earlier turn is settled when T3 shows its thread with no active run and, for a reviewer's turn, the checkout is clean on the task branch. Then the turn runs. While the earlier run goes on, the turn launches nothing and fails with `tasks.copy_turn_unended`.
+- A check, a publish or a proof of the copy cannot read T3. While an earlier turn is not settled, it answers `tasks.copy_turn_unended`: run the next turn to settle it, or `task:cancel` to end it with the copy.
 - The transcript holds message text only, and the thread has no token metrics.
 
 
@@ -56,12 +57,13 @@ A turn in a task copy adds these answers and Operation errors:
 | `tasks.copy_turn_unsupported` (422) | The turn is a consult or names a model. |
 | `tasks.thread_role_mismatch` (422) | `--thread=ID` is not the role's thread that the turn would continue in this copy. |
 | `tasks.commit_not_checked` (422) | A reviewer turn's `--check` is not the subtask's checked candidate. |
-| `tasks.copy_turn_unended` (409) | An earlier turn may still run in the copy, or a reviewer turn left the checkout unrestored; `details.operation_id` names it. Run `task:cancel`. A check of the copy refuses the same way. |
+| `tasks.copy_turn_unended` (409) | A check, a publish or a proof of the copy: an earlier turn is not settled; `details.operation_id` names it. The next turn settles it once its run ended. |
 | `tasks.copy_turn_model_invalid` (503) | The role's `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` is not a model name. |
 | `tasks.copy_turn_effort_invalid` (503) | The role's `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT` is not `low`, `medium`, `high`, `xhigh` or `max`. |
 | `tasks.copy_thread_missing` | The Operation's error: T3 in the copy holds no single thread of the title to continue. Nothing was launched. A first turn that T3 refused leaves such a thread recorded: `--thread=new` starts a new one. |
 | `tasks.copy_tree_dirty` | The Operation's error: the copy's checkout had uncommitted changes or no branch before a reviewer turn. Nothing was launched. |
-| `tasks.copy_review_unrestored` | The Operation's error: after a reviewer turn, the checkout is not clean on its branch at the commit it had before. The group holds until `task:cancel`. |
+| `tasks.copy_turn_unended` | The Operation's error: an earlier turn's run still goes on, or a reviewer left the checkout unclean or off the task branch. Nothing was launched, and the work in the copy stays. |
+| `tasks.copy_review_unrestored` | The Operation's error: after a reviewer turn, the checkout is not clean on its branch at the commit it had before. The next turn settles it once the checkout is clean on the task branch. |
 | `tasks.copy_question_unread` | The Operation's error: the run asked, but Orbit could not read the question, so it did not stop the run. The group holds. |
 | `tasks.copy_question_unstopped` | The Operation's error: Orbit stored the question but could not stop the run that asked. The result keeps the question, and the group holds. |
 | `tasks.turn_timeout` | The Operation's error: the turn ran past its one-hour bound. |

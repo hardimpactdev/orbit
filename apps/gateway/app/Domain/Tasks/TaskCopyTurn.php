@@ -77,7 +77,10 @@ final readonly class TaskCopyTurn
             throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must be the role\'s thread that this turn continues in the task copy.', 422);
         }
         $thread = $data->thread === 'new' ? null : $current;
-        self::refuseUnended($group);
+        // An earlier turn that may still run is settled first, by this turn's own phase in the copy (docs/cli/task/copy-turn.mmd).
+        $settle = array_map(static fn (Operation $turn): array => ['operation_id' => $turn->id,
+            'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
+            'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch'])], self::unsettled($group));
         $candidate = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
@@ -110,30 +113,39 @@ final readonly class TaskCopyTurn
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
             'turn' => ['t3' => InstanceContainer::T3, 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
-                'candidate' => $candidate, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
+                'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt)],
         ];
     }
 
     /**
-     * Refuses more work on a group until every turn in its copy is settled: T3 shows its thread with no active run, and a reviewer's
-     * checkout is restored, clean on its branch at its tip. The result's `ended` records that at the turn's end. A turn that asked is
-     * settled once Orbit stopped its run. A turn whose run started and whose result is not settled (its bound cut the wait, a stop that
-     * failed, a cancel or a lost phase) may leave the agent writing in the checkout, or the checkout off the task branch. Called by the
-     * turn and by the check, the publish and the proof of a copy.
-     *
-     * T3 runs the turns of one thread in order, so only the latest turn of each thread counts: keyed by thread, the later turn replaces the earlier.
+     * Refuses a check, a publish or a proof of the copy while an earlier turn is not settled: none of them can read T3 in the copy. The
+     * next turn settles it in its own phase.
      */
     public static function refuseUnended(Task $group): void
     {
-        $unended = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-            ->where('kind', OperationKinds::TasksCopyTurn)->whereIn('status', OperationStatus::terminalValues())->orderBy('id')->get()
-            ->keyBy(static fn (Operation $turn): int => ValidatedData::integer($turn->input['thread_id']))
-            ->first(static fn (Operation $turn): bool => ($turn->state['swamp_run_id'] ?? null) !== null && ($turn->result['ended'] ?? null) !== true);
+        $unended = self::unsettled($group)[0] ?? null;
         if ($unended instanceof Operation) {
-            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. Run task:cancel to end it with the copy.', 409,
-                details: ['operation_id' => $unended->id]);
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. '
+                .'The next task:turn settles it once its run ended; task:cancel ends it with the copy.', 409, details: ['operation_id' => $unended->id]);
         }
+    }
+
+    /**
+     * The group's copy turns that started a run and are not settled. One rule settles a turn: T3 shows its thread with no active run,
+     * and a reviewer's checkout is clean on the task branch. The turn's own result records that as `ended`; a later turn's phase that
+     * found it so names it in its result's `settled`. A turn that asked and whose run Orbit stopped ended.
+     *
+     * @return list<Operation>
+     */
+    public static function unsettled(Task $group): array
+    {
+        $turns = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->whereIn('status', OperationStatus::terminalValues())->orderBy('id')->get();
+        $settled = $turns->flatMap(static fn (Operation $turn): array => ValidatedData::integerList($turn->result['settled'] ?? []))->all();
+
+        return array_values($turns->filter(static fn (Operation $turn): bool => ($turn->state['swamp_run_id'] ?? null) !== null
+            && ($turn->result['ended'] ?? null) !== true && ! in_array($turn->id, $settled, true))->all());
     }
 
     /**

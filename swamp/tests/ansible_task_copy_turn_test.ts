@@ -11,7 +11,7 @@ const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn
 const shipped = new URL("../ansible/", import.meta.url).pathname.replace(/\/$/, "");
 const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 const ssh = { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } };
-const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", candidate: null, seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
+const turn = { t3: "/opt/orbit-agent/current/agent/bin/t3", node: "/opt/orbit-runtime/current/bin/node", thread: "new", provider: "claudeMedium", model: "claude-opus-5-5", candidate: null, settle: [] as { operation_id: number; title: string; branch: string | null }[], seconds: 3600, title: "Orbit task 4970 thread 77", prompt: "Subtask: Doctor note\n\nRun Doctor." };
 // What TaskCopyTurn admits; the workflow passes only the runtime, the SSH target and the turn to the phase.
 const intent = { subtask: 4971, role: "implementer", thread: "new", group_id: 4970, instance_id: 2685, node_id: 9, ssh_execution: ssh,
     runtime: { project: "orbit-instances-nested", name: "instance-2685" }, branch: "task-4970", thread_id: 77, turn };
@@ -120,16 +120,17 @@ if rest[3:5] == ['thread', 'list']:
     if os.environ['T3_START'] == 'garbled':
         print('not json')
         sys.exit(0)
-    print(json.dumps([{'threadId': thread, 'status': 'completed', 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}]))
+    earlier = [{'threadId': 'earlier', 'status': os.environ['T3_SETTLE'], 'title': 'Orbit task 4970 thread 76'}] if os.environ.get('T3_SETTLE') else []
+    print(json.dumps([{'threadId': thread, 'status': 'completed', 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}] + earlier))
     sys.exit(0)
 assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8] == thread, rest
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
 type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; detached: boolean; launched: boolean;
-    start: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null; read: Record<string, unknown> | null;
+    start: Record<string, unknown> | null; settle: Record<string, unknown> | null; ask: Record<string, unknown> | null; interrupt: Record<string, unknown> | null; read: Record<string, unknown> | null;
     restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] };
-async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", ask = "questions"): Promise<Phase> {
+async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean", ask = "questions", settle = ""): Promise<Phase> {
     const folder = Deno.makeTempDirSync();
     try {
         Deno.mkdirSync(`${folder}/bin`);
@@ -141,7 +142,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_become=false", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
                 `${shipped}/task-copy-turn.yml`],
-            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask,
+            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
@@ -156,6 +157,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
             launched: read(`${folder}/run/launch.json`) !== null,
             start: json("start.json"),
             ask: json("ask.json"),
+            settle: json("settle.json"),
             interrupt: json("interrupt.json"),
             read: json("read.json"),
             restore: json("restore.json"),
@@ -256,7 +258,8 @@ Deno.test({ name: "a turn cut by its bound still reads the thread it started; a 
 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
     for (const change of [{ t3: "/tmp/t3" }, { node: "/usr/bin/node" }, { title: "Something else" }, { seconds: 7200 }, { model: "a b" }, { thread: "resume" }, { provider: null }, { model: null },
-        { candidate: "HEAD" }]) {
+        { candidate: "HEAD" }, { settle: [{ operation_id: "9", title: "Orbit task 4970 thread 76", branch: null }] },
+        { settle: [{ operation_id: 9, title: "Orbit task 4970 thread 76", branch: "main; rm" }] }, { settle: null }]) {
         const refused = await phase("completed", change);
         assert(!refused.ok, JSON.stringify(change));
         assertEquals([refused.launched, refused.start, refused.read, refused.calls.length], [false, null, null, 0]);
@@ -298,4 +301,37 @@ Deno.test({ name: "a question the helper cannot read stops nothing; a reviewer t
     const order = reviewer.calls.map((call) => call.args.slice(15).join(" "));
     assert(order.findIndex((args) => args.includes(" interrupt ")) < order.findIndex((args) => args.includes("reset --quiet --hard")));
     assertEquals([reviewer.interrupt!.interrupt_exit, reviewer.restore], [0, { restored: true }]);
+} });
+
+const earlier = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: null };
+
+Deno.test({ name: "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing", ignore: !available, async fn() {
+    // A cut wait whose run T3 later completed, and a run whose stop failed and that later ended, are settled; the turn runs.
+    for (const status of ["completed", "interrupted"]) {
+        const settled = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
+        assert(settled.ok, settled.output);
+        assertEquals([settled.settle, settled.launched], [{ list_exit: 0, settled: [9], open: [] }, true], status);
+    }
+    // T3 holds no thread of the title: no run can go on.
+    const gone = await phase("completed", { settle: [earlier] });
+    assertEquals([gone.ok, gone.settle!.settled], [true, [9]]);
+    // A run that still goes on, or still waits for an answer, holds: nothing is launched and the work stays.
+    for (const status of ["running", "waiting"]) {
+        const held = await phase("completed", { settle: [earlier] }, "clean", "questions", status);
+        assert(!held.ok && held.output.includes("tasks.copy_turn_unended"), held.output);
+        assertEquals([held.settle, held.launched, held.start], [{ list_exit: 0, settled: [], open: [9] }, false, null], status);
+    }
+    // A list that fails settles nothing.
+    const unread = await phase("listfail", { settle: [earlier] });
+    assertEquals([unread.ok, unread.settle, unread.launched], [false, { list_exit: 1, settled: [], open: [9] }, false]);
+} });
+
+Deno.test({ name: "an earlier reviewer turn is settled only with the checkout clean on the task branch", ignore: !available, async fn() {
+    const reviewer = { ...earlier, branch: "task-4970" };
+    const clean = await phase("completed", { settle: [reviewer] }, "clean", "questions", "completed");
+    assertEquals([clean.ok, clean.settle!.settled, git(clean.calls).slice(0, 2)], [true, [9], ["status --porcelain", "symbolic-ref --quiet --short HEAD"]]);
+    const dirty = await phase("completed", { settle: [reviewer] }, "dirty", "questions", "completed");
+    assertEquals([dirty.ok, dirty.settle!.open, dirty.launched], [false, [9], false]);
+    const other = await phase("completed", { settle: [{ ...reviewer, branch: "task-1" }] }, "clean", "questions", "completed");
+    assertEquals([other.ok, other.settle!.open], [false, [9]]);
 } });

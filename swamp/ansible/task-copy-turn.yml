@@ -50,12 +50,76 @@
           - intent.turn.title | default('') is match('^Orbit task [1-9][0-9]* thread [1-9][0-9]*$')
           - intent.turn.seconds | default(0) | int >= 60 and intent.turn.seconds | int <= 3600
           - intent.turn.prompt | default('') | length > 0
+          - intent.turn.settle is defined and intent.turn.settle is sequence and intent.turn.settle is not string
+          - intent.turn.settle | rejectattr('operation_id', 'integer') | list | length == 0
+          - intent.turn.settle | map(attribute='title') | reject('match', '^Orbit task [1-9][0-9]* thread [1-9][0-9]*$') | list | length == 0
+          - intent.turn.settle | map(attribute='branch') | select('string') | reject('match', '^task-[1-9][0-9]*$') | list | length == 0
         fail_msg: tasks.copy_turn_invalid
     # A copy the phase cannot reach fails here, before the launch mark: no turn can run there, so its group stays free.
     - name: Reach the copy as agent
       ansible.builtin.command:
         argv: "{{ copy_exec + ['/usr/bin/true'] }}"
       changed_when: false
+    # An earlier turn that may still run is settled first by one rule: T3 lists its thread in no active state, or none of its title, and
+    # a reviewer's checkout is clean on the task branch. While one is not, nothing is launched, and the work in the copy stays.
+    - name: Settle the earlier turns
+      when: intent.turn.settle | length > 0
+      block:
+        - name: List the threads to settle
+          ansible.builtin.command:
+            argv: "{{ copy_exec + ['/usr/bin/timeout', '60', intent.turn.t3, 'thread', 'list', '--project', '/srv/workspace', '--json'] }}"
+          register: settle_threads
+          failed_when: false
+          changed_when: false
+          no_log: true
+        - name: Read the checkout a reviewer left
+          when: intent.turn.settle | map(attribute='branch') | select('string') | list | length > 0
+          block:
+            - name: Read the checkout's changes
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['status', '--porcelain'] }}"
+              register: settle_status
+              changed_when: false
+            - name: Read the checkout's branch
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
+              register: settle_branch
+              failed_when: false
+              changed_when: false
+        - name: Name the settled turns
+          vars:
+            settle_listed: "{{ settle_threads.stdout | from_json if settle_threads.rc == 0 else none }}"
+            settle_active: ['preparing', 'queued', 'starting', 'running', 'waiting']
+          ansible.builtin.set_fact:
+            settle_done: >-
+              {% set done = [] %}{% for entry in intent.turn.settle if settle_listed is not none %}{% set mine = settle_listed
+              | selectattr('title', 'equalto', entry.title) | list %}{% if (mine | length == 0 or (mine | length == 1
+              and mine[0].status not in settle_active)) and (entry.branch is none or (settle_status.stdout | default('x') == ''
+              and settle_branch.stdout | default('') == entry.branch)) %}{% set _ = done.append(entry.operation_id) %}{% endif %}{% endfor %}{{ done }}
+          no_log: true
+      rescue:
+        # A list that is not JSON, or a checkout Git cannot read, settles nothing.
+        - name: Settle nothing
+          ansible.builtin.set_fact:
+            settle_done: []
+      always:
+        - name: Write the settle evidence
+          ansible.builtin.copy:
+            content: >-
+              {{ {'list_exit': settle_threads.rc | default(none), 'settled': settle_done | default([]),
+                  'open': intent.turn.settle | map(attribute='operation_id') | reject('in', settle_done | default([])) | list} | to_json }}
+            dest: "{{ run }}/settle.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
+        - name: Require every earlier turn settled
+          ansible.builtin.assert:
+            that: intent.turn.settle | map(attribute='operation_id') | reject('in', settle_done | default([])) | list | length == 0
+            fail_msg: tasks.copy_turn_unended
     # A continued turn sends to the T3 thread whose title names the Orbit thread. Without exactly one, nothing is launched. A list that
     # fails or is not JSON names no exit code: that is T3 failing, not a missing thread.
     - name: Find the thread to continue

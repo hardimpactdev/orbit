@@ -1518,9 +1518,17 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 
 ### Hold after a turn that may still run
 
-A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A reviewer turn whose checkout is not restored is not over. Nor is a turn cancelled before its run step reports.
 
-A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that asks is over once Orbit stopped it. A reviewer turn whose checkout is not restored is never over. A turn cancelled before its run step reports holds the group the same way.
+One rule settles a turn that is not over: T3 lists its thread in no active state, or none of its title, and a reviewer's checkout is clean on the task branch. Only a turn's phase can read that, so the next turn settles it:
+
+- The Gateway puts every turn that is not settled into the next turn's intent, with its title and, for a reviewer, the task branch.
+- The phase lists T3's threads first. For a reviewer's turn it also reads the checkout's changes and branch.
+- The phase writes which turns it found settled.
+- While one is not, the phase launches nothing and fails with `tasks.copy_turn_unended`. The work in the copy stays.
+- The result names the settled turns, and the Gateway counts them settled from then on.
+
+A check, a publish or a proof of the copy refuses with `tasks.copy_turn_unended` while a turn is not settled. `task:cancel` still ends the copy, and any run with it.
 
 The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 

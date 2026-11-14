@@ -1,6 +1,6 @@
 manifestVersion: 1
 name: '@nckrtl/task-copy-turn'
-version: 2026.11.14.5
+version: 2026.11.14.6
 visibility: private
 license: MIT
 description: Typed, redacted evidence of one agent turn that T3's own CLI ran in a task copy.

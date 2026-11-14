@@ -1,5 +1,5 @@
 order = 380
-source_sha256 = "7c4f961f9e11a22a8eba674b688f9a2a50b46baddfeeff47fdfaa80374c81b47"
+source_sha256 = "2c77410fdae23b172929256ba7db78d4672c037aa77471bd2d61fadae8971f57"
 cases = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time",
@@ -14,9 +14,11 @@ cases = [
   "a thread list that is not JSON reads as no thread, and the start's end is still written",
   "a run that asks has its question stored before the run is stopped, and the thread is read back after",
   "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored",
+  "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing",
+  "an earlier reviewer turn is settled only with the checkout clean on the task branch",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 87
+cost = 121
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -44,3 +46,5 @@ inputs = [
   "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4
   "a run that asks has its question stored before the run is stopped, and the thread is read back after" = 9
   "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored" = 21
+  "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing" = 23
+  "an earlier reviewer turn is settled only with the checkout clean on the task branch" = 11

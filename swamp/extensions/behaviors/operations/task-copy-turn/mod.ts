@@ -10,12 +10,14 @@ const AskBytes = 1048576;
 const TextChars = 20000;
 const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
-// What `task-copy-turn.yml` writes, each file as soon as its command ended: for a continued turn `continue.json` with the exit code of
+// What `task-copy-turn.yml` writes, each file as soon as its command ended: `settle.json` with the earlier turns it found settled and
+// those still open, for a continued turn `continue.json` with the exit code of
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
 // the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
 // `t3 thread send` with `--wait --json`, for a run that waits for an answer `ask.json` with the exit code and stdout of `t3_copy_rpc.mjs
 // read` and `interrupt.json` with those of `t3_copy_rpc.mjs interrupt`, `read.json` with what `t3 thread list` found and `t3 thread show`
 // read, and for a reviewer turn `restore.json` with whether the checkout is clean on its branch at its tip again.
+const Settle = z.object({ list_exit: z.number().int().nullable(), settled: z.array(z.number().int()), open: z.array(z.number().int()) }).strict();
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
@@ -50,6 +52,7 @@ const Read = z.object({
 /** Thread states in which T3's run may still change the checkout. */
 const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]);
 export type Evidence = {
+    settle?: z.infer<typeof Settle> | null;
     resumed: z.infer<typeof Resumed> | null;
     review: z.infer<typeof Review> | null;
     detached: boolean;
@@ -97,6 +100,8 @@ export const Turn = z.object({
     model: z.string().nullable(),
     // What the agent asked, in its own words and options: set when the turn ends at a question.
     questions: z.array(AskedQuestion),
+    // The earlier turns whose run this turn's phase found over, with a reviewer's checkout clean on the task branch.
+    settled: z.array(z.number().int()),
     transcript: z.array(Entry),
 });
 export type Turn = z.infer<typeof Turn>;
@@ -159,8 +164,13 @@ function shapeRun(evidence: Evidence): Turn {
         provider_instance: shown?.thread.providerInstanceId ?? null,
         model: shown?.thread.model ?? null,
         questions: [],
+        settled: evidence.settle?.settled ?? [],
         transcript: transcript(shown),
     };
+    if (evidence.settle && evidence.settle.open.length > 0) {
+        return { ...base, state: "failed", error: `An earlier turn may still run in the copy (Operation ${evidence.settle.open.join(", ")}); nothing was launched.`,
+            error_code: "tasks.copy_turn_unended" };
+    }
     if (started?.status === "completed") return { ...base, state: "done", error: null };
     if (started?.status === "waiting") return asked(base, evidence);
     if (started !== null) {
@@ -237,7 +247,7 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.14.5",
+    version: "2026.11.14.6",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
@@ -246,6 +256,7 @@ export const behavior = {
             async execute(args: { folder: string }, ctx: Context) {
                 const marked = (name: string) => Deno.stat(`${args.folder}/${name}`).then(() => true, () => false);
                 const turn = Turn.parse(shapeTurn({
+                    settle: await evidence(args.folder + "/settle.json", 65536, Settle),
                     resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
                     review: await evidence(args.folder + "/review.json", 1024, Review),
                     detached: await marked("detach.json"),

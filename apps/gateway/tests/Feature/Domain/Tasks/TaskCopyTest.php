@@ -1036,7 +1036,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
             ->and($turn->input['branch'])->toBe('task-'.$group->id)
             ->and(Arr::except($turn->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'seconds' => 3600,
+                'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
             ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
@@ -1119,7 +1119,7 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($next->input['thread_id'])->toBe($first->input['thread_id'])
             ->and(Arr::except($next->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'node' => '/opt/orbit-runtime/current/bin/node',
-                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'candidate' => null, 'seconds' => 3600, 'title' => $first->input['turn']['title']])
+                'thread' => 'continue', 'provider' => null, 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600, 'title' => $first->input['turn']['title']])
             ->and($next->input['turn']['prompt'])->toEndWith("Prompt of this turn:\nFix the failing test.\n\n".TaskCopyTurn::AskRule)
             ->and($named->input['thread_id'])->toBe($first->input['thread_id'])->and($named->input['turn']['thread'])->toBe('continue')
             ->and(AgentThread::query()->where('task_group_id', $group->id)->sole()->effort)->toBe('medium')
@@ -1308,33 +1308,65 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(Operation::query()->findOrFail($cancel->result['destroy_operation_id'])->kind)->toBe('instance.destroy');
     });
 
-    it('refuses more turns and checks while an earlier turn may still run in the copy, until task:cancel', function (string $status, array $shaped): void {
+    it('hands a turn that may still run to the next turn to settle, and refuses a check until a turn settled it', function (string $status, array $shaped): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $cut = copyTurnEnded(copyTurn($group), $status, $shaped);
         $subtask = $group->tasks()->firstOrFail();
+        $check = fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
 
-        // The default turn continues the same thread: a run whose end is unknown holds it too.
-        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_unended 409')
-            ->and(copyRefusal(fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null)))
-            ->toBe('tasks.copy_turn_unended 409')
+        // A check cannot read T3 in the copy: it refuses and names the turn.
+        expect(copyRefusal($check))->toBe('tasks.copy_turn_unended 409')
             ->and(Operation::query()->where('kind', 'tasks.check')->exists())->toBeFalse()
             // A cancelled turn records nothing on its thread.
             ->and(AgentThread::query()->findOrFail($cut->input['thread_id'])->state)->toBe($status === 'cancelled' ? null : AgentThreadState::Failed);
         try {
-            copyTurn($group);
+            $check();
         } catch (ResourceOperationException $error) {
             expect($error->details)->toBe(['operation_id' => $cut->id]);
         }
 
-        expect(app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)->status)->toBe(OperationStatus::Succeeded);
+        // The next turn is admitted and settles the earlier one in its own phase first, also on another thread.
+        $next = copyTurn($group, ['thread' => 'new']);
+        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null]]);
     })->with([
         'a wait cut by the bound' => ['failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]],
         'a cancelled run' => ['cancelled', []],
         'a phase that wrote no end' => ['failed', ['state' => 'failed', 'error' => 'No end.', 'error_code' => 'tasks.copy_turn_failed', 'ended' => false, 't3_thread_id' => null, 'run_id' => null, 'transcript' => []]],
         'a reviewer checkout left unrestored' => ['failed', ['state' => 'failed', 'error' => 'Unrestored.', 'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'transcript' => []]],
     ]);
+
+    it('admits a check once the next turn found the cut turn\'s run over, and keeps refusing while T3 still runs it', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        $check = fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
+        $cut = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false,
+            't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]);
+
+        // T3 still runs it: the next turn launched nothing and settled nothing.
+        $held = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'Still runs.', 'error_code' => 'tasks.copy_turn_unended', 'ended' => true,
+            't3_thread_id' => null, 'run_id' => null, 'settled' => [], 'transcript' => []]);
+        expect($held->error_code)->toBe('tasks.copy_turn_unended')->and(copyRefusal($check))->toBe('tasks.copy_turn_unended 409');
+
+        // T3 later completed it: the next turn settles it, runs, and the group is free.
+        $next = copyTurn($group);
+        expect($next->input['turn']['settle'])->toBe([['operation_id' => $cut->id, 'title' => $cut->input['turn']['title'], 'branch' => null]]);
+        copyTurnEnded($next, 'succeeded', [...copyTurnDone('mcp:1'), 'settled' => [$cut->id]]);
+        expect(copyTurn($group)->input['turn']['settle'])->toBe([]);
+    });
+
+    it('names a reviewer turn\'s task branch, so the next turn settles it only on a clean checkout of that branch', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $reviewer = copyTurnEnded(copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]), 'failed', ['state' => 'failed', 'error' => 'Unrestored.',
+            'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'transcript' => []]);
+
+        expect(copyTurn($group)->input['turn']['settle'])->toBe([['operation_id' => $reviewer->id, 'title' => $reviewer->input['turn']['title'], 'branch' => 'task-'.$group->id]]);
+    });
 
     it('admits the next turn after a turn whose T3 run ended, also a failed one', function (): void {
         Storage::fake('local');
@@ -1384,7 +1416,7 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(copyTurn($group, ['prompt' => 'Next.'])->input['turn']['prompt'])->not->toContain('You asked');
     });
 
-    it('holds every turn, its own thread\'s included, and every check while a run that asked was not stopped', function (string $code): void {
+    it('settles a run that asked and was not stopped by the same rule: a check waits, and the next turn admits once T3 shows it ended', function (string $code): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
@@ -1393,10 +1425,12 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($held->error_code)->toBe($code)
             ->and(AgentThread::query()->findOrFail($held->input['thread_id'])->state)->toBe(AgentThreadState::AskingForInput)
-            ->and(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_unended 409')
-            ->and(copyRefusal(fn () => copyTurn($group, ['thread' => 'new'])))->toBe('tasks.copy_turn_unended 409')
             ->and(copyRefusal(fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null)))
             ->toBe('tasks.copy_turn_unended 409');
+        $next = copyTurn($group, ['prompt' => 'Blue.']);
+        expect(array_column($next->input['turn']['settle'], 'operation_id'))->toBe([$held->id]);
+        copyTurnEnded($next, 'succeeded', [...copyTurnDone('mcp:1'), 'settled' => [$held->id]]);
+        expect(app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null)->kind)->toBe('tasks.check');
     })->with(['tasks.copy_question_unstopped', 'tasks.copy_question_unread']);
 
     it('names the provider instance, the model and the effort that instance carries in the turn\'s result', function (): void {
