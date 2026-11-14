@@ -1088,14 +1088,25 @@ describe('a turn of a group that owns a copy', function (): void {
     it('reads an empty Gateway agent key as its shipped default, and a set one as itself', function (): void {
         $keys = ['ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER' => '', 'ORBIT_TASKS_COPY_IMPLEMENTER_MODEL' => '', 'ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT' => '',
             'ORBIT_TASKS_COPY_REVIEWER_PROVIDER' => '', 'ORBIT_TASKS_COPY_REVIEWER_MODEL' => 'claude-sonnet-5-5', 'ORBIT_TASKS_COPY_REVIEWER_EFFORT' => ''];
+        // The keys' earlier values, absent ones as null, so the test leaves the environment as it found it.
+        $earlier = array_map(static fn (string $key): array => [$_SERVER[$key] ?? null, $_ENV[$key] ?? null], array_combine(array_keys($keys), array_keys($keys)));
         foreach ($keys as $key => $value) {
             $_SERVER[$key] = $_ENV[$key] = $value;
         }
         try {
             $agents = (require config_path('orbit.php'))['tasks']['copy_agents'];
         } finally {
-            foreach (array_keys($keys) as $key) {
-                unset($_SERVER[$key], $_ENV[$key]);
+            foreach ($earlier as $key => [$server, $env]) {
+                if ($server === null) {
+                    unset($_SERVER[$key]);
+                } else {
+                    $_SERVER[$key] = $server;
+                }
+                if ($env === null) {
+                    unset($_ENV[$key]);
+                } else {
+                    $_ENV[$key] = $env;
+                }
             }
         }
 
