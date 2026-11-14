@@ -1336,6 +1336,10 @@ Incus writes `memory.swap.max = 0` for every Instance container from `limits.mem
 
 So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. It records the inner cgroups it opened in `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, one path below the container's cgroup per line, and their count in its result as `swap_subtree`. Each resume by a wake's run, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record.
 
+The sleep makes the record's folder first: `/dev/shm` is empty after a Node's reboot. A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them.
+
+The record is written from what the walk opened before any later step can fail, and a rescue also closes what this run opened when the record could not be written. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
+
 A short-lived unit, such as `systemd-hostnamed.service`, can end while the container sleeps, and its cgroup goes with it; the resume skips that path and never fails on it. In practice only the container's own cgroup and the three inner payload roots matter.
 
 The Node's wake script closes only the container's own cgroup, and changing it would need an `app-dev` converge. So the Gateway skips [the Node's resume](#the-node-resumes-a-frozen-container) for a nested-fleet Instance and for any Instance whose last sleep has `swap_subtree` above 0; those wakes take the run. A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. A plain clone has no inner cgroup with 0, so its record is empty.
@@ -1386,8 +1390,8 @@ An Instance sleeps only when no row of this table keeps it awake. The sweep chec
 
 | Reason | The Instance stays awake when |
 | --- | --- |
-| `not_development` | It is not a development Instance. |
 | `t3_server` | The value is `without_t3`, and it has a T3 server. |
+| `not_development` | It is not a development Instance. |
 | `never_sleep` | Its id is in `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`. |
 | `asleep` | It already sleeps. The sweep does not read it. |
 | `busy`, `task` | It is not active, an Operation is open on it or on its Processes, or a task runs in it. |
@@ -1407,7 +1411,7 @@ The three `t3_` rows apply only to an Instance with a T3 server. An Instance wit
 
 **The watch.** The first run that acts on a clone records when it began to watch it, in `idle_watch_started_at` of the Instance's runtime. Until one idle window has passed since then, the clone stays awake with `watch_starting` or `watching`. An access log written before the watch, such as the file a migrated Instance kept from its checkout, proves nothing about the time since. A dry run never starts a watch.
 
-A clone without a Route sleeps on the watch, its wakes and T3 alone; an Instance without a Route and without a T3 server sleeps on the watch and its wakes. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
+A clone without a Route sleeps on the watch, its wakes and T3 alone; an Instance without a Route and without a T3 server sleeps on the watch, its wakes and its deployments. An Instance without a published Route has no Caddy site, so its sleep has no asleep check to verify: it writes the marker and freezes the container. Nothing proxies to it until a Route publishes a site, which renders the check. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
 
 A turn that runs is never cut, whatever its age. A thread that waits for the user keeps the clone awake only while its request is younger than the idle window; the freeze keeps the request, and the user's answer in Conn wakes the clone. A Conn client that is only connected is no activity: Conn keeps a socket open to every server it knows and pings it.
 
@@ -1473,11 +1477,11 @@ A second check follows for the same reason. The converge keeps each container's 
 
 Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
-A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+A destroy removes the marker and the swap record. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
-**What wakes an Instance.** A visit to its Route, a deployment of it, and [`instance:wake`](/cli/instance/wake). A default with no visitor stays asleep until one of them comes. A clone or task copy of an asleep default does not wake it: the copy comes from the seed snapshot. A deployment that starts or resumes the container removes the asleep marker once FrankenPHP answers, so the Route serves the app again; its result records `power_state` `running`.
+**What wakes an Instance.** A visit to its Route, a deployment of it, and [`instance:wake`](/cli/instance/wake). A default with no visitor stays asleep until one of them comes. A clone or task copy of an asleep default does not wake it: the copy comes from the seed snapshot. A deployment that starts or resumes the container removes the asleep marker once its `start` part passed (the container runs and its units are active; there is no web probe), so the Route serves the app again; its result records `power_state` `running`.
 
 The end of a deployment counts as activity, like the end of a wake: the Instance stays awake with `deployed_recently` for one idle window, then sleeps when nothing else keeps it awake.
 

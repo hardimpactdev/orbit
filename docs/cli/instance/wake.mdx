@@ -9,7 +9,7 @@ covers:
   - apps/gateway/routes/api/instance-power.php
   - apps/cli/app/Commands/Instances/WakeInstanceCommand.php
   - packages/php-sdk/src/Requests/Instances/WakeInstanceRequest.php
-  - swamp/ansible/tasks/instance-container-power.yml
+  - swamp/ansible/tasks/{instance-container-power.yml,instance-container-swap.yml}
   - swamp/workflows/workflow-operation-instance-wake.yaml
   - swamp/workflows/workflow-operation-instance-start.yaml
 ---
@@ -42,6 +42,8 @@ The API is `POST /api/v1/instances/{instance}/wake`; it starts an `instance.wake
 A nested-fleet Instance, the default or a clone, sleeps frozen and never stopped. The freeze keeps its inner fleet, its tunnel `wg-nested` and the Club key in the container's `/run`, so its wake's run resumes it and starts no fleet. The run also closes the swap that the sleep opened for the inner fleet's cgroups. Orbit takes this path while the Instance's last sleep froze it and no wake since found it stopped.
 
 A wake never boots a stopped nested-fleet container: a boot without the Club key and the tunnel gives an inner fleet that cannot become ready. When a host reboot ended the freeze, the wake fails with `instance.nested_fleet_stopped`, and the marker stays. The next wake of a clone then takes the start below, which removes the marker. A nested-fleet default starts only through its [deployment](/cli/instance/deploy), which removes the marker too.
+
+**Known limit.** On a Route visit after such a reboot, Try again starts the clone's start (about 90 seconds), but the waiting page still reads the failed wake and shows the failure page until the start ends. Follow the start with [`operation:show`](/cli/operation/show), or wake the clone with this command.
 
 ## A stopped nested-fleet clone
 

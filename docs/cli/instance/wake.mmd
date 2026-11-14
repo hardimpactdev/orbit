@@ -79,7 +79,7 @@ sequenceDiagram
   %%> - the visitor waits for the app, not for T3; T3 gates only the Operation's end
   %%> - unit enablement holds each Process's desired state, so a stopped Process stays stopped
   %%> When:
-  %%> - the wake's state handling runs only in a start whose intent names `marker`; a deployment's start and a nested-fleet clone's start name `asleep_marker` instead, which only removes the marker once the app answers
+  %%> - the wake's state handling runs only in a start whose intent names `marker`; a deployment's start and a nested-fleet clone's start name `asleep_marker` instead, which only removes the marker once the `start` part passed, with no web probe
   alt the run passes
     %% path: main
     SW-->>GW: Run succeeded<br/>terminal result
