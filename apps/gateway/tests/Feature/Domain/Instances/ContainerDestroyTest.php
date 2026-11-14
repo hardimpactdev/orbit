@@ -217,8 +217,10 @@ it('removes container Processes and disabled Conn records and frees the port onl
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'succeeded'));
     expect($clone->fresh())->toBeNull()->and($process->fresh())->toBeNull()->and($environment->fresh())->toBeNull()->and($pairing->fresh())->toBeNull()
         ->and($default->fresh()->status)->toBe(InstanceState::Active);
+    expect(InstanceRuntime::query()->where('node_id', $clone->node_id)->where('t3_port', $port)->exists())->toBeFalse();
+    // The freed port is not given again at once: the next clone takes the port after it (development-containers.md#prepare-a-node).
     $next = destroyClone($default);
-    expect($next->runtime->t3_port)->toBe($port);
+    expect($next->runtime->t3_port)->toBe($port + 1);
     expect($default->runtime()->exists())->toBeTrue();
     $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
     expect($deleted)->toContain('native-gateway-copy', ($migrated ? 'instance-migrate-model-' : 'instance-create-model-').$create->id)

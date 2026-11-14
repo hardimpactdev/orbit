@@ -34,6 +34,8 @@ final readonly class TaskTurnIntent
             return app(TaskCopyTurn::class)->start($group, $data, $caller, $request);
         }
         TaskVmAwake::require($group);
+        // A task VM turn without a thread starts a new one.
+        $data = $data->thread === null ? new TaskTurnData($data->subtask, $data->role, $data->prompt, 'new', $data->model, $data->check) : $data;
 
         return $this->operations->start($group, 'tasks.turn', $data->toArray(), static function (Task $group): void {},
             $caller, $request, fn (Task $group): array => $this->captureTurn($group, $data));

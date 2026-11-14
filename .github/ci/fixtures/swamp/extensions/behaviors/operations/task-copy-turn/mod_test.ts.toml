@@ -1,10 +1,14 @@
 order = 370
-source_sha256 = "5c87967b8076b9eb7bfca727477f142ca880b9b80c9f9d4bce1cf78243424eaa"
+source_sha256 = "22fded92deef5e01d49aea9b7341b5336c3e26004801a1ebf30d1ca2dba65fd5"
 cases = [
   "a completed run is done and over, and records the message transcript and the T3 thread",
   "a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status",
   "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
   "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
+  "a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched",
+  "a continued turn whose thread list failed or printed no JSON is tasks.copy_turn_failed, not a missing thread",
+  "a reviewer turn fails when its checkout could not be put on the candidate or was not restored after a run T3 ended",
+  "a detached reviewer checkout without a restore holds the group whatever the run did",
   "a message without a run id keeps the transcript",
   "transcript text is redacted and bounded to the newest entries",
   "the method reads each evidence file on its own, so an oversized read keeps the start's end",

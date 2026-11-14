@@ -8,14 +8,20 @@ use Illuminate\Validation\ValidationException;
 
 /**
  * The sections of a profile's settings document. Each section has its own version, so two devices that
- * change different sections never conflict. A section is `workspaces`, `appearance`, or `devices.<type>`,
- * where `<type>` names a kind of device such as `desktop` or `iphone`.
+ * change different sections never conflict. A section is `workspaces`, `appearance`, `attachedThreads`, or
+ * `devices.<type>`, where `<type>` names a kind of device such as `desktop` or `iphone`.
  */
 final readonly class ConnProfileSections
 {
     public const string Workspaces = 'workspaces';
 
     public const string Appearance = 'appearance';
+
+    /** The threads the profile has attached: the servers its devices connect to ({@see ConnAttachedThreads}). */
+    public const string AttachedThreads = 'attachedThreads';
+
+    /** The sections that are one name each; the device sections are `devices.<type>`. */
+    public const array Named = [self::Workspaces, self::Appearance, self::AttachedThreads];
 
     private const string DevicePrefix = 'devices.';
 
@@ -27,6 +33,10 @@ final readonly class ConnProfileSections
     public const int MaxAppearanceBytes = 512 * 1024;
 
     public const int MaxDeviceBytes = 64 * 1024;
+
+    public const int MaxAttachedThreads = 500;
+
+    public const int MaxAttachedThreadsBytes = 64 * 1024;
 
     public const int MaxDocumentBytes = 4 * 1024 * 1024;
 
@@ -49,11 +59,11 @@ final readonly class ConnProfileSections
 
     public static function isKnown(string $section): bool
     {
-        return $section === self::Workspaces || $section === self::Appearance || self::deviceType($section) !== null;
+        return in_array($section, self::Named, true) || self::deviceType($section) !== null;
     }
 
     /**
-     * The document with one section replaced. A null value removes `appearance` or a device section, and
+     * The document with one section replaced. A null value removes any section but `workspaces`, and
      * `devices` goes away with its last device. `workspaces` always stays a list.
      *
      * @param  array<string, mixed>  $settings
@@ -97,22 +107,35 @@ final readonly class ConnProfileSections
     }
 
     /**
-     * Refuses a document that grew past a limit that only the whole document shows.
+     * Refuses a document that grew past a limit that only the whole document shows. A write that does not grow past
+     * what the document held before passes, so a write that only shrinks a document already over a limit, such as
+     * Orbit's drop of a removed Instance's threads, never fails.
      *
      * @param  array<string, mixed>  $settings
+     * @param  array<string, mixed>  $before
      *
      * @throws ValidationException
      */
-    public static function assertWithinLimits(array $settings): void
+    public static function assertWithinLimits(array $settings, array $before): void
     {
-        $devices = $settings['devices'] ?? [];
+        $types = self::deviceTypeCount($settings);
 
-        if (is_array($devices) && count($devices) > self::MaxDeviceTypes) {
+        if ($types > self::MaxDeviceTypes && $types > self::deviceTypeCount($before)) {
             throw ValidationException::withMessages(['settings' => ['A profile holds at most '.self::MaxDeviceTypes.' device types.']]);
         }
 
-        if (self::encodedSize($settings) > self::MaxDocumentBytes) {
+        $size = self::encodedSize($settings);
+
+        if ($size > self::MaxDocumentBytes && $size > self::encodedSize($before)) {
             throw ValidationException::withMessages(['settings' => ['The settings document is larger than '.(self::MaxDocumentBytes / 1024 / 1024).' MB.']]);
         }
+    }
+
+    /** @param  array<string, mixed>  $settings */
+    private static function deviceTypeCount(array $settings): int
+    {
+        $devices = $settings['devices'] ?? [];
+
+        return is_array($devices) ? count($devices) : 0;
     }
 }

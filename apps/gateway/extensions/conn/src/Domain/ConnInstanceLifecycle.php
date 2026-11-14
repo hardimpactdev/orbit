@@ -49,6 +49,7 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
             ConnPairing::query()->where('conn_environment_id', $environment->id)->delete();
             $environment->delete();
         }
+        app(ConnAttachedThreads::class)->drop(array_values($environments->map(static fn (ConnEnvironment $environment): string => $environment->environment_id)->all()));
     }
 
     /**

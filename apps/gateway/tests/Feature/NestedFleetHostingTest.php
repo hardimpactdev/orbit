@@ -201,9 +201,10 @@ describe('the inner volume', function (): void {
             ->and($intent['allowed_devices']['inner-pool'])->toBe(['type' => 'disk', 'pool' => 'orbit-instances', 'source' => 'inner-'.$default->id, 'path' => '/srv/inner-pool'])
             ->and(app(ContainerInstanceDestroy::class)->capture($default)['inner_volume'])->toBe('inner-'.$default->id);
 
-        // A clone of it copies its default and records none.
+        // A clone of it records its own volume, which the clone copies from the default's seed
+        // (docs/reference/development-containers.md#copies-of-the-volume).
         $clone = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/test/nested/feature']);
-        expect(app(InstanceContainer::class)->reserve($clone, $node, $default)->inner_volume)->toBeNull();
+        expect(app(InstanceContainer::class)->reserve($clone, $node, $default)->inner_volume)->toBe('inner-'.$clone->id);
 
         // A non-default runtime with no clone source, as a migration reserves one, records none either.
         $moved = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'moved', 'checkout_path' => '/test/nested/moved']);

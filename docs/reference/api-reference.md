@@ -41,6 +41,8 @@ bin/docs-openapi
 
 `GET /api/v1/conn/projects/{project}/branches` generates `conn-project-branches` with typed branch, pull request and Instance data, the optional `query`, and the `meta.pull_requests_unavailable` marker. [Conn branch choices](/reference/conn#threads-in-an-orbit-project) defines its bounds and partial-read behavior.
 
+`bin/docs-openapi` writes the Conn settings patch body by hand in `conn_settings_body()`, because its rules depend on the sections a request holds. It lists `workspaces`, `appearance`, `attachedThreads` and `devices.<type>`. `ConnProfileSettingsContractTest` compares the generated OpenAPI and the `conn-profile-settings-patch` tool with the request rules. Change the body with the rules, then regenerate OpenAPI and the MCP manifest. [Attached threads](/reference/conn#attached-threads) owns that section's rules.
+
 `GET /api/v1/conn/environments` and `conn-environment-list` return the six flat Orbit fields described in [Instance servers](/reference/conn#instance-servers). Their nullable types come from `ConnEnvironmentData`; regenerate OpenAPI, the MCP manifest and web API types after changing this response.
 
 The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its description explains how to retry a revoked pairing whose session still lives. [Conn session cleanup](/reference/conn#session-cleanup) defines selection and failure behavior. Regenerate both OpenAPI and the MCP manifest when this request changes.

@@ -2486,6 +2486,137 @@ Deno.test({
   },
 });
 
+/** The seed snapshots of the container and of its inner volume. */
+const seedPair = (f: ReturnType<typeof fixture>) => ({container: f.state().containers["instance-7"].snapshots,
+  volume: f.state().volumes?.["inner-7"]?.snapshots ?? []});
+
+Deno.test({
+  name: "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        const result = f.run(phase);
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      const first = git(f.source, "rev-parse", "HEAD");
+      // docs/reference/development-containers.md#the-inner-volume: the seed is a pair of one name, taken with the Processes stopped.
+      assertEquals(seedPair(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
+      const calls = incusCalls(f).map((call) => call.join(" "));
+      const container = calls.findIndex((call) => call.includes(`snapshot create instance-7 seed-${first}`));
+      const volume = calls.findIndex((call) => call.includes(`storage volume snapshot create orbit-instances inner-7 seed-${first}`));
+      assert(container >= 0 && container < volume, JSON.stringify(calls));
+      // A seed without its volume half, as one taken before the volume seed existed, is taken again; a full pair is kept.
+      const half = f.state();
+      half.volumes["inner-7"].snapshots = [];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(half));
+      assert(f.run("seed").ok);
+      assertEquals(seedPair(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
+      const takes = () => incusCalls(f).filter((call) => call.includes("create") && call.includes("snapshot")).length;
+      const before = takes();
+      assert(f.run("seed").ok);
+      assertEquals(takes(), before);
+      // A deployment at a new commit takes the new pair, then deletes both halves of the older one.
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
+      const second = git(f.source, "rev-parse", "HEAD");
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      for (const phase of ["start", "fetch", "checkout", "seed"]) {
+        const result = f.run(phase);
+        assert(result.ok, `${phase}: ${result.output}`);
+      }
+      assertEquals(seedPair(f), {container: [`seed-${second}`], volume: [`seed-${second}`]});
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      const first = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "commit", "--quiet", "--allow-empty", "-m", "second");
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      for (const phase of ["start", "fetch", "checkout"]) assert(f.run(phase).ok);
+      const state = f.state();
+      state.volume_snapshot_fails = true;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const failed = f.run("seed");
+      assert(!failed.ok);
+      assertEquals(f.result(), { error_code: "instance.seed_volume_snapshot_failed" });
+      // No half pair: the new container snapshot is gone, and the older pair stays for a restore.
+      assertEquals(seedPair(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
+      // The Processes run again after the failure.
+      assert(failed.output.includes("TASK [Start the Processes again]"), failed.output);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a failed deployment of a default with an inner volume restores both halves of the newest seed, and refuses a seed without its volume half",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      f.intent.fleet = fleetIntent();
+      f.write();
+      const seed = f.state().containers["instance-7"].snapshots[0];
+      const restored = f.run("fleet_restore");
+      assert(restored.ok, restored.output);
+      assertEquals(f.state().containers["instance-7"].restored, [seed]);
+      assertEquals(f.state().volumes["inner-7"].restored, [seed]);
+      assert(f.run("start").ok);
+
+      // The volume half is gone: nothing is restored, and the container stays as it is.
+      const half = f.state();
+      half.volumes["inner-7"].snapshots = [];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(half));
+      assert(!f.run("fleet_restore").ok);
+      assertEquals(f.result(), { error_code: "instance.fleet_seed_missing" });
+      assertEquals(f.state().containers["instance-7"].restored, [seed]);
+      assertEquals(f.state().containers["instance-7"].status, "Running");
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a normal default and a nested-fleet default without an inner volume (Instance 2454's shape) seed, retake and restore with no volume call",
+  ignore: !hasAnsible,
+  fn() {
+    for (const shape of ["nested", "normal"]) {
+      const f = fixture();
+      try {
+        if (shape === "nested") nestedCreate(f);
+        for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, `${shape} ${phase}`);
+        f.intent.deployment = { variant: "container" };
+        f.write();
+        const seeded = f.run("seed");
+        assert(seeded.ok, seeded.output);
+        // The seed tasks for the volume run their expressions and skip.
+        for (const task of ["Read the inner volume's snapshots", "Snapshot the inner volume", "Delete the older seeds of the inner volume"]) {
+          // Only the task's own lines, up to the next task header.
+          const own = (seeded.output.split(`TASK [${task}]`)[1] ?? "").split("\nTASK [")[0];
+          assert(/skipping: \[node\]/.test(own) && !/(ok|changed): \[node\]/.test(own), `${shape}: ${task}`);
+        }
+        f.intent.fleet = fleetIntent();
+        f.write();
+        assert(f.run("fleet_restore").ok, shape);
+        assertEquals(f.state().containers["instance-7"].restored?.length, 1, shape);
+        assertEquals(incusCalls(f).filter((call) => call[0] === "storage" || call.join(" ").includes("/volumes/custom/")), [], shape);
+      } finally { f.cleanup(); }
+    }
+  },
+});
+
 Deno.test({
   name: "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
   ignore: !hasAnsible,

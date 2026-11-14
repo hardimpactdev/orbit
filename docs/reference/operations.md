@@ -36,9 +36,40 @@ Every `instance.create`, `instance.complete` or `instance.deploy` Operation that
 
 The alert uses the existing [signed release webhook](/reference/gateway-recovery#webhook), with event `instance.operation_failed`. It includes the Operation, Instance and Node IDs, kind, native root run ID, failed step and error code. It does not include inputs, private material, output or stderr. The Activity command `instance:failure-alert` records the notification and webhook outcome. An unavailable webhook does not change the failed Operation. Both release webhook settings must be configured for delivery; otherwise Activity records `not_configured`.
 
+## Schedules of the Swamp Node
+
+`swamp-datastore-watch` and `swamp-credential-monitor` read the serve checkout at `/home/orbit/apps/orbit-monorepo-staging/checkout`, the `swamp.orbit` certificate under `~/.config/swamp/serve-tls` and the Node 209 token names. Only the production Swamp Node has them.
+
+Every serve loads the same `swamp/workflows`. Swamp registers each workflow's built-in `trigger` on every serve, a [nested fleet's](/reference/development-containers#nested-fleet) too. The release sets these two schedules on Node 209 as well:
+
+1. `swamp/config/swamp-node-schedules.json` holds the cron of each workflow.
+2. The `load` step of the [release Swamp load](/reference/gateway-recovery#load-swamp) runs `swamp workflow trigger set` for each entry. It runs after `swamp serve reload`.
+3. Serve keeps each one as a trigger override in its `.swamp/serve.yaml`.
+
+A schedule that serve does not confirm fails the load.
+
+Only the production release runs that load. Serve merges an override with the built-in trigger into one schedule. The cron in the file equals the built-in one, so Node 209 runs each workflow once, at the same time as before.
+
+### Built-in triggers
+
+For now, the two workflows keep their built-in `trigger`. A nested fleet's serve therefore still registers them, and their runs fail there. A later change removes the built-in triggers, after a release has set the overrides on Node 209. From then on, only the production release sets these schedules.
+
+They stay until then because a release reloads with the load workflow that serve already has. If one commit dropped them and added the overrides, Node 209 would run neither schedule until the next release.
+
+### Changing the file
+
+The load only sets the entries that the file holds. A missing or empty file sets nothing and passes, because a rollback runs the load against an older checkout without the file. A file that jq cannot read fails the load.
+
+When you remove an entry from the file, its override stays in serve.yaml. Remove it on Node 209 by hand, as `orbit` in the serve checkout:
+
+```bash
+swamp workflow trigger remove <workflow> --server ws://127.0.0.1:9418 \
+  --token-file ~/.config/swamp/serve-driver-token
+```
+
 ## Swamp datastore watch
 
-The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209. It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
+The native schedule `swamp-datastore-watch` runs every 15 minutes on the swamp role's workers on Node 209 ([Schedules of the Swamp Node](#schedules-of-the-swamp-node)). It reads only: one `command/shell` step counts the files under serve's datastore, `.swamp/` in the serve checkout, and samples serve's CPU over 5 seconds with `top`. It prints one JSON result with the auto-definitions per type, `outputs`, `workflow_runs`, `data`, `step_leases`, `grants` and `serve_cpu_percent`. The step never calls the Gateway.
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
 
@@ -61,7 +92,7 @@ A key is filed once two fires at least 10 minutes apart report it. The first lat
 
 ## Swamp credential expiry alerts
 
-The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers. It is alert only: it reads expiry metadata and changes no credential or grant. Three plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
+The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers on Node 209 ([Schedules of the Swamp Node](#schedules-of-the-swamp-node)). It is alert only: it reads expiry metadata and changes no credential or grant. Three plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
 
 - `swamp access token list` and `swamp worker token list`, read locally from the serve datastore;
 - `openssl x509 -enddate` for the `swamp.orbit` certificate.
@@ -98,7 +129,7 @@ For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,90
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. A maintainer must update the fixed row once the history holds author turns.
 
-`tasks.copy_turn` has a fixed 4,200 seconds: the turn's own bound of 3,600 seconds, the 30-second kill grace, up to 4 minutes to read the thread back, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
+`tasks.copy_turn` has a fixed 4,200 seconds. Its Ansible phase ends after 4,050 seconds: the turn's own bound of 3,600 seconds, the 30-second kill grace, three T3 reads of up to a minute each, a reviewer's checkout and restore of up to 160 seconds, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a VM place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 

@@ -57,6 +57,7 @@ use Illuminate\Support\Str;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
+use Orbit\Extensions\Conn\Models\ConnProfile;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\Process;
 
@@ -390,6 +391,30 @@ it('admits the forced engine and follows its Conn-owned Operation through succes
     $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->getJson('/api/v1/conn/environments')
         ->assertOk()->assertJsonCount(0, 'data');
     connRemovalCall($instance->id, ['acknowledge_unsaved' => true], 'new-key')->assertNotFound();
+});
+
+it('drops the removed clone\'s attached threads from every profile when the destroy succeeds', function (): void {
+    $instance = connRemovalClone();
+    connRemovalResources($instance);
+    ConnEnvironment::query()->create(['environment_id' => 'host-env', 'label' => 'host', 'url' => 'http://10.44.0.7:3773',
+        'node_id' => $instance->node_id, 'admin_session' => 'fixture-session', 'admin_session_expires_at' => now()->addDay(), 'registered_at' => now()]);
+    $profile = ConnProfile::query()->create(['name' => 'conn-lane-test', 'settings' => ['workspaces' => []], 'settings_version' => 1]);
+    $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->patchJson('/api/v1/conn/profiles/'.$profile->id.'/settings', ['sections' => [
+        'attachedThreads' => ['version' => 0, 'value' => ['schema' => 1, 'threads' => [
+            ['environmentId' => 'feature-env', 'threadId' => 'thread-1'], ['environmentId' => 'host-env', 'threadId' => 'thread-2'],
+        ]]],
+    ]])->assertOk();
+
+    $operation = Operation::query()->findOrFail(connRemovalCall($instance->id, ['acknowledge_unsaved' => true])->assertAccepted()->json('data.id'));
+    expect($profile->fresh()?->settings_version)->toBe(2);
+    connRemovalSucceed($operation->refresh());
+
+    $profile = $profile->fresh();
+    expect($instance->fresh())->toBeNull()
+        ->and($profile?->settings['attachedThreads'])->toBe(['schema' => 1, 'threads' => [['environmentId' => 'host-env', 'threadId' => 'thread-2']]])
+        ->and($profile?->section_meta['attachedThreads']['version'])->toBe(2)
+        ->and($profile?->section_meta['attachedThreads']['updated_by_node_id'])->toBeNull()
+        ->and($profile?->settings_version)->toBe(3);
 });
 
 it('keeps default and non-container refusals local to Conn', function (bool $container, string $code): void {
