@@ -20,7 +20,7 @@ final readonly class StartTaskPublishAction
     public function __construct(private RequireTasksExtensionAction $extension, private TaskPublishIntent $publish, private TaskGroupDone $done, private OperationIdempotency $idempotency) {}
 
     /** @param  int|null  $doneCheck  the done check a release or the tick read; the admission refuses `tasks.not_done` when it is no longer the done check */
-    public function execute(Task $group, StartTaskPublishData $input, string $triggeredBy, ?string $requestId, ?int $doneCheck = null): Operation
+    public function execute(Task $group, StartTaskPublishData $input, string $triggeredBy, ?string $requestId, ?int $doneCheck = null, bool $byItself = false): Operation
     {
         $this->extension->execute();
         if ($input->check === null) {
@@ -39,6 +39,6 @@ final readonly class StartTaskPublishAction
             $doneCheck = $check->id;
         }
 
-        return $this->publish->start($group, $input, $triggeredBy, $requestId, $doneCheck);
+        return $this->publish->start($group, $input, $triggeredBy, $requestId, $doneCheck, $byItself);
     }
 }
