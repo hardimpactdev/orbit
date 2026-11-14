@@ -65,8 +65,11 @@ DEFAULT_BUDGET = 270
 
 
 class Part:
+    """One part's result. Its output keeps the last OUTPUT_LINES lines, each within LINE_BYTES."""
+
     def __init__(self, name, status, seconds=0.0, detail='', output=''):
-        self.name, self.status, self.seconds, self.detail, self.output = name, status, seconds, detail, output
+        self.name, self.status, self.seconds, self.detail = name, status, seconds, detail
+        self.output = tail(output) if output.strip() else ''
 
 
 def run(argv, cwd=ROOT, env=None, timeout=None):
@@ -131,7 +134,7 @@ def timed(name, commands, deadline, cwd=ROOT, env=None):
             seconds = time.monotonic() - started
             return Part(name, 'skipped', seconds, f'budget: stopped after {seconds:.0f}s')
         if code:
-            return Part(name, 'FAILED', time.monotonic() - started, f'exit {code}: {" ".join(argv)}', tail(output))
+            return Part(name, 'FAILED', time.monotonic() - started, f'exit {code}: {" ".join(argv)}', output)
     return Part(name, 'passed', time.monotonic() - started)
 
 
@@ -358,7 +361,7 @@ def fixtures(plan, deadline, table):
         detail += '; budget skipped: ' + ', '.join(stopped + skipped + deferred)
     seconds = time.monotonic() - started
     if failed or not_run or (code not in (0, None) and not stopped):
-        return Part('fixtures', 'FAILED', seconds, detail, tail(output))
+        return Part('fixtures', 'FAILED', seconds, detail, output)
     return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
 
 
@@ -428,7 +431,7 @@ def main(argv=None):
     head = candidate_head(committed)
     jobs, plan, error = ci_plan(base, head)
     if jobs is None:
-        record(Part('ci-plan', 'FAILED', time.monotonic() - plan_started, 'CI cannot plan this change', tail(error)))
+        record(Part('ci-plan', 'FAILED', time.monotonic() - plan_started, 'CI cannot plan this change', error))
     else:
         chosen = sorted(name for name, on in jobs.items() if on)
         record(Part('ci-plan', 'passed', time.monotonic() - plan_started, 'jobs: ' + ', '.join(chosen)))

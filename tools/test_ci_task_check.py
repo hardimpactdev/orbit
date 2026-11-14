@@ -340,6 +340,16 @@ class ReportTest(unittest.TestCase):
         self.assertTrue(lines[lines.index('Last lines of pest project-1:') - 1].startswith('FAILED case 399 '))
         self.assertEqual(lines[-2:], [check['NOT_IN_CHECK'], 'Task check FAILED against 0123456789ab in 206.6s'])
 
+    def test_every_part_output_is_bounded_whatever_made_it(self):
+        # Such as an error message or the stale-fixture and capacity rows, which no command printed.
+        part = Part('fixture-population', 'FAILED', 0, 'the fixture table does not load',
+                    'x' * 5000 + '\n' + '\n'.join(f'row {index}' for index in range(200)))
+        rows = part.output.splitlines()
+        self.assertEqual((rows[0], rows[-1], len(rows)), ('…', 'row 199', check['OUTPUT_LINES'] + 1))
+        self.assertTrue(all(len(row.encode()) <= check['LINE_BYTES'] for row in rows))
+        self.assertTrue(Part('ci-plan', 'FAILED', 0, '', 'y' * 5000).output.endswith('… (5000 bytes)'))
+        self.assertEqual(Part('ci-plan', 'passed').output, '')
+
     def test_a_very_long_output_line_keeps_its_start_and_names_its_size(self):
         text = 'first\n' + 'é' * 10000 + '\nlast\n'
         rows = check['tail'](text).splitlines()
