@@ -506,7 +506,7 @@ For a slug such as `My_App`, a person sees `default.My_App` as T3's label, and `
 - **`/etc/machine-info`** is Orbit's whole file: `PRETTY_HOSTNAME=<name>`. The clone's boot file writes the same text.
 - **`/etc/hosts`** gets its `127.0.1.1` line: the hostname, its first label, the running kernel hostname and the Incus name, each once.
 
-The running kernel hostname and the Incus name stay on the hosts line, so the kernel hostname resolves before and after the next boot. The converge reads the running kernel hostname of a running container; a frozen container renamed while frozen resolves its kernel hostname again at its next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
+The running kernel hostname and the Incus name stay on the hosts line, so the kernel hostname resolves before and after the next boot. The converge reads the running kernel hostname of a running container. A container that is frozen at the converge gets no such alias. So if a renamed Project's running container is frozen before the next converge, its kernel hostname stops resolving after it thaws, and `sudo` warns until the container's next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
 
 Where each path writes the name:
 

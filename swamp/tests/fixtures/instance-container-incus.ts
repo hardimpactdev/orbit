@@ -316,7 +316,8 @@ if (family === "list") {
   const [, , target] = args;
   const name = target.slice(0, target.indexOf("/"));
   const path = rootfs(name) + target.slice(name.length);
-  if (!exists(path)) fail("Error: Not Found");
+  // Incus 7 reads files over SFTP and answers a missing one with exactly this text.
+  if (!exists(path)) fail("file does not exist");
   Deno.stdout.writeSync(Deno.readFileSync(path));
   state.pulls ??= [];
   state.pulls.push(target);

@@ -46,6 +46,12 @@ class RenderTest(unittest.TestCase):
                                                                '127.0.1.1\ttask-5003.dlf-leden task-5003 instance-42'))
         self.assertEqual(render([files['/etc/hostname'], files['/etc/machine-info'], files['/etc/hosts']]), {})
 
+    def test_render_names_each_file_by_its_path_whatever_the_order_of_its_input(self):
+        given = {'/etc/hosts': TEMPLATE, '/etc/machine-info': None, '/etc/hostname': 'instance-42\n'}
+        files = command(SOURCE, 'render', {'files': given, 'hostname': 'task-5003.dlf-leden', 'pretty': 'task-5003.dlf-leden',
+                                           'container': 'instance-42', 'kernel': None})['files']
+        self.assertEqual(files, render(['instance-42\n', None, TEMPLATE]))
+
     def test_machine_info_is_orbits_whole_file_with_the_name_as_stored(self):
         files = render([None, 'CHASSIS=container\nPRETTY_HOSTNAME=default.shop\n', None],
                        'default-0000000000000000000000000000000000000000000000123.my-app', 'default.My_App')

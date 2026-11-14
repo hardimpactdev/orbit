@@ -12,7 +12,7 @@ files through Incus itself: the clone script, the container and start phases and
   the next boot. Every other line stays, Orbit's private names block among them, so the block's writer and this one never undo each other.
 
 Commands, each with JSON on stdin and JSON on stdout:
-- `render`: `{"files": {path: text or null}, "hostname", "pretty", "container", "kernel"}` for the three paths in the order above,
+- `render`: `{"files": {path: text or null}, "hostname", "pretty", "container", "kernel"}` with the three paths above as keys,
   `kernel` the running kernel hostname or null; prints
   `{"files": {path: text}}` with only the files whose text changes. A missing file counts as empty.
 - `hosts`: `{"hosts", "hostname", "container"}`; prints `{"content"}`, for the clone script's private names pass.
@@ -22,6 +22,8 @@ import json
 import sys
 
 HOSTS_LINE = '127.0.1.1'
+# The three files, by their paths: `render` names each one, never by the order of its input.
+HOSTNAME_FILE, MACHINE_INFO_FILE, HOSTS_FILE = '/etc/hostname', '/etc/machine-info', '/etc/hosts'
 
 
 def machine_info(pretty):
@@ -40,9 +42,9 @@ def hosts(current, hostname, container, kernel=None):
 
 
 def render(files, hostname, pretty, container, kernel=None):
-    """The changed files of the name; `files` maps the three paths, in order, to their current text, or None when it is missing."""
-    hostname_path, info_path, hosts_path = files
-    wanted = {hostname_path: hostname + '\n', info_path: machine_info(pretty), hosts_path: hosts(files[hosts_path] or '', hostname, container, kernel)}
+    """The changed files of the name; `files` maps each of the three paths to its current text, or None when it is missing."""
+    wanted = {HOSTNAME_FILE: hostname + '\n', MACHINE_INFO_FILE: machine_info(pretty),
+              HOSTS_FILE: hosts(files[HOSTS_FILE] or '', hostname, container, kernel)}
     return {path: text for path, text in wanted.items() if text != files[path]}
 
 

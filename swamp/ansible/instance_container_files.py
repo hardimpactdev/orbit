@@ -141,13 +141,26 @@ def delete(project, name, path):
         raise IncusFailure(f"incus file delete {path}: {result.stderr.strip()[:200]}")
 
 
+# Incus 7 reads a container's files over SFTP and answers a missing one with exactly this text (instance_env_keys.py,
+# instance_mail_line.py). Only it means missing.
+MISSING_FILE = "Error: file does not exist"
+
+
 def pull_named(project, name, path):
-    """A file of the machine name, or None only when Incus says it is not found; any other failed read fails the container, so a
+    """A file of the machine name, or None only when Incus says it does not exist; any other failed read fails the container, so a
     container that changed its state mid-read never gets a file rendered from nothing."""
     result = incus("file", "pull", "--project", project, name + path, "-", ok=(0, 1))
-    if result.returncode and "not found" not in result.stderr.lower():
+    if result.returncode and result.stderr.strip() != MISSING_FILE:
         raise IncusFailure(f"incus file pull {path}: {result.stderr.strip()[:200]}")
     return result.stdout if result.returncode == 0 else None
+
+
+def kernel_hostname(project, name):
+    """A running container's kernel hostname, or None when it cannot be read in five seconds: the alias then waits, the converge goes on."""
+    try:
+        return incus("exec", "--project", project, name, "--", "hostname", timeout=5).stdout.strip() or None
+    except (IncusFailure, subprocess.TimeoutExpired):
+        return None
 
 
 def machine_name(project, name, status, label, presented, code, summary):
@@ -155,7 +168,7 @@ def machine_name(project, name, status, label, presented, code, summary):
     /etc/hosts keeps it missing: the line alone would drop localhost."""
     current = {path: pull_named(project, name, path) for path in ("/etc/hostname", "/etc/machine-info", "/etc/hosts")}
     # A running container keeps its kernel hostname until its next start, so the hosts line names it too.
-    kernel = incus("exec", "--project", project, name, "--", "hostname").stdout.strip() or None if status == "Running" else None
+    kernel = kernel_hostname(project, name) if status == "Running" else None
     rendered = subprocess.run(["python3", "-I", "-c", code, "render"], capture_output=True, text=True, check=False, input=json.dumps(
         {"files": current, "hostname": presented["hostname"], "pretty": presented["pretty"], "container": name, "kernel": kernel}))
     if rendered.returncode:

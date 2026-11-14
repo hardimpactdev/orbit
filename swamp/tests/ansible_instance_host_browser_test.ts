@@ -401,7 +401,7 @@ Deno.test({
 });
 
 Deno.test({
-    name: "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias",
+    name: "a failed read of a machine name file fails that container after its trust work and writes no hosts file from nothing; a renamed running kernel stays an alias, an unreadable one is none",
     ignore: !hasAnsible,
     async fn() {
         const f = await fixture();
@@ -418,10 +418,15 @@ Deno.test({
             // instance-7 changes its state mid-read; instance-8's kernel still runs the name of before the Project's rename.
             state.pull_failures = ["instance-7/etc/hosts"];
             state.kernel_hostnames = { "instance-8": "default.dlf-leden" };
+            // instance-10's kernel hostname cannot be read: it gets no such alias, and the converge does not fail for it.
+            state.instances.push({ name: "instance-10", project: "orbit-instances", status: "Running" });
+            state.files["instance-10/etc/hosts"] = { content: "127.0.0.1\tlocalhost\n", mode: "0644", uid: "0", gid: "0" };
+            state.kernel_failures = ["instance-10"];
             Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
             const run = await pass(f.folder, undefined, [
                 { project: "orbit-instances", container: "instance-7", hostname: "task-5003.leden", pretty: "task-5003.leden" },
                 { project: "orbit-instances", container: "instance-8", hostname: "default.leden", pretty: "default.leden" },
+                { project: "orbit-instances", container: "instance-10", hostname: "feature.leden", pretty: "feature.leden" },
             ]);
             assert(!run.ok);
             assertEquals(run.summary.error_code, "instance.host_unavailable");
@@ -432,6 +437,8 @@ Deno.test({
             assert(files["instance-7/usr/local/share/ca-certificates/orbit-managed-root-ca.crt"] !== undefined);
             // The other container went on, with its running kernel hostname as an alias.
             assertEquals(files["instance-8/etc/hosts"].content, "127.0.1.1\tdefault.leden default default.dlf-leden instance-8\n127.0.0.1\tlocalhost\n");
+            assertEquals(files["instance-10/etc/hosts"].content, "127.0.1.1\tfeature.leden feature instance-10\n127.0.0.1\tlocalhost\n");
+            assert(!run.summary.failed.some((line: string) => line.includes("instance-10")), JSON.stringify(run.summary));
         } finally {
             f.cleanup();
         }

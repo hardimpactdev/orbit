@@ -14,7 +14,9 @@
   loop: [/etc/hostname, /etc/machine-info, /etc/hosts]
   register: machine_name_held
   changed_when: false
-  failed_when: machine_name_held.rc != 0 and 'not found' not in (machine_name_held.stderr | lower)
+  # Incus 7 answers a missing file with exactly this text (instance_container_files.py MISSING_FILE); any other failure fails.
+  failed_when: >-
+    machine_name_held.rc != 0 and machine_name_held.stderr | trim != 'Error: file does not exist'
 
 - name: Render the files of the machine name
   ansible.builtin.command:

@@ -1,7 +1,8 @@
 order = 1450
-source_sha256 = "e8575636a7dce5049e30f640f1c781271369bf7ed48ad182e9572dad595816d6"
+source_sha256 = "aa1377b9cedf6b8a7bb8bfa52defcf225f80dbc17118fbab2ac93aea4226aabf"
 cases = [
   "test_a_copy_gets_all_three_files_and_a_second_render_changes_none",
+  "test_render_names_each_file_by_its_path_whatever_the_order_of_its_input",
   "test_machine_info_is_orbits_whole_file_with_the_name_as_stored",
   "test_the_incus_name_stays_an_alias_so_the_kernel_hostname_resolves_before_the_next_boot",
   "test_a_running_kernel_hostname_that_differs_stays_an_alias_until_the_next_boot",
@@ -9,7 +10,7 @@ cases = [
   "test_only_the_127_0_1_1_line_changes_and_the_private_names_survive_both_orders",
 ]
 file = "swamp/tests/instance_machine_name_test.py"
-cost = 6
+cost = 10
 # The files it reads: the writer, the private names renderer and the Gateway's shared fixture of file texts.
 inputs = [
   "swamp/ansible/instance_machine_name.py",
@@ -18,8 +19,12 @@ inputs = [
 ]
 [case_costs]
 "test_a_copy_gets_all_three_files_and_a_second_render_changes_none" = 1
+"test_render_names_each_file_by_its_path_whatever_the_order_of_its_input" = 1
 "test_machine_info_is_orbits_whole_file_with_the_name_as_stored" = 1
 "test_the_incus_name_stays_an_alias_so_the_kernel_hostname_resolves_before_the_next_boot" = 1
 "test_a_running_kernel_hostname_that_differs_stays_an_alias_until_the_next_boot" = 1
 "test_the_file_texts_match_the_shared_fixture_that_the_gateway_asserts" = 1
 "test_only_the_127_0_1_1_line_changes_and_the_private_names_survive_both_orders" = 1
+"swamp/ansible/instance_machine_name.py" = 1
+"swamp/ansible/instance_node_services.py" = 1
+"apps/gateway/tests/Fixtures/machine-name-files.json" = 1
