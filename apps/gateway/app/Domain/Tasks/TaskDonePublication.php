@@ -18,6 +18,9 @@ use App\Models\TaskCheck;
  */
 final class TaskDonePublication
 {
+    /** A publish whose step waited too long for a Swamp behavior lock: no refusal, the tick starts the same check again. */
+    public const string LockTimeoutCode = 'tasks.publish_lock_timeout';
+
     /** The limit of a pull request body that the publish request accepts. */
     public const int BodyLimit = 65536;
 
