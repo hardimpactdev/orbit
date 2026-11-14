@@ -115,7 +115,9 @@ def run(record, pools, names):
     elif shutil.which('duperemove') is None:
         dedupe = 'missing'
     else:
-        done = subprocess.run(['duperemove', '-d', '-r', '-q', *[str(disk) for disk, _ in disks.values()]], stdout=sys.stderr, check=False)
+        # Its own bound inside the container, under the step's 600 s: a timeout of the step ends only the `incus exec` client.
+        done = subprocess.run(['timeout', '570', 'duperemove', '-d', '-r', '-q', *[str(disk) for disk, _ in disks.values()]], stdout=sys.stderr,
+                              check=False)
         dedupe = 'ran' if done.returncode == 0 else 'failed'
     if dedupe in ('ran', 'not_btrfs'):
         path = Path(record)
