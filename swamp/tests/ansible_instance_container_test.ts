@@ -3127,7 +3127,8 @@ Deno.test({
       assertEquals(f.result(), {error_code: "instance.fleet_seed_missing"});
       assertEquals(f.state().containers["instance-7"].restored, undefined);
       delete f.intent.fleet;
-      f.intent.deployment = {variant: "container"};
+      // The Gateway always captures a steps list, including when this deployment has no commands.
+      f.intent.deployment = {variant: "container", steps: []};
       f.write();
       for (const phase of ["start", "fetch", "checkout", "seed"]) {
         result = f.run(phase);
