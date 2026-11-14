@@ -1,22 +1,13 @@
 {
-  "about": "What a nested Node's base converge reads from swamp/. The nested-fleet refresh hashes their Git object IDs into its converge digest, with the inner Gateway's base intent digests (orbit:node-converge-digest) and the fleet intent. swamp/tests/fleet_converge_inputs_test.ts fails on a file the base converge reads that is not here. A cut is an include whose guard is empty in every base intent. Rule: docs/reference/development-containers.md#what-a-refresh-skips",
+  "about": "What a nested Node's base converge reads from swamp/. The nested-fleet refresh hashes their Git object IDs into its converge digest, with the inner Gateway's base intent digests (orbit:node-converge-digest) and the fleet intent. swamp/tests/fleet_converge_inputs_test.ts fails on a file the base converge reads that is not here. A cut is an include whose guard is empty in every base intent. A cut import is a module the behavior file uses only in methods the converge workflow never calls, or only under a guard that is empty in every base intent. Rule: docs/reference/development-containers.md#what-a-refresh-skips",
   "inputs": [
     "swamp/workflows/workflow-operation-node-converge-direct.yaml",
-    "swamp/extensions/behaviors/_lib/public_output.ts",
     "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
     "swamp/extensions/behaviors/operations/ansible-input/converge_input.ts",
     "swamp/extensions/behaviors/operations/ansible-input/converge_result.ts",
     "swamp/extensions/behaviors/operations/ansible-input/converge_tool.ts",
-    "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
-    "swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts",
     "swamp/extensions/behaviors/operations/ansible-input/write.ts",
-    "swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_input.ts",
-    "swamp/extensions/behaviors/operations/node-bootstrap/tool_setup_plan.ts",
     "swamp/extensions/behaviors/operations/node/ci_host_spec.ts",
-    "swamp/extensions/behaviors/operations/routes/caddy-input.ts",
-    "swamp/extensions/behaviors/operations/routes/mutation-command/dns.ts",
-    "swamp/extensions/behaviors/operations/routes/publication-command/assets.ts",
-    "swamp/extensions/behaviors/operations/routes/publication-command/sections.ts",
     "swamp/extensions/behaviors/operations/tools/constraints.ts",
     "swamp/extensions/behaviors/operations/tools/contract.ts",
     "swamp/extensions/behaviors/operations/tools/native.ts",
@@ -37,17 +28,29 @@
     "swamp/ansible/tasks/node-kernel-policy.yml",
     "swamp/ansible/tasks/node-update-policy.yml"
   ],
-  "clone_only": [
-    "scripts/instance_clone.py",
-    "scripts/instance_clone_launch.py",
-    "scripts/instance_clone_guest.py",
-    "ansible/instance_network.py",
-    "ansible/instance_nested.py",
-    "ansible/instance_node_services.py",
-    "ansible/instance_mail.py",
-    "ansible/instance_bridge.py",
-    "ansible/instance_node_runtime.py",
-    "ansible/instance_nested_club_key.sh"
+  "cut_imports": [
+    {
+      "file": "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+      "import": "./fleet_reboot_result.ts",
+      "methods": [
+        "fleetRebootResult"
+      ]
+    },
+    {
+      "file": "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+      "import": "./role_add_plans.ts",
+      "methods": [
+        "composeRole"
+      ]
+    },
+    {
+      "file": "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+      "import": "./clone_payload.ts",
+      "methods": [
+        "write"
+      ],
+      "guard": "container?.clone ?"
+    }
   ],
   "cut": [
     {

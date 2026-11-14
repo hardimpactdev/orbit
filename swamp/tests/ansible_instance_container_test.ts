@@ -762,6 +762,8 @@ Deno.test({
             { path: "/etc/orbit/instance", uid: 0, gid: 0, mode: "0644", content: "ORBIT_INSTANCE_ID=8\n" },
             { path: "/home/agent/.codex/config.toml", uid: 2750, gid: 2750, mode: "0600", content: "model_provider = \"orbit\"\n" },
             { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
+            // A folder the image lacks: the push makes it (a migrate builds the container from the image).
+            { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", uid: 0, gid: 0, mode: "0644", content: "[Unit]\nDefaultDependencies=no\n" },
           ],
           links: [{ path: "/home/agent/.claude/CLAUDE.md", target: "/opt/orbit-agent/current/notes/web-app.md" }],
         },
@@ -794,6 +796,7 @@ Deno.test({
       assertEquals(f.workspace("symbolic-ref", "--short", "HEAD"), "main");
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${seed}`]);
       assertEquals(Deno.readTextFileSync(`${clone}/etc/orbit/instance`), "ORBIT_INSTANCE_ID=8\n");
+      assertEquals(Deno.readTextFileSync(`${clone}/etc/systemd/system/t3.service.d/10-orbit-boot.conf`), "[Unit]\nDefaultDependencies=no\n");
       assertEquals(JSON.parse(Deno.readTextFileSync(`${clone}/home/agent/.t3/userdata/settings.json`)), { linkedEnvironmentsEnabled: true });
       assertEquals(Deno.statSync(`${clone}/home/agent/.t3/userdata`).mode! & 0o777, 0o700);
       assertEquals(Deno.readTextFileSync(`${clone}/home/agent/.config/orbit/model.env`), "ORBIT_MODEL_KEY=placeholder\n");
@@ -2891,6 +2894,14 @@ Deno.test({
         detail: "Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
       f.intent.deployment = deployment;
       f.write();
+
+      // A task copy's proof resets its fleet with `fleet_reset`, which runs the reset; a failed reset names its tag and says why.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-reset.yml`,
+        `- name: Check the restores\n  ansible.builtin.assert: { that: false, fail_msg: "nested-gateway did not restore base: Snapshot not found", quiet: true }\n`);
+      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify({ commit: null }));
+      assert(!f.run("fleet_reset").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_reset_failed",
+        detail: "Check the restores: nested-gateway did not restore base: Snapshot not found" });
 
       // The refresh names what each part did; every later phase of the run keeps it in the result file, a failed one too.
       const refreshed = { migrate: "nothing", restart: "yes", converge: "ran", changed: 0, base: "kept", record: "present",

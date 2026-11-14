@@ -10,7 +10,7 @@
 #   intent.fleet.layout.<role>.address    The address of each nested container on the inner bridge (TaskVmNestedFleet::Layout).
 #   intent.fleet.operator                 {address, hub, network}: the container as operator, the nested Gateway as hub, the
 #                                         fleet's network (TaskVmNestedFleet::operator()).
-#   intent.fleet.checkout.path            Where the nested Gateway and app-dev see the workspace (TaskVmNestedFleet::CheckoutPath).
+#   intent.fleet.checkout.path            Where the three nested Nodes see the workspace (TaskVmNestedFleet::CheckoutPath).
 #   intent.fleet.proxy                    The egress proxy environment, name to value: HTTP_PROXY, HTTPS_PROXY, http_proxy,
 #                                         https_proxy, NO_PROXY and no_proxy. The fleet's own names and networks are in NO_PROXY.
 #   intent.container.config               Its `environment.NO_PROXY` and `environment.no_proxy`, and
@@ -87,7 +87,7 @@
     # Docker in a nested Node skips its AppArmor profile when the kernel reads AppArmor as off.
     fleet_apparmor_device:
       apparmor-off: {type: disk, source: /etc/orbit/apparmor-off, path: /sys/module/apparmor/parameters/enabled, readonly: "true"}
-    # The workspace is `agent:work` (2750:2760) with files of `orbit` (1000), facts of the image. The nested Gateway and app-dev keep
+    # The workspace is `agent:work` (2750:2760) with files of `orbit` (1000), facts of the image. All three nested Nodes keep
     # all three IDs, so nested root resolves every checkout inode and the state mounts come up. An ID shift fails two levels below the
     # host. Changing a map remaps a container's disk, so it is a build rule.
     fleet_idmap: {raw.idmap: "both 1000 1000\nuid 2750 2750\ngid 2760 2760"}
@@ -133,8 +133,8 @@
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
         files: "{{ fleet_egress_files }}"
       app-prod:
-        devices: "{{ fleet_apparmor_device }}"
-        config: "{{ fleet_autostart | combine(fleet_environment) }}"
+        devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
+        config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
         files: "{{ fleet_egress_files }}"
     fleet_build_rules: [raw.idmap]
     # The inner bridge's own keys, owned. Its dnsmasq answers the fleet's names and forwards every other name to the Instance

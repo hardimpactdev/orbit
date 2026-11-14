@@ -20,7 +20,7 @@ covers:
 | --- | --- |
 | Records, Node preparation, egress and DNS | Built |
 | Default create and deploy, clone, forced non-default destroy, checkout migration | Built on the build-list Nodes |
-| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start. Planned: reset, rebuild |
+| [Nested fleet](#nested-fleet) | Built on switched-on build-list Nodes: placement, host preparation, start guards, the [image](#the-nested-fleet-image), the [refresh](#refresh-after-a-release), and the [clone's](#a-clone-starts-its-fleet) and [stopped clone's](#a-stopped-nested-fleet-clone-starts) fleet start, and a copy's [reset](#reset). Planned: rebuild |
 | [Sleep and wake](#sleep-and-wake) | Built: the commands, the wake on a Route visit, and the idle sleep, which is off until the operator turns it on. Planned: the wake from Conn and tasks |
 | Task containers, nested-fleet parity and production containers | Planned |
 | Dedicated workspace volumes and explicit package workspace links | [Draft specification](#workspace-volumes-draft); not implemented or proved |
@@ -177,6 +177,10 @@ The app runs as `orbit`: FrankenPHP, queue workers and every Orbit Process. `orb
 T3 and the agents run as `agent`, and so do the shell commands of Claude Code and Codex. There is no wrapper shell. Both users read and write the workspace: a file each one writes is `rw-rw----`, group `work`.
 
 A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node_modules`, caps the ACL mask, and the other user cannot write there. Root gives the group back what the owner has before a deployment's steps and after them, and after a clone's create. Between those, a folder that one user creates with a narrow mode stays closed to the other until the next deployment.
+
+The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path, and the pass never follows a link.
+
+Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it. A workspace that only deployments write, such as a default's, gains one pack per deployment; Orbit does not repack it yet.
 
 There is one exception to "a URL reaches only `orbit`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
 
@@ -521,11 +525,67 @@ Where each path writes the name:
 
 T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 
-No path restarts T3 for its name, and only a new container gets its kernel hostname at once. A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
+No path above restarts T3 for its name, and only a new container gets its kernel hostname at once. One explicit command restarts an idle running T3: see [Existing Instances](#existing-instances). A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
 
 #### Existing Instances
 
 An existing Instance gets its name without a new container. The converge of its Node writes the files. The kernel hostname takes the name at the container's next start, and T3 its label at T3's next start, such as a stopped container's next start or an agent folder update. T3's environment ID, threads, sessions and pairings do not depend on the name.
+
+A container that ran before the name existed keeps showing `instance-<id>` as T3's label until T3 starts again, and a default Instance can run for weeks. [`conn:environment-restart`](/cli/conn/environment-restart) restarts the T3 of one running container whose label is not the name; [`conn:node-environments-restart`](/cli/conn/node-environments-restart) does it for each container of a Node. Run the Node form once on each app-dev Node after the release that brought the name.
+
+Only an idle T3 restarts. The Gateway reads T3's threads with its admin session, the read the idle sleep uses. While a turn works, or any runtime request is pending, it restarts nothing and answers `busy`. A later run takes that container.
+
+Only T3's service restarts. The run first checks that `/etc/machine-info` holds the name; without it, it answers `skipped` with `name_not_written`. Then it runs `systemctl try-restart t3.service` in the container and reads T3's label inside the container until it is the name. A T3 that does not come back is reported `failed`, and nothing retries it. The kernel hostname stays until the next boot.
+
+`t3.service` sets no `KillMode`, so a restart ends every process in the service's cgroup and in any cgroup below it. So right before the restart the run reads, in one call, systemd's `MainPID` of `t3.service`, the cgroups below it, and the exact members of its `cgroup.procs` with each one's parent, session, terminal and name. It restarts only when every member may go. Any other member answers `busy` with `processes` and the counts, and nothing restarts. This table is the rule; the playbook's template only applies it.
+
+| Member of `t3.service` | Answer |
+| --- | --- |
+| T3 itself: the `MainPID`, and no other process | may go |
+| T3's resource monitor (`t3-resource-mon`) or its own `git` call, a direct child of T3 with no terminal | may go |
+| A provider, `claude` or `codex` (the binaries the recipe ships), a direct child of T3 with no terminal | may go |
+| A member of the `claude` provider's own session whose parent is in the service: its setup `sh` and stdio MCP servers such as Laravel Boost's `php`, or `npm` and `node` | may go |
+| Any member with a terminal (a tty), such as a shell node-pty forked or an `exec claude` typed in it | `busy`: `terminals` when T3 is its parent, else `commands` |
+| Any other direct child of T3 | `busy`, counted in `terminals` |
+| A `claude` tool tree, in the session of its own that Claude Code starts each tool shell in: a turn's tool, or a server it left running | `busy`, counted in `commands` |
+| Any descendant of `codex`: its tools may share its session, so none is allowed | `busy`, counted in `commands` |
+| A process whose parent left the service, such as a backgrounded `nohup` server that PID 1 adopted | `busy`, counted in `commands` |
+| A member line the read cannot parse | `busy`, counted in `commands` |
+
+The `claude` session allowance depends on Claude Code starting each tool shell in a session of its own, as the pinned recipe version does. Measure it again on each Claude Code bump in the recipe.
+
+An open idle shell counts because a restart loses its state. After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
+
+An accepted limit: an MCP server that starts a long-running child without detaching keeps that child in the provider's session, and the restart ends it.
+
+The read fails closed. When it cannot be read, `ps` fails for a member that is still alive, `MainPID` is 0 or not a member, or `cgroup.stat` counts a cgroup below the service, the answer is `busy` with `processes_unreadable`, and nothing restarts.
+
+So the restart ends T3, its monitor and `git` calls, an idle provider with no descendant outside the `claude` session, and a terminal or command that started in the moment (about a second) between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here.
+
+A turn with no live tool process outside the provider's session is cut, for example one that runs Grep, Read or Edit, or whose Bash command already ended. T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
+
+A frozen or stopped container is skipped. T3 reads the name at its next start.
+
+#### The restart window
+
+The thread read and the restart are two steps. The read stays in the Gateway so the busy rule has one place. A read inside the run would need the admin session as a vault execution copy, as `conn.session_hold` has, and a second copy of the busy rule outside PHP. So the Gateway admits the Operation right after the read. The Node form reads every label at once and each container's threads right before its own admission.
+
+An estimate, until the proof of the command measures it: about 5 to 15 seconds pass from the Gateway's read to the restart, for the dispatch, the run's input step, the start of its Ansible phase and its reads.
+
+The `conn_operation` check and the admission are two queries in one request, milliseconds apart. A Conn Operation admitted in that gap can overlap the restart; it then fails on its own T3 call and is run again.
+
+The run's process read narrows the window for a turn that runs a tool, and for every terminal, to about a second: the time from that read to `try-restart`. One call of the Node form admits at most four restarts, so the Swamp queue does not widen it. The intent carries `read_at`, the end of the Gateway's read. The run notes `restart_at` just before the restart. A restarted Operation's result keeps both and `window_ms`, the time between them.
+
+What a user sees:
+
+- **A turn in the window** with no live tool process outside the provider's session is cut. T3 0.1.7 marks that run cancelled as it stops.
+- **The cut turn continues.** T3 continues it in a new run after its start. The T3 setting `continueThreadsAfterServerUpdate` does this, and it is on by default.
+- **A connected client** shows *Reconnecting…* and reconnects by itself. Its backoff starts at one second.
+- **An unsent draft stays.** T3's client keeps drafts in the browser (`t3code:composer-drafts:v1`), never on the server.
+
+A container whose T3 nobody restarts keeps its old label until T3's next start, such as the container's next start or an agent folder update. Nothing else changes.
+
+No schedule runs the restart. The label changes once, after one release, and a stock T3 that starts later reads the name by itself. A scheduled pass would add an always-on loop for a one-off change, and it would restart T3 servers at times nobody chose, each restart with its window above.
 
 A rename of the Project (`project:update --slug`) writes no container file itself. The containers take the new name at their next start or at the next converge of their Node.
 
@@ -997,7 +1057,13 @@ Two steps then start at the same time. The workspace step runs the `checkout` pa
 
 #### T3 starts with the copy
 
-The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`. The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
+The copy step writes T3's files into the stopped copy before its first start. First the placeholder model environment, then Codex's `config.toml`, Claude Code's `.claude.json` and T3's `settings.json`, and the drop-in `/etc/systemd/system/t3.service.d/10-orbit-boot.conf`. The two JSON files merge into the seed's own, as the agent part merges them. Last comes `/etc/orbit/instance`, the file that `t3.service` waits for. The copy's boot then starts T3, and T3's cold start runs beside private names, Node services, mail and branch. No snapshot holds the model environment: the default never has it, and Orbit takes no snapshot of a clone.
+
+The drop-in turns off T3's default dependencies. T3 then starts after `nftables.service`, the local file systems, the journal socket and `systemd-sysctl.service`, and stops before shutdown. T3 skips the wait for `sysinit.target`, which udev's trigger holds about 0.6 s in a container. `Requires=nftables.service` stays in the unit, so T3 still starts only with its firewall.
+
+The image's `After=network-online.target` stays, because a drop-in cannot remove an ordering. A plain clone's boot does not pull that target in, so it holds nothing there. In a nested-fleet clone the inner Incus wants that target, so T3 there still waits for eth0's route.
+
+On a throwaway clone (2026-11-14, load 12-31), T3's unit started 0.35-0.43 s after systemd's userspace start. Without the drop-in it started 1.14-1.41 s after. The image keeps its unit. The drop-in is one of the agent files, so a migrated checkout with a T3 gets it too; the agent push makes its folder.
 
 The model environment reaches the copy step on its one SSH stdin. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
 
@@ -1912,6 +1978,8 @@ On the host this is one volume and one device on one container: no pool, profile
 
 A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots.
 
+On this volume a [reset](#reset) of a copy's fleet, which a proof runs before each batch, takes about 16 seconds.
+
 Every Instance without `inner_volume`, the first nested-fleet default before its conversion and its copies included, keeps today's shape: no step makes, snapshots, copies or checks a volume for it.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
@@ -2042,7 +2110,7 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | Rule | Where | Why |
 | --- | --- | --- |
 | The workspace `/srv/workspace` is the disk device `checkout`, with `shift=false` | `nested-gateway`, `nested-app-dev` | An edit reaches them at once. A shifted mount fails two levels below the host |
-| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | `nested-gateway`, `nested-app-dev` | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
+| `raw.idmap` `both 1000 1000`, `uid 2750 2750` and `gid 2760 2760` in the inner Incus | All three nested containers | The workspace is `agent:work` (2750:2760) with files of `orbit` (1000). With only the `orbit` line, nested root cannot resolve the state mounts. The outer container still has no `raw.*` key |
 | The Club key folder device `club-key`: `/run/orbit-club` at `/home/orbit/.config/swamp/club`, `shift=false`, and the link `/home/orbit/.config/swamp/api-key` to `club/swamp-club-api-key` | `nested-gateway` | The nested Swamp reads the [Club key](#the-club-key-of-the-nested-gateway) that Orbit delivers to the outer container's `/run` |
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
@@ -2157,9 +2225,11 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
 | Room before a change | The check reads the room on the nested Nodes' disk first. When a refresh could not end above the inner Doctor's floor, it refuses with `instance.container_fleet_no_room` and the numbers. Nothing changed |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
-| A failure names its phase | The Operation names the first failed step, and its code names the failed phase, such as `instance.container_fleet_refresh_failed` from "Finish the container". `error.detail` names the failed task and its message |
+| A failure names its phase | The Operation names the first failed step, and its code names the failed phase, such as `instance.container_fleet_refresh_failed` from "Finish the container". `error.detail` names the failed task and its message. |
 | Migrate before Doctor | The check checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | The refresh starts again what it stopped for `base`, before the seed. After a restore, the run starts the restored fleet |
+
+A checkout that fails other than by a refusal also writes its detail: the failed task, its message and the end of the command's stderr, at most 4,096 characters.
 
 A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is every issue of the last Doctor body: its code, Node, summary and observed value, each at most 240 characters, and at most 12 issues. Any other body gives its first 300 characters. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
 
@@ -2179,7 +2249,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | --- | --- | --- |
 | Migrate the nested Gateway, restart its services | Git object IDs of `apps/gateway` and `apps/agent/contract`, which it reads | The digest differs |
 | Wait for the three agents | | The converges run |
-| Base converge of the three nested Nodes | The `swamp` files a base converge reads, the nested Gateway's digest of each Node's base intent, and the fleet intent | The digest differs, a digest cannot be read, or the last converge that ran is more than 7 days old |
+| Base converge of each nested Node | One digest per Node: the `swamp` files a base converge reads, the nested Gateway's digest of that Node's base intent, and the fleet intent | For that Node: its digest differs, or its last converge is more than 7 days old. For all three: a digest cannot be read |
 | Agent delivery | `code` | The code digest differs. The delivery writes into the checkout, from `apps/gateway` |
 | Reload the grants | Git object IDs of `apps/gateway` and `swamp`, from which the nested Gateway renders them; recorded only with the Club key | With the Club key: the digest differs. The grants live on the nested Gateway's own disk (its state mount `swamp/grants`) |
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
@@ -2190,11 +2260,11 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 
 The migrate follows `apps/gateway`, not only its migrations folder. Packages in its Composer lock ship migrations too, so a new lock can bring a migration.
 
-The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. It has three inputs:
+The converge digest follows what a base converge of a nested Node reads, so a release that changes only tests, other workflows or other Gateway code converges nothing. Each Node has its own digest, so a moved base intent converges only that Node. A digest has three inputs:
 
 | Input | What it holds |
 | --- | --- |
-| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and its imports, the playbook and the task files it reaches, and the play's configuration and modules |
+| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and the imports a converge runs, the playbook and its task files, and the play's configuration and modules |
 | The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target, the CLI plan and the [units of the Node's roles](/reference/node-provisioning#role-units-at-a-converge) |
 | The fleet intent | The fleet's names, layout, checkout and proxy |
 
@@ -2206,9 +2276,28 @@ A file list cannot follow the Gateway code that builds an intent: through its mo
 
 The list leaves out four include groups of the playbook: roles, software, Tools and the network. Each runs only when the intent selects roles, Tools or a network, and a base intent never does. The cover test fails when the guard of such an include changes.
 
-A digest that cannot be read makes the converge run and is not recorded, so the next refresh runs it too. The record also holds `converged`, the time of the last converge that ran. When that is more than 7 days old, the converge runs whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+The list also leaves out three imports of the behavior file, `write.ts`. A converge never runs their code:
 
-When the converge runs, the three Nodes converge one by one. They cannot run side by side: every step of the converge workflow has a fixed behavior name. Swamp locks each behavior, so a second run would wait for the first one's lock and fail after 60 s. A failed converge fails the refresh, and the run restores the old seed, as for any failed step.
+| Import | Why a converge never runs it |
+| --- | --- |
+| `fleet_reboot_result.ts`, with `_lib/public_output.ts` | Only the `fleetRebootResult` method uses it, and the converge workflow does not call that method |
+| `role_add_plans.ts`, with the route and Tool setup plans it imports | Only the `composeRole` method uses it, and the converge workflow does not call that method |
+| `clone_payload.ts` | Only a clone intent runs it (`container?.clone`); a base intent has no `container` |
+
+The cover test fails when the converge workflow calls such a method, when an imported name is used outside its method, or when a use of `clone_payload.ts` leaves its guard. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
+
+The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
+
+The `swamp` files are the same for the three Nodes. When the converge runs, the due Nodes converge side by side. Two things made them wait for each other before:
+
+| What | Now |
+| --- | --- |
+| The nested Gateway refused a second converge while one held the VPN hub, and every converge held it | Two base converges never conflict, the hub's own included: a base intent has no network. Against a converge with roles, Tools or a network, any converge still refuses ([node:converge](/cli/node/converge)) |
+| Every step of the converge workflow had a fixed behavior name, so a second run waited for the first one's Swamp lock | The seven Ansible plays lock a behavior per Node (`node-converge-converge-<phase>-<node_id>`). The local steps of a second or less keep one name |
+
+The refresh admits every due Node first, then reads each Operation until it has ended. A failed or refused converge fails the refresh only after every admitted converge has ended, so no run is still going when the run restores the old seed. The error names each Node that failed. Three base converges that changed nothing took 108 s one by one (refresh 22223) and 48 s side by side (measured in a copy of the Orbit container).
+
+The bound is the nested Gateway's Swamp: three workers, one run each, and the workflow waits 30 s for a worker (`queueTimeout`). The three converges take all three workers, so nothing else should start on the nested Swamp during the converge.
 
 A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `base` is the slow part: about 32 s for each container on the directory pool, plus its stop and start. So the refresh retakes `base` only for the containers whose disk changed, and the set stays consistent:
 
@@ -2297,7 +2386,14 @@ A failed build or package install never fails the refresh. The refresh goes on a
 
 The gate and the runner take the tools as ready only when the venv holds `.complete`. The script writes that marker last, after the collections are in place, so a failed or stopped build leaves no venv that looks ready, and the next refresh builds again. A proof in a copy without ready tools builds them in its own cache, as before, which needs `python3-venv` and the internet. When that build fails, the fleet preparation fails with one line from the runner (`proof_controller` in `swamp/proof/runner/fleet.py`). The line names the cache build that failed and ends with the missing folder, `/opt/orbit-shape-gate/venv-<digest>`.
 
-The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `nothing` or `skipped`), `converge` (`ran` or `skipped`), `converge_reason` (`changed`, `record`, `digest_unreadable`, `stale` or `unchanged`), `changed` (the tasks the converges changed), `tokens` (`reminted`, `young` or `skipped`), `tokens_reason` (`age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`), `tools` (`present`, `built` or `failed`), `tools_reason` (see [The pinned shape tools](#the-pinned-shape-tools)), `base` (`retaken` or `kept`), `base_containers` (the containers whose `base` was retaken), `restart` (`yes` or `no`), `record` (`present`, `missing` or `unreadable`) and `seconds` per part.
+The Operation's result has `fleet_refresh`. It holds these fields:
+
+- `migrate`: `applied`, `nothing` or `skipped`. `restart`: `yes` or `no`.
+- `converge`: `ran` or `skipped`. `converge_reason`: `changed`, `record`, `digest_unreadable`, `stale` or `unchanged`. `converge_nodes`: the Nodes the converge ran for. `changed`: the tasks the converges changed.
+- `tokens`: `reminted`, `young` or `skipped`. `tokens_reason`: `age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`.
+- `tools`: `present`, `built` or `failed`. `tools_reason`: see [The pinned shape tools](#the-pinned-shape-tools).
+- `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
+- `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.
 
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
@@ -2395,9 +2491,23 @@ A stopped nested-fleet default does not take this path: a wake refuses it with `
 
 ### Reset
 
-A reset restores `base` of the three nested containers, starts them, waits for the nested Gateway's state mounts, migrates it to its checkout (and restarts its services when a migration applied), then waits for the same Doctor check. `agent` runs it. A reset command is planned.
+A reset stops the three nested containers in one `incus stop --force` and restores `base` of each stopped container. It starts them and waits for the nested Gateway's state mounts. It migrates the nested Gateway to its checkout, and restarts its services when a migration applied. Then it waits for the same Doctor check. Its waits poll every second; the refresh's poll every 5 seconds.
 
-Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds. On the [inner volume](#the-inner-volume) each restore is a btrfs snapshot restore: 1.9 to 3.1 s per container in the 2026-11-14 test, whatever changed. The reset on that volume follows separately.
+Its one caller is the [proof of a task copy](/cli/proof/proof#the-run): Swamp runs the phase `fleet_reset` of `instance-container.yml` from the copy's Node, before every batch, the first included, and not after the last. The Gateway admits it only for a clone that keeps its nested fleet. A Project's default Instance is refused with `proof.copy_fleet_missing`, so its fleet, the seed of every copy, is never reset. The play refuses it too, before any command and also when run by hand: an intent whose container is not a clone fails with `instance.fleet_reset_not_clone`.
+
+A restore of a running container stops it and boots it again, so the reset stops the three first. On the [inner volume](#the-inner-volume), measured by hand in a task copy on 2026-11-14:
+
+| Part | Seconds |
+| --- | --- |
+| Stop the three at once | 1.75 |
+| Restore a stopped container | 0.9 each; `nested-gateway` 2.5 |
+| Start the three in one call, after the rules check | 0.44 |
+| The whole reset, with readiness | 15.9 |
+| The whole reset before these cuts: running restores one by one (9.6 s), polls every 5 s | 30.7 |
+
+On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change: 7 to 8 s for all three, Doctor healthy 33 s after. Each restore has 45 seconds.
+
+A reset that fails after its stop starts each nested container that ran before it again, one by one and best effort, then fails with the first reason. The proof's batch reports that reason. A failed restore can leave a container on its old disk or on `base`, so the fleet runs but its state is unknown. To recover, run `orbit proof` again: it resets first. When a container has lost its `base` snapshot, the reset cannot succeed; start a new task copy.
 
 ### Rebuild from stock
 
@@ -2422,7 +2532,7 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 ### The fleet step
 
-Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). No flow calls the rules or the reset alone yet.
+Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). The proof of a task copy calls the reset through the tag `fleet_reset` ([Reset](#reset)). No flow calls the rules alone yet.
 
 Each phase runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed, for the deployment of the default and the create of its clone.
 
@@ -2433,14 +2543,14 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | Start | `instance-fleet-start.yml` | Checks the rules, starts the stopped nested containers, brings up `wg-nested`. Then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor. A stopped clone's start adds `instance-fleet-proxy.yml` |
 | Refresh | `instance-fleet-refresh.yml` | Migrates and restarts the nested Gateway, converges the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
-| Reset | `instance-fleet-reset.yml` | Restores `base` on the three nested containers, then runs the start and waits for readiness |
+| Reset | `instance-fleet-reset.yml` | Stops the three nested containers at once and restores `base` on each. Then it runs the start, migrates the nested Gateway forward and waits for readiness |
 
 The fleet rules:
 
-- The disk device `checkout` gives the workspace to the nested Gateway and `app-dev` with `shift=false`. An ID shift fails two levels below the host.
+- The disk device `checkout` gives the workspace to all three nested containers with `shift=false`. An ID shift fails two levels below the host.
 - The disk device `club-key` gives the folder `/run/orbit-club` of the container to the nested Gateway at `/home/orbit/.config/swamp/club`, with `shift=false` and `required=false`.
 - In the nested Gateway, `/home/orbit/.config/swamp/api-key` links to `club/swamp-club-api-key`. `base` keeps the link.
-- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into the nested Gateway and `app-dev`, so the nested `orbit` and the container's `orbit` own the workspace together.
+- `raw.idmap` of the inner Incus maps `orbit` (1000), `agent` (2750) and the group `work` (2760) into all three nested containers, so the nested `orbit` and the container's `orbit` own the workspace together.
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - `boot.autostart=true` is on the three nested containers.
 - The egress proxy settings are `environment.*` keys on the three nested containers, and the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
@@ -2448,13 +2558,17 @@ The fleet rules:
 
 The refresh writes an egress file that differs on the running fleet, before the converge of the nested Nodes. The rules then find it in place.
 
-Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs (a key or device while the fleet is stopped, a file before the converge), and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent. A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; the check and the start also refuse a fleet that lacks `raw.idmap`.
+Orbit owns every rule except `raw.idmap`: the refresh writes an owned rule that differs (a key or device while the fleet is stopped, a file before the converge), and the check and the start let it pass. `raw.idmap` is a build rule, because a new map remaps a container's disk. It is written only where the key is absent.
+
+A fleet whose `raw.idmap` holds another value, or a nested container or the inner bridge that cannot be read, is refused with `instance.container_fleet_drift` before any change; a standalone check, start or proof reset also refuses a fleet that lacks `raw.idmap`. The deployment’s initial start permits an absent build rule because its later refresh writes it with the fleet stopped and retakes `base`. A conflicting value still refuses before any change. This lets an older fleet acquire a newly required map through its normal deployment.
+
+If the deployment fails, the resume of the restored seed permits absent build rules too. It starts the fleet that Prepare admitted, without changing its maps. The next deployment installs the missing rules. Conflicting maps still refuse on rollback.
 
 The Operation's result `fleet_drift` names each difference, as `<container> <kind> <name>`; for the inner bridge the first part is the bridge, as in `oe-nested network raw.dnsmasq`.
 
 The deployment runs the check right after it starts the container, before it takes its first seed. A refusal there changed nothing, so no seed is restored. A failure from the checkout on, such as a start that fails after a change, restores the seed.
 
-A restore of `base` reverts devices and configuration keys. So the rules must be in `base`. The start lets a missing owned rule pass, because the refresh after it writes the rule. The reset ends with the same start and has no refresh after it; no flow calls it yet.
+A restore of `base` reverts devices and configuration keys. So the rules must be in `base`. The start lets a missing owned rule pass, because the refresh after it writes the rule. The reset ends with the same start and has no refresh after it.
 
 Readiness is the proof's own check, from the container over `wg-nested`: every nested container runs, Doctor of the nested Gateway is healthy within a bounded wait, the three agents are online and the Gateway knows the operator with its key. A failure names the nested container or the check. A failed Doctor wait names what its last poll got: the HTTP status and the first 300 characters of the body, or curl's error when no response came.
 

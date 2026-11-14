@@ -99,3 +99,12 @@ describe('the record of the run', function (): void {
         expect($again->status)->toBe(OperationStatus::Succeeded)->and($again->result)->toBe($first->result);
     });
 });
+
+it('exposes batch reset seconds as evidence without changing the verdict', function (): void {
+    $timings = '{"batch":"fresh-fleet","reset":{"reset_seconds":70.2}}';
+    $projected = app(ProofVerifyProjection::class)->apply(verifyOperation(), verifyEnded('succeeded', VERIFY_PASSED."\n".$timings));
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result['cases'])->toHaveCount(1)
+        ->and($projected->result['batches'])->toBe([['batch' => 'fresh-fleet', 'reset_seconds' => 70.2]]);
+});

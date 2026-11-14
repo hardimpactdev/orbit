@@ -50,10 +50,16 @@ final readonly class InstanceWake extends InstancePower
         return InstanceRuntimePowerState::Running;
     }
 
+    /** The container sleeps frozen: its runtime records it stopped and its last sleep froze it (ContainerResume::frozenBySleep). */
+    private static function frozen(InstanceRuntime $runtime, Instance $instance): bool
+    {
+        return $runtime->power_state === InstanceRuntimePowerState::Stopped && ContainerResume::frozenBySleep($instance);
+    }
+
     /** A nested-fleet default that no sleep froze starts only through its deployment, which brings back its Club key and fleet. */
     protected function refuse(Instance $instance, InstanceRuntime $runtime): void
     {
-        if ($runtime->incus_project === InstancePlacement::NestedProject && InstanceSleep::frozen($instance, $runtime) === null) {
+        if ($runtime->incus_project === InstancePlacement::NestedProject && ! self::frozen($runtime, $instance)) {
             throw new ResourceOperationException('instance.sleep_unsupported',
                 'A nested-fleet Instance that no sleep froze starts only through its deployment, or a clone through its start.', 409);
         }
@@ -68,7 +74,7 @@ final readonly class InstanceWake extends InstancePower
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
         $runtime = $instance->runtime()->first();
-        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && InstanceSleep::frozen($instance, $runtime) !== null)) {
+        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
             return $this->resume(parent::start($instance, $caller, $requestId));
         }
         $idempotency = app(OperationIdempotency::class);

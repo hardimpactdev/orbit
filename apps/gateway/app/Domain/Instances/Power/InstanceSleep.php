@@ -74,22 +74,6 @@ final readonly class InstanceSleep extends InstancePower
         return $sleep?->status === OperationStatus::Succeeded ? $sleep : null;
     }
 
-    /**
-     * The sleep that froze the Instance, while it still holds: no wake since found the container stopped, as after a host reboot. A
-     * nested-fleet Instance wakes by resume only then; otherwise only its start or its deployment brings back its fleet.
-     */
-    public static function frozen(Instance $instance, InstanceRuntime $runtime): ?Operation
-    {
-        $sleep = self::asleep($instance, $runtime);
-        if ($sleep === null || ($sleep->result['sleep'] ?? null) !== 'frozen') {
-            return null;
-        }
-        $found = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->where('id', '>', $sleep->id)->where('error_code', InstanceWake::NestedStopped)->exists();
-
-        return $found ? null : $sleep;
-    }
-
     /** The anonymous memory that may stay in RAM after the reclaim; more means swap is full, and the sleep stops the container. */
     protected function intent(): array
     {

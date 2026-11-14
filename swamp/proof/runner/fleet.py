@@ -109,8 +109,8 @@ class Fleet:
         return {'rc': done.returncode, 'json': parsed, 'stdout': done.stdout, 'stderr': done.stderr}
 
     def incus_exec(self, node, argv, timeout=60):
-        """A program on a Node as its managed user, with the home of that user."""
-        return subprocess.run(['incus', 'exec', self.nodes[node]['instance'], '--user', NODE_USER, '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--env', 'COLUMNS=' + COLUMNS, '--', *argv],
+        """A program as orbit with its primary and supplementary groups (work opens the checkout)."""
+        return subprocess.run(['incus', 'exec', self.nodes[node]['instance'], '--cwd', NODE_HOME, '--env', 'HOME=' + NODE_HOME, '--env', 'COLUMNS=' + COLUMNS, '--', 'runuser', '-u', 'orbit', '--', *argv],
                               capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
 
     def prepare_cli_callers(self, items):
@@ -132,13 +132,32 @@ class Fleet:
         before scheduling cases. A step that cannot be done is a `FleetError` that names it, and not the exit status 127 of a missing program.
         """
         guest = self.nodes[node]['instance']
+        gateway = self.nodes['gateway']['instance']
+        shift = self.must(['incus', 'config', 'device', 'get', gateway, 'checkout', 'shift'], f'{node}: cannot read the fleet checkout mode').stdout.strip()
+        if shift not in ('true', 'false'):
+            raise FleetError(f'{node}: unknown fleet checkout shift: {shift!r}')
         mounted = subprocess.run(['incus', 'config', 'device', 'get', guest, 'checkout', 'source'], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         if mounted.returncode != 0 or mounted.stdout.strip() != str(CHECKOUT):
+            # A copy holds this device and ID map in base. Changing raw.idmap here would remap a running Node.
+            if shift == 'false':
+                raise FleetError(f'{node}: the fleet base lacks the tested checkout; refresh the fleet before proving it')
             self.must(['incus', 'config', 'device', 'add', guest, 'checkout', 'disk', f'source={CHECKOUT}', f'path={NODE_CHECKOUT}', 'shift=true'], f'{node}: cannot mount the tested checkout')
+        if shift == 'false':
+            # The copy's checkout is group-accessible only. Its ID map preserves that GID; app-prod's seed has no work group yet.
+            gid = str(CHECKOUT.stat().st_gid)
+            group = subprocess.run(['incus', 'exec', guest, '--', 'getent', 'group', gid], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
+            if group.returncode == 2:
+                self.must(['incus', 'exec', guest, '--', 'groupadd', '--gid', gid, 'work'], f'{node}: cannot create the checkout group')
+                group_name = 'work'
+            elif group.returncode == 0 and len(group.stdout.strip().split(':')) == 4 and group.stdout.strip().split(':')[2] == gid:
+                group_name = group.stdout.split(':')[0]
+            else:
+                raise FleetError(f'{node}: cannot read the checkout group')
+            self.must(['incus', 'exec', guest, '--', 'usermod', '--append', '--groups', group_name, 'orbit'], f'{node}: cannot give orbit the checkout group')
         # The CLI keeps its profiles in config.json under the home it is given; the call reads the file, which a restore of `base` may have taken away.
         if self.incus_exec(node, ['grep', '-q', f'"{PROFILE}"', NODE_HOME + '/.orbit/config.json']).returncode == 0:
             return
-        self.must(['incus', 'exec', guest, '--user', NODE_USER, '--', 'install', '-d', '-m', '0700', NODE_HOME + '/.orbit'], f'{node}: cannot make the CLI home')
+        self.must(['incus', 'exec', guest, '--', 'runuser', '-u', 'orbit', '--', 'install', '-d', '-m', '0700', NODE_HOME + '/.orbit'], f'{node}: cannot make the CLI home')
         self.must(['incus', 'file', 'push', outer_ca(), f'{guest}{NESTED_CA}', '--uid', NODE_USER, '--gid', NODE_USER, '--mode', '0644'],
                   f'{node}: cannot give the nested CA')
         added = self.incus_exec(node, [*NODE_ORBIT, 'gateway:add', NESTED_GATEWAY, f'--name={PROFILE}', '--use', '--accept-ca-change', f'--ca={NESTED_CA}', '--json'], 120)
@@ -166,6 +185,46 @@ class Fleet:
         started = time.time()
         done = terminal.drive([*ORBIT, *args], script, {**cli_env(), 'TERM': 'xterm-256color'}, timeout)
         return {'rc': done['rc'], 'json': None, 'stdout': done['text'], 'stderr': '', 'secs': round(time.time() - started, 2), 'args': ['orbit', *args]}
+
+
+# The fleet fingerprint, read before each batch's setup: what a reset to `base` must bring back each time, so the live proof of a task
+# copy compares batch 1's with batch 2's. One read-only Laravel call in the nested Gateway gives its pending migrations and the counts.
+FINGERPRINT_PHP = (
+    '$m = app("migrator"); $files = $m->getMigrationFiles(array_merge([database_path("migrations")], $m->paths()));'
+    ' echo json_encode(["pending_migrations" => count(array_diff(array_keys($files), $m->getRepository()->getRan())),'
+    ' "nodes" => App\\Models\\Node::count(), "access_grants" => App\\Models\\NodeAccess::count(),'
+    ' "firewall_rules" => App\\Models\\FirewallRule::count(), "instances" => App\\Models\\Instance::count(),'
+    ' "unended_operations" => App\\Models\\Operation::whereNotIn("status", App\\Domain\\Operations\\OperationStatus::terminalValues())->count()]), PHP_EOL;'
+)
+FINGERPRINT_KEYS = ('pending_migrations', 'nodes', 'access_grants', 'firewall_rules', 'instances', 'unended_operations')
+
+
+FINGERPRINT_SECONDS = 60
+
+
+def fingerprint(fleet, seconds=FINGERPRINT_SECONDS):
+    """Doctor through the candidate CLI (exit 0 only when healthy) and the nested Gateway's counts, within `seconds` in total. Evidence,
+    never a verdict: any read that fails or times out is named in `error`, and the batch goes on."""
+    deadline = time.monotonic() + seconds
+    found, errors = {}, []
+    try:
+        found['doctor_healthy'] = fleet.cli(['doctor'], timeout=max(1, int(seconds * 2 / 3)))['rc'] == 0
+    except Exception as error:  # evidence only: nothing here may stop the batch
+        errors.append(f'doctor: {type(error).__name__}')
+    try:
+        left = int(deadline - time.monotonic())
+        if left < 1:
+            raise TimeoutError('no time left')
+        done = fleet.incus_exec('gateway', ['php', NODE_CHECKOUT + '/apps/gateway/artisan', 'tinker', '--execute', FINGERPRINT_PHP], left)
+        lines = [line for line in done.stdout.splitlines() if line.startswith('{')]
+        counts = json.loads(lines[-1]) if done.returncode == 0 and lines else None
+        if isinstance(counts, dict) and all(isinstance(counts.get(key), int) for key in FINGERPRINT_KEYS):
+            found.update({key: counts[key] for key in FINGERPRINT_KEYS})
+        else:
+            errors.append(f'counts: exit {done.returncode}, {(done.stderr or done.stdout).strip()[-160:]}')
+    except Exception as error:  # evidence only
+        errors.append(f'counts: {type(error).__name__}')
+    return {**found, **({'error': '; '.join(errors)} if errors else {})}
 
 
 class Background:

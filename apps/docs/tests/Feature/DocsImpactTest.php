@@ -424,6 +424,19 @@ it('docs impact maps Reverb app commands to the websocket reference', function (
         ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/websocket/app-'.$action.'.mdx');
 })->with(['create', 'list', 'show', 'destroy']);
 
+it('docs impact maps the Conn operator commands to their pages', function (): void {
+    $root = docsImpactFixture();
+    is_dir($root.'/docs/cli/conn') || mkdir($root.'/docs/cli/conn', 0777, true);
+    file_put_contents($root.'/docs/cli/conn/environment-restart.mdx', "---\ntitle: \"orbit conn:environment-restart\"\n---\nT3 restart\n");
+    $path = 'apps/cli/app/Commands/RestartConnEnvironmentCommand.php';
+    file_put_contents($root.'/'.$path, "<?php class RestartConnEnvironmentCommand { protected \$signature = 'conn:environment-restart'; }\n");
+
+    $report = new DocsImpact($root)->report(null, [$path]);
+
+    expect($report['errors'])->toBe([])
+        ->and(collect($report['impacted_pages'])->pluck('page'))->toContain('docs/cli/conn/environment-restart.mdx');
+});
+
 it('docs impact rejects unknown CLI families instead of guessing an owner', function (): void {
     $root = docsImpactFixture();
     $path = 'apps/cli/app/Commands/UnknownCommand.php';

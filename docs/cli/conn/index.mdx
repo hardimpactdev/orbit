@@ -1,0 +1,16 @@
+---
+title: "conn"
+sidebarTitle: "Overview"
+description: "The Conn commands an operator runs. Conn devices use the Conn API itself; see the Conn reference."
+---
+
+Conn connects devices to the T3 servers of Orbit's Nodes and container Instances. Devices call the [Conn API](/reference/conn#api) directly. An operator runs these commands:
+
+| Command | What it does |
+| --- | --- |
+| [`conn:environment-restart`](/cli/conn/environment-restart) | Restart one idle container T3 server so that it shows its machine name. |
+| [`conn:node-environments-restart`](/cli/conn/node-environments-restart) | Do the same for each container Instance on one Node. |
+
+## How it works
+
+The Conn extension must be on. [Conn](/reference/conn) describes access, registration, renewal and the thread index.

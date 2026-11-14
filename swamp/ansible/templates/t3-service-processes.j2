@@ -1,0 +1,41 @@
+{#- Which members of a container's t3.service a T3 restart may end. The rule and its reasons are the table in
+    docs/reference/development-containers.md#existing-instances; this template only applies it.
+    `lines` is the restart phase's read: `main <MainPID>`, `children <child cgroups>`, then `pid ppid sid tty comm` per member.
+    Prints JSON {"readable": false} or {"readable": true, "terminals": n, "commands": n}. -#}
+{%- set providers = ['claude', 'codex'] -%}
+{%- set session_providers = ['claude'] -%}
+{%- set ns = namespace(main=0, children=-1) -%}
+{%- set procs = [] -%}
+{%- set unparsed = [] -%}
+{%- for line in lines if line | trim != '' -%}
+  {%- set f = line.split(None, 4) -%}
+  {%- if f | length == 2 and f[0] == 'main' and f[1] is match('^[0-9]+$') -%}
+    {%- set ns.main = f[1] | int -%}
+  {%- elif f | length == 2 and f[0] == 'children' and f[1] is match('^[0-9]+$') -%}
+    {%- set ns.children = f[1] | int -%}
+  {%- elif f | length == 5 and f[0] is match('^[0-9]+$') and f[1] is match('^[0-9]+$') and f[2] is match('^[0-9]+$') -%}
+    {%- set _ = procs.append({'pid': f[0] | int, 'ppid': f[1] | int, 'sid': f[2] | int, 'tty': f[3], 'comm': f[4] | trim}) -%}
+  {%- else -%}
+    {%- set _ = unparsed.append(line) -%}
+  {%- endif -%}
+{%- endfor -%}
+{%- set pids = procs | map(attribute='pid') | list -%}
+{%- if ns.main == 0 or ns.main not in pids or ns.children != 0 -%}
+{{ {'readable': false} | to_json }}
+{%- else -%}
+{%- set provider_pids = procs | selectattr('ppid', 'equalto', ns.main) | selectattr('tty', 'equalto', '?') | selectattr('comm', 'in', providers) | map(attribute='pid') | list -%}
+{%- set session_pids = procs | selectattr('pid', 'in', provider_pids) | selectattr('comm', 'in', session_providers) | map(attribute='pid') | list -%}
+{%- set counts = {'terminals': 0, 'commands': unparsed | length} -%}
+{%- for p in procs if p.pid != ns.main -%}
+  {%- if p.tty != '?' -%}
+    {%- set _ = counts.update({'terminals': counts.terminals + 1} if p.ppid == ns.main else {'commands': counts.commands + 1}) -%}
+  {%- elif p.ppid == ns.main and (p.comm in ['t3-resource-mon', 'git'] or p.pid in provider_pids) -%}
+  {%- elif p.sid in session_pids and p.ppid in pids -%}
+  {%- elif p.ppid == ns.main -%}
+    {%- set _ = counts.update({'terminals': counts.terminals + 1}) -%}
+  {%- else -%}
+    {%- set _ = counts.update({'commands': counts.commands + 1}) -%}
+  {%- endif -%}
+{%- endfor -%}
+{{ {'readable': true, 'terminals': counts.terminals, 'commands': counts.commands} | to_json }}
+{%- endif -%}

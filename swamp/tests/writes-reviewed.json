@@ -426,6 +426,10 @@
    "result": "read-only",
    "cleanup": "idempotent"
   },
+  "operation-conn-environment-restart": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "operation-instance-sleep": {
    "result": "read-only",
    "cleanup": "idempotent"
@@ -663,6 +667,10 @@
   "project-maintenance-inspect": {
    "Read the changed files": "unreviewed",
    "Read the manifest SHAs": "unreviewed"
+  },
+  "proof-copy-fleet-reset": {
+   "result": "read-only",
+   "cleanup": "idempotent"
   },
   "proof-fleet-restore": {
    "Read the container state": "read-only",

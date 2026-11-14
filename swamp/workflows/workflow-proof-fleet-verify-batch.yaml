@@ -1,6 +1,6 @@
 id: 8e4d2b71-3c59-4a0e-b6d8-7f1a93c05e22
 name: proof-fleet-verify-batch
-description: One batch of proof cases on the task VM. The batch setup, then one runner step for all its cases (several at a time, the ones that run alone last), then one report of the verdict lines.
+description: One batch of proof cases on the task VM or in a task copy. The restore of `base` (a VM) or the reset of the copy's inner fleet, the batch setup, then one runner step for all its cases (several at a time, the ones that run alone last), then one report of the verdict lines.
 vaults: []
 queueTimeout: 30
 inputs:
@@ -32,6 +32,10 @@ inputs:
       type: boolean
     restore:
       type: boolean
+    # In a task copy whose intent sets `restore_first`: {container, fleet, ssh_execution} for the reset of its inner fleet. Empty
+    # otherwise.
+    reset:
+      type: object
     cases:
       type: array
       items:
@@ -46,16 +50,17 @@ inputs:
   - ssh_name
   - batch
   - setup
+  - reset
   - cases
   additionalProperties: false
 jobs:
 - name: start
   labels: {role: swamp}
   steps:
-  # Each batch but the first starts from the `base` snapshot of the fleet: restore, then apply the checkout, then the batch setup. A restore that fails stops the batch.
+  # On a task VM each batch but the first starts from the `base` snapshot of the fleet: restore, then apply the checkout, then the batch setup. A restore that fails stops the batch.
   - name: restore
     labels: {role: swamp}
-    # A task copy has no restore of `base` yet: see `setup`.
+    # A task copy resets its fleet in `reset` instead.
     guard: '${{ !(has(inputs.restore) && inputs.restore) || size(inputs.runner_prefix) > 0 }}'
     allowFailure: true
     writes: true
@@ -64,13 +69,26 @@ jobs:
       workflowIdOrName: proof-fleet-restore
       inputs:
         ssh_execution: ${{ inputs.ssh_execution }}
-  # In a task copy a later batch does not start: without a restore its start state is unknown, so its cases are unrun.
+  # In a task copy every batch, the first included, starts from `base`: the reset of the copy's inner fleet, from its Node. A reset that fails stops the batch.
+  - name: reset
+    labels: {role: swamp}
+    guard: '${{ !(has(inputs.restore) && inputs.restore) || size(inputs.reset) == 0 }}'
+    allowFailure: true
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: proof-copy-fleet-reset
+      inputs:
+        intent: ${{ inputs.reset }}
+  # A copy batch that asks for a start from `base` but has no reset (a run that an older Gateway admitted) does not start: its start state is unknown, so its cases are unrun.
   - name: setup
     labels: {role: swamp}
-    guard: '${{ has(inputs.restore) && inputs.restore && size(inputs.runner_prefix) > 0 }}'
+    guard: '${{ has(inputs.restore) && inputs.restore && size(inputs.runner_prefix) > 0 && size(inputs.reset) == 0 }}'
     allowFailure: true
     dependsOn:
     - step: restore
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+    - step: reset
       condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     writes: true
     task:
@@ -103,11 +121,11 @@ jobs:
     condition: {type: completed}
   steps:
   # One step runs the batch: the runner reads the fleet once, runs the cases that share the fleet several at a time (the cases file sets how many), then the
-  # cases that run alone. It prints one verdict line a case, the ones that did not pass first. A failed restore or setup (this batch's start) skips it.
+  # cases that run alone. It prints one verdict line a case, the ones that did not pass first. A failed restore, reset or setup (this batch's start) skips it.
   # A case that did not pass triggers no restore: cases use their own resources, and the next batch restores anyway.
   - name: batch
     labels: {role: swamp}
-    guard: '${{ steps.?restore.?status.orValue("") == "failed" || !steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"ok\"") }}'
+    guard: '${{ steps.?restore.?status.orValue("") == "failed" || steps.?reset.?status.orValue("") == "failed" || !steps.?setup.?outputs.?stdout.orValue("").contains("\"setup\": \"ok\"") }}'
     allowFailure: true
     writes: true
     task:
@@ -141,6 +159,8 @@ jobs:
   steps:
   # The verdict lines of the batch. A case with no line gets one of its own, so every case has one: unrun when the batch step printed nothing (the batch was
   # stopped before it), failed when it printed lines but none for the case (the runner stopped, or the output was cut).
+  # When the reset of a copy's fleet failed, the line says so with the reset's reason (its `reason=` line: safe to show, at most 300
+  # characters, no quote or backslash), so the author sees why the batch did not run.
   - name: report
     labels: {role: swamp}
     task:
@@ -150,6 +170,7 @@ jobs:
       methodName: execute
       inputs:
         run: |
-          printf '%s\n' "$LINES"
+          printf '%s\n%s\n' "$LINES" "$RESET"
         env:
-          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? "run stopped: the batch setup did not succeed" : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'
+          RESET: '${{ steps.?reset.?outputs.?result.?stdout.orValue("").split("\n").filter(l, l.startsWith("{") && l.contains("\"reset_seconds\"")).map(l, "{\"batch\": \"" + inputs.batch + "\", \"reset\": " + l + "}").join("\n") }}'
+          LINES: '${{ [steps.?batch.?outputs.?stdout.orValue("").split("\n").map(l, l.trim()).filter(l, l.contains("\"verdict\""))].map(got, (got.join("\n") + inputs.cases.filter(c, !got.exists(l, l.contains("\"id\": \"" + c + "\""))).map(c, "\n{\"id\": \"" + c + "\", \"verdict\": \"" + (size(got) == 0 ? "unrun" : "failed") + "\", \"cause\": \"infrastructure\", \"secs\": 0, \"failed\": [\"" + (size(got) == 0 ? (steps.?reset.?status.orValue("") == "failed" ? "run stopped: the fleet reset failed" + [steps.?reset.?outputs.?result.?stdout.orValue("").split("\n").filter(l, l.startsWith("reason="))].map(r, size(r) > 0 ? ": " + r[0].split("reason=", 2)[1] : "")[0] : "run stopped: the batch setup did not succeed") : "the case printed no verdict") + "\"]}").join("")).trim())[0] }}'

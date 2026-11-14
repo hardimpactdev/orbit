@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: `orbit proof COMMAND`, the first step of stage 3 of the command development pipeline. The author proves one command in the task copy they work in, with the nested fleet that copy already has and no new copy. The Gateway records the intent and the verdicts; Orbit's own Swamp reaches the copy through its Node and runs the runner in it as `agent`, restores `base` first and leaves a clean fleet after. `proof:run` is the CI path.
+  %% Target design: `orbit proof COMMAND`, the first step of stage 3 of the command development pipeline. The author proves one command in the task copy they work in, with the nested fleet that copy already has and no new copy. The Gateway records the intent and the verdicts; Orbit's own Swamp reaches the copy through its Node and runs the runner in it as `agent`, and resets the copy's inner fleet to `base` before every batch. `proof:run` is the CI path.
   %% status: draft
   %% command: proof
   %% kind: proof.verify
@@ -18,38 +18,43 @@ sequenceDiagram
   %%> - the cases come from the copy's own checkout, so they run against the code the author has now, committed or not
   Note over GW: Admit the proof<br/>copy · group · inputs
   %%> What it records:
-  %%> - the copy's Incus project and container, its Node as the SSH target and the cases file; no secret, and no step calls back
+  %%> - the copy's Incus project and container, its Node as the SSH target, the copy's inner fleet and the cases file; no secret, and no step calls back
   %%> Refuses:
   %%> - a copy whose last completion failed: `tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`
+  %%> - an Instance that is not a clone that keeps its nested fleet, such as a Project's default: `proof.copy_fleet_missing`; the reset never runs on it
   %%> - a group without a copy, a copy that is not active or not running, a Project without a nested fleet, a copy turn that may still run, or another operation on the group
-  %%> - a copy where a proof or an agent turn already ran, until a copy can restore `base`
   GW-->>CLI: 202 Accepted<br/>operation ID
   GW->>SW: Start the run<br/>proof-fleet-verify
   SW->>CP: Select the cases<br/>runner plan --lines
   %%> What it does:
   %%> - every runner call goes Node SSH, `incus exec` into the copy, `runuser -u agent`, as a copy turn does; a missing or invalid cases file fails the run here, before the fleet changes
-  SW->>CP: Restore the base snapshot<br/>first · 45 s limit
-  %%> Why:
-  %%> - the author's fleet may have moved since the copy started
   loop each batch, in the order of swamp/proof/batches.yaml
-    SW->>CP: Run the batch<br/>restore · setup · cases
+    SW->>CP: Reset the inner fleet<br/>restore base · start · ready
+    %%> Why:
+    %%> - the author's fleet may have moved since the copy started, and cases undo nothing, so every batch, the first included, starts from `base`; a copy can prove again
     %%> What it does:
-    %%> - one restore of `base` per batch but the first, the batch start state, then each case with its own resources and no undo
+    %%> - the fleet reset of the copy's container, from its Node: stop the three nested containers, restore `base` of each, start them, migrate the nested Gateway forward, wait for a healthy Doctor
+    %%> When:
+    %%> - before each batch, never after the last: the fleet keeps what the cases left for the author to read, and the next proof resets first
+    %%> Fails:
+    %%> - a failed reset stops the run: the cases of this batch and of every later batch are `unrun` with cause `infrastructure`
+    SW->>CP: Run the batch<br/>setup · cases
+    %%> What it does:
+    %%> - the batch start state, then each case with its own resources and no undo
+    %%> - CLI callers use the checkout device saved in the copy fleet’s `base`; nested commands run as `orbit` with its groups
+    %%> - the reset duration is evidence in the batch result, never a verdict
   end
-  SW->>CP: Restore base<br/>last · clean fleet
-  %%> When:
-  %%> - also after a failed case or a stopped run; a cancelled run leaves the fleet as it is
   Note over SW: Join the verdicts<br/>report step
   %%> What it does:
   %%> - one line a case, in plan order; a case of a batch that did not run is `unrun` with cause `infrastructure`
-  alt every case passes and the last restore succeeded
+  alt every case passes
     SW-->>GW: Run succeeded<br/>verdict per case
     Note over GW: Record the result once<br/>PASS
     GW-->>CLI: PASS per case<br/>timings
-  else a case failed or did not run, or the last restore failed
+  else a case failed or did not run
     SW--xGW: Run failed<br/>verdict per case
     Note over GW: Record the result once<br/>FAIL
     GW--xCLI: Failed check per case<br/>exit nonzero
     %%> Result:
-    %%> - `proof.cases_failed`, `proof.run_failed` or `proof.restore_failed`; the receipt of each case stays in the copy's evidence directory
+    %%> - `proof.cases_failed` or `proof.run_failed`; the receipt of each case stays in the copy's evidence directory
   end

@@ -124,7 +124,8 @@
       "limits.cpu": "2",
       "limits.memory": "3GiB",
       "security.nesting": "true",
-      "user.orbit.step8": "trial-78"
+      "user.orbit.step8": "trial-78",
+      "raw.idmap": "both 1000 1000\nuid 2750 2750\ngid 2760 2760"
     },
     "devices": {
       "apparmor-off": {
@@ -144,6 +145,12 @@
         "path": "/",
         "pool": "topology-seed",
         "type": "disk"
+      },
+      "checkout": {
+        "type": "disk",
+        "source": "/srv/workspace",
+        "path": "/home/orbit/orbit",
+        "shift": "false"
       }
     }
   }

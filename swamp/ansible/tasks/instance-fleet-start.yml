@@ -17,21 +17,42 @@
 - name: Wait for the inner Incus
   ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_incus + ['admin', 'waitready', '--timeout', '80'] }}" }
   changed_when: false
-- { name: Check the fleet rules, ansible.builtin.import_tasks: instance-fleet-rules.yml, vars: { fleet_rules_apply: false } }
+# Deployment admits absent build rules at its initial start and when it resumes the restored seed after failure.
+# Refresh installs them with the fleet stopped; rollback leaves them for the next deployment. A proof reset or standalone
+# start must already have them. Never admit a conflicting map.
+- name: Check the fleet rules
+  ansible.builtin.import_tasks: instance-fleet-rules.yml
+  vars:
+    fleet_rules_apply: false
+    fleet_rules_allow_missing_build: "{{ fleet_deploy_allow_missing_build | default(false) | bool }}"
 
 - name: Read the state of the nested containers
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['list', '--format', 'csv', '--columns', 'ns'] }}" }
   register: fleet_start_list
   changed_when: false
+# One by one, so one that fails names itself. The reset (`fleet_start_together`) starts the stopped ones in one call: Incus boots them in
+# parallel, 0.44 s for the three against one boot after the other.
 - name: Start the nested containers
+  when: not (fleet_start_together | default(false) | bool)
   ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['start', item] }}" }
   loop: "{{ fleet_names | reject('in', fleet_start_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list) | list }}"
   register: fleet_start
   changed_when: fleet_start.rc == 0
   failed_when: false
+- name: Start the nested containers together
+  vars:
+    fleet_start_stopped: "{{ fleet_names | reject('in', fleet_start_list.stdout_lines | select('match', '^[^,]+,RUNNING$') | map('regex_replace', ',.*$', '') | list) | list }}"
+  when: fleet_start_together | default(false) | bool and fleet_start_stopped | length > 0
+  ansible.builtin.command: { argv: "{{ ['timeout', '120'] + fleet_incus + ['start'] + fleet_start_stopped }}" }
+  register: fleet_start_one
+  changed_when: fleet_start_one.rc == 0
+  failed_when: false
 - name: Check that the nested containers started
   vars:
-    fleet_start_failed: "{{ fleet_start.results | rejectattr('rc', 'eq', 0) | list }}"
+    # The one call of the reset names all the containers it started.
+    fleet_start_failed: >-
+      {{ (([fleet_start_one | combine({'item': fleet_start_one.cmd[(fleet_incus | length) + 3:] | join(', ')})] if fleet_start_one.rc is defined else [])
+          + (fleet_start.results | default([]) | selectattr('rc', 'defined') | list)) | rejectattr('rc', 'eq', 0) | list }}
   ansible.builtin.assert:
     that: fleet_start_failed | length == 0
     fail_msg: >-

@@ -1,0 +1,35 @@
+# Format: docs/reference/verification-cases.
+# The proof fleet has no container Instance with a T3 server yet. Gateway Pest tests cover every answer and the walk; real-Ansible
+# fixtures (swamp/tests/workflow_conn_environment_restart_test.ts) cover the restart phase. The cases below the refusal need a fixture
+# clone on app-dev whose T3 still shows `instance-<id>`, as after a release that wrote the name into a running container.
+command: conn:environment-restart
+chart: conn/environment-restart
+target: app-dev
+sources: [gateway]
+baseline: [operations]
+uncovered:
+  main: "Need a running fixture clone on app-dev whose T3 label is still instance-<id> while /etc/machine-info holds the name and no thread works or waits. The case runs the command and expects answer restarted; then the descriptor read from the Gateway shows label <instance>.<project slug> with the same environmentId, and the Operation result records read_at, restart_at and window_ms. Its window_ms is the measured window the docs quote."
+  restarted: "The same fixture as main."
+  not-back: "Need a fixture clone whose t3.service fails to start after the restart, to prove failed with conn.t3_unready and one try-restart only."
+  busy: "Need the same fixture clone with a running turn (a thread status running). The case expects answer busy with t3_working, no conn.environment_restart Operation, and the same ActiveEnterTimestamp of t3.service before and after (systemctl show -p ActiveEnterTimestamp t3.service)."
+  processes: "Need the same fixture clone with an open T3 terminal running sleep 300. The case expects answer busy with processes (1 terminal, 1 command), the sleep still running, and the same ActiveEnterTimestamp of t3.service."
+  frozen: "Need the same fixture clone put to sleep with instance:sleep (frozen). The case expects answer skipped with frozen, no Operation, and the container still Frozen."
+  "conn.t3_unready": "As not-back."
+  "conn.t3_label_mismatch": "Need a fixture whose /etc/machine-info changes between the Gateway read and the restart; the real-Ansible fixture covers it."
+  "conn.t3_restart_failed": "A run that fails without its own code; Pest covers the projection."
+  "conn.restart_admission_failed": "An unexpected Gateway failure for one Instance; Pest covers it."
+  "instance.lifecycle_not_active": "Need a clone whose create runs; Pest covers the refusal."
+  "operation.target_busy": "Need a clone with an open lifecycle Operation; Pest covers the refusal."
+  "extension.disabled": "The proof fleet keeps Conn on; the route middleware is shared with every Conn route."
+cases:
+  - id: invalid-id
+    batch: fresh-fleet
+    covers: []
+    summary: Reject a nonnumeric Instance locally.
+    act:
+      - cli:
+          run: [conn:environment-restart, invalid]
+          forms: [json, human]
+          expect: {exit: 1, code: instance.id_invalid, request: none}
+    expect:
+      - unchanged: {since: act, what: [operations]}

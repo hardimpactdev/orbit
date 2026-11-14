@@ -51,7 +51,9 @@ sequenceDiagram
   %%> - changes no device or configuration key: on a running fleet it only reads
   %%> - reads no fleet file: every file rule is owned and never refuses; the refresh reads the files when they matter
   %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`), or a nested container or the inner bridge cannot be read; the Operation's result `fleet_drift` names each difference
-  %%> - an owned rule that differs passes: the refresh writes it
+  %%> - an owned rule that differs or a build rule that is absent passes because this deployment follows with refresh; the refresh writes it with the fleet stopped before retaking `base`
+  %%> - a build rule with a conflicting value still refuses; a standalone start or proof reset also refuses an absent build rule
+  %%> - after a later failure, deployment rollback also admits absent build rules when it resumes the restored seed; it changes no map and leaves the upgrade to the next deployment
   %%> fleet_start · why:
   %%> - the fleet keeps running between releases, so the run checks it once, before it changes anything; a refusal or a failed start restores no seed
   %%> - a refresh that cannot end above the inner Doctor's floor would fail only at its last readiness wait, after minutes of work and a restore: refresh 21617 did that on `node.disk_low`
@@ -86,9 +88,9 @@ sequenceDiagram
   %%> - installs the new and changed Process units and waits for each running unit
   %%> Phase fleet_refresh:
   %%> - reads the refresh record in the container (`/var/lib/orbit/fleet-refresh.json`) and the digest `code` of the checkout: `apps/gateway`, which holds the migrations and the Composer lock of packages that ship migrations, and `apps/agent/contract`, which it reads
-  %%> - after the migrate, makes the digest `converge` from what a base converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the nested Gateway's digest of each Node's base intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
+  %%> - after the migrate, makes one converge digest per nested Node from what its base converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the nested Gateway's digest of that Node's base intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
   %%> - a part runs when its digest differs from the record; a missing record, or one it cannot read, makes every part run, and an unreadable record adds a warning
-  %%> - the converge also runs when a digest cannot be read, or when the last converge that ran (`converged` in the record) is more than 7 days old
+  %%> - a Node also converges when its last converge (`converged_<role>` in the record) is more than 7 days old; all three converge when a digest cannot be read
   %%> - also from the record: `grants` (with the Club key only), the digest of `apps/gateway` and `swamp`, from which the nested Gateway renders its Swamp grants; `tokens`, the creation time of the oldest of the nested Gateway's six Swamp tokens
   %%> - every run, once: waits until the state mounts of the nested Gateway (with its Swamp state when the Club key is there) and app-dev are active (60 s)
   %%> - `code` changed: places the agent delivery (into the checkout)
@@ -98,7 +100,7 @@ sequenceDiagram
   %%> - `code` changed: migrates the nested Gateway and restarts its services
   %%> - every run: reads the fleet rules on the running fleet, its devices and keys and the inner bridge; reads the fleet files only when `rules` (the files' content) differs from the record or the converge is due, and writes those that differ
   %%> - every run: checks the services of the nested Gateway, and Swamp serve and its workers with the Club key, in one read
-  %%> - the converge is due: waits until the three agents are online (300 s), converges the base of the three nested Nodes one by one, and reads how many tasks each changed; a failed converge fails the refresh
+  %%> - a converge is due: waits until the three agents are online (300 s), admits the base converge of each due nested Node, then reads each until it has ended, and reads how many tasks each changed; a failed or refused converge fails the refresh after every admitted one has ended
   %%> - every run: waits for readiness once (Doctor healthy, three agents, the operator), so the seed holds a ready fleet: before the tools when the fleet keeps running, after the start that follows a retaken `base` otherwise
   %%> - retakes `base` only for the containers whose disk changed: a step that writes a nested disk and reported a change (the grants reload that changed a file, a remint), that container; a converge that changed a Node, that Node and the nested Gateway; a missing `base`, that container; a missing or unreadable record or a rule or file that differed, all three
   %%> - each of them stops first; the others keep running; with all three stopped it writes the owned rules (and a build rule only where it is absent), and it checks every rule; with some stopped the rules only compare, and a difference fails the refresh
@@ -112,8 +114,11 @@ sequenceDiagram
   %%> fleet_refresh · why:
   %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes, and three base converges that change nothing about 87 s
   %%> - a file list cannot follow the Gateway code that builds a base intent, so the nested Gateway hashes the intent itself; the `swamp` list has a cover test
+  %%> - the list leaves out the imports of the behavior file that a converge never runs (the fleet reboot's result, role plans, the clone part): a change there converged the three Nodes for nothing twice on 14 November 2026 (108 s and 120 s)
+  %%> - one digest per Node: a moved base intent converges that Node only
   %%> - the nested Gateway's Swamp tokens live 30 days, and a fleet lives longer: the refresh keeps them young, so no copy stops with expired tokens; an older fleet with only workers a and b gets worker c first, because the remint renews all three
-  %%> - the converges run one by one: every step of the converge workflow has a fixed behavior name, so a second run at once waits for the first one's Swamp lock and fails after 60 s
+  %%> - the converges run side by side: two base converges never share the hub's reservation, and the converge workflow's Ansible plays lock a behavior per Node; three that changed nothing took 108 s one by one (22223) and 48 s side by side
+  %%> - the nested Swamp has three workers and a run waits 30 s for one: the three converges take all three
   %%> - a reset restores `base` of all three in seconds; taking `base` costs about 32 s per container, so only what changed is retaken
   %%> - a migration does not retake `base`: a reset restores `base` and then migrates the nested Gateway forward to its checkout, and restarts it when one applied; a retake for each migrating release cost 95 to 100 s (21810, 21978)
   %%> - the grants, the agent delivery, the token read and the file reads cost about 8 s of every run, and a docs-only release changes none of their inputs

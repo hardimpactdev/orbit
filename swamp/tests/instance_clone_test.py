@@ -527,13 +527,16 @@ class CloneTest(unittest.TestCase):
             {"path": "/home/agent/.claude/CLAUDE.md.note", "uid": 2750, "gid": 2750, "mode": "0600", "content": "not before the start\n"},
             {"path": "/home/agent/.t3/userdata/settings.json", "before_start": True, "uid": 2750, "gid": 2750, "mode": "0600",
              "json": {"linkedEnvironmentsEnabled": True}},
+            {"path": "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", "before_start": True, "uid": 0, "gid": 0, "mode": "0644",
+             "content": "[Unit]\nDefaultDependencies=no\n"},
         ],
     }
     # The seed's agent home: the folders a default holds, without T3's state folder (a default never runs T3).
-    T3_ROOT = {"home/agent/.config/orbit/.keep": "", "home/agent/.codex/.keep": "", "etc/orbit/.keep": ""}
+    T3_ROOT = {"home/agent/.config/orbit/.keep": "", "home/agent/.codex/.keep": "", "etc/orbit/.keep": "", "etc/systemd/system/.keep": ""}
     T3_TARGETS = ["/etc/orbit/instance", "/home/agent/.config/orbit/model.env", "/home/agent/.codex/config.toml", "/home/agent/.claude.json",
                   "/home/agent/.claude/CLAUDE.md.note", "/home/agent/.t3", "/home/agent/.t3/userdata",
-                  "/home/agent/.t3/userdata/settings.json"]
+                  "/home/agent/.t3/userdata/settings.json", "/etc/systemd/system/t3.service.d",
+                  "/etc/systemd/system/t3.service.d/10-orbit-boot.conf"]
 
     def t3_writes(self, calls):
         return [call for call in calls if call[3:5] in (["file", "push"], ["file", "create"])
@@ -548,7 +551,9 @@ class CloneTest(unittest.TestCase):
         writes = self.t3_writes(calls)
         self.assertEqual([call[-1] for call in writes], ["instance-7/home/agent/.config/orbit/model.env", "instance-7/home/agent/.codex/config.toml",
                                                           "instance-7/home/agent/.claude.json", "instance-7/home/agent/.t3", "instance-7/home/agent/.t3/userdata",
-                                                          "instance-7/home/agent/.t3/userdata/settings.json", "instance-7/etc/orbit/instance"])
+                                                          "instance-7/home/agent/.t3/userdata/settings.json",
+                                                          "instance-7/etc/systemd/system/t3.service.d",
+                                                          "instance-7/etc/systemd/system/t3.service.d/10-orbit-boot.conf", "instance-7/etc/orbit/instance"])
         self.assertEqual(self.inputs[id(writes[0])], self.MODEL)
         self.assertEqual(writes[0][5:11], ["--uid", "2750", "--gid", "2750", "--mode", "0600"])
         self.assertEqual(self.inputs[id(writes[1])], "codex\n")
@@ -556,7 +561,11 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(json.loads(self.inputs[id(writes[2])]), {"hasCompletedOnboarding": True})
         self.assertEqual(writes[3][3:12], ["file", "create", "--type=directory", "--uid", "2750", "--gid", "2750", "--mode", "0700"])
         self.assertEqual(json.loads(self.inputs[id(writes[5])]), {"linkedEnvironmentsEnabled": True})
-        self.assertEqual(self.inputs[id(writes[6])], "ORBIT_INSTANCE_ID=7\n")
+        # T3's drop-in folder is root's, 0755, and the drop-in goes in before the file T3 waits for.
+        self.assertEqual(writes[6][3:12], ["file", "create", "--type=directory", "--uid", "0", "--gid", "0", "--mode", "0755"])
+        self.assertEqual(self.inputs[id(writes[7])], "[Unit]\nDefaultDependencies=no\n")
+        self.assertEqual(writes[7][5:11], ["--uid", "0", "--gid", "0", "--mode", "0644"])
+        self.assertEqual(self.inputs[id(writes[8])], "ORBIT_INSTANCE_ID=7\n")
         start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
         self.assertTrue(all(calls.index(call) < start for call in writes))
         # The model environment goes only into its file: never onto a command line or into another input.
@@ -582,7 +591,9 @@ class CloneTest(unittest.TestCase):
                 self.assertEqual(push[5:11], ["--uid", "2750", "--gid", "2750", "--mode", "0600"])
         writes = [call for call in self.t3_writes(calls) if call[-1] != "instance-7/home/agent/.claude.json"]
         self.assertEqual([call[-1] for call in writes], ["instance-7/home/agent/.config/orbit/model.env", "instance-7/home/agent/.codex/config.toml",
-                                                          "instance-7/home/agent/.t3/userdata/settings.json", "instance-7/etc/orbit/instance"])
+                                                          "instance-7/home/agent/.t3/userdata/settings.json",
+                                                          "instance-7/etc/systemd/system/t3.service.d",
+                                                          "instance-7/etc/systemd/system/t3.service.d/10-orbit-boot.conf", "instance-7/etc/orbit/instance"])
         self.assertEqual(json.loads(self.inputs[id(writes[2])]), {"projectSettingsFolded": True, "linkedEnvironmentsEnabled": True})
 
     def test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start(self):

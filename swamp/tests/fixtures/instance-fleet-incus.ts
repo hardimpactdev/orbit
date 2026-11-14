@@ -157,6 +157,26 @@ if (command[0] === "incus") {
     }
     done({ name, status: found.status, config: found.config, devices: found.devices });
   }
+  // `stop --force` takes several names in one call (the reset); stopping a stopped container fails, as in Incus.
+  if (inner[0] === "stop" && inner[1] === "--force") {
+    const found = inner.slice(2).map(container);
+    if (found.length === 0) fail("No instance named");
+    if (found.some((value) => value.status !== "Running")) fail("The instance is already stopped");
+    for (const value of found) value.status = "Stopped";
+    done();
+  }
+  // `start` takes several names in one call (the reset): Incus starts each it can and fails naming the others.
+  if (inner[0] === "start" && inner.length > 2) {
+    const errors: string[] = [];
+    for (const name of inner.slice(1)) {
+      const found = container(name);
+      if (state.failStart?.[name]) errors.push(`${name}: ${state.failStart[name]}`);
+      else if (found.status === "Running") errors.push(`${name}: The instance is already running`);
+      else found.status = "Running";
+    }
+    if (errors.length > 0) fail(errors.join("; "));
+    done();
+  }
   if (inner[0] === "start" || inner[0] === "stop") {
     const found = container(inner[1]);
     if (inner[0] === "start") {
@@ -203,6 +223,8 @@ if (command[0] === "incus") {
       delete found.snapshots[snapshot];
     } else if (verb === "restore") {
       const taken = found.snapshots[snapshot] ?? fail("Snapshot not found");
+      // A restore of a running container stops and boots it again; the fake counts those, so a reset that restores a stopped one shows.
+      if (found.status === "Running") state.runningRestores = (state.runningRestores ?? 0) + 1;
       found.config = copy(taken.config);
       found.devices = copy(taken.devices);
       found.files = copy(taken.files);
@@ -424,6 +446,8 @@ if (command[0] === "curl") {
     if (command.at(-1) !== '{"base":true}') fail("A refresh converges the base");
     state.operations ??= [];
     const node = Number(converge[1]);
+    // `convergeRefused`: the Nodes whose admission the nested Gateway refuses, as curl --fail reports a 409.
+    if (state.convergeRefused?.includes(node)) fail("curl: (22) The requested URL returned error: 409", 22);
     // `egressNeeded`: a base converge runs apt and downloads the agent, so it fails on a Node without the egress files.
     const guest = containers[["nested-gateway", "nested-app-dev", "nested-app-prod"][node - 1]];
     const egress = !state.egressNeeded || state.egressNeeded.every((path: string) => (guest.files ?? {})[path]?.includes("10.253.0.1:3128"));
@@ -433,6 +457,11 @@ if (command[0] === "curl") {
   const operation = /^\/operations\/(\d+)$/.exec(path);
   if (method === "GET" && operation) {
     const found = state.operations[Number(operation[1]) - 901];
+    // `convergeRunning`: the reads in which a Node's converge still runs.
+    if ((state.convergeRunning?.[found.node] ?? 0) > 0) {
+      state.convergeRunning[found.node] -= 1;
+      done({ data: { id: Number(operation[1]), status: "running", error_code: null, result: null } });
+    }
     // `convergeChanged`: the tasks each Node's base converge changed, as the Operation's `result.changed`; 0 by default.
     // `convergeNoCount`: a result without a count.
     done({ data: { id: Number(operation[1]), status: found.status, error_code: found.status === "failed" ? "node.converge_failed" : null,

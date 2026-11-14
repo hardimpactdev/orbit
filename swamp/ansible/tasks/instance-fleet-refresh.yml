@@ -4,8 +4,8 @@
 # The record `fleet_record` holds the digests of the parts the last passed refresh did; a part runs when its digest differs, and a
 # missing or unreadable record makes every part run. `code` migrates and restarts the nested Gateway and places the agent delivery,
 # `grants` reloads the nested Swamp's grants, `tokens` reads the nested Swamp's tokens when the oldest may be due, `rules` reads the fleet
-# files, and `converge` waits for the three agents and converges the base of the three nested Nodes one by one. The converge is also due 7
-# days after the last one that ran. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
+# files, and `converge` waits for the three agents and converges the base of each nested Node whose own digest changed, side by side. A
+# Node's converge is also due 7 days after its last one. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
 # retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants or a remint
 # changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
 # does not: a reset migrates after its restore (instance-fleet-migrate.yml). The record is removed before the
@@ -24,8 +24,8 @@
 # the life of a Horizon worker). `grants` is `apps/gateway` and `swamp`: the nested Gateway renders its Swamp grants from the checkout
 # with its own code (gateway-swamp-grants.yml). `rules` is the fleet files' content. `converge` is made after the migrate, from what a
 # base converge reads: the `swamp` files of `fleet-converge-inputs.json` (its cover test: swamp/tests/fleet_converge_inputs_test.ts), the
-# nested Gateway's digest of each Node's base intent, and the fleet intent. The record also holds `converged`, the time of the last
-# converge that ran, and `tokens`, the creation time of the oldest Swamp token of the nested Gateway (`YYYYMMDDHHMMSS`, UTC).
+# nested Gateway's digest of each Node's base intent, and the fleet intent, one digest per Node. The record also holds `converged_<role>`,
+# the time of each Node's last converge, and `tokens`, the creation time of the oldest Swamp token of the nested Gateway (`YYYYMMDDHHMMSS`, UTC).
 - name: Read the list of converge inputs
   ansible.builtin.set_fact:
     fleet_converge_inputs: "{{ lookup('ansible.builtin.file', 'fleet-converge-inputs.json') | from_json }}"
@@ -46,7 +46,7 @@
 - name: Work out which parts are due
   vars:
     fleet_record_valid: >-
-      {{ fleet_record_read.rc == 0 and fleet_record_read.stdout | trim is match('^\{"[a-z]+": ?"[0-9a-f]+"(, ?"[a-z]+": ?"[0-9a-f]+")*\}$') }}
+      {{ fleet_record_read.rc == 0 and fleet_record_read.stdout | trim is match('^\{"[a-z_]+": ?"[0-9a-f]+"(, ?"[a-z_]+": ?"[0-9a-f]+")*\}$') }}
     fleet_ids: >-
       {{ fleet_digests_read.stdout_lines if fleet_digests_read.rc == 0
          and fleet_digests_read.stdout_lines | length == 3 + fleet_converge_inputs.inputs | length else [] }}
@@ -196,9 +196,11 @@
   register: fleet_intents_read
   changed_when: false
   failed_when: false
-# The converge is due when the record is missing or unreadable, a digest cannot be read, the digest differs from the record, or the
-# last converge that ran is older than `fleet_converge_max_age` seconds (7 days): a safety net for an input no digest covers.
-- name: Work out whether the converge is due
+# Each nested Node has its own converge digest: the listed `swamp` files, that Node's base intent digest and the fleet intent; the record
+# holds it as `converge_<role>` and the time of that Node's last converge as `converged_<role>` (`-` in a role is `_`). A Node is due
+# when the record is missing or unreadable, a digest cannot be read (all three are then due), its digest differs from the record, or its
+# last converge is older than `fleet_converge_max_age` seconds (7 days): a safety net for an input no digest covers.
+- name: Work out which nested Nodes the converge is due for
   vars:
     fleet_intents: >-
       {%- set read = (fleet_intents_read.stdout_lines | default([]) | last | default('')) -%}
@@ -206,21 +208,38 @@
       {{ out if out is mapping and out.keys() | sort == fleet_roles | sort
               and out.values() | select('match', '^[0-9a-f]{64}$') | list | length == fleet_roles | length else {} }}
     fleet_converge_now: >-
-      {{ '' if fleet_swamp_ids | length == 0 or fleet_intents | length == 0 else
-         (fleet_swamp_ids | join(' ') ~ ' ' ~ (fleet_roles | map('extract', fleet_intents) | join(' ')) ~ ' '
-          ~ (intent.fleet | to_json(sort_keys=true))) | hash('sha256') }}
-    fleet_converged_age: >-
-      {{ (now().timestamp() | int) - (fleet_recorded.converged | int) if fleet_recorded.converged | default('') is match('^[0-9]+$') else none }}
+      {%- set digests = {} -%}
+      {%- if fleet_swamp_ids | length > 0 and fleet_intents | length > 0 -%}
+      {%- for role in fleet_roles -%}
+      {%- set _ = digests.update({'converge_' ~ (role | replace('-', '_')): (fleet_swamp_ids | join(' ') ~ ' ' ~ fleet_intents[role] ~ ' '
+             ~ (intent.fleet | to_json(sort_keys=true))) | hash('sha256')}) -%}
+      {%- endfor -%}
+      {%- endif -%}
+      {{ digests }}
+    fleet_now_seconds: "{{ now().timestamp() | int }}"
+    fleet_converge_reasons: >-
+      {%- set reasons = {} -%}
+      {%- for role in fleet_roles -%}
+      {%- set key = role | replace('-', '_') -%}
+      {%- set at = fleet_recorded['converged_' ~ key] | default('') -%}
+      {%- set age = (fleet_now_seconds | int) - (at | int) if at is match('^[0-9]+$') else -1 -%}
+      {%- set _ = reasons.update({role: 'record' if fleet_record_state != 'present'
+            else 'digest_unreadable' if fleet_converge_now | length == 0
+            else 'changed' if fleet_recorded['converge_' ~ key] | default('') != fleet_converge_now['converge_' ~ key]
+            else 'stale' if age < 0 or age > fleet_converge_max_age | default(604800) | int
+            else 'unchanged'}) -%}
+      {%- endfor -%}
+      {{ reasons }}
   ansible.builtin.set_fact:
-    fleet_now: "{{ fleet_now | combine({'converge': fleet_converge_now} if fleet_converge_now | length > 0 else {}) }}"
+    fleet_now: "{{ fleet_now | combine(fleet_converge_now) }}"
+    # The due Nodes, in converge order.
+    fleet_converge_roles: "{{ fleet_roles | select('in', fleet_converge_reasons | dict2items | rejectattr('value', 'eq', 'unchanged') | map(attribute='key') | list) | list }}"
+    # The refresh's one word: the first of `record`, `digest_unreadable`, `changed`, `stale` that holds for a Node, else `unchanged`.
     fleet_converge_reason: >-
-      {{ 'record' if fleet_record_state != 'present' else 'digest_unreadable' if fleet_converge_now | length == 0
-         else 'changed' if fleet_recorded.converge | default('') != fleet_converge_now
-         else 'stale' if fleet_converged_age | int(-1) < 0 or fleet_converged_age | int > fleet_converge_max_age | default(604800) | int
-         else 'unchanged' }}
+      {{ (['record', 'digest_unreadable', 'changed', 'stale'] | select('in', fleet_converge_reasons.values() | list) | list + ['unchanged']) | first }}
 - name: Name the due converge
   ansible.builtin.set_fact:
-    fleet_due: "{{ fleet_due | combine({'converge': fleet_converge_reason != 'unchanged'}) }}"
+    fleet_due: "{{ fleet_due | combine({'converge': fleet_converge_roles | length > 0}) }}"
 
 # The fleet rules, read on the running fleet every time; the files only when `rules` is due or the converge is: the base converge runs
 # apt and downloads the agent through the egress proxy, so the fleet's files are written before it, and the rules then find them in place
@@ -284,7 +303,7 @@
   when: fleet_due.converge
   ansible.builtin.command:
     argv: "{{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests[item], '--', 'systemctl', 'stop', 'apt-daily.timer', 'apt-daily-upgrade.timer'] }}"
-  loop: "{{ fleet_roles }}"
+  loop: "{{ fleet_converge_roles }}"
   changed_when: true
 - name: Wait for running updates to end
   when: fleet_due.converge
@@ -301,14 +320,14 @@
   delay: "{{ fleet_ready_delay }}"
   failed_when: fleet_updates.rc != 0 or not fleet_updates_idle
   changed_when: false
-  loop: "{{ fleet_roles }}"
-# One Node after the other, and an include per Node stops at the first Node whose converge fails. They cannot run side by side: every
-# step of the converge workflow has a fixed behavior name, so a second run waits for the first one's Swamp lock and fails after 60 s.
-- name: Converge the base of each nested Node
+  loop: "{{ fleet_converge_roles }}"
+# The due Nodes converge side by side: all are admitted, then each is awaited, and a failure fails the refresh only after every
+# admitted converge has ended (instance-fleet-converge-node.yml).
+- name: Converge the base of the due nested Nodes
   when: fleet_due.converge
   ansible.builtin.include_tasks: instance-fleet-converge-node.yml
-  loop: "{{ fleet_nodes }}"
-  loop_control: { loop_var: fleet_node, label: "{{ fleet_node.name }}" }
+  vars:
+    fleet_converge_nodes: "{{ fleet_nodes | selectattr('name', 'in', fleet_converge_roles) | list }}"
 
 - name: Time the converge
   ansible.builtin.set_fact:
@@ -467,6 +486,8 @@
       converge: "{{ 'ran' if fleet_due.converge else 'skipped' }}"
       # Why: `changed` (a digest differs), `record` (the record is missing or unreadable), `digest_unreadable`, `stale` (7 days), `unchanged`.
       converge_reason: "{{ fleet_converge_reason }}"
+      # The nested Nodes the converge ran for, in converge order.
+      converge_nodes: "{{ fleet_converge_roles }}"
       changed: "{{ fleet_converge_changed | int }}"
       tokens: "{{ 'skipped' if fleet_tokens_reason == 'no_key' else 'young' if fleet_tokens_reason in ['young', 'recorded'] else 'reminted' }}"
       # Why: `age` (one is older than `fleet_token_max_age`), `incomplete` (one is missing, such as worker c's), `unreadable`, `young`,
@@ -491,12 +512,24 @@
 - name: Write the refresh record
   when: fleet_now | length > 0
   vars:
+    # The time of each Node's last converge: now for a Node that converged in this run, else the recorded one.
+    fleet_converged_record: >-
+      {%- set out = {} -%}
+      {%- for role in fleet_roles -%}
+      {%- set key = 'converged_' ~ (role | replace('-', '_')) -%}
+      {%- if role in fleet_converge_roles -%}
+      {%- set _ = out.update({key: now().timestamp() | int | string}) -%}
+      {%- elif fleet_recorded[key] is defined -%}
+      {%- set _ = out.update({key: fleet_recorded[key]}) -%}
+      {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
     fleet_record_write: >-
       mkdir -p "${1%/*}" && cat > "$1.tmp" && chown root:root "$1.tmp" && chmod 0644 "$1.tmp" && mv -f "$1.tmp" "$1"
   ansible.builtin.command:
     argv: "{{ ['timeout', '30'] + fleet_outer + ['sh', '-c', fleet_record_write, 'sh', fleet_record] }}"
     stdin: >-
-      {{ fleet_now | combine({'converged': (now().timestamp() | int | string) if fleet_due.converge else fleet_recorded.converged})
+      {{ fleet_now | combine(fleet_converged_record)
          | combine({'tokens': fleet_tokens_mark} if fleet_tokens_mark is not none and fleet_tokens_mark | string is match('^[0-9]{14}$') else {})
          | to_json(sort_keys=true) }}
     stdin_add_newline: false

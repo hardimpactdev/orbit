@@ -5,6 +5,7 @@ import { roleAddPlans } from "./role_add_plans.ts";
 import { convergeResult, ReportInput } from "./converge_result.ts";
 import { fleetRebootResult, FleetRebootResultInput } from "./fleet_reboot_result.ts";
 import { convergeInput } from "./converge_input.ts";
+import { clonePart } from "./clone_payload.ts";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -154,37 +155,13 @@ export const behavior = {
                 );
                 const container = args.intent.container as { clone?: unknown; instance_id: number; allowed_devices?: unknown; club_key?: unknown } | null | undefined;
                 const privatePath = `/tmp/orbit-clone-${container?.instance_id ?? 0}-${folder.split("/").at(-1)?.slice("orbit-ansible-".length)}`;
-                const launcher = container?.clone
-                    ? await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_launch.py")) : "";
-                const cloneArgv = container?.clone
-                    ? ["python3", privatePath + "/launch.py", privatePath] : [];
-                let cloneNetwork = "";
-                if (container?.clone) {
-                    const network = await Deno.readTextFile(ctx.extensionFile("ansible/instance_network.py"));
-                    cloneNetwork = container.allowed_devices
-                        ? network.split('if __name__ == "__main__":')[0] + await Deno.readTextFile(ctx.extensionFile("ansible/instance_nested.py")) : network;
-                }
-                const clonePayload = container?.clone ? JSON.stringify({
-                    launcher,
-                    script: await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone.py")),
-                    container,
-                    guest: await Deno.readTextFile(ctx.extensionFile("scripts/instance_clone_guest.py")),
-                    network: cloneNetwork,
-                    account: (args.intent.ssh_execution as { target: { user: string } }).target.user,
-                    bundle: {
-                        node_services: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_services.py")),
-                        machine_name: await Deno.readTextFile(ctx.extensionFile("ansible/instance_machine_name.py")),
-                        mail: await Deno.readTextFile(ctx.extensionFile("ansible/instance_mail.py")),
-                        bridge: await Deno.readTextFile(ctx.extensionFile("ansible/instance_bridge.py")),
-                        node: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_runtime.py")),
-                        // Only a nested-fleet clone delivers its nested Gateway's Club key.
-                        ...(container.club_key ? { club_key: await Deno.readTextFile(ctx.extensionFile("ansible/instance_nested_club_key.sh")) } : {}),
-                    },
-                }) : "";
+                // Only a clone intent has a clone part (clone_payload.ts).
+                const clone = container?.clone ? await clonePart(container, args.intent, privatePath, ctx)
+                    : { clone_argv: [], clone_stage_argv: [], clone_payload: "" };
                 const value = Output.parse({
-                    clone_argv: cloneArgv,
-                    clone_stage_argv: container?.clone ? ["python3", "-c", launcher, privatePath] : [],
-                    clone_payload: clonePayload,
+                    clone_argv: clone.clone_argv,
+                    clone_stage_argv: clone.clone_stage_argv,
+                    clone_payload: clone.clone_payload,
                     clone_private: privatePath,
                     path: args.path,
                     assets,

@@ -6,6 +6,8 @@ namespace App\Domain\Instances\Power;
 
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Operations\OperationStatus;
 use App\Infrastructure\AgentCommands\AgentCommandRefused;
 use App\Infrastructure\AgentCommands\AgentCommandRunner;
 use App\Infrastructure\AgentCommands\AgentRunnerFailure;
@@ -62,13 +64,37 @@ final readonly class ContainerResume
      */
     public function applies(Instance $instance, InstanceRuntime $runtime, array $input): bool
     {
-        if ($runtime->incus_project === InstancePlacement::NestedProject || (ValidatedData::object($input['container'])['web_config'] ?? null) === null
+        if ($runtime->power_state !== InstanceRuntimePowerState::Stopped || $runtime->incus_project === InstancePlacement::NestedProject
+            || (ValidatedData::object($input['container'])['web_config'] ?? null) === null
             || Cache::has(self::missingScriptKey($instance->node_id))) {
             return false;
         }
-        $sleep = InstanceSleep::frozen($instance, $runtime);
+        $sleep = self::frozenSleep($instance);
 
         return $sleep !== null && ($sleep->result['swap_subtree'] ?? 0) === 0;
+    }
+
+    /**
+     * Whether the Instance's last sleep froze its container, rather than stopping it or failing, and no wake since found the container
+     * stopped (a host reboot ends a freeze): the one rule for a frozen container.
+     */
+    public static function frozenBySleep(Instance $instance): bool
+    {
+        return self::frozenSleep($instance) !== null;
+    }
+
+    /** The sleep that froze the Instance's container while that freeze still holds; see frozenBySleep(). */
+    public static function frozenSleep(Instance $instance): ?Operation
+    {
+        $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->orderByDesc('id')->first();
+        if ($sleep?->status !== OperationStatus::Succeeded || ($sleep->result['sleep'] ?? null) !== 'frozen') {
+            return null;
+        }
+        $found = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->where('id', '>', $sleep->id)->where('error_code', InstanceWake::NestedStopped)->exists();
+
+        return $found ? null : $sleep;
     }
 
     /**

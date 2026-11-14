@@ -190,13 +190,67 @@ it('refuses unsupported Nodes from recorded eligibility with no live probe', fun
     'nonhex verifier' => [['agent_secret_hash' => str_repeat('g', 64)]], 'linebreak verifier' => [['agent_secret_hash' => str_repeat('a', 64)."\n"]],
 ]);
 
-it('reserves the target and the recorded shared hub even for a base-only scope', function (): void {
+it('records the shared hub and the base mark; a converge of the same Node and a non-base hold of the hub still refuse', function (): void {
     $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
     $this->postJson($this->url, ['base' => true])->assertAccepted();
     $operation = Operation::query()->sole();
-    expect($operation->input['_converge']['network'])->toBe(['hub_id' => $this->control->id]);
-    expect(fn () => app(NodeNetworkReservation::class)->hold($this->control, fn () => null))->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
+    expect($operation->input['_converge']['network'])->toBe(['hub_id' => $this->control->id, 'base' => true]);
+    expect(fn () => app(NodeNetworkReservation::class)->hold($this->control, false, fn () => null))->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
     $this->postJson($this->url, ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+});
+
+/** A second converge target beside `target`, with its own verifier, reachable by the control Node. */
+function otherConvergeNode(Node $node, Node $control): Node
+{
+    $other = $node->replicate(['instance_bridge']);
+    $other->forceFill(['name' => 'other', 'wireguard_ip' => '10.44.0.8', 'public_ssh_host' => '10.44.0.8'])->saveQuietly();
+    $control->accessibleNodes()->attach($other);
+
+    return $other;
+}
+
+it('admits two base converges of different Nodes at once, and a base hold of the hub beside them', function (): void {
+    $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $other = otherConvergeNode($this->node, $this->control);
+    $this->postJson($this->url, ['base' => true])->assertAccepted();
+    $this->postJson('/api/v1/nodes/'.$other->id.'/converge', ['base' => true])->assertAccepted();
+    $admitted = app(NodeNetworkReservation::class)->hold($this->control, true, fn () => Operation::query()->latest('id')->first());
+
+    expect(Operation::query()->count())->toBe(2)->and($admitted->target_id)->toBe($other->id);
+    Queue::assertPushed(StartAdmittedSwampRun::class, 2);
+});
+
+it('refuses a base converge beside a converge with roles of another Node, in both orders, and the hub waits for it', function (bool $baseFirst): void {
+    $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $other = otherConvergeNode($this->node, $this->control);
+    $other->roles()->create(['role' => RoleName::AppProd, 'status' => 'active']);
+    $roles = '/api/v1/nodes/'.$other->id.'/converge';
+    $this->postJson($baseFirst ? $this->url : $roles, $baseFirst ? ['base' => true] : ['roles' => ['app-prod']])->assertAccepted();
+
+    $this->postJson($baseFirst ? $roles : $this->url, $baseFirst ? ['roles' => ['app-prod']] : ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+    expect(Operation::query()->count())->toBe(1);
+    if (! $baseFirst) {
+        // A converge with roles holds the hub as before: a base converge of the hub itself waits too.
+        expect(fn () => app(NodeNetworkReservation::class)->hold($this->control, true, fn () => null))->toThrow(ResourceOperationException::class, 'Another Operation owns the Node or VPN hub.');
+    }
+})->with(['base first' => true, 'roles first' => false]);
+
+it('treats an open converge without the base mark as one with roles', function (): void {
+    $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $other = otherConvergeNode($this->node, $this->control);
+    $this->postJson('/api/v1/nodes/'.$other->id.'/converge', ['base' => true])->assertAccepted();
+    $open = Operation::query()->sole();
+    $open->forceFill(['input' => [...$open->input, '_converge' => [...$open->input['_converge'], 'network' => ['hub_id' => $this->control->id]]]])->save();
+
+    $this->postJson($this->url, ['base' => true])->assertConflict()->assertJsonPath('error.code', 'operation.target_busy');
+});
+
+it('builds a base intent without a network for the hub Node and for a Node it serves, so base converges never touch the hub', function (): void {
+    $this->control->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+    $this->control->forceFill(['agent_secret_hash' => hash('sha256', 'hub-secret'), 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'pinned'])->saveQuietly();
+
+    expect(app(NodeDesiredConvergeInput::class)->baseIntent($this->control)['network'])->toBeNull()
+        ->and(app(NodeDesiredConvergeInput::class)->baseIntent($this->node)['network'])->toBeNull();
 });
 
 it('refuses app-dev role convergence while Node convergence holds the Node', function (bool $timedOut): void {

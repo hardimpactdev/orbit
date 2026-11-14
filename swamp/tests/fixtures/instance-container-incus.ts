@@ -517,7 +517,7 @@ if (family === "list") {
     for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
     Deno.exit(0);
   }
-  // T3 in the container: its well-known document once started, sessions it issues and knows, and the project it adds.
+  // T3 in the container: its well-known document once started (its label `t3_label`, else `t3`), sessions it issues and knows, and the project it adds.
   if (command[0] === "curl") {
     const url = command.at(-1)!;
     // FrankenPHP on the web port: `web` lists the status of each answer in turn and keeps its last; none means it does not listen.
@@ -531,7 +531,7 @@ if (family === "list") {
     }
     if (!state.containers[name].t3) Deno.exit(7);
     if (url.endsWith("/.well-known/t3/environment")) {
-      console.log(JSON.stringify({ environmentId: `env-${name}`, label: "t3", serverVersion: "0.1.7" }));
+      console.log(JSON.stringify({ environmentId: `env-${name}`, label: state.containers[name].t3_label ?? "t3", serverVersion: "0.1.7" }));
     } else {
       const token = (await new Response(Deno.stdin.readable).text()).replace("Authorization: Bearer ", "").trim();
       const known = (state.sessions ?? []).find((session: { token: string }) => session.token === token);
@@ -571,6 +571,11 @@ if (family === "list") {
     const admitted = nic.some((acl: {egress: Record<string, string>[]}) => acl.egress.some((rule) => allows(rule, target.host, target.port))) &&
       bridge?.egress.some((rule: Record<string, string>) => rule.source === "10.253.0.0/24" && allows(rule, target.translatedHost, target.translatedPort));
     Deno.exit(admitted ? 0 : 1);
+  }
+  // The restart phase's read of T3's service runs as written, against the container's own cgroup and /proc folders; the test puts
+  // `systemctl` and `ps` stand-ins on PATH.
+  if (command[0] === "sh" && command[1] === "-c" && command[2].includes("/sys/fs/cgroup/system.slice/t3.service")) {
+    command[2] = command[2].replaceAll("/sys/fs/cgroup/", rootfs(name) + "/sys/fs/cgroup/").replaceAll("/proc/", rootfs(name) + "/proc/");
   }
   if (command[0] === "python3" && command[1] === "-c" && command[2].includes("/var/lib/orbit/vite-plus-home/js_runtime")) {
     command[2] = command[2].replaceAll("/var/lib/orbit/vite-plus-home", rootfs(name) + "/var/lib/orbit/vite-plus-home")

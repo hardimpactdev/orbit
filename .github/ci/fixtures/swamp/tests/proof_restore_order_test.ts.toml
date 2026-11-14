@@ -1,5 +1,5 @@
 order = 1040
-source_sha256 = "07714a7ec175405fdcdb25aa996402ae107e6d51819472df363446346a9b0599"
+source_sha256 = "506afce7cb00b322727ab8acdb8a0a628f46bd55dd23101d34249b814d972a03"
 cases = [
   "restored fleets require checkout migration before every nested Gateway API check",
   "renewed base snapshots check readiness only after the apply that migrates",
@@ -12,6 +12,7 @@ cases = [
   "late gateway state mounts pass after the boot wait and fail without it",
   "late app-dev state mounts pass after the boot wait and fail without it",
   "boot wait refuses an unsettled boot, a timeout and an inactive required mount",
+  "a copy's batch resets with proof-copy-fleet-reset, which runs fleet_reset; the VM restore is unchanged",
 ]
 file = "swamp/tests/proof_restore_order_test.ts"
 cost = 30

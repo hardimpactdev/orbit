@@ -175,6 +175,8 @@ additionalFiles:
   - ansible/tasks/instance-mail-line.yml
   - ansible/instance-mail-update.yml
   - ansible/instance-container-power.yml
+  - ansible/conn-environment-restart.yml
+  - ansible/templates/t3-service-processes.j2
   - ansible/tasks/instance-container-power.yml
   - ansible/tasks/instance-container-swap.yml
   - ansible/instance-connection-environment.yml

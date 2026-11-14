@@ -1,5 +1,5 @@
 order = 1410
-source_sha256 = "7e35455f03995302348ac21adaa7614bfb7e744e58ee9e3e0a6d19f15bf0704c"
+source_sha256 = "60ee1442dfa2e1ea9c1a8699b2e5c6a084ad32cad7d1cd6574a269abb36442af"
 cases = [
   "the full intent reaches a private file beyond the environment size limit",
   "an intent write refuses paths outside its run folder",
@@ -9,11 +9,21 @@ cases = [
   "real clone launch preserves stdin and cleanup works after an early container failure",
   "workflow command and inline script templates keep 16 KiB of budget headroom",
   "nested clone input ships the composed pre-start policy and keeps the normal program unchanged",
+  "a plain clone gets the same clone part bytes as before the move",
+  "a nested-fleet clone gets the same clone part bytes as before the move",
+  "an intent without a clone container gets the empty clone part",
 ]
 file = "swamp/extensions/behaviors/operations/ansible-input/write_test.ts"
-cost = 8 # ESTIMATE: eight command-boundary cases completed in 0.33 s locally; one second per case
+cost = 11 # ESTIMATE: eleven command-boundary cases completed in 0.54 s locally; one second per case
 inputs = [
   "swamp/extensions/behaviors/operations/ansible-input/write.ts",
+  "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/instance_machine_name.py",
+  "swamp/ansible/instance_mail.py",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_node_runtime.py",
+  "swamp/ansible/instance_nested_club_key.sh",
   "swamp/ansible/instance_network.py",
   "swamp/ansible/instance-nic-filters.json",
   "swamp/ansible/instance_nested.py",
