@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 3, docs/reference/development-containers.md#t3-registration-and-pairing, docs/reference/conn.md#renewal-of-an-instance-server): how Orbit keeps the Gateway's admin session on a container's T3 server. The create flow registers the server (built, steps clone-sessions and clone-register of workflow-operation-instance-create). This chart is its renewal, `conn.environment_renew`, workflow-operation-conn-environment-renew. The container cannot call the Gateway, so the Gateway records the session from the run's result.
+  %% Container runtime (ADR 0250 step 3, docs/reference/development-containers.md#t3-registration-and-pairing, docs/reference/conn.md#renewal-of-an-instance-server): how Orbit keeps the Gateway's admin session on a container's T3 server. The create flow registers the server (built, steps clone-t3 (its sessions check) and clone-register of workflow-operation-instance-create). This chart is its renewal, `conn.environment_renew`, workflow-operation-conn-environment-renew. The container cannot call the Gateway, so the Gateway records the session from the run's result.
   %% status: built
   %% command: none · hourly tick, and POST /conn/environments/{environment_id}/renew
   %% kind: conn.environment_renew

@@ -995,7 +995,9 @@ On a container Instance, `env:sync` writes only the keys of the attached connect
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
-Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+Then one step, `clone-t3`, runs until the thread is usable. It runs the `checkout` part of the workspace phase beside T3: the branch, the checkout mark and `.env`. Beside it, the step checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 part never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs.
+
+When both parts have ended, the step checks the two sessions and the checkout. Before, these were three steps on two Swamp levels, and each step cost about 1 s before it did work.
 
 #### T3 starts with the copy
 
@@ -1007,13 +1009,13 @@ The image's `After=network-online.target` stays, because a drop-in cannot remove
 
 On a throwaway clone (2026-11-14, load 12-31), T3's unit started 0.35-0.43 s after systemd's userspace start. Without the drop-in it started 1.14-1.41 s after. The image keeps its unit. The drop-in is one of the agent files, so a migrated checkout with a T3 gets it too; the agent push makes its folder.
 
-The model environment reaches the copy step on its one SSH stdin. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
+The model environment reaches only the copy step, on its one SSH stdin. The T3 step's stdin is the workspace's private JSON; its agent part finds the model environment in place and fails without it. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
 
 The T3 step does not start a T3 that runs. It starts T3 when the copy was not started by this run, or when the run carried no model environment, as a run of an older Gateway does. A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
 
-Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy and the Club key, so both start when the Club key step ends or skips.
+Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). The T3 step is in the level after the copy and the Club key, so it starts when the Club key step ends or skips.
 
-The sessions check waits for both lines, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+The sessions check waits for both parts, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. A failed part writes its name into the step's private `t3.json`, and the result names the phase: `workspace` for the checkout, `t3` for the agent part or T3, `register` for the sessions check. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
 The levels and their measured seconds, with about 1.2 s of dispatch in each step:
 
@@ -1021,11 +1023,11 @@ The levels and their measured seconds, with about 1.2 s of dispatch in each step
 | --- | --- | --- |
 | (start) | Gateway admission, Swamp start | 3.8 |
 | `input` | the intent | 1.3 |
-| `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-workspace` beside `clone-t3` · `clone-sessions` · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.2 · 2.6 · 1.4 · 1.3 |
+| `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-t3` (the checkout beside T3, then the sessions check) · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.4 · 1.4 · 1.3 |
 | `publication` | `clone-route-csr-<i>` · `clone-route` (with its TLS probe), beside the `clone` job | 3 to 4 · 5 to 7 |
 | `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure, and the run-folder cleanup · `accepted` | 1.3 · 0.3 · 0 |
 
-A plain clone's create succeeds about 24 seconds after the click. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
+A plain clone's create succeeds about 22 seconds after the click, by these older step times. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
 
 When the run succeeds, the Gateway reads the [workspace baseline](#workspace-work-state) over SSH, before its transaction. Then, in one transaction, it records the T3 server, writes the baseline and turns the create `succeeded`. The clone stays `source_resolved` with its `starting_commit`, and its runtime is `running`. In the same transaction, after the create row is terminal, the Gateway admits `instance.complete` with the Instance lock. The create's result names it in `completion_operation_id`. The completion's vault copy and its Swamp start run after the commit.
 
