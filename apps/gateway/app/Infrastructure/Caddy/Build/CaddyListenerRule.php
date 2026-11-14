@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build;
 
 /**
- * The four listener rules of ADR 0141. Each site source has exactly one.
+ * The listener rules of ADR 0141, and the own-site rule of an Instance container. Each site has exactly one.
  */
 enum CaddyListenerRule: string
 {
@@ -20,4 +20,10 @@ enum CaddyListenerRule: string
 
     /** `websocket`, `analytics`, and the sites that extensions contribute: the WireGuard address. */
     case Shared = 'shared';
+
+    /**
+     * The own site of an Instance container on a private Route: the Instance bridge's gateway address, for that container alone
+     * (docs/reference/development-containers.md#the-own-site-from-inside).
+     */
+    case Bridge = 'bridge';
 }

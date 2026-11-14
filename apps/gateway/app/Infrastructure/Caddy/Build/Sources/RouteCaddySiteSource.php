@@ -68,7 +68,31 @@ final readonly class RouteCaddySiteSource implements NodeCaddySiteSource
                         : [],
                 );
             })
-            ->all()), ...$this->devPortSites($sorted)];
+            ->all()), ...$this->devPortSites($sorted), ...$this->ownSites($sorted)];
+    }
+
+    /**
+     * A container clone's own sites on the Instance bridge's gateway address: the Route's site on 443 and its development site on
+     * the development listener, each for that clone's bridge address alone. So an agent in the clone opens its own Instance by the
+     * Route's name, and no other container reaches it (docs/reference/development-containers.md#the-own-site-from-inside). The same
+     * rule as the development site decides them: a private Route of a clone.
+     *
+     * @param  Collection<int, DevelopmentSite>  $sites
+     * @return list<CaddySite>
+     */
+    private function ownSites(Collection $sites): array
+    {
+        return array_merge(...array_values($sites
+            ->filter(static fn (DevelopmentSite $site): bool => $site->devUpstream !== null)
+            ->map(fn (DevelopmentSite $site): array => [
+                new CaddySite(source: $this->source($site), name: "{$site->scope}-bridge", listener: CaddyListenerRule::Bridge,
+                    hosts: [$site->domain], port: 443, body: $this->renderer->render(collect([$site]), self::BindPlaceholder, self::BindPlaceholder),
+                    bindPlaceholder: self::BindPlaceholder, client: $site->devUpstream),
+                new CaddySite(source: $this->source($site), name: "{$site->scope}-dev-bridge", listener: CaddyListenerRule::Bridge,
+                    hosts: [$site->domain], port: InstanceDevPorts::Listener, body: $this->renderer->renderDevPorts($site, self::BindPlaceholder),
+                    bindPlaceholder: self::BindPlaceholder, client: $site->devUpstream),
+            ])
+            ->all()));
     }
 
     /**

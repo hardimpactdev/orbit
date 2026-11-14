@@ -4,20 +4,24 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\DatabaseConnections\DockerPublishedPort;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\VpnSettings;
 use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Process;
+use LogicException;
 
 /**
  * The way to an agent's development servers in the clones of a Node (docs/reference/development-containers.md#agent-development-servers).
  * An nftables table on the Node redirects each new TCP connection that a WireGuard peer opens to a port from 1024 to 65535 of the Node's
- * WireGuard address to Caddy's development listener. Caddy then routes by host name, and proxies to the port the client named in the
- * container. Nothing binds the range, so a port in use on the Node never fails a Caddy reload: the table leaves every port that has
- * a listener, and the ports Orbit gives the Node's services, to those services.
+ * WireGuard address to Caddy's development listener, and so does a container's connection to the development band of the Instance bridge's
+ * gateway address. Caddy then routes by host name, and proxies to the port the client named in the container. Nothing binds the range,
+ * so a port in use on the Node never fails a Caddy reload: the WireGuard chain leaves every port that has a listener, and the ports
+ * Orbit gives the Node's services, to those services.
  */
 final readonly class InstanceDevPorts
 {
@@ -35,6 +39,35 @@ final readonly class InstanceDevPorts
 
     /** The egress proxy of the container egress path (rollout step 2c). */
     public const int EgressProxy = 3128;
+
+    /**
+     * The development band of a container on the Instance bridge's gateway address: the Vite preset's port 5173, with room for the
+     * next ports Vite moves to when 5173 is taken. The dev-port table redirects exactly this band to Caddy's development listener, and
+     * a clone's NIC ACL admits exactly this band (InstanceOwnSite::nicEgress). No Node publication on every address or on the gateway
+     * may use it (`assertOutsideBand`), so the redirect never takes a port that Docker publishes there.
+     */
+    public const string BridgeBand = '5173-5199';
+
+    /** Whether the port lies in the development band. */
+    public static function inBand(int $port): bool
+    {
+        [$first, $last] = array_map(intval(...), explode('-', self::BridgeBand));
+
+        return $port >= $first && $port <= $last;
+    }
+
+    /**
+     * Refuses a Docker publication of the Node in the development band on every address or on the Instance bridge's gateway address:
+     * the bridge redirect would take it. A publication on another address, such as the WireGuard address, never reaches the gateway.
+     */
+    public static function assertOutsideBand(Node $node, DockerPublishedPort $mapping): void
+    {
+        $gateway = InstanceHostIntent::gateway($node);
+        if (self::inBand($mapping->publishedPort) && in_array($mapping->bindAddress, [null, '0.0.0.0', ...($gateway === null ? [] : [$gateway])], true)) {
+            throw new ResourceOperationException('instance.dev_band_reserved',
+                'Ports '.self::BridgeBand.' on every address and on the Instance bridge address are the development band of Instance containers. Publish another port, or bind to the WireGuard address.', 422);
+        }
+    }
 
     /**
      * The Node's own ports in the range that the table never redirects, even while their service is down: the SSH port, the egress
@@ -98,16 +131,24 @@ final readonly class InstanceDevPorts
     }
 
     /**
-     * The table, replaced in one transaction. It runs after Docker's DNAT, so a port Docker publishes keeps its mapping, and it
-     * handles only new connections, so the Node's own connections are untouched. `socket transparent 0` matches a packet that a
-     * socket of the Node takes: a port that a program listens on stays with that program. Every other new TCP connection that a
+     * The table, replaced in one transaction. Its WireGuard chain runs after Docker's DNAT, so a port Docker publishes keeps its
+     * mapping, and it handles only new connections, so the Node's own connections are untouched. `socket transparent 0` matches a
+     * packet that a socket of the Node takes: a port that a program listens on stays with that program. Every other new TCP connection that a
      * WireGuard peer opens to a port of the range on the Node's WireGuard address goes to Caddy's development listener.
+     *
+     * A container's connection to the development band of the Instance bridge's gateway address takes its own chain, with no
+     * exits: every port of the band goes to Caddy's development listener, and only the containers' own sites answer it
+     * (RouteCaddySiteSource::ownSites). The chain runs before Docker's address mapping, and no Node publication on the gateway uses
+     * the band (`assertOutsideBand`), so the redirect takes no port that another program serves.
      */
     public function ruleset(Node $node): string
     {
         $table = self::Table;
         $interface = InstanceContainer::WireGuardInterface;
         $address = (string) $node->wireguard_ip;
+        $bridge = InstanceHostIntent::Network;
+        $gateway = InstanceHostIntent::gateway($node) ?? throw new LogicException("Node [{$node->name}] has no Instance bridge.");
+        $band = self::BridgeBand;
         $range = self::First.'-'.self::Last;
         $listener = self::Listener;
         $excluded = implode(', ', $this->excluded($node));
@@ -129,6 +170,13 @@ final readonly class InstanceDevPorts
             	chain development {
             		tcp dport @excluded return
             		socket transparent 0 return
+            		meta l4proto tcp counter redirect to :{$listener}
+            	}
+            	chain bridge_prerouting {
+            		type nat hook prerouting priority dstnat - 10; policy accept;
+            		iifname "{$bridge}" ip daddr {$gateway} tcp dport {$band} ct state new jump bridge_development
+            	}
+            	chain bridge_development {
             		meta l4proto tcp counter redirect to :{$listener}
             	}
             }

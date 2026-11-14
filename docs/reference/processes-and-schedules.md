@@ -304,6 +304,12 @@ A public or private custom proxy Route does not block an environment-only or ima
 
 The Route stays active through an allowed update, without certificate or firewall activation. Container replacement can briefly interrupt the listener. Caddy reconnects to the unchanged upstream, and [Route Doctor checks](/reference/routes#public-process-hostnames) report an unreachable listener.
 
+A Docker Process that publishes a TCP port from 5173 to 5199 on every address or on the Instance bridge address is refused at create and update. That band is the [development band](/reference/development-containers#the-own-site-from-inside) of Instance containers. A publication on another address, such as the WireGuard address, is allowed.
+
+| Publication error code | Meaning |
+| --- | --- |
+| `instance.dev_band_reserved` | A Docker publication uses the development band, 5173 to 5199, on every address or on the Instance bridge address (HTTP 422). |
+
 ### Persisted intent and retry recovery
 
 Updating the Gateway record and changing a remote runtime are not one atomic transaction. The Gateway validates the request and acquires the operation locks before accepting new intent. Invalid input, an admission failure, or a detected ownership conflict before acceptance leaves the stored specification and runtime unchanged. Once accepted, the new specification and an incomplete convergence state are persisted before remote changes begin. The desired state remains unchanged. A later runtime failure does not roll the specification back or restore the old container layer.

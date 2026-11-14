@@ -182,7 +182,7 @@ An agent's development server answers at the Instance's Route with its own port,
 
 The way in has two parts on the Node. A Caddyfile cannot bind a range of ports, and a listener per port would fail the Node's whole Caddy reload whenever another program held one. So Orbit binds nothing in the range:
 
-1. **The redirect.** The nftables table `orbit_instance_dev_ports` takes new TCP connections from WireGuard peers to the Node's WireGuard address on ports 1024 to 65535.
+1. **The redirect.** The nftables table `orbit_instance_dev_ports` takes new TCP connections from WireGuard peers to the Node's WireGuard address on ports 1024 to 65535. It also takes a container's connections to the bridge's gateway address.
 2. **The listener.** The table sends them to Caddy's development listener, port 444.
 3. **Caddy.** A private Route of a clone has a site on port 444, with the Route's name and certificate.
 4. **The port.** The site reads the port from the request's `Host`, which keeps the port the client named. It proxies to that port at the container's bridge address.
@@ -206,7 +206,8 @@ The Node's own ports are the SSH port, the egress proxy 3128, the published T3 p
 
 Who reaches the servers:
 
-- **WireGuard peers only.** The table takes only connections that come in on the WireGuard interface to its address. The site refuses LAN neighbours and task VMs, as every WireGuard-only site does.
+- **WireGuard peers.** The table takes connections that come in on the WireGuard interface to its address. The site refuses LAN neighbours and task VMs, as every WireGuard-only site does.
+- **The clone itself.** A clone reaches its own servers on the bridge, as [the own site from inside](#the-own-site-from-inside) shows. No other container reaches them.
 - **Private Routes only.** A public Route has no development site. Making a Route public takes it away at the next Caddy build.
 - **One rule.** The same rule decides the site, the container's ACL and `/etc/orbit/instance`. The ACL and the file are written at the create.
 - **The container ACL.** Only the bridge's own address, the Node's Caddy, reaches ports 1024 to 65535 in a clone.
@@ -223,6 +224,46 @@ The [`vite` Process preset](/reference/processes-and-schedules#the-vite-preset) 
 The Node's converge writes the table, and its unit loads it at boot. A Database server or Process added later is left alone by the socket check while it runs; the next converge also adds its port to the ports the Node keeps.
 
 The [environment notes](#environment-notes) tell the agent to bind to `0.0.0.0`, to allow the Instance's host name, and to point hot reload at the URL and port. For Vite, those are `server.host`, `server.allowedHosts` and `server.hmr`.
+
+### The own site from inside
+
+An agent in a clone opens its own Instance by the Route's name with a headless browser, such as `https://feature.tool.test` or Vite's hot URL `https://feature.tool.test:5173`. The path goes through the Node's Caddy, on the Instance bridge's gateway address, such as `10.253.0.1`.
+
+| Part | What Orbit does |
+| --- | --- |
+| Sites | A private Route of a clone gets two more sites on the gateway address: the Route's site on 443 and its development site on 444 |
+| Same handlers | Each has the same name, certificate and handlers as its twin on the WireGuard address |
+| Callers | Each of these sites admits only its own clone's bridge address. Caddy aborts every other connection, so no sibling container reaches it |
+| Which clones | The same rule as the development site: a clone with a private Route. A default, a clone without a Route and a public Route get none |
+| Band | The development band is ports 5173 to 5199 on the gateway address |
+| Redirect | The table sends every new TCP connection from the bridge to the gateway address in the band to 444. Its chain has no exit, and it runs before Docker's address mapping |
+| Other ports | The table redirects no other port. Mailpit's 1025, the egress proxy, the model forwarder and an attached Node service keep their own ACL rule and their own path |
+| One constant | One constant gives the redirect's ports and the ports of a clone's `Orbit own development ports` rule |
+| Host firewall | The bridge ACL `orbitinst0-egress` and UFW (`orbit:instances-own-site` and `orbit:instances-own-dev`) admit TCP 443 and 444 in from the bridge to the gateway address. Neither admits the raw range |
+| When | The sites come with the Route's Caddy build, as every site does. The table and the host rules come with the Node's converge. Nothing restarts in a container |
+
+The container side comes from the clone's [access plan](#private-names-of-the-access-plan):
+
+| Part | What Orbit does |
+| --- | --- |
+| Targets | One target per private Route name of the clone: the gateway address, port 443, the Route's name, and the description `Orbit own site` |
+| From each target | The hosts line, the `NO_PROXY` entry and the NIC ACL rule. No second list names the Route names |
+| Development ports | One more NIC ACL rule, `Orbit own development ports`, to the gateway address on the band |
+| Bridge side | No bridge endpoint and no UFW rule per clone: the Node's own-site rows admit both ports at the bridge |
+| `env:sync` | It reconciles both rules by description, as it does the websocket app's rule. A Route that turned public loses them |
+
+The create and the clone write these. A container made before them gets them at its next `env:sync`.
+
+Why the band:
+
+- **The preset port.** The [`vite` preset](/reference/processes-and-schedules#the-vite-preset) and the `vp-dev` preset listen on 5173 in a container, so every clone's development server answers there.
+- **Room for Vite.** Vite moves to the next free port while 5173 is in use.
+- **More ports.** The band leaves 26 more ports for those moves and for a second server.
+- **Nothing else there.** No Node publication on every address or on the gateway address may use the band, so the redirect takes no port that Docker serves there.
+
+**The limit.** A development server outside 5173 to 5199 is not reachable by name from inside the container. That includes a default's old Vite port from before its move into a container. From WireGuard, every port from 1024 still works.
+
+**The refusal.** A Docker publication of a Node in the band, on every address or on the gateway address, is refused with `instance.dev_band_reserved`. Both the Process create and update and a [Node service attach](/cli/instance/node-service-attach) refuse it. A publication on the WireGuard address only is allowed, because it never reaches the gateway address. A Mailpit port configured in the band (`instances.mailpit.port`) is refused with the same code, so mail never hides behind the redirect.
 
 ### PHP
 
@@ -521,6 +562,7 @@ A container reaches only what this table lists. Everything else is dropped by it
 | Its own address | Each NIC accepts only its own IPv4 and MAC address: `security.ipv4_filtering` and `security.mac_filtering`. Root in a container cannot send as another bridge address |
 | Preview | The Instance's Route on the Node's Caddy proxies to FrankenPHP in the container, at its bridge address |
 | Development ports | Any port from 1024 of a private Route, redirected to the Node's Caddy and proxied to the same port in a clone. Only the Node's Caddy reaches them in the container |
+| Own site | The clone's own Route on the Node's Caddy at the bridge's gateway address, for that clone alone. See [the own site from inside](#the-own-site-from-inside) |
 | Database | The Instance's own database server and port, on the Node or over WireGuard. A rule on the container's NIC, from the create flow. The server admits the Instance's role only |
 | Models | The forwarder at the bridge's gateway address |
 | Realtime | For an Instance that holds a private [websocket app](/reference/websocket-apps#reach-from-a-container): `reverb.orbit` on port 8443 only, at the address private DNS gives the name, by its [private name](#private-names-of-the-access-plan) |
@@ -550,7 +592,7 @@ A container cannot reach the Gateway: its traffic would leave as its Node's Wire
 
 ### Private names of the access plan
 
-A target of the access plan can carry a fleet private name. Today only an attached private websocket app does: `reverb.orbit` at port 8443. The plan lists each one under `private_names`, with the exact address and port it admits; the key is absent for every other Instance, so their plans stay as they were.
+A target of the access plan can carry a fleet private name. Two kinds do: an attached private websocket app, `reverb.orbit` at port 8443, and a clone's [own site](#the-own-site-from-inside), each private Route name at the bridge's gateway address and port 443. The plan lists each one under `private_names`, with the exact address and port it admits; the key is absent for every other Instance, so their plans stay as they were.
 
 - **Hosts file.** The container has no DNS server, and the egress proxy refuses private names. So Orbit writes each name with its address into the container's `/etc/hosts`.
 - **When.** The create, migrate and start phases write the names; deploy and wake run the start phase. `env:sync` writes them in a running container.

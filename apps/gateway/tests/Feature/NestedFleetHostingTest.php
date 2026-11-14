@@ -202,7 +202,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             'name' => 'default', 'checkout_path' => '/test/default']), $node->refresh());
         $expected = app(BaselineNormalInstanceHostIntent::class)->for($node);
         $actual = app(InstanceHostIntent::class)->for($node);
-        expect(json_encode($actual, JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+        // `own_site` came after the frozen copy: every Node gets it alike, and ContainerDevPortsTest pins it.
+        expect(json_encode(array_diff_key($actual ?? [], ['own_site' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 
