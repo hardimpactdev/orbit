@@ -15,6 +15,7 @@ sequenceDiagram
   %%> Phases:
   %%> - preflight, before, after, receipt, export or discard
   %%> - check, commit or commit-ref, only from the task check child; they need no expected head
+  %%> - base and base-cleanup, only from `task:sync`: base fetches the default branch into the copy's Node mirror with a run-scoped credential file that never enters the container, and imports only what the copy lacks into `refs/remotes/origin/<default>`; base-cleanup removes the credential file and the bundles after success, failure or cancel
   %%> - Ansible runs workspace commands as agent in /srv/workspace; Incus stdin is closed
   alt target or evidence differs
     N-->>SW: Refuse the phase

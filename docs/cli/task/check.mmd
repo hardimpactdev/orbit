@@ -44,6 +44,7 @@ sequenceDiagram
     %%> What it does:
     %%> - one child workflow runs the whole check through Ansible phases on the Instance Node; every repository command runs in the container as `agent` in `/srv/workspace`, with the agent's HOME and login shell
     %%> - the task VM steps below are skipped; the same TypeScript rules judge the evidence, so outcomes match
+    %%> - a scoped Project check such as `bin/task-check` prints one summary line per part; its `ci-policy` part runs the CI policy tests (`python3 -m unittest discover -s tools -p 'test_ci_*.py'`) when the change touches a test file, a fixture toml or CI files, before Pest and the fixtures, within the check's budget
     %%> - see [task Instance workspace](/reference/task-instance-workspace#check-phases)
     %%> Refuses:
     %%> - a changed checkout identity or branch: `tasks.workspace_identity_changed`
