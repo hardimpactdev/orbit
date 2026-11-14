@@ -1102,7 +1102,9 @@ A clone refuses with `instance.database_clone_unsupported` when the default has 
 
 `orbit instance:destroy INSTANCE --yes --force` removes a non-default container Instance, cloned or migrated. The default is the Instance named `default`. This first slice requires `--force`: it runs no work or turn checks and no Project teardown steps. Guarded removal follows separately. A call without force refuses with `instance.container_destroy_force_required`.
 
-A container default refuses with `operation.kind_unavailable`, except a default that has an [inner volume](#the-inner-volume), whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS`, and that no Instance copies (else `instance.default_has_copies`). Such a default is a trial default of a nested fleet; the same removal deletes its container, its seed snapshots and its inner volume. The first nested-fleet default has no inner volume, and the operator never lists its Project, so it cannot be removed this way.
+A container default refuses with `operation.kind_unavailable`, except a default whose Project is on the operator list `ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS` and that no Instance copies (else `instance.default_has_copies`). The operator lists only the Project of a nested-fleet trial default, made with an [inner volume](#the-inner-volume) or before it; the code does not check the kind of Project.
+
+The same removal deletes its container and its seed snapshots, and its inner volume when it has one; a stopped container needs no start. Only the list tells a trial default from the first nested-fleet default: the operator never lists that Project, and while any copy of it exists the copy check refuses too.
 
 A removal from Conn without acknowledgement reads the [workspace work state](#workspace-work-state) first and removes only a `clean` workspace. The CLI's rules do not change.
 
@@ -1164,6 +1166,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A Route visit wakes the Instance | Built |
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
+| The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
 | A visit gets the app without the waiting page while the container is frozen | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
@@ -1878,7 +1881,7 @@ The refresh lists each step that writes a nested container's own disk once, with
 
 The nested Gateway's other two state mounts need no rule. The refresh writes nothing to `swamp/vaults`: on the live default, no file there changed during a refresh.
 
-The nested Gateway's serve loads the workflows of the checkout as they change, with no step of the refresh. It still registers the built-in triggers of the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node), `swamp-credential-monitor` and `swamp-datastore-watch`, and their runs fail there: they read Node 209's checkout. A later change removes those built-in triggers, so that only the production release sets them.
+The nested Gateway's serve loads the workflows of the checkout as they change, with no step of the refresh. It does not register the [schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node), `swamp-credential-monitor` and `swamp-datastore-watch`: they have no built-in trigger, and only the production release load sets them.
 
 Swamp serve writes `swamp/.swamp` all the time, with or without a refresh. It holds run records, outputs, an audit log and caches built from the checkout. These are records, not inputs. After a reset, serve builds the caches again.
 

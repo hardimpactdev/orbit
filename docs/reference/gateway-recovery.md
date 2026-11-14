@@ -237,7 +237,7 @@ Grant rendering stays in the Gateway; no Node script renders or publishes grants
 
 When the two files differ, the `Check the Ansible collections` step fails. The load and the release go on, and the release record gets `phases.swamp` with `warning: swamp.collections_drift` and `fix: orbit node:role:add 209 swamp --converge`. The swamp role converge is the one path that installs collections.
 
-A schedule that serve does not confirm fails the load. The first release that adds this step still runs the previous load, so the overrides are first set by the release after it.
+A schedule that serve does not confirm fails the load. These workflows have no built-in trigger, so this step is the only place that schedules them. A Swamp Node with no overrides runs neither `swamp-credential-monitor` nor `swamp-datastore-watch` until the next release Swamp load. That is a Gateway that bootstraps its own Swamp Node, or a serve that lost `.swamp/serve.yaml`. Nothing reports the gap: a run that never fires raises nothing ([Schedules of the Swamp Node](/reference/operations#schedules-of-the-swamp-node)).
 
 The final `load` step prints the commit, the previous commit, and the workflow count. Any failure, or no terminal within the wait, pauses the release with `gateway.release_swamp_load_failed`, and the old release stays live. The release record names its Operation. A failed load can leave the checkout on the new commit; fix forward and resume.
 

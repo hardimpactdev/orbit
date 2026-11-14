@@ -15,6 +15,7 @@ use Orbit\Extensions\Conn\Http\Controllers\ConnPairingsController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProfilesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectBranchesController;
 use Orbit\Extensions\Conn\Http\Controllers\ConnProjectsController;
+use Orbit\Extensions\Conn\Http\Controllers\ConnThreadsController;
 
 // Conn reuses node access (/reference/conn#access): a server is reached through its registering Node.
 // Registration needs none: it ties the server to the calling Node.
@@ -53,6 +54,8 @@ Route::middleware([
         Route::get('environments', [ConnEnvironmentsController::class, 'index'])->name('conn:environment:list');
         Route::post('environments/{environment}/renew', [ConnEnvironmentsController::class, 'renew'])->name('conn:environment:renew');
         Route::post('environments/{environment}/sessions/cleanup', [ConnEnvironmentsController::class, 'cleanup'])->name('conn:environment:cleanup');
+        Route::get('threads', [ConnThreadsController::class, 'index'])->withoutMiddleware(RecordCommandActivity::class)->name('conn:thread:list');
+        Route::post('environments/{environment}/threads', [ConnThreadsController::class, 'store'])->name('conn:thread:record');
         Route::get('environments/{environment}/pairings', [ConnPairingsController::class, 'index'])->name('conn:pairing:list');
         Route::get('environments/{environment}/pairings/{pairing}', [ConnPairingsController::class, 'show'])->whereNumber('pairing')->name('conn:pairing:show');
         Route::post('environments/{environment}/pairings', [ConnPairingsController::class, 'store'])->name('conn:pairing:create');

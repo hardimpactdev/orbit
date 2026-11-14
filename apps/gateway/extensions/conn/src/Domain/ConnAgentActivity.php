@@ -104,6 +104,17 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
             || in_array($thread['activityRunStatus'] ?? null, self::Working, true)
             || ($thread['blockedOnThreadWait'] ?? false) === true
             || (is_array($background) && $background !== [])
-            || (($status === 'waiting' || ($thread['activityRunStatus'] ?? null) === 'waiting') && ($pending === null || ($pending['blocking'] ?? true) === false));
+            || (($status === 'waiting' || ($thread['activityRunStatus'] ?? null) === 'waiting') && ! self::waitsForUser($pending));
+    }
+
+    /**
+     * Whether a thread's pending runtime request waits for the user: a request is blocking unless it says it is not. The thread index
+     * shows it as needs-input (docs/reference/conn.md#thread-index).
+     *
+     * @param  array<array-key, mixed>|null  $pending
+     */
+    public static function waitsForUser(?array $pending): bool
+    {
+        return $pending !== null && ($pending['blocking'] ?? true) !== false;
     }
 }

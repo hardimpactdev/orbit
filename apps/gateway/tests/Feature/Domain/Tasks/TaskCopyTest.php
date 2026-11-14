@@ -19,6 +19,8 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\InstanceThreadContribution;
+use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
@@ -1231,6 +1233,19 @@ describe('a turn of a group that owns a copy', function (): void {
         expect(Instance::query()->find($copy->id))->toBeNull()
             ->and($read['archived'])->toBeTrue()
             ->and(array_column($read['data']['entries'] ?? $read['entries'] ?? [], 'text'))->toBe(['Run Doctor.', 'Committed d867aba2.']);
+    });
+
+    it('hands the copy\'s new T3 thread and its title to the extensions once the turn\'s projection committed', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+        $contribution = Mockery::mock(InstanceThreadContribution::class);
+        $contribution->shouldReceive('recordThread')->once()->withArgs(fn (Instance $instance, string $id, string $title): bool => $instance->id === $copy->id
+            && $id === 'mcp:66105c2c' && $title === 'Orbit task '.$group->id.' thread '.$turn->input['thread_id']);
+        app()->instance(InstanceThreadContributions::class, new InstanceThreadContributions([$contribution]));
+
+        copyTurnEnded($turn, 'succeeded', ['state' => 'done', 'error' => null, 'ended' => true, 't3_thread_id' => 'mcp:66105c2c', 'run_id' => 'run:1', 'transcript' => []]);
     });
 
     it('records a turn that ran past its bound as failed with tasks.turn_timeout', function (): void {
