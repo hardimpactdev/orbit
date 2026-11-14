@@ -744,6 +744,12 @@ The first default Instance and its deployments are built for the Nodes of the [b
 
 Each step that writes `.env` also names it once in the checkout's own `info/exclude`, as `/<path in the checkout>`: the `workspace` phase of a default's first create, and the clone's `checkout` part, which every clone and task copy runs. So Git never takes it, also when the Project's `.gitignore` does not name it. A rerun or a clone of a clone adds no second line. The file's other lines and the Project's files stay as they are.
 
+#### A task copy starts clean
+
+A [task copy](/reference/tasks#task-copy) starts from its start commit alone: the default's modified and untracked files, which the seed holds, must not reach its checks and its pull request. The Gateway marks a task copy in the clone intent with `container.clone.clean_workspace`. Every other clone, from Conn or `instance:create`, has no mark and keeps the default's tree.
+
+Planned: the clone's `checkout` part reads the mark and cleans the tree. Until it ships, a task copy keeps the default's tree as before.
+
 #### Processes
 
 Container Process units order after `network.target`. They do not request `network-online.target`: the container network is configured before its Processes start. Orbit starts units without blocking and checks each unit within a bounded readiness wait.
