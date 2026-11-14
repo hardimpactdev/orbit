@@ -19,7 +19,7 @@ In a task VM, the fetch writes `refs/remotes/origin/<default branch>` and `refs/
 
 ## A task copy
 
-In a [task copy](/reference/tasks#task-copy), the sync writes only `refs/remotes/origin/<default branch>`. It fetches the default branch into the copy's mirror on its Node with a read credential that never enters the copy. Then it imports only the commits the copy lacks. It never merges or rebases `task-42`, and HEAD, the working tree, the index and the local branches stay as they are.
+In a [task copy](/reference/tasks#task-copy), the sync writes only `refs/remotes/origin/<default branch>`. It fetches the default branch into the copy's mirror on its Node with the sync's read token, which is never written to a file and never enters the copy. Then it imports only the commits the copy lacks. It never merges or rebases `task-42`, and HEAD, the working tree, the index and the local branches stay as they are.
 
 The result names `default_commit`, the head it imported, `branch_commit`, `behind_by`, the commits of the default branch that `task-42` lacks, and `start`, the copy's start commit. To take the new main, merge or rebase in the copy yourself, then check again. [Bring main into a copy](/reference/tasks#bring-main-into-a-copy) has the details.
 

@@ -21,10 +21,11 @@
       # task:sync of a copy: one default branch, the Project's repository and two Node mirrors by their full paths.
       - workspace_phase != 'base' or (intent.default_branch | default('') is match('^[A-Za-z0-9][A-Za-z0-9._/-]*$')
         and '..' not in intent.default_branch and not intent.default_branch.endswith(('/', '.lock')))
-      - workspace_phase != 'base' or intent.repository | default('') is match('^(https://|file:///)')
+      - workspace_phase != 'base' or intent.repository | default('') is match('^https://[^\\s]+$')
+      # The default's mirror makes a missing one of the copy; empty when the default is gone, and then only a present mirror works.
       - workspace_phase != 'base' or (intent.mirror | default('') is match('^/[^ ]+/[1-9][0-9]*[.]git$')
-        and intent.source_mirror | default('') is match('^/[^ ]+/[1-9][0-9]*[.]git$')
-        and '..' not in (intent.mirror ~ '/' ~ intent.source_mirror).split('/'))
+        and intent.source_mirror | default('') is match('^(/[^ ]+/[1-9][0-9]*[.]git)?$')
+        and '..' not in (intent.mirror ~ '/' ~ intent.source_mirror | default('')).split('/'))
       - intent.start is not defined or intent.start is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
       # The copy's scratch is named by its Instance, so the next sync of the copy finds what a cancelled one left.
       - workspace_phase not in workspace_base_phases or (intent.instance_id | default(0) is integer and intent.instance_id | default(0) > 0)
@@ -36,10 +37,13 @@
 - name: Name the guest boundary
   ansible.builtin.set_fact:
     workspace_base_phases: [base, base-cleanup]
-    # task:sync of a copy: the copy's Node scratch holds the read credential and the bundle. It is named by the copy's Instance, so
-    # base-cleanup and the next base find what a cancelled run left; the group lock lets one sync of a copy run at a time.
+    # task:sync of a copy: the copy's Node scratch holds the bundle, never a credential. It and the copy's bundle folder are named by
+    # the copy's Instance, so base-cleanup, the next base and the copy's destroy find what a cancelled run left; the group lock lets
+    # one sync of a copy run at a time.
     base_node: "/var/tmp/orbit-task-base-{{ intent.instance_id | default('') }}"
-    base_guest_bundle: "/tmp/orbit-task-base-{{ intent.instance_id | default('') }}/base.bundle"
+    base_guest: "/tmp/orbit-task-base-{{ intent.instance_id | default('') }}"
+    # Root in the copy, for the bundle folder that agent may read and never change.
+    base_root_exec: "{{ ['incus', '--project', intent.runtime.project, 'exec', '--disable-stdin', intent.runtime.name, '--'] }}"
     workspace_exec: >-
       {{ ['incus', '--project', intent.runtime.project, 'exec', '--disable-stdin', '--cwd', '/srv/workspace',
           intent.runtime.name, '--', '/usr/sbin/runuser', '-u', 'agent', '--', '/usr/bin/env', '-i', 'HOME=/home/agent',
@@ -61,7 +65,7 @@
       phase = sys.argv[1]
       root = Path.cwd()
       scratch = Path('/tmp/orbit-task-workspace-' + request['snapshot_id'])
-      # task:sync of a copy: the bundle the Node pushes in, in a folder only agent reads.
+      # task:sync of a copy: the bundle the Node pushes in, in a folder root made and owns; agent only reads it.
       base_scratch = Path('/tmp/orbit-task-base-' + str(request.get('instance_id', '')))
       env = {'HOME': '/home/agent', 'PATH': '/usr/local/bin:/usr/bin:/bin',
              'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_TERMINAL_PROMPT': '0'}
@@ -247,14 +251,11 @@
 
       def base_phase(head):
           # Only refs/remotes/origin/<default> moves: HEAD, the tree, the index and the local branches stay as they are.
-          import shutil
           ref = 'refs/remotes/origin/' + request['default_branch']
           if phase == 'base-read':
-              shutil.rmtree(base_scratch, ignore_errors=True)
-              base_scratch.mkdir(mode=0o700)
               origin = subprocess.run(git_argv + ['rev-parse', '--verify', '--quiet', ref + '^{commit}'], capture_output=True,
                                       env=env, check=False, timeout=60).stdout.decode().strip()
-              return {'branch_commit': head, 'origin': origin, 'uid': os.getuid(), 'gid': os.getgid(), 'changed': False}
+              return {'branch_commit': head, 'origin': origin, 'gid': os.getgid(), 'changed': False}
           target, before = request['base_head'], text('for-each-ref', '--format=%(objectname)', ref)
           if request['bundled']:
               bundle = base_scratch / 'base.bundle'
@@ -270,7 +271,6 @@
           start = request.get('start')
           if start is not None:
               git('cat-file', '-e', start + '^{commit}')
-          shutil.rmtree(base_scratch, ignore_errors=True)
           return {'default_branch': request['default_branch'], 'default_commit': target, 'branch': request['branch'],
                   'branch_commit': head, 'behind_by': int(text('rev-list', '--count', head + '..' + ref)), 'start': start,
                   'bundled': request['bundled'], 'changed': before != target}
@@ -280,10 +280,6 @@
           if phase == 'check-cleanup':
               import shutil
               shutil.rmtree(scratch, ignore_errors=True)
-              return {'changed': False}
-          if phase == 'base-cleanup':
-              import shutil
-              shutil.rmtree(base_scratch, ignore_errors=True)
               return {'changed': False}
           git_dir = Path(text('rev-parse', '--absolute-git-dir'))
           if Path(text('rev-parse', '--show-toplevel')).resolve() != root.resolve():
@@ -575,15 +571,18 @@
         that: workspace_export_cleanup.rc | default(1) == 0
         fail_msg: tasks.workspace_phase_failed
 
-# task:sync of a copy. Git runs on the Node, in the copy's own mirror, with the read credential in a 0600 file for one fetch;
-# the copy receives only a bundle of what it lacks, which agent imports into refs/remotes/origin/<default>.
+# task:sync of a copy. Git runs on the Node, in the copy's own mirror. The read credential is a Git header that reaches the one fetch
+# only through the stdin of a pipelined task, which Ansible keeps in memory: never argv, a file or a stored output, so a killed run
+# leaves none behind. The copy receives only a bundle of what it lacks, in a folder root owns, and agent imports it into
+# refs/remotes/origin/<default>.
 - name: Bring the default branch into the copy
   when: workspace_phase == 'base'
   vars:
-    base_credential: "{{ base_node }}/credential"
     base_bundle: "{{ base_node }}/base.bundle"
     base_ref: "refs/heads/{{ intent.default_branch | default('') }}"
     base_mirror_git: [/usr/bin/git, -c, core.hooksPath=/dev/null, -c, core.fsmonitor=false, -C, "{{ intent.mirror | default('') }}"]
+    ansible_pipelining: true
+    ansible_ssh_pipelining: true
   block:
     - name: Read the copy's refs as agent
       ansible.builtin.command:
@@ -602,7 +601,7 @@
     - name: Keep the copy's refs
       ansible.builtin.set_fact:
         base_copy: "{{ base_read.stdout | from_json }}"
-    # What an earlier, cancelled sync of this copy left goes before this run writes its credential.
+    # What an earlier, cancelled sync of this copy left goes first; none of it holds a credential.
     - name: Remove the copy's earlier Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
       changed_when: false
@@ -613,6 +612,10 @@
       ansible.builtin.stat: { path: "{{ intent.mirror }}/HEAD" }
       register: base_mirror
     # A copy made before its mirror existed starts it from the default's mirror, which holds the seed's commit.
+    - name: Refuse a missing mirror without the default's
+      ansible.builtin.assert:
+        that: base_mirror.stat.exists or intent.source_mirror | default('') != ''
+        fail_msg: tasks.workspace_phase_failed
     - name: Make the copy's mirror from the default's mirror
       when: not base_mirror.stat.exists
       ansible.builtin.command: { argv: "{{ item }}" }
@@ -620,31 +623,43 @@
         - [/usr/bin/git, init, --quiet, --bare, "{{ intent.mirror }}"]
         - "{{ base_mirror_git + ['fetch', '--quiet', '--no-tags', '--', intent.source_mirror, '+refs/heads/*:refs/seed/*'] }}"
       changed_when: true
-    - name: Fetch the default branch with the read credential
-      block:
-        # The credential lives only for the fetch, in a file that root alone reads; it never enters the copy.
-        - name: Write the read credential
-          ansible.builtin.copy:
-            content: "{{ lookup('ansible.builtin.env', 'ORBIT_GIT_CREDENTIAL') }}"
-            dest: "{{ base_credential }}"
-            mode: "0600"
-          no_log: true
-          changed_when: false
-        - name: Fetch the default branch into the mirror
-          ansible.builtin.command:
-            argv: >-
-              {{ ['/usr/bin/timeout', '300', '/usr/bin/env', 'GIT_TERMINAL_PROMPT=0', 'GIT_CONFIG_NOSYSTEM=1', 'GIT_CONFIG_GLOBAL=/dev/null']
-                 + base_mirror_git
-                 + ['-c', 'credential.helper=', '-c', 'credential.helper=store --file=' ~ base_credential,
-                    '-c', 'protocol.allow=never', '-c', 'http.followRedirects=false',
-                    '-c', 'url.https://github.com/.insteadOf=git@github.com:', '-c', 'url.https://github.com/.insteadOf=ssh://git@github.com/',
-                    '-c', 'protocol.' ~ ('file' if intent.repository.startswith('file://') else 'https') ~ '.allow=always',
-                    'fetch', '--quiet', '--no-tags', '--', intent.repository, '+' ~ base_ref ~ ':' ~ base_ref] }}
-          changed_when: false
-      always:
-        - name: Remove the read credential
-          ansible.builtin.file: { path: "{{ base_credential }}", state: absent }
-          changed_when: false
+    - name: Refuse a transfer that writes the module arguments on the Node
+      ansible.builtin.assert:
+        that:
+          - ansible_pipelining | bool
+          - ansible_ssh_pipelining | bool
+          - not (lookup('ansible.builtin.config', 'DEFAULT_KEEP_REMOTE_FILES') | bool)
+          - (ansible_connection | default(lookup('ansible.builtin.config', 'DEFAULT_TRANSPORT')))
+            in ['ssh', 'ansible.builtin.ssh', 'local', 'ansible.builtin.local']
+        fail_msg: tasks.workspace_phase_failed
+        quiet: true
+    # The header, scoped to the Project's repository, is the environment of this one git command, as the publish's push sends it.
+    - name: Fetch the default branch into the mirror
+      ansible.builtin.command:
+        argv:
+          - /bin/sh
+          - -c
+          - |
+            IFS= read -r header || true
+            export GIT_TERMINAL_PROMPT=0 GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_COUNT=1
+            export GIT_CONFIG_KEY_0="http.$2.extraheader" GIT_CONFIG_VALUE_0="$header"
+            exec /usr/bin/timeout 300 /usr/bin/git -c core.hooksPath=/dev/null -c core.fsmonitor=false -C "$1" -c credential.helper= \
+              -c protocol.allow=never -c protocol.https.allow=always -c http.followRedirects=false \
+              fetch --quiet --no-tags -- "$2" "$3"
+          - sh
+          - "{{ intent.mirror }}"
+          - "{{ intent.repository }}"
+          - "+{{ base_ref }}:{{ base_ref }}"
+        stdin: "{{ lookup('ansible.builtin.env', 'ORBIT_GIT_AUTHORIZATION') }}"
+        stdin_add_newline: true
+      no_log: true
+      register: base_fetch
+      failed_when: false
+      changed_when: false
+    - name: Check the fetch
+      ansible.builtin.assert:
+        that: base_fetch.rc == 0
+        fail_msg: tasks.workspace_phase_failed
     - name: Read the default head in the mirror
       ansible.builtin.command: { argv: "{{ base_mirror_git + ['rev-parse', '--verify', base_ref ~ '^{commit}'] }}" }
       register: base_head
@@ -669,11 +684,19 @@
       ansible.builtin.command:
         argv: "{{ base_mirror_git + ['bundle', 'create', '--quiet', base_bundle, base_ref] + (base_prerequisites | map('regex_replace', '^', '^') | list) }}"
       changed_when: true
-    - name: Push the bundle into the copy for agent
+    # Root makes the folder fresh and owns it and the bundle: agent reads the bundle and cannot swap it for a link.
+    - name: Make the copy's bundle folder as root
+      when: base_new.stdout | int > 0
+      ansible.builtin.command: { argv: "{{ base_root_exec + item }}", stdin: '', stdin_add_newline: false }
+      loop:
+        - [/bin/rm, -rf, --, "{{ base_guest }}"]
+        - [/bin/mkdir, -m, '0755', --, "{{ base_guest }}"]
+      changed_when: true
+    - name: Push the bundle into the copy for agent to read
       when: base_new.stdout | int > 0
       ansible.builtin.command:
-        argv: [incus, --project, "{{ intent.runtime.project }}", file, push, --uid, "{{ base_copy.uid }}", --gid, "{{ base_copy.gid }}",
-               --mode, "0600", "{{ base_bundle }}", "{{ intent.runtime.name }}{{ base_guest_bundle }}"]
+        argv: [incus, --project, "{{ intent.runtime.project }}", file, push, --uid, '0', --gid, "{{ base_copy.gid }}",
+               --mode, "0640", "{{ base_bundle }}", "{{ intent.runtime.name }}{{ base_guest }}/base.bundle"]
         expand_argument_vars: false
         stdin: ''
         stdin_add_newline: false
@@ -701,39 +724,29 @@
     - name: Remove the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
       changed_when: false
-    - name: Remove the bundle in the copy as agent
-      ansible.builtin.command:
-        argv: "{{ workspace_exec + [workspace_guest_program, 'base-cleanup', intent | to_json] }}"
-        expand_argument_vars: false
-        stdin: ''
-        stdin_add_newline: false
+    - name: Remove the bundle folder in the copy as root
+      ansible.builtin.command: { argv: "{{ base_root_exec + ['/bin/rm', '-rf', '--', base_guest] }}", stdin: '', stdin_add_newline: false }
       register: base_guest_cleanup
       changed_when: false
       failed_when: false
-      no_log: true
     - name: Require the copy's cleanup
       ansible.builtin.assert:
         that: base_guest_cleanup.rc | default(1) == 0
         fail_msg: tasks.workspace_phase_failed
 
-# A cancelled sync stops before the base phase's `always`, and a cancelled run may skip its cleanup job too: this phase, and the
-# next base of the copy, remove what it left by the copy's scratch names.
+# A cancelled sync stops before the base phase's `always`, and may skip its cleanup job: this phase, the next base of the copy and
+# the copy's destroy remove what it left. None of it holds a credential.
 - name: Remove what a base phase left
   when: workspace_phase == 'base-cleanup'
   block:
-    - name: Remove the copy's Node scratch and its credential
+    - name: Remove the copy's Node scratch
       ansible.builtin.file: { path: "{{ base_node }}", state: absent }
       changed_when: false
-    - name: Remove the bundle folder in the copy as agent
-      ansible.builtin.command:
-        argv: "{{ workspace_exec + [workspace_guest_program, 'base-cleanup', intent | to_json] }}"
-        expand_argument_vars: false
-        stdin: ''
-        stdin_add_newline: false
+    - name: Remove the bundle folder in the copy as root
+      ansible.builtin.command: { argv: "{{ base_root_exec + ['/bin/rm', '-rf', '--', base_guest] }}", stdin: '', stdin_add_newline: false }
       register: base_cleanup
       changed_when: false
       failed_when: false
-      no_log: true
     - name: Require the copy's cleanup
       ansible.builtin.assert:
         that: base_cleanup.rc | default(1) == 0

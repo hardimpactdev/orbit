@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationWorkflowInput;
@@ -20,8 +19,8 @@ use App\Support\ValidatedData;
 final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     /**
-     * The run starts now, so the Gateway mints the read token now and writes it to the vault key that admission named: a Git header
-     * for a task VM, one credential-store line for a task copy's Node.
+     * The run starts now, so the Gateway mints the read token now and writes it, as a Git header, to the vault key that admission
+     * named: a task VM's clone on Node 209 and a task copy's fetch on its Node send it the same way.
      *
      * @return array<string,mixed>
      */
@@ -31,14 +30,7 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
         if (! $group instanceof Task) {
             throw new ResourceOperationException('tasks.no_workspace', 'The task group is gone, so the sync cannot start.', 409);
         }
-        $input = ValidatedData::object($operation->input);
-        if (isset($input['copy'])) {
-            $credential = ValidatedData::object(ValidatedData::object($input['copy'])['git_credential']);
-            app(InstanceGitHubReadTokens::class)->credentialCopy(ValidatedData::string(ValidatedData::object($input['workspace'])['repository']),
-                ValidatedData::string($credential['key']));
-        } else {
-            app(TaskGitHubTokens::class)->writeClone($group, ValidatedData::object($input['git_authorization']));
-        }
+        app(TaskGitHubTokens::class)->writeClone($group, ValidatedData::object(ValidatedData::object($operation->input)['git_authorization']));
 
         return $this->input($operation);
     }

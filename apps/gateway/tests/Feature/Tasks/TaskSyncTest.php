@@ -23,7 +23,6 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\SwampNodeFixture;
 
@@ -72,7 +71,7 @@ it('fails with the step that failed and leaves the commits out', function (): vo
  *
  * @return array{Task, Instance, Instance}
  */
-function syncCopyWorld(string $power = 'running'): array
+function syncCopyWorld(string $power = 'running', bool $source = true): array
 {
     SwampNodeFixture::ensure();
     Queue::fake([StartAdmittedSwampRun::class]);
@@ -91,7 +90,7 @@ function syncCopyWorld(string $power = 'running'): array
     $copy = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/var/lib/incus/rootfs/task/srv/workspace',
         'status' => InstanceState::Active, 'branch' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'starting_commit' => str_repeat('a', 40)]);
     InstanceRuntime::query()->create(['node_id' => $node->id, 'power_state' => $power, 'runtime_version' => 'test', 'agent_version' => 'test', 'instance_id' => $copy->id,
-        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$copy->id, 'bridge_address' => '10.253.0.5', 'clone_source_instance_id' => $default->id]);
+        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$copy->id, 'bridge_address' => '10.253.0.5', 'clone_source_instance_id' => $source ? $default->id : null]);
     $group->update(['taskable_type' => $copy->getMorphClass(), 'taskable_id' => $copy->id]);
 
     return [$group->refresh(), $copy, $default];
@@ -106,18 +105,18 @@ it('admits a task copy sync with its copy intent and no task VM', function (): v
     $target = ValidatedData::object($intent['copy']);
     expect($operation->kind)->toBe(OperationKinds::TasksSync)
         ->and($operation->status)->toBe(OperationStatus::Queued)
-        ->and($intent)->not->toHaveKeys(['checkout_path', 'git_authorization'])
+        ->and($intent)->not->toHaveKey('checkout_path')
         ->and($intent['instance_id'])->toBe($copy->id)
         ->and($intent['node_id'])->toBe($copy->node_id)
         ->and($intent['workspace'])->toBe(['repository' => 'https://github.com/example/trial.git', 'default_branch' => 'main', 'branch' => 'task-'.$group->id])
-        ->and(array_keys($target))->toBe(['runtime', 'branch', 'snapshot_id', 'start', 'mirror', 'source_mirror', 'git_credential'])
+        ->and(array_keys($target))->toBe(['runtime', 'branch', 'snapshot_id', 'start', 'mirror', 'source_mirror'])
         ->and($target['runtime'])->toBe(['project' => 'orbit-instances', 'name' => 'instance-'.$copy->id])
         ->and($target['branch'])->toBe('task-'.$group->id)
         ->and($target['start'])->toBe(str_repeat('a', 40))
         ->and($target['mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$copy->id.'.git')
         ->and($target['source_mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$default->id.'.git')
-        ->and($target['git_credential']['vault'])->toBe('orbit-control-inputs')
-        ->and($target['git_credential']['key'])->toMatch('/\\Atask-sync-credential-[a-f0-9-]{36}\\z/')
+        ->and($intent['git_authorization']['vault'])->toBe('orbit-control-inputs')
+        ->and($intent['git_authorization']['key'])->toMatch('/\\Atask-sync-token-[a-f0-9-]{36}\\z/')
         ->and(TaskVm::query()->count())->toBe(0)
         ->and(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);
 });
@@ -144,7 +143,7 @@ it('refuses a task copy sync when the copy does not run', function (): void {
 it('mints the copy read credential as the run starts, and lists its key for cleanup', function (): void {
     [$group] = syncCopyWorld();
     $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
-    $key = ValidatedData::string($operation->input['copy']['git_credential']['key']);
+    $key = ValidatedData::string($operation->input['git_authorization']['key']);
     $vault = new class implements WebSocketClient
     {
         /** @var list<array{key: string, value: string}> */
@@ -178,17 +177,13 @@ it('mints the copy read credential as the run starts, and lists its key for clea
     };
     app()->instance(WebSocketClient::class, $vault);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
-    // A public repository fetches anonymously: the credential line is empty, but the run still gets its own key.
-    Http::fake([
-        'api.github.com/repos/example/trial/installation' => Http::response([], 404),
-        'api.github.com/repos/example/trial' => Http::response(['full_name' => 'example/trial', 'private' => false]),
-    ]);
+    // A Project without GitHub App source access fetches anonymously: the header is empty, but the run still gets its own key.
 
     $inputs = app(DirectOperation::class)->workflowInputs($operation);
 
     $patterns = array_column(ValidatedData::object(app(DirectOperation::class)->definition(OperationKinds::TasksSync))['execution_copies'], 'key_pattern');
     expect($vault->puts)->toBe([['key' => $key, 'value' => '']])
-        ->and($inputs['intent']['copy']['git_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
+        ->and($inputs['intent']['git_authorization'])->toBe(['vault' => 'orbit-control-inputs', 'key' => $key])
         ->and(array_filter($patterns, fn (string $pattern): bool => preg_match('/'.$pattern.'/', $key) === 1))->toHaveCount(1);
 });
 
@@ -210,3 +205,28 @@ it('records the base of a task copy from its base phase', function (): void {
         ->and($projected->result)->toBe(['default_branch' => 'main', 'default_commit' => $main, 'branch' => 'task-1', 'branch_commit' => $branch,
             'behind_by' => 3, 'start' => $start]);
 });
+
+it('admits a copy whose default is gone and names no source mirror; the copy syncs from its own', function (): void {
+    [$group] = syncCopyWorld(source: false);
+
+    $operation = app(StartTaskSyncAction::class)->execute($group, 'test', null);
+
+    expect($operation->input['copy']['source_mirror'])->toBe('')
+        ->and($operation->input['copy']['mirror'])->toBe('/var/lib/orbit/instance-repositories/'.$group->taskable_id.'.git');
+});
+
+it('refuses a copy sync while the copy is not ready, or after its completion failed', function (bool $failed, string $code): void {
+    [$group, $copy] = syncCopyWorld();
+    $copy->update(['status' => InstanceState::SourceResolved]);
+    if ($failed) {
+        Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'status' => OperationStatus::Failed,
+            'sequence' => 1, 'attempts' => 1, 'input' => [], 'error_code' => 'instance.complete_failed', 'result' => ['failed_step' => 'Start the Processes']]);
+    }
+
+    expect(fn () => app(StartTaskSyncAction::class)->execute($group->refresh(), 'test', null))
+        ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe($code))
+        ->and(Operation::query()->where('kind', OperationKinds::TasksSync)->count())->toBe(0);
+})->with([
+    'a create or completion that still runs' => [false, 'tasks.copy_not_ready'],
+    'a failed completion' => [true, 'tasks.copy_completion_failed'],
+]);

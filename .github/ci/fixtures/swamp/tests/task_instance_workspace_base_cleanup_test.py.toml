@@ -1,11 +1,11 @@
 file = "swamp/tests/task_instance_workspace_base_cleanup_test.py"
 slices = false
-cost = 57
-source_sha256 = "a682372b90ae2b503bb93f4e3f5a3b9e0c38248b3855410a286f6c3fd5be0b07"
+cost = 42
+source_sha256 = "2bcef30cda6f9702e6083e733893ca4f14c82cdf3a873957abab6b817e7720b4"
 cases = [
   "test_a_failed_fetch_leaves_no_credential_and_no_bundle",
-  "test_a_sync_cancelled_during_the_fetch_leaves_nothing_after_base_cleanup",
-  "test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup",
+  "test_a_sync_cancelled_during_the_fetch_leaves_no_credential_and_no_bundle",
+  "test_a_sync_cancelled_after_the_push_leaves_no_credential_and_base_cleanup_removes_the_bundle",
   "test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left"
 ]
 inputs = [
@@ -16,12 +16,13 @@ inputs = [
   "swamp/ansible/task-instance-workspace.yml",
   "swamp/ansible/tasks/task-instance-workspace-phase.yml",
   "swamp/ansible/tasks/ssh-execution-*.yml",
-  "swamp/extensions/behaviors/operations/task-instance-workspace/**"
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/workflows/workflow-task-copy-base.yaml"
 ]
 
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
-"test_a_failed_fetch_leaves_no_credential_and_no_bundle" = 9
-"test_a_sync_cancelled_during_the_fetch_leaves_nothing_after_base_cleanup" = 11
-"test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup" = 18
-"test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left" = 19
+"test_a_failed_fetch_leaves_no_credential_and_no_bundle" = 8
+"test_a_sync_cancelled_during_the_fetch_leaves_no_credential_and_no_bundle" = 10
+"test_a_sync_cancelled_after_the_push_leaves_no_credential_and_base_cleanup_removes_the_bundle" = 13
+"test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left" = 11

@@ -40,27 +40,27 @@ sequenceDiagram
   %%> Next:
   %%> - the CLI follows the Operation with `operation:show`
   alt a task copy
-    SW->>N: Bring in the base<br/>workspace phase base
+    SW->>N: Bring in the base<br/>task-copy-base · base
+    %%> Why its own child:
+    %%> - only this path calls `task-copy-base`; the shared workspace child of turns, checks and publishes takes no secret and no base input
     %%> On the Node:
     %%> - first removes what an earlier, cancelled sync of the copy left in the copy's Node scratch and bundle folder, which the copy's Instance names
-    %%> - writes the read credential to a file in that scratch, mode 0600, readable by root only, and removes it in an `always` block; it never enters the container
-    %%> - fetches `+refs/heads/<default>` from the Project's repository into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`; a missing mirror is made from the default's mirror first
+    %%> - fetches `+refs/heads/<default>` from the Project's repository into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`; a missing mirror is made from the default's mirror, which only then is needed
+    %%> - the read token is the sync's Git header: it reaches that one `git fetch` only as its environment, through the stdin of a pipelined task; never argv, a file or a stored output, so a killed run leaves none behind
     %%> - bundles the default branch without the commits the copy already holds (`^origin/<default>`, `^task-42`, where the mirror holds them); when the copy holds the head already, no bundle is made
-    %%> In the container, as `agent`:
-    %%> - `git fetch` of the bundle into `refs/remotes/origin/<default>` only
+    %%> In the container:
+    %%> - root makes the bundle folder fresh and owns it and the bundle; `agent` can read it and cannot replace it
+    %%> - as `agent`, `git fetch` of the bundle into `refs/remotes/origin/<default>` only
     %%> - reads the default head, the branch commit, `git rev-list --count task-42..origin/<default>` and the copy's start
     %%> Result:
     %%> - HEAD, the working tree, the index and the local branches are not touched; nothing is merged or rebased
     %%> Source:
     %%> - the Project's repository, for every Project; a Project whose repository receives main only at a release sees the last released main
-    SW->>N: Discard the base scratch<br/>workspace phase base-cleanup
-    %%> When:
-    %%> - always: after success, failure or a cancelled run
-    %%> What it does:
-    %%> - removes the copy's credential file and bundle on the Node and the bundle in the container
-    %%> - a cancelled run may skip this step; the next sync of the copy removes the same scratch before its fetch
+    SW->>N: Discard the base scratch<br/>task-copy-base · base-cleanup
+    %%> Clean-up rule:
+    %%> - the bundles on the Node and in the copy go when the base ends, here after the run, at the next sync of the copy, or at the copy's destroy, whichever comes first; no credential is ever written, so none is left to remove
     %%> Test:
-    %%> - a failed and a cancelled sync leave no credential file on the Node and no bundle in the copy
+    %%> - a failed fetch, a cancel during the fetch and a cancel after the push leave no credential anywhere and no bundle in the copy once this step or the next base ran
   else a task VM
     SW->>GH: Clone the refs<br/>git clone --bare · fetch
     %%> What it does:
@@ -106,7 +106,7 @@ sequenceDiagram
     %%> - which step failed; a branch that does not exist on origin fails the clone step
     Note over GW: Mark the Operation failed<br/>workspace unchanged
     %%> Retry:
-    %%> - run it again: a new run mints a new credential, and a fetch that already happened makes the next bundle smaller
+    %%> - run it again: a new run mints a new read token, and a fetch that already happened makes the next bundle smaller
   end
   loop until terminal
     CLI->>GW: operation:show<br/>Operation number

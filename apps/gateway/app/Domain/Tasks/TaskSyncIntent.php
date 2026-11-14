@@ -47,9 +47,10 @@ final readonly class TaskSyncIntent
     }
 
     /**
-     * A task copy: its guest target and start, its own Node mirror and the default's, from which a missing one is made, and the
-     * vault key of the read credential that the Gateway mints as the run starts. The run fetches over HTTPS, so the repository is
-     * named by its GitHub URL.
+     * A task copy: its guest target and start, its own Node mirror and the default's, from which a missing one is made, and the vault
+     * key of the read token that the Gateway mints as the run starts, the same Git header as a task VM's. The run fetches over HTTPS,
+     * so the repository is named by its GitHub URL. The default's mirror is needed only when the copy's own is missing: a copy
+     * whose default is gone names none and still syncs from its own mirror.
      *
      * @return array<string,mixed>
      */
@@ -63,16 +64,14 @@ final readonly class TaskSyncIntent
             throw new ResourceOperationException('tasks.sync_failed', 'A task copy syncs only from a GitHub repository with a valid default branch.', 422);
         }
         $source = $copy->runtime->clone_source_instance_id === null ? null : Instance::query()->find($copy->runtime->clone_source_instance_id);
-        if (! $source instanceof Instance) {
-            throw new ResourceOperationException('tasks.no_workspace', 'The task copy has no default Instance whose mirror makes its own.', 409);
-        }
         $target = $copy->intent();
 
         return [
             'group_id' => $group->id, 'instance_id' => $instance->id, 'project_id' => $group->project_id, 'node_id' => $instance->node_id,
             'workspace' => ['repository' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git', 'default_branch' => $base, 'branch' => 'task-'.$group->id],
-            'copy' => [...$target, 'start' => $copy->start(), 'mirror' => InstanceContainer::mirror($instance), 'source_mirror' => InstanceContainer::mirror($source),
-                'git_credential' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-credential-'.Str::uuid()]],
+            'copy' => [...$target, 'start' => $copy->start(), 'mirror' => InstanceContainer::mirror($instance),
+                'source_mirror' => $source instanceof Instance ? InstanceContainer::mirror($source) : ''],
+            'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-sync-token-'.Str::uuid()],
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
         ];
     }

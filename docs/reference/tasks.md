@@ -1033,14 +1033,14 @@ A held publish leaves the checked commit in the copy. An operator adds a Project
 
 A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of a group with a task copy makes the default branch's newest head available in the copy as `refs/remotes/origin/<default branch>`. It is one `tasks.sync` Operation, and its run takes the [copy path](/cli/task/sync#how-it-works):
 
-1. The Gateway mints a read credential for the Project's repository as the run starts.
-2. The run writes the credential to a file on the copy's Node, mode `0600`. The phase always removes the file at its end.
-3. On the Node, Git fetches the default branch into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`.
-4. A copy without its mirror first gets one from the default's mirror.
+1. The Gateway mints the sync's read token as the run starts, as a Git header, the same as for a task VM.
+2. On the Node, Git fetches the default branch into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`.
+3. The header is the environment of that one fetch alone. It is never written to a file.
+4. A copy without its mirror first gets one from the default's mirror. A copy whose mirror exists needs no default.
 5. The Node bundles the default branch without the commits that the copy holds already. A copy that holds the head gets no bundle.
-6. In the copy, as `agent`, Git fetches the bundle into `refs/remotes/origin/<default branch>` and nothing else.
+6. Root puts the bundle into a folder of the copy that root owns. As `agent`, Git fetches it into `refs/remotes/origin/<default branch>` and nothing else.
 7. The run reads the default head, the branch commit, how far the branch is behind and the copy's start commit.
-8. A cleanup step removes the credential file and the bundles on the Node and in the copy. A cancelled run may skip it, so the next sync of the copy removes them before its fetch.
+8. The run's cleanup step removes the bundles. The next sync of the copy, or its destroy, removes any that a cancel left.
 
 The sync never merges or rebases `task-<id>`. HEAD, the working tree, the index and the local branches stay as they are. The result is `{ default_branch, default_commit, branch, branch_commit, behind_by, start }`, where `behind_by` counts the commits of the default branch that `task-<id>` lacks. The agent merges or rebases in the copy, then checks again.
 
@@ -1051,7 +1051,7 @@ The source is the Project's repository, for every Project. The trial Project's r
 | Copy turn | Refused with `tasks.copy_turn_unended` while a copy turn of the group may still run |
 | Check or publish | The group lock refuses the sync with `operation.target_busy` while either runs |
 | Container | Refused with `tasks.instance_not_running` when the copy's container does not run |
-| Credential | Minted per run; it lives on the Node only, mode `0600`, and is removed at the end of the run |
+| Credential | Minted per run; it is the environment of the Node's one fetch and is never written, so a killed run leaves none |
 | Older Gateway | Only an intent with the `copy` key takes the copy path. An older Gateway's run takes the task VM path, whose steps read no new key |
 
 A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.

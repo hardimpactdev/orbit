@@ -92,6 +92,9 @@
               ansible.builtin.file: {path: "{{ container.asleep_marker }}", state: absent}
             - name: Remove the Node repository mirror
               ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
+            # A task copy's base scratch, named by its Instance like its mirror, which a cancelled task:sync may leave; no credential.
+            - name: Remove the Node task base scratch
+              ansible.builtin.file: { path: "/var/tmp/orbit-task-base-{{ container.mirror | basename | regex_replace('[.]git$', '') }}", state: absent }
             - name: Read the remaining containers
               ansible.builtin.command: { argv: "{{ incus + ['list', '--format=json'] }}", stdin: "" }
               register: destroy_remaining

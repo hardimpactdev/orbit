@@ -35,8 +35,8 @@ inputs:
             branch: {type: string, pattern: '^task-[1-9][0-9]*$'}
           required: [repository, default_branch, branch]
           additionalProperties: false
-        # A task copy (docs/cli/task/sync.mmd): its guest target, the copy's and the default's Node mirrors, its start commit and
-        # the vault key of the read credential, one credential-store line. A task VM intent has no `copy`.
+        # A task copy (docs/cli/task/sync.mmd): its guest target, the copy's and the default's Node mirrors and its start commit; its
+        # read token is git_authorization, as for a task VM. A task VM intent has no `copy`.
         copy:
           type: object
           properties:
@@ -51,15 +51,9 @@ inputs:
             snapshot_id: {type: string, format: uuid}
             start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
             mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
-            source_mirror: {type: string, pattern: '^/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git$'}
-            git_credential:
-              type: object
-              properties:
-                vault: {type: string, enum: [orbit-control-inputs]}
-                key: {type: string, pattern: '^task-sync-credential-[a-f0-9-]{36}$'}
-              required: [vault, key]
-              additionalProperties: false
-          required: [runtime, branch, snapshot_id, start, mirror, source_mirror, git_credential]
+            # Empty when the default is gone: then only a copy whose mirror exists can sync.
+            source_mirror: {type: string, pattern: '^(/var/lib/orbit/instance-repositories/[1-9][0-9]*\.git)?$'}
+          required: [runtime, branch, snapshot_id, start, mirror, source_mirror]
           additionalProperties: false
         git_authorization:
           type: object
@@ -85,18 +79,18 @@ jobs:
   labels: {role: swamp}
   steps:
   - name: Bring in the base
-    # A task copy: one workspace phase on its Node, the only step that reads the copy's read credential.
+    # A task copy: one workspace phase on its Node, through the child that only this path calls.
     labels: {role: swamp}
     queueTimeout: 30
     guard: '${{ !("copy" in inputs.intent) }}'
     task:
       type: workflow
-      workflowIdOrName: task-instance-workspace
+      workflowIdOrName: task-copy-base
       inputs:
         node_id: ${{ inputs.intent.node_id }}
         phase: base
         intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "default_branch": inputs.intent.workspace.default_branch, "repository": inputs.intent.workspace.repository, "mirror": inputs.intent.copy.mirror, "source_mirror": inputs.intent.copy.source_mirror, "start": inputs.intent.copy.start, "ssh_execution": inputs.intent.ssh_execution} }}'
-        git_credential: ${{ inputs.intent.copy.git_credential }}
+        git_authorization: ${{ inputs.intent.git_authorization }}
   - name: Clone the refs
     # A task VM: this step and the ones below read only the keys they read before `copy` existed.
     labels: {role: swamp}
@@ -299,18 +293,19 @@ jobs:
       - type: skipped
   steps:
   - name: Discard the base scratch
-    # A task copy: the workspace phase removes the copy's credential file and bundles; a cancelled run may skip it, and the next
-    # base of the copy removes the same scratch first.
+    # A task copy: removes the bundle on the Node and in the copy. A cancelled run may skip it; the next base of the copy removes
+    # the same scratch first and the copy's destroy removes its Node folder. No credential is ever written.
     labels: {role: swamp}
     queueTimeout: 30
     guard: '${{ !("copy" in inputs.intent) }}'
     task:
       type: workflow
-      workflowIdOrName: task-instance-workspace
+      workflowIdOrName: task-copy-base
       inputs:
         node_id: ${{ inputs.intent.node_id }}
         phase: base-cleanup
         intent: '${{ {"runtime": inputs.intent.copy.runtime, "branch": inputs.intent.copy.branch, "snapshot_id": inputs.intent.copy.snapshot_id, "instance_id": inputs.intent.instance_id, "ssh_execution": inputs.intent.ssh_execution} }}'
+        git_authorization: ${{ inputs.intent.git_authorization }}
   - name: Clean up the scratch
     labels: {role: swamp}
     queueTimeout: 30

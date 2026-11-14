@@ -5,6 +5,7 @@ covers:
   - swamp/ansible/task-instance-workspace.yml
   - swamp/ansible/tasks/task-instance-workspace-phase.yml
   - swamp/workflows/workflow-task-instance-workspace.yaml
+  - swamp/workflows/workflow-task-copy-base.yaml
   - swamp/workflows/workflow-task-instance-check.yaml
   - apps/gateway/app/Domain/Tasks/TaskInstanceWorkspace.php
   - swamp/extensions/behaviors/operations/task-instance-workspace/*
@@ -29,7 +30,7 @@ The caller supplies the recorded Incus project and container name, expected bran
 | `export` | Preflight identity and candidate head/tree | Create and verify the exact candidate bundle as `agent`; transfer it to Node scratch and verify its checksum, or with `worker_bundle` fetch it to the worker |
 | `discard` | Preflight identity | Remove only this snapshot's guest scratch after its users have stopped |
 | `base` | Branch, default branch, repository and mirror | Fetch the default branch into the copy's Node mirror and import only what the copy lacks into `refs/remotes/origin/<default branch>`; return the default head, branch commit, `behind_by` and start |
-| `base-cleanup` | The copy's Instance id | Remove the copy's credential file and bundle on the Node and the bundle in the guest |
+| `base-cleanup` | The copy's Instance id | Remove the copy's bundle on the Node and its root-owned bundle folder in the guest |
 
 Snapshots use a temporary Git index. They include unignored untracked files, staged files (including force-added ignored paths), spaces and symlinks, and leave the real index unchanged. Guest scratch contains all indexes and evidence. Git hooks and fsmonitor are disabled. Commands isolate global and system Git configuration and trust only the exact checkout. Evidence does not execute project setup, checks or scripts.
 
@@ -43,13 +44,13 @@ Worker input and result files are private and removed after the phase settles, i
 
 The publish also names `proposed_body_path`, the task branch's proposed pull request body `.git/orbit/proposed-pr-bodies/task-<id>.md`, and `worker_proposed_body`. The Node pulls that file and fetches it to the worker only when it is a regular file of at most 64 KiB. A missing file or a link fetches nothing and does not fail the export. The file is data: the publish reads only its waiver lines ([Docs-impact waivers in a copy](/reference/tasks#docs-impact-waivers-in-a-copy)).
 
-[`task:sync`](/reference/tasks#bring-main-into-a-copy) of a task copy runs `base`, then always `base-cleanup`. `base` is the one phase that holds a credential: the read credential of the Project's repository. The caller names its vault key as the child's `git_credential` input, and only the child's step `Bring in the base` reads it, as one environment value; every other phase runs in `Run workspace phase` without it. The Node writes it to a file in the copy's Node scratch, mode `0600`, readable by root only, uses it for one fetch into the copy's mirror, `/var/lib/orbit/instance-repositories/<instance>.git`, and removes it in an `always` block. A missing mirror is first made from the default's mirror. The guest never receives the credential.
+[`task:sync`](/reference/tasks#bring-main-into-a-copy) of a task copy runs `base`, then `base-cleanup`, through their own child workflow, `task-copy-base`, which only the sync's copy path calls. The shared child of this page takes no secret and no base input. `base` is the one phase that uses a credential: the sync's read token, a Git header that the child names as `git_authorization`. Only its step `Bring in the base` reads it, and the Node passes it to its one `git fetch` as that command's environment, through the stdin of a pipelined task, which Ansible keeps in memory. It never reaches argv, a file, the guest or a stored output, so a killed run leaves no credential anywhere.
 
-The Node bundles the default branch with the copy's `origin/<default branch>` and branch heads as prerequisites, where the mirror holds them, and pushes the bundle into guest scratch owned by `agent`. As `agent`, the guest fetches it into `refs/remotes/origin/<default branch>` only. HEAD, the working tree, the index and the local branches stay as they are. When the copy holds the head already, no bundle is made.
+The fetch goes into the copy's mirror, `/var/lib/orbit/instance-repositories/<instance>.git`. A missing mirror is first made from the default's mirror; a copy whose default is gone syncs only when its own mirror exists. The Node bundles the default branch with the copy's `origin/<default branch>` and branch heads as prerequisites, where the mirror holds them. When the copy holds the head already, no bundle is made.
 
-The copy's Instance id names its Node scratch, `/var/tmp/orbit-task-base-<instance>`, and its bundle folder, `/tmp/orbit-task-base-<instance>`. A cancelled run may skip its cleanup, so `base` first removes what an earlier sync of the copy left, before it writes the credential; the group lock lets one sync of a copy run at a time. `base-cleanup` removes what a failed or cancelled `base` left, and a test proves that neither leaves a credential file on the Node or a bundle in the copy.
+Root removes and makes the copy's bundle folder and pushes the bundle into it, root-owned with the agent's group, mode `0640`, so `agent` can read it and cannot swap it for a link. As `agent`, the guest fetches it into `refs/remotes/origin/<default branch>` only. HEAD, the working tree, the index and the local branches stay as they are.
 
-Transfer or guest-cleanup failure removes Node scratch before returning failure. Export removes its guest bundle after transfer, including failure. The parent calls `discard` after all guest evidence users stop, on success or failure. Interrupted cleanup can leave scratch for explicit recovery; it never justifies deleting user files.
+The copy's Instance id names its Node scratch, `/var/tmp/orbit-task-base-<instance>`, and its bundle folder, `/tmp/orbit-task-base-<instance>`. The bundles go when the base ends: in `base-cleanup`, at the next `base` of the copy, which removes them before it starts, or at the copy's destroy, which removes the Node scratch with the mirror. A test proves that a failed fetch, a cancel during the fetch and a cancel after the push leave no credential and, once one of these ran, no bundle.
 
 ## Check phases
 
