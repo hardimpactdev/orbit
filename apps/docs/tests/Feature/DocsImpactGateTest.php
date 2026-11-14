@@ -395,7 +395,8 @@ it('a task handoff names its absent waiver file and no CI step', function (): vo
     expect(Artisan::call('orbit:docs-impact', ['--base' => $base, '--gate' => true, '--waiver-file' => $waiverFile]))->toBe(1);
     $output = Artisan::output();
     expect($output)->toContain('The waiver file '.$waiverFile.' is absent.', 'add a separate line to that file',
-        'Docs-unaffected: docs/reference/tasks.md: <explain why no docs change is needed>')
+        'Docs-unaffected: docs/reference/tasks.md: <explain why no docs change is needed>',
+        'Copy the same lines into the PR body; CI reads only the live PR body.')
         ->and($output)->not->toContain('gh run rerun')->not->toContain('--pr-body-file');
 });
 

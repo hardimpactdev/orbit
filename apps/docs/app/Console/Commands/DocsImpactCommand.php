@@ -98,7 +98,9 @@ final class DocsImpactCommand extends Command
                     foreach ($gate['missing_pages'] as $page) {
                         $this->line('Docs-unaffected: '.$page.': <explain why no docs change is needed>');
                     }
-                    if (! is_string($waiverFile)) {
+                    if (is_string($waiverFile)) {
+                        $this->line('Copy the same lines into the PR body; CI reads only the live PR body.');
+                    } else {
                         $this->line('Check before pushing: bin/docs-impact --gate --base origin/main --pr-body-file /path/to/pr-body.md');
                         $runId = getenv('GITHUB_RUN_ID');
                         $run = is_string($runId) && ctype_digit($runId) ? $runId : '<run-id>';
