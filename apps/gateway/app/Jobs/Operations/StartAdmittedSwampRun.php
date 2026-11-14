@@ -17,7 +17,11 @@ use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Bus;
 use Throwable;
 
-/** Starts committed intent once. Admission copies are acknowledged before queuing; run-time copies are prepared from the committed intent. */
+/**
+ * Starts committed intent once. Admission copies are acknowledged before queuing; run-time copies are prepared from the committed intent.
+ * Starts run on their own workers, side by side: the status transition in StartSwampRun::begin admits one submission per Operation,
+ * and the target hold keeps a second Operation for the same target from being admitted until the first ends.
+ */
 final class StartAdmittedSwampRun implements ShouldQueue
 {
     use Queueable;
@@ -30,7 +34,7 @@ final class StartAdmittedSwampRun implements ShouldQueue
 
     public function __construct(public int $operationId)
     {
-        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Operations->value);
+        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::OperationStarts->value);
     }
 
     public function handle(StartSwampRun $start, ExpireOperationAction $expire): void
