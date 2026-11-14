@@ -82,9 +82,13 @@ final readonly class ConnHeldSessions
     {
         $now ??= CarbonImmutable::now();
         $due = ConnPairing::query()->where('conn_environment_id', $environment->id)->where('held', true)->whereNotNull('session')
-            ->whereNull('withdrawn_at')->whereNull('revoked_at')->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays))->get();
+            ->whereNull('withdrawn_at')->whereNull('revoked_at')->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays))
+            ->with(['node', 'environment.node'])->get();
         foreach ($due as $pairing) {
-            $this->renew($pairing);
+            // A Node that lost its access gets no new session; the sweep withdraws its old one.
+            if ($this->access->allows($pairing->node, $pairing->environment)) {
+                $this->renew($pairing);
+            }
         }
     }
 
@@ -122,8 +126,10 @@ final readonly class ConnHeldSessions
     }
 
     /**
-     * A revoke's end settles the held pairings it named. One it covered no longer owes a revoke. One it named before its link existed got
-     * its session after the revoke read the server, so that session is withdrawn and revoked again by its id (issue 3540).
+     * A revoke's end settles the held pairings it named. One it covered no longer owes a revoke; an unmatched revoke of that one alone
+     * proves nothing of it is left on the server. One it named before its link existed got its session after the revoke read the server,
+     * so that session is withdrawn and revoked again by its id (issue 3540). Then the next owed revoke on the server starts: one revoke
+     * holds a server at a time.
      */
     public function revoked(Operation $operation, OperationOutcome $outcome): void
     {
@@ -139,14 +145,32 @@ final readonly class ConnHeldSessions
                 ->where('held', true)->lockForUpdate()->get();
             foreach ($held as $pairing) {
                 if (in_array($pairing->id, $covered, true)) {
-                    // An unmatched revoke of one withdrawn session proves nothing of it is left on the server.
-                    if (! $unmatched || ($covered === [$pairing->id] && $pairing->withdrawn_at !== null)) {
+                    if (! $unmatched || $covered === [$pairing->id]) {
                         $pairing->forceFill(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
                     }
                 } elseif ($pairing->pairing_link_id !== null) {
                     $this->withdraw($pairing);
                 }
             }
+            DB::afterCommit(fn () => $this->revokeNext(ValidatedData::integer($operation->input['conn_environment_id'])));
         });
+    }
+
+    /** Admits the revoke of the server's next owed held session, if any. */
+    public function revokeNext(int $environment): ?Operation
+    {
+        $owed = ConnPairing::query()->where('conn_environment_id', $environment)->where('held', true)->whereNotNull('withdrawn_at')
+            ->where(static fn ($query) => $query->whereNull('session_expires_at')->orWhere('session_expires_at', '>', Carbon::now()))->orderBy('id')->first();
+
+        return $owed instanceof ConnPairing ? $this->revoke($owed) : null;
+    }
+
+    /** A withdrawn session past its end owes nothing: T3 refuses it already. One whose end is unknown ends with T3's 30-day session. */
+    public function settleEnded(CarbonImmutable $now): void
+    {
+        ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')
+            ->where(static fn ($query) => $query->where('session_expires_at', '<=', $now)
+                ->orWhere(static fn ($unknown) => $unknown->whereNull('session_expires_at')->where('created_at', '<=', $now->subDays(30))))
+            ->update(['withdrawn_at' => null, 'revoked_at' => $now]);
     }
 }

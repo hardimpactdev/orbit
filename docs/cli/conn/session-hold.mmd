@@ -80,14 +80,14 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal event · expiry
     Note over GW: Keep the session<br/>encrypted · keys deleted
     %%> What it does:
-    %%> - reads the session key once, stores it encrypted on pairing 7, deletes both vault keys
+    %%> - reads the session key once, stores it encrypted on pairing 7, deletes the run's vault keys
     %%> - a revoke that named pairing 7 while it ran wins: the session is withdrawn and revoked by id
     %%> Result:
     %%> - task #5172 succeeds; its result holds only the pairing, link id and expiry
   else T3 refuses, answers badly or not at all
     SW--xGW: Run failed<br/>conn.* error_code
     %%> The Gateway reads:
-    %%> - `conn.session_rejected`, `conn.request_refused`, `conn.response_invalid` or `conn.redeem_refused`: T3 answered, no session exists
+    %%> - `conn.session_rejected`, `conn.request_refused`, `conn.response_invalid` or `conn.redeem_refused`: T3 answered, no session exists, the pairing is settled
     %%> - anything else is `conn.session_outcome_unknown`: the pairing is withdrawn and revoked by its label
     %%> Retry:
     %%> - the next read starts a new task with a new label

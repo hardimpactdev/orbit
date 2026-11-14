@@ -497,9 +497,9 @@ The run `operation-conn-session-hold` runs on the Swamp worker:
 | Redeem the link | `POST <url>/oauth/token`, T3's normal pairing endpoint: the OAuth token exchange a device makes, without a DPoP proof. curl reads the link from the vault into a variable, never into argv. |
 | Store the session | A typed data method reads T3's access-token reply (`access_token`, `token_type: Bearer`, `expires_in`, `scope`) and stores the session as a native sensitive field. |
 
-The Gateway reads the session key once, stores the session encrypted on the pairing, and deletes the run's vault keys. The result holds only `pairing_id`, `pairing_link_id` and `session_expires_at`.
+The Gateway reads the session key once, stores the session encrypted on the pairing, and deletes the run's vault keys. The result holds only `backend: held`, `pairing_id`, `pairing_link_id` and `session_expires_at`.
 
-When T3 answered, the Operation ends with that answer's code, and no session exists: `conn.session_rejected` (the admin session got 401), `conn.request_refused` (another status), `conn.response_invalid` (a link reply without T3's shape) or `conn.redeem_refused` (T3 refused the link at `/oauth/token`). Any other failure is `conn.session_outcome_unknown`: a session may exist, so the Gateway withdraws the pairing and revokes it by its label. The next read starts a new Operation with a new label.
+When T3 answered, no session exists. The Operation ends with that answer's code, and the pairing is settled with a revoke time: `conn.session_rejected` (the admin session got 401), `conn.request_refused` (another status), `conn.response_invalid` (a link reply without T3's shape) or `conn.redeem_refused` (T3 refused the link at `/oauth/token`). Any other failure is `conn.session_outcome_unknown`: a session may exist, so the Gateway withdraws the pairing and revokes it by its label. The next read starts a new Operation with a new label.
 
 The New-instance flow holds sessions before the first attach. When a clone's server is recorded, the Gateway admits a `conn.session_hold` for each Node of the creating Node's profile that has node access to the server, or for the creating Node alone when it has no profile.
 
@@ -511,9 +511,11 @@ The old session serves until the new one is recorded. Then the Gateway withdraws
 
 ### Revoke and removal
 
-Revoke stays per pairing: `POST /environments/{environment_id}/pairings/revoke` with `pairing_id` ends one held session, and without it the Node's open pairings, held ones included. The Node keeps its node access, so its next read makes a new held session. To stop a Node for good, remove its node access.
+Revoke stays per pairing: `POST /environments/{environment_id}/pairings/revoke` with `pairing_id` ends one held session. Without `pairing_id` it keeps its meaning for installed clients: the Node's own open pairings, never a held one. The Node keeps its node access, so its next read makes a new held session. To stop a Node for good, remove its node access.
 
-A held session ends in two steps. The Gateway withdraws it: it stops serving it and clears it at once. Then it owes the revoke on the server: it admits a revoke by `pairing_id`, and while the server cannot take it (asleep, busy, its admin session ended) the hourly tick admits it again. A session past its end owes nothing.
+An unmatched revoke of one held pairing by its id proves that T3 holds no session with its label. The Gateway then settles the pairing, and the next read makes a new one. A client whose server answers 401 reads the handle again. If the handle answers the same `pairing_id` again, the client revokes that pairing by its id, then reads again.
+
+A held session ends in two steps. The Gateway withdraws it: it stops serving it and clears it at once. Then it owes the revoke on the server: it admits a revoke by `pairing_id`. One revoke holds a server at a time, so when a revoke ends, the next owed revoke on that server starts. While the server cannot take one (asleep, busy, its admin session ended) the hourly tick admits it again. A session past its end owes nothing, and the tick settles it.
 
 - Removing a Node's node access withdraws its held sessions on the servers that the Node now cannot reach. Core calls Conn through the `NodeAccessRemovalHook` plug-in point of `node:access:remove`.
 - The hourly tick also withdraws a held session whose Node lost access another way.

@@ -35,7 +35,9 @@ final readonly class RevokeConnPairingsAction
             if ($pairingId !== null && ! $all->contains('id', $pairingId)) {
                 abort(404);
             }
-            $pairings = $all->filter(fn (ConnPairing $pairing): bool => $pairingId === null ? $pairing->revoked_at === null : $pairing->id === $pairingId)->values();
+            // Without an id, the Node's own open pairings, as before held sessions; a held one is revoked by its id
+            // ([Held sessions](/reference/conn#held-sessions)).
+            $pairings = $all->filter(fn (ConnPairing $pairing): bool => $pairingId === null ? $pairing->revoked_at === null && ! $pairing->held : $pairing->id === $pairingId)->values();
             // A held session is matched by its exact label alone, so a held pairing is never ambiguous and makes no other pairing so
             // ([Held sessions](/reference/conn#held-sessions)).
             foreach ($pairings as $pairing) {

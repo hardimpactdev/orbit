@@ -48,11 +48,11 @@ final readonly class ConnHeldSessionSweep
                 $admitted[] = $operation->id;
             }
         }
-        // A session past its end needs no revoke; the server refuses it already.
-        $owed = $this->running(ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')
-            ->where(static fn (Builder $query) => $query->whereNull('session_expires_at')->orWhere('session_expires_at', '>', $now)))->orderBy('id')->get();
-        foreach ($owed->unique('conn_environment_id') as $pairing) {
-            if (($operation = $this->held->revoke($pairing)) instanceof Operation) {
+        // A session past its end needs no revoke; the server refuses it already. Each revoke's end starts the next one on its server.
+        $this->held->settleEnded($now);
+        $owed = $this->running(ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at'))->pluck('conn_environment_id')->unique();
+        foreach ($owed as $environment) {
+            if (($operation = $this->held->revokeNext(ValidatedData::integer($environment))) instanceof Operation) {
                 $admitted[] = $operation->id;
             }
         }

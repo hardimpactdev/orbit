@@ -23,6 +23,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
+use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessionSweep;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
@@ -132,7 +133,7 @@ function endHold(Operation $operation, string $status = 'succeeded', ?string $de
 
     return app(ConnSessionHoldProjection::class)->apply($operation->fresh(), ['run_id' => HeldRun, 'status' => $status,
         'started_at' => now()->subSeconds(2)->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'result' => $status === 'succeeded' ? ['held_receipt' => json_encode(heldReceipt($operation), JSON_THROW_ON_ERROR)] : [],
+        'result' => ['link_key' => heldReceipt($operation)['link_ref']['key'], ...$status === 'succeeded' ? ['held_receipt' => json_encode(heldReceipt($operation), JSON_THROW_ON_ERROR)] : []],
         'failure' => ['detail' => $detail]]);
 }
 
@@ -255,8 +256,11 @@ describe('the session handle', function (): void {
         readHeld($this->phone, $this->environment)->assertStatus(202);
         $refused = endHold(holdOperation($this->phone, $this->environment), 'failed', 'conn.redeem_refused');
         expect($refused->error_code)->toBe('conn.redeem_refused')
-            ->and(ConnPairing::query()->findOrFail($refused->target_id)->withdrawn_at)->toBeNull()
-            ->and(revokes())->toBe([]);
+            ->and(ConnPairing::query()->findOrFail($refused->target_id))->withdrawn_at->toBeNull()->revoked_at->not->toBeNull()
+            ->and(revokes())->toBe([])
+            // The minted link's key goes on a refused path too, with the admin copy.
+            ->and(collect($this->vault->sent)->where('type', 'vault.delete')->pluck('payload.key')->all())
+            ->toContain(heldReceipt($refused)['link_ref']['key'], $refused->input['execution_secrets']['admin_session']['key']);
 
         readHeld($this->phone, $this->environment)->assertStatus(202);
         $unknown = endHold(holdOperation($this->phone, $this->environment), 'failed', 'conn.pairing_outcome_unknown');
@@ -367,7 +371,7 @@ describe('revoke and removal', function (): void {
         readHeld($this->phone, $this->environment)->assertStatus(202);
         $hold = holdOperation($this->phone, $this->environment);
         test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
-            ->postJson('/api/v1/conn/environments/env-fix-login/pairings/revoke', [], ['Idempotency-Key' => 'revoke-all'])->assertAccepted();
+            ->postJson('/api/v1/conn/environments/env-fix-login/pairings/revoke', ['pairing_id' => $hold->target_id], ['Idempotency-Key' => 'revoke-new'])->assertAccepted();
         $revoke = revokes()[0];
         expect($revoke->input['pairing_ids'])->toBe([$hold->target_id])->and($revoke->input['intent']['pairings'])->toBe([]);
 
@@ -391,6 +395,49 @@ describe('revoke and removal', function (): void {
         readHeld($this->phone, $this->environment)->assertStatus(202);
         expect(ConnPairing::query()->findOrFail($hold->target_id))->session->toBeNull()->withdrawn_at->not->toBeNull()
             ->and(revokes()[0]->input['pairing_ids'])->toBe([$hold->target_id]);
+    });
+
+    it('keeps revoke-all to the device pairings of the Node, also beside a withdrawn held pairing', function (): void {
+        $device = ConnPairing::query()->create(['node_id' => $this->phone->id, 'conn_environment_id' => $this->environment->id, 'client_label' => 'phone via Orbit device00',
+            'pairing_link_id' => 'device-link', 'issue_started_at' => now()->subDay(), 'expires_at' => now()->subDay()->addMinutes(5)]);
+        $held = ConnPairing::query()->create(['node_id' => $this->phone->id, 'conn_environment_id' => $this->environment->id, 'client_label' => 'phone via Orbit held0000',
+            'held' => true, 'withdrawn_at' => now()]);
+
+        test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->postJson('/api/v1/conn/environments/env-fix-login/pairings/revoke', [], ['Idempotency-Key' => 'revoke-all'])->assertAccepted();
+
+        $revoke = revokes()[0];
+        expect($revoke->input['pairing_ids'])->toBe([$device->id])
+            ->and(collect($revoke->input['intent']['pairings'])->pluck('id')->all())->toBe([$device->id]);
+        endRevoke($revoke);
+        expect($device->fresh()->revoked_at)->not->toBeNull()->and($held->fresh()->withdrawn_at)->not->toBeNull();
+    });
+
+    it('settles a held session that an unmatched revoke by its id found gone, so the handle stops answering it', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $held = ConnPairing::query()->where('held', true)->sole();
+        $revoke = app(RevokeConnPairingsAction::class)->execute($this->phone, $this->environment, $this->phone, $held->id);
+
+        endRevoke($revoke, 'failed', 'conn.revocation_unmatched');
+
+        expect($held->fresh())->revoked_at->not->toBeNull()->session->toBeNull();
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+    });
+
+    it('starts the next owed revoke of a server when one ends, and settles a withdrawn session past its end', function (): void {
+        $make = fn (string $label, array $attributes = []) => ConnPairing::query()->create(['node_id' => $this->phone->id, 'conn_environment_id' => $this->environment->id,
+            'client_label' => $label, 'held' => true, 'pairing_link_id' => 'link-'.$label, 'issue_started_at' => now(), 'expires_at' => now()->addMinutes(5),
+            'session_expires_at' => now()->addDays(20), 'withdrawn_at' => now(), ...$attributes]);
+        $first = $make('phone via Orbit first000');
+        $second = $make('phone via Orbit second00');
+        $ended = $make('phone via Orbit ended000', ['session_expires_at' => now()->subMinute()]);
+
+        app(ConnHeldSessionSweep::class)->run();
+        expect(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$first->id])
+            ->and($ended->fresh())->withdrawn_at->toBeNull()->revoked_at->not->toBeNull();
+
+        endRevoke(revokes()[0]);
+        expect(revokes())->toHaveCount(2)->and(revokes()[1]->input['pairing_ids'])->toBe([$second->id]);
     });
 
     it('withdraws and revokes the held sessions of a Node whose grant is removed', function (): void {

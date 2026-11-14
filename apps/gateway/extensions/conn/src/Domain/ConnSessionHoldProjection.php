@@ -40,6 +40,7 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
     public function apply(Operation $operation, array $data): Operation
     {
         $status = ValidatedData::string($data['status']);
+        $captured = ValidatedData::object($data['result'] ?? []);
         $raw = $status === 'succeeded' ? ValidatedData::object(json_decode(ValidatedData::string(ValidatedData::object($data['result'] ?? [])['held_receipt'] ?? '{}'), true, flags: JSON_THROW_ON_ERROR)) : [];
         $keys = [];
         $session = null;
@@ -88,7 +89,10 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
                 if ($previous instanceof ConnPairing) {
                     $this->held->withdraw($previous);
                 }
-            } elseif ($status !== 'succeeded' && ! in_array($result['error_code'] ?? null, self::AnsweredFailures, true) && $pairing->revoked_at === null) {
+            } elseif ($status !== 'succeeded' && in_array($result['error_code'] ?? null, self::AnsweredFailures, true)) {
+                // T3 answered, so no session exists: the pairing is settled and owes nothing.
+                $pairing->forceFill(['revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
+            } elseif ($status !== 'succeeded' && $pairing->revoked_at === null) {
                 $pairing->forceFill(['issue_started_at' => $pairing->issue_started_at ?? $started])->save();
                 $this->held->withdraw($pairing);
             }
@@ -96,11 +100,18 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
             return $projected;
         });
 
-        // The admin session's execution copy lives for this run only, on every terminal path.
+        // The admin session's execution copy and a minted link live for this run only, on every terminal path.
         $copy = ValidatedData::object(ValidatedData::object($operation->input['execution_secrets'] ?? [])['admin_session'] ?? []);
-        if (! $replay && in_array($status, ['succeeded', 'failed', 'interrupted', 'cancelled'], true) && is_string($copy['key'] ?? null)) {
-            $keys[] = $copy['key'];
+        if (! $replay && in_array($status, ['succeeded', 'failed', 'interrupted', 'cancelled'], true)) {
+            $link = $captured['link_key'] ?? null;
+            if (is_string($link) && preg_match(sprintf(self::KeyPattern, 'link-link', $operation->target_id, 'credential'), $link) === 1) {
+                $keys[] = $link;
+            }
+            if (is_string($copy['key'] ?? null)) {
+                $keys[] = $copy['key'];
+            }
         }
+        $keys = array_values(array_unique($keys));
         foreach ($keys as $key) {
             try {
                 $this->mutations->deleteSecret('orbit-control-inputs', $key);
