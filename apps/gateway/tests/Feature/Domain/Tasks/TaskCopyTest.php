@@ -51,6 +51,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
@@ -255,6 +256,10 @@ describe('a task start on the copy path', function (): void {
             ->and($runtime->incus_project)->toBe(InstanceHostIntent::Project)
             ->and($runtime->clone_source_instance_id)->toBe($default->id)
             ->and($container)->not->toHaveKey('club_key')
+            ->and(ValidatedData::object($container['clone'])['clean_workspace'] ?? null)->toBeTrue()
+            // The copy's runtime reads running only when the create's result is recorded, after the checkout cleaned the tree: no check,
+            // baseline included, is admitted before (tasks.instance_not_running), and a turn waits for `active`.
+            ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Stopped)
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
             ->and($group->taskable_id)->toBe($copy->id)
             ->and(TaskVm::query()->count())->toBe(0);

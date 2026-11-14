@@ -344,6 +344,9 @@ final readonly class InstanceContainer
             // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
             ...($source === null ? [] : ['source' => $source->container_name, 'snapshot' => 'seed-'.ValidatedData::string($source->seed_commit),
                 'seed_commit' => ValidatedData::string($source->seed_commit), 'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id))]),
+            // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files
+            // (docs/reference/development-containers.md#a-task-copy-starts-clean). Every other clone keeps the default's tree, and no key.
+            ...($source !== null && $instance->task_workspace_owner_id !== null ? ['clean_workspace' => true] : []),
             't3' => ['port' => $runtime->t3_port, 'listen' => ValidatedData::string($node->wireguard_ip), 'device' => self::T3Device,
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
