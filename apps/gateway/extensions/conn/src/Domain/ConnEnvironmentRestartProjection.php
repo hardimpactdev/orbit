@@ -44,7 +44,7 @@ final readonly class ConnEnvironmentRestartProjection implements DirectOperation
             };
         } elseif (in_array($status, ['failed', 'interrupted'], true)) {
             $code = $raw['error_code'] ?? null;
-            $code = is_string($code) && preg_match('/\Aconn\.[a-z_]{1,80}\z/D', $code) === 1 ? $code : 'conn.t3_restart_failed';
+            $code = is_string($code) && preg_match('/\Aconn\.[a-z0-9_]{1,80}\z/D', $code) === 1 ? $code : 'conn.t3_restart_failed';
             $data['error_code'] = $code;
             $result = ['answer' => 'failed', 'error_code' => $code];
         }
