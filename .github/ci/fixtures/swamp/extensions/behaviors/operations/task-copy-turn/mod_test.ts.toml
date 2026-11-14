@@ -1,5 +1,5 @@
 order = 370
-source_sha256 = "4df2adcd3875b7be5f5f4c5c580168becbe04c449f743036eb4bdeda961b3163"
+source_sha256 = "8711b4ed544247638f5d24a11dcdba1f2a93ae264bbdea8314f2578939cdaf55"
 cases = [
   "a completed run is done and over, and records the message transcript and the T3 thread",
   "a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status",
@@ -7,6 +7,7 @@ cases = [
   "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
   "a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched",
   "a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered with the offered slugs, and nothing launched",
+  "a long refusal keeps the end of T3's message, where T3 names the refusal",
   "a start T3 refused on stderr names T3's own message",
   "a continued turn whose thread list failed or printed no JSON is tasks.copy_turn_failed, not a missing thread",
   "a reviewer turn fails when its checkout could not be put on the candidate or was not restored after a run T3 ended",

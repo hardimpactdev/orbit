@@ -1,5 +1,5 @@
 order = 380
-source_sha256 = "42bc1d04e523f574ee302264ad331352d8722ef0c6cb482106161a09fb215f88"
+source_sha256 = "e39a96832fe96b0b16696d058a557f6dbafc923ff043ac47db00eab4e8c262dc"
 cases = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time",
@@ -16,11 +16,11 @@ cases = [
   "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout",
   "without T3's cached catalog the check is skipped and the turn runs",
   "a continued thread keeps its model: the catalog is not read",
-  "a catalog entry without a slug is left out, and a model list that is no list skips the check",
-  "the start evidence keeps stderr only when the start failed, and only its last 4 KB",
+  "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check",
+  "the start evidence keeps stderr only when the start failed, and only its last 4096 characters",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 95
+cost = 99
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -49,5 +49,5 @@ inputs = [
   "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout" = 5
   "without T3's cached catalog the check is skipped and the turn runs" = 5
   "a continued thread keeps its model: the catalog is not read" = 5
-  "a catalog entry without a slug is left out, and a model list that is no list skips the check" = 7
-  "the start evidence keeps stderr only when the start failed, and only its last 4 KB" = 5
+  "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check" = 11
+  "the start evidence keeps stderr only when the start failed, and only its last 4096 characters" = 5

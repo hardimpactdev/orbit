@@ -86,12 +86,16 @@
               {{ (model_catalog.stdout | from_json).get('manifest', {}).get('providers', {}).get(model_driver, {}).get('models')
                  if model_catalog.rc == 0 else none }}
           no_log: true
-        # A list of entries with a slug is a catalog; anything else is not one T3 wrote, and the check is skipped.
+        # A list with at least one entry that has a slug is a catalog; anything else is not one T3 wrote, and the check is skipped.
+        - name: Keep the entries with a slug
+          ansible.builtin.set_fact:
+            model_valid: >-
+              {{ model_listed | select('mapping') | selectattr('slug', 'defined') | selectattr('slug', 'string') | list
+                 if model_listed is iterable and model_listed is not string and model_listed is not mapping else [] }}
+          no_log: true
         - name: Name the models T3 lists for it
           ansible.builtin.set_fact:
-            model_entries: >-
-              {{ model_listed | select('mapping') | selectattr('slug', 'defined') | selectattr('slug', 'string') | list
-                 if model_listed is iterable and model_listed is not string and model_listed is not mapping else none }}
+            model_entries: "{{ model_valid if model_valid | length > 0 else none }}"
           no_log: true
       rescue:
         - name: List no models
@@ -261,7 +265,7 @@
         - name: Write the start evidence
           ansible.builtin.copy:
             # T3 prints a refused start, such as an instance it does not know, on stderr only. Only a failed start's stderr is kept, and
-            # only its tail, so a chatty run cannot push the file past its bound.
+            # only its last 4096 characters, so a chatty run cannot push the file past its bound.
             content: >-
               {{ {'start_exit': turn_start.rc, 'start': turn_start.stdout | default(''),
                   'error': (turn_start.stderr | default(''))[-4096:] if turn_start.rc != 0 else ''} | to_json }}

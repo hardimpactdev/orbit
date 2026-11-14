@@ -93,6 +93,8 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
         models = [{'name': 'No slug'}, 'claude-fable-5-2', {'slug': 7}] + models
     if catalog == 'notlist':
         models = {'claude-opus-5-5': {}}
+    if catalog == 'noentry':
+        models = [{'name': 'No slug'}, 'claude-fable-5-2']
     print(json.dumps({'fetchedAtMs': 1, 'manifest': {'providers': {'claudeAgent': {'models': models}, 'codex': {'models': [{'slug': 'other-model'}]}}}}))
     sys.exit(0)
 if rest == ['/usr/bin/true']:
@@ -309,18 +311,21 @@ Deno.test({ name: "a continued thread keeps its model: the catalog is not read",
     assertEquals([reads(done.calls), done.model], [[], null]);
 } });
 
-Deno.test({ name: "a catalog entry without a slug is left out, and a model list that is no list skips the check", ignore: !available, async fn() {
+Deno.test({ name: "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check", ignore: !available, async fn() {
     const offered = await phase("completed", { model: "claude-opus-5-5" }, "clean", "noslug");
     assert(offered.ok, offered.output);
     assertEquals(offered.model, { model: "claude-opus-5-5", offered: ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], accepted: true });
     const refused = await phase("completed", { model: "claude-fable-5-2" }, "clean", "noslug");
     assert(!refused.ok && refused.output.includes("tasks.copy_turn_model_unoffered"), refused.output);
-    const skipped = await phase("completed", { model: "claude-opus-9" }, "clean", "notlist");
-    assert(skipped.ok, skipped.output);
-    assertEquals([skipped.model, skipped.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true]);
+    // A list without one valid entry is no catalog either.
+    for (const catalog of ["notlist", "noentry"]) {
+        const skipped = await phase("completed", { model: "claude-opus-9" }, "clean", catalog);
+        assert(skipped.ok, skipped.output);
+        assertEquals([skipped.model, skipped.launched], [{ model: "claude-opus-9", offered: null, accepted: true }, true], catalog);
+    }
 } });
 
-Deno.test({ name: "the start evidence keeps stderr only when the start failed, and only its last 4 KB", ignore: !available, async fn() {
+Deno.test({ name: "the start evidence keeps stderr only when the start failed, and only its last 4096 characters", ignore: !available, async fn() {
     const chatty = await phase("chatty");
     assert(chatty.ok, chatty.output);
     assertEquals([chatty.start!.start_exit, chatty.start!.error], [0, ""]);

@@ -152,7 +152,8 @@ function shapeRun(evidence: Evidence): Turn {
         };
     }
     const exit = evidence.start === null ? "no exit" : `exit ${evidence.start.start_exit}`;
-    const refusal = redactText(evidence.start?.error?.trim() ?? "").slice(0, ErrorChars);
+    // T3's message ends its stderr; a long one keeps its end.
+    const refusal = redactText(evidence.start?.error?.trim() ?? "").slice(-ErrorChars);
     return { ...base, state: "failed", error: `T3 did not report the turn's end (${exit})${refusal === "" ? "" : `: ${refusal}`}.`, error_code: "tasks.copy_turn_failed" };
 }
 

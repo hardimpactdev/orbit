@@ -75,6 +75,12 @@ Deno.test("a new thread whose model T3's catalog does not offer is tasks.copy_tu
     assertEquals(turn(0, started("completed"), { model: { model: "claude-opus-9", offered: null, accepted: true } }).state, "done");
 });
 
+Deno.test("a long refusal keeps the end of T3's message, where T3 names the refusal", () => {
+    const refused = shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "", error: "x".repeat(4000) + "Provider instance is disabled." },
+        read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } });
+    assertEquals([refused.error!.endsWith("Provider instance is disabled.."), refused.error!.length < 2100], [true, true]);
+});
+
 Deno.test("a start T3 refused on stderr names T3's own message", () => {
     const refused = shapeTurn({ ...none, launched: true, start: { start_exit: 1, start: "", error: 'Provider instance "claudeMinimal" is disabled for project p.\n' },
         read: { list_exit: 0, found: 0, status: null, show_exit: null, show: "" } });
