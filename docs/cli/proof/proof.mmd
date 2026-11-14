@@ -21,6 +21,7 @@ sequenceDiagram
   %%> - the copy's Incus project and container, its Node as the SSH target and the cases file; no secret, and no step calls back
   %%> Refuses:
   %%> - a group without a copy, a copy that is not active or not running, a Project without a nested fleet, a copy turn that may still run, or another operation on the group
+  %%> - a copy where a proof or an agent turn already ran, until a copy can restore `base`
   GW-->>CLI: 202 Accepted<br/>operation ID
   GW->>SW: Start the run<br/>proof-fleet-verify
   SW->>CP: Select the cases<br/>runner plan --lines

@@ -15,6 +15,11 @@ inputs:
       minimum: 1
     file:
       type: string
+    # Empty on a task VM. In a task copy: `incus exec` into the copy and `runuser -u agent`, run as root on the copy's Node.
+    runner_prefix:
+      type: array
+      items:
+        type: string
     batch:
       type: string
     setup:
@@ -31,6 +36,7 @@ inputs:
   - checkout_path
   - group_id
   - file
+  - runner_prefix
   - batch
   - setup
   - cases
@@ -42,7 +48,8 @@ jobs:
   # Each batch but the first starts from the `base` snapshot of the fleet: restore, then apply the checkout, then the batch setup. A restore that fails stops the batch.
   - name: restore
     labels: {role: swamp}
-    guard: '${{ !(has(inputs.restore) && inputs.restore) }}'
+    # A task copy has no restore of `base` yet: see `setup`.
+    guard: '${{ !(has(inputs.restore) && inputs.restore) || size(inputs.runner_prefix) > 0 }}'
     allowFailure: true
     writes: true
     task:
@@ -50,8 +57,10 @@ jobs:
       workflowIdOrName: proof-fleet-restore
       inputs:
         ssh_execution: ${{ inputs.ssh_execution }}
+  # In a task copy a later batch does not start: without a restore its start state is unknown, so its cases are unrun.
   - name: setup
     labels: {role: swamp}
+    guard: '${{ has(inputs.restore) && inputs.restore && size(inputs.runner_prefix) > 0 }}'
     allowFailure: true
     dependsOn:
     - step: restore
@@ -78,15 +87,8 @@ jobs:
         hosts: name:target
         okExitCodes: any
         timeoutSec: 480
-        argv:
-        - python3
-        - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
-        - setup
-        - ${{ inputs.batch }}
-        - --file
-        - ${{ inputs.checkout_path + "/" + inputs.file }}
-        - --evidence
-        - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
+        sudo: '${{ size(inputs.runner_prefix) > 0 }}'
+        argv: '${{ inputs.runner_prefix + ["python3", inputs.checkout_path + "/swamp/proof/runner/runner.py", "setup", inputs.batch, "--file", inputs.checkout_path + "/" + inputs.file, "--evidence", inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify"] }}'
 - name: cases
   labels: {role: swamp}
   dependsOn:
@@ -122,17 +124,8 @@ jobs:
         hosts: name:target
         okExitCodes: any
         timeoutSec: 3600
-        argv:
-        - python3
-        - ${{ inputs.checkout_path + "/swamp/proof/runner/runner.py" }}
-        - batch
-        - ${{ inputs.batch }}
-        - --file
-        - ${{ inputs.checkout_path + "/" + inputs.file }}
-        - --evidence
-        - ${{ inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify" }}
-        - --only
-        - ${{ inputs.cases.join(" ") }}
+        sudo: '${{ size(inputs.runner_prefix) > 0 }}'
+        argv: '${{ inputs.runner_prefix + ["python3", inputs.checkout_path + "/swamp/proof/runner/runner.py", "batch", inputs.batch, "--file", inputs.checkout_path + "/" + inputs.file, "--evidence", inputs.checkout_path + "/.orbit-artifacts/" + string(inputs.group_id) + "/verify", "--only", inputs.cases.join(" ")] }}'
 - name: report
   labels: {role: swamp}
   dependsOn:
