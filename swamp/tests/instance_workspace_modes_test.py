@@ -24,7 +24,7 @@ IN_WORKSPACE = next(task for task in TASKS if task.get('name') == 'Name the cont
 GIT_OPTIONS = re.findall(r"'([^']*)'", IN_WORKSPACE.split("'git',", 1)[1])
 CHECKOUT = next(task for task in TASKS if task.get('name') == 'Check out the commit')['block']
 REPACK = next(task for task in CHECKOUT if task['name'] == 'Repack the workspace')
-REPACK_NOTE = next(task for task in CHECKOUT if task['name'] == 'Note a repack that did not pass')
+REPACK_NOTE = next(task for task in CHECKOUT if task['name'] == 'Report a repack that did not pass')
 # The repack's own words after the workspace's Git options, and the time limit before them.
 REPACK_ARGV = REPACK['ansible.builtin.command']['argv']
 REPACK_ARGS = re.findall(r"'([^']*)'", REPACK_ARGV[REPACK_ARGV.index("['repack'"):])
@@ -179,11 +179,11 @@ class WorkspaceGitMaintenanceTest(unittest.TestCase):
         self.git(workspace, *REPACK_ARGS, options=GIT_OPTIONS)
         self.assertEqual(sorted(path.name for path in packs.iterdir()), before)
 
-    def test_a_repack_that_fails_or_times_out_is_named_and_never_fails_the_checkout(self):
+    def test_a_repack_that_fails_or_times_out_is_reported_and_never_fails_the_checkout(self):
         self.assertIs(REPACK['failed_when'], False)
         folder = Path(tempfile.mkdtemp())
         self.addCleanup(subprocess.run, ['rm', '-rf', str(folder)])
-        note = REPACK_NOTE['ansible.builtin.set_fact']['workspace_repack_result']['workspace_repack']
+        note = REPACK_NOTE['ansible.builtin.debug']['msg']
         results = {'passed': {'rc': 0, 'stderr': ''}, 'timed_out': {'rc': 124, 'stderr': ''},
                    'failed': {'rc': 128, 'stderr': 'fatal: unable to create temporary file\n'}}
         play = [{'hosts': 'localhost', 'gather_facts': False, 'connection': 'local', 'tasks': [
@@ -197,8 +197,8 @@ class WorkspaceGitMaintenanceTest(unittest.TestCase):
                               check=False, capture_output=True, text=True, env={**os.environ, 'ANSIBLE_PYTHON_INTERPRETER': sys.executable})
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
         self.assertFalse((folder / 'passed').exists())
-        self.assertEqual((folder / 'timed_out').read_text(), 'timed_out')
-        self.assertEqual((folder / 'failed').read_text(), 'failed: fatal: unable to create temporary file')
+        self.assertEqual((folder / 'timed_out').read_text(), 'orbit-workspace-repack=timed_out')
+        self.assertEqual((folder / 'failed').read_text(), 'orbit-workspace-repack=failed: fatal: unable to create temporary file')
 
 
 class CheckoutFailureDetailTest(unittest.TestCase):
