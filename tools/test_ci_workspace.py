@@ -17,7 +17,7 @@ class WorkspaceFixturesTest(unittest.TestCase):
         evidence = json.loads(EVIDENCE.read_text())['files']
         budget, fixtures, defaults = units.configuration()
         result = units.plan(['swamp/tests/_support/task_instance_workspace.py'], budget, fixtures, defaults)
-        self.assertCountEqual(names(result), evidence)
+        self.assertCountEqual(names(result), [*evidence, "swamp/tests/task_copy_publish_test.py"])
         self.assertFalse(result['deferred'])
         self.assertFalse(result.get('capacity'))
         seen = []
@@ -38,6 +38,13 @@ class WorkspaceFixturesTest(unittest.TestCase):
                 self.assertLessEqual(entry['cost'] + budget['slice_startup_seconds'], 90)
         self.assertEqual(len(seen), 15)
         self.assertEqual(len(set(seen)), 15)
+        publish = fixtures['swamp/tests/task_copy_publish_test.py']
+        current = units.collect(publish['file'])
+        self.assertEqual(publish['source_sha256'], current['source_sha256'])
+        self.assertEqual(publish['cases'], current['cases'])
+        self.assertEqual(len(current['cases']), 4)
+        self.assertFalse(set(seen) & set(current['cases']))
+        self.assertLessEqual(publish['cost'] + budget['slice_startup_seconds'], 90)
         harness = runpy.run_path(str(ROOT / 'swamp/tests/_support/task_instance_workspace.py'))
         for name in ('WorkspaceHarness', 'CheckHarness'):
             self.assertEqual(unittest.defaultTestLoader.getTestCaseNames(harness[name]), [])
