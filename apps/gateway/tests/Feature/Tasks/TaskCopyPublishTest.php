@@ -245,9 +245,6 @@ it('names a refused environment file, its content and an unchecked content with 
     'typed read of an error' => ['Read the .env check', 'tasks.publish_secret_unchecked', 'tasks.publish_secret_unchecked'],
 ]);
 
-/** The error of Operation 22074: its export waited 60 s for the workspace phase's behavior lock that another publish held. */
-const CopyPublishLockTimeout = 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms';
-
 it('names a step that timed out on a Swamp behavior lock tasks.publish_lock_timeout, on any step, and nothing else', function (string $step, ?string $detail, string $code): void {
     [$group, $check] = copyPublishWorld();
     $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
@@ -259,13 +256,14 @@ it('names a step that timed out on a Swamp behavior lock tasks.publish_lock_time
 
     expect($projected->error_code)->toBe($code)->and($projected->result)->toBe(['error_code' => $code]);
 })->with([
-    'the workspace phase' => ['Run workspace phase', CopyPublishLockTimeout, 'tasks.publish_lock_timeout'],
-    'with a final newline' => ['Run workspace phase', CopyPublishLockTimeout."\n", 'tasks.publish_lock_timeout'],
-    'the push step' => ['Push the branch', CopyPublishLockTimeout, 'tasks.publish_lock_timeout'],
-    'the content check' => ['Check the .env content', CopyPublishLockTimeout, 'tasks.publish_lock_timeout'],
+    // The error of Operation 22074: its export waited 60 s for the workspace phase's behavior lock that another publish held.
+    'the workspace phase' => ['Run workspace phase', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms', 'tasks.publish_lock_timeout'],
+    'with a final newline' => ['Run workspace phase', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms'."\n", 'tasks.publish_lock_timeout'],
+    'the push step' => ['Push the branch', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms', 'tasks.publish_lock_timeout'],
+    'the content check' => ['Check the .env content', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms', 'tasks.publish_lock_timeout'],
     'a holder that let go at the deadline' => ['Run workspace phase', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" — timed out after 60002ms', 'tasks.publish_lock_timeout'],
     'a step that ran out of time' => ['Run workspace phase', 'Run workspace phase timed out after 1800s', 'tasks.publish_failed'],
-    'a lock line inside other output' => ['Run workspace phase', "fatal: x\n".CopyPublishLockTimeout, 'tasks.publish_failed'],
+    'a lock line inside other output' => ['Run workspace phase', "fatal: x\n".'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms', 'tasks.publish_failed'],
     'a lock that is no Swamp lock file' => ['Run workspace phase', 'Lock "/var/lib/dpkg/lock" held by root (pid 7) — timed out after 60002ms', 'tasks.publish_failed'],
     'a push step that ran out of time' => ['Push the branch', 'Push the branch timed out after 60s', 'tasks.push_failed'],
 ]);
