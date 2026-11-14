@@ -465,7 +465,7 @@ def main():
 
     if phase == "container":
         boot = boot_files()
-        owner = private_folder()
+        private_folder()
         line, model = start_input()
         credential = folder / "git-credential"
         credential.write_text(line)
