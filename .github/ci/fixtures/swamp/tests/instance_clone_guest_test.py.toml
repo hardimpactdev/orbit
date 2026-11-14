@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "ac8877c54815af048b9120d42253bb717733a553f690a08922db79703e5e0950"
+source_sha256 = "9063298d7ab4a0df9b3eb73f6e7898c4cebf78be2365a1d2ab0c3dd388604595"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
