@@ -258,7 +258,8 @@ final readonly class InstanceImage
      */
     private static function nestedFiles(): array
     {
-        $ids = "root:1000000:100000000\nroot:".InstanceHostIntent::OrbitUid.":1\n";
+        // The inner containers share one range of 65,536 IDs at 1,000,000; it fits the converted map (development-containers.md#the-id-map-size).
+        $ids = "root:1000000:65536\nroot:".InstanceHostIntent::OrbitUid.":1\n";
 
         return [
             ['path' => '/etc/subuid', 'content' => $ids, 'uid' => 0, 'gid' => 0, 'mode' => '0644'],

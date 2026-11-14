@@ -470,6 +470,26 @@ describe('a task start on the copy path', function (): void {
         expect(copyRefusal(fn () => startCopy(copyGroup($default->project))))->toBe('tasks.copy_id_range_full 409');
     });
 
+    it('places a copy of a converted default by its recorded size, where the full size no longer fits', function (): void {
+        $default = copySource();
+        config(['orbit.tasks.copies_max' => 50]);
+        $nested = static fn (string $name, int $base): array => ['name' => $name, 'project' => 'orbit-instances-nested',
+            'config' => ['security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'volatile.idmap.base' => (string) $base]];
+        // Nine full-size maps leave 90,934,464 IDs: no full-size range for a copy, but room for many of the converted size.
+        $containers = [];
+        foreach (range(0, 8) as $i) {
+            $containers[] = $nested($i === 0 ? $default->runtime->container_name : 'instance-'.(100 + $i), 1065536 + $i * 101000000);
+        }
+        $this->ssh->ids = ['uid' => [1000000, 1000000000], 'gid' => [1000000, 1000000000], 'containers' => $containers];
+        expect(copyRefusal(fn () => startCopy(copyGroup($default->project))))->toBe('tasks.copy_id_range_full 409');
+
+        // docs/reference/development-containers.md#the-id-map-size: a converted default and its next copies record the small size.
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
+        $operation = startCopy(copyGroup($default->project));
+        expect($operation->kind)->toBe('instance.create')
+            ->and(InstanceRuntime::query()->where('instance_id', $operation->target_id)->value('idmap_size'))->toBe(1165536);
+    });
+
     it('keeps a range for another default\'s seed: a plain copy may not fill the last nested-sized gap', function (): void {
         $nested = copySource();
         $plain = copySource('app', nested: false);
