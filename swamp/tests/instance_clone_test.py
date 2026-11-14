@@ -588,6 +588,15 @@ class CloneTest(unittest.TestCase):
             result = check({**stock, **filters, "security.acls": ""})
             self.assertEqual(result.returncode, 1)
 
+    def test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code(self):
+        source = NETWORK_CHECK.read_text()
+        for broken in [source.replace("FILTERS = {", "_FILTERS = {", 1),
+                       source.replace("FILTERS = {", "FILTERS = dict(**{", 1).replace('"true"}\n', '"true"})\n', 1)]:
+            with self.subTest(source=broken[:0]):
+                calls, _, error = self.clone(network_check=broken)
+                self.assertEqual(error, "instance.nic_filters_missing\n")
+                self.assertFalse(any("copy" in call for call in calls))
+
     def test_the_three_holders_of_the_nic_filters_are_equal(self):
         # One holder per language: Python (the shared NIC check, which the native clone reads), Ansible and the Gateway.
         namespace = {}

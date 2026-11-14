@@ -61,8 +61,14 @@ def nic_filters(network_check):
     """The address filters of every Instance NIC: `FILTERS` of the shared NIC check, whose source this phase receives."""
     for node in ast.parse(network_check).body:
         if isinstance(node, ast.Assign) and [getattr(target, "id", "") for target in node.targets] == ["FILTERS"]:
-            return ast.literal_eval(node.value)
-    raise RuntimeError("instance.container_network_unsafe")
+            try:
+                filters = ast.literal_eval(node.value)
+            except ValueError:
+                break
+            if isinstance(filters, dict) and filters and all(isinstance(item, str) for pair in filters.items() for item in pair):
+                return filters
+            break
+    raise RuntimeError("instance.nic_filters_missing")
 
 
 def main():
