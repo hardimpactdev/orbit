@@ -233,7 +233,8 @@ final readonly class DirectOperation
         if ($definition === null) {
             return null;
         }
-        $recorded = $operation->state['swamp_start']['workflow'] ?? null;
+        $start = $operation->state['swamp_start'] ?? null;
+        $recorded = is_array($start) ? ($start['workflow'] ?? null) : null;
         if (is_string($recorded) && $recorded !== '') {
             return $recorded;
         }
