@@ -75,11 +75,12 @@ final readonly class TaskCheckIntent
         }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
         $ci = $hostedCi && $input->phase === TaskCheckKind::Handoff ? $group->project->handoffCheckName() : null;
-        $setup = $input->phase === TaskCheckKind::Baseline ? $this->evidence->baselineSetup($group) : [];
+        // A container workspace is a copy of the Project default, whose seed already ran the setup steps: its baseline runs none.
+        $setup = $input->phase === TaskCheckKind::Baseline && $container === null ? $this->evidence->baselineSetup($group) : [];
         $workspace = null;
         if ($container !== null) {
             TaskCopyTurn::refuseUnended($group);
-            TaskInstanceWorkspace::refuseUnavailable($ci, $setup);
+            TaskInstanceWorkspace::refuseUnavailable($ci);
             $workspace = $container->intent();
         }
         if ($ci !== null && $repository === null) {
