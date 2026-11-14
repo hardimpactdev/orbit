@@ -97,13 +97,13 @@ Port 8443 is a listener of its own. It binds only the `reverb.orbit` site, so a 
 
 ### Keys and path
 
-A private attachment writes `REVERB_PORT=8443`, for a checkout and a container alike. A checkout Instance that still has `443` from an earlier attachment keeps working, because port 443 still serves the app. Its next `env:sync` writes `8443`.
+A private attachment writes `REVERB_PORT=8443`, for a checkout and a container alike. A checkout Instance that still has `443` from an earlier attachment keeps working, because port 443 still serves the app. To move it to `8443`, run `instance:websocket:add` with the same app again: it stores `8443`. Then run `env:sync`.
 
-The app is one target of the container's [access plan](/reference/development-containers#private-names-of-the-access-plan). The plan holds the exact NIC ACL rule, route allowance and bridge endpoint to the address of `reverb.orbit` on port 8443. It also writes the name into the container's hosts file. The migrate's env check reads the same plan. It admits `REVERB_HOST=reverb.orbit` with `REVERB_PORT=8443`, and it still refuses port 443.
+The app is one target of the container's [access plan](/reference/development-containers#private-names-of-the-access-plan). The plan holds the exact NIC ACL rule, route allowance and bridge endpoint to the address of `reverb.orbit` on port 8443. It also writes the name into the container's hosts file. The migrate's env check reads the same plan. It admits `REVERB_HOST=reverb.orbit` with `REVERB_PORT=8443`, and it still refuses port 443. A container on the websocket Node itself gets no target: its traffic arrives from the bridge address, which the listener refuses, so the check refuses the move too.
 
 The publisher verifies the Orbit CA certificate of `reverb.orbit`. Verification stays on.
 
-When the container runs, `env:sync` writes the seven keys and reconciles the path. After a remove, the next `env:sync` withdraws the ACL rule, the firewall rule and the hosts line. The keys stay in the file, because `env:sync` on a container removes no key.
+When the container runs, `env:sync` writes the seven keys and reconciles the path. After a remove, the next `env:sync` withdraws the ACL rule, the firewall rule and the hosts line. The keys stay in the file, because `env:sync` on a container removes no key. `reverb.orbit` also stays in the container's `NO_PROXY` until the container is created again; with no hosts line and no rule, it reaches nothing.
 
 ## Publish on the existing public app Route
 

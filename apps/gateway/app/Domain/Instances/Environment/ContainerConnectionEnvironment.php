@@ -94,11 +94,13 @@ final readonly class ContainerConnectionEnvironment implements DirectOperationPr
                 $lines[$key] = $key.'='.InstanceEnvironmentRenderer::quote($value);
             }
         }
-        // The Instance's websocket app: its keys, as the attach stores them (docs/reference/websocket-apps.md#reach-from-a-container).
-        $websocket = WebSocketAppTarget::query()->with(['webSocketApp', 'route'])->where('instance_id', $instance->id)->first();
-        if ($websocket !== null) {
-            foreach (app(WebSocketAppEnvProjection::class)->project($websocket->webSocketApp, $websocket) as $key => $value) {
-                $lines[$key] = $key.'='.InstanceEnvironmentRenderer::quote($value);
+        // The Instance's websocket app: its keys as the attach stored them, the one source (docs/reference/websocket-apps.md#reach-from-a-container).
+        if (WebSocketAppTarget::query()->where('instance_id', $instance->id)->exists()) {
+            $stored = app(InstanceEnvironmentStore::class)->values($instance);
+            foreach (WebSocketAppEnvProjection::Keys as $key) {
+                if (isset($stored[$key])) {
+                    $lines[$key] = $key.'='.InstanceEnvironmentRenderer::quote($stored[$key]);
+                }
             }
         }
         ksort($lines, SORT_STRING);

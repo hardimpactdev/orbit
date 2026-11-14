@@ -899,6 +899,19 @@ describe('the databases of a move', function (): void {
             ->and(json_encode($operation->input))->not->toContain('reverb-secret-value');
     })->with(['no app' => [false, false], 'private app' => [true, false], 'public app' => [true, true]]);
 
+    it('admits no websocket endpoint on the container\'s own Node, whose Reverb listener refuses the bridge address', function (): void {
+        $node = containerDefaultNode();
+        $node->roles()->create(['role' => RoleName::WebSocket, 'status' => LifecycleStatus::Active]);
+        $default = migrateCheckout(containerDefaultProject(), $node);
+        $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => 'reverb-secret-value', 'credential_generation' => 1]);
+        WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $default->id]);
+
+        $container = ValidatedData::object(migrateStart($default)->input['container']);
+
+        expect($container)->not->toHaveKey('private_names')->not->toHaveKey('proxy_environment')
+            ->and($container['bridge_endpoints'])->toBe([]);
+    });
+
     it('uses the container access endpoints for the guard despite a different target projection without copying credentials', function (): void {
         $node = containerDefaultNode();
         $node->update(['lan_ip' => '192.168.50.7', 'tld' => 'private.test']);

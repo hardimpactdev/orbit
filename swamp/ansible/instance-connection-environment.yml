@@ -147,7 +147,9 @@
           register: connection_proxy_write
           changed_when: connection_proxy_write.rc == 0 and (connection_proxy_write.stdout | from_json).changed
 
+        # A run with no key to write, such as the sync after a websocket app's remove, only reconciles the path.
         - name: Write the connection keys
+          when: plan['keys'] | length > 0
           ansible.builtin.command:
             argv: [python3, -c, "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_env_keys.py') }}",
                    "{{ container.project }}", "{{ container.name }}", "{{ container.environment_file }}"]
@@ -159,6 +161,7 @@
           changed_when: connection_keys.rc == 0 and (connection_keys.stdout | from_json).status == 'changed'
 
         - name: Require a safe key result
+          when: plan['keys'] | length > 0
           ansible.builtin.assert:
             that: connection_keys.rc == 0
             fail_msg: >-
@@ -169,7 +172,9 @@
 
         - name: Keep only the public key result
           ansible.builtin.set_fact:
-            connection_result: "{{ connection_keys.stdout | from_json }}"
+            connection_result: >-
+              {{ connection_keys.stdout | from_json if plan['keys'] | length > 0
+                 else {'status': 'unchanged', 'written': [], 'added': [], 'kept': [], 'unchanged': []} }}
 
         - name: Refresh what runs only after the file changed
           when: connection_result.status == 'changed'

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Nodes\RoleName;
 use App\Domain\WireGuard\VpnSettings;
+use App\Infrastructure\WebSocket\WebSocketFootprint;
 use App\Models\DatabaseServer;
 use App\Models\Instance;
 use App\Models\Node;
@@ -90,7 +92,9 @@ final readonly class InstanceDevPorts
     public static function infrastructurePorts(Node $node): array
     {
         return [(string) $node->public_ssh_port, (string) self::EgressProxy, InstanceContainer::T3PortFirst.'-'.InstanceContainer::T3PortLast,
-            (InstanceHostIntent::ModelForwarderPort - 1).'-'.InstanceHostIntent::ModelForwarderPort, app(VpnSettings::class)->port()];
+            (InstanceHostIntent::ModelForwarderPort - 1).'-'.InstanceHostIntent::ModelForwarderPort, app(VpnSettings::class)->port(),
+            // Reverb's own listener: a container's exact path to it never falls through to the development listener.
+            ...($node->roles()->where('role', RoleName::WebSocket->value)->exists() ? [(string) WebSocketFootprint::InstancePort] : [])];
     }
 
     /**

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 use App\Actions\Instances\StartInstanceEnvironmentSyncAction;
 use App\Domain\Instances\Environment\ContainerConnectionEnvironment;
+use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\WebSocket\WebSocketAppEnvProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Processes\SystemdProcessRenderer;
@@ -178,6 +180,8 @@ it('writes an attached private websocket app\'s keys and reconciles its exact pa
     $services->roles()->create(['role' => RoleName::WebSocket, 'status' => 'active']);
     $app = WebSocketApp::query()->create(['name' => 'tool', 'app_id' => '1001', 'key' => 'reverb-key', 'secret' => CONNECTION_ENV_SECRET, 'credential_generation' => 1]);
     $target = WebSocketAppTarget::query()->create(['websocket_app_id' => $app->id, 'instance_id' => $instance->id]);
+    // The attach stores the projected keys; env:sync reads them from the store.
+    app(InstanceEnvironmentStore::class)->seedForCreate($instance, app(WebSocketAppEnvProjection::class)->project($app, $target));
     $vault = connectionEnvVault();
 
     $operation = app(ContainerConnectionEnvironment::class)->start($instance, null, null);

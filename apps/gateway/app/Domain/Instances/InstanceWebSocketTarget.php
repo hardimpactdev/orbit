@@ -31,7 +31,9 @@ final readonly class InstanceWebSocketTarget
             ->whereHas('roles', static fn ($query) => $query->where('role', RoleName::WebSocket->value)->where('status', LifecycleStatus::Active->value))
             ->orderBy('id')->first();
         $node = app(WebSocketDnsTarget::class)->node($role);
-        if (! $node instanceof Node || ! is_string($node->wireguard_ip)) {
+        // On the container's own Node the traffic arrives from the bridge address, which the listener's VPN-only guard aborts: no
+        // target, so the env check refuses an endpoint the container cannot reach.
+        if (! $node instanceof Node || ! is_string($node->wireguard_ip) || $node->id === $instance->node_id) {
             return null;
         }
 

@@ -483,7 +483,7 @@ final readonly class InstanceContainer
 
         return $endpoint === null ? null : ['host' => $endpoint['host'], 'port' => $endpoint['port'], 'docker' => false, 'name' => $endpoint['name'],
             'description' => self::WebSocketEgressDescription,
-            'rule' => $this->tcpRule($instance, $runtime, $endpoint['host'], $endpoint['port'], $endpoint['node_id'] === $runtime->node_id, 'websocket')];
+            'rule' => $this->tcpRule($instance, $runtime, $endpoint['host'], $endpoint['port'], false, 'websocket')];
     }
 
     /**

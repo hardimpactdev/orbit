@@ -127,5 +127,27 @@ class ComposedProxyWriteTest(unittest.TestCase):
         self.assertIn('skipping: [localhost]', output)
 
 
+class NoKeyRunTest(unittest.TestCase):
+    """A sync with no key to write, such as after a websocket app's remove, skips the key writer and reports unchanged."""
+
+    def test_no_key_run_skips_the_writer_and_reports_unchanged(self):
+        executable = shutil.which('ansible-playbook')
+        self.assertIsNotNone(executable, 'Pinned Ansible is required')
+        tasks = yaml.safe_load(PLAYBOOK.read_text())[1]['tasks'][0]['block']
+        names = ('Write the connection keys', 'Require a safe key result', 'Keep only the public key result')
+        selected = [next(task for task in tasks if task['name'] == name) for name in names]
+        with tempfile.TemporaryDirectory() as folder:
+            out = Path(folder) / 'out.json'
+            play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+                     'vars': {'plan': {'keys': []}, 'container': {'project': 'p', 'name': 'c', 'environment_file': '/srv/workspace/.env'}},
+                     'tasks': [*selected, {'name': 'Keep', 'ansible.builtin.copy': {'dest': str(out), 'content': '{{ connection_result | to_json }}'}}]}]
+            path = Path(folder) / 'play.yml'
+            path.write_text(yaml.safe_dump(play))
+            result = subprocess.run([executable, '-i', 'localhost,', str(path)], capture_output=True, text=True, timeout=60)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertEqual(json.loads(out.read_text()), {'status': 'unchanged', 'written': [], 'added': [], 'kept': [], 'unchanged': []})
+            self.assertRegex(result.stdout, r'Write the connection keys\] \*+\nskipping')
+
+
 if __name__ == '__main__':
     unittest.main()
