@@ -604,12 +604,18 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($held->refresh()->lock_key)->not->toBeNull();
     });
 
-    it('names the commits the group published to the read, so a published copy with no later work cancels without discard', function (): void {
+    it('names only the commits the group published with success to the read, so a published copy with no later work cancels without discard', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
         $published = str_repeat('f', 40);
         Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
             'input' => [], 'result' => ['branch' => $copy->name, 'commit' => $published], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
+        // A failed publish of this group and a publish of another group pushed nothing of this copy: neither commit reaches the read.
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'input' => [], 'result' => ['branch' => $copy->name, 'commit' => str_repeat('a', 40)], 'status' => OperationStatus::Failed, 'sequence' => 2, 'attempts' => 1]);
+        $other = copyGroup($group->project);
+        Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $other->id, 'node_id' => $copy->node_id,
+            'input' => [], 'result' => ['branch' => 'other', 'commit' => str_repeat('b', 40)], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1]);
 
         $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
 

@@ -45,13 +45,13 @@ sequenceDiagram
     %%> - no Operation holds the copy, such as its create or an earlier destroy; otherwise HTTP 409 `operation.target_busy`, naming it
     %%> - after the group's running work was asked to stop, no Operation still holds the group, such as a timed-out one whose run nothing has proven ended; otherwise HTTP 409 `operation.target_busy`, naming it, and no destroy is admitted
     %%> What it does:
-    %%> - the destroy's reads come first, outside any transaction: its replication slot check over SSH and the stop of the copy's Schedules in Swamp
+    %%> - the destroy's checks and the Schedule stop come first, outside any transaction: its replication slot check over SSH, then the stop of the copy's Schedules (`schedule.destroy` Operations and their removal in Swamp)
     %%> - then, in the destroy's one transaction, records the cancel under the group's lock key first and admits the normal `instance.destroy` of the copy with force
-    %%> - an Operation that takes the group lock first makes the record refuse with HTTP 409 `operation.target_busy`; the transaction rolls back, so a refused cancel never admits the destroy
+    %%> - an Operation that takes the group lock first makes the record refuse with HTTP 409 `operation.target_busy`; the transaction rolls back, so a refused cancel never admits the destroy; the copy's Schedules stay stopped
     %%> Result:
     %%> - the cancel is recorded as succeeded at once (R1); its result names the destroy Operation and holds the workspace read
     %%> - the destroy runs as every Instance destroy does; when it succeeds, a task that still runs and its open subtasks are `cancelled`, and the task lets go of the copy; a `failed` task stays `failed`
-    %%> - when it fails, the task runs on and keeps the copy; the next cancel admits the destroy again
+    %%> - when it fails, the task runs on and keeps the copy; the next cancel admits the destroy again; a stopped or half-removed copy may read `unknown`, so that cancel may need the discard
   else no VM and no workspace
     Note over GW: End the task at admission<br/>R1: no run
     %%> When:
