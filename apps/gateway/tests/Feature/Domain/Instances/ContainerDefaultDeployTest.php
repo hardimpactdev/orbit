@@ -191,15 +191,25 @@ it('reads a container deployment\'s commit or refusal from the result file', fun
     $commit = str_repeat('b', 40);
 
     expect($run('succeeded', json_encode(['commit' => $commit], JSON_THROW_ON_ERROR))[1])->toBe(['commit' => $commit, 'failed_step' => null, 'started' => true, 'club_key' => null])
-        ->and($run('failed', '{"error_code":"instance.container_start_failed"}', ['Start the container'])[1]['started'])->toBeFalse()
+        ->and($run('failed', '{"error_code":"instance.container_start_failed","failed_phase":"start"}', ['Prepare the container'])[1]['started'])->toBeFalse()
         ->and($run('failed', '{"error_code":"deployment.checkout_dirty"}', ['Check out in the container'])[0]['error_code'])->toBe('deployment.checkout_dirty')
-        ->and($run('failed', '{"error_code":"deployment.commit_not_on_branch"}', ['Fetch into the mirror'])[0]['error_code'])->toBe('deployment.commit_not_on_branch')
+        ->and($run('failed', '{"error_code":"deployment.commit_not_on_branch","failed_phase":"fetch"}', ['Prepare the container'])[0]['error_code'])->toBe('deployment.commit_not_on_branch')
         ->and($run('failed', '{"commit":null}', ['Run dev deploy steps-0'])[0]['error_code'])->toBe('deployment.step_failed')
-        ->and($run('failed', 'not json', ['Start the container'])[0]['error_code'])->toBe('operation.native_failed')
-        ->and($run('failed', '{"error_code":"Not A Code"}', ['Start the container'])[0]['error_code'])->toBe('operation.native_failed');
+        ->and($run('failed', 'not json', ['Prepare the container'])[0]['error_code'])->toBe('operation.native_failed')
+        ->and($run('failed', '{"error_code":"Not A Code"}', ['Prepare the container'])[0]['error_code'])->toBe('operation.native_failed');
+    // "Prepare the container" starts the container in its first phase: the container runs when `start` passed, also when a later phase
+    // was killed before it wrote a failure (no `failed_phase`); a result without a passed start leaves the power state as it was.
+    expect($run('failed', '{"error_code":"deployment.commit_not_on_branch","failed_phase":"fetch","phases_passed":["start"]}', ['Prepare the container'])[1]['started'])->toBeTrue()
+        ->and($run('failed', '{"error_code":"instance.container_fleet_drift","failed_phase":"fleet_start","phases_passed":["start"]}', ['Prepare the container'])[1]['started'])->toBeTrue()
+        ->and($run('failed', '{"commit":null,"club_key":"changed","phases_passed":["start"]}', ['Prepare the container'])[1])->toMatchArray(['started' => true, 'club_key' => 'changed'])
+        ->and($run('failed', '{"commit":null,"club_key":"changed","phases_passed":["start"]}', ['Prepare the container'])[0]['error_code'])->toBe('operation.native_failed')
+        ->and($run('failed', '{"error_code":"instance.container_start_failed","failed_phase":"start","phases_passed":[]}', ['Prepare the container'])[1]['started'])->toBeFalse()
+        ->and($run('failed', 'not json', ['Prepare the container'])[1]['started'])->toBeFalse()
+        ->and($run('failed', '{"error_code":"instance.container_processes_failed","failed_phase":"processes"}', ['Finish the container'])[1]['started'])->toBeTrue()
+        ->and($run('failed', 'not json', ['Write the container intent'])[1]['started'])->toBeFalse();
     // A Process that did not become active is named in the failure and in the payload.
     [$data, $payload] = $run('failed', '{"error_code":"instance.container_processes_failed","detail":"Not active: orbit-process-9-mailer.service","units_inactive":["orbit-process-9-mailer.service"]}',
-        ['Install the Processes']);
+        ['Finish the container']);
     expect($data['failure']['detail'])->toBe('Not active: orbit-process-9-mailer.service')
         ->and($payload['units_inactive'])->toBe(['orbit-process-9-mailer.service']);
 });
@@ -279,7 +289,7 @@ function deployAndFinish(Instance $instance, string $status, string $commit): Op
     app(InstanceDeployProjection::class)->apply($operation, ['status' => $status, 'run_id' => "run-{$commit}", 'started_at' => now()->toIso8601String(),
         'finished_at' => now()->toIso8601String(), 'result' => ['steps' => $status === 'succeeded'
             ? ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]] : [],
-            'summary' => ['failed_steps' => $status === 'succeeded' ? [] : ['Install the Processes']]]]);
+            'summary' => ['failed_steps' => $status === 'succeeded' ? [] : ['Finish the container']]]]);
 
     return $operation->refresh();
 }
@@ -989,17 +999,18 @@ it('names the failed fleet step and its code, and keeps the code of the failed p
     $run = static fn (string $file, array $failed): array => ContainerDeployOutcome::from(['status' => 'failed', 'result' => [
         'steps' => ['Read the container result' => ['stdout' => $file]], 'summary' => ['failed_steps' => $failed]]]);
 
-    [$data, $payload] = $run('{"error_code":"instance.container_fleet_refresh_failed"}', ['Refresh the inner fleet']);
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_refresh_failed","failed_phase":"fleet_refresh"}', ['Finish the container']);
     expect($data['error_code'])->toBe('instance.container_fleet_refresh_failed')
-        ->and($payload['failed_step'])->toBe('Refresh the inner fleet')
+        ->and($payload['failed_step'])->toBe('Finish the container')
         ->and($payload['started'])->toBeTrue();
-    [$data, $payload] = $run('{"error_code":"instance.container_fleet_start_failed"}', ['Check the inner fleet']);
-    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Check the inner fleet')
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_start_failed","failed_phase":"fleet_start","phases_passed":["start"]}', ['Prepare the container']);
+    expect($data['error_code'])->toBe('instance.container_fleet_start_failed')->and($payload['failed_step'])->toBe('Prepare the container')
+        ->and($payload['started'])->toBeTrue()
         ->and($payload)->not->toHaveKey('fleet_drift');
     // A refused check names each difference; nothing changed, so no restore ran.
-    [$data, $payload] = $run('{"error_code":"instance.container_fleet_drift","fleet_drift":["nested-gateway config raw.idmap"]}', ['Check the inner fleet']);
+    [$data, $payload] = $run('{"error_code":"instance.container_fleet_drift","fleet_drift":["nested-gateway config raw.idmap"],"failed_phase":"fleet_start"}', ['Prepare the container']);
     expect($data['error_code'])->toBe('instance.container_fleet_drift')
-        ->and($payload['failed_step'])->toBe('Check the inner fleet')
+        ->and($payload['failed_step'])->toBe('Prepare the container')
         ->and($payload['fleet_drift'])->toBe(['nested-gateway config raw.idmap']);
 });
 
@@ -1009,17 +1020,17 @@ it('records why a fleet phase failed, adds a restored fleet that did not start, 
         'result' => ['steps' => ['Read the container result' => ['stdout' => json_encode($file, JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => $failed]]]);
     $doctor = "Check Doctor: Readiness check 'doctor' failed after 300 s: {\"data\":{\"healthy\":false}}";
 
-    [$data] = $run(['error_code' => 'instance.container_fleet_start_failed', 'detail' => $doctor], ['Check the inner fleet']);
-    expect($data['failure'])->toBe(['failed_step' => 'Check the inner fleet', 'detail' => $doctor, 'stderr_recorded' => true]);
+    [$data] = $run(['error_code' => 'instance.container_fleet_start_failed', 'detail' => $doctor, 'failed_phase' => 'fleet_start'], ['Prepare the container']);
+    expect($data['failure'])->toBe(['failed_step' => 'Prepare the container', 'detail' => $doctor, 'stderr_recorded' => true]);
     // The restored fleet did not start either: the first failure stays, and the detail says so.
     [$data, $payload] = $run(['error_code' => 'instance.container_fleet_refresh_failed', 'detail' => 'Migrate the nested Gateway: non-zero return code',
-        'restore_failure' => 'The inner fleet of the restored seed did not start: Check the agents: x'], ['Refresh the inner fleet', 'Start the restored fleet']);
-    expect($data['error_code'])->toBe('instance.container_fleet_refresh_failed')->and($payload['failed_step'])->toBe('Refresh the inner fleet')
+        'restore_failure' => 'The inner fleet of the restored seed did not start: Check the agents: x'], ['Finish the container', 'Start the restored fleet']);
+    expect($data['error_code'])->toBe('instance.container_fleet_refresh_failed')->and($payload['failed_step'])->toBe('Finish the container')
         ->and($data['failure']['detail'])->toBe('Migrate the nested Gateway: non-zero return code The inner fleet of the restored seed did not start: Check the agents: x');
     [$data] = $run(['error_code' => 'deployment.checkout_dirty', 'restore_failure' => 'The inner fleet of the restored seed did not start: y'], ['Check out in the container']);
     expect($data['failure']['detail'])->toBe('Command exited with code 2 The inner fleet of the restored seed did not start: y');
     // A credential-shaped value in a message is redacted.
-    [$data] = $run(['error_code' => 'instance.container_fleet_refresh_failed', 'detail' => 'Migrate: password=hunter2-secret-value'], ['Refresh the inner fleet']);
+    [$data] = $run(['error_code' => 'instance.container_fleet_refresh_failed', 'detail' => 'Migrate: password=hunter2-secret-value'], ['Finish the container']);
     expect($data['failure']['detail'])->not->toContain('hunter2-secret-value');
     // A normal container phase writes no detail: the native step's failure stays as it was.
     [$data, $payload] = $run(['error_code' => 'deployment.checkout_dirty'], ['Check out in the container']);
@@ -1035,13 +1046,13 @@ it('names a failed seed in the Operation and leaves an Activity problem when the
     $detail = "No free ID range for the new seed: every isolated range of root's subordinate IDs is held by a container. The old seed stays.";
 
     app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-        'failure' => ['failed_step' => 'Keep the current seed', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false], 'result' => [
-            'steps' => ['Read the container result' => ['stdout' => json_encode(['error_code' => 'instance.container_seed_failed', 'detail' => $detail], JSON_THROW_ON_ERROR)]],
-            'summary' => ['failed_steps' => ['Keep the current seed']]]]);
+        'failure' => ['failed_step' => 'Prepare the container', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false], 'result' => [
+            'steps' => ['Read the container result' => ['stdout' => json_encode(['error_code' => 'instance.container_seed_failed', 'detail' => $detail, 'failed_phase' => 'seed'], JSON_THROW_ON_ERROR)]],
+            'summary' => ['failed_steps' => ['Prepare the container']]]]);
 
     $operation->refresh();
     expect($operation->error_code)->toBe('instance.container_seed_failed')
-        ->and($operation->state['native_failure'])->toBe(['failed_step' => 'Keep the current seed', 'detail' => $detail, 'stderr_recorded' => true]);
+        ->and($operation->state['native_failure'])->toBe(['failed_step' => 'Prepare the container', 'detail' => $detail, 'stderr_recorded' => true]);
     $rows = Activity::query()->where('description', 'instance.refresh_failed')->get();
     expect($rows->count())->toBe($problem ? 1 : 0);
     if ($problem) {

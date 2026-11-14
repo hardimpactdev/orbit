@@ -17,6 +17,9 @@ final readonly class ContainerDeployOutcome
 {
     public const string ResultStep = 'Read the container result';
 
+    /** The step whose first phase starts the container (docs/cli/instance/deploy.mmd). */
+    public const string PrepareStep = 'Prepare the container';
+
     /**
      * @param  array<string, mixed>  $data
      * @param  list<string>  $secrets  Values the recorded failure detail must not show: the Instance's environment and the Swamp tokens.
@@ -43,8 +46,12 @@ final readonly class ContainerDeployOutcome
         } elseif ($status === 'failed') {
             $step = $failed[0] ?? 'native_execution';
             $payload['failed_step'] = $step;
-            // A deployment that failed before the container started leaves its power state as it was.
-            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent', 'Start the container'], true);
+            // A deployment that failed before the container started leaves its power state as it was. "Prepare the container" starts
+            // it in its first phase, `start`; each phase that passed writes itself into `phases_passed` as it ends, also when a later
+            // phase is killed before it can write a failure.
+            $passed = is_array($file['phases_passed'] ?? null) ? $file['phases_passed'] : [];
+            $payload['started'] = ! in_array($step, ['native_execution', 'Write the container intent'], true)
+                && ($step !== self::PrepareStep || in_array('start', $passed, true));
             $code = match (true) {
                 str_starts_with($step, 'Run dev deploy steps') => 'deployment.step_failed',
                 is_string($file['error_code'] ?? null) && preg_match('/\A[a-z]+\.[a-z_]+\z/', $file['error_code']) === 1 => $file['error_code'],

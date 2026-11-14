@@ -9,6 +9,8 @@ use App\Domain\Doctor\FactDoctor;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
@@ -580,4 +582,186 @@ describe('the id map size', function (): void {
         expect(InstanceRuntime::query()->where('instance_id', $nested->id)->value('idmap_size'))->toBe(101000000)
             ->and(InstanceRuntime::query()->where('instance_id', $normal->id)->value('idmap_size'))->toBeNull();
     });
+});
+
+/**
+ * The real start guard (swamp/ansible/instance_network.py with instance_nested.py, composed as instance-network-nic-check.yml composes
+ * them) over a container read, with the allowed devices, config and volumes that the Ansible start passes from the intent. A fake
+ * `incus` answers the guard's own volume read. Returns the exit code and what the guard named.
+ *
+ * @param  array<string, mixed>  $intent  the intent's `container`
+ * @param  array<string, string>  $config  the container's effective config
+ * @param  array<string, array<string, string>>  $devices  the container's effective devices
+ * @param  array<string, string>|null  $volume  the custom volume's config on the Node, if any
+ * @return array{0: int, 1: string}
+ */
+function windowGuard(array $intent, array $config, array $devices, ?array $volume): array
+{
+    $folder = sys_get_temp_dir().'/window-guard-'.bin2hex(random_bytes(4));
+    mkdir($folder);
+    file_put_contents($folder.'/volume.json', json_encode(['config' => $volume ?? []], JSON_THROW_ON_ERROR));
+    file_put_contents($folder.'/incus', "#!/bin/sh\ncase \"\$*\" in *'/volumes/custom/'*) cat '{$folder}/volume.json';; *) echo '{\"config\": {}}';; esac\n");
+    chmod($folder.'/incus', 0755);
+    $ansible = base_path('../../swamp/ansible');
+    $source = explode('if __name__ == "__main__":', (string) file_get_contents($ansible.'/instance_network.py'))[0]
+        .file_get_contents($ansible.'/instance_nested.py');
+    $volumes = isset($intent['inner_volume'])
+        ? [$intent['inner_volume']['device'] => [...$intent['inner_volume']['config'], 'size' => $intent['inner_volume']['size']]] : [];
+    $guard = new Process(['python3', '-c', $source, 'orbitinst0', 'eth0', json_encode($intent['allowed_devices'], JSON_THROW_ON_ERROR),
+        json_encode($intent['config'], JSON_THROW_ON_ERROR), json_encode((object) $volumes, JSON_THROW_ON_ERROR)],
+        null, ['PATH' => $folder.':'.getenv('PATH')]);
+    $guard->setInput(json_encode(['name' => $intent['name'], 'project' => $intent['project'],
+        'expanded_config' => [...$config, 'volatile.uuid' => 'u', 'image.os' => 'ubuntu'], 'expanded_devices' => $devices], JSON_THROW_ON_ERROR));
+    $guard->run();
+    array_map(unlink(...), glob($folder.'/*') ?: []);
+    rmdir($folder);
+
+    return [(int) $guard->getExitCode(), trim($guard->getOutput())];
+}
+
+/**
+ * Instance 2454's shape before the window: a nested default with the full size and no inner volume, a seed, and one old copy.
+ *
+ * @return array{0: Node, 1: Instance, 2: Instance}
+ */
+function windowDefault(): array
+{
+    $node = nestedSwitch(containerDefaultNode(), true);
+    $default = recordedNestedInstance(otherProject('window', true), $node);
+    InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('a', 40)]);
+    $old = recordedNestedInstance($default->project, $node, 'old', $default);
+
+    return [$node, $default, $old];
+}
+
+describe('the inner volume of a converted default', function (): void {
+    it('records the volume the product would reserve, so the intent, the start guard, the seed and each new clone take the converted shape', function (): void {
+        [$node, $default, $old] = windowDefault();
+        $containers = app(InstanceContainer::class);
+        $volume = 'inner-'.$default->id;
+        expect($default->runtime()->value('inner_volume'))->toBeNull()->and($old->runtime()->value('inner_volume'))->toBeNull();
+
+        // The two Gateway lines of the window (docs/reference/development-containers.md#convert-a-default).
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $default->id, 'size' => '1165536'])->assertSuccessful();
+        $idmapOnly = $containers->intent($default, $default->runtime()->firstOrFail());
+        $guard = ['devices' => ['inner-pool' => ['type' => 'disk', 'pool' => 'orbit-instances', 'source' => $volume, 'path' => '/srv/inner-pool']],
+            'volume' => ['project' => 'orbit-instances-nested', 'pool' => 'orbit-instances', 'name' => $volume, 'config' => ['zfs.block_mode' => 'true',
+                'block.filesystem' => 'btrfs', 'block.mount_options' => 'user_subvol_rm_allowed,discard', 'security.shifted' => 'true', 'size' => '30GiB']],
+            'inner_pool' => ['name' => 'inner', 'source' => '/srv/inner-pool/pool']];
+        $this->artisan('gateway:instance-inner-volume', ['instance' => (string) $default->id, 'volume' => $volume])
+            ->expectsOutput(json_encode(['instance_id' => $default->id, 'inner_volume' => $volume, 'from' => null, 'seed_commit' => null, 'start_guard' => $guard], JSON_THROW_ON_ERROR))
+            ->expectsOutputToContain("incus storage volume show orbit-instances {$volume} --project orbit-instances-nested; incus config device show instance-{$default->id} --project orbit-instances-nested")
+            ->assertSuccessful();
+        $runtime = $default->runtime()->firstOrFail();
+
+        // (a) The intent carries the inner volume and the small map, as a new nested default's does.
+        $intent = $containers->intent($default, $runtime);
+        expect($runtime->only(['inner_volume', 'idmap_size', 'seed_commit']))->toBe(['inner_volume' => $volume, 'idmap_size' => 1165536, 'seed_commit' => null])
+            ->and($intent['config']['security.idmap.size'])->toBe('1165536')
+            ->and($intent['inner_volume'])->toBe(['name' => $volume, 'pool' => 'orbit-instances', 'size' => '30GiB', 'config' => array_diff_key($guard['volume']['config'], ['size' => true]),
+                'device' => 'inner-pool', 'path' => '/srv/inner-pool', 'inner_pool' => $guard['inner_pool']])
+            ->and($intent['allowed_devices']['inner-pool'])->toBe($guard['devices']['inner-pool']);
+
+        // (b) The start guard admits exactly the converted shape and names each half-converted one.
+        $converted = $intent['allowed_devices'];
+        $plain = array_diff_key($converted, ['inner-pool' => true]);
+        $onNode = $guard['volume']['config'];
+        $small = $intent['config'];
+        $full = [...$small, 'security.idmap.size' => '101000000'];
+        expect(windowGuard($intent, $small, $converted, $onNode))->toBe([0, ''])
+            ->and(windowGuard($idmapOnly, $small, $converted, $onNode))->toBe([1, 'inner-pool'])
+            ->and(windowGuard($intent, $small, $plain, null))->toBe([1, 'inner-pool'])
+            ->and(windowGuard($intent, $full, $converted, $onNode))->toBe([1, 'config security.idmap.size'])
+            ->and(windowGuard($intent, $small, $converted, [...$onNode, 'size' => '20GiB']))->toBe([1, 'volume inner-pool size']);
+
+        // (c) Clones refuse until a passed deployment has a new seed; that deployment's intent carries the volume, so it takes the pair.
+        expect(placementRefusal(fn () => app(DevelopmentInstanceCreateAdmission::class)->assertSeed($default->refresh())))->toBe('instance.default_missing 409');
+        $default->forceFill(['status' => 'active', 'source_layout' => 'checkout'])->save();
+        expect(app(InstanceDeploymentIntent::class)->snapshot($default)['container']['inner_volume'])->toBe($intent['inner_volume']);
+        $runtime->update(['seed_commit' => str_repeat('b', 40)]);
+
+        // (d) A clone made after it gets its own volume, copied from the default's; the copy made before keeps its own shape.
+        $new = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $node->id, 'name' => 'new', 'checkout_path' => '/test/window/new']);
+        $newRuntime = $containers->reserve($new, $node, $default->refresh());
+        $newIntent = $containers->intent($new, $newRuntime);
+        expect($newRuntime->only(['inner_volume', 'idmap_size']))->toBe(['inner_volume' => 'inner-'.$new->id, 'idmap_size' => 1165536])
+            ->and($newIntent['inner_volume']['name'])->toBe('inner-'.$new->id)
+            ->and($newIntent['allowed_devices']['inner-pool']['source'])->toBe('inner-'.$new->id)
+            ->and($newIntent['clone']['inner_volume'])->toBe($volume)
+            ->and(windowGuard($newIntent, $newIntent['config'], $newIntent['allowed_devices'], $onNode))->toBe([0, '']);
+        $oldRuntime = $old->runtime()->firstOrFail();
+        $oldIntent = $containers->intent($old, $oldRuntime);
+        expect($oldRuntime->only(['inner_volume', 'idmap_size']))->toBe(['inner_volume' => null, 'idmap_size' => 101000000])
+            ->and($oldIntent)->not->toHaveKey('inner_volume')
+            ->and($oldIntent['config']['security.idmap.size'])->toBe('101000000')
+            ->and(windowGuard($oldIntent, $oldIntent['config'], $oldIntent['allowed_devices'], null))->toBe([0, '']);
+    });
+
+    it('clears the record for a rollback, with the seed, once no copy has an inner volume', function (): void {
+        [$node, $default] = windowDefault();
+        $volume = 'inner-'.$default->id;
+        $this->artisan('gateway:instance-inner-volume', ['instance' => (string) $default->id, 'volume' => $volume])->assertSuccessful();
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('b', 40)]);
+        // A repeat after the deployment's seed changes nothing and keeps that seed.
+        $this->artisan('gateway:instance-inner-volume', ['instance' => (string) $default->id, 'volume' => $volume])
+            ->expectsOutputToContain('instance.inner_volume_unchanged')->assertFailed();
+        expect(InstanceRuntime::query()->where('instance_id', $default->id)->value('seed_commit'))->toBe(str_repeat('b', 40));
+        $copy = Instance::query()->create(['project_id' => $default->project_id, 'node_id' => $node->id, 'name' => 'new', 'checkout_path' => '/test/window/new']);
+        app(InstanceContainer::class)->reserve($copy, $node, $default->refresh());
+
+        $this->artisan('gateway:instance-inner-volume', ['instance' => (string) $default->id, '--clear' => true])
+            ->expectsOutputToContain('instance.inner_volume_copies_with_volume')->assertFailed();
+        expect(InstanceRuntime::query()->where('instance_id', $default->id)->first()?->only(['inner_volume', 'seed_commit']))
+            ->toBe(['inner_volume' => $volume, 'seed_commit' => str_repeat('b', 40)]);
+
+        InstanceRuntime::query()->where('instance_id', $copy->id)->delete();
+        $this->artisan('gateway:instance-inner-volume', ['instance' => (string) $default->id, '--clear' => true])
+            ->expectsOutput(json_encode(['instance_id' => $default->id, 'inner_volume' => null, 'from' => $volume, 'seed_commit' => null,
+                'start_guard' => ['devices' => [], 'volume' => null, 'inner_pool' => null]], JSON_THROW_ON_ERROR))
+            ->expectsOutputToContain('The start guard now refuses a disk inner-pool on instance-'.$default->id)
+            ->assertSuccessful();
+        $runtime = $default->runtime()->firstOrFail();
+        expect($runtime->only(['inner_volume', 'seed_commit']))->toBe(['inner_volume' => null, 'seed_commit' => null])
+            ->and(app(InstanceContainer::class)->intent($default, $runtime))->not->toHaveKey('inner_volume');
+    });
+
+    it('refuses an Instance, a name or a moment the record does not fit, and changes nothing', function (string $case, string $code): void {
+        [$node, $default] = windowDefault();
+        $arguments = ['instance' => (string) $default->id, 'volume' => 'inner-'.$default->id];
+        match ($case) {
+            'both a name and --clear' => $arguments['--clear'] = true,
+            'neither a name nor --clear' => $arguments = ['instance' => (string) $default->id],
+            'another name' => $arguments['volume'] = 'inner-2454-b',
+            'a copy' => $arguments = ['instance' => (string) recordedNestedInstance($default->project, $node, 'feature', $default)->id,
+                'volume' => 'inner-'.(Instance::query()->max('id'))],
+            'a normal default' => (function () use ($node, &$arguments): void {
+                $normal = Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal']);
+                app(InstanceContainer::class)->reserve($normal, $node);
+                $arguments = ['instance' => (string) $normal->id, 'volume' => 'inner-'.$normal->id];
+            })(),
+            'a default without the nested flag' => $default->project->update(['nested_fleet' => false]),
+            '--clear without a record' => $arguments = ['instance' => (string) $default->id, '--clear' => true],
+            'an open Operation' => DB::table('operations')->insert(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id,
+                'node_id' => $node->id, 'status' => 'running', 'input' => '{}', 'state' => '{}', 'created_at' => now(), 'updated_at' => now()]),
+            'an open copy creation' => DB::table('operations')->insert(['kind' => 'instance.create', 'target_type' => 'instance',
+                'target_id' => recordedNestedInstance($default->project, $node, 'copying', $default)->id,
+                'node_id' => $node->id, 'status' => 'running', 'input' => '{}', 'state' => '{}', 'created_at' => now(), 'updated_at' => now()]),
+            default => null,
+        };
+        $this->artisan('gateway:instance-inner-volume', $arguments)
+            ->expectsOutputToContain($case === 'another name' ? $code.': The volume of this default is inner-'.$default->id.'.' : $code)
+            ->assertFailed();
+        expect(InstanceRuntime::query()->whereNotNull('inner_volume')->exists())->toBeFalse()
+            ->and(InstanceRuntime::query()->where('instance_id', $default->id)->value('seed_commit'))->toBe(str_repeat('a', 40));
+    })->with([
+        'both a name and --clear' => ['both a name and --clear', 'instance.inner_volume_arguments_invalid'],
+        'neither a name nor --clear' => ['neither a name nor --clear', 'instance.inner_volume_arguments_invalid'],
+        'another name' => ['another name', 'instance.inner_volume_name_invalid'],
+        'a copy' => ['a copy', 'instance.inner_volume_not_default'],
+        'a normal default' => ['a normal default', 'instance.inner_volume_not_nested'],
+        'a default without the nested flag' => ['a default without the nested flag', 'instance.inner_volume_nested_flag_off'],
+        'an open Operation' => ['an open Operation', 'operation.target_busy'],
+        'an open copy creation' => ['an open copy creation', 'instance.clone_in_flight'],
+        '--clear without a record' => ['--clear without a record', 'instance.inner_volume_unchanged'],
+    ]);
 });

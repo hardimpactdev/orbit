@@ -1,9 +1,10 @@
 order = 250
-source_sha256 = "ee80c3c86b5e69e7bb950230993133d008bce504d49c9d3110dc6e91558c2143"
+source_sha256 = "53c9c0a9d51b95fcec2d8e799905225f9668b106d738707bc9604975793ad939"
 cases = [
   "one candidate becomes one ordered backlog task through the Gateway, never a live start",
   "baseline is one task and repeated scans create no second baseline",
   "lost create reply is adopted by exact brief and never posted twice",
+  "a lost create reply is adopted from a later page of the task list",
   "uncertain absent creates stop for reconciliation; duplicates also stop",
   "website Project and automatic merge settings cannot receive parity tasks",
   "current upstream creates no group and does not call the Gateway",

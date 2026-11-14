@@ -1474,6 +1474,48 @@ class InnerVolumeGuardTest(unittest.TestCase):
         self.assertEqual(self.check(self.INNER, allowed=False), "volume inner-pool")
 
 
+class RootSizeGuardTest(unittest.TestCase):
+    """The nested guard's root disk rule (docs/reference/development-containers.md#the-root-disk): every key but `size` is exact; an
+    allowed size admits a `<n>GiB` of at least that size; an allowed root without a size admits only a root without one."""
+
+    def check(self, has, allowed):
+        namespace = {}
+        exec(compile(NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0]
+                     + (NETWORK_CHECK.parent / "instance_nested.py").read_text().split('if __name__ == "__main__":')[0], "instance_nested.py", "exec"),
+             namespace)
+        root = lambda size, **keys: {"type": "disk", "path": "/", "pool": "orbit-instances", **keys, **({} if size is None else {"size": size})}
+        own = has if isinstance(has, dict) else root(has)
+        return namespace["nested_unsafe_device"]({"expanded_config": {}, "expanded_devices": {"root": own}}, {"root": root(allowed)}, {})
+
+    def test_admits_the_probe_profile_root_a_copy_and_a_grown_default(self):
+        # One subtest per shape: the CI budget of this file holds two more cases (.github/ci/fixtures/swamp/tests/instance_clone_test.py.toml).
+        shapes = {"host clone probe: the profile root, no size on either side": (None, None),
+                  "normal nested copy: 40GiB at 40GiB": ("40GiB", "40GiB"),
+                  "grown default: 80GiB at its 80GiB intent": ("80GiB", "80GiB"),
+                  "grown default after the setting went down: 80GiB at 64GiB": ("80GiB", "64GiB")}
+        for shape, (has, allowed) in shapes.items():
+            with self.subTest(shape=shape):
+                self.assertEqual(self.check(has, allowed), "")
+
+    def test_refuses_a_size_where_none_is_allowed_a_missing_smaller_or_odd_size_and_another_key(self):
+        disk = {"type": "disk", "path": "/", "pool": "orbit-instances"}
+        shapes = {"a size where the allowed root has none": ("40GiB", None),
+                  "no size where one is allowed": (None, "40GiB"),
+                  "a smaller size": ("40GiB", "80GiB"),
+                  "an odd own size": ("50GB", "40GiB"),
+                  "an odd allowed size": ("80GB", "80GB"),
+                  "a leading zero": ("040GiB", "40GiB"),
+                  "an empty allowed size": ("40GiB", ""),
+                  "full-width digits": ("\uff14\uff10GiB", "40GiB"),
+                  "another pool, no size": ({**disk, "pool": "other"}, None),
+                  "an added key, no size": ({**disk, "readonly": "true"}, None),
+                  "another pool, with a size": ({**disk, "pool": "other", "size": "40GiB"}, "40GiB"),
+                  "an added key, with a size": ({**disk, "readonly": "true", "size": "40GiB"}, "40GiB")}
+        for shape, (has, allowed) in shapes.items():
+            with self.subTest(shape=shape):
+                self.assertEqual(self.check(has, allowed), "root")
+
+
 class T3PhaseTest(unittest.TestCase):
     """The `t3` phase runs the agent's guest phase with the model key on stdin, then T3's first start without it, in one call."""
 

@@ -281,7 +281,7 @@ describe('the result of a start', function (): void {
         'written, serve not restarted' => [['commit' => str_repeat('c', 40), 'club_key' => 'changed_serve_pending'], 'succeeded', [], 'written_serve_not_restarted'],
         'unchanged' => [['commit' => str_repeat('c', 40), 'club_key' => 'unchanged'], 'succeeded', [], 'unchanged'],
         'the run delivered nothing' => [['commit' => str_repeat('c', 40)], 'succeeded', [], 'missing'],
-        'refused' => [['error_code' => 'instance.nested_club_key_unsafe_transfer'], 'failed', ['Start the container'], 'refused'],
+        'refused' => [['error_code' => 'instance.nested_club_key_unsafe_transfer', 'failed_phase' => 'start'], 'failed', ['Prepare the container'], 'refused'],
     ]);
 
     it('reports on a refresh what each part did, and nothing for a run without a refresh', function (): void {

@@ -162,6 +162,7 @@ describe('task transport', function (): void {
     it('puts list filters in the query and omits absent ones', function (): void {
         expect(new ListTasksRequest()->query()->all())->toBe([])
             ->and(new ListTasksRequest(4, 'backlog')->query()->all())->toBe(['project_id' => 4, 'status' => 'backlog'])
+            ->and(new ListTasksRequest(limit: 50, cursor: '120')->query()->all())->toBe(['limit' => 50, 'cursor' => '120'])
             ->and(new ListTaskQuestionsRequest()->query()->all())->toBe([])
             ->and(new ListTaskQuestionsRequest(4, 'contract_gap', 'answered', '2026-10-07T00:00:00Z')->query()->all())
             ->toBe(['project_id' => 4, 'cause' => 'contract_gap', 'status' => 'answered', 'since' => '2026-10-07T00:00:00Z']);
@@ -221,6 +222,16 @@ describe('task responses from recorded Gateway fixtures', function (): void {
         } catch (GatewayApiException $exception) {
             expect($exception->errorCode())->toBe('tasks.assistance_subtask_open');
         }
+    });
+
+    it('reads the next cursor of a page, and none on the last page', function (): void {
+        $page = task_fixture_send('task-list/next-page', new ListTasksRequest(limit: 1));
+        $last = task_fixture_send('task-list/default', new ListTasksRequest);
+
+        expect($page)->toBeInstanceOf(TaskGroupsResponse::class)
+            ->and($page->nextCursor)->toBe('4')->and($page->toArray()['next_cursor'])->toBe('4')
+            ->and($last)->toBeInstanceOf(TaskGroupsResponse::class)
+            ->and($last->nextCursor)->toBeNull()->and($last->toArray())->toHaveKey('next_cursor', null);
     });
 
     it('maps each recorded success to its typed DTO', function (string $fixture, GatewayRequest $request, string $class): void {
@@ -821,7 +832,13 @@ it('maps the mode, its source and the publication of a task copy\'s group, and l
         ->and($group->publication?->state)->toBe('waiting_for_release')
         ->and($group->toArray())->toMatchArray(['pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication])
         ->and($plain->publication)->toBeNull()
-        ->and($plain->toArray())->not->toHaveKey('publication');
+        ->and($plain->toArray())->not->toHaveKey('publication')->not->toHaveKey('pr_mode');
+});
+
+it('keeps the mode of a task copy\'s list row, which carries no publication', function (): void {
+    $row = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-list/default')[0], 'pr_mode' => 'pr_when_done', 'pr_mode_source' => 'group'], 'request-id');
+
+    expect($row->toArray())->toMatchArray(['pr_mode' => 'pr_when_done', 'pr_mode_source' => 'group'])->not->toHaveKey('publication');
 });
 
 it('maps the releases of task:status', function (): void {

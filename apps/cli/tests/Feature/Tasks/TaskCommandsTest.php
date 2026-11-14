@@ -92,6 +92,10 @@ describe('omitted and invalid input', function (): void {
         'agent show with invalid thread' => ['task:agent:show', ['task' => '1', 'session' => 'x'], 'task.agent_thread_invalid'],
         'list with invalid project' => ['task:list', ['--project' => '0'], 'task.project_invalid'],
         'list with unknown status' => ['task:list', ['--status' => 'queued'], 'task.status_invalid'],
+        'list with a limit of 0' => ['task:list', ['--limit' => '0'], 'input.invalid'],
+        'list with a limit over 100' => ['task:list', ['--limit' => '101'], 'input.invalid'],
+        'list with a word for a cursor' => ['task:list', ['--cursor' => 'next'], 'input.invalid'],
+        'subtask list with a page' => ['task:list', ['--parent' => '1', '--limit' => '5'], 'input.invalid'],
         'questions with invalid project' => ['task:question:list', ['--project' => '0'], 'task.project_invalid'],
         'questions with unknown cause' => ['task:question:list', ['--cause' => 'nope'], 'task.cause_invalid'],
         'questions with unknown status' => ['task:question:list', ['--status' => 'queued'], 'task.status_invalid'],
@@ -235,6 +239,17 @@ describe('requests', function (): void {
             && $request->query()->all() === ['project_id' => 4, 'status' => 'settling']);
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskCommentRequest
             && (string) $request->body() === '{"type":"assistance_requested","body":"Stuck.","author":"nick","agent_thread_id":9}');
+    });
+
+    it('pages the list with --limit and --cursor and names the next cursor', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-list/next-page'));
+
+        expect(Artisan::call('task:list', ['--limit' => '1', '--cursor' => '50', '--no-interaction' => true]))->toBe(0)
+            ->and(Artisan::output())->toContain('More task groups: --cursor=4');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest && $request->query()->all() === ['limit' => 1, 'cursor' => '50']);
+
+        expect(Artisan::call('task:list', ['--limit' => '1', '--json' => true, '--no-interaction' => true]))->toBe(0)
+            ->and(json_decode(Artisan::output(), true))->toMatchArray(['next_cursor' => '4']);
     });
 
     it('accepts the VM review wait as a list filter', function (): void {
@@ -522,13 +537,29 @@ describe('requests', function (): void {
 describe('prompts', function (): void {
     it('selects a group by its stable ID from the offered statuses', function (): void {
         $mock = task_prompt_mock();
-        [$status, $display] = task_prompt_run('select-backlog', [Key::DOWN, Key::ENTER]);
+        [$status, $display] = task_prompt_run('select-backlog', [Key::ENTER]);
 
         expect($status)->toBe(0)
             ->and($display)->toContain('selected 3')
             ->not->toContain('Settling feature');
         $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest
-            && $request->query()->all() === ['status' => 'backlog']);
+            && $request->query()->all() === ['status' => 'backlog', 'limit' => 100]);
+    });
+
+    it('reads every page of the list and each offered status, newest first', function (): void {
+        $mock = task_prompt_mock();
+        [$status, $display] = task_prompt_run('select-any', [Key::DOWN, Key::DOWN, Key::ENTER]);
+
+        expect($status)->toBe(0)->and($display)->toContain('selected 1')
+            ->and(strpos($display, 'Settling feature'))->toBeLessThan(strpos($display, 'Second backlog feature'));
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest && $request->query()->all() === ['limit' => 100]);
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest && $request->query()->all() === ['limit' => 100, 'cursor' => '3']);
+
+        $mock = task_prompt_mock();
+        [$status, $display] = task_prompt_run('select-backlog-or-settling', [Key::ENTER]);
+
+        expect($status)->toBe(0)->and($display)->toContain('selected 5')->toContain('Backlog feature');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest && $request->query()->all() === ['status' => 'settling', 'limit' => 100]);
     });
 
     it('leaves out excluded statuses and stops on an empty list', function (): void {
@@ -599,10 +630,17 @@ function task_prompt_mock(): MockClient
     ];
 
     return MockClient::global([
-        ListTasksRequest::class => static fn ($pending): MockResponse => MockResponse::make(['data' => array_values(array_filter(
-            [$group(1, 'Backlog feature', 'backlog'), $group(3, 'Second backlog feature', 'backlog'), $group(5, 'Settling feature', 'settling')],
-            static fn (array $row): bool => ! isset($pending->getRequest()->query()->all()['status']) || $row['status'] === $pending->getRequest()->query()->all()['status'],
-        )), 'meta' => $meta]),
+        // Pages of at most two groups, newest first, so a third group is on the next page.
+        ListTasksRequest::class => static function ($pending) use ($group, $meta): MockResponse {
+            $query = $pending->getRequest()->query()->all();
+            $rows = array_values(array_filter(
+                [$group(5, 'Settling feature', 'settling'), $group(3, 'Second backlog feature', 'backlog'), $group(1, 'Backlog feature', 'backlog')],
+                static fn (array $row): bool => (! isset($query['status']) || $row['status'] === $query['status']) && (! isset($query['cursor']) || $row['id'] < (int) $query['cursor']),
+            ));
+            $page = array_slice($rows, 0, 2);
+
+            return MockResponse::make(['data' => $page, 'meta' => [...$meta, 'next_cursor' => count($rows) > 2 ? (string) end($page)['id'] : null]]);
+        },
         ShowTaskRequest::class => MockResponse::make(['data' => $group(1, 'Feature', 'backlog'), 'meta' => $meta]),
         ListTaskAgentsRequest::class => MockResponse::make(['data' => [
             ['id' => 2, 'task_group_id' => 1, 'task_id' => null, 'role' => 'reviewer', 'driver' => 't3', 'external_id' => 'stored-t3-thread', 'state' => 'done'],
@@ -667,6 +705,16 @@ final class TaskPromptsCommand extends TaskCommand
                     return self::SUCCESS;
                 case 'select-agent':
                     $id = $this->selectAgent($connector, 1);
+                    $this->line("selected {$id}");
+
+                    return self::SUCCESS;
+                case 'select-any':
+                    $id = $this->selectGroup($connector);
+                    $this->line("selected {$id}");
+
+                    return self::SUCCESS;
+                case 'select-backlog-or-settling':
+                    $id = $this->selectGroup($connector, ['backlog', 'settling']);
                     $this->line("selected {$id}");
 
                     return self::SUCCESS;

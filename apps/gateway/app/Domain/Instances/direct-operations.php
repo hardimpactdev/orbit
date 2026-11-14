@@ -95,9 +95,10 @@ return [
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^instance-git-(?:operation|credential)-[1-9][0-9]*$'], ['vault' => 'orbit-control-inputs', 'key_pattern' => '^route-[a-f0-9]{16}-(?:forward|restore)-route_material_[0-9]+$'], DatabaseDestroyRun::OWNED_EXECUTION_COPY]],
     'instance.deploy' => [
         'workflow' => 'operation-instance-deploy-direct',
-        // Development ends with the checkout's end check, a container default with its container's, production with the deployment's; the Vite+ runtime the steps
-        // ran under comes as one capture. Every step runs on Node 209 over official SSH.
-        'terminal_result' => ['job' => 'deploy', 'step' => 'Check the checkout', 'alternatives' => ['Check the deployment', 'Check the container'], 'native' => true,
+        // Development ends with the checkout's end check, a container default with "Finish the container", whose last phase is its
+        // check, and production with the deployment's; the Vite+ runtime the steps ran under comes as one capture. Every step runs on
+        // Node 209 over official SSH.
+        'terminal_result' => ['job' => 'deploy', 'step' => 'Check the checkout', 'alternatives' => ['Check the deployment', 'Finish the container'], 'native' => true,
             'captures' => ['vp_runtime' => ['job' => 'dev-vp-workspaces', 'step' => 'dev-vp-requirements', 'field' => 'runtime'],
                 'php_runtime' => ['job' => 'deploy', 'step' => 'Check PHP runtime', 'field' => 'status']]],
         'workflow_inputs' => true,

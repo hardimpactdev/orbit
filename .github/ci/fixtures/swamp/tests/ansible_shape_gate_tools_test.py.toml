@@ -1,5 +1,5 @@
 order = 450
-source_sha256 = "bd8f23535ee91447c5a0d80462505b9e4ca29f3e345762f613591580cf7c897e"
+source_sha256 = "d9328858fd50dcc4c3b56f9237c63413cc47dcdf926f8b83988f985a42db9690"
 cases = [
   "test_uses_the_system_tools_only_when_built_for_these_pins",
   "test_a_built_venv_needs_no_write_access_and_no_install",
@@ -14,6 +14,10 @@ cases = [
   "test_complete_tools_are_only_read_and_a_cleanup_left_over_is_done",
   "test_complete_collections_are_kept_when_only_the_venv_is_new",
   "test_a_missing_python3_venv_is_installed_through_apt",
+  "test_host_programs_missing_beside_ready_tools_are_installed_once_then_only_read",
+  "test_a_default_made_before_the_image_carried_btrfs_progs_gets_it_once_beside_ready_tools",
+  "test_a_failed_package_read_is_the_package_step",
+  "test_a_failed_host_program_install_is_reported_and_keeps_ready_tools",
   "test_each_failed_step_is_named_and_leaves_nothing_complete",
   "test_the_names_are_the_gates_own",
 ]

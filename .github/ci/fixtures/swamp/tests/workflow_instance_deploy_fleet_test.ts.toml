@@ -1,10 +1,12 @@
 order = 1160
-source_sha256 = "eb8ff2170a6999cebde426c90848baa89009a67b81f7b4fda7e048a69c308d49"
+source_sha256 = "116ab9eb6ab7e0de9bc6096792a3c97cf269d52075e22a492a11d38b0fcb3b26"
 cases = [
-  "a normal container deployment skips every fleet step, after success and after a failure",
-  "a nested-fleet default checks its running fleet once, keeps its current seed, refreshes the fleet before the last seed, and starts it no second time",
-  "a fleet that the check refuses changes nothing: every later step skips and no seed is restored",
-  "a nested-fleet deployment that failed after its checkout restores the old seed, starts through start and keeps the failed phase's result",
+  "a container deployment runs its phases in two steps, each one play of the phases that share their failure handling",
+  "the playbook runs the phases of a merged step in order, and the handlers of one phase before the next phase",
+  "a normal container deployment never restores, after success and after a failure",
+  "a failed Prepare the container changes nothing in the workspace: every later step skips and no seed is restored",
+  "a nested-fleet deployment that failed from its checkout on restores the old seed, starts through start and keeps the failed phase's result",
+  "the result step waits for every step that writes the result file",
   "the deployment's one fleet check waits for no Doctor, and the refresh starts again what it stopped for base before the seed",
   "after a restore the restored fleet is started and waited for, and the first failure stays the run's result",
 ]
@@ -13,8 +15,12 @@ cost = 1
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
+  "swamp/ansible/instance-container.yml",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-container-run-phase.yml",
+  "swamp/ansible/tasks/instance-fleet-refresh.yml",
+  "swamp/ansible/tasks/instance-fleet-start.yml",
   "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
 ]

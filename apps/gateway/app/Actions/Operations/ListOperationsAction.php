@@ -16,6 +16,12 @@ final readonly class ListOperationsAction
 
     public const int MaxLimit = 100;
 
+    /** Every column but the stored input and result, which a row never shows and which can each hold 256 KiB. */
+    private const array ListColumns = [
+        'id', 'kind', 'target_type', 'target_id', 'node_id', 'state', 'status', 'sequence', 'current_step', 'failed_step', 'error_code', 'attempts',
+        'triggered_by', 'cancel_requested_at', 'started_at', 'finished_at', 'created_at', 'updated_at',
+    ];
+
     public function __construct(private NodeAccessAuthorizer $access) {}
 
     /**
@@ -28,6 +34,8 @@ final readonly class ListOperationsAction
     public function execute(Node $consumer, array $filters, int $limit = self::DefaultLimit, ?int $before = null): array
     {
         $rows = Operation::query()
+            ->select(self::ListColumns)
+            ->addSelect(['input->caller_node_id as listed_caller_node_id', 'input->capacity_request as listed_capacity_request'])
             ->withCallerNodeName()
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
@@ -41,8 +49,19 @@ final readonly class ListOperationsAction
             ->orderByDesc('id')
             ->limit($limit + 1)
             ->get();
-        $page = $rows->take($limit)->values();
+        $page = $rows->take($limit)->values()->each(self::listedInput(...));
 
         return ['operations' => $page, 'next_cursor' => $rows->count() > $limit ? (string) $page->last()?->id : null];
+    }
+
+    /** A row reads two members of the input: the caller Node and whether the operation waits for a task place. */
+    private static function listedInput(Operation $operation): void
+    {
+        $caller = $operation->getAttribute('listed_caller_node_id');
+        $request = $operation->getAttribute('listed_capacity_request');
+        $operation->input = array_filter([
+            'caller_node_id' => is_numeric($caller) ? (int) $caller : null,
+            'capacity_request' => is_string($request) ? json_decode($request, true) : $request,
+        ], static fn (mixed $value): bool => $value !== null);
     }
 }

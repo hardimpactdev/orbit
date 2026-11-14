@@ -1,6 +1,6 @@
 import { queryOptions } from "@tanstack/react-query";
 import type { components } from "./schema";
-import { get } from "./client";
+import { apiEnvelope, get } from "./client";
 import type { AgentThread } from "../tasks/agent-stream";
 
 type LineChanges = { lines_added?: number | null; lines_deleted?: number | null };
@@ -200,9 +200,28 @@ export function tasksForInstance(groups: readonly TaskGroup[], instanceId: numbe
 // their own. Every caller passes `useTaskPoll()`: every 30 s while realtime is down, and every
 // 5 minutes while it is live, as a safety net for a lost notice.
 
+/** The largest page the Gateway serves. The board, the navigation count and the Instance tab need every group. */
+export const taskGroupPage = 100;
+
+/** Every task group, newest first: the Gateway pages the list, so this follows `next_cursor` to the last page. */
+export async function allTaskGroups(): Promise<TaskGroup[]> {
+    const groups: TaskGroup[] = [];
+    let path: string = `/api/v1/tasks?limit=${taskGroupPage}`;
+
+    for (;;) {
+        const page = await apiEnvelope<TaskGroup[]>("GET", path);
+        groups.push(...page.data);
+        const cursor = page.meta?.next_cursor;
+        if (!cursor) {
+            return groups;
+        }
+        path = `/api/v1/tasks?limit=${taskGroupPage}&cursor=${encodeURIComponent(cursor)}`;
+    }
+}
+
 export const taskGroupsQuery = queryOptions({
     queryKey: ["tasks"],
-    queryFn: () => get<TaskGroup[]>("/api/v1/tasks"),
+    queryFn: allTaskGroups,
     retry: false,
 });
 
