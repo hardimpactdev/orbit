@@ -18,7 +18,7 @@ sequenceDiagram
   %%> - syntax: `<instance-id> [--json]`
   %%> Callers:
   %%> - the command, at once
-  %%> - the idle sleep of the runtime hibernator, every 10 min, after it read no HTTP or wake activity for an hour and, for an Instance with a T3 server, no T3 activity and no running turn (docs/reference/development-containers.md#sleep-and-wake)
+  %%> - the idle sleep of the runtime hibernator, every 10 min, after it read no HTTP, wake or deployment activity for an hour and, for an Instance with a T3 server, no T3 activity and no running turn (docs/reference/development-containers.md#sleep-and-wake)
   opt the Instance has a T3 server
     Note over GW: Last read of T3 threads<br/>Conn thread index
     %%> When:
@@ -46,7 +46,7 @@ sequenceDiagram
   SW->>N: Freeze the container<br/>Ansible · tags freeze
   %%> What it does:
   %%> - writes `max` to `memory.swap.max` of every cgroup in the container's subtree that holds 0: the container's own (Incus writes 0) and, in a nested-fleet Instance, the inner payload cgroups (the inner Incus writes 0 too)
-  %%> - records the inner cgroups it opened on the Node, `/dev/shm/orbit/hibernation/app-instance-<id>.swap`; a cgroup with its own limit, such as 32 MiB, stays as it is
+  %%> - records the inner cgroups it opened on the Node, `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, and their count in the result, `swap_subtree`; a cgroup with its own limit, such as 32 MiB, stays as it is
   %%> - `incus pause`, then a reclaim of the container's memory
   %%> - the processes and their state stay; their memory goes to swap, about 13 MiB stays in RAM for a clone, 78 MiB for a nested-fleet default
   %%> - a frozen or stopped container stays as it is
@@ -79,7 +79,7 @@ sequenceDiagram
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record asleep
     %%> Result:
-    %%> - the runtime's `power_state` is `stopped` for a frozen and a stopped container; the result says `sleep: frozen` or `sleep: stopped`
+    %%> - the runtime's `power_state` is `stopped` for a frozen and a stopped container; the result says `sleep: frozen` or `sleep: stopped`, and `swap_subtree`, the number of inner cgroups the freeze opened
     %%> - `t3_turn` is `idle` when the idle sleep read T3 first, `no_server` for an Instance without a T3 server, and `not_checked` for the command
     %%> - the Conn layer shows its T3 server asleep; the hourly renewal skips it
   else a step fails
