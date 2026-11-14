@@ -79,24 +79,47 @@ final readonly class NativeRunCancellation
      */
     public function holdsForCopy(Operation $operation): bool
     {
+        return array_any($this->copySteps($operation), static fn (array $row): bool => $row['within']);
+    }
+
+    /** Logs a copy step that still shows running past its bound, once, where the cancel is sent anyway. */
+    public function logBoundPassed(Operation $operation): void
+    {
+        foreach ($this->copySteps($operation) as $row) {
+            if (! $row['within']) {
+                Log::warning('operation.cancel_copy_bound_passed', ['operation_id' => $operation->id, 'step' => $row['step'], 'since' => $row['since']]);
+            }
+        }
+    }
+
+    /**
+     * The copy steps that the current run's progress shows running, each with its start and whether it is within its bound and margin.
+     * The start is the earlier of Swamp's `started_at` and the Gateway's `observed_at`, so Swamp's clock cannot stretch the bound.
+     * Progress of an earlier run of the Operation holds nothing.
+     *
+     * @return list<array{step: string, since: ?string, within: bool}>
+     */
+    private function copySteps(Operation $operation): array
+    {
         $steps = self::CopySteps[$operation->kind] ?? [];
         $progress = $operation->state['native_progress'] ?? null;
-        if ($steps === [] || $operation->status->terminal() || ! is_array($progress) || ! is_array($progress['active'] ?? null)) {
-            return false;
+        if ($steps === [] || $operation->status->terminal() || ! is_array($progress) || ! is_array($progress['active'] ?? null)
+            || ($progress['run'] ?? null) !== ($operation->state['swamp_run_id'] ?? null)) {
+            return [];
         }
+        $rows = [];
         foreach ($progress['active'] as $row) {
             $step = is_array($row) ? ($row['step'] ?? null) : null;
             if (! is_string($step) || ! isset($steps[$step])) {
                 continue;
             }
-            $since = is_string($row['started_at'] ?? null) ? $row['started_at'] : ($row['observed_at'] ?? null);
-            if (is_string($since) && Carbon::parse($since)->greaterThan(now()->subSeconds($steps[$step] + self::CopyMarginSeconds))) {
-                return true;
-            }
-            Log::warning('operation.cancel_copy_bound_passed', ['operation_id' => $operation->id, 'step' => $step, 'since' => $since]);
+            $times = array_map(Carbon::parse(...), array_values(array_filter([$row['started_at'] ?? null, $row['observed_at'] ?? null], is_string(...))));
+            $since = $times === [] ? null : min($times);
+            $rows[] = ['step' => $step, 'since' => $since?->toISOString(),
+                'within' => $since !== null && $since->greaterThan(now()->subSeconds($steps[$step] + self::CopyMarginSeconds))];
         }
 
-        return false;
+        return $rows;
     }
 
     /**

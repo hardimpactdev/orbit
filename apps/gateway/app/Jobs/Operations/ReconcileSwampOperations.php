@@ -248,6 +248,7 @@ final class ReconcileSwampOperations implements ShouldBeUnique, ShouldQueue
             return;
         }
         $requested = $operation->state['native_cancel_requested_at'] ?? null;
+        app(NativeRunCancellation::class)->logBoundPassed($operation);
         $cancel->execute($operation);
         DB::transaction(function () use ($operation, $store, $requested): void {
             $current = Operation::query()->lockForUpdate()->findOrFail($operation->id);
