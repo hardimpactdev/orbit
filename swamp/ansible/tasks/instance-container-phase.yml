@@ -417,6 +417,24 @@
           {{ {container.inner_volume.device: container.inner_volume.config | combine({'size': container.inner_volume.size})}
              if container.inner_volume is defined else {} }}
 
+# A stopped container gets the presented machine name before its start, through the file API, so the one boot gives the kernel its
+# hostname and T3 its label: nothing restarts. A running or frozen one keeps what it has; the Node converge writes its files. A
+# container that never started still has its Incus templates pending, which would write over the files: it waits for the converge.
+- name: Write the presented machine name before the start
+  tags: [start]
+  when: >-
+    phase == 'start' and start_found == 'Stopped'
+    and 'volatile.apply_template' not in ((container_read.stdout | from_json).config | default({}))
+  ansible.builtin.include_tasks:
+    file: instance-machine-name.yml
+    apply:
+      tags: [start]
+  vars:
+    machine_name_push: "{{ incus_project }}"
+    machine_name_container: "{{ container.name }}"
+    machine_name: "{{ container.machine_name }}"
+    machine_name_live: false
+
 - name: Start the container
   tags: [container, clone, start]
   when: phase in ['container', 'clone', 'start'] and (container_read.rc != 0 or (container_read.stdout | from_json).status != 'Running')
@@ -526,6 +544,23 @@
     private_names_push: "{{ incus_project }}"
     private_names_container: "{{ container.name }}"
     private_names: "{{ container.private_names | default([]) }}"
+
+# A container this run made gets the presented machine name right after its first start, whose Incus templates write the Incus name
+# into /etc/hostname and /etc/hosts, and after the private names, so both writers of /etc/hosts keep each other's lines. Its kernel
+# hostname changes at once: nothing runs in it yet. A clone gets the name from its clone script (instance_clone.py).
+- name: Write the presented machine name into the new container
+  tags: [container]
+  when: phase == 'container' and container_read.rc != 0
+  ansible.builtin.include_tasks:
+    file: instance-machine-name.yml
+    apply:
+      tags: [container]
+  vars:
+    machine_name_push: "{{ incus_project }}"
+    machine_name_root: "{{ as_root }}"
+    machine_name_container: "{{ container.name }}"
+    machine_name: "{{ container.machine_name }}"
+    machine_name_live: true
 
 # The composed NO_PROXY, present only when it is not the image's base (InstanceNodeServiceTargets::proxyEnvironment, the one builder),
 # for the units and login shells. instance_node_services.py `proxy` is the one writer; a unit reads the value at its next start.

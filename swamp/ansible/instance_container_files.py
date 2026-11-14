@@ -19,6 +19,10 @@ Nothing restarts: every later process reads the files by itself.
   status) is not the exact version the module needs gets no store; in the last case `agent` removes an Orbit entry it already has.
   Each is listed in `browser_trust` with its reason, and the run still passes: one container's own state never fails the converge.
 - `incus exec` refuses a frozen container, so a frozen one gets only file writes and deletes.
+- Each container that the Gateway names gets its presented machine name in `/etc/hostname`, the `PRETTY_HOSTNAME` line of
+  `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` (docs/reference/development-containers.md#the-machine-name), through
+  the file API, by instance_machine_name.py `render`, whose text the task passes and which runs on the Node. Nothing restarts and the
+  kernel hostname stays: it takes the file at the container's next start, and T3 its label at its next start.
 
 The Node keeps a digest of the library names it last applied to every container, so a changed folder reaches stopped containers
 too. Prints a JSON summary; a failed Incus call fails the run after every other container had its turn.
@@ -137,7 +141,19 @@ def delete(project, name, path):
         raise IncusFailure(f"incus file delete {path}: {result.stderr.strip()[:200]}")
 
 
-def container(project, row, files, trust, browser, libraries, names, libraries_changed, summary):
+def machine_name(project, name, label, presented, code, summary):
+    """The three files of the presented name, each pushed only when instance_machine_name.py `render` changes it."""
+    current = {path: pull(project, name, path) for path in ("/etc/hostname", "/etc/machine-info", "/etc/hosts")}
+    rendered = subprocess.run(["python3", "-I", "-c", code, "render"], capture_output=True, text=True, check=False, input=json.dumps(
+        {"files": current, "hostname": presented["hostname"], "pretty": presented["pretty"], "container": name}))
+    if rendered.returncode:
+        raise IncusFailure(f"machine name render: {rendered.stderr.strip()[:200]}")
+    for path, content in json.loads(rendered.stdout)["files"].items():
+        incus("file", "push", "--project", project, "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + path, stdin=content)
+        summary["written"].append(label + path)
+
+
+def container(project, row, files, trust, browser, libraries, names, libraries_changed, summary, presented=None, code=""):
     name, status = row["name"], row["status"]
     label = f"{project}/{name}"
     if status not in ("Running", "Stopped", "Frozen"):
@@ -159,6 +175,8 @@ def container(project, row, files, trust, browser, libraries, names, libraries_c
                   name + file["path"], stdin=file["content"])
             summary["written"].append(label + file["path"])
             written.add(file["path"])
+        if presented is not None:
+            machine_name(project, name, label, presented, code, summary)
         # The root's links, as `update-ca-certificates` makes them, so its rehash keeps them as they are.
         for path, target in trust["links"]:
             if link_target(project, name, path) == target:
@@ -187,7 +205,7 @@ def container(project, row, files, trust, browser, libraries, names, libraries_c
     browser_trust(project, name, status, label, browser, summary)
 
 
-def converge(projects, files, trust_spec, browser, libraries, state):
+def converge(projects, files, trust_spec, browser, libraries, state, machine_names=(), machine_name_code=""):
     names = library_names(libraries)
     digest = hashlib.sha256("\n".join(names).encode()).hexdigest()
     state_file = Path(state)
@@ -212,8 +230,10 @@ def converge(projects, files, trust_spec, browser, libraries, state):
              "links": [(linked, trust_spec["path"]), (f"{directory}/{digest_name}.0", linked)]}
     # One list of every project, as the folder's restart reads it: a project that does not exist yet has no containers.
     rows = json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)
+    presented = {(entry["project"], entry["container"]): entry for entry in machine_names}
     for row in sorted((row for row in rows if row.get("project") in projects), key=lambda row: (row["project"], row["name"])):
-        container(row["project"], row, files, trust, browser, libraries, names, libraries_changed, summary)
+        container(row["project"], row, files, trust, browser, libraries, names, libraries_changed, summary,
+                  presented.get((row["project"], row["name"])), machine_name_code)
     if summary["failed"]:
         print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
         return 1
@@ -228,4 +248,5 @@ def converge(projects, files, trust_spec, browser, libraries, state):
 
 if __name__ == "__main__":
     spec = json.loads(sys.argv[1])
-    sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"]))
+    sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"],
+                      spec["machine_names"], spec["machine_name_code"]))

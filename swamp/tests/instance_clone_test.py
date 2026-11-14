@@ -19,6 +19,12 @@ from unittest.mock import patch
 SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
 NODE_SERVICES = SCRIPT.parents[1] / "ansible/instance_node_services.py"
+MACHINE_NAME = SCRIPT.parents[1] / "ansible/instance_machine_name.py"
+# The copy's presented machine name (InstanceMachineName); the `127.0.1.1` line of its hosts file names it after the clone's pass.
+HOSTNAME = "feature.tool"
+NAMED_LINE = "127.0.1.1\tfeature.tool feature instance-7"
+# The clone's one exec after the start.
+READ_SCRIPT = 'hostname "$1" && { cat -- /etc/hostname 2>/dev/null; printf "\\0"; cat -- /etc/hosts; }'
 # The renderer's commands: the clone runs the bundle's instance_node_services.py with `proxy-files` before the copy's first start
 # and with `hosts` right after it, once Incus has rendered the hosts template.
 RENDERS = ("hosts", "proxy-files")
@@ -202,6 +208,7 @@ class CloneTest(unittest.TestCase):
             container = {
                 "mail": mail,
                 "name": "instance-7",
+                "machine_name": {"hostname": HOSTNAME, "pretty": HOSTNAME},
                 "project": "orbit-instances",
                 "network": "orbitinst0",
                 "nic_acl": nic_acl,
@@ -237,7 +244,7 @@ class CloneTest(unittest.TestCase):
                 self.decoding[id(argv)] = kwargs.get("errors")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
-                if argv[:2] == ["python3", "-c"] and argv[3:] in ([render] for render in RENDERS):
+                if argv[:2] == ["python3", "-c"] and argv[3:] in ([render] for render in RENDERS) and argv[2] != MACHINE_NAME.read_text():
                     # The one renderer: the bundle's instance_node_services.py, whose real source answers here.
                     return real_run(["python3", "-c", NODE_SERVICES.read_text(), *argv[3:]], **kwargs)
                 if argv[:2] == ["python3", "-c"]:
@@ -245,17 +252,20 @@ class CloneTest(unittest.TestCase):
                 if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
-                if argv[3:5] == ["file", "push"] and argv[-1] == container["name"] + "/etc/hosts":
-                    files["/etc/hosts"] = kwargs.get("input")
+                if argv[3:5] == ["file", "push"] and argv[-1] in (container["name"] + "/etc/hosts", container["name"] + "/etc/hostname"):
+                    files[argv[-1][len(container["name"]):]] = kwargs.get("input")
                 if argv[3:4] == ["start"] and copied and "copy" in templates.get("/etc/hosts", []):
                     # Incus runs the `copy` templates once, at the first start after the copy, before pid 1: hosts.tpl.
                     copied.clear()
                     files["/etc/hosts"] = HOSTS_TEMPLATE.format(name=container["name"])
-                if argv[3:4] == ["exec"] and argv[-3:] == ["cat", "--", "/etc/hosts"]:
+                if argv[3:4] == ["exec"] and argv[-3:] == [READ_SCRIPT, "sh", HOSTNAME]:
+                    # One exec: the kernel hostname, then /etc/hostname, a NUL and /etc/hosts.
                     if container.get("fixture_hosts_read_error"):
                         return subprocess.CompletedProcess(argv, 1, "", "Error: Failed to retrieve PID of executing child process")
+                    files["kernel"] = HOSTNAME
                     held = files.get("/etc/hosts")
-                    return subprocess.CompletedProcess(argv, 0 if isinstance(held, str) else 1, held if isinstance(held, str) else "",
+                    return subprocess.CompletedProcess(argv, 0 if isinstance(held, str) else 1,
+                                                       files.get("/etc/hostname", "instance-7\n") + "\0" + (held if isinstance(held, str) else ""),
                                                        "" if isinstance(held, str) else "cat: /etc/hosts: No such file or directory")
                 if argv[0] == "curl" and argv[3] == "-":
                     # A file's bytes and its headers on stderr: from `fixture_files` (path: content, or the headers and content),
@@ -366,7 +376,8 @@ class CloneTest(unittest.TestCase):
                         (NETWORK_CHECK.read_text().split('if __name__ == "__main__":')[0] + (NETWORK_CHECK.parent / "instance_nested.py").read_text()) if container.get("allowed_devices") else (network_check or NETWORK_CHECK.read_text()),
                         pwd.getpwuid(os.getuid()).pw_name,
                         folder + "/private",
-                        json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')'}),
+                        json.dumps({"node_services": node_service_code or 'print(\'{"status":"unchanged"}\')', "mail": mail_code or 'print(\'{"status":"unchanged"}\')',
+                                    "machine_name": MACHINE_NAME.read_text()}),
                         "container",
                     ],
                 ),
@@ -384,6 +395,7 @@ class CloneTest(unittest.TestCase):
             if transcript is not None:
                 transcript.append(output.getvalue())
             self.hosts = files.get("/etc/hosts")
+            self.hostname = (files.get("/etc/hostname"), files.get("kernel"))
             return calls, read, error.getvalue()
 
     def test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy(self):
@@ -766,6 +778,9 @@ class CloneTest(unittest.TestCase):
                                 capture_output=True, check=True)
         return json.loads(result.stdout)
 
+    # The one exec of the pass: the kernel hostname, then the hosts file.
+    READ = ["incus", "--project", "orbit-instances", "exec", "instance-7", "--", "sh", "-c", READ_SCRIPT, "sh", HOSTNAME]
+
     def hosts_pushes(self, calls):
         return [call for call in calls if call[3:5] == ["file", "push"] and call[-1] == "instance-7/etc/hosts"]
 
@@ -776,15 +791,23 @@ class CloneTest(unittest.TestCase):
         calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed}})
         self.assertEqual(error, "")
         template = HOSTS_TEMPLATE.format(name="instance-7")
-        self.assertEqual(self.hosts, template + self.BLOCK)
-        self.assertEqual(self.hosts, self.renderer("hosts", {"hosts": template, "private_names": self.NAMES})["content"])
+        named = template.replace("127.0.1.1\tinstance-7", NAMED_LINE)
+        self.assertEqual(self.hosts, named + self.BLOCK)
+        # Both renderers ran on the template, each keeping the other's lines, and the name reached the file and the kernel.
+        self.assertEqual(self.hosts, self.renderer("hosts", {"hosts": template, "private_names": self.NAMES})["content"]
+                         .replace("127.0.1.1\tinstance-7", NAMED_LINE))
+        self.assertEqual(self.hostname, (HOSTNAME + "\n", HOSTNAME))
         pushes = self.hosts_pushes(calls)
         self.assertEqual([call[3:] for call in pushes],
                          [["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", "instance-7/etc/hosts"]])
         start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
-        read = calls.index(["incus", "--project", "orbit-instances", "exec", "instance-7", "--", "cat", "--", "/etc/hosts"])
+        read = calls.index(self.READ)
         self.assertLess(start, read)
         self.assertLess(read, calls.index(pushes[0]))
+        # The private names and the machine name share the pass's one exec, between the start and the push.
+        self.assertEqual([call for call in calls[start:calls.index(pushes[0])] if call[3:4] == ["exec"]], [self.READ])
+        self.assertLess(calls.index(pushes[0]), calls.index(["incus", "--project", "orbit-instances", "file", "push", "--uid", "0", "--gid", "0",
+                                                             "--mode", "0644", "-", "instance-7/etc/hostname"]))
         # The clone runs the bundle's renderer, not a copy of it.
         render = next(call for call in calls if call[:2] == ["python3", "-c"] and call[3:] == ["hosts"])
         self.assertEqual(render[2], 'print(\'{"status":"unchanged"}\')')
@@ -792,17 +815,17 @@ class CloneTest(unittest.TestCase):
     def test_a_clone_without_names_writes_no_block_and_drops_a_seed_block_the_template_left(self):
         calls, _, error = self.clone_with({}, overrides={"fixture_files": {"/etc/hosts": "127.0.0.1 localhost\n" + self.BLOCK}})
         self.assertEqual(error, "")
-        self.assertEqual(self.hosts, HOSTS_TEMPLATE.format(name="instance-7"))
-        self.assertEqual(self.hosts_pushes(calls), [])
+        self.assertEqual(self.hosts, HOSTS_TEMPLATE.format(name="instance-7").replace("127.0.1.1\tinstance-7", NAMED_LINE))
+        self.assertEqual(len(self.hosts_pushes(calls)), 1)
         # A copy whose metadata has no hosts template keeps the seed's file: its block goes, every other line stays.
         calls, _, error = self.clone_with({}, overrides={"fixture_hosts_template": False,
                                                          "fixture_files": {"/etc/hosts": "127.0.0.1 localhost\n" + self.BLOCK}})
         self.assertEqual(error, "")
-        self.assertEqual(self.hosts, "127.0.0.1 localhost\n")
-        # A copy without a hosts file and without names gets none.
+        self.assertEqual(self.hosts, NAMED_LINE + "\n127.0.0.1 localhost\n")
+        # A copy without a hosts file and without names gets one with its name line alone.
         calls, _, error = self.clone_with({}, overrides={"fixture_hosts_template": False})
         self.assertEqual(error, "")
-        self.assertEqual(self.hosts_pushes(calls), [])
+        self.assertEqual(self.hosts, NAMED_LINE + "\n")
 
     def test_a_retry_on_a_running_copy_with_the_block_in_place_writes_nothing(self):
         running = {"name": "instance-7", "status": "Running", "devices": {"t3": {}}, "config": {"volatile.uuid": "abc-123"},
@@ -811,10 +834,13 @@ class CloneTest(unittest.TestCase):
                                                  "security.acls.default.egress.action": "reject",
                                                  "security.acls.default.ingress.action": "reject",
                                                  "security.ipv4_filtering": "true", "security.mac_filtering": "true"}}}
-        held = HOSTS_TEMPLATE.format(name="instance-7") + self.BLOCK
-        calls, _, error = self.clone_with({}, existing=running, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": held}})
+        held = HOSTS_TEMPLATE.format(name="instance-7").replace("127.0.1.1\tinstance-7", NAMED_LINE) + self.BLOCK
+        calls, _, error = self.clone_with({}, existing=running, overrides={"private_names": self.NAMES,
+                                                                           "fixture_files": {"/etc/hosts": held, "/etc/hostname": HOSTNAME + "\n"}})
         self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
+        # The hostname file is in place too: no push.
+        self.assertFalse(any(call[3:5] == ["file", "push"] and call[-1] == "instance-7/etc/hostname" for call in calls))
         self.assertEqual(self.hosts, held)
         # The phase did not start this copy: its mail part may not read a silent systemd as a boot (instance_mail.py).
         calls, _, error = self.clone(mail={"port": 1025}, existing=running)

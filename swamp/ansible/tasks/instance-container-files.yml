@@ -5,7 +5,8 @@
 # (docs/reference/development-containers.md#trust). A container that cannot take the store is listed with its reason; it never
 # fails the step.
 # A container made from an older image gets them here, running, stopped or frozen, in the Instance project and the nested-fleet one.
-# Nothing restarts: T3, the agents and the Processes keep running, and each later process reads the files by itself.
+# Nothing restarts: T3, the agents and the Processes keep running, and each later process reads the files by itself. Each container
+# also gets its presented machine name's files (instance_machine_name.py); its kernel hostname and T3's label follow at its next start.
 - name: Write the image's shared files into each existing container
   ansible.builtin.command:
     argv:
@@ -21,7 +22,9 @@
             'browser_trust': instances.image.browser_trust
               | combine({'script': lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-browser-trust.sh')}),
             'libraries': instances.folders.runtime.path ~ '/current/lib',
-            'state': '/var/lib/orbit/instance-container-libraries'} | to_json }}
+            'state': '/var/lib/orbit/instance-container-libraries',
+            'machine_names': instances.machine_names,
+            'machine_name_code': lookup('ansible.builtin.file', playbook_dir ~ '/instance_machine_name.py')} | to_json }}
     stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
   vars:
     # The Orbit root CA that the Node's base converge writes for its agent (InstanceHostIntent::TrustSource).

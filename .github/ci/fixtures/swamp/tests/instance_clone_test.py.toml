@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "3421f4fca0dd1ecd97b6d4bc261a7d94dc3393fa6c3ab79f9ea8c397763fd33e"
+source_sha256 = "0035e2a2eaf61139188040ce856322d69aeaabac040434c520683529397859af"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -20,6 +20,10 @@ cases = [
   "test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl",
   "test_the_container_phase_prints_the_seconds_of_each_part",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
+  "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last",
+  "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line",
+  "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start",
+  "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files",
   "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start",
   "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start",
   "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file",
@@ -87,10 +91,6 @@ cases = [
   "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value",
   "test_names_a_failed_delivery_without_its_output",
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
-  "test_t3_files_reach_the_copy_before_its_first_start_with_the_file_t3_waits_for_last",
-  "test_t3_files_merge_into_the_seeds_settings_and_a_public_repository_frames_no_line",
-  "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start",
-  "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files",
 ]
 file = "swamp/tests/instance_clone_test.py"
 cost = 148

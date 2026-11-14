@@ -311,6 +311,15 @@ if (family === "list") {
     const name = target.slice(0, target.indexOf("/"));
     Deno.removeSync(rootfs(name) + target.slice(name.length), { recursive: args.includes("--force") });
   }
+} else if (family === "file" && args[1] === "pull") {
+  // A file of the container's root file system on stdout, whatever its state, as the file API reads it.
+  const [, , target] = args;
+  const name = target.slice(0, target.indexOf("/"));
+  const path = rootfs(name) + target.slice(name.length);
+  if (!exists(path)) fail("Error: Not Found");
+  Deno.stdout.writeSync(Deno.readFileSync(path));
+  state.pulls ??= [];
+  state.pulls.push(target);
 } else if (family === "file" && args[1] === "push") {
   const createDirs = args.indexOf("--create-dirs");
   if (createDirs >= 0) args.splice(createDirs, 1);
@@ -429,6 +438,13 @@ if (family === "list") {
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
+    Deno.exit(0);
+  }
+  if (command[0] === "hostname") {
+    // The kernel hostname: the container name until a `hostname -F` sets it from the container's file.
+    if (command[1] === "-F") state.containers[name].hostname = Deno.readTextFileSync(inside(name, command[2])).trim();
+    else console.log(state.containers[name].hostname ?? name);
+    save();
     Deno.exit(0);
   }
   if (command[0] === "python3" && command[1] === "-c" && command.at(-1) === "proxy" && command[2].includes("def write_proxy_environment")) {

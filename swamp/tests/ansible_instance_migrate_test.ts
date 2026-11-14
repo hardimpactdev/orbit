@@ -134,7 +134,9 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
   Deno.copyFileSync(new URL("instance_migrate_files.py", root), `${folder}/instance_migrate_files.py`);
   Deno.copyFileSync(new URL("instance_migrate_links.py", root), `${folder}/instance_migrate_links.py`);
   Deno.copyFileSync(new URL("instance_migrate_git.py", root), `${folder}/instance_migrate_git.py`);
-  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml", "instance-private-names.yml"]) {
+  Deno.copyFileSync(new URL("instance_machine_name.py", root), `${folder}/instance_machine_name.py`);
+  Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
+  for (const name of ["instance-container-handlers.yml", "instance-container-phase.yml", "instance-migrate-phase.yml", "instance-migrate-process-ready.yml", "instance-migrate-discard.yml", "instance-migrate-retire.yml", "instance-migrate-retirement-check.yml", "instance-migrate-schedules.yml", "instance-migrate-schedule-check.yml", "instance-migrate-link-result.yml", "instance-migrate-env-check.yml", "instance-private-names.yml", "instance-machine-name.yml"]) {
     const tasks = (parse(Deno.readTextFileSync(new URL(`tasks/${name}`, root))) as Task[]).map((task) => {
       const transformed = transform(structuredClone(task));
       return name.startsWith("instance-migrate-schedule") ? scheduleHostPaths(transformed) : transformed;
@@ -211,6 +213,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     instance_id: id,
     project: "orbit-instances",
     name: `instance-${id}`,
+    machine_name: { hostname: `move-${id}.shop`, pretty: `move-${id}.shop` },
     image: "orbit-instance",
     config: { "limits.cpu": "4", "limits.memory": "8GiB", "limits.processes": "4096" },
     root_disk_pool: "orbit-instances",

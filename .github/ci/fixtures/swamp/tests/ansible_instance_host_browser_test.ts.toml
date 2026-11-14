@@ -1,5 +1,5 @@
 order = 70
-source_sha256 = "c18bd0ab128b3e5dcf76fe0d5953a05afc15183bb033d9a85b55a3a94520df18"
+source_sha256 = "5134fbbe43e583a623bf0dc6d408441d1335b45b8b77c97c010935c1fbf3bccd"
 cases = [
   "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart",
   "two Debian packages that give the same library name fail the folder build: one would hide the other",
@@ -7,6 +7,7 @@ cases = [
   "a new folder version that only adds files keeps every running process valid; a changed, missing or relinked file does not",
   "a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container",
   "a rotated Orbit root replaces the old one and its hashed name in running, stopped and frozen containers; a frozen one gets no exec",
+  "the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts",
   "a Node without a readable Orbit root CA fails the step by name and writes nothing",
   "only agent writes its NSS store, only in a running container: a new store holds only the entry, an existing one gets it appended once; a stopped or frozen one waits",
   "a planted symlink, a file where the store folder goes and a folder named like the store are refused and listed; every other step still runs",
@@ -16,7 +17,7 @@ cases = [
   "the trust module's package only adds its module to the runtime folder: no restart, and nothing new in lib",
 ]
 file = "swamp/tests/ansible_instance_host_browser_test.ts"
-cost = 255
+cost = 260
 # Beast case times * 2.1, rounded up + 1s; startup is added per slice.
 slices = 13
 inputs = [
@@ -52,6 +53,7 @@ inputs = [
 ]
 
 [case_costs]
+  "the converge writes each named container's machine name files, running, stopped and frozen, keeping other hosts lines; nothing restarts" = 5 # ESTIMATE: local 2s * 2.1, rounded up
   "a Debian package part gives the runtime folder its libraries and fonts; existing containers, frozen ones too, get the shared files with no restart" = 82 # ESTIMATE: Beast 35-38s * 2.1, rounded up + 1s
   "two Debian packages that give the same library name fail the folder build: one would hide the other" = 18 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
   "a second pass writes nothing and runs no ldconfig; a new library reaches running and stopped containers alike" = 2 # ESTIMATE: Beast 0.82s, no Ansible; rounded up

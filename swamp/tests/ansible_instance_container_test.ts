@@ -89,7 +89,7 @@ function fixture() {
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
-    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml",
+    "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
@@ -110,6 +110,7 @@ function fixture() {
     instance_id: 7,
     project: "orbit-instances",
     name: "instance-7",
+    machine_name: { hostname: "default.shop", pretty: "default.shop" },
     image: "orbit-instance",
     config: { "limits.cpu": "4", "limits.memory": "8GiB", "limits.processes": "4096" },
     root_disk_pool: "orbit-instances",
@@ -1651,6 +1652,69 @@ Deno.test({
       const removed = f.run("start");
       assert(removed.ok, removed.output);
       assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n10.1.1.1 operator\n");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the presented machine name: a create writes it after its first start; a stopped start writes it before the boot; running and frozen get nothing; T3 never restarts",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const etc = `${f.folder}/containers/instance-7/etc`;
+    // Each Incus call without its leading `--project <name>`.
+    const calls = () => Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[])
+      .map((call) => call[0] === "--project" ? call.slice(2) : call);
+    const named = (list: string[][]) => list.filter((call) => call[0] === "file" && /instance-7\/etc\/(hostname|machine-info|hosts)$/.test(call.at(-1)!));
+    const t3Restarts = () => (f.state().systemctl ?? []).filter((call: string[]) => call.includes("t3.service") && call[0] !== "start").length;
+    try {
+      // The create: the image's template wrote the Incus name into the hosts file; the step changes only that line and sets the kernel
+      // hostname at once.
+      Deno.mkdirSync(etc, { recursive: true });
+      Deno.writeTextFileSync(`${etc}/hosts`, "127.0.1.1\tinstance-7\n127.0.0.1\tlocalhost\n");
+      const made = f.run("container");
+      assert(made.ok, made.output);
+      assertEquals(Deno.readTextFileSync(`${etc}/hostname`), "default.shop\n");
+      assertEquals(Deno.readTextFileSync(`${etc}/machine-info`), "PRETTY_HOSTNAME=default.shop\n");
+      assertEquals(Deno.readTextFileSync(`${etc}/hosts`), "127.0.1.1\tdefault.shop default instance-7\n127.0.0.1\tlocalhost\n");
+      assertEquals(f.state().containers["instance-7"].hostname, "default.shop");
+
+      // A start of the running container reads and writes none of the files, even for a new name: the converge owns them.
+      Object.assign(f.container, { machine_name: { hostname: "default.store", pretty: "default.Store" } });
+      f.write();
+      let before = calls().length;
+      const running = f.run("start");
+      assert(running.ok, running.output);
+      assertEquals(named(calls().slice(before)), []);
+      assertEquals(Deno.readTextFileSync(`${etc}/hostname`), "default.shop\n");
+
+      // A start of the stopped container writes the files before the boot, through the file API: the boot takes the name, no exec
+      // sets it and T3 does not restart.
+      assert(f.run("stop").ok);
+      before = calls().length;
+      const booted = f.run("start");
+      assert(booted.ok, booted.output);
+      const since = calls().slice(before);
+      const start = since.findIndex((call) => call[0] === "start");
+      assert(start > 0, JSON.stringify(since));
+      assertEquals(named(since).every((call) => since.indexOf(call) < start), true);
+      assertEquals(named(since).filter((call) => call[1] === "push").map((call) => call.at(-1)),
+        ["instance-7/etc/hostname", "instance-7/etc/machine-info", "instance-7/etc/hosts"]);
+      assertEquals(Deno.readTextFileSync(`${etc}/machine-info`), "PRETTY_HOSTNAME=default.Store\n");
+      assertEquals(Deno.readTextFileSync(`${etc}/hosts`), "127.0.1.1\tdefault.store default instance-7\n127.0.0.1\tlocalhost\n");
+      assert(!since.some((call) => call[0] === "exec" && call.includes("hostname")));
+      assertEquals(t3Restarts(), 0);
+
+      // A wake that resumes the frozen container writes nothing and restarts nothing.
+      Object.assign(f.container, { machine_name: { hostname: "default.other", pretty: "default.other" } });
+      f.write();
+      before = calls().length;
+      const woken = wakeFrom(f, "Frozen");
+      assert(woken.run.ok, woken.run.output);
+      assertEquals(named(calls().slice(before)), []);
+      assertEquals(t3Restarts(), 0);
     } finally {
       f.cleanup();
     }

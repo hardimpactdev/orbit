@@ -177,6 +177,8 @@ additionalFiles:
   - ansible/instance-connection-environment.yml
   - ansible/instance_env_keys.py
   - ansible/instance_node_services.py
+  - ansible/instance_machine_name.py
+  - ansible/tasks/instance-machine-name.yml
   - ansible/instance_shape_tools.py
   - ansible/instance_mail.py
   - ansible/instance_mail_line.py

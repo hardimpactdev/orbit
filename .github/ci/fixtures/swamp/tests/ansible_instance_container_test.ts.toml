@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "108945f060588af2f6d2c1d60931cc0e67470667d66f1a1a54bb6a3b2ec2e1ff"
+source_sha256 = "eb1d23b38e90e40e775c3a60346826b7ecd3bd1cd6f89f72121b401287b75ef1"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -33,6 +33,7 @@ cases = [
   "the agent can commit with its default identity and keeps each configured identity value",
   "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
   "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
+  "the presented machine name: a create writes it after its first start; a stopped start writes it before the boot; running and frozen get nothing; T3 never restarts",
   "start refuses a NIC with missing ACL before starting the container",
   "start refuses a NIC with permissive default before starting the container",
   "start refuses a NIC with bridge union ACL before starting the container",
@@ -91,7 +92,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4029
+cost = 4107
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   # The deploy-step record across four checkouts (45s locally, run in full before the PR): a 72nd slice would defer the whole file. The PR
@@ -169,6 +170,7 @@ inputs = [
 ]
 
 [case_costs]
+  "the presented machine name: a create writes it after its first start; a stopped start writes it before the boot; running and frozen get nothing; T3 never restarts" = 78 # ESTIMATE: local time * 2.1, rounded up + 1s
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 72 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 43.6-73.7s
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 135 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s; plus 11s ESTIMATE for three workspace runs of the .env exclude (local 5s x 2.1, rounded up)
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s
