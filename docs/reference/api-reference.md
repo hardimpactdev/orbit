@@ -31,6 +31,8 @@ The `fleet` group holds rollout admission, CLI convergence, peer DNS and the fle
 
 Optional lists keep their declared item schema. The Operation `steps` list references `OperationStep`, which exposes only native step names, jobs, statuses and timestamps. [Operations](/reference/operations#the-record) defines when that field is present. Conn Operation show uses this same step schema; its API and MCP descriptions state that `after_sequence` is accepted but currently does not filter steps. They also name the kinds it serves to the calling Node, a clone's `instance.complete` included; regenerate OpenAPI and the MCP manifest when that list changes. See the [Conn step contract](/reference/conn#threads-in-an-orbit-project).
 
+The Conn Operation cancel description names the same kinds except `instance.destroy`, which it refuses with 404, and answers 200 with `OperationData`; [Cancel a create or a completion](/reference/conn#cancel-a-create-or-a-completion) owns its rules.
+
 Run the generator from the repository root:
 
 ```bash
