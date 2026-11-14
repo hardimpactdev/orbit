@@ -34,6 +34,9 @@ final class RoutePublicationHolds
     private const array Kinds = ['instance.create', 'instance.complete', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
         'instance.restore', 'route.create', 'route.update', 'route.destroy', 'route.target_set'];
 
+    /** Kinds that render their whole publication again from the current catalog when a promotion starts them. */
+    private const array RefreshedKinds = ['instance.create', 'instance.complete', 'instance.clone', 'instance.restore', 'route.create'];
+
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
     private const int UnconfirmedMinutes = 15;
 
@@ -319,9 +322,26 @@ final class RoutePublicationHolds
      */
     public function releasePublished(Operation $operation): void
     {
-        if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
+        $held = DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until');
+        // A waiting write that publishes the whole Caddyfile it rendered at its admission would drop the new site; it starts at the
+        // create's end, as it would have after the completion. Creates render again when they start, and a removal composes from the
+        // live file, so those may start now.
+        $nodes = ValidatedData::integerList((clone $held)->pluck('node_id')->all());
+        foreach ($this->waiters() as $waiter) {
+            if (array_intersect($nodes, self::waitingNodes($waiter)) !== [] && ! self::rendersAtStart($waiter)) {
+                return;
+            }
+        }
+        if ($held->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
+    }
+
+    /** A write whose Caddy input is fresh when it starts: a create that renders again at promotion, or a removal that composes from the live file. */
+    private static function rendersAtStart(Operation $operation): bool
+    {
+        return $operation->kind === 'instance.destroy'
+            || (in_array($operation->kind, self::RefreshedKinds, true) && isset($operation->input['route_create']));
     }
 
     /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
@@ -426,7 +446,7 @@ final class RoutePublicationHolds
     /** Only unstarted creates can replace their whole publication from the current catalog; their resource intent stays fixed. */
     private function refreshPublication(Operation $operation): void
     {
-        if (! in_array($operation->kind, ['instance.create', 'instance.complete', 'instance.clone', 'instance.restore', 'route.create'], true) || ! isset($operation->input['route_create'])) {
+        if (! in_array($operation->kind, self::RefreshedKinds, true) || ! isset($operation->input['route_create'])) {
             return;
         }
         DB::transaction(function () use ($operation): void {

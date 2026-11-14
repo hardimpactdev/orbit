@@ -267,8 +267,12 @@ Deno.test("a clone's create ends at the registration: the workspace and T3 share
   const { jobs, steps } = levelsOf("workflow-operation-instance-create.yaml");
   const sorted = (levels: string[][]) => levels.map((level) => [...level].sort());
   assertEquals(sorted(jobs), [["input"], ["clone", "legacy", "publication"], ["create"]]);
-  // The address is published beside the copy, in its own job (docs/cli/instance/container/create.mmd).
+  // The address is published beside the copy, in its own job (docs/cli/instance/container/create.mmd). Each step allows its failure,
+  // so a failed publication never fails the run and so the create (Swamp fails a job, and the run, on a failed step otherwise).
   assertEquals(sorted(steps.publication), [["clone-route-csr"], ["clone-route"]]);
+  const publicationJob = (parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as { jobs: { name: string; steps: { name: string; allowFailure?: boolean }[] }[] })
+    .jobs.find((job) => job.name === "publication")!;
+  assertEquals(publicationJob.steps.map((step) => [step.name, step.allowFailure]), [["clone-route-csr", true], ["clone-route", true]]);
   assertEquals(sorted(steps.clone), [["clone-input"], ["clone-container"], ["clone-club-key"], ["clone-t3", "clone-workspace"], ["clone-sessions"],
     ["clone-session-copy"], ["clone-register"]]);
   assertEquals(sorted(steps.create), [["clone-private-cleanup", "finish"], ["stop-container", "withdraw-route"], ["accepted", "cleanup"]]);
@@ -372,13 +376,21 @@ Deno.test("a create that fails or is cancelled before clone-route ends withdraws
   // Only the CSR ran: its key and certificate go too.
   const early = runCreate(routeIntent, { ...publication(4, 7), "clone-input": { status: "failed" }, "clone-route-csr-0": { status: "failed", duration: 1 } });
   assertEquals([early.finish.outputs!.ready, early["withdraw-route"].status], [false, "succeeded"]);
+  // The realistic order of an early failure: the copy fails at 5 s, while the publication goes on and publishes 6 s later. The address
+  // is active and its Nodes free, so the failed create keeps it (502) until a retry or a removal; withdraw-route skips it.
+  const copyFirst = runCreate(routeIntent, { ...publication(4, 7), "clone-container": { status: "failed", duration: 5.3 } });
+  assert(copyFirst["clone-container"].end < copyFirst["clone-route"].end);
+  assertEquals([copyFirst["clone-route"].status, copyFirst.finish.outputs!.ready, copyFirst["withdraw-route"].status, copyFirst["stop-container"].status],
+    ["succeeded", false, "skipped", "succeeded"]);
+  assertEquals(copyFirst.finish.start, copyFirst["clone-route"].end);
   // A published address is active and its Nodes are free: a later failure keeps it (502) until a retry or a removal.
   const late = runCreate(routeIntent, { ...publication(4, 7), "clone-register": { status: "failed", duration: 1.3 } });
   assertEquals([late["clone-route"].status, late.finish.outputs!.ready, late["withdraw-route"].status, late["stop-container"].status], ["succeeded", false, "skipped", "succeeded"]);
 });
 
-Deno.test("a clone without a Route, or whose admission found the Route Nodes held, runs no publication step", () => {
-  // Guard: `inputs.intent.route == null` skips clone-route, and the CSR's forEach list is empty.
+Deno.test("a route-free clone and a route-free task copy, or a clone whose admission found the Route Nodes held, run no publication step", () => {
+  // Guard: `inputs.intent.route == null` skips clone-route, and the CSR's forEach list is empty. A task copy (`clean_workspace`) of a
+  // web-serving Project carries `route` like any clone and publishes when its admission took the Nodes (the first case above).
   for (const intent of [cloneIntent, { ...cloneIntent, container: { ...cloneIntent.container, clean_workspace: true } }]) {
     const ran = runCreate(intent, cloneOutcomes());
     assertEquals(ran["clone-route"].status, "skipped");
@@ -393,8 +405,14 @@ Deno.test("a nested-fleet clone gets its Club key before the workspace and T3, a
   const nested = { ...cloneIntent, container: { ...cloneIntent.container, project: "orbit-instances-nested", club_key: { available: true } }, fleet: { seed: "e".repeat(40) } };
   const ran = runCreate(nested, outcomes);
   assertEquals(ran["clone-club-key"].status, "succeeded");
-  // A nested copy has no Route: no publication step runs, and the levels stay.
+  // This nested copy's Project serves no web pages: no publication step runs, and the levels stay.
   assertEquals([ran["clone-route"].status, "clone-route-csr-0" in ran], ["skipped", false]);
+  // A nested copy of a web-serving Project publishes beside its copy; its Club key and the registration keep their places.
+  const routed = runCreate({ ...nested, route: { leaf_indexes: [0] } }, publication(4, 7, outcomes));
+  assertEquals([routed["clone-club-key"].status, routed["clone-route-csr-0"].status, routed["clone-route"].status], ["succeeded", "succeeded", "succeeded"]);
+  assertEquals(routed["clone-route-csr-0"].start, routed["clone-input"].start);
+  for (const name of ["clone-club-key", "clone-workspace", "clone-t3", "clone-register"]) assertEquals(routed[name].start, ran[name].start, name);
+  assertEquals(JSON.parse(String(routed.finish.outputs!.stdout)).route_publication, "published");
   assertEquals([ran["clone-workspace"].start, ran["clone-t3"].start], [ran["clone-club-key"].end, ran["clone-club-key"].end]);
   assertEquals("clone-fleet" in ran, false);
   assertEquals(ran.finish.outputs!.ready, true);
@@ -435,4 +453,28 @@ Deno.test("a nested-fleet clone's start reads only the Club key, and every wake 
   }), []);
   // The wake's own workflow names no secret: a normal wake keeps its empty map.
   assertEquals(failures("workflow-operation-instance-wake.yaml", { execution_secrets: {}, intent: { container: { clone: {} } } }), []);
+});
+
+Deno.test("a checkout create and a container default with a Route keep reading route-csr and route; only a clone reads its clone- steps", () => {
+  const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as {
+    jobs: { steps: { name: string; guard?: string; task: { inputs?: Record<string, string> } }[] }[];
+  };
+  const step = (name: string) => workflow.jobs.flatMap((job) => job.steps).find((s) => s.name === name)!;
+  const finish = step("finish").task.inputs!;
+  const evaluate = (expression: string, context: Record<string, unknown>) => environment.evaluate(swampExpression(expression), context);
+  const legacy = { "route-csr-0": { status: "succeeded" }, route: { status: "failed", outputs: {} } };
+  const cloned = { "clone-route-csr-0": { status: "failed" }, "clone-route": { status: "skipped", outputs: {} } };
+  for (const container of [null, { clone: null }]) {
+    const intent = { already_active: false, route: { leaf_indexes: [0n] }, container };
+    const steps = { ...legacy, ...cloned, finish: { outputs: { ready: false } } };
+    assertEquals([evaluate(finish.route, { inputs: { intent }, steps }), evaluate(finish.certificates, { inputs: { intent }, steps })], ["failed", ["succeeded"]], JSON.stringify(container));
+    // A failed create that ran its Route takes it back.
+    assertEquals(evaluate(step("withdraw-route").guard!, { inputs: { intent }, steps }), false, JSON.stringify(container));
+  }
+  const clone = { already_active: false, route: { leaf_indexes: [0n] }, container: { clone: { source: "instance-7" } } };
+  const steps = { "route-csr": { status: "skipped" }, route: { status: "skipped" }, ...cloned, finish: { outputs: { ready: false } } };
+  assertEquals([evaluate(finish.route, { inputs: { intent: clone }, steps }), evaluate(finish.certificates, { inputs: { intent: clone }, steps })], ["skipped", ["failed"]]);
+  assertEquals(evaluate(step("withdraw-route").guard!, { inputs: { intent: clone }, steps }), false);
+  // A clone whose clone-route succeeded keeps its active address.
+  assertEquals(evaluate(step("withdraw-route").guard!, { inputs: { intent: clone }, steps: { ...steps, "clone-route": { status: "succeeded" } } }), true);
 });

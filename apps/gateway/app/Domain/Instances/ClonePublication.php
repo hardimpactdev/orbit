@@ -45,7 +45,7 @@ final readonly class ClonePublication
      */
     public function defer(Operation $operation): void
     {
-        $input = array_diff_key($operation->input, ['route_create' => true, 'route_lifecycle' => true, 'certificates' => true, 'execution_secrets' => true]);
+        $input = array_diff_key($operation->input, ['route_create' => true, 'route_lifecycle' => true, 'certificates' => true, 'execution_secrets' => true, 'mode' => true]);
         $input['participant_node_ids'] = [ValidatedData::integer($input['node_id'])];
         $input['direct_provisioning'] = [...ValidatedData::object($input['direct_provisioning']), 'route' => null];
         app(OperationStore::class)->change($operation, ['input' => $input]);
@@ -81,17 +81,27 @@ final readonly class ClonePublication
         app(RoutePublicationHolds::class)->releasePublished($operation);
     }
 
+    /** A Route that another write has taken since the admission, such as a `route:destroy` that marked it retiring, stays as it is. */
     public function activate(Operation $operation): void
     {
-        Route::query()->whereKey(ValidatedData::integer($operation->input['route_id']))->lockForUpdate()->first()
-            ?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
+        $route = $this->route($operation);
+        if ($route !== null && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed, RouteStatus::Active], true)) {
+            $route->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
+        }
     }
 
-    /** The publication failed in the create: the Route says so, and its completion publishes it again. */
+    /** The publication failed in the create: the Route says so, and its completion publishes it again. A published Route stays as it is. */
     public function failed(Operation $operation): void
     {
-        Route::query()->whereKey(ValidatedData::integer($operation->input['route_id']))->lockForUpdate()->first()
-            ?->update(['failed_step' => 'native-create', 'error_code' => 'instance.create_route_failed']);
+        $route = $this->route($operation);
+        if ($route !== null && ! $route->sites_published && in_array($route->status, [RouteStatus::Pending, RouteStatus::Failed], true)) {
+            $route->update(['failed_step' => 'native-create', 'error_code' => 'instance.create_route_failed']);
+        }
+    }
+
+    private function route(Operation $operation): ?Route
+    {
+        return Route::query()->whereKey(ValidatedData::integer($operation->input['route_id']))->lockForUpdate()->first();
     }
 
     private static function clone(Operation $operation): bool

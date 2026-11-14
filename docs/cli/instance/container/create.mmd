@@ -55,7 +55,7 @@ sequenceDiagram
     %%> - the site step skips the Route access and `APP_URL` (`prepared` names this Node): the copy's root disk does not exist yet, and `.env` comes with the checkout
     %%> - Caddy proxies to the bridge address reserved at admission; until the completion starts the units, the address answers TLS and then 502
     %%> On failure:
-    %%> - the create goes on; `result.route_publication` is `failed`, the Route records `instance.create_route_failed`, and the completion publishes it again
+    %%> - both steps allow their failure, so the run and the create still succeed; `result.route_publication` is `failed`, the Route records `instance.create_route_failed`, and the completion publishes it again
     SW-->>GW: clone-route ended<br/>native progress event
     Note over GW: Route active, free Nodes<br/>one transaction
     %%> When:
@@ -65,6 +65,8 @@ sequenceDiagram
     %%> - the create's Route Nodes are freed, and waiting Route writes start oldest first
     %%> Otherwise:
     %%> - a failed or skipped `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them
+    %%> - so does a waiting Route write that would publish a whole Caddyfile rendered at its admission; a waiting create renders again and a removal composes from the live file, so they start now
+    %%> - a Route that another write took meanwhile, such as a retiring one, stays as it is
   end
     SW->>N: Stage clone helpers<br/>native clone-input
     %%> What it does:

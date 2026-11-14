@@ -557,7 +557,7 @@ Inherited refusals keep their codes:
 | `instance.remove_refused` | The state, source layout or attached Route is unsafe to remove. |
 | `instance.removal_conflict` | Saved removal, placement or Route inventory changed. |
 | `instance.destroy_unsupported` | Removal requires its recorded development placement and non-root account. |
-| `operation.target_busy` | Another destroy owns a member of the removal set, or a restore owns the Instance. |
+| `operation.target_busy` | Another destroy owns a member of the removal set, a restore owns the Instance, or the Instance's create still runs. `details.operation_id` names the create. |
 | `operation.kind_unavailable` | The placement has no supported native destroy path. |
 | `route.withdrawal_node_unavailable` | The admitted withdrawal Node is inactive. |
 | `database.connection_attached` | An owned database is attached outside the removal set. |

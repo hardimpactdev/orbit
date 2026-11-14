@@ -11,7 +11,7 @@ import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
 type RecordValue = Record<string, unknown>;
-type Mode = "success" | "workspace-failure" | "route" | "route-failure" | "route-cancel";
+type Mode = "success" | "workspace-failure" | "route" | "route-failure" | "route-csr-failure" | "route-cancel";
 const text = (bytes: Uint8Array) => new TextDecoder().decode(bytes);
 const exists = (path: string) => {
     try {
@@ -47,6 +47,7 @@ async function fixture(mode: Mode) {
     // records its phase; the Route fails in route-failure mode and runs 30 s in route-cancel mode.
     const child = JSON.parse((await call("workflow", "create", "create-child")).stdout);
     const routeRun = mode === "route-failure" ? `; test "\${{ inputs.phase }}" != clone-route`
+        : mode === "route-csr-failure" ? `; test "\${{ inputs.phase }}" != clone-route-csr`
         : mode === "route-cancel" ? `; if [ "\${{ inputs.phase }}" = clone-route ]; then touch '${folder}/clone-route'; sleep 30; fi` : "";
     Deno.writeTextFileSync(child.path, stringify({
         id: child.id, name: child.name,
@@ -190,13 +191,17 @@ Deno.test({ name: "pinned create: a clone with a Route publishes it beside the c
     }
 } });
 
-Deno.test({ name: "pinned create: a failed publication leaves the create ready, names the Route warning and withdraws nothing", ignore: !binary, async fn() {
-    const f = await fixture("route-failure");
+for (const [mode, csr, route] of [["route-failure", "succeeded", "failed"], ["route-csr-failure", "failed", "skipped"]] as const) {
+Deno.test({ name: `pinned create: a failed publication (${mode}) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing`, ignore: !binary, async fn() {
+    const f = await fixture(mode);
     try {
         const done = await execute(f);
+        // The publication steps allow their failure: the run, and so the create, still succeeds (D2).
         assert(done.success, text(done.stdout) + text(done.stderr));
+        assertEquals(JSON.parse(text(done.stdout)).status ?? "succeeded", "succeeded");
         const steps = await f.steps();
-        assertEquals([status(steps, "clone-route"), status(steps, "clone-register"), status(steps, "withdraw-route")], ["failed", "succeeded", "skipped"]);
+        assertEquals([status(steps, "clone-route-csr-0"), status(steps, "clone-route"), status(steps, "clone-register"), status(steps, "withdraw-route")],
+            [csr, route, "succeeded", "skipped"]);
         const value = result(steps);
         assertEquals([value.ready, value.failed_step, value.route_publication], [true, undefined, "failed"]);
         assertEquals(value.warnings, [{ code: "instance.create_route_failed", step: "route" }]);
@@ -204,6 +209,7 @@ Deno.test({ name: "pinned create: a failed publication leaves the create ready, 
         f.cleanup();
     }
 } });
+}
 
 Deno.test({ name: "pinned create: a cancel while clone-route runs withdraws the half Route and stops the container", ignore: !binary, async fn() {
     const f = await fixture("route-cancel");

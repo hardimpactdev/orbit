@@ -733,7 +733,9 @@ Route writes also hold their Nodes (decided by the orchestrator, for Nick's revi
 
 A container clone's create takes the hold only when every Node is free at its admission, and never waits. With a Node held, its intent carries no publication. Its completion then publishes the Route and holds the Nodes for its whole run, as before.
 
-A create that took the hold keeps it until its `clone-route` step ends. The Gateway sees that step succeed in the run's progress events. In one transaction it turns the Route `active` with its sites published and frees the Nodes; no step calls the Gateway. A failed step or a lost event keeps the hold until the create's terminal state. A completion of a Route that the create published holds no Node.
+A create that took the hold keeps it until its `clone-route` step ends. The Gateway sees that step succeed in the run's progress events. In one transaction it turns the Route `active` with its sites published and frees the Nodes; no step calls the Gateway. A failed step or a lost event keeps the hold until the create's terminal state.
+
+The create also keeps the hold to its end when a waiting Route write would publish the whole Caddyfile it rendered at its admission. Examples are `route:update`, `route:target:set`, `instance:migrate` and `instance:transfer`; that render lacks the new site. A waiting create renders again when it starts, and a removal composes from the live file, so they may start early. A completion of a Route that the create published holds no Node.
 
 A second Route write that needs a held Node is admitted with status `waiting`. It starts no Swamp run and gets no 409. It starts when every Node it needs is free, oldest first. A newer write also waits behind an older waiting one that shares a Node. Its time budget counts from its start, and an operator can cancel it while it waits.
 

@@ -591,7 +591,7 @@ jobs:
   # A clone's Route, beside its copy (docs/cli/instance/container/create.mmd). Only a clone whose admission took the free Route Nodes
   # carries `route`; with a Node held the admission drops it and the completion publishes. No step reads the container: the CSR and the
   # site are host files, the site skips the Route access and APP_URL (`prepared`), and the TLS probe is a handshake with the Node's Caddy.
-  # A failure here never stops a clone step and never fails the create: the completion publishes again. The Gateway frees the Route
+  # A failure here never stops a clone step and never fails the run (`allowFailure`): the completion publishes again. The Gateway frees the Route
   # Nodes and activates the Route when it sees `clone-route` succeed (NativeRunProgress), so the steps keep their names.
   - name: publication
     dependsOn: [{job: input, condition: {type: succeeded}}]
@@ -599,6 +599,7 @@ jobs:
       - name: clone-route-csr
         labels: {role: swamp}
         writes: true
+        allowFailure: true
         dependsOn: []
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         forEach: {item: leaf, in: '${{ inputs.intent.route == null || inputs.intent.container == null || inputs.intent.container.clone == null ? [] : inputs.intent.route.leaf_indexes }}'}
@@ -613,6 +614,7 @@ jobs:
       - name: clone-route
         labels: {role: swamp}
         writes: true
+        allowFailure: true
         dependsOn: [{step: clone-route-csr, condition: {type: always}}]
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || !(inputs.intent.container != null && inputs.intent.container.clone != null) || steps.exists(k, k.startsWith("clone-route") && steps[k].status == "failed") }}'
         task:

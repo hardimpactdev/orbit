@@ -294,7 +294,8 @@ final readonly class DevelopmentSiteRepository
                         $target->status,
                         [InstanceState::SourceResolved, InstanceState::Active],
                         true,
-                    ) || $target->cloneInProgress() || ($target->status === InstanceState::Reserved && $route->sites_published))
+                    ) || $target->cloneInProgress()
+                        || ($target->status === InstanceState::Reserved && $route->sites_published && $target->runtime?->clone_source_instance_id !== null))
                 ),
             )
             ->values();

@@ -960,7 +960,9 @@ The admission then looks at the Route publication hold of the Route's serving No
 
 The hold table's key is the Node, so of two creates admitted in the same second exactly one takes the hold. The other gets the completion path, and its thread never waits for the first create.
 
-The Gateway frees the hold when `clone-route` ends, not at the create's end. When the run's progress event says `clone-route` succeeded, the Gateway turns the Route `active` with its sites published and frees the Nodes in one transaction, so the next Route writer's render keeps the site. No step calls the Gateway. A failed `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them.
+The Gateway frees the hold when `clone-route` ends, not at the create's end. When the run's progress event says `clone-route` succeeded, the Gateway turns the Route `active` with its sites published and frees the Nodes in one transaction, so the next Route writer's render keeps the site. No step calls the Gateway. A failed `clone-route`, or a lost event, keeps the Nodes until the create's terminal state frees them. So does a waiting Route write that publishes a render from its admission ([coordinate publication](/reference/routes#coordinate-publication)).
+
+Both publication steps allow their failure (`allowFailure`), so a failed publication fails neither the run nor the create. A removal while the create runs is refused with `operation.target_busy`, which names the create.
 
 No publication step needs the running app. The site step skips the Route access and `APP_URL`, because the copy's root disk does not exist yet; `.env` comes with the checkout. Caddy proxies to the bridge address that the admission reserved. The TLS probe is a handshake with the Node's Caddy and sends no request. So when the create succeeds, the address answers TLS, but the app answers 502 until the completion's `clone-services` starts the units, about 10 to 20 seconds later.
 
