@@ -460,3 +460,25 @@ Deno.test("a clone's Route publication never decides its create: published, fail
         route: "failed", certificates: ["succeeded"]}).stdout);
     assertEquals([fallen.ready, fallen.failed_step, fallen.route_publication], [false, "route", undefined]);
 });
+
+Deno.test("a ready create's finish removes its run folder; a failed create keeps it for the container stop and the cleanup step", async () => {
+    const { behavior } = await import("./assets.ts");
+    const run = async (ready: boolean) => {
+        const folder = await Deno.makeTempDir({ prefix: "orbit-ansible-" });
+        // The checked T3 sessions wait in the run folder until it goes.
+        await Deno.writeTextFile(`${folder}/t3.json`, '{"gateway":{"token":"never kept"}}');
+        try {
+            const checkout = ready ? { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } } : { status: "failed", outputs: { stdout: "" } };
+            const done = await behavior.methods.create_result.execute({
+                intent: { ...intent, setup_steps: [] }, folder, checkout, database: "succeeded", setup: "skipped", processes: [], route: "skipped",
+            }, { writeResource: async () => undefined });
+            let kept = true;
+            try { await Deno.stat(folder); } catch { kept = false; }
+            return [done.ready, done.removed, kept];
+        } finally {
+            await Deno.remove(folder, { recursive: true }).catch(() => undefined);
+        }
+    };
+    assertEquals(await run(true), [true, true, false]);
+    assertEquals(await run(false), [false, false, true]);
+});

@@ -233,7 +233,8 @@ function runCreate(intent: Record<string, unknown>, outcomes: Record<string, Out
   return runWorkflow("workflow-operation-instance-create.yaml", "instance.create", intent, outcomes, (step, cel) => {
     const values = Object.fromEntries(Object.entries(step.task.inputs!).map(([key, value]) => [key, cel(value)]));
     const result = createResult(intent, behavior.methods.create_result.arguments.parse(values));
-    return { outputs: { ready: result.ready, stdout: result.stdout } };
+    // A ready create's finish removes the run folder itself (assets.ts), so the cleanup step skips.
+    return { outputs: { ready: result.ready, stdout: result.stdout, removed: result.ready } };
   });
 }
 
@@ -299,6 +300,8 @@ Deno.test("a normal clone succeeds at the registration in about 24 s, with the w
   assertEquals(JSON.parse(String(ran.finish.outputs!.stdout)).commit, commit);
   assertEquals(JSON.parse(String(ran.finish.outputs!.stdout)).environment, { copied: ["APP_NAME"], dropped: [] });
   assertEquals([ran["stop-container"].status, ran["withdraw-route"].status, ran.accepted.status], ["skipped", "skipped", "succeeded"]);
+  // finish removed the ready create's run folder: the cleanup step skips, and the run ends with accepted.
+  assertEquals(ran.cleanup.status, "skipped");
   // Seconds per level, from timeline.md: input 1.3 · stage 2.0 · copy 5.3 · T3 4.2 beside the checkout · sessions 2.6 · copy 1.4 · register 1.3 ·
   // finish 1.3. With 3.8 s for the Gateway's admission and the Swamp start, the create succeeds about 24 s after the click.
   assertEquals(Math.round(ran.finish.end * 10) / 10, 19.1);

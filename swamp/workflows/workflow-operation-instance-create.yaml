@@ -721,11 +721,12 @@ jobs:
         labels: {role: swamp}
         dependsOn: [{step: finish, condition: {type: succeeded}}, {step: withdraw-route, condition: {type: always}}, {step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
         task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}
+      # A ready create's `finish` removed the run folder itself (`removed`), so this step runs only after a failure or a failed removal.
       - name: cleanup
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
-        guard: '${{ inputs.intent.already_active }}'
+        guard: '${{ inputs.intent.already_active || ("finish" in steps && steps.finish.status == "succeeded" && steps.finish.outputs.removed == true) }}'
         task:
           type: behavior
           behaviorType: command/shell
