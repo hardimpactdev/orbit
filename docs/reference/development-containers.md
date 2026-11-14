@@ -1188,20 +1188,27 @@ The create's terminal projection admits the first completion. A completion that 
 Every phase of a clone's create and completion runs `swamp/scripts/instance_clone.py` on the Node. When one of its commands fails, the Operation's `error.detail` holds three things:
 
 1. The code line, such as `instance.container_services_failed: command incus exited 1`.
-2. What the command did, in public words, such as `(incus exec instance-7 python3 guest services)`. Options, their values and `-c` programs never appear.
-3. The end of the command's stderr, in whole lines. The whole detail is at most 4,000 characters, so the native step's own words still fit the Gateway's 4,096 bytes.
+2. What the command did, in public words, such as `(incus exec instance-7 python3 guest services)`. No option or `-c` program appears.
+3. The end of the command's stderr, in whole lines.
 
-Native run history keeps a step's stderr, so the script redacts the text before it prints it:
+The whole detail has at most 4,000 characters. The native step adds its own words, and the Gateway keeps 4,096 bytes.
 
-- Each value of the phase's private input is replaced by `[REDACTED]`, if it has at least 8 characters. These are the strings of the framed vault value, each line of them and each value of a `KEY=VALUE` line.
-- Credentials are replaced by their shape, as the Gateway's redaction does: a URL's user part, `Authorization` and `Bearer` values, GitHub tokens, PEM blocks, 64-character hex strings and `password=`-style pairs.
-- A line that still holds an 8-character piece of a private value is dropped.
+Native run history keeps a step's stderr. So the script redacts the text before it prints it:
+
+- Each private value of at least 8 characters becomes `[REDACTED]`.
+- The private values are the strings of the framed vault value. Their lines and the values of their `KEY=VALUE` lines count too.
+- Credentials become `[REDACTED]` by their shape, as in the Gateway's redaction.
+- These shapes are URL user parts, `Authorization` and `Bearer` values, GitHub tokens, PEM blocks and 64-character hex strings.
+- A `password=` or `token=` pair loses its value.
+- The script drops a line that still holds an 8-character piece of a private value.
 
 The Gateway redacts the detail once more with the Instance's stored values.
 
 The guest phase in the container also hands on the stderr of its own failed `git`, `mkdir` or `systemctl`, on the lines after its diagnostic. It never hands on the stderr of `curl`, `php`, `t3` or `python3`: those commands can see a token that T3 issues in the container or a Project's value, and the Node script cannot know those to redact them. Any other failure of the guest names the error's type, and for a file error its cause and path.
 
-The `workspace` and `services` parts make no Incus file call. Incus serves a container's files through one `forkfile` helper per container, and the helper exits after about 15 seconds without a request. A request that reaches it just before that exit is never served: `incus file push` fails with `Error: error receiving version packet from server: server unexpectedly closed connection`. A completion's first file call comes about 15 seconds after the create's last one, so it could meet that exit. So the Node script puts the Node runtime helper (`/usr/local/libexec/orbit-instance-node-runtime.py`) in the guest's intent, and the guest writes it, root's and mode 0755, in the exec it runs anyway. The other phases' file calls come seconds apart within one create. A failed one names its command and Incus's words, and is not retried.
+The `workspace` and `services` parts make no Incus file call. Incus serves a container's files through one `forkfile` helper per container, and the helper exits after about 15 seconds without a request. A request that reaches it just before that exit is never served: `incus file push` fails with `Error: error receiving version packet from server: server unexpectedly closed connection`. A completion's first file call comes about 15 seconds after the create's last one, so it could meet that exit.
+
+So the Node script puts the Node runtime helper (`/usr/local/libexec/orbit-instance-node-runtime.py`) in the guest's intent. The guest writes it, owned by root with mode 0755, in the exec it runs anyway. The other phases' file calls come seconds apart within one create. A failed one names its command and Incus's words. Nothing retries it.
 
 ### Clone the database
 
