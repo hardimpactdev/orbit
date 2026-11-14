@@ -215,3 +215,13 @@ Deno.test("an undelivered pairing still requires an actual session revocation", 
         await Deno.remove(directory, { recursive: true });
     }
 });
+
+Deno.test("a held pairing matches only its exact label, never an MCP session of its Node in its window", () => {
+    const inventory = [
+        { sessionId: "held", subject: "one-time-token", current: false, issuedAt: "2026-11-10T16:53:00.000Z", client: { label: "mini via Orbit h3ld0000", ipAddress: "10.44.0.209" } },
+        { sessionId: "cli", subject: "mcp-client", current: false, issuedAt: "2026-11-10T16:53:21.318Z", client: { label: "arbitrary OAuth client", ipAddress: "10.44.0.9" } },
+    ];
+    const held = { ...mini, id: 1900, label: "mini via Orbit h3ld0000", held: true };
+    assertEquals(selectPairings(JSON.stringify(inventory), [held]).ids, ["held"]);
+    assertEquals(selectPairings(JSON.stringify(inventory), [{ ...held, held: false }]).ids, ["held", "cli"]);
+});

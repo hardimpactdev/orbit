@@ -1,0 +1,73 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Orbit\Extensions\Conn\Domain;
+
+use App\Domain\Instances\InstanceRuntimePowerState;
+use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationStatus;
+use App\Models\Operation;
+use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
+use Orbit\Extensions\Conn\Models\ConnPairing;
+
+/**
+ * The hourly care of held sessions ([Held sessions](/reference/conn#held-sessions)). No device takes part. It withdraws a session whose
+ * Node lost its grant, renews each session within the margin of its end, also on Instances no device uses, and admits each owed revoke
+ * while its server runs. A sleeping Instance is skipped; its wake renews its sessions.
+ */
+final readonly class ConnHeldSessionSweep
+{
+    /** Clones made on one day reach the margin in the same hour; one tick renews at most this many. */
+    public const int PerTick = 20;
+
+    public function __construct(private ConnHeldSessions $held, private ConnServerAccess $access) {}
+
+    /** @return list<int> the Operation ids it admitted */
+    public function run(?CarbonImmutable $now = null): array
+    {
+        $now ??= CarbonImmutable::now();
+        $admitted = [];
+        foreach (ConnPairing::query()->where('held', true)->whereNull('withdrawn_at')->whereNull('revoked_at')->with(['node', 'environment.node'])->get() as $pairing) {
+            if (! $this->access->allows($pairing->node, $pairing->environment)) {
+                DB::transaction(fn () => $this->held->withdraw($pairing));
+            }
+        }
+        $open = Operation::query()->where('kind', ConnHeldSessions::Kind)->whereNotIn('status', OperationStatus::terminalValues())->get()
+            ->map(static fn (Operation $operation): string => ValidatedData::integer($operation->input['caller_node_id']).':'.ValidatedData::integer($operation->input['conn_environment_id']))->flip();
+        $due = $this->running(ConnPairing::query()->where('held', true)->whereNotNull('session')->whereNull('withdrawn_at')->whereNull('revoked_at')
+            ->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays)))->orderBy('session_expires_at')->orderBy('id')->get();
+        foreach ($due as $pairing) {
+            if (count($admitted) >= self::PerTick) {
+                break;
+            }
+            if (! $open->has($pairing->node_id.':'.$pairing->conn_environment_id) && ($operation = $this->held->renew($pairing)) instanceof Operation) {
+                $admitted[] = $operation->id;
+            }
+        }
+        // A session past its end needs no revoke; the server refuses it already.
+        $owed = $this->running(ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')
+            ->where(static fn (Builder $query) => $query->whereNull('session_expires_at')->orWhere('session_expires_at', '>', $now)))->orderBy('id')->get();
+        foreach ($owed->unique('conn_environment_id') as $pairing) {
+            if (($operation = $this->held->revoke($pairing)) instanceof Operation) {
+                $admitted[] = $operation->id;
+            }
+        }
+
+        return $admitted;
+    }
+
+    /**
+     * @param  Builder<ConnPairing>  $query
+     * @return Builder<ConnPairing>
+     */
+    private function running(Builder $query): Builder
+    {
+        return $query->whereHas('environment', static fn (Builder $environment) => $environment->whereNotNull('instance_id')
+            ->whereHas('instance', static fn (Builder $instance) => $instance->where('status', '!=', InstanceState::Removing->value))
+            ->whereDoesntHave('instance.runtime', static fn (Builder $runtime) => $runtime->where('power_state', InstanceRuntimePowerState::Stopped->value)));
+    }
+}
