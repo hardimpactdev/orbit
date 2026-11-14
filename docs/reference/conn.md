@@ -637,11 +637,15 @@ The Gateway reads the session key once, stores the session encrypted on the pair
 
 When T3 answered, no session exists. The Operation ends with that answer's code, and the pairing is settled with a revoke time: `conn.session_rejected` (the admin session got 401), `conn.request_refused` (another status), `conn.response_invalid` (a link reply without T3's shape) or `conn.redeem_refused` (T3 refused the link at `/oauth/token`). Any other failure is `conn.session_outcome_unknown`: a session may exist, so the Gateway withdraws the pairing and revokes it by its label. The next read starts a new Operation with a new label.
 
-**Pre-mint.** The operator's switch `ORBIT_CONN_HELD_SESSION_PREMINT` (`orbit.conn.held_session_premint`) makes sessions before the first read. It is off by default, because it adds Swamp runs to every container create. The Gateway operator turns it on in `/home/orbit/shared/gateway.env` and [applies the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed. While it is on, the Gateway pre-mints each time it records a container Instance's T3 server: at the end of `instance:create` of a development container, from Conn's New-instance flow or any other caller, and at the end of `instance:migrate`. It admits a `conn.session_hold` for each Node of the creating Node's profile that has node access to the server, or for the creating Node alone when it has no profile. The creating Node is the Node that started the Instance's first `instance.create`; an Instance that no Node created gets none. A refused admission is logged as `conn.held_premint_deferred`, and that Node's first read makes its session. While the switch is off, the first read makes it. The handle, renewal and revoke do not depend on the switch.
+**Pre-mint.** The operator's switch `ORBIT_CONN_HELD_SESSION_PREMINT` (`orbit.conn.held_session_premint`) makes sessions before the first read. It is off by default, because it adds Swamp runs to every container create. The Gateway operator turns it on in `/home/orbit/shared/gateway.env` and [applies the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed. While it is off, the first read makes each session. The handle, renewal and revoke do not depend on the switch.
+
+While it is on, the Gateway pre-mints each time it records a container Instance's T3 server: at the end of `instance:create` of a development container, from Conn's New-instance flow or any other caller, and at the end of `instance:migrate`. It admits a `conn.session_hold` for each Node of the creating Node's profile that has node access to the server, or for the creating Node alone when it has no profile. The creating Node is the Node that started the Instance's first `instance.create`; an Instance that no Node created gets none. A refused admission is logged as `conn.held_premint_deferred`, and that Node's first read makes its session.
 
 ### Renewal of a held session
 
-T3 issues the session for 30 days. The hourly renewal tick ([Renewal of an Instance server](#renewal-of-an-instance-server)) then admits a `conn.session_hold` for each held session that ends within seven days, at most 20 a tick, the earliest end first. A session whose last renewal failed goes after the others, so failing sessions never take every slot from healthy ones. It does so also for Instances no device is connected to. A sleeping Instance is skipped; a successful wake renews its held sessions that end within seven days and admits the server's next owed revoke. A held session that waits on an ended admin session renews as soon as the renewed admin session is recorded. No device renews anything.
+T3 issues the session for 30 days. The hourly renewal tick ([Renewal of an Instance server](#renewal-of-an-instance-server)) then admits a `conn.session_hold` for each held session that ends within seven days, at most 20 a tick, the earliest end first. A session whose last renewal failed goes after the others, so failing sessions never take every slot from healthy ones. It does so also for Instances no device is connected to.
+
+A sleeping Instance is skipped; a successful wake renews its held sessions that end within seven days and admits the server's next owed revoke. A held session that waits on an ended admin session renews as soon as the renewed admin session is recorded. No device renews anything.
 
 The old session serves until the new one is recorded. Then the Gateway withdraws the old one and admits its revoke by `pairing_id`.
 
@@ -649,13 +653,18 @@ The old session serves until the new one is recorded. Then the Gateway withdraws
 
 Revoke stays per pairing: `POST /environments/{environment_id}/pairings/revoke` with `pairing_id` ends one held session. Without `pairing_id` it keeps its meaning for installed clients: the Node's own open pairings, never a held one. The Node keeps its node access, so its next read makes a new held session. To stop a Node for good, remove its node access.
 
-A revoke by `pairing_id` withdraws a held pairing at its admission: the handle stops serving it at once. An unmatched revoke of that one pairing proves that T3 holds no session with its label only when no hold of the pairing ran at the revoke's admission. Then the Gateway settles the pairing, and the next read makes a new one. If its hold ran, the session may come after the revoke read the server, so the pairing stays withdrawn and the hold's end revokes it again. A client whose server answers 401 reads the handle again. If the handle answers the same `pairing_id` again, the client revokes that pairing by its id, then reads again.
+A revoke by `pairing_id` withdraws a held pairing at its admission: the handle stops serving it at once. An unmatched revoke of that one pairing proves that T3 holds no session with its label only when no hold of the pairing ran at the revoke's admission. Then the Gateway settles the pairing, and the next read makes a new one. If its hold ran, the session may come after the revoke read the server, so the pairing stays withdrawn and the hold's end revokes it again.
+
+A client whose server answers 401 reads the handle again. If the handle answers the same `pairing_id` again, the client revokes that pairing by its id, then reads again.
 
 A held session ends in two steps. The Gateway withdraws it: it stops serving it and clears it at once. Then it owes the revoke on the server: it admits a revoke by `pairing_id`. One revoke holds a server at a time, so when a revoke ends, the next owed revoke on that server starts. While the server cannot take one (asleep, busy, its admin session ended) the hourly tick admits it again. A session past its end owes nothing, and the tick settles it.
 
 - Removing a Node's node access withdraws its held sessions on the servers that the Node now cannot reach. Core calls Conn through the `NodeAccessRemovalHook` plug-in point of `node:access:remove`.
 - The hourly tick also withdraws a held session whose Node lost access another way.
-- Deleting a Node ([`node:remove`](/cli/node/remove)) withdraws its held sessions that are not settled, just before the Node row goes. Core calls Conn through the `NodeRemovalHook` plug-in point. The Gateway made those pairings, so each passes to the Gateway Node: the row survives the delete, and the owed revoke by `pairing_id` runs as above. The first revoke on each server starts at once; one whose hold still runs revokes at that hold's end. A server that is asleep or down gets its revoke at its wake or from the hourly tick.
+- Deleting a Node ([`node:remove`](/cli/node/remove)) withdraws its unsettled held sessions just before the Node row goes. Core calls Conn through the `NodeRemovalHook` plug-in point.
+- Each of those pairings passes to the Gateway Node, which made it. So the row survives the delete.
+- The owed revoke by `pairing_id` then runs as above.
+- The first revoke on each server starts at once. One whose hold still runs revokes at that hold's end.
 - Destroying the Instance deletes its held pairings with its other pairings. T3 goes with the container, so nothing is left to revoke.
 
 `GET /environments/{environment_id}/pairings` keeps its default answer: device pairings only. `include_held=1` or `include_held=true` adds the held pairings, and then each row has `held`. The optional `include_held` accepts only `1`, `true`, `0` or `false`, else `validation.failed` (422). A device's `renew: true` pairing looks only at the device's own pairings, so a revoked held pairing never refuses it.
@@ -670,7 +679,8 @@ T3 0.1.7 does not bind the session to a client. It checks only the signature, th
 
 - it ends, at most 30 days after it was issued;
 - the next renewal revokes it, at most 23 days after it was issued;
-- a revoke by `pairing_id`, removing the Node's node access, or deleting the Node ends it as soon as the server takes the revoke. A server that is asleep or down takes it at its wake or the next hourly tick.
+- a revoke by `pairing_id`, removing the Node's node access, or deleting the Node: it ends once the server takes that revoke;
+- a server that is asleep or down takes that revoke at its wake or at the next hourly tick.
 
 Binding would need a DPoP proof key that the client presents when the link is redeemed. The Gateway redeems for the client, so it cannot present the client's key. Stock T3 also issues a bound token for one hour only.
 
@@ -692,8 +702,11 @@ A failed delete is logged as `conn.held_vault_cleanup_failed`.
 
 A revoke by `pairing_id` during the hold that makes that pairing's session reads the server before the session exists. It can end first, unmatched, or after the hold. The Gateway closes the gap from both ends:
 
-- The revoke withdraws the held pairing at its admission and records that its hold still runs. Its unmatched answer then settles nothing, and no owed revoke of that pairing starts while its hold runs.
-- When the hold ends, it finds the pairing withdrawn: it never serves the session and admits its revoke by id. If the first revoke still holds the server, that revoke's end starts it.
+- The revoke withdraws the held pairing at its admission and records that its hold still runs.
+- Its unmatched answer then settles nothing.
+- No owed revoke of that pairing starts during its hold.
+- When the hold ends, it finds the pairing withdrawn. It never serves the session, and it admits the revoke by id.
+- If the first revoke still holds the server, the end of that revoke starts the next one.
 
 So no session outlives a revoke that named it, in either order. A renewal makes a new pairing, so a revoke of the old pairing ends only the old session; the renewal's own session is a new `pairing_id`.
 

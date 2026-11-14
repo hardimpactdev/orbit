@@ -114,7 +114,7 @@ final readonly class ConnHeldSessions
         foreach ($pairings as $pairing) {
             $pairing->forceFill(['node_id' => $gateway, 'session' => null, 'withdrawn_at' => $pairing->withdrawn_at ?? Carbon::now()])->save();
         }
-        $environments = $pairings->pluck('conn_environment_id')->unique()->values()->all();
+        $environments = array_values(array_unique($pairings->map(static fn (ConnPairing $pairing): int => $pairing->conn_environment_id)->all()));
         DB::afterCommit(function () use ($environments): void {
             foreach ($environments as $environment) {
                 $this->revokeNext($environment);
