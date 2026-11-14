@@ -26,6 +26,8 @@ sequenceDiagram
     %%> - before the transaction, one bounded read of the default's container (at most about 6 s) confirms it runs: its power record can be stale after a stop by hand; a stopped, asleep or unreachable container refuses the same way
     %%> - no Instance is named `task-TASK` yet; otherwise `tasks.copy_name_taken`
     %%> - for a nested-fleet Project only: the default's Node holds fewer nested-fleet task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every nested copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait. A copy of any other Project is a plain clone: it neither counts nor waits
+    %%> - before the transaction, one bounded read of the Node's ID ranges (at most about 4 s): root's subordinate range and every container's ID map, stopped ones too; an unreadable Node refuses, `tasks.copy_id_ranges_unreadable`
+    %%> - with the copy placed as Incus places ranges, a free isolated ID range stays for the next seed of every default on the Node; a container that an open create admitted counts as held; otherwise `tasks.copy_id_range_full`, with no wait, also for a plain clone
     %%> What it does:
     %%> - one transaction: the clone `task-TASK` on branch `task-TASK`, owned by the task and bound to it, the task `reserved`, and the `instance.create` Operation that `task:start` returns and follows
     %%> - Swamp starts the run only after that commit: a Gateway that stops before it leaves no record and no run

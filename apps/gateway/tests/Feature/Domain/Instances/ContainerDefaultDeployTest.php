@@ -34,6 +34,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitRepositoryIdentity;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRuntime;
@@ -119,7 +120,7 @@ function deployDefault(bool $container, string $incusProject = 'orbit-instances'
     if ($container) {
         InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
             'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
-            'power_state' => InstanceRuntimePowerState::Stopped]);
+            'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => $incusProject === InstancePlacement::NestedProject ? 101000000 : null]);
     }
 
     return $instance;
@@ -967,7 +968,7 @@ it('refuses the refresh of a nested-fleet default while a clone of it is being c
         'name' => 'feature', 'checkout_path' => '/srv/tool/feature', 'status' => InstanceState::Active]);
     InstanceRuntime::query()->create(['instance_id' => $clone->id, 'node_id' => $clone->node_id, 'incus_project' => InstancePlacement::NestedProject,
         'container_name' => 'instance-'.$clone->id, 'bridge_address' => '10.253.0.3', 'runtime_version' => 'r', 'agent_version' => 'a',
-        't3_port' => 3800, 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped]);
+        't3_port' => 3800, 'clone_source_instance_id' => $instance->id, 'power_state' => InstanceRuntimePowerState::Stopped, 'idmap_size' => 101000000]);
     Operation::query()->create(['kind' => 'instance.create', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
         'status' => $status, 'input' => [], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
 
@@ -1051,6 +1052,36 @@ it('keeps the new seed when only the start after a passed refresh failed, and sh
         ->and($operation->state['native_failure']['detail'])->not->toContain('swamp-run-token-value-0123456789')
         ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->firstOrFail()->seed_commit)->toBe($commit);
 });
+
+it('names a failed seed in the Operation and leaves an Activity problem when the release refresh fails', function (string $trigger, bool $problem): void {
+    $instance = deployDefault(container: true);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'triggered_by' => $trigger, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)],
+        'state' => ['swamp_run_id' => 'run-1']]);
+    // As refresh 21308 on 2026-11-14: Incus found no free ID range for the snapshot; the seed step kept the old seed.
+    $detail = "No free ID range for the new seed: every isolated range of root's subordinate IDs is held by a container. The old seed stays.";
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'failure' => ['failed_step' => 'Keep the current seed', 'detail' => 'Command exited with code 2', 'stderr_recorded' => false], 'result' => [
+            'steps' => ['Read the container result' => ['stdout' => json_encode(['error_code' => 'instance.container_seed_failed', 'detail' => $detail], JSON_THROW_ON_ERROR)]],
+            'summary' => ['failed_steps' => ['Keep the current seed']]]]);
+
+    $operation->refresh();
+    expect($operation->error_code)->toBe('instance.container_seed_failed')
+        ->and($operation->state['native_failure'])->toBe(['failed_step' => 'Keep the current seed', 'detail' => $detail, 'stderr_recorded' => true]);
+    $rows = Activity::query()->where('description', 'instance.refresh_failed')->get();
+    expect($rows->count())->toBe($problem ? 1 : 0);
+    if ($problem) {
+        $row = $rows->sole();
+        expect([$row->status, $row->error_code, $row->command, $row->subject_id])->toBe(['failed', 'instance.refresh_failed', 'instances:refresh-nested-fleets', $instance->id])
+            ->and($row->properties?->get('operation_id'))->toBe($operation->id)
+            ->and($row->properties?->get('operation_error_code'))->toBe('instance.container_seed_failed')
+            ->and($row->properties?->get('error_message'))->toContain('No free ID range for the new seed');
+    }
+})->with([
+    'the refresh a release admitted' => [NestedFleetRefresh::Trigger, true],
+    'a deployment by hand' => ['manual', false],
+]);
 
 it('admits one refresh per nested-fleet default to the release commit, and nothing without one', function (): void {
     Queue::fake();

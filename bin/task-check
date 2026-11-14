@@ -1,0 +1,466 @@
+#!/usr/bin/env python3
+"""Check what a task changed since its start commit, within a time budget. The scoped task check of a task copy.
+
+CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
+Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
+names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
+are left to CI and named as skipped. Every part gets the time left as its limit; a part the budget stops or
+leaves out is named as skipped. One line per part ends the output.
+
+--base REF        the start commit (default: the merge base with origin/main, else main)
+--budget SECONDS  wall time of the whole run (default 270)
+--only PARTS      comma-separated part names, such as pest,phpstan"""
+import argparse
+from contextlib import contextmanager
+from importlib.machinery import SourceFileLoader
+from importlib.util import module_from_spec, spec_from_loader
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import shutil
+import signal
+import subprocess
+import sys
+import tempfile
+import time
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def module(name, path):
+    loader = SourceFileLoader(name, str(path))
+    result = module_from_spec(spec_from_loader(name, loader))
+    loader.exec_module(result)
+    return result
+
+
+# The candidate gate owns how a candidate's paths, tree and docs impact command are read.
+review = runpy.run_path(str(ROOT / 'bin/review-check'))
+units = module('task_check_units', ROOT / 'bin/ci-units')
+# bin/cli-contract owns which CLI tests replay an SDK fixture.
+contract = module('task_check_contract', ROOT / 'bin/cli-contract')
+
+PARTS = ('ci-plan', 'docs-impact', 'check-flows', 'docs-lint', 'pint', 'phpstan', 'swamp-shape', 'fixture-population',
+         'pest', 'fixtures')
+PHP_PROJECTS = review['PHP_PROJECTS']
+# The CI jobs that run a project's Pest suite or its static analysis. CI runs no PHPStan on apps/docs.
+PEST_JOBS = {'gateway-tests': 'apps/gateway', 'cli-tests': 'apps/cli', 'sdk-tests': 'packages/php-sdk', 'docs': 'apps/docs'}
+STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-static': 'packages/php-sdk',
+               'e2e-static': 'apps/e2e'}
+# The suites small enough to run whole. Each other suite runs only its changed and contract-mapped test files.
+FULL_SUITES = ('packages/php-sdk',)
+COLLECT_SECONDS = 15
+FIXTURE_SETUP_SECONDS = 10
+OUTPUT_LINES = 80
+DEFAULT_BUDGET = 270
+
+
+class Part:
+    def __init__(self, name, status, seconds=0.0, detail='', output=''):
+        self.name, self.status, self.seconds, self.detail, self.output = name, status, seconds, detail, output
+
+
+def run(argv, cwd=ROOT, env=None, timeout=None):
+    """Run one command; return its exit code and combined output. A missing program is exit 127 and says so.
+    A command stopped at its timeout returns None."""
+    try:
+        process = subprocess.Popen(argv, cwd=cwd, env={**os.environ, 'COMPOSER_PROCESS_TIMEOUT': '0', **(env or {})},
+                                   stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+    except FileNotFoundError as error:
+        return 127, f'{error.filename or argv[0]}: required tool not found\n'
+    try:
+        output, _ = process.communicate(timeout=timeout)
+        return process.returncode, output
+    except subprocess.TimeoutExpired:
+        return None, stop(process)
+    except BaseException:
+        # A stop of the check itself, such as Orbit's outer timeout, stops the command too.
+        stop(process)
+        raise
+
+
+def stop(process):
+    os.killpg(process.pid, signal.SIGTERM)
+    try:
+        output, _ = process.communicate(timeout=15)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        output, _ = process.communicate()
+    return output
+
+
+def tail(text, lines=OUTPUT_LINES):
+    rows = text.rstrip('\n').splitlines()
+    return '\n'.join((['…'] if len(rows) > lines else []) + rows[-lines:])
+
+
+def timed(name, commands, deadline, cwd=ROOT, env=None):
+    """A part of commands that run in order and stop at the first failure. Each command gets the time left."""
+    started, output = time.monotonic(), ''
+    for argv in commands:
+        left = deadline - time.monotonic()
+        if left <= 0:
+            return Part(name, 'skipped', time.monotonic() - started, 'budget: not started, no time left')
+        code, text = run(argv, cwd, env, timeout=left)
+        output += text
+        if code is None:
+            seconds = time.monotonic() - started
+            return Part(name, 'skipped', seconds, f'budget: stopped after {seconds:.0f}s')
+        if code:
+            return Part(name, 'FAILED', time.monotonic() - started, f'exit {code}: {" ".join(argv)}', tail(output))
+    return Part(name, 'passed', time.monotonic() - started)
+
+
+def changes(root, base):
+    """Whether the tree is committed, the start commit, and the paths changed since it, as the candidate gate reads them."""
+    committed = not review['git'](root, 'status', '--porcelain')
+    start, paths = review['candidate_paths'](root, review['git'](root, 'rev-parse', 'HEAD'), committed, base)
+    return committed, start, paths
+
+
+def candidate_head(committed):
+    """HEAD, or a commit of the working tree that no branch holds, so CI's plans read uncommitted work too."""
+    head = review['git'](ROOT, 'rev-parse', 'HEAD')
+    if committed:
+        return head
+    identity = {'GIT_AUTHOR_NAME': 'task-check', 'GIT_AUTHOR_EMAIL': 'task-check@orbit.invalid',
+                'GIT_COMMITTER_NAME': 'task-check', 'GIT_COMMITTER_EMAIL': 'task-check@orbit.invalid'}
+    return subprocess.check_output(['git', '-C', str(ROOT), 'commit-tree', review['working_tree'](ROOT), '-p', head,
+                                    '-m', 'bin/task-check candidate'], env={**os.environ, **identity}, text=True).strip()
+
+
+@contextmanager
+def candidate_checkout(head, committed):
+    """A checkout whose HEAD is the candidate. The Swamp checkers read committed HEAD and tracked files, so
+    uncommitted work runs in a temporary worktree of the candidate commit, removed afterwards."""
+    if committed:
+        yield ROOT
+        return
+    scratch = None
+    try:
+        scratch = Path(tempfile.mkdtemp(prefix='task-check-candidate-'))
+        worktree = scratch / 'checkout'
+        subprocess.run(['git', '-C', str(ROOT), 'worktree', 'add', '--quiet', '--detach', str(worktree), head],
+                       check=True, capture_output=True)
+        yield worktree
+    finally:
+        if scratch is not None:
+            subprocess.run(['git', '-C', str(ROOT), 'worktree', 'remove', '--force', str(scratch / 'checkout')], capture_output=True)
+            shutil.rmtree(scratch, ignore_errors=True)
+            subprocess.run(['git', '-C', str(ROOT), 'worktree', 'prune'], capture_output=True)
+
+
+def exit_on_sigterm():
+    """Orbit stops a task check with SIGTERM at its outer timeout: exit through SystemExit, so cleanup runs."""
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(128 + signal.SIGTERM))
+
+
+def project_of(path):
+    return next((project for project in PHP_PROJECTS if path.startswith(project + '/')), None)
+
+
+def php_files(paths, project):
+    return [path for path in paths if path.endswith('.php') and project_of(path) == project and (ROOT / path).is_file()]
+
+
+def analysed_paths(project):
+    """The repository paths that the project's phpstan.neon analyses."""
+    text = (ROOT / project / 'phpstan.neon').read_text()
+    block = re.search(r'^    paths:\n((?:        - .+\n)+)', text, re.M)
+    return [os.path.normpath(f'{project}/{line.strip()[2:]}') for line in block.group(1).splitlines()] if block else []
+
+
+def phpstan_files(paths, project):
+    roots = analysed_paths(project)
+    return [path for path in paths if path.endswith('.php') and (ROOT / path).is_file()
+            and any(path == root or path.startswith(root + '/') for root in roots)]
+
+
+def test_files(paths, project):
+    return [path for path in paths if path.startswith(project + '/tests/') and path.endswith('Test.php') and (ROOT / path).is_file()]
+
+
+def pest_plan(jobs, paths, base):
+    """One entry per Pest part: (name, project, files, status, detail). files None runs the whole suite."""
+    entries = []
+    for job, project in PEST_JOBS.items():
+        name = f'pest {project}'
+        if not jobs[job]:
+            entries.append((name, project, [], 'not selected', f'CI does not select the {job} job'))
+            continue
+        if project in FULL_SUITES:
+            entries.append((name, project, None, 'run', 'the whole suite'))
+            continue
+        files = set(test_files(paths, project))
+        if project == 'apps/cli':
+            files |= {str(path.relative_to(ROOT)) for fixture in contract.changed_fixtures(base)
+                      for path in contract.replay_tests(fixture)}
+        if files:
+            entries.append((name, project, sorted(files), 'run', f'{len(files)} changed or contract-mapped test files'))
+        entries.append((f'{name} suite', project, [], 'skipped', 'CI runs the full suite'))
+    return entries
+
+
+def pest(name, project, files, deadline):
+    argv = [str(ROOT / 'bin/pest-plain'), 'vendor/bin/pest', '--compact', '--colors=never',
+            *[str(Path(file).relative_to(project)) for file in files or ()]]
+    part = timed(name, [argv], deadline, cwd=ROOT / project)
+    if part.status != 'skipped':
+        part.detail = (part.detail + '; ' if part.detail else '') + (f'{len(files)} test files' if files else 'the whole suite')
+    return part
+
+
+def fixture_population(plan, deadline):
+    """A planned Deno fixture's registered cases must equal its stored cases: CI fails its PR unit before any case otherwise."""
+    started = time.monotonic()
+    try:
+        # The table load refuses a Python fixture whose case_costs no longer match its live tests.
+        _budget, fixtures, _defaults = units.configuration()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        return Part('fixture-population', 'FAILED', time.monotonic() - started, 'the fixture table does not load', str(error))
+    # The units CI runs on the PR. A deferred unit runs in the main full set, which collects its cases live.
+    planned = [unit for shard in plan['shards'] for unit in shard['units']]
+    files = list(dict.fromkeys(unit.split('#')[0] for unit in planned))
+    # CI compares the registered cases of a Deno fixture only; the table load checks a Python fixture.
+    files = [file for file in files if file in fixtures and 'cases' in fixtures[file] and not file.endswith('.py')
+             and (ROOT / file).is_file()]
+    if not files:
+        return Part('fixture-population', 'not selected', 0, 'no planned Deno fixture holds stored cases')
+    stale, skipped = [], []
+    for file in files:
+        if deadline - time.monotonic() < COLLECT_SECONDS:
+            skipped.append(file)
+            continue
+        try:
+            live = units.collect(file)['cases']
+        except subprocess.TimeoutExpired:
+            # A cold Deno cache can outlast the collector's limit: that is time, not a stale population.
+            skipped.append(f'{file} (collection over {COLLECT_SECONDS}s)')
+            continue
+        except (ValueError, OSError, subprocess.SubprocessError) as error:
+            stale.append(f'{file}: collection failed: {error}')
+            continue
+        stored = fixtures[file]['cases']
+        if live != stored:
+            added = [name for name in live if name not in stored]
+            removed = [name for name in stored if name not in live]
+            stale.append(f'{file}: registered cases differ from {units.registry.metadata_path(file)}'
+                         + (f'; not stored: {json.dumps(added)}' if added else '')
+                         + (f'; not registered: {json.dumps(removed)}' if removed else '')
+                         + ('; order differs' if not added and not removed else '')
+                         + f'. Run bin/ci-units collect --file {file} and update the stored cases.')
+    seconds = time.monotonic() - started
+    detail = f'{len(files) - len(skipped)} of {len(files)} planned fixtures collected'
+    if skipped:
+        detail += '; budget skipped: ' + ', '.join(skipped)
+    if stale:
+        return Part('fixture-population', 'FAILED', seconds, f'{len(stale)} stale; ' + detail, '\n'.join(stale))
+    return Part('fixture-population', 'skipped' if len(skipped) == len(files) else 'passed', seconds, detail)
+
+
+def fixture_workers():
+    """The fixture units' worker count: the check's process budget, which Orbit sets to 1, not CI's shard_workers."""
+    return review['check_processes'](ROOT)
+
+
+def capacity_errors(plan, table):
+    """The capacity rows of the CI plan: CI's Required checks fail on each one. bin/ci-units words them."""
+    return [line[2:] for line in units.plan_summary(plan, table).splitlines() if line.startswith('- CAPACITY:')]
+
+
+def missing_programs(planned, table):
+    """The planned units whose declared host programs this copy lacks, grouped by the missing programs."""
+    groups = {}
+    for unit in planned:
+        missing = [name for name in table.get(unit.split('#')[0], {}).get('host_programs', []) if shutil.which(name) is None]
+        if missing:
+            groups.setdefault(', '.join(missing), []).append(unit)
+    return groups
+
+
+def fixtures(plan, deadline, table):
+    """Admit planned units while they still pack into the time left, by the rule of bin/ci-units; name the rest.
+    A unit whose declared host program is missing in this copy does not run: CI has the program and runs it."""
+    started = time.monotonic()
+    planned = [unit for shard in plan['shards'] for unit in shard['units']]
+    deferred = [f'{unit} (deferred by the CI plan)' for unit in plan['deferred']]
+    if not planned:
+        return Part('fixtures', 'not selected', 0, 'no planned unit' + ('; ' + ', '.join(deferred) if deferred else ''))
+    lacking = missing_programs(planned, table)
+    unrunnable = {unit for units_of in lacking.values() for unit in units_of}
+    lacks = '; '.join(f'{len(units_of)} skipped: {names} missing in this copy ({", ".join(units_of)})' for names, units_of in lacking.items())
+    costs = {unit: plan['units'][unit]['declared_seconds'] for unit in planned}
+    workers = fixture_workers()
+    capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
+                'shard_workers': workers}
+    admitted, skipped = [], []
+    for unit in (unit for unit in planned if unit not in unrunnable):
+        try:
+            fits = capacity['shard_seconds'] > 0 and units.pack([(name, costs[name], 0) for name in (*admitted, unit)], capacity) is not None
+        except ValueError:
+            fits = False
+        if fits:
+            admitted.append(unit)
+        else:
+            skipped.append(f'{unit} (budget: declared {costs[unit]:g}s)')
+    if not admitted:
+        return Part('fixtures', 'skipped', 0, '; '.join(([lacks] if lacks else []) + ([
+            'budget skipped: ' + ', '.join(skipped + deferred)] if skipped or deferred else [])))
+    with tempfile.TemporaryDirectory(prefix='task-check-units-') as scratch:
+        times = Path(scratch) / 'times.json'
+        code, output = run(['python3', 'bin/ci-units', 'run', '--units', json.dumps(admitted), '--times', str(times),
+                            '--workers', str(workers)],
+                           timeout=max(deadline - time.monotonic(), 1))
+        results = json.loads(times.read_text()) if times.is_file() else []
+    outcomes = {row['unit']: row['status'] for row in results}
+    failed = [unit for unit in admitted if outcomes.get(unit) in ('FAILED', 'OVER BUDGET')]
+    # Only the check's own timeout stops a unit. A unit that did not run otherwise, such as after a failed tool setup,
+    # fails: CI's job fails on it too.
+    unfinished = [unit for unit in admitted if outcomes.get(unit) not in ('passed', 'FAILED', 'OVER BUDGET')]
+    stopped_by_budget = code is None
+    stopped = [f'{unit} (stopped at the end of the budget)' for unit in unfinished if stopped_by_budget or outcomes.get(unit) == 'CANCELLED']
+    not_run = [unit for unit in unfinished if not (stopped_by_budget or outcomes.get(unit) == 'CANCELLED')]
+    passed = [unit for unit in admitted if outcomes.get(unit) == 'passed']
+    detail = f'{len(passed)} of {len(planned)} planned units passed'
+    if failed:
+        detail += '; failed: ' + ', '.join(failed)
+    if not_run:
+        detail += '; not run: ' + ', '.join(not_run)
+    if lacks:
+        detail += '; ' + lacks
+    if stopped or skipped or deferred:
+        detail += '; budget skipped: ' + ', '.join(stopped + skipped + deferred)
+    seconds = time.monotonic() - started
+    if failed or not_run or (code not in (0, None) and not stopped):
+        return Part('fixtures', 'FAILED', seconds, detail, tail(output))
+    return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
+
+
+def ci_plan(base, head):
+    """The CI jobs and fixture units of this change, from CI's own planners."""
+    code, output = run(['python3', 'bin/ci-build-plan', '--base', base, '--head', head, '--pull-request'])
+    if code:
+        return None, None, output
+    jobs = json.loads(output.strip().splitlines()[-1])['jobs']
+    with tempfile.TemporaryDirectory(prefix='task-check-plan-') as scratch:
+        path = Path(scratch) / 'plan.json'
+        code, output = run(['python3', 'bin/ci-units', 'plan', '--base', base, '--head', head, '--plan-json', str(path)])
+        if code:
+            return None, None, output
+        return jobs, json.loads(path.read_text()), ''
+
+
+def report(parts, base, seconds):
+    """The summary: one line per part, what CI alone runs, and the result."""
+    failed = any(part.status == 'FAILED' for part in parts)
+    lines = ['', 'Task check summary']
+    lines += [f'  {part.status:<12} {part.name} ({part.seconds:.1f}s{"; " + part.detail if part.detail else ""})' for part in parts]
+    lines.append('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web and Pi '
+                 'server checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
+    lines.append(f'Task check {"FAILED" if failed else "PASSED"} against {base[:12]} in {seconds:.1f}s')
+    return lines
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--base')
+    parser.add_argument('--budget', type=float, default=DEFAULT_BUDGET)
+    parser.add_argument('--only', type=lambda value: [part.strip() for part in value.split(',') if part.strip()])
+    args = parser.parse_args(argv)
+    if args.only and set(args.only) - set(PARTS):
+        parser.error('unknown part: ' + ', '.join(sorted(set(args.only) - set(PARTS))) + '; parts: ' + ', '.join(PARTS))
+    started = time.monotonic()
+    deadline = started + args.budget
+    selected = set(args.only or PARTS) | {'ci-plan'}
+    committed, base, paths = changes(ROOT, args.base)
+    if base is None:
+        print('Task check FAILED: no start commit. There is no merge base with origin/main or main; pass --base REF.')
+        return 1
+    print(f'Task check against {base[:12]}: {len(paths)} changed paths; budget {args.budget:g}s', flush=True)
+    parts = []
+
+    def record(part):
+        parts.append(part)
+        line = f'==> {part.name}: {part.status} ({part.seconds:.1f}s)'
+        print(line + (f'; {part.detail}' if part.detail and part.status != 'passed' else ''), flush=True)
+        if part.status == 'FAILED' and part.output:
+            print(part.output, flush=True)
+
+    plan_started = time.monotonic()
+    head = candidate_head(committed)
+    jobs, plan, error = ci_plan(base, head)
+    if jobs is None:
+        record(Part('ci-plan', 'FAILED', time.monotonic() - plan_started, 'CI cannot plan this change', tail(error)))
+    else:
+        chosen = sorted(name for name, on in jobs.items() if on)
+        record(Part('ci-plan', 'passed', time.monotonic() - plan_started, 'jobs: ' + ', '.join(chosen)))
+
+    def want(part):
+        return part in selected and jobs is not None
+
+    if want('docs-impact'):
+        common = Path(review['git'](ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+        record(timed('docs-impact', [review['docs_impact_command'](ROOT, base, common)], deadline))
+    if want('check-flows'):
+        record(timed('check-flows', [['node', 'bin/check-flows']], deadline, env={'BASE': base}) if jobs['docs']
+               else Part('check-flows', 'not selected', 0, 'the Docs job is not selected'))
+    if want('docs-lint'):
+        # Root composer check writes docs/openapi.json before the docs build, so the lint never reads a stale one.
+        commands = [['bin/docs-openapi']] if jobs['api-reference'] else []
+        commands += [['composer', 'docs-build'], ['composer', 'docs-lint']]
+        record(timed('docs-lint', commands, deadline) if jobs['docs']
+               else Part('docs-lint', 'not selected', 0, 'the Docs job is not selected'))
+    if want('pint'):
+        projects = [project for project in PHP_PROJECTS if php_files(paths, project)]
+        for project in projects:
+            files = [str(Path(file).relative_to(project)) for file in php_files(paths, project)]
+            record(timed(f'pint {project}', [['vendor/bin/pint', '--test', *files]], deadline, cwd=ROOT / project))
+        if not projects:
+            record(Part('pint', 'not selected', 0, 'no changed PHP file in a Composer project'))
+    if want('phpstan'):
+        projects = [project for job, project in STATIC_JOBS.items() if jobs[job]]
+        for project in projects:
+            files = [os.path.relpath(file, project) for file in phpstan_files(paths, project)]
+            record(timed(f'phpstan {project}', [['vendor/bin/phpstan', 'analyse', '--no-progress', '--memory-limit=1G',
+                                                  '-c', 'phpstan.neon', *files]], deadline, cwd=ROOT / project) if files
+                   else Part(f'phpstan {project}', 'skipped', 0, 'no changed PHP file in its analysed paths; CI runs the full analysis'))
+        if not projects:
+            record(Part('phpstan', 'not selected', 0, 'no static analysis job is selected'))
+    if want('swamp-shape'):
+        if jobs['swamp']:
+            with candidate_checkout(head, committed) as checkout:
+                record(timed('swamp-shape', [['python3', str(checkout / 'bin/swamp-shape-gate'), '--only', 'control', '--base', base]],
+                             deadline, cwd=checkout))
+        else:
+            record(Part('swamp-shape', 'not selected', 0, 'the Swamp checks are not selected'))
+    if want('fixture-population'):
+        record(fixture_population(plan, deadline))
+    if want('pest'):
+        for name, project, files, status, detail in pest_plan(jobs, paths, base):
+            record(pest(name, project, files, deadline) if status == 'run' else Part(name, status, 0, detail))
+    if want('fixtures'):
+        try:
+            _budget, table, _defaults = units.configuration()
+        except (ValueError, OSError, subprocess.CalledProcessError) as error:
+            record(Part('fixtures', 'FAILED', 0, 'the fixture table does not load', str(error)))
+        else:
+            capacity = capacity_errors(plan, table)
+            if capacity:
+                record(Part('fixture-capacity', 'FAILED', 0, f'{len(capacity)} capacity rows of the CI plan', '\n'.join(capacity)))
+            record(fixtures(plan, deadline, table))
+
+    lines = report(parts, base, time.monotonic() - started)
+    print('\n'.join(lines), flush=True)
+    return 1 if any(part.status == 'FAILED' for part in parts) else 0
+
+
+if __name__ == '__main__':
+    exit_on_sigterm()
+    try:
+        sys.exit(main())
+    except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
+        print(f'Task check FAILED: {error}', file=sys.stderr)
+        sys.exit(1)

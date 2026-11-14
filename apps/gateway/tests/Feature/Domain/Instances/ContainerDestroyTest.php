@@ -12,6 +12,7 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRemovalStatus;
 use App\Domain\Instances\InstanceRemovalStep;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -155,10 +156,10 @@ it('keeps container default destruction unavailable in this clone-only slice', f
         ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe(InstanceState::Active);
 })->with([false, true]);
 
-it('removes a container default only with an inner volume, on the operator list and without a copy', function (string $case, string $code): void {
+it('removes a container default only on the operator list and without a copy, with or without an inner volume', function (string $case, string $code, bool $inner): void {
     $default = destroyDefault();
-    // The shape a trial default of a nested fleet has: an inner volume on its runtime (docs/reference/development-containers.md#destroy).
-    $default->runtime()->update(['inner_volume' => $case === 'no inner volume (Instance 2454)' ? null : 'inner-'.$default->id]);
+    // A trial default of a nested fleet, made with an inner volume or before it (docs/reference/development-containers.md#destroy).
+    $default->runtime()->update(['inner_volume' => $inner ? 'inner-'.$default->id : null]);
     config(['instances.default_destroy_projects' => match ($case) {
         'Project not listed' => [$default->project_id + 1],
         'malformed list' => ['0' => 'x'],
@@ -171,24 +172,44 @@ it('removes a container default only with an inner volume, on the operator list 
     expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), $case !== 'no --force')))->toBe($code)
         ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe(InstanceState::Active);
 })->with([
-    'no inner volume (Instance 2454)' => ['no inner volume (Instance 2454)', 'operation.kind_unavailable'],
     'Project not listed' => ['Project not listed', 'operation.kind_unavailable'],
     'malformed list' => ['malformed list', 'instance.default_destroy_projects_invalid'],
     'a copy exists' => ['a copy exists', 'instance.default_has_copies'],
     'no --force' => ['no --force', 'instance.container_destroy_force_required'],
-]);
+])->with(['inner volume' => true, 'no inner volume' => false]);
 
-it('destroys a removable container default with its inner volume and frees its records', function (): void {
+it('keeps a listed nested-fleet default without an inner volume refused while a copy of it exists', function (): void {
+    // The shape of the first nested-fleet default: the nested Incus project, no inner volume, and task copies of it.
     $default = destroyDefault();
-    $default->runtime()->update(['inner_volume' => 'inner-'.$default->id]);
+    // The database keeps a recorded project from changing, so the runtime row is made again with the nested project.
+    $row = $default->runtime()->firstOrFail()->getAttributes();
+    $default->runtime()->delete();
+    unset($row['id']);
+    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject, 'inner_volume' => null, 'idmap_size' => 101000000]);
+    config(['instances.default_destroy_projects' => [$default->project_id]]);
+    $copy = destroyClone($default->refresh());
+    $before = Operation::query()->count();
+    expect(containerRefusal(fn () => app(StartInstanceDestroyAction::class)->execute($default->refresh(), true)))->toBe('instance.default_has_copies')
+        ->and(Operation::query()->count())->toBe($before)->and($default->fresh()->status)->toBe(InstanceState::Active)
+        ->and($copy->fresh()->status)->toBe(InstanceState::Active)->and($copy->runtime()->value('incus_project'))->toBe(InstancePlacement::NestedProject);
+});
+
+it('destroys a listed container default without a copy and frees its records', function (bool $inner): void {
+    $default = destroyDefault();
+    // A trial default is stopped; the removal does not start it first.
+    $default->runtime()->update(['inner_volume' => $inner ? 'inner-'.$default->id : null, 'power_state' => InstanceRuntimePowerState::Stopped]);
     config(['instances.default_destroy_projects' => [$default->project_id]]);
 
     $operation = app(StartInstanceDestroyAction::class)->execute($default->refresh(), true);
-    expect($operation->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$default->id, 'inner_volume' => 'inner-'.$default->id]);
+    expect($operation->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$default->id]);
+    // Only a default with an inner volume names one, so the run deletes no volume for the other.
+    $inner
+        ? expect($operation->input['container_destroy']['inner_volume'])->toBe('inner-'.$default->id)
+        : expect($operation->input['container_destroy'])->not->toHaveKey('inner_volume');
     app(DevelopmentInstanceDestroyProjection::class)->apply($operation, destroyTerminal($operation, 'succeeded'));
     expect($default->fresh())->toBeNull()
         ->and(InstanceRuntime::query()->where('instance_id', $default->id)->exists())->toBeFalse();
-});
+})->with(['inner volume' => true, 'no inner volume' => false]);
 
 it('requires force for non-default cleanup until guarded removal is built', function (bool $migrated): void {
     $clone = destroyClone(destroyDefault(), $migrated);

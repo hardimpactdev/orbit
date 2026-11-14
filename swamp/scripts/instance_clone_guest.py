@@ -295,7 +295,8 @@ def phase_main(phase, raw):
                     raise PhaseRefusal(process_failure(unit, state))
 
     def checkout():
-        """The checkout part of the workspace: the bundle's branch, this Instance's mark, and the merged `.env`. Names only leave."""
+        """The checkout part of the workspace: the bundle's branch, or a branch at the seed's commit without one, this Instance's mark, and
+        the merged `.env`. Names only leave."""
         assert root(ws + "/.git").is_dir()
         mark = root(CHECKOUT_MARK)
         checked_out = json.loads(mark.read_text()) if mark.is_file() else {}
@@ -306,21 +307,23 @@ def phase_main(phase, raw):
                 before = git("symbolic-ref", "--quiet", "--short", "HEAD").stdout.strip()
                 head = git("rev-parse", "HEAD").stdout.strip()
                 if before != c["branch"] or head != c["expected_commit"]:
-                    git(
-                        "fetch",
-                        "--quiet",
-                        c["bundle"],
-                        "+refs/heads/"
-                        + c["branch"]
-                        + ":refs/remotes/origin/"
-                        + c["branch"],
-                    )
+                    if "bundle" in c:
+                        git(
+                            "fetch",
+                            "--quiet",
+                            c["bundle"],
+                            "+refs/heads/"
+                            + c["branch"]
+                            + ":refs/remotes/origin/"
+                            + c["branch"],
+                        )
+                    # A branch without a bundle starts at the seed's commit, which the seed's own repository holds.
                     git(
                         "checkout",
                         "--quiet",
                         "-B",
                         c["branch"],
-                        "refs/remotes/origin/" + c["branch"],
+                        "refs/remotes/origin/" + c["branch"] if "bundle" in c else c["expected_commit"],
                     )
                     changes.append("checkout")
                 assert git("symbolic-ref", "--short", "HEAD").stdout.strip() == c["branch"]
@@ -335,7 +338,8 @@ def phase_main(phase, raw):
                 written.chmod(0o600)
                 os.replace(written, mark)
         finally:
-            root(c["bundle"]).unlink(missing_ok=True)
+            if "bundle" in c:
+                root(c["bundle"]).unlink(missing_ok=True)
         inputs = json.loads(private)
         env = (
             root(c["environment_file"]).read_text()

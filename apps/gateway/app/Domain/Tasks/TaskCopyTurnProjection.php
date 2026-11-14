@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Models\AgentThread;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +66,13 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
         $result = [...$result, 'state' => in_array($state, [AgentThreadState::Done, AgentThreadState::AskingForInput], true) ? $state->value : AgentThreadState::Failed->value];
         if (is_string($result['t3_thread_id'] ?? null) && $result['t3_thread_id'] !== '') {
             AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)->update(['external_id' => $result['t3_thread_id']]);
+            // The extensions record the copy's new thread under the title the turn gave it (docs/reference/extensions.md#plug-in-points).
+            $instance = Instance::query()->find(ValidatedData::integer($operation->input['instance_id']));
+            $title = ValidatedData::object($operation->input['turn'])['title'];
+            if ($instance instanceof Instance && is_string($title)) {
+                $threadId = $result['t3_thread_id'];
+                DB::afterCommit(static fn () => app(InstanceThreadContributions::class)->recordThread($instance, $threadId, $title));
+            }
         }
         TaskTurnProjection::recordThread($operation->target_id, $thread, array_diff_key($result, ['metrics' => true]));
         $questions = $result['state'] === AgentThreadState::AskingForInput->value && is_array($result['questions'] ?? null) && $result['questions'] !== []

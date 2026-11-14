@@ -140,6 +140,31 @@ export function cloneCleaned(phase: Phase): {reset_count: number; reset: string[
     return null;
 }
 
+/** A part name of a clone phase's `timings`; anything else is dropped. */
+const PART = /^[a-z][a-z0-9_]{0,31}$/;
+
+/**
+ * The seconds of each part of a clone's phases (docs/reference/development-containers.md#create): the JSON line each phase prints carries
+ * `timings`, part names and seconds only. A phase that did not succeed, or printed none, gives none.
+ */
+export function cloneTimings(phases: Record<string, {phase: string; output: Phase | string | undefined}>): Record<string, Record<string, number>> | null {
+    const found: Record<string, Record<string, number>> = {};
+    for (const [key, {phase, output}] of Object.entries(phases)) {
+        const text = typeof output === "string" ? output : output?.status === "succeeded" ? String(output.outputs?.stdout ?? "") : "";
+        for (const line of text.split("\n")) {
+            let parsed: unknown;
+            try { parsed = JSON.parse(line); } catch { continue; }
+            const printed = parsed as {phase?: unknown; timings?: unknown} | null;
+            if (printed?.phase !== phase || printed.timings === null || typeof printed.timings !== "object" || Array.isArray(printed.timings)) continue;
+            const parts = Object.entries(printed.timings as Record<string, unknown>)
+                .filter((entry): entry is [string, number] => PART.test(entry[0]) && typeof entry[1] === "number" && Number.isFinite(entry[1])
+                    && entry[1] >= 0 && entry[1] < 100000);
+            if (parts.length > 0) found[key] = Object.fromEntries(parts);
+        }
+    }
+    return Object.keys(found).length > 0 ? found : null;
+}
+
 /** Ansible emits only this bounded public vocabulary; no file contents or Process output is decoded. */
 function mailResult(phase: Phase) {
     if (phase?.status !== "succeeded") return null;
@@ -215,6 +240,11 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     const cleaned = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneCleaned(container?.workspace) : null;
     const nested = (intent.container as {club_key?: unknown} | null | undefined)?.club_key != null;
     const club = nested ? clubKeyWord((intent.container as {clone?: unknown}).clone != null, container?.club_key, phases.club_key_file) : null;
+    // The container step's own output is the one `mail` names: the clone-container step, whose last line carries its timings.
+    const timings = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneTimings({
+        container: {phase: "container", output: container?.mail}, checkout: {phase: "checkout", output: container?.workspace},
+        t3: {phase: "t3", output: phases.t3_observation}, sessions: {phase: "sessions", output: phases.sessions_observation},
+    }) : null;
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
@@ -227,6 +257,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ...(cleaned ? {workspace_cleaned: cleaned} : {}),
         ...(mail ? {mail} : {}),
         ...(club ? {club_key: club} : {}),
+        ...(timings ? {timings} : {}),
         ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
         ...(failed
             ? {

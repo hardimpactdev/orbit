@@ -259,6 +259,14 @@
         argv: [incus, query, "--", "/1.0/instances/{{ container.clone.source }}/snapshots?project={{ container.project }}&recursion=1"]
       register: source_snapshots
       changed_when: false
+    # A default with no seed at all (a retake that failed before the retake kept the old seed left none) refuses by its own code. A
+    # `next-` snapshot is a retake between its delete and its rename: that is a moved seed, and the same command takes the new one.
+    - name: Refuse a default without a seed
+      when: container_read.rc != 0
+      ansible.builtin.assert:
+        that: source_snapshots.stdout | from_json | map(attribute='name') | select('match', '^(seed|next)-') | list | length > 0
+        fail_msg: instance.default_seed_missing
+        quiet: true
     # A deployment of the default between this create's admission and its copy took a newer seed and deleted the admitted one.
     - name: Refuse a seed that a deployment replaced
       when: container_read.rc != 0
@@ -1328,7 +1336,12 @@
 
 # A clone copies the seed snapshot, so it is taken with the Processes stopped: no file is half written in it. Every passed deployment
 # retakes it, also at the same commit: the default's files (caches, built assets) move on between deployments, and a clone must start
-# from what the default has now.
+# from what the default has now. A retake never leaves the default without a seed
+# (docs/reference/development-containers.md#a-retake-keeps-the-seed): the new seed is taken first, under `next-<commit>` when the
+# seed's name is taken, and only when it is whole does the old seed go and the new one take its name. Incus needs a free isolated ID
+# range to create a container snapshot (it maps it like a new container), but not to delete or rename one, so a host with no free
+# range fails the create and keeps the old seed. The seed of an Instance with an inner volume is a pair of the same name, and both
+# halves follow the same order.
 - name: Take the seed snapshot
   tags: [seed]
   when: phase == 'seed'
@@ -1360,11 +1373,72 @@
       ansible.builtin.set_fact:
         container_commit: "{{ seed_head.stdout | trim }}"
         seed_name: "seed-{{ seed_head.stdout | trim }}"
+        seed_next: "next-{{ seed_head.stdout | trim }}"
         seed_names: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^seed-') | list }}"
+        seed_nexts: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^next-') | list }}"
         # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part.
         seed_volume_names: >-
           {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^seed-') | list)
              if container.inner_volume is defined else [] }}
+        seed_volume_nexts: >-
+          {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^next-') | list)
+             if container.inner_volume is defined else [] }}
+    # An earlier retake stopped after its new seed was whole: every half of it is under `next-`. It takes the seed's name now. A new
+    # seed that is not whole is dropped, so no seed is ever a pair of two retakes.
+    - name: Finish an earlier retake of this seed
+      when: seed_next in seed_nexts and (container.inner_volume is not defined or seed_next in seed_volume_nexts)
+      block:
+        - name: Delete the old container half
+          when: seed_name in seed_names
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, seed_name] }}" }
+          changed_when: true
+        - name: Delete the old volume half
+          when: seed_name in seed_volume_names
+          ansible.builtin.command:
+            argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, seed_name] }}"
+          changed_when: true
+        - name: Name the container half
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'rename', container.name, seed_next, seed_name] }}" }
+          changed_when: true
+        - name: Name the volume half
+          when: container.inner_volume is defined
+          ansible.builtin.command:
+            argv: >-
+              {{ incus_project + ['storage', 'volume', 'snapshot', 'rename', container.inner_volume.pool, container.inner_volume.name,
+                                  seed_next, seed_name] }}
+          changed_when: true
+        - name: Count the finished retake
+          ansible.builtin.set_fact:
+            seed_names: "{{ (seed_names + [seed_name]) | unique }}"
+            seed_nexts: "{{ seed_nexts | reject('equalto', seed_next) | list }}"
+            seed_volume_names: "{{ ((seed_volume_names + [seed_name]) | unique) if container.inner_volume is defined else [] }}"
+            seed_volume_nexts: "{{ seed_volume_nexts | reject('equalto', seed_next) | list }}"
+    # The run stopped between the two renames: the container half has the name, the volume half is still `next-`. Only that stop
+    # leaves this state, so both halves are the same take.
+    - name: Name the volume half of an earlier retake
+      when: >-
+        container.inner_volume is defined and seed_next in seed_volume_nexts and seed_next not in seed_nexts
+        and seed_name in seed_names and seed_name not in seed_volume_names
+      block:
+        - name: Name the lone volume half
+          ansible.builtin.command:
+            argv: >-
+              {{ incus_project + ['storage', 'volume', 'snapshot', 'rename', container.inner_volume.pool, container.inner_volume.name,
+                                  seed_next, seed_name] }}
+          changed_when: true
+        - name: Count the named volume half
+          ansible.builtin.set_fact:
+            seed_volume_names: "{{ seed_volume_names + [seed_name] }}"
+            seed_volume_nexts: "{{ seed_volume_nexts | reject('equalto', seed_next) | list }}"
+    - name: Delete a retake that an earlier run left
+      ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
+      loop: "{{ seed_nexts }}"
+      changed_when: true
+    - name: Delete a retake of the inner volume that an earlier run left
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, item] }}"
+      loop: "{{ seed_volume_nexts }}"
+      changed_when: true
     # Every passed deployment retakes the seed, also at the same commit: the default's caches and built files move on, and a clone must
     # copy them as they are now. A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
     # failure restores a seed with the fleet, and after it, so the seed holds the refreshed fleet and its record.
@@ -1374,42 +1448,76 @@
         or (container.inner_volume is defined and seed_name not in seed_volume_names)
         or intent.deployment is defined
         or (node_runtime_result | default({})).get('seed_refresh_required', false)
+      vars:
+        # A half of this name exists: the new seed waits under `next-` until it is whole.
+        seed_take: "{{ seed_next if seed_name in seed_names or seed_name in seed_volume_names else seed_name }}"
       block:
         - name: Stop the Processes
           when: units | length > 0
           ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'stop', '--'] + units }}" }
           changed_when: true
-        - name: Snapshot the container
-          ansible.builtin.command:
-            argv: >-
-              {{ incus_project + ['snapshot', 'create', container.name, seed_name]
-                 + (['--reuse'] if seed_name in seed_names else []) }}
-          changed_when: true
-        # The other half of the pair, at once, with the Processes still stopped. A failure deletes both halves of this name, so no
-        # reader ever finds a container seed without its volume seed: a clone then refuses with instance.default_seed_moved, and an
-        # older pair, which the run deletes only after both halves exist, stays for a restore.
-        - name: Snapshot the inner volume with the seed's name
-          when: container.inner_volume is defined
+        # Both halves at once, with the Processes still stopped. A failure deletes only what this take made, a new name or `next-`,
+        # so every older seed, a pair whole, stays for a clone and a restore.
+        - name: Take the new seed beside the old one
           block:
+            - name: Snapshot the container
+              ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'create', container.name, seed_take] }}" }
+              changed_when: true
             - name: Snapshot the inner volume
+              when: container.inner_volume is defined
               ansible.builtin.command:
                 argv: >-
                   {{ incus_project + ['storage', 'volume', 'snapshot', 'create', container.inner_volume.pool, container.inner_volume.name,
-                                      seed_name] + (['--reuse'] if seed_name in seed_volume_names else []) }}
+                                      seed_take] }}
               changed_when: true
           rescue:
-            - name: Delete the container half of the seed
-              ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, seed_name] }}" }
+            - name: Name why the seed failed
+              ansible.builtin.set_fact:
+                seed_failed_volume: "{{ ansible_failed_task.name | default('') == 'Snapshot the inner volume' }}"
+                seed_failure:
+                  detail: >-
+                    {{ ("No free ID range for the new seed: every isolated range of root's subordinate IDs is held by a container"
+                        if 'Not enough uid/gid' in seed_take_error
+                        else (ansible_failed_task.name | default('Snapshot the container')) ~ ': ' ~ seed_take_error)
+                       ~ ('. The old seed stays.' if seed_names | length > 0 else '. The default has no seed yet.') }}
+              vars:
+                seed_take_error: >-
+                  {{ ((ansible_failed_result.stderr | default('') | string | trim)[-400:]
+                      or (ansible_failed_result.msg | default('') | string)) | regex_replace('^Error: ', '') }}
+            - name: Delete the container half of the failed take
+              ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, seed_take] }}" }
               changed_when: true
               failed_when: false
-            - name: Delete the volume half of the seed
+            - name: Delete the volume half of the failed take
+              when: container.inner_volume is defined
               ansible.builtin.command:
-                argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, seed_name] }}"
+                argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, seed_take] }}"
               changed_when: true
               failed_when: false
             - name: Fail the seed
               ansible.builtin.fail:
-                msg: instance.seed_volume_snapshot_failed
+                msg: "{{ 'instance.seed_volume_snapshot_failed' if seed_failed_volume | bool else 'instance.container_seed_failed' }}"
+        # The new seed is whole: the old one goes, and the new one takes its name.
+        - name: Delete the old container half of this name
+          when: seed_take == seed_next and seed_name in seed_names
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, seed_name] }}" }
+          changed_when: true
+        - name: Delete the old volume half of this name
+          when: seed_take == seed_next and seed_name in seed_volume_names
+          ansible.builtin.command:
+            argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, seed_name] }}"
+          changed_when: true
+        - name: Name the new container half
+          when: seed_take == seed_next
+          ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'rename', container.name, seed_next, seed_name] }}" }
+          changed_when: true
+        - name: Name the new volume half
+          when: seed_take == seed_next and container.inner_volume is defined
+          ansible.builtin.command:
+            argv: >-
+              {{ incus_project + ['storage', 'volume', 'snapshot', 'rename', container.inner_volume.pool, container.inner_volume.name,
+                                  seed_next, seed_name] }}
+          changed_when: true
       always:
         - name: Start the Processes again
           when: units | length > 0

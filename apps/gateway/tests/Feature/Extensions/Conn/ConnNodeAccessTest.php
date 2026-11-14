@@ -266,6 +266,11 @@ describe('registration', function (): void {
             {
                 throw T3ServerException::unreachable($baseUrl);
             }
+
+            public function shells(array $servers, float $timeoutSeconds): array
+            {
+                return array_map(static fn (array $server): T3ServerException => T3ServerException::unreachable($server['url']), $servers);
+            }
         });
     });
 
@@ -328,6 +333,11 @@ describe('registration', function (): void {
             public function shell(string $baseUrl, string $adminSession): array
             {
                 return ['threads' => [], 'archivedThreads' => []];
+            }
+
+            public function shells(array $servers, float $timeoutSeconds): array
+            {
+                return array_map(static fn (): array => ['threads' => [], 'archivedThreads' => []], $servers);
             }
         });
 

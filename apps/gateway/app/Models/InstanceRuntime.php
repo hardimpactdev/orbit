@@ -35,6 +35,7 @@ use LogicException;
  * @property Carbon|null $workspace_baseline_at
  * @property Carbon|null $idle_watch_started_at
  * @property string|null $inner_volume
+ * @property int|null $idmap_size
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -61,6 +62,7 @@ final class InstanceRuntime extends Model
         'workspace_baseline_at',
         'idle_watch_started_at',
         'inner_volume',
+        'idmap_size',
     ];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */
@@ -99,6 +101,7 @@ final class InstanceRuntime extends Model
             'node_id' => 'integer',
             't3_port' => 'integer',
             'clone_source_instance_id' => 'integer',
+            'idmap_size' => 'integer',
             'power_state' => InstanceRuntimePowerState::class,
             'workspace_baseline' => 'array',
             'workspace_baseline_at' => 'datetime',

@@ -21,7 +21,7 @@ final readonly class ContainerInstanceDestroy
             return;
         }
         if ($instance->name === DefaultInstanceName::Name) {
-            $this->assertRemovableDefault($instance, $runtime);
+            $this->assertRemovableDefault($instance);
         }
         if (! $force) {
             throw new ResourceOperationException('instance.container_destroy_force_required', 'Non-default container removal currently requires --force. Guarded removal follows separately.', 409);
@@ -29,17 +29,17 @@ final readonly class ContainerInstanceDestroy
     }
 
     /**
-     * A container default goes only when all three hold (docs/reference/development-containers.md#destroy): its runtime records an
-     * inner volume, so it is a nested-fleet trial default made with one; its Project is on the operator list; and no Instance copies
-     * it, whose seed snapshot it holds. Instance 2454 records no inner volume and its Project is never listed.
+     * A container default goes only when both hold (docs/reference/development-containers.md#destroy): its Project is on the operator
+     * list, and no Instance copies it, whose seed snapshot it holds. The list alone names a trial default; the first nested-fleet
+     * default's Project is never listed.
      */
-    private function assertRemovableDefault(Instance $instance, InstanceRuntime $runtime): void
+    private function assertRemovableDefault(Instance $instance): void
     {
         $listed = config('instances.default_destroy_projects');
         if (! is_array($listed) || ! array_is_list($listed) || ! array_all($listed, static fn (mixed $id): bool => is_int($id) && $id > 0)) {
             throw new ResourceOperationException('instance.default_destroy_projects_invalid', 'ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS must be a JSON list of positive integer Project IDs.', 500);
         }
-        if ($runtime->inner_volume === null || ! in_array($instance->project_id, $listed, true)) {
+        if (! in_array($instance->project_id, $listed, true)) {
             throw new ResourceOperationException('operation.kind_unavailable', 'Container default destruction is not available for this default.', 503);
         }
         if (InstanceRuntime::query()->where('clone_source_instance_id', $instance->id)->exists()) {

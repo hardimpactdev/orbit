@@ -25,4 +25,13 @@ interface T3ServerClient
      * @return array<array-key, mixed>
      */
     public function shell(string $baseUrl, #[SensitiveParameter] string $adminSession): array;
+
+    /**
+     * The shells of many servers at once, each with its own `url` and `session`. One server that does not answer within
+     * `$timeoutSeconds` holds back no other: its key maps to the T3ServerException of its failure.
+     *
+     * @param  array<array-key, array{url: string, session: string}>  $servers
+     * @return array<array-key, array<array-key, mixed>|T3ServerException>
+     */
+    public function shells(#[SensitiveParameter] array $servers, float $timeoutSeconds): array;
 }
