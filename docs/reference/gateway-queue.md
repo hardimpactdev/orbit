@@ -26,7 +26,7 @@ After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services`
 
 ## Queues
 
-Laravel Horizon runs six queues on the connection with four supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs and operations keep separate supervisors:
+Laravel Horizon runs seven queues on the connection with five supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs, operations and the prompt projection of operations keep separate supervisors:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
@@ -34,7 +34,10 @@ Laravel Horizon runs six queues on the connection with four supervisors. The `ta
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
-| `operations` | 1 | Native run starts after admission, and jobs that record a Swamp run in its [Operation](/reference/operations): the minute reconciler pass, schedule fires and WebSocket registry closes. One job at a time |
+| `operations` | 1 | Native run starts and the jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
+| `operations-prompt` | 1 | The projection of one Operation whose root run just ended ([How an operation runs](/reference/operations#how-an-operation-runs)). Job timeout 150 seconds, memory cap 256 MB |
+
+A pass on `operations` neither drops nor holds back a job on `operations-prompt`.
 
 Image and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
@@ -85,7 +88,7 @@ Logs, Activity, assistance signals, and the Horizon-only collection have no sche
 
 While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
-Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
+Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue; the end of a root run also queues `ProjectEndedNativeRun` for that Operation on `operations-prompt` ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
 
 ## Horizon
 
@@ -96,6 +99,8 @@ A system shutdown or reboot does not wait for that drain. The unit's `ExecStop` 
 A bootstrapped Gateway starts both before its first run. The Horizon unit is ordered after `valkey-server.service`, so a shutdown stops Horizon before a local queue server.
 
 The [release run](/reference/gateway-recovery#release-as-a-swamp-run) drains the existing Horizon Process before it switches code, then starts it on the selected release. It does not create or converge the Process or its unit. Manage that state through [Processes](/reference/processes-and-schedules).
+
+A supervisor added to `config/horizon.php` starts with the Horizon master on the release that adds it: the release starts Horizon from that release's cached configuration, so it needs no step of its own. Its job timeout counts toward the drain only when it is the longest one.
 
 Horizon uses cached application configuration. After clearing `ORBIT_GATEWAY_QUEUE_CONNECTION`, apply the env change and destroy the Process with `orbit process:destroy <id>`.
 
