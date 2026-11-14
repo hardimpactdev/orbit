@@ -13,6 +13,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
@@ -48,8 +49,21 @@ final readonly class ConnHeldSessions
      */
     public function withdraw(ConnPairing $pairing): void
     {
+        // The row as it is now, so a session stored after the caller read it is cleared too.
+        $pairing = ConnPairing::query()->lockForUpdate()->findOrFail($pairing->id);
         $pairing->forceFill(['session' => null, 'withdrawn_at' => $pairing->withdrawn_at ?? Carbon::now()])->save();
         DB::afterCommit(fn () => $this->revoke($pairing));
+    }
+
+    /**
+     * The held sessions to renew: served, and ending within the margin. The hourly sweep and a wake or renewed Gateway session use it.
+     *
+     * @return Builder<ConnPairing>
+     */
+    public static function due(CarbonImmutable $now): Builder
+    {
+        return ConnPairing::query()->where('held', true)->whereNotNull('session')->whereNull('withdrawn_at')->whereNull('revoked_at')
+            ->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays));
     }
 
     /** Admits the revoke of one withdrawn pairing by its id; a refusal waits for the next sweep. */
@@ -112,9 +126,7 @@ final readonly class ConnHeldSessions
     public function renewDue(ConnEnvironment $environment, ?CarbonImmutable $now = null): void
     {
         $now ??= CarbonImmutable::now();
-        $due = ConnPairing::query()->where('conn_environment_id', $environment->id)->where('held', true)->whereNotNull('session')
-            ->whereNull('withdrawn_at')->whereNull('revoked_at')->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays))
-            ->with(['node', 'environment.node'])->get();
+        $due = self::due($now)->where('conn_environment_id', $environment->id)->with(['node', 'environment.node'])->get();
         foreach ($due as $pairing) {
             // A Node that lost its access gets no new session; the sweep withdraws its old one.
             if ($this->access->allows($pairing->node, $pairing->environment)) {
@@ -214,6 +226,6 @@ final readonly class ConnHeldSessions
         ConnPairing::query()->where('held', true)->whereNotNull('withdrawn_at')
             ->where(static fn ($query) => $query->where('session_expires_at', '<=', $now)
                 ->orWhere(static fn ($unknown) => $unknown->whereNull('session_expires_at')->where('created_at', '<=', $now->subDays(30))))
-            ->update(['withdrawn_at' => null, 'revoked_at' => $now]);
+            ->update(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $now]);
     }
 }

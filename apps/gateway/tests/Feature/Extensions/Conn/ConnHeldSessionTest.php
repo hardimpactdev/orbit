@@ -229,6 +229,15 @@ describe('the session handle', function (): void {
         expect($raw)->not->toBeNull()->not->toContain('held-session-sentinel');
     });
 
+    it('answers the current state to a read that repeats its Idempotency-Key, never a replay of the first 202', function (): void {
+        $read = fn () => test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->getJson("/api/v1/conn/environments/{$this->environment->environment_id}/session", ['Idempotency-Key' => 'session-read']);
+        $read()->assertStatus(202);
+        endHold(holdOperation($this->phone, $this->environment));
+
+        $read()->assertOk()->assertJsonPath('data.access_token', 'held-session-sentinel');
+    });
+
     it('answers only its own Node; a Node without node access gets 403 and starts nothing', function (): void {
         $other = heldNode('laptop', '10.44.0.78');
         NodeAccess::query()->create(['consumer_node_id' => $other->id, 'serving_node_id' => $this->host->id]);
@@ -269,7 +278,9 @@ describe('the session handle', function (): void {
         readHeld($this->phone, $this->environment)->assertStatus(202);
         $unknown = endHold(holdOperation($this->phone, $this->environment), 'failed', 'conn.pairing_outcome_unknown');
         expect($unknown->error_code)->toBe('conn.session_outcome_unknown')
-            ->and(ConnPairing::query()->findOrFail($unknown->target_id)->withdrawn_at)->not->toBeNull();
+            ->and(ConnPairing::query()->findOrFail($unknown->target_id)->withdrawn_at)->not->toBeNull()
+            // The run may have stored the session before it failed: its key goes too.
+            ->and(collect($this->vault->sent)->where('type', 'vault.delete')->pluck('payload.key')->all())->toContain(heldReceipt($unknown)['session_ref']['key']);
         $revoke = revokes()[0];
         assertFitsWorkflowSchema(['operation_id' => $revoke->id, 'node_id' => 1, 'kind' => $revoke->kind, ...Arr::only($revoke->input, ['intent', 'execution_secrets'])], workflowInputs('conn-pairing-revoke'));
         expect($revoke->input['pairing_ids'])->toBe([$unknown->target_id])
@@ -390,6 +401,53 @@ describe('renewal', function (): void {
 
         expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
             ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
+    });
+
+    it('admits a revoke owed on an asleep server at its wake', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $pairing = ConnPairing::query()->where('held', true)->sole();
+        InstanceRuntime::query()->where('instance_id', $this->environment->instance_id)->update(['power_state' => 'stopped']);
+        $pairing->forceFill(['session' => null, 'withdrawn_at' => now()])->save();
+        expect(app(ConnHeldSessionSweep::class)->run())->toBe([]);
+
+        InstanceRuntime::query()->where('instance_id', $this->environment->instance_id)->update(['power_state' => 'running']);
+        app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
+
+        expect(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$pairing->id]);
+    });
+
+    it('renews healthy held sessions before ones whose last renewal failed, so failures never take every slot', function (): void {
+        $make = function (int $index, int $days): ConnPairing {
+            $node = heldNode('device-'.$index, '10.44.2.'.$index);
+            NodeAccess::query()->create(['consumer_node_id' => $node->id, 'serving_node_id' => $this->host->id]);
+
+            return ConnPairing::query()->create(['node_id' => $node->id, 'conn_environment_id' => $this->environment->id, 'client_label' => 'device-'.$index.' via Orbit '.$index,
+                'held' => true, 'session' => 'held-'.$index, 'session_expires_at' => now()->addDays($days), 'pairing_link_id' => 'link-'.$index, 'expires_at' => now()->subDays(25)]);
+        };
+        foreach (range(1, ConnHeldSessionSweep::PerTick) as $index) {
+            $failing = $make($index, 1);
+            Operation::query()->create(['kind' => 'conn.session_hold', 'target_type' => 'conn_pairing', 'target_id' => 1000 + $index, 'node_id' => SwampNodeFixture::Id,
+                'status' => OperationStatus::Failed, 'input' => ['conn_environment_id' => $this->environment->id, 'caller_node_id' => $failing->node_id, 'renews_pairing_id' => $failing->id]]);
+        }
+        $healthy = $make(ConnHeldSessionSweep::PerTick + 1, 5);
+
+        app(ConnHeldSessionSweep::class)->run();
+
+        expect(Operation::query()->where('kind', 'conn.session_hold')->whereNotIn('status', OperationStatus::terminalValues())->pluck('input')->pluck('renews_pairing_id')->all())
+            ->toContain($healthy->id);
+    });
+
+    it('clears a session that its hold stored after the withdrawing caller read the row', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $hold = holdOperation($this->phone, $this->environment);
+        $stale = ConnPairing::query()->findOrFail($hold->target_id);
+        endHold($hold);
+        // Its revoke waits for the server, so only the withdrawal clears the session.
+        $this->environment->forceFill(['admin_session_expires_at' => now()->subMinute()])->save();
+
+        DB::transaction(fn () => app(ConnHeldSessions::class)->withdraw($stale));
+
+        expect(DB::table('conn_pairings')->where('id', $stale->id)->value('session'))->toBeNull();
     });
 
     it('admits an owed revoke again while the server could not take it', function (): void {
@@ -519,11 +577,11 @@ describe('revoke and removal', function (): void {
             'session_expires_at' => now()->addDays(20), 'withdrawn_at' => now(), ...$attributes]);
         $first = $make('phone via Orbit first000');
         $second = $make('phone via Orbit second00');
-        $ended = $make('phone via Orbit ended000', ['session_expires_at' => now()->subMinute()]);
+        $ended = $make('phone via Orbit ended000', ['session_expires_at' => now()->subMinute(), 'session' => 'ended-session']);
 
         app(ConnHeldSessionSweep::class)->run();
         expect(revokes())->toHaveCount(1)->and(revokes()[0]->input['pairing_ids'])->toBe([$first->id])
-            ->and($ended->fresh())->withdrawn_at->toBeNull()->revoked_at->not->toBeNull();
+            ->and($ended->fresh())->withdrawn_at->toBeNull()->revoked_at->not->toBeNull()->session->toBeNull();
 
         endRevoke(revokes()[0]);
         expect(revokes())->toHaveCount(2)->and(revokes()[1]->input['pairing_ids'])->toBe([$second->id]);

@@ -23,7 +23,7 @@ sequenceDiagram
   %%> Result:
   %%> - one Operation a server, holding the server's lock; the intent has no session
   %%> Same tick, afterwards:
-  %%> - the held sessions of Nodes (session-hold.mmd): withdraw a session whose Node lost its grant, renew each that ends within seven days, admit each owed revoke while its server runs
+  %%> - the held sessions of Nodes (session-hold.mmd): withdraw a session whose Node lost its grant, renew each that ends within seven days, those whose last renewal failed last, admit each owed revoke while its server runs
   GW->>SW: Start run, full intent<br/>operation-conn-environment-renew
   SW->>N: Issue the Gateway session<br/>t3 auth session issue
   %%> Command, over the Node's SSH account, then in the container as `agent`:

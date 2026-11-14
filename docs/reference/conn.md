@@ -605,6 +605,7 @@ A held session is a held pairing: a pairing row with `held` set, whose link the 
 - Without one, it admits one `conn.session_hold` and answers 202 with that Operation, in the shape of the other Conn handles.
 - The caller follows it on `GET /operations/{id}`. After it succeeds, the next read answers 200.
 - Concurrent first reads of one Node start one Operation: admission takes the server's row lock, and a later read gets the open Operation.
+- The read ignores `Idempotency-Key`: a repeated read answers the current state, never a replay of an earlier 202.
 
 ```json
 {"data": {"environment_id": "env-fix-login", "url": "http://10.44.0.30:3812", "pairing_id": 41, "token_type": "Bearer", "access_token": "<session>", "expires_at": "2026-12-14T12:13:38+00:00"}}
@@ -640,7 +641,7 @@ When T3 answered, no session exists. The Operation ends with that answer's code,
 
 ### Renewal of a held session
 
-T3 issues the session for 30 days. The hourly renewal tick ([Renewal of an Instance server](#renewal-of-an-instance-server)) then admits a `conn.session_hold` for each held session that ends within seven days, at most 20 a tick, the earliest end first. It does so also for Instances no device is connected to. A sleeping Instance is skipped; a successful wake renews its held sessions that end within seven days. A held session that waits on an ended admin session renews as soon as the renewed admin session is recorded. No device renews anything.
+T3 issues the session for 30 days. The hourly renewal tick ([Renewal of an Instance server](#renewal-of-an-instance-server)) then admits a `conn.session_hold` for each held session that ends within seven days, at most 20 a tick, the earliest end first. A session whose last renewal failed goes after the others, so failing sessions never take every slot from healthy ones. It does so also for Instances no device is connected to. A sleeping Instance is skipped; a successful wake renews its held sessions that end within seven days and admits the server's next owed revoke. A held session that waits on an ended admin session renews as soon as the renewed admin session is recorded. No device renews anything.
 
 The old session serves until the new one is recorded. Then the Gateway withdraws the old one and admits its revoke by `pairing_id`.
 
@@ -682,8 +683,8 @@ Binding would need a DPoP proof key that the client presents when the link is re
 | Key | Holds | Removed |
 | --- | --- | --- |
 | `conn-session-hold-<uuid>` | The execution copy of the admin session | The Gateway deletes it when the run ends, on every path |
-| `nckrtl-conn-session-<model>-link-link-pairing-<id>-credential` | The one-time link; T3 consumes it at the redeem, and an unused one expires within five minutes | The Gateway deletes it after it stores the session |
-| `nckrtl-conn-session-<model>-hold-held-pairing-<id>-access_token` | The session | The Gateway deletes it after it stores the session encrypted |
+| `nckrtl-conn-session-<model>-link-link-pairing-<id>-credential` | The one-time link; T3 consumes it at the redeem, and an unused one expires within five minutes | The Gateway deletes it when the run ends, on every path |
+| `nckrtl-conn-session-<model>-hold-held-pairing-<id>-access_token` | The session | The Gateway deletes it when the run ends, on every path: after it stores the session encrypted, or, on a failure, by the name it derives from the link key |
 
 A failed delete is logged as `conn.held_vault_cleanup_failed`.
 

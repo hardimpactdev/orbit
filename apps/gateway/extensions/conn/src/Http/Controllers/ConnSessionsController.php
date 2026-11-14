@@ -26,7 +26,8 @@ use Orbit\Extensions\Conn\Models\ConnPairing;
 #[RequiresNodeAccess(ServingNode::Collection)]
 final class ConnSessionsController extends Controller
 {
-    #[StartsOperation(ConnHeldSessions::Kind, bindCaller: true)]
+    // A read answers the current state: an open hold of the Node dedupes concurrent first reads, so no key replays a stale 202.
+    #[StartsOperation(ConnHeldSessions::Kind, keyed: false)]
     public function show(Request $request, ConnEnvironment $environment, ConnServerAccess $access, ConnHeldSessions $held, AdmitConnSessionHoldAction $action): JsonResponse
     {
         $caller = $request->user();

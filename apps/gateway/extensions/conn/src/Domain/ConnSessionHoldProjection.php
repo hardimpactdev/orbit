@@ -101,12 +101,14 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
             return $projected;
         });
 
-        // The admin session's execution copy and a minted link live for this run only, on every terminal path.
+        // The admin session's execution copy, a minted link and a stored session live for this run only, on every terminal path. The
+        // session key is the link key's sibling, so a run that failed after it stored the session leaves nothing; a missing key is done.
         $copy = ValidatedData::object(ValidatedData::object($operation->input['execution_secrets'] ?? [])['admin_session'] ?? []);
         if (! $replay && in_array($status, ['succeeded', 'failed', 'interrupted', 'cancelled'], true)) {
             $link = $captured['link_key'] ?? null;
             if (is_string($link) && preg_match(sprintf(self::KeyPattern, 'link-link', $operation->target_id, 'credential'), $link) === 1) {
                 $keys[] = $link;
+                $keys[] = substr($link, 0, -strlen("-link-link-pairing-{$operation->target_id}-credential"))."-hold-held-pairing-{$operation->target_id}-access_token";
             }
             if (is_string($copy['key'] ?? null)) {
                 $keys[] = $copy['key'];

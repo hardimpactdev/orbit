@@ -71,8 +71,10 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
             }
         }
         // Held sessions renew with the session they find; one that waits on an ended Gateway session renews once that is recorded.
+        // A revoke owed while it slept starts too; one the server cannot take yet waits for the hourly tick.
         if ($environment->admin_session_expires_at->isFuture()) {
             app(ConnHeldSessions::class)->renewDue($environment);
+            app(ConnHeldSessions::class)->revokeNext($environment->id);
         }
     }
 

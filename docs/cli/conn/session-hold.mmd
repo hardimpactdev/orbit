@@ -41,6 +41,7 @@ sequenceDiagram
     %%> - the Gateway's admin session on ENV has not ended, else `conn.session_expired`
     %%> What it does:
     %%> - takes ENV's row lock: an open hold of the same Node answers instead, so concurrent first reads start one task
+    %%> - ignores `Idempotency-Key`: a repeated read answers the current state, never a replay
     %%> - records held pairing 7 with a unique label, such as `phone via Orbit k3j9x0qa`
     %%> - pushes the admin session to the Swamp vault after commit (R3)
     %%> Pre-mint:

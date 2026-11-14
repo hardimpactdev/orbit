@@ -90,12 +90,13 @@ sequenceDiagram
       %%> What it does:
       %%> - see conn/environment-renew.mmd; the run needs no old session, so a session that ended during the sleep renews too
     end
-    opt a held Node session ends within 7 days
-      Note over GW: Renew held sessions<br/>conn.session_hold
+    opt a held session is due or owes a revoke
+      Note over GW: Renew held sessions<br/>owed revoke next
       %%> When:
       %%> - after the wake's transaction, while the Gateway session has not ended; it never fails the wake
       %%> What it does:
       %%> - see conn/session-hold.mmd: one renewal per held session that ends within seven days
+      %%> - and the server's next owed held revoke (conn/pairing-revoke.mmd), which waited while the Instance slept
     end
   else T3 does not answer
     %% path: t3-unready

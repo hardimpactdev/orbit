@@ -38,8 +38,13 @@ final readonly class ConnHeldSessionSweep
         }
         $open = Operation::query()->where('kind', ConnHeldSessions::Kind)->whereNotIn('status', OperationStatus::terminalValues())->get()
             ->map(static fn (Operation $operation): string => ValidatedData::integer($operation->input['caller_node_id']).':'.ValidatedData::integer($operation->input['conn_environment_id']))->flip();
-        $due = $this->running(ConnPairing::query()->where('held', true)->whereNotNull('session')->whereNull('withdrawn_at')->whereNull('revoked_at')
-            ->where('session_expires_at', '<', $now->addDays(ConnRenewalSweep::MarginDays)))->orderBy('session_expires_at')->orderBy('id')->get();
+        $due = $this->running(ConnHeldSessions::due($now))->orderBy('session_expires_at')->orderBy('id')->get();
+        // A session whose last renewal failed goes after the others, so failing ones never take every slot from healthy ones. A due
+        // session's every renewal failed: a success withdraws it.
+        $failed = Operation::query()->where('kind', ConnHeldSessions::Kind)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Interrupted->value, OperationStatus::Cancelled->value])
+            ->whereIn('input->renews_pairing_id', $due->modelKeys())->get()
+            ->map(static fn (Operation $operation): int => ValidatedData::integer($operation->input['renews_pairing_id']))->flip();
+        $due = $due->sortBy(static fn (ConnPairing $pairing): int => $failed->has($pairing->id) ? 1 : 0)->values();
         foreach ($due as $pairing) {
             if (count($admitted) >= self::PerTick) {
                 break;
