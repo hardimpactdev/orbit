@@ -133,9 +133,7 @@ class CopyExportTest(unittest.TestCase):
         scratch = self.publication()
         self.intent['environment_path'] = '.env'
         self.proposed(scratch)
-        self.intent['proposed_body_path'] = '.env'
-        with self.assertRaises(Exception):
-            self.phase('export')
+        self.assertIn('tasks.workspace_target_invalid', self.phase('export', intent=dict(self.intent, proposed_body_path='.env'), ok=False))
 
     def test_a_publication_export_refuses_a_copy_without_a_regular_environment_file(self):
         (self.checkout / 'apps/web').mkdir(parents=True)
