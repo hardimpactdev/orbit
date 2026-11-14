@@ -1,12 +1,12 @@
 #!/usr/bin/env node
-// Checks every docs/cli/<family>/<name>.mmd against the subset the renderer supports and the text limits,
-// checks the `%% kind:` lines and the chart placements in the pages, keeps flows-pending.txt shrinking,
-// and holds the kinds in flows-migrated.txt to their Swamp workflow step names.
-const { readdirSync, readFileSync } = require('node:fs')
+// Checks every docs/cli/<family>/<name>.mmd, and each sub-folder chart a page places, against the subset the renderer
+// supports and the text limits, checks the `%% kind:` lines and the chart placements in the pages, keeps flows-pending.txt
+// shrinking, and holds the kinds in flows-migrated.txt to their Swamp workflow step names.
+const { existsSync, readdirSync, readFileSync } = require('node:fs')
 const { execFileSync } = require('node:child_process')
 const root = `${__dirname}/..`, dir = `${root}/docs/cli`
 const list = (text) => text.split('\n').map((l) => l.trim()).filter((l) => l && !l.startsWith('#'))
-const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt)\b/, /^else\b/, /^end$/,
+const ok = [/^sequenceDiagram$/, /^autonumber$/, /^%%/, /^participant \w+ as .+$/, /^(alt|loop|opt|par)\b/, /^(else|and)\b/, /^end$/,
   /^Note over [\w, ]+: .+$/, /^\w+\s*(-->>|->>|--x|-x)\s*\w+\s*:\s*.+$/]
 const files = readdirSync(dir, { recursive: true }).filter((n) => n.split('/').length === 2)
 let bad = 0
@@ -22,7 +22,9 @@ for (const f of [...files.filter((n) => n.endsWith('.mmd')), ...refCharts.map((n
   else if (charts.has(kinds[0])) fail(`${f}: kind ${kinds[0]} already has chart ${charts.get(kinds[0])}`)
   else charts.set(kinds[0], f)
 }
-for (const f of charts.values()) {
+for (const f of charts.values()) lint(f)
+// A chart a page shows keeps the renderer's subset and the text limits.
+function lint(f) {
   const ids = new Set(), errs = []
   readFileSync(`${dir}/${f}`, 'utf8').split('\n').forEach((raw, i) => {
     const l = raw.trim(); if (!l) return
@@ -37,18 +39,22 @@ for (const f of charts.values()) {
 }
 
 // A page places a chart explicitly under `## How it works`, in the form bin/docs-flows reads. Each placement names
-// a chart, and a chart beside a page of its name is placed there.
+// a chart, and a chart beside a page of its name is placed there. A page may also place a chart of its own kind
+// from a sub-folder of its family, such as instance/container/create on instance/create.mdx.
+const kindOf = (f) => readFileSync(`${dir}/${f}`, 'utf8').match(/^\s*%% kind: (\S+)\s*$/m)?.[1]
 const placed = new Map()
 for (const page of files.filter((n) => n.endsWith('.mdx'))) {
   const text = readFileSync(`${dir}/${page}`, 'utf8')
   for (const m of text.matchAll(/^.*className="flow-at".*$/gm)) {
-    const name = m[0].match(/^<div className="flow-at" data-chart="([a-z0-9-]+\/[a-z0-9-]+)"><\/div>$/)?.[1]
+    const name = m[0].match(/^<div className="flow-at" data-chart="([a-z0-9-]+\/(?:[a-z0-9-]+\/)?[a-z0-9-]+)"><\/div>$/)?.[1]
+    const own = `${page.slice(0, -4)}.mmd`, sub = name?.split('/').length === 3
     const section = [...text.slice(0, m.index).matchAll(/^## (.+)$/gm)].at(-1)?.[1]
-    if (!name) fail(`${page}: write a placement as <div className="flow-at" data-chart="<family>/<name>"></div>`)
+    if (!name) fail(`${page}: write a placement as <div className="flow-at" data-chart="<family>/<name>"></div>, or <family>/<folder>/<name> for a chart of its own kind`)
     else if (section !== 'How it works') fail(`${page}: place ${name} under '## How it works'`)
-    else if (!files.includes(`${name}.mmd`)) fail(`${page}: places ${name}, which is no chart`)
+    else if (sub ? !existsSync(`${dir}/${name}.mmd`) : !files.includes(`${name}.mmd`)) fail(`${page}: places ${name}, which is no chart`)
+    else if (sub && (!name.startsWith(page.split('/')[0] + '/') || !files.includes(own) || kindOf(`${name}.mmd`) !== kindOf(own))) fail(`${page}: places ${name}, which is no chart of its own kind`)
     else if (placed.has(name)) fail(`${page}: places ${name}, which ${placed.get(name)} places already`)
-    else placed.set(name, page)
+    else { placed.set(name, page); if (sub) lint(`${name}.mmd`) }
   }
 }
 for (const f of charts.values()) {

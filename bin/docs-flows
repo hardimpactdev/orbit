@@ -2,7 +2,7 @@
 """Write docs/flows-data.js: the flow charts the docs pages place, for docs/flow.js.
 
 A CLI page places a chart with `<div className="flow-at" data-chart="<family>/<name>"></div>`, which names
-docs/cli/<family>/<name>.mmd. A reference page places a pipeline stage chart with
+docs/cli/<family>/<name>.mmd; `<family>/<folder>/<name>` names a sub-folder chart of the page's kind. A reference page places a pipeline stage chart with
 `data-chart="reference/pipeline/<name>"`, which names docs/reference/pipeline/<name>.mmd.
 Charts that no page places are left out. bin/check-flows checks the placements.
 """
@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-PLACEMENT = re.compile(r'<div className="flow-at" data-chart="([a-z0-9-]+/[a-z0-9-]+)"></div>')
+PLACEMENT = re.compile(r'<div className="flow-at" data-chart="([a-z0-9-]+/(?:[a-z0-9-]+/)?[a-z0-9-]+)"></div>')
 REFERENCE_PLACEMENT = re.compile(r'<div className="flow-at" data-chart="(reference/pipeline/[a-z0-9-]+)"></div>')
 
 
