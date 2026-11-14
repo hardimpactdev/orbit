@@ -1,11 +1,12 @@
 order = 40
-source_sha256 = "68d884e95a424144277eefbd45e883826d2cbd3b5ca824afd28684fe9f584900"
+source_sha256 = "822f6b7c331d4c1d8198c05b652c32e7d85862969c588f673799492929dbf36a"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it",
   "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
   "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
+  "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -92,6 +93,9 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 3989
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The bundle's edge cases (44s locally, run in full before the PR): with it the file needs a 72nd slice and defers whole. The PR keeps
+  # the fast-forward prerequisite of a normal default's deploy in "a deployment checks out the branch's new commit".
+  "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   # The inner volume's flush before its half of the seed (89s locally, 33s to fail without the flush): like the seed pair cases.
   "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
   # The seed-retake cases of slice-seed-safe, 30 to 60s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard

@@ -652,8 +652,36 @@
   tags: [fetch, workspace]
   when: phase == 'fetch' or (phase == 'workspace' and workspace_behind | bool)
   block:
+    # Only what the workspace lacks travels. The bundle's prerequisite is the newest commit the branch shares with the workspace's HEAD
+    # (their merge base in the mirror), or the tip's parent when the workspace already holds the tip: a bundle cannot be empty, and the
+    # checkout fetches it to move `origin/<branch>`, so it sees the same refs as with the whole branch. A workspace whose HEAD the
+    # mirror does not hold (local commits) or that has none (a first build) gets the whole branch.
+    - name: Read the workspace's commit for the bundle
+      ansible.builtin.command: { argv: "{{ in_workspace + ['rev-parse', '--verify', '--quiet', 'HEAD^{commit}'] }}" }
+      register: bundle_head
+      changed_when: false
+      failed_when: false
+    - name: Read what the branch shares with the workspace
+      when: bundle_head.rc == 0 and bundle_head.stdout | trim != ''
+      ansible.builtin.command: { argv: "{{ mirror_git + ['merge-base', 'refs/heads/' ~ container.branch, bundle_head.stdout | trim] }}" }
+      register: bundle_shared
+      changed_when: false
+      failed_when: false
+    - name: Read the branch tip and its parent
+      ansible.builtin.command: { argv: "{{ mirror_git + ['rev-list', '--first-parent', '--max-count=2', 'refs/heads/' ~ container.branch] }}" }
+      register: bundle_tip
+      changed_when: false
+    - name: Name the bundle's prerequisite
+      ansible.builtin.set_fact:
+        bundle_prerequisite: >-
+          {{ '' if bundle_shared is skipped or bundle_shared.rc != 0 or bundle_shared.stdout | trim == ''
+             else (bundle_tip.stdout_lines[1] | default('')) if bundle_shared.stdout | trim == bundle_tip.stdout_lines[0]
+             else bundle_shared.stdout | trim }}
     - name: Bundle the branch
-      ansible.builtin.command: { argv: "{{ mirror_git + ['bundle', 'create', '--quiet', node_bundle, 'refs/heads/' ~ container.branch] }}" }
+      ansible.builtin.command:
+        argv: >-
+          {{ mirror_git + ['bundle', 'create', '--quiet', node_bundle, 'refs/heads/' ~ container.branch]
+             + (['^' ~ bundle_prerequisite] if bundle_prerequisite != '' else []) }}
       changed_when: true
     - name: Push the bundle into the container
       ansible.builtin.command:

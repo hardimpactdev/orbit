@@ -438,6 +438,54 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      const sent = () => (f.state().bundles ?? []).at(-1);
+      const commit = (text: string) => {
+        Deno.writeTextFileSync(`${f.source}/index.php`, `<?php echo ${text};\n`);
+        git(f.source, "commit", "--quiet", "-am", text);
+        return git(f.source, "rev-parse", "HEAD");
+      };
+      // The first build has no workspace HEAD: the whole branch, no prerequisite.
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const first = git(f.source, "rev-parse", "HEAD");
+      assertEquals(sent(), { prerequisites: [], refs: [`refs/heads/${f.container.branch}`] });
+      // A fast-forward: the workspace's HEAD is the prerequisite, and the checkout moves to the new commit.
+      const second = commit("2");
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(sent()!.prerequisites, [first]);
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      // The same commit again: the bundle holds only the tip, on its parent, and the checkout changes nothing.
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(sent()!.prerequisites, [first]);
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      // A force-moved branch: the prerequisite is what both still share, and the checkout refuses as it does with the whole branch.
+      git(f.source, "reset", "--quiet", "--hard", first);
+      const moved = commit("3");
+      assert(f.run("fetch").ok);
+      assertEquals(sent()!.prerequisites, [first]);
+      assert(!f.run("checkout").ok);
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+      assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      assertEquals(f.workspace("rev-parse", `refs/remotes/origin/${f.container.branch}`), moved);
+      // A local commit that the mirror does not hold: the whole branch, and the same refusal.
+      Deno.writeTextFileSync(`${f.folder}/containers/instance-7/srv/workspace/local.txt`, "local\n");
+      f.workspace("add", "local.txt");
+      f.workspace("-c", "user.name=t", "-c", "user.email=t@example.test", "commit", "--quiet", "-m", "local");
+      assert(f.run("fetch").ok);
+      assertEquals(sent()!.prerequisites, []);
+      assert(!f.run("checkout").ok);
+      assertEquals(f.result(), { error_code: "deployment.branch_diverged" });
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   ignore: !hasAnsible,
   fn() {
@@ -455,6 +503,8 @@ Deno.test({
       }
       assertEquals(f.result(), { commit: second });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
+      // Only what the workspace lacks travelled: the bundle's prerequisite is the workspace's HEAD before the fetch.
+      assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${second}`]);
 
       // A pinned commit that is not on the branch refuses at the fetch.
