@@ -1,17 +1,8 @@
 /** Stateful Incus boundary for the real host-preparation Ansible tasks. No live host commands. */
 const folder = Deno.env.get("HOST_FIXTURE")!;
 if (Deno.args[0] === "--daemon") {
-  Deno.serve({ path: `${folder}/unix.socket`, onListen: () => console.log(`ready ${Deno.pid}`) }, (request) => {
+  Deno.serve({ path: `${folder}/unix.socket`, onListen: () => console.log(`ready ${Deno.pid}`) }, () => {
     const current = JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
-    const url = new URL(request.url);
-    // The files API names a path's type in `X-Incus-Type` and never follows a link; a missing path is a 404.
-    const files = url.pathname.match(/^\/1\.0\/instances\/([^/]+)\/files$/);
-    if (files) {
-      const key = `${decodeURIComponent(files[1])}${url.searchParams.get("path")}`;
-      const kind = current.links?.[key] !== undefined ? "symlink" : current.files?.[key] !== undefined ? "file"
-        : current.dirs?.[key] !== undefined ? "directory" : null;
-      return kind === null ? new Response("not found", { status: 404 }) : new Response("", { headers: { "X-Incus-Type": kind } });
-    }
     return Response.json({ metadata: { environment: { server_pid: current.socket_server_pid ?? Deno.pid } } });
   });
   await new Promise(() => {});
@@ -137,11 +128,7 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   const link = state.links?.[key];
   if (link !== undefined) console.log(link.startsWith("/") ? link : `${query.get("path")!.replace(/\/[^/]*$/, "")}/${link}`);
   else if (state.files?.[key] !== undefined) Deno.stdout.writeSync(new TextEncoder().encode(state.files[key].content));
-  // A directory answers with its entries.
-  else if (state.dirs?.[key] !== undefined) {
-    console.log(JSON.stringify([...Object.keys(state.files ?? {}), ...Object.keys(state.dirs ?? {}), ...Object.keys(state.links ?? {})]
-      .filter((path) => path.startsWith(`${key}/`) && !path.slice(key.length + 1).includes("/")).map((path) => path.slice(key.length + 1))));
-  } else fail("not found");
+  else fail("not found");
 } else if (family === "query") {
   const path = args.at(-1)!;
   const [route, query = ""] = path.slice(5).split("?");
@@ -313,6 +300,13 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   // A command as a container user runs for real against a copy of that container's /home/agent from the state, which it then
   // replaces: what the user's own script makes, with its own modes, is what the container holds.
   if (!instance(action)) fail("Instance not found");
+  // A user command that hangs: `timeout` inside the container ends it with 124.
+  if (state.agent_hangs?.includes(action)) Deno.exit(124);
+  // A user command that prints bytes that are not UTF-8.
+  if (state.agent_bytes?.includes(action)) {
+    Deno.stdout.writeSync(Uint8Array.from([0xff, 0xfe, 0x0a]));
+    Deno.exit(0);
+  }
   const prefix = `${action}/home/agent`;
   const root = Deno.makeTempDirSync();
   const local = (key: string) => `${root}/home/agent${key.slice(prefix.length)}`;
@@ -402,16 +396,16 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   }
 } else if (family === "file" && action === "pull") {
   // The files the converge wrote, by `<instance>/<path>`; any other path is missing, as `incus file pull` reports it.
+  // A status file of raw bytes, as base64, for a container whose dpkg status is not UTF-8.
+  const raw = args[2].endsWith("/var/lib/dpkg/status") ? state.raw_status?.[args[2].split("/")[0]] : undefined;
+  if (raw !== undefined) {
+    Deno.stdout.writeSync(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+    Deno.exit(0);
+  }
   const pulled = state.files?.[args[2]] ?? (args[2].endsWith("/var/lib/dpkg/status") && instance(args[2].split("/")[0])
     ? { content: dpkgStatus(args[2].split("/")[0]) } : undefined);
   if (pulled === undefined) fail("Error: not found");
   Deno.stdout.writeSync(new TextEncoder().encode(pulled.content));
-} else if (family === "file" && action === "create" && args.includes("--type=directory")) {
-  // `incus file create --type=directory --uid U --gid G --mode M <instance>/<path>`: it refuses a path that exists.
-  const path = args.at(-1)!;
-  if (state.dirs?.[path] !== undefined || state.files?.[path] !== undefined) fail("File already exists");
-  state.dirs ??= {};
-  state.dirs[path] = { mode: args[args.indexOf("--mode") + 1], uid: args[args.indexOf("--uid") + 1], gid: args[args.indexOf("--gid") + 1] };
 } else if (family === "file" && action === "create") {
   // Symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.
   state.links ??= {};

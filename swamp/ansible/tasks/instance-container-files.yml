@@ -18,8 +18,8 @@
               | map('selectattr', 'key', 'in', ['path', 'content', 'mode']) | map('items2dict') | list,
             'trust': {'source': instance_trust_source, 'path': '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                       'directory': '/etc/ssl/certs'},
-            'browser_trust': instances.image.browser_trust,
-            'socket': container_image_socket,
+            'browser_trust': instances.image.browser_trust
+              | combine({'script': lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-browser-trust.sh')}),
             'libraries': instances.folders.runtime.path ~ '/current/lib',
             'state': '/var/lib/orbit/instance-container-libraries'} | to_json }}
     stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"

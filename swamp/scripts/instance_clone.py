@@ -102,6 +102,8 @@ def main():
             check=False,
             input=content,
             text=True,
+            # A copy's own bytes, such as its dpkg status, need not be UTF-8: they never fail a decode.
+            errors="surrogateescape",
             capture_output=True,
             timeout=remaining,
             env=dict(os.environ, LC_ALL="C", GIT_TERMINAL_PROMPT="0"),

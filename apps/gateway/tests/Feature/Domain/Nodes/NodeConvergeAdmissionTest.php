@@ -380,7 +380,7 @@ it('claims local DNS before dispatch and retains cleanup after a later machine f
                 $phases[] = ['name' => $name, 'status' => $index < 3 ? 'succeeded' : ($index === 3 ? 'failed' : 'skipped'), 'changed' => 0, 'elapsed_seconds' => 0];
             }
             app(NodeConvergeProjection::class)->apply($operation, ['run_id' => 'dns-machine-failed', 'status' => 'failed', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
-                'result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 0, 'tools' => [],
+                'result' => ['outcome' => 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => 0, 'tools' => [], 'browser_trust' => [],
                     'cleanup_complete' => true, 'failed_phase' => 'roles', 'error_code' => 'operation.native_failed']]);
         }
         expect($operation->refresh()->status)->toBe(OperationStatus::Failed);

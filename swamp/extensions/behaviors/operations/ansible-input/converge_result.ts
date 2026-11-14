@@ -13,7 +13,7 @@ const Failure = z.object({
 // so no other text of a container reaches the result.
 const BrowserTrust = z.array(z.object({
     container: z.string().regex(/^[a-z0-9-]{1,63}\/[A-Za-z0-9-]{1,63}$/),
-    reason: z.string().regex(/^(no agent home|version mismatch: (not installed|unreadable|[0-9A-Za-z.+:~-]{1,64}) != [0-9A-Za-z.+:~-]{1,64}|path refused: \/home\/agent(\/[A-Za-z0-9._-]{1,64}){0,3} is (file|directory|symlink|other|unknown)|store failed: (incus error|exit [0-9]{1,3}))$/),
+    reason: z.string().regex(/^(no agent home|not running|version mismatch: (not installed|unreadable|[0-9A-Za-z.+:~-]{1,64}) != [0-9A-Za-z.+:~-]{1,64}|path refused: \/home\/agent(\/[A-Za-z0-9._-]{1,64}){0,3} is (file|directory|symlink|other|unknown)|store failed: (timeout|exit [0-9]{1,3}|[A-Za-z]{1,40}))$/),
 }).strict()).max(1000);
 export const Result = z.object({
     phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),

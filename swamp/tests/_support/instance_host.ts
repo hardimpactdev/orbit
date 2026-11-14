@@ -116,6 +116,7 @@ function writeTasks(folder: string) {
     Deno.copyFileSync(new URL("instance_container_files.py", root), `${folder}/instance_container_files.py`);
     Deno.mkdirSync(`${folder}/files`, { recursive: true });
     Deno.copyFileSync(new URL("files/instance-container-wake.sh", root), `${folder}/files/instance-container-wake.sh`);
+    Deno.copyFileSync(new URL("files/instance-browser-trust.sh", root), `${folder}/files/instance-browser-trust.sh`);
     for (
         const name of [
             "instance-host.yml",

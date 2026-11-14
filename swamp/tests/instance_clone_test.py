@@ -122,6 +122,7 @@ class CloneTest(unittest.TestCase):
     def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None):
         calls = []
         self.inputs = {}
+        self.decoding = {}
         real_run = subprocess.run
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder) / "rootfs"
@@ -161,6 +162,7 @@ class CloneTest(unittest.TestCase):
                 nonlocal read
                 calls.append(argv)
                 self.inputs[id(argv)] = kwargs.get("input")
+                self.decoding[id(argv)] = kwargs.get("errors")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
                 if argv[:2] == ["python3", "-c"] or argv[0] == "openssl":
@@ -492,6 +494,13 @@ class CloneTest(unittest.TestCase):
                 self.assertEqual(error, "instance.clone_browser_trust_refused\n")
                 self.assertEqual(self.store_calls(calls), [])
                 self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
+    def test_the_copys_dpkg_status_and_store_are_read_without_a_decode_failure(self):
+        calls, _, error = self.store_clone({"home/agent/.pki/nssdb/pkcs11.txt": "x"}, held="x\n")
+        self.assertEqual(error, "")
+        reads = [call for call in calls if call[3:5] == ["file", "pull"] and call[5].endswith(("/var/lib/dpkg/status", "pkcs11.txt"))]
+        self.assertEqual(len(reads), 2)
+        self.assertTrue(all(self.decoding[id(call)] == "surrogateescape" for call in reads))
 
     def test_a_copy_whose_libp11_kit0_is_not_the_modules_version_refuses_the_create(self):
         for version in ("0.25.5-3", None):

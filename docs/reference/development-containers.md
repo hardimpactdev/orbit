@@ -497,13 +497,13 @@ The store:
 - NSS makes `cert9.db` and `key4.db` itself at first use.
 - Orbit never replaces or rewrites an existing store. A store without the entry gets the entry appended after a blank line. A store with the entry stays as it is.
 
-`agent` owns these paths, so root never writes through them while `agent` could change them.
+`agent` owns these paths, so root never writes through them.
 
-In a running container, the converge runs a short script as `agent`, with uid and gid 2750 and umask 077. `agent` writes its own store, so a link it planted gains it nothing.
+In a running container, the converge runs `instance-browser-trust.sh` as `agent`, with uid and gid 2750 and umask 077, under `timeout 30`. `agent` writes its own store, so a link it planted gains it nothing. The script refuses a path of another type or a link, and it opens `pkcs11.txt` only as a regular file.
 
-In a stopped or frozen container, nothing runs, so no path changes during the step. The converge reads each path's type from the `X-Incus-Type` header of the local Incus API. The home and both folders must be directories, and `pkcs11.txt` a file or missing. Only then does it write through the file API. A link anywhere is refused.
+A stopped or frozen container gets no store at that converge, because it can wake at any moment while the step runs. It gets the store at the next converge that finds it running.
 
-A clone's copy has not started yet. The clone script makes the same type check. A refusal fails the create with `instance.clone_browser_trust_refused`.
+A clone's copy has not started yet, so nothing can change its paths. The clone script reads each path's type from the `X-Incus-Type` header of the local Incus API. The home and both folders must be directories, and `pkcs11.txt` a file or missing. A link anywhere is refused. A refusal fails the create with `instance.clone_browser_trust_refused`.
 
 The module needs the container's `libp11-kit0` at exactly the part's version, `0.26.2-2`. The recipe holds that version once. The image definition carries it too, so a new pin builds and checks a new image.
 
@@ -511,19 +511,20 @@ The module needs the container's `libp11-kit0` at exactly the part's version, `0
 | --- | --- |
 | Image build | The build reads the version with `dpkg-query` and fails with `instance.browser_trust_mismatch`. It writes no store and publishes no image |
 | Clone | The clone script reads the copy's `/var/lib/dpkg/status` and fails the create with `instance.clone_browser_trust_mismatch` |
-| Converge | The converge reads `/var/lib/dpkg/status` through the file API, so a frozen container gets the check too. That container gets no store |
+| Converge | The converge reads `/var/lib/dpkg/status` of a running container. That container gets no store, and `agent` removes the Orbit entry if its store already has one |
 
-The converge never fails because of one container. A container without `/home/agent`, with a refused path, or with another library version gets no store. The rest of the converge goes on for it and for every other container. The `node.converge` Operation result lists each such container in `browser_trust`, with its reason:
+The converge never fails because of one container. A container that is not running, has no `/home/agent`, has a refused path or another library version gets no store. The rest of the converge goes on for it and for every other container. The `node.converge` Operation result lists each such container in `browser_trust`, with its reason:
 
+- `not running`: the container was frozen or stopped at the converge, so its store was not written. The next converge that finds it running writes it.
 - `no agent home`
 - `path refused: <path> is <type>`
 - `version mismatch: <installed> != <expected>`
-- `store failed: <cause>`, when a call to Incus failed
+- `store failed: <cause>`: the store step timed out, exited with another code, or hit an error of the named type
 
-`orbit operation:show <id> --json` shows the list. In such a container, Chromium behaves as before this store: it refuses the Orbit certificate, and nothing else changes. An agent in the container can see why with one command:
+`orbit operation:show <id> --json` shows the list. In such a container, Chromium behaves as before this store: it refuses the Orbit certificate, and nothing else changes. An agent in the container can see the likely cause with one command; the full reason is in that list of the Node's last converge:
 
 ```sh
-printf 'installed: %s\nneeded: %s\n' "$(dpkg-query -W -f='${Version}' libp11-kit0 2>/dev/null || echo none)" "$(cat /opt/orbit-runtime/current/pkcs11/requires)"; grep -qx 'library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so' ~/.pki/nssdb/pkcs11.txt 2>/dev/null && echo 'store: names the module' || echo 'store: lacks the module'
+printf 'installed: %s\nneeded: %s\n' "$(dpkg-query -W -f='${Version}' libp11-kit0 2>/dev/null || echo none)" "$(cat /opt/orbit-runtime/current/pkcs11/requires)"; grep -qx 'library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so' ~/.pki/nssdb/pkcs11.txt 2>/dev/null && echo 'store: names the module' || echo 'store: lacks the module'; echo 'full reason: browser_trust in the result of the Node'"'"'s last node.converge Operation'
 ```
 
 A new Orbit root needs nothing here. It flows into the bundle as above, and the module reads the bundle, so no store needs a new seed.
