@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Http\Requests\Tasks;
 
+use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\Task;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
+/** The list filters and page. A page applies to groups; the subtasks of one parent are listed whole. */
 final class ListTaskGroupsRequest extends FormRequest
 {
     protected function prepareForValidation(): void
@@ -25,8 +27,10 @@ final class ListTaskGroupsRequest extends FormRequest
         return [
             'compact' => ['sometimes', 'boolean'],
             'project_id' => ['sometimes', 'integer', 'min:1'],
-            'parent_id' => ['sometimes', 'integer', 'min:1', Rule::exists(Task::class, 'id')->whereNull('parent_id')],
+            'parent_id' => ['sometimes', 'integer', 'min:1', 'prohibits:limit,cursor', Rule::exists(Task::class, 'id')->whereNull('parent_id')],
             'status' => ['sometimes', 'string', Rule::enum($this->has('parent_id') ? TaskStatus::class : TaskGroupStatus::class)],
+            'limit' => ['sometimes', 'integer', 'min:1', 'max:'.ListTaskGroupsAction::MaxLimit],
+            'cursor' => ['sometimes', 'string', 'max:20', 'regex:/\A[1-9][0-9]*\z/'],
         ];
     }
 
@@ -44,8 +48,28 @@ final class ListTaskGroupsRequest extends FormRequest
         return is_string($value) ? TaskGroupStatus::from($value) : null;
     }
 
+    public function subtaskStatus(): ?TaskStatus
+    {
+        $value = $this->validated('status');
+
+        return is_string($value) ? TaskStatus::from($value) : null;
+    }
+
+    public function limit(): int
+    {
+        return $this->integer('limit', ListTaskGroupsAction::DefaultLimit);
+    }
+
+    /** The ID the next page starts below. */
+    public function cursor(): ?int
+    {
+        $cursor = $this->validated('cursor');
+
+        return is_string($cursor) ? (int) $cursor : null;
+    }
+
     public function parentTask(): ?Task
     {
-        return $this->has('parent_id') ? Task::topLevel()->findOrFail($this->integer('parent_id')) : null;
+        return $this->has('parent_id') ? Task::topLevel()->select(['id', 'project_id'])->findOrFail($this->integer('parent_id')) : null;
     }
 }

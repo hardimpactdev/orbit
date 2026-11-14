@@ -14,6 +14,9 @@ use Spatie\LaravelData\Mappers\SnakeCaseMapper;
 #[MapOutputName(SnakeCaseMapper::class)]
 final class TaskCheckData extends Data
 {
+    /** The columns a list row reads: every field but the output, which a list leaves out. */
+    public const array ListColumns = ['id', 'task_id', 'kind', 'status', 'started_at', 'finished_at', 'exit_code', 'changed_paths', 'failed_step', 'commit_sha'];
+
     /** @param list<string> $changedPaths */
     public function __construct(
         public int $id,

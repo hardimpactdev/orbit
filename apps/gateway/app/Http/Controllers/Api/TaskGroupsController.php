@@ -33,7 +33,6 @@ use App\Data\Tasks\TaskData;
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskGroupActivity;
 use App\Http\Authorization\CallerName;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -240,22 +239,19 @@ final class TaskGroupsController extends Controller
     #[RequiresNodeAccess(ServingNode::Collection)]
     public function index(ListTaskGroupsRequest $request, ListTaskGroupsAction $action): JsonResponse
     {
-        $tasks = $request->parentTask()?->tasks()
-            ->when($request->validated('status'), static fn ($query, $status) => $query->where('status', $status))
-            ->when($request->projectId(), static fn ($query, $project) => $query->whereHas('parent', static fn ($parent) => $parent->where('project_id', $project)))
-            ->orderBy('position')->get() ?? $action->execute($request->projectId(), $request->status());
-        $activity = TaskGroupActivity::of(array_values($tasks->whereNull('parent_id')->map(static fn (Task $group): int => $group->id)->all()));
+        $parent = $request->parentTask();
+        if ($parent instanceof Task) {
+            $rows = $action->subtasks($parent, $request->subtaskStatus(), $request->projectId())->map(static fn (Task $task): TaskData => TaskData::fromModel($task))->all();
+            $nextCursor = null;
+        } else {
+            $page = $action->execute($request->projectId(), $request->status(), $request->limit(), $request->cursor());
+            $rows = TaskGroupData::fromModels($page['groups']);
+            $nextCursor = $page['next_cursor'];
+        }
 
         return response()->json([
-            'data' => $tasks
-                ->map(static function (Task $task) use ($request, $activity): array {
-                    $data = $task->parent_id === null ? TaskGroupData::fromModel($task, $activity[$task->id]) : TaskData::fromModel($task);
-
-                    return $request->boolean('compact') ? $data->toCompactArray() : $data->toArray();
-                })
-                ->values()
-                ->all(),
-            'meta' => $this->meta($request),
+            'data' => array_values(array_map(static fn (TaskData|TaskGroupData $row): array => $request->boolean('compact') ? $row->toCompactArray() : $row->toListArray(), $rows)),
+            'meta' => [...$this->meta($request), 'next_cursor' => $nextCursor],
         ]);
     }
 
