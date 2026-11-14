@@ -517,7 +517,7 @@ if (family === "list") {
     for (const line of (state.journal?.[unit] ?? []).slice().reverse()) console.log(line);
     Deno.exit(0);
   }
-  // T3 in the container: its well-known document once started, sessions it issues and knows, and the project it adds.
+  // T3 in the container: its well-known document once started (its label `t3_label`, else `t3`), sessions it issues and knows, and the project it adds.
   if (command[0] === "curl") {
     const url = command.at(-1)!;
     // FrankenPHP on the web port: `web` lists the status of each answer in turn and keeps its last; none means it does not listen.
@@ -531,7 +531,7 @@ if (family === "list") {
     }
     if (!state.containers[name].t3) Deno.exit(7);
     if (url.endsWith("/.well-known/t3/environment")) {
-      console.log(JSON.stringify({ environmentId: `env-${name}`, label: "t3", serverVersion: "0.1.7" }));
+      console.log(JSON.stringify({ environmentId: `env-${name}`, label: state.containers[name].t3_label ?? "t3", serverVersion: "0.1.7" }));
     } else {
       const token = (await new Response(Deno.stdin.readable).text()).replace("Authorization: Bearer ", "").trim();
       const known = (state.sessions ?? []).find((session: { token: string }) => session.token === token);

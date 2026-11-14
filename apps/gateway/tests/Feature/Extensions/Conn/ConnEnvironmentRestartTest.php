@@ -153,7 +153,7 @@ it('admits one restart on the Instance lock with an intent that holds no session
         ->and($operation->lock_key)->toBe('instance:'.$clone->id)
         ->and($operation->triggered_by)->toBe('node:1')
         ->and($operation->input)->toBe(['instance_id' => $clone->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $clone->id, 'url' => 'http://10.44.0.7:3840', 'name' => 'clone.shop', 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
+            'intent' => ['instance_id' => $clone->id, 't3_port' => App\Domain\Instances\InstanceHostIntent::T3Port, 'name' => 'clone.shop', 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]]])
         ->and(json_encode($operation->input))->not->toContain('gateway-session');
 });
@@ -208,7 +208,8 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
         'window_ms' => (int) round(CarbonImmutable::parse($read)->diffInMilliseconds(CarbonImmutable::parse('2026-11-14T12:00:07.500000Z'), false))] : $result;
     expect($projected->status->value)->toBe($status)->and($projected->result)->toBe($result)->and($projected->error_code)->toBe($code);
 })->with([
-    'T3 inactive' => ['failed', ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], 'conn.t3_inactive'],
+    'T3 does not answer' => ['failed', ['answer' => 'failed', 'error_code' => 'conn.t3_unready'], ['answer' => 'failed', 'error_code' => 'conn.t3_unready'], 'conn.t3_unready'],
+    'name not written' => ['succeeded', ['answer' => 'skipped', 'reason' => 'name_not_written'], ['answer' => 'skipped', 'reason' => 'name_not_written'], null],
     'no code of its own' => ['failed', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
     'restarted, with its window from the read' => ['succeeded', ['answer' => 'restarted', 'restart_at' => '2026-11-14T12:00:07.500000Z'], 'window', null],
     'interrupted' => ['interrupted', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],

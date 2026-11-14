@@ -1,6 +1,6 @@
 id: 558dd201-76e5-4031-b64c-41ff74c403f9
 name: operation-conn-environment-restart
-description: Restart an idle container's T3 server for its machine name (docs/cli/conn/environment-restart.mmd), then check that it is active and shows the name.
+description: Restart an idle container's T3 server for its machine name (docs/cli/conn/environment-restart.mmd), then check inside the container that it answers with the name.
 queueTimeout: 30
 labels: {role: swamp}
 inputs:
@@ -13,7 +13,7 @@ inputs:
       type: object
       properties:
         instance_id: {type: integer, minimum: 1}
-        url: {type: string, pattern: '^http://[0-9.]{7,15}:[0-9]{1,5}$'}
+        t3_port: {type: integer, minimum: 1, maximum: 65535}
         name: {type: string, minLength: 3, maxLength: 255}
         read_at: {type: string}
         container:
@@ -24,7 +24,7 @@ inputs:
           required: [project, name]
           additionalProperties: false
         ssh_execution: {type: object}
-      required: [instance_id, url, name, read_at, container, ssh_execution]
+      required: [instance_id, t3_port, name, read_at, container, ssh_execution]
       additionalProperties: false
     # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
     execution_secrets: {type: object, properties: {}, additionalProperties: false}
@@ -44,7 +44,7 @@ jobs:
           inputs:
             intent: '${{ inputs.intent }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-      # One phase: the container read, the try-restart, and the bounded waits for an active T3 and its label (about 15 s each).
+      # One phase: the container and name reads, the try-restart, and the bounded wait for T3's label inside the container.
       - name: Restart T3
         labels: {role: swamp}
         writes: true

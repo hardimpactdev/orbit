@@ -18,7 +18,7 @@ Deno.test("the restart runs one tagged phase of the shipped playbook between the
     assertEquals(workflow.jobs.map((job) => job.name), ["restart"]);
     assertEquals(steps.map((step) => step.name), ["input", "Restart T3", "result", "cleanup"]);
     assertEquals(steps[2].dependsOn, [{ step: "Restart T3", condition: { type: "always" } }]);
-    assertEquals(workflow.inputs.properties.intent.required, ["instance_id", "url", "name", "read_at", "container", "ssh_execution"]);
+    assertEquals(workflow.inputs.properties.intent.required, ["instance_id", "t3_port", "name", "read_at", "container", "ssh_execution"]);
     const phase = steps[1];
     assertEquals(phase.task.inputs.run, 'timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags restart "$ORBIT_ANSIBLE/conn-environment-restart.yml"');
     const context = { inputs: { node_id: 9, intent: {} }, steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
@@ -32,19 +32,19 @@ Deno.test("the restart runs one tagged phase of the shipped playbook between the
 
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
-/** One run of the phase against a container in `status`, whose T3 is active or not and answers `label`. */
-async function restart(options: { status?: string; inactive?: boolean; label?: string }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
+/** One run of the phase against a container in `status`, whose /etc/machine-info holds `written`, and whose T3 (the fixture's) answers `label` or not at all. */
+async function restart(options: { status?: string; down?: boolean; label?: string; written?: string }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
     const folder = Deno.makeTempDirSync();
-    const t3 = Deno.serve({ port: 0, hostname: "127.0.0.1", onListen() {} }, () => Response.json({ environmentId: "env", label: options.label ?? "clone.shop", serverVersion: "0.1.7" }));
     try {
-        for (const dir of ["bin", "run", "containers/instance-7"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
-        Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({ inactive: options.inactive ? ["t3.service"] : [],
-            containers: { "instance-7": { status: options.status ?? "Running", t3: true } } }));
+        for (const dir of ["bin", "run", "containers/instance-7/etc"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
+        Deno.writeTextFileSync(`${folder}/containers/instance-7/etc/machine-info`, options.written ?? "PRETTY_HOSTNAME=clone.shop\n");
+        Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
+            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop" } } }));
         Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
             ssh_execution: { identity_file: "/fixture", target: { host: "127.0.0.1", port: 22, user: "orbit", host_keys: ["ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl"] } },
-            instance_id: 7, url: `http://127.0.0.1:${t3.addr.port}`, name: "clone.shop", read_at: "2026-11-14T12:00:00.000Z",
+            instance_id: 7, t3_port: 3773, name: "clone.shop", read_at: "2026-11-14T12:00:00.000Z",
             container: { project: "orbit-instances", name: "instance-7" },
         }));
         const done = await new Deno.Command("ansible-playbook", {
@@ -60,17 +60,16 @@ async function restart(options: { status?: string; inactive?: boolean; label?: s
             systemctl: JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)).systemctl ?? [],
         };
     } finally {
-        await t3.shutdown();
         Deno.removeSync(folder, { recursive: true });
     }
 }
 
-Deno.test({ name: "an idle running T3 restarts once, is active again and shows the name; the result has the restart time", ignore: !available, async fn() {
+Deno.test({ name: "an idle running T3 restarts once and answers inside the container with the name; the result has the restart time", ignore: !available, async fn() {
     const run = await restart({});
     assert(run.ok, run.output);
     assertEquals(run.result.answer, "restarted");
     assert(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(String(run.result.restart_at)), String(run.result.restart_at));
-    assertEquals(run.systemctl, [["try-restart", "--", "t3.service"], ["is-active", "--", "t3.service"]]);
+    assertEquals(run.systemctl, [["try-restart", "--", "t3.service"]]);
 } });
 
 Deno.test({ name: "a container that froze or stopped after the read is skipped, and nothing restarts", ignore: !available, async fn() {
@@ -82,14 +81,23 @@ Deno.test({ name: "a container that froze or stopped after the read is skipped, 
     }
 } });
 
-Deno.test({ name: "a T3 that is not active again fails with conn.t3_inactive, and the restart is not repeated", ignore: !available, async fn() {
-    const run = await restart({ inactive: true });
+Deno.test({ name: "a container whose /etc/machine-info lacks the name is skipped, and nothing restarts", ignore: !available, async fn() {
+    for (const written of ["PRETTY_HOSTNAME=instance-7\n", ""]) {
+        const run = await restart({ written });
+        assert(run.ok, run.output);
+        assertEquals(run.result, { answer: "skipped", reason: "name_not_written" });
+        assertEquals(run.systemctl, []);
+    }
+} });
+
+Deno.test({ name: "a T3 that does not answer after the restart fails with conn.t3_unready, and the restart is not repeated", ignore: !available, async fn() {
+    const run = await restart({ down: true });
     assert(!run.ok, run.output);
-    assertEquals(run.result.error_code, "conn.t3_inactive");
+    assertEquals(run.result.error_code, "conn.t3_unready");
     assertEquals(run.systemctl.filter((call) => call[0] === "try-restart").length, 1);
 } });
 
-Deno.test({ name: "a T3 that is active without the name fails with conn.t3_label_mismatch", ignore: !available, async fn() {
+Deno.test({ name: "a T3 that answers without the name fails with conn.t3_label_mismatch", ignore: !available, async fn() {
     const run = await restart({ label: "instance-7" });
     assert(!run.ok, run.output);
     assertEquals(run.result.error_code, "conn.t3_label_mismatch");

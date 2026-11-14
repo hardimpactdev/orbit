@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\Conn\Actions;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Operations\OperationStore;
@@ -18,7 +19,7 @@ use Orbit\Extensions\Conn\Models\ConnEnvironment;
 /**
  * Admits the T3 restart of one container Instance for its machine name ([Restart for the machine name](/reference/conn#restart-for-the-machine-name)).
  * `read_at` is when the Gateway's thread read ended; the run's `restart_at` measures the window from it. It holds the Instance's lock, so no sleep, wake or other lifecycle work runs beside it. No credential enters the intent: the run
- * restarts T3 and reads only its public label.
+ * restarts T3 and reads only its public label, inside the container on T3's own port.
  */
 final readonly class AdmitConnEnvironmentRestartAction
 {
@@ -35,7 +36,7 @@ final readonly class AdmitConnEnvironmentRestartAction
 
         return $this->operations->execute(self::Kind, 'instance', $instance->id, $runtime->node_id, [
             'instance_id' => $instance->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $instance->id, 'url' => $environment->url, 'name' => $name, 'read_at' => $readAt->utc()->format('Y-m-d\TH:i:s.v\Z'),
+            'intent' => ['instance_id' => $instance->id, 't3_port' => InstanceHostIntent::T3Port, 'name' => $name, 'read_at' => $readAt->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]],
         ], $triggeredBy, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
     }

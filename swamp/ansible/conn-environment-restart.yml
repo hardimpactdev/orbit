@@ -1,10 +1,11 @@
 ---
 # The T3 restart of one running container for its machine name (docs/cli/conn/environment-restart.mmd). The Gateway read T3's threads
 # with its admin session just before it admitted the run, and found no working run and no pending request.
-#   restart: read the container; one that no longer runs is skipped. Else `systemctl try-restart t3.service`, then a bounded wait until
-#   T3 is active and its label is the name. Nothing else restarts, and the restart itself is never repeated.
-# It writes `result.json` in the run folder: `{"answer": "restarted", "restart_at": …}`, `{"answer": "skipped", "reason": "frozen"|"stopped"}`,
-# or the public error code.
+#   restart: read the container; one that no longer runs, or whose /etc/machine-info lacks the name, is skipped. Else
+#   `systemctl try-restart t3.service`, then a bounded wait until T3 answers inside the container with the name as its label. Nothing
+#   else restarts, and the restart itself is never repeated.
+# It writes `result.json` in the run folder: `{"answer": "restarted", "restart_at": …}`,
+# `{"answer": "skipped", "reason": "frozen"|"stopped"|"name_not_written"}`, or the public error code.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -28,10 +29,15 @@
   vars:
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
-    # About 15 s each for T3 to be active and to show its label: a stock T3 answers within a few seconds of its start.
-    restart_retries: 15
+    as_agent: >-
+      {{ ['incus', 'exec', '--project', container.project, '--cwd', '/home/agent', '--env', 'HOME=/home/agent', container.name,
+          '--', 'runuser', '-u', 'agent', '--'] }}
+    # The label read after the restart: 21 tries of at most about 4 s each (a 2 s curl, the exec, a 1 s delay).
+    restart_retries: 20
     restart_delay: 1
   tasks:
+    # Worst case inside the phase's 240 s: two reads, the try-restart's 100 s (systemd's 90 s stop of T3, and its start) and the
+    # label reads' about 84 s, with room for the rescue to write the result.
     - name: Run the restart
       tags: [restart]
       block:
@@ -46,52 +52,52 @@
           ansible.builtin.set_fact:
             restart_result: { answer: skipped, reason: "{{ 'frozen' if (restart_read.stdout | from_json).status == 'Frozen' else 'stopped' }}" }
 
+        # The Node converge writes the name. Before it ran, a restart would read the old name again.
+        - name: Read the written name
+          when: restart_result is not defined
+          ansible.builtin.command: { argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, cat, /etc/machine-info] }
+          register: restart_machine_info
+          changed_when: false
+          failed_when: false
+
+        - name: Skip a container whose name is not written
+          when: restart_result is not defined and restart_machine_info.stdout != 'PRETTY_HOSTNAME=' ~ intent.name
+          ansible.builtin.set_fact:
+            restart_result: { answer: skipped, reason: name_not_written }
+
         # The time the Gateway read is measured against (docs/reference/development-containers.md#the-restart-window).
         - name: Note the time of the restart
           when: restart_result is not defined
           ansible.builtin.set_fact:
             restart_at: "{{ now(utc=true).strftime('%Y-%m-%dT%H:%M:%S.%fZ') }}"
 
+        # t3.service sets no KillMode: the stop ends every process of its cgroup, T3 terminals and what runs in them included.
         - name: Restart T3
           when: restart_result is not defined
           ansible.builtin.command:
-            argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, timeout, "60", systemctl, try-restart, --, t3.service]
+            argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, timeout, "100", systemctl, try-restart, --, t3.service]
           changed_when: true
 
-        - name: Wait until T3 is active
-          when: restart_result is not defined
-          block:
-            - name: Read whether T3 is active
-              ansible.builtin.command:
-                argv: [incus, exec, --project, "{{ container.project }}", "{{ container.name }}", --, timeout, "5", systemctl, is-active, --, t3.service]
-              register: restart_active
-              changed_when: false
-              retries: "{{ restart_retries }}"
-              delay: "{{ restart_delay }}"
-              until: restart_active.rc == 0
-          rescue:
-            - name: Refuse a T3 that is not active
-              ansible.builtin.fail: { msg: conn.t3_inactive }
-
-        # The Node reaches the URL the Gateway recorded: its own WireGuard address and T3's port.
+        # Type=simple reads as active the moment T3 forks, so the label read inside the container is the check that it is back.
         - name: Wait until T3 shows the name
           when: restart_result is not defined
           block:
             - name: Read T3's label
-              ansible.builtin.uri: { url: "{{ intent.url }}/.well-known/t3/environment", return_content: true, timeout: 5 }
+              ansible.builtin.command:
+                argv: "{{ as_agent + ['curl', '--fail', '--silent', '--max-time', '2', 'http://127.0.0.1:' ~ intent.t3_port ~ '/.well-known/t3/environment'] }}"
               register: restart_label
               changed_when: false
               failed_when: false
               retries: "{{ restart_retries }}"
               delay: "{{ restart_delay }}"
-              until: restart_label.status | default(0) == 200 and (restart_label.json.label | default('')) == intent.name
+              until: restart_label.rc == 0 and (restart_label.stdout | from_json).label | default('') == intent.name
+            - name: Refuse a T3 that does not answer
+              ansible.builtin.assert: { that: [restart_label.rc == 0], fail_msg: conn.t3_unready, quiet: true }
             - name: Refuse a label that is not the name
               ansible.builtin.assert:
-                that: restart_label.status | default(0) == 200 and (restart_label.json.label | default('')) == intent.name
+                that: [(restart_label.stdout | from_json).label | default('') == intent.name]
+                fail_msg: conn.t3_label_mismatch
                 quiet: true
-          rescue:
-            - name: Refuse T3 without its name
-              ansible.builtin.fail: { msg: conn.t3_label_mismatch }
 
         - name: Write the result
           ansible.builtin.copy:
