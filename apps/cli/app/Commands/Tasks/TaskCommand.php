@@ -55,6 +55,9 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
     /** The Gateway stores at most this many deliverables on a subtask. */
     public const int DELIVERABLES_MAX = 5;
 
+    /** The largest page of task groups the Gateway serves, which the group picker reads page by page. */
+    public const int PICKER_PAGE = 100;
+
     /** Set when a deliverables list is refused for a reason more specific than its shape. */
     protected static ?string $deliverablesRefusal = null;
 
@@ -181,21 +184,32 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
      */
     protected function selectGroup(GatewayConnector $connector, array $statuses = [], array $excluded = []): ?int
     {
-        $groups = $this->sendWithProgress(
-            $connector,
-            new ListTasksRequest(status: count($statuses) === 1 ? $statuses[0] : null),
-            TaskGroupsResponse::class,
-            ['List task groups', 'Loading task groups', 'Loaded task groups'],
-            dismiss: true,
-        );
+        // The Gateway pages the list, so read every page, filtered by each offered status on the Gateway.
+        $groups = [];
+        foreach ($statuses === [] ? [null] : $statuses as $status) {
+            $cursor = null;
+            do {
+                $page = $this->sendWithProgress(
+                    $connector,
+                    new ListTasksRequest(status: $status, limit: self::PICKER_PAGE, cursor: $cursor),
+                    TaskGroupsResponse::class,
+                    ['List task groups', 'Loading task groups', 'Loaded task groups'],
+                    dismiss: true,
+                );
 
-        if (! $groups instanceof TaskGroupsResponse) {
-            return null;
+                if (! $page instanceof TaskGroupsResponse) {
+                    return null;
+                }
+
+                array_push($groups, ...$page->taskGroups);
+                $cursor = $page->nextCursor;
+            } while ($cursor !== null);
         }
+        usort($groups, static fn (TaskGroupResponse|SubtaskResponse $a, TaskGroupResponse|SubtaskResponse $b): int => $b->id <=> $a->id);
 
         $rows = [];
 
-        foreach ($groups->taskGroups as $group) {
+        foreach ($groups as $group) {
             if (! $group instanceof TaskGroupResponse) {
                 continue;
             }
