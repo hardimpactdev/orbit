@@ -84,7 +84,7 @@ final class SwampRunSubscriber
         if ($old !== null) {
             unset($this->requests[$old]);
         }
-        $this->following[$operationId] = ['run' => $run, 'workflow' => app(DirectOperation::class)->workflowFor($operation), 'request' => null, 'attached' => false];
+        $this->following[$operationId] = ['run' => $run, 'workflow' => app(DirectOperation::class)->workflowFor($operation) ?? $definition['workflow'], 'request' => null, 'attached' => false];
     }
 
     /** One pass beside the existing Gateway observer's Reverb receive loop. */
