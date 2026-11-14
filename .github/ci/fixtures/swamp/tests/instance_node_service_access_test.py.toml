@@ -1,5 +1,5 @@
 order = 1380
-source_sha256 = "2b18093091736aa43febc19b0e323b3db33a63e2b757024babce6932c6a5be0c"
+source_sha256 = "d0db7dff8d5738aaa2d348ac03afbd4302a68dd542bc60cf3bf0cd701f529344"
 cases = [
   "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
   "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",
@@ -18,4 +18,4 @@ cases = [
 ]
 file = "swamp/tests/instance_node_service_access_test.py"
 cost = 20
-inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/task-copy-base-names.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts", "swamp/tests/fixtures/instance-container-ufw.ts"]
+inputs = ["swamp/ansible/instance_node_services.py", "swamp/ansible/instance-container-destroy.yml", "swamp/ansible/tasks/task-copy-base-names.yml", "swamp/ansible/tasks/instance-container-swap.yml", "swamp/ansible/tasks/instance-migrate-discard.yml", "swamp/tests/fixtures/instance-container-incus.ts", "swamp/tests/fixtures/instance-container-ufw.ts"]
