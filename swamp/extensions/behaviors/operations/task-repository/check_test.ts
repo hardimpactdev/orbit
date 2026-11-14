@@ -162,6 +162,26 @@ Deno.test("a committed candidate must keep the checked tree and parent", () => {
             "changed",
         );
     }
+    // A container check of a clean, recorded head made no commit: the checked head is the candidate.
+    assertEquals(
+        candidateResult(input, local, read([head, tree]), true).commit,
+        head,
+    );
+    assertEquals(
+        candidateResult(input, local, read(["d".repeat(40), tree]), true)
+            .outcome,
+        "changed",
+    );
+    assertEquals(
+        candidateResult(input, local, read([head, "d".repeat(40)]), true)
+            .outcome,
+        "changed",
+    );
+    // A task VM check always commits: a read of the checked head is a moved workspace.
+    assertEquals(
+        candidateResult(input, local, read([head, tree])).outcome,
+        "changed",
+    );
     assertEquals(
         candidateResult(input, local, read([], 128)).error_code,
         "tasks.repository_execution_unknown",
