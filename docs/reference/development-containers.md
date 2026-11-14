@@ -740,7 +740,7 @@ The first default Instance and its deployments are built for the Nodes of the [b
 
 #### The `.env` stays out of Git
 
-The step that writes `.env` also names it once in the checkout's own `info/exclude`, as `/<path in the checkout>`. So Git never takes it, also when the Project's `.gitignore` does not name it. A rerun adds no second line. The file's other lines and the Project's files stay as they are.
+Each step that writes `.env` also names it once in the checkout's own `info/exclude`, as `/<path in the checkout>`: the `workspace` phase of a default's first create, and the clone's `checkout` part, which every clone and task copy runs. So Git never takes it, also when the Project's `.gitignore` does not name it. A rerun or a clone of a clone adds no second line. The file's other lines and the Project's files stay as they are.
 
 #### Processes
 
