@@ -98,7 +98,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 151
+cost = 149
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -114,15 +114,16 @@ inputs = [
   "swamp/scripts/instance_clone_guest.py",
 ]
 
-# Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
+# Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate. The whole file runs in 7-10 s on Beast
+# (2026-11-14), so two legacy branch cases count 1 s each to keep the file within one shard.
 [case_costs]
   "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 1
   "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 1
   "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start" = 1
   "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy" = 1
   "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start" = 1
-  "test_legacy_new_branch_still_uses_seed_without_selection" = 2
-  "test_legacy_existing_remote_branch_still_uses_its_tip" = 2
+  "test_legacy_new_branch_still_uses_seed_without_selection" = 1
+  "test_legacy_existing_remote_branch_still_uses_its_tip" = 1
   "test_new_branch_uses_fetched_base_tip_not_seed" = 2
   "test_existing_branch_uses_its_remote_tip" = 2
   "test_resume_keeps_admitted_commit_when_remote_advances" = 2
