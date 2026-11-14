@@ -519,7 +519,7 @@ Where each path writes the name:
 | Start, wake, deployment | Only a stopped container: the start phase writes the files through the file API before it boots it. A running or frozen container gets nothing |
 | Node converge | The files, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
 
-T3 starts with a clone's copy. Its label is right from its first start, because the boot file came first; the kernel hostname, `/etc/hostname` and the `127.0.1.1` line may follow after T3 started.
+T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
 
 No path restarts T3 for its name, and only a new container gets its kernel hostname at once. A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
 
