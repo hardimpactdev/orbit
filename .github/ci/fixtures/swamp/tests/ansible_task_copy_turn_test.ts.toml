@@ -1,5 +1,5 @@
 order = 380
-source_sha256 = "723da952ad85d927a28c0f5e49efd3b4f21332f9f000a8567e7571b9855ae9ed"
+source_sha256 = "2b08e74d2e3962fb4e6f62a3d2719f6322c7e66423c18569ee96ef099d8f6fae"
 cases = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time",
@@ -12,9 +12,13 @@ cases = [
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
   "an intent outside the admitted shape runs nothing in the copy",
   "a thread list that is not JSON reads as no thread, and the start's end is still written",
+  "a new thread reads T3's catalog first and runs a model it offers, by slug or alias",
+  "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout",
+  "without T3's cached catalog the check is skipped and the turn runs",
+  "a continued thread keeps its model: the catalog is not read",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 57
+cost = 83
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -39,3 +43,7 @@ inputs = [
   "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 6
   "an intent outside the admitted shape runs nothing in the copy" = 4
   "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4
+  "a new thread reads T3's catalog first and runs a model it offers, by slug or alias" = 11
+  "a new thread whose model T3's catalog does not list launches nothing, before a reviewer's checkout" = 5
+  "without T3's cached catalog the check is skipped and the turn runs" = 5
+  "a continued thread keeps its model: the catalog is not read" = 5
