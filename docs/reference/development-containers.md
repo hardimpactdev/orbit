@@ -2,12 +2,12 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand}.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,NestedFleetIntent,NestedFleetRefresh}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
-  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
+  - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
@@ -1194,7 +1194,7 @@ The agents use their own subagents only. MCP servers come from the project's own
 
 ## Tasks in an Instance container
 
-This section is the target. Built today, for a Project with `nested_fleet` on: the start, the check ([Task Instance workspace](/reference/task-instance-workspace)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
+This section is the target. Built today, for a Project with `nested_fleet` on: the start, the check ([Task Instance workspace](/reference/task-instance-workspace)), a new implementer turn ([`tasks.copy_turn`](/cli/task/turn#a-task-that-runs-in-a-copy)) and the end by `task:cancel`. A [task copy](/reference/tasks#task-copy) lists the rules. The copy's agent gets the fixed task model key, as every clone does; it is not per task, and per-task model keys are an open decision.
 
 A task group runs in one Instance container. Everything else about a group, its subtasks, checks, reviews and reads, stays as [Tasks](/reference/tasks) describes.
 
@@ -1203,7 +1203,7 @@ A task group runs in one Instance container. Everything else about a group, its 
 | Start | `task:start` clones the Project's default Instance into the Instance `task-{id}`, branch `task-{id}`, as [Create](#create) does. The task is the clone's [owner](/reference/tasks#workspace-ownership) |
 | No default | Without an active default Instance of the Project on an `app-dev` Node, the start fails with `instance.default_missing` |
 | Attach | A group may name an existing Instance of its Project instead. The task drives its T3 and works on its branch, but does not own it |
-| Turns | Swamp drives the container's T3, as [Swamp drives T3](#swamp-drives-t3) specifies |
+| Turns | Swamp runs T3's own CLI in the container, as [Swamp drives T3](#swamp-drives-t3) specifies |
 | Workspace actions | The receipt, the Git evidence, the reviewer's reset and the checks run from the Node, with `incus exec` as `agent` in `/srv/workspace`. A check sees what the agent saw |
 | Preview | The Instance's Route |
 | Publish | Orbit reads the branch out on the Node and pushes it with a minted token, as [Git in and out](#git-in-and-out) describes |
@@ -1214,40 +1214,53 @@ A task keeps its Instance awake: [Sleep and wake](#sleep-and-wake) never stops a
 
 ## Swamp drives T3
 
-Swamp drives a container's T3 server through T3's own API. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver, which replaces the [`pi` driver](/reference/tasks#drivers) for tasks in Instance containers. The `pi` driver stays for task VMs until they go.
+Swamp drives a container's T3 server through T3's own CLI, run in the container. Nothing of Orbit runs in the container for it, and Orbit forks neither T3 nor Conn. This section is the contract of the `t3` task driver, which replaces the [`pi` driver](/reference/tasks#drivers) for tasks in Instance containers. The `pi` driver stays for task VMs until they go.
 
 ### Reach and authentication
 
-Swamp reaches the container's T3 as a Conn device does, with its own session.
+Stock T3 0.1.7 serves its thread tools at `/mcp`, but accepts there only an MCP client session. A session that `t3 auth session issue` makes, as the create's `Orbit Swamp` session, is refused. A session issued with the MCP client subject is held to `approval-required`, because the CLI cannot give it a higher mode. Only T3 itself issues a full-access MCP session, through its OAuth approval or in its own process. So Swamp uses T3's own CLI:
 
-- **Address.** The Instance's published URL: the Node's WireGuard address and the runtime row's `t3_port`. Conn devices use the same path. The firewall admits WireGuard peers and refuses task VMs.
-- **Session.** A second T3 session, `Orbit Swamp`, from the create flow.
-- **Vault.** Swamp keeps that session in the vault and reads it in each step that calls T3.
-- **Session scope.** The session never enters a run or the Gateway's records. Destroy revokes it. Orbit does not renew it yet, because nothing uses it: it ends after 30 days.
-- **MCP.** `POST <url>/mcp` with `Authorization: Bearer <session>`.
-- **WebSocket.** `POST <url>/api/auth/websocket-ticket` with the same bearer gives a ticket. Swamp then opens `/ws?orchestrationProtocol=2&wsTicket=<ticket>` and sends Effect RPC requests.
-- **Workspace.** File and Git actions in the container go over SSH to the Node, then `incus exec` and `incus file pull`. No token enters the container.
+- **Path.** One Ansible phase on the container's Node runs `incus exec` into the container, then `runuser -u agent`. The shell is not a login shell.
+- **Groups.** `runuser` keeps the agent's groups. `incus exec --user` would drop the `work` group, which owns the checkout's Git folder.
+- **Session.** Each `t3 thread` command issues its own full-access session inside the container.
+- **Session end.** The command calls T3 on its loopback address. At its exit, it revokes the session.
+- **No credential outside.** No T3 session reaches the Node, Swamp, the vault or the Gateway.
+- **Orbit Swamp session.** The create still issues it and keeps it in the vault. The turn does not use it. Destroy revokes it. Orbit does not renew it, so it ends after 30 days.
+- **Workspace.** File and Git actions in the container go over SSH to the Node, then `incus exec`. No token enters the container.
 
 ### Calls
 
-Swamp uses these T3 calls and no others.
+The phase uses these commands, as `agent` in `/srv/workspace`.
 
-| Purpose | Call | Input that Orbit sets |
+| Purpose | Command | What Orbit sets |
 | --- | --- | --- |
-| Find the workspace project | MCP `t3_project_list` | The project at `/srv/workspace`, which the create flow adds |
-| Start a thread with its first turn | MCP `t3_thread_launch` | `projectId`, `title`, `message`, `modelSelection: {instanceId: codex or claudeAgent, model, options: {effort}}`, `runtimeMode: full-access`, `interactionMode: default`, `workspaceStrategy: {type: root}`, `clientRequestId` |
-| Send a later turn | MCP `t3_thread_send` | `threadId`, `message`, `mode: queue`, `clientRequestId` |
-| Wait for the turn | MCP `t3_thread_wait` | `threadId`, `runId`, `timeoutMs`. It returns when the run ends, with the run's latest `runId` |
-| Read a question | MCP `t3_pending_request` | `action: read`, for a `waiting` run |
-| Read the transcript | MCP `t3_thread_read` | `threadId`, `view: activity`, paged with `afterPosition` |
-| Read state and usage | WebSocket `orchestration.getThreadProjection` | `threadId`. Gives the run's status, failure, retry and provider turns with their token usage |
-| Interrupt | MCP `t3_thread_interrupt` | `threadId`, `runId`. If the run has not ended 30 seconds later, WebSocket `orchestration.forceStopThread` with `threadId` and `runId` |
+| Start a thread with its first turn and wait for its run | `t3 thread start --provider P --model M --title T --wait --json /srv/workspace -` | The composed prompt on stdin, the [turn model](#turn-model), the title `Orbit task GROUP thread THREAD`, and a 3,600-second `timeout` |
+| Find the thread | `t3 thread list --project /srv/workspace --json` | Matched by its title, also when the bound cut the wait before T3 printed the thread id |
+| Read the thread | `t3 thread show --messages 200 --json THREAD` | The thread's status and its user and assistant messages |
 
-`clientRequestId` is `operation-{id}`. A retried launch or send with the same id and the same session returns the same run and starts no second turn, as a repeated Pi send key does. T3 keeps these ids per session, so a future renewal of the `Orbit Swamp` session must not run while a turn operation of the Instance runs.
+The start returns the run's status. `completed` is `done`, `waiting` is `asking_for_input`, and any other status is `failed` with `tasks.turn_failed`. A wait cut by the bound is `failed` with `tasks.turn_timeout`. A start that T3 refused, for example while its server is down, is `failed` with `tasks.copy_turn_failed`.
 
-`runtimeMode: full-access` holds only while the session carries no mode limit and the server's managed policy sets no lower maximum. The image sets neither.
+### Turn model
 
-A wait that times out reads the run's status. While it is still running, Swamp waits again. A `waiting` run ends the turn as `blocked`: Swamp reads the question with `t3_pending_request` and records it as the receipt's question.
+The Gateway's `ORBIT_TASKS_COPY_TURN_MODEL` names the provider and model of every turn, as `PROVIDER/MODEL`. The default is `claudeAgent/claude-opus-5-5`: a container reaches only the Claude model forwarder. T3 picks the effort.
+
+### Gaps of the CLI path
+
+These hold until a T3 server gives Swamp a full-access MCP session:
+
+- **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
+- **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
+- **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
+- **No effort setting.** T3 runs the model at its own default effort.
+- **One new implementer thread per turn.** A reviewer turn, a continued thread and a caller's model are refused with `tasks.copy_turn_unsupported`.
+
+### Hold after a turn that may still run
+
+A turn whose run may still go on holds its group. Its group refuses turns and checks with `tasks.copy_turn_unended` until `task:cancel` destroys the copy, and the run ends with it.
+
+A turn is over when nothing was launched, or when the start printed an end. It is also over when T3 lists its thread in no active state. A run that waits for an answer is not over. A turn cancelled before its run step reports holds the group the same way.
+
+The threads and roles, thread state, provider errors, token metrics, retries and transcripts below remain the target. Their MCP and WebSocket calls need a T3 server that gives Swamp its own full-access session.
 
 ### Threads and roles
 

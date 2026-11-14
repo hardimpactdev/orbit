@@ -61,6 +61,9 @@ final readonly class InstanceContainer
     /** The placeholder model key and the model origin, which T3's unit hands to Claude Code and Codex. */
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
 
+    /** T3's command in a container, from the agent release its image holds. */
+    public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
+
     public function __construct(private RecipeImageBuilds $recipes) {}
 
     public static function name(Instance $instance): string
@@ -323,7 +326,7 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3', 'project_mark' => '/home/agent/.config/orbit/t3-project'],
+                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project'],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
             // A copy of a default with a Node service elsewhere drops that host, and a nested-fleet copy keeps its inner fleet.
             ...($resetProxy || $nestedFleet ? ['proxy_environment' => InstanceNodeServiceTargets::proxyEnvironment($gateway, [], $nestedFleet, [])] : []),

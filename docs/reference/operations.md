@@ -98,6 +98,8 @@ For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,90
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. A maintainer must update the fixed row once the history holds author turns.
 
+`tasks.copy_turn` has a fixed 4,200 seconds: the turn's own bound of 3,600 seconds, the 30-second kill grace, up to 4 minutes to read the thread back, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
+
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a VM place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 
 `task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The converge of a base from stock builds the nested fleet when the base has none. That takes 5,400 seconds at its bound and about 25 minutes in practice (the standalone fleet build, since removed, took 1,840 seconds as operation 11816). A VM at its pins converges in about a minute. Stopping and snapshotting the base and proving a fresh task start add time. A maintainer must update the provisional row after measuring successful runs.
@@ -298,6 +300,7 @@ Use the kind and target type to start or find the work of a command.
 | `POST tasks/{group}/script` | `tasks.script` | `task_group` | Gateway |
 | `POST tasks/{group}/package` | `tasks.package` | `task_group` | Gateway |
 | `task:turn` | `tasks.turn` | `task_group` | Gateway |
+| `task:turn` of a [task copy](/reference/tasks#task-copy) | `tasks.copy_turn` | `task_group` | Gateway |
 | `task:publish` | `tasks.publish` | `task_group` | Gateway |
 | `POST tasks/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST tasks/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
@@ -332,7 +335,7 @@ When the Gateway cannot confirm the start, it answers `swamp.start_uncertain` an
 
 ### Retry a start with a key
 
-Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{task}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{task}/turn` (`tasks.turn`). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{task}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{task}/turn` (`tasks.turn`, or `tasks.copy_turn` for a group that runs in a task copy, which takes the request's key). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
 Automatic deploy starts bind caller and command as well as target and input. The [automatic deploy start](/reference/deployments#pinned-commits-and-automatic-callers) requires a key and Gateway Node access. Manual deploys and other kinds retain their key scope across callers.
 

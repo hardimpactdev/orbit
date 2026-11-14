@@ -78,6 +78,7 @@ final readonly class TaskCheckIntent
         $setup = $input->phase === TaskCheckKind::Baseline ? $this->evidence->baselineSetup($group) : [];
         $workspace = null;
         if ($container !== null) {
+            TaskCopyTurn::refuseUnended($group);
             TaskInstanceWorkspace::refuseUnavailable($ci, $setup);
             $workspace = $container->intent();
         }

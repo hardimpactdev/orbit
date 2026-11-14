@@ -1106,6 +1106,37 @@ inputs = [
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
 
 [[fixture]]
+file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
+cost = 2
+# Local Deno case times on Beast rounded up; not CI measurements.
+inputs = [
+  "swamp/extensions/behaviors/_lib/public_output.ts",
+  "swamp/extensions/behaviors/operations/task-copy-turn/mod.ts",
+]
+
+[[fixture]]
+file = "swamp/tests/ansible_task_copy_turn_test.ts"
+cost = 18
+# Local Deno case times on Beast rounded up by one second; not CI measurements.
+slices = 1
+inputs = [
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/task-copy-turn.yml",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/manifest.yaml",
+  "swamp/workflows/workflow-operation-task-copy-turn.yaml",
+]
+
+[fixture.case_costs]
+  "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result" = 1
+  "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back" = 3
+  "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing" = 6
+  "an intent outside the admitted shape runs nothing in the copy" = 4
+  "a thread list that is not JSON reads as no thread, and the start's end is still written" = 4
+
+[[fixture]]
 file = "swamp/tests/ansible_instance_container_power_test.ts"
 cost = 29
 # Local Deno case times on Beast rounded up by one second; not CI measurements.

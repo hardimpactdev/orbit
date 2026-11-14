@@ -1,0 +1,85 @@
+id: 84e5d701-3189-4948-8111-42010de80414
+name: operation-task-copy-turn
+description: One agent turn in a task copy. T3's own CLI runs it as agent through an Ansible phase on the copy's Node; the thread is read back and recorded.
+queueTimeout: 30
+labels: {role: swamp}
+inputs:
+  type: object
+  properties:
+    operation_id: {type: integer, minimum: 1}
+    node_id: {type: integer, minimum: 1}
+    kind: {type: string, const: tasks.copy_turn}
+    intent: {type: object}
+    # T3 issues and revokes its own session inside the copy: the turn carries no credential.
+    execution_secrets: {type: object, additionalProperties: false}
+  required: [operation_id, node_id, kind, intent, execution_secrets]
+  additionalProperties: false
+jobs:
+  - name: turn
+    labels: {role: swamp}
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ {"runtime": inputs.intent.runtime, "ssh_execution": inputs.intent.ssh_execution, "turn": inputs.intent.turn} }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # The turn's own bound is intent.turn.seconds (3,600 s); this covers it, the 30 s kill grace, two 120 s reads and the SSH set-up.
+      - name: Run the turn
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "task-copy-turn-" + string(inputs.node_id) }}'
+          methodName: execute
+          inputs:
+            run: timeout 4000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      # The thread's state, error and message transcript, bounded and redacted. A phase that wrote nothing is a failed start.
+      - name: result
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: Run the turn, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/task-copy-turn'
+          behaviorName: '${{ "task-copy-turn-result" }}'
+          methodName: result
+          inputs:
+            folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "task-copy-turn-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: outcome
+        labels: {role: swamp}
+        dependsOn:
+          - {step: result, condition: {type: succeeded}}
+          - {step: cleanup, condition: {type: always}}
+        task:
+          type: assert
+          expr: steps.result.outputs.successful
+          message: The agent's turn in the task copy did not complete.
+          severity: high

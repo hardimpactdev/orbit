@@ -721,10 +721,10 @@
   "swamp/extensions/behaviors/projects/horizon-new-dawn/mod_test.ts": {
     "source_sha256": "2fe5a9d2b502583d7b49e5c992c3e1ab24f8d39eb7bf74ee53b00a0058b9aee5",
     "cases": [
-      "exact script output: v5.11.0 → v5.12.0",
-      "exact script output: v5.42.0 → v5.43.0",
-      "exact script output: v5.49.0 → v5.50.0",
-      "exact script output: v5.50.0 → v5.50.1",
+      "exact script output: v5.11.0 \u2192 v5.12.0",
+      "exact script output: v5.42.0 \u2192 v5.43.0",
+      "exact script output: v5.49.0 \u2192 v5.50.0",
+      "exact script output: v5.50.0 \u2192 v5.50.1",
       "detects only the next stable tag, ignores prereleases and deduplicates annotated tags",
       "missing, invalid and unknown baselines fail before diffing",
       "upstream failures never become a clean empty detection",
@@ -2565,6 +2565,28 @@
     "cases": [
       "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
       "pinned create: a failed workspace registers nothing, stops the container and removes the private folder"
+    ]
+  },
+  "swamp/tests/ansible_task_copy_turn_test.ts": {
+    "source_sha256": "5953b1c98c47e71586750f983caebf1bf08c0a33396cfb975d94f7d78224c458",
+    "cases": [
+      "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
+      "a completed turn sends the prompt on stdin with the copy's model, finds its thread by title and reads it back",
+      "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing",
+      "an intent outside the admitted shape runs nothing in the copy",
+      "a thread list that is not JSON reads as no thread, and the start's end is still written"
+    ]
+  },
+  "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts": {
+    "source_sha256": "5c87967b8076b9eb7bfca727477f142ca880b9b80c9f9d4bce1cf78243424eaa",
+    "cases": [
+      "a completed run is done and over, and records the message transcript and the T3 thread",
+      "a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status",
+      "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
+      "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
+      "a message without a run id keeps the transcript",
+      "transcript text is redacted and bounded to the newest entries",
+      "the method reads each evidence file on its own, so an oversized read keeps the start's end"
     ]
   }
 }

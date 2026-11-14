@@ -924,7 +924,9 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Task copy
 
-A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases). Turns, publish, prep and build do not run in a copy yet.
+A task of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on has no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
+
+[`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs a new implementer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes; the turn's thread and transcript stay on the Gateway after the copy is gone. Reviewer turns, continued threads, publish, prep and build do not run in a copy yet.
 
 | Part | Rule |
 | --- | --- |
