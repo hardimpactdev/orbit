@@ -1,0 +1,17 @@
+order = 801
+source_sha256 = "ea6b6b674e2ea01977800507deb6f78f1be513e378b358d93c2384e3c4f3e318"
+cases = [
+  "conn.environment_renew reports on every path, also when the Node step never ran",
+  "tasks.dependency_merge confirms on every path, also after a failed mint",
+  "tasks.publish confirms on every path of a copy and a VM, also after a failed mint",
+  "vault.setup: a skipped cleanup step never skips the end check",
+]
+file = "swamp/tests/end_check_paths_test.ts"
+# Local Deno run on Beast: under 1 s for the whole file.
+cost = 1
+inputs = [
+  "swamp/workflows/workflow-operation-conn-environment-renew.yaml",
+  "swamp/workflows/workflow-operation-dependency-merge.yaml",
+  "swamp/workflows/workflow-operation-task-publish.yaml",
+  "swamp/workflows/workflow-operation-vault-setup.yaml",
+]
