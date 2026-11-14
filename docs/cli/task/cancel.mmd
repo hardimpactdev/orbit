@@ -19,6 +19,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - no Operation is open on the group's task VM, such as a resume or an earlier release; otherwise HTTP 409 `operation.target_busy`, naming it
   %%> - the group is cancellable; otherwise `tasks.not_cancellable`
+  %%> - after the group's running work is asked to stop, no Operation still holds the group, such as a timed-out one whose run nothing has proven ended; otherwise HTTP 409 `operation.target_busy`, naming it
   %%> - every refusal here and in the next step comes before the cancel stops running work, so a refused cancel changes nothing
   GW->>GH: Compare the task branch<br/>approved...task-42
   %%> What it does:

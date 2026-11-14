@@ -71,6 +71,12 @@ final readonly class TaskCancelIntent
                     TaskCopyEnd::assertFree($copy->instance);
                 }
                 $this->operations->cancelOpen($group);
+                // An ended Operation can still hold the group: a timed-out one whose run nothing has proven ended. The cancel refuses
+                // before it admits the copy's destroy, so a refused cancel changes nothing.
+                $held = Operation::query()->where('lock_key', OperationStore::lockKey('task_group', $group->id))->value('id');
+                if ($held !== null) {
+                    throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
+                }
                 if ($copy !== null && $workspace !== null) {
                     return app(TaskCopyEnd::class)->cancel($group, $copy->instance, $workspace, $caller, $request);
                 }

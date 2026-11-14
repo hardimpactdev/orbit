@@ -466,6 +466,21 @@ describe('a cancel of a group that owns a copy', function (): void {
             ->and($operation->refresh()->status)->toBe(OperationStatus::Running);
     });
 
+    it('is refused before the copy\'s destroy while a timed-out Operation still holds the group', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $held = Operation::query()->create(['kind' => 'tasks.publish', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $copy->node_id,
+            'lock_key' => OperationStore::lockKey('task_group', $group->id), 'input' => [], 'status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
+            'state' => ['swamp_run_id' => '5d0c3a8e-4f7b-4a51-9a63-0e2b1c7d9f10', 'native_timeout' => ['budget_seconds' => 900]], 'sequence' => 1, 'attempts' => 1,
+            'started_at' => now()->subMinutes(20), 'finished_at' => now()->subMinutes(5)]);
+
+        expect(copyRefusal(fn () => app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)))->toBe('operation.target_busy 409')
+            ->and(Operation::query()->where('kind', 'instance.destroy')->exists())->toBeFalse()
+            ->and(Operation::query()->where('kind', 'tasks.cancel')->exists())->toBeFalse()
+            ->and(Instance::query()->find($copy->id))->not->toBeNull()
+            ->and($held->refresh()->lock_key)->not->toBeNull();
+    });
+
     it('leaves the destroy of a clone that no group owns as it was', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);
