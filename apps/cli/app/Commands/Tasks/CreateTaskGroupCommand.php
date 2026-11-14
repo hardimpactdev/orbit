@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Tasks;
 
+use App\Commands\Concerns\ReadsTaskAgentOptions;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use App\Support\Console\ProgressOutcome;
@@ -17,6 +18,8 @@ use Orbit\Sdk\Responses\Tasks\TaskRecordResponse;
 
 final class CreateTaskGroupCommand extends TaskCommand
 {
+    use ReadsTaskAgentOptions;
+
     /** The Gateway stores at most this many subtasks on create. */
     private const int MAX_SUBTASKS = 50;
 
@@ -34,6 +37,12 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--preview : Keep the sandbox running during review}
         {--current-recipe : Wait for the current machine recipe image; never start from a fallback image}
         {--review= : manual (default; Nick approves the head) or automatic (a fresh reviewer passes the head)}
+        {--implementer-provider= : Implementer provider in a task copy, such as claude}
+        {--implementer-model= : Implementer model in a task copy, such as claude-opus-5-5}
+        {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max}
+        {--reviewer-provider= : Reviewer provider in a task copy}
+        {--reviewer-model= : Reviewer model in a task copy}
+        {--reviewer-effort= : Reviewer effort in a task copy}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -43,7 +52,8 @@ final class CreateTaskGroupCommand extends TaskCommand
     {
         $child = $this->option('parent') !== null;
         $unsupported = $child
-            ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe']
+            ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe', 'implementer-provider', 'implementer-model', 'implementer-effort',
+                'reviewer-provider', 'reviewer-model', 'reviewer-effort']
             : ['deliverables', 'topology'];
         foreach ($unsupported as $option) {
             if (! in_array($this->option($option), [null, false], true)) {
@@ -72,6 +82,12 @@ final class CreateTaskGroupCommand extends TaskCommand
         $subtasks = $this->subtasks();
 
         if ($subtasks === false) {
+            return self::FAILURE;
+        }
+
+        $agents = $this->taskAgentsOption('', 'task', clearable: false);
+
+        if ($agents === false) {
             return self::FAILURE;
         }
 
@@ -120,6 +136,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 orchestration: is_string($orchestration) ? $orchestration : null,
                 currentRecipe: $this->option('current-recipe') === true ? true : null,
                 review: is_string($review) ? $review : null,
+                agents: $agents,
             ),
             TaskRecordResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],

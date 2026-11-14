@@ -19,6 +19,10 @@ Fetching Instances...
 │
 ├  Task check              —
 │
+├  Implementer agent       claude / claude-sonnet-5-5 / -
+│
+├  Reviewer agent          - / - / xhigh
+│
 ├  Task workspace routed   yes
 │
 ├  Review and merge        no
