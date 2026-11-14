@@ -1,11 +1,11 @@
 order = 1470
-source_sha256 = "82764c504e2af43ac5825197932f8be567ec75142cae5db1b6f59af6447cae44"
+source_sha256 = "5287709edd68a85f47a58f78f7ca549a1d86e7dc9a609cd68dad0ff0b6f0c72e"
 cases = [
-  "two publishes of copies on one Node share no behavior name",
+  "a publish names its group only for the content check, the import and the push",
   "the publish passes its group to every workspace phase",
-  "two workspace phases on one Node share only their short input, evidence and cleanup steps",
-  "two copy checks on one Node share only their short input, evidence and cleanup steps",
-  "two syncs share only their short scratch cleanup on 209; each VM is its own group's",
+  "a workspace phase names its group only for the phase itself",
+  "a copy check names its group only for the check, commit and commit-ref phases",
+  "a sync names its group only for the clone and the bundle on 209",
 ]
 file = "swamp/tests/workflow_task_lock_scope_test.ts"
 cost = 1

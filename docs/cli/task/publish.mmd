@@ -67,7 +67,7 @@ sequenceDiagram
     SW->>N: Export the copy
     %%> How:
     %%> - the workspace phase bundles the branch as `agent`, checks its head and tree against the candidate, and fetches it to this worker; the Node keeps no copy
-    %%> - the phase runs as the behavior `task-workspace-NODE-GROUP` for up to 1,800 s; each step of this run names its group as well as its Node, so a publish or check of another group's copy on this Node never waits for its lock
+    %%> - the phase runs as the behavior `task-workspace-NODE-GROUP` for up to 1,800 s, so a publish of another group's copy on this Node never waits for its lock; the content check, import and push name their group too
     %%> - the Node also pulls the copy's `.env` as a regular file and fetches it beside the bundle; its bytes enter no result or log
     %%> - and the copy's proposed pull request body for the task branch, `.git/orbit/proposed-pr-bodies/task-GROUP.md`, when it is a regular file of at most 64 KiB: data, never run; without it the publish sends the caller's text
   else a task VM

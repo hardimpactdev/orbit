@@ -44,7 +44,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/task-check-data'
-          behaviorName: '${{ ("task-instance-check-prepare-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
+          behaviorName: '${{ "task-instance-check-prepare-" + string(inputs.node_id) }}'
           methodName: prepare
           inputs:
             # Only its validation is used: the guest phase builds the agent's own commands.
@@ -107,7 +107,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/task-check-data'
-          behaviorName: '${{ ("task-instance-check-local-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
+          behaviorName: '${{ "task-instance-check-local-" + string(inputs.node_id) }}'
           methodName: local
           inputs:
             intent: '${{ inputs.intent }}'
@@ -155,7 +155,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/task-check-data'
-          behaviorName: '${{ ("task-instance-check-candidate-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
+          behaviorName: '${{ "task-instance-check-candidate-" + string(inputs.node_id) }}'
           methodName: candidate
           inputs:
             intent: '${{ inputs.intent }}'
@@ -215,7 +215,7 @@ jobs:
         task:
           type: behavior
           behaviorType: '@nckrtl/task-check-data'
-          behaviorName: '${{ ("task-instance-check-finish-" + string(inputs.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}'
+          behaviorName: '${{ "task-instance-check-finish-" + string(inputs.node_id) }}'
           methodName: finish
           inputs:
             intent: '${{ inputs.intent }}'

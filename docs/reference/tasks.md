@@ -1023,16 +1023,16 @@ A held publish leaves the checked commit in the copy. An operator adds a Project
 
 #### Two groups on one Node
 
-Copies of several groups can share a Node, and their checks, publishes and syncs run side by side. Swamp locks a behavior for the whole step and lets a second step wait for that lock 60 seconds before it fails. So each long step of these runs names its behavior by its group as well as its Node, `<family>-<node>-<group>` ([behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names)):
+Copies of several groups can share a Node, and their checks, publishes and syncs run side by side. Swamp locks a behavior for the whole step and lets a second step wait for that lock 60 seconds before it fails. So each step that two groups can run at once on one target, and that can hold its lock near or past that wait, names its behavior by its group as well as its Node, `<family>-<node>-<group>` ([behavior names](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/README.md#behavior-names)):
 
 | Step | Behavior | Runs up to |
 | --- | --- | --- |
 | The workspace phase of a publish: preflight, export, discard | `task-workspace-<node>-<group>` | 1,800 s |
-| The check of a copy, with its prepare, local, candidate and finish steps | `task-instance-check-<node>-<group>` and `task-instance-check-<step>-<node>-<group>` | 10,800 s |
-| Every step of `operation-task-publish` that runs a command | `task-publish-<step>-<node>-<group>` | 240 s for the `.env` content check |
+| The check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 10,800 s, 600 s, 600 s |
+| The `.env` content check, the import and the push of a publish on 209 | `task-publish-content-<node>-<group>`, `task-publish-import-<node>-<group>`, `task-publish-push-<node>-<group>` | 240 s, 60 s, 60 s |
 | The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 120 s |
 
-One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Steps of a few seconds keep one shared name, such as `ansible-input` and the evidence and cleanup steps. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
+One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name: a step of 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, and a step that runs only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
 
 ### Workspace ownership
 
