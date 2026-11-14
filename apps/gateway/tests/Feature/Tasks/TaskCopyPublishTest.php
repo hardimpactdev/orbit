@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
@@ -266,4 +267,98 @@ it('names a step that timed out on a Swamp behavior lock tasks.publish_lock_time
     'a lock line inside other output' => ['Run workspace phase', "fatal: x\n".'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms', 'tasks.publish_failed'],
     'a lock that is no Swamp lock file' => ['Run workspace phase', 'Lock "/var/lib/dpkg/lock" held by root (pid 7) — timed out after 60002ms', 'tasks.publish_failed'],
     'a push step that ran out of time' => ['Push the branch', 'Push the branch timed out after 60s', 'tasks.push_failed'],
+    // A lock timeout of the base check is a lock timeout, not a conflict: the tick retries it.
+    'the base check' => ['Check the base', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" held by orbit@swamp (pid 3018532) — timed out after 60002ms', 'tasks.publish_lock_timeout'],
 ]);
+
+/** A copy publish admitted and running, as its run's terminal event finds it. */
+function runningCopyPublish(): array
+{
+    [$group, $check] = copyPublishWorld();
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+    $run = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+
+    return [$group, $operation->refresh(), $run];
+}
+
+it('states the base of a copy publish in its result and publishes, behind or not', function (int $behind, array $overlap): void {
+    [$group, $operation, $run] = runningCopyPublish();
+    $base = ['base_commit' => str_repeat('a', 40), 'default_commit' => str_repeat('c', 40), 'behind_by' => $behind, 'overlapping_paths' => $overlap, 'overlapping_more' => 0];
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['base' => json_encode($base),
+            'pull_receipt' => json_encode(['pull_request_number' => 7, 'pull_request_url' => 'https://github.com/example/trial/pull/7'])]]);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['branch' => 'task-'.$group->id, 'commit' => str_repeat('b', 40), 'pull_request_number' => 7,
+            'pull_request_url' => 'https://github.com/example/trial/pull/7', ...$base])
+        ->and($group->refresh()->pr_url)->toBe('https://github.com/example/trial/pull/7');
+})->with([
+    'level with the default branch' => [0, []],
+    'behind, no path changed on both sides' => [3, []],
+    'behind, a path changed on both sides without a conflict' => [2, ['app/Models/Order.php']],
+]);
+
+it('records no base for a run that started on the workflow before the base step', function (): void {
+    [$group, $operation, $run] = runningCopyPublish();
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['branch' => 'task-'.$group->id, 'commit' => str_repeat('b', 40), 'pull_request_number' => null, 'pull_request_url' => null]);
+});
+
+it('refuses a real conflict with the default branch, names its paths and publishes nothing', function (): void {
+    [$group, $operation, $run] = runningCopyPublish();
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [],
+        'failure' => ['failed_step' => 'Check the base', 'detail' => 'tasks.publish_conflict: "app/Order.php", "docs/a, b.md" and 3 more']]);
+
+    expect($projected->error_code)->toBe('tasks.publish_conflict')
+        ->and($projected->result)->toBe(['error_code' => 'tasks.publish_conflict', 'conflicting_paths' => ['app/Order.php', 'docs/a, b.md'], 'conflicting_more' => 3])
+        ->and($group->refresh()->pr_url)->toBeNull();
+});
+
+it('fails a base read that could not run without the conflict code', function (): void {
+    [, $operation, $run] = runningCopyPublish();
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => ['failed_step' => 'Check the base', 'detail' => 'tasks.publish_failed']]);
+
+    expect($projected->error_code)->toBe('tasks.publish_failed')
+        ->and($projected->result)->toBe(['error_code' => 'tasks.publish_failed']);
+});
+
+it('keeps a long conflict through the stored step failure, with its code and its bounded paths', function (): void {
+    [$group, $operation, $run] = runningCopyPublish();
+    // "Check the base" names at most 3,000 bytes of paths and the count of the rest; the run's step error carries that line after
+    // other output, and the Gateway keeps the last 4,096 bytes of it, without an incomplete first line.
+    $paths = array_map(static fn (int $index): string => "apps/gateway/app/Domain/Tasks/Long/Folder/Name/Changed{$index}.php", range(0, 299));
+    $shown = [];
+    $used = 2;
+    foreach ($paths as $path) {
+        $size = strlen(json_encode($path, JSON_UNESCAPED_SLASHES)) + ($shown === [] ? 0 : 2);
+        if ($used + $size > 3000 - strlen('tasks.publish_conflict: ') - strlen(' and 300 more')) {
+            break;
+        }
+        $shown[] = $path;
+        $used += $size;
+    }
+    $line = 'tasks.publish_conflict: '.implode(', ', array_map(static fn (string $path): string => json_encode($path, JSON_UNESCAPED_SLASHES), $shown))
+        .' and '.(300 - count($shown)).' more';
+    $error = str_repeat("deno: an earlier line of the step's output\n", 60).$line;
+    $failure = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [
+        ['name' => 'Check the base', 'status' => 'failed', 'error' => $error, 'completedAt' => now()->toIso8601String()],
+    ]]]], $operation);
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => $failure]);
+
+    expect(strlen($line))->toBeLessThanOrEqual(3000)
+        ->and($projected->error_code)->toBe('tasks.publish_conflict')
+        ->and($projected->result)->toBe(['error_code' => 'tasks.publish_conflict', 'conflicting_paths' => $shown, 'conflicting_more' => 300 - count($shown)])
+        ->and($group->refresh()->pr_url)->toBeNull();
+});

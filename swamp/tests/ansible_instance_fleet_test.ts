@@ -148,10 +148,11 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
         return call.slice(5).join(" ");
       });
     },
-    run(phase: string, extra: string[] = []) {
+    /** Run a phase; its waits poll at once unless `ownDelay` keeps the delay that the phase sets. */
+    run(phase: string, extra: string[] = [], options: { ownDelay?: boolean } = {}) {
       const result = new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
-          "-e", `phase=${phase}`, "-e", "fleet_ready_delay=0", ...extra, `${folder}/play.yml`],
+          "-e", `phase=${phase}`, ...(options.ownDelay ? [] : ["-e", "fleet_ready_delay=0"]), ...extra, `${folder}/play.yml`],
         env: {
           HOST_FIXTURE: folder,
           PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
@@ -243,11 +244,16 @@ const remint = "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbi
 const tokenShaped = /[a-z0-9-]+\.[A-Za-z0-9_-]{20,}/;
 /** A call to the nested Gateway's converge API: an admission or a read of its Operation. */
 const convergeApi = (call: string) => call.startsWith(api) && (call.includes("/converge ") || call.includes("/operations/"));
-/** The three Nodes converge one after the other: the converge workflow's fixed behavior names share one Swamp lock. */
-const convergeCalls = [1, 2, 3].flatMap((node) => [
+/** The due Nodes converge one after the other: the converge workflow's fixed behavior names share one Swamp lock. The fake numbers
+ * each admitted Operation from 901 in admission order. */
+const convergeCallsFor = (nodes: number[]) => nodes.flatMap((node, index) => [
   `${api} --fail -X POST https://10.45.0.1/api/v1/nodes/${node}/converge -H Content-Type: application/json -d {"base":true}`,
-  `${api} --fail https://10.45.0.1/api/v1/operations/${900 + node}`,
+  `${api} --fail https://10.45.0.1/api/v1/operations/${901 + index}`,
 ]);
+const convergeCalls = convergeCallsFor([1, 2, 3]);
+/** The record keys of the three nested Nodes' converge digests and last converge times. */
+const convergeKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converge_${role}`);
+const convergedKeys = ["gateway", "app_dev", "app_prod"].map((role) => `converged_${role}`);
 const swampServices = ["orbit-swamp-serve.service", "orbit-swamp-worker@a.service", "orbit-swamp-worker@b.service", "orbit-swamp-worker@c.service"];
 const mountReads = [
   "incus exec nested-gateway -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount " +
@@ -591,7 +597,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
+  name: "a reset stops the three containers in one call, restores base on each stopped one, keeps the rules of base, starts the fleet and polls every second; a base without the rules is refused",
   ignore: !hasAnsible,
   fn() {
     const f = fixture(ruled(), { base: true });
@@ -600,13 +606,23 @@ Deno.test({
       f.calls();
       // Work in the fleet changed a device of a nested container; the restore takes base's back.
       f.change((state) => state.containers["nested-app-dev"].devices.checkout.shift = "true");
-      const reset = f.run("reset");
+      // Doctor answers unhealthy once, so the readiness wait polls again after the reset's own delay.
+      f.change((state) => {
+        state.doctorCalls = 0;
+        state.doctorUnhealthy = 1;
+      });
+      const reset = f.run("reset", [], { ownDelay: true });
       assert(reset.ok, reset.output);
       const calls = f.calls();
       assertEquals(calls, [
+        // A restore of a running container stops and boots it again, one by one: the reset stops the three in one call first.
+        "incus list --format csv --columns ns",
+        `incus stop --force ${names.join(" ")}`,
         ...names.map((name) => `incus snapshot restore ${name} base`),
         ...startReads,
         "incus list --format csv --columns ns",
+        // One call starts the three after the rules check: Incus boots them in parallel.
+        `incus start ${names.join(" ")}`,
         "incus exec nested-gateway -- readlink /home/orbit/.config/swamp/api-key",
         "incus exec nested-gateway -- ln -sfnT club/swamp-club-api-key /home/orbit/.config/swamp/api-key",
         "test -s /etc/wireguard/wg-nested.key",
@@ -620,10 +636,14 @@ Deno.test({
         "incus exec nested-gateway -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
         "incus exec nested-app-dev -- systemctl is-active home-orbit-orbit-apps-gateway-.env.mount home-orbit-orbit-apps-gateway-storage.mount home-orbit-orbit-apps-gateway-bootstrap-cache.mount",
         "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
-        ...readyCalls,
+        // The unhealthy Doctor answer is polled once more.
+        ...readyCalls.slice(0, 3), readyCalls[2], readyCalls[3],
       ]);
       assertKeyUntouched(calls, reset.output);
       assertEquals(f.state().containers["nested-app-dev"].devices.checkout.shift, "false");
+      assertEquals(f.state().runningRestores ?? 0, 0, "a restore of a running container boots it on its own");
+      // The waits poll every second within the 300 s bound: 300 retries, where the refresh's 5 s give 60.
+      assertStringIncludes(reset.output, "FAILED - RETRYING: [localhost]: Wait for Doctor of the nested Gateway (300 retries left)");
       const g = fixture(structuredClone(shapes), { base: true });
       try {
         const refused = g.run("reset");
@@ -635,6 +655,78 @@ Deno.test({
       }
     } finally {
       f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a reset that fails after its stop starts the containers that ran again and fails with the first reason",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled(), { base: true });
+    try {
+      assert(f.run("start").ok);
+      f.calls();
+      // nested-app-prod lost its base: its restore fails after the stop of all three.
+      f.change((state) => delete state.containers["nested-app-prod"].snapshots.base);
+      const failed = f.run("reset");
+      assert(!failed.ok, failed.output);
+      assertStringIncludes(failed.output, '"msg": "nested-app-prod did not restore base: Error: Snapshot not found"');
+      // The failure keeps the name of the task that failed, which the container play writes into its `detail`.
+      assertEquals(failed.output.match(/TASK \[Check the restores\]/g)?.length, 2);
+      const calls = f.calls();
+      const stop = calls.indexOf(`incus stop --force ${names.join(" ")}`);
+      assert(stop >= 0, calls.join("\n"));
+      // Each start is its own call after the failed restore, so one that fails stops none of the others.
+      assertEquals(calls.slice(stop + 1).filter((call) => call.startsWith("incus start")), names.map((name) => `incus start ${name}`));
+      assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      // The one start of the three fails for one of them: the check names the call's containers and the reason.
+      f.change((state) => {
+        state.containers["nested-app-prod"].snapshots.base = structuredClone(state.containers["nested-app-dev"].snapshots.base);
+        state.failStart = { "nested-app-dev": "Failed to start device" };
+      });
+      f.calls();
+      const unstarted = f.run("reset");
+      assert(!unstarted.ok);
+      assertStringIncludes(unstarted.output, `"msg": "${names.join(", ")} did not start: Error: nested-app-dev: Failed to start device"`);
+      f.change((state) => delete state.failStart);
+      assert(f.run("start").ok);
+      // A fleet that was stopped before the reset stays stopped.
+      f.change((state) => {
+        for (const name of names) state.containers[name].status = "Stopped";
+        delete state.containers["nested-app-prod"].snapshots.base;
+      });
+      f.calls();
+      assert(!f.run("reset").ok);
+      assert(!f.calls().some((call) => call.startsWith("incus start")));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a reset refuses an Instance that is not a clone with instance.fleet_reset_not_clone before any command",
+  ignore: !hasAnsible,
+  fn() {
+    for (const clone of [null, undefined]) {
+      const f = fixture(ruled(), { base: true });
+      try {
+        assert(f.run("start").ok);
+        f.calls();
+        // A default's intent has `clone` null (InstanceContainer::intent); a hand-made one may lack it.
+        f.intent((intent) => {
+          if (clone === null) intent.container.clone = null;
+          else delete intent.container.clone;
+        });
+        const refused = f.run("reset");
+        assert(!refused.ok, refused.output);
+        assertStringIncludes(refused.output, '"msg": "instance.fleet_reset_not_clone"');
+        assertEquals(f.calls(), []);
+        assertEquals(names.map((name) => f.state().containers[name].status), ["Running", "Running", "Running"]);
+      } finally {
+        f.cleanup();
+      }
     }
   },
 });
@@ -936,13 +1028,14 @@ function refreshFromScratch() {
  */
 // Only the wall-clock times (the last converge and the oldest token) are rebound; all digests and other persistent state must match exactly.
 function savedRecord(value: Record<string, string>) {
-  assert(/^\d+$/.test(value.converged), "the real refresh must write a numeric converge time");
+  for (const key of convergedKeys) assert(/^\d+$/.test(value[key]), `the real refresh must write a numeric ${key}`);
   assert(/^\d{14}$/.test(value.tokens), "the real refresh must write the oldest token's creation time");
-  return { ...value, converged: "@CONVERGED@", tokens: "@TOKENS@" };
+  return { ...value, ...Object.fromEntries(convergedKeys.map((key) => [key, "@CONVERGED@"])), tokens: "@TOKENS@" };
 }
 function currentRecord(value: Record<string, string>, converged = String(Math.floor(Date.now() / 1000))) {
-  assertEquals([value.converged, value.tokens], ["@CONVERGED@", "@TOKENS@"]);
-  return { ...value, converged, tokens: new Date(Date.now() - 86400_000).toISOString().slice(0, 19).replace(/[^0-9]/g, "") };
+  assertEquals([...convergedKeys.map((key) => value[key]), value.tokens], [...convergedKeys.map(() => "@CONVERGED@"), "@TOKENS@"]);
+  return { ...value, ...Object.fromEntries(convergedKeys.map((key) => [key, converged])),
+    tokens: new Date(Date.now() - 86400_000).toISOString().slice(0, 19).replace(/[^0-9]/g, "") };
 }
 const refreshedBoundary = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-refreshed.json", import.meta.url)));
 // deno-lint-ignore no-explicit-any
@@ -968,8 +1061,10 @@ Deno.test({
     const before = Math.floor(Date.now() / 1000);
     const f = refreshFromScratch();
     try {
-      const converged = Number(JSON.parse(f.state().outer.files[record]).converged);
-      assert(converged >= before && converged <= Math.floor(Date.now() / 1000));
+      for (const key of convergedKeys) {
+        const converged = Number(JSON.parse(f.state().outer.files[record])[key]);
+        assert(converged >= before && converged <= Math.floor(Date.now() / 1000), key);
+      }
       assertEquals(persistentState(f.state()), refreshedBoundary.state);
     } finally {
       f.cleanup();
@@ -993,8 +1088,10 @@ Deno.test({
     try {
       const before = structuredClone(f.state().containers);
       const written = JSON.parse(f.state().outer.files[record]);
-      // A test and another workflow changed, so the `swamp` tree did: none of them is a converge input, but the grants follow `swamp`.
-      f.change((state) => state.digests = { "apps/gateway": "a1", swamp: "e1", "swamp/tests": "f9", "swamp/workflows/workflow-operation-instance-deploy-direct.yaml": "f8" });
+      // A test, another workflow and two modules of the converge's behavior that no converge runs changed, so the `swamp` tree did: none
+      // of them is a converge input (the clone part, and the redaction only the fleet reboot's result uses), but the grants follow `swamp`.
+      f.change((state) => state.digests = { "apps/gateway": "a1", swamp: "e1", "swamp/tests": "f9", "swamp/workflows/workflow-operation-instance-deploy-direct.yaml": "f8",
+        "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts": "f7", "swamp/extensions/behaviors/_lib/public_output.ts": "f6" });
       const again = f.run("refresh");
       assert(again.ok, again.output);
       const calls = f.calls();
@@ -1009,7 +1106,7 @@ Deno.test({
       }
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
-        changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
+        converge_nodes: [], changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
         tools_reason: "current", seconds: undefined });
       // The record vouches for the oldest token: no read and no remint.
       assertEquals([calls.filter((call) => call === tokenRead).length, ran(calls, "--tags remint")], [0, false]);
@@ -1019,8 +1116,8 @@ Deno.test({
       assertEquals(f.state().outer.modes[record], "root:root 0644");
       // The record keeps the time of the last converge that ran; the seeded record of the short cases is the one a refresh writes.
       assertEquals(JSON.parse(f.state().outer.files[record]), { ...written, grants: sha256("a1 e1") });
-      assertEquals(Object.keys(written), ["code", "converge", "converged", "grants", "rules", "tokens"]);
-      assertEquals(seededRecord(Number(written.converged), fixtureFleet, written.tokens), written);
+      assertEquals(Object.keys(written), ["code", ...convergeKeys.toSorted(), ...convergedKeys.toSorted(), "grants", "rules", "tokens"].toSorted());
+      assertEquals(seededRecord(Number(written.converged_gateway), fixtureFleet, written.tokens), written);
     } finally {
       f.cleanup();
     }
@@ -1082,7 +1179,7 @@ for (const [input, change, due, base, recorded] of inputCases) {
     fn() {
       const f = refreshedOnce();
       try {
-        const previous = JSON.parse(f.state().outer.files[record]).converged;
+        const previous = JSON.parse(f.state().outer.files[record]).converged_app_dev;
         const before = Math.floor(Date.now() / 1000);
         f.change(change);
         const refreshed = f.run("refresh");
@@ -1092,8 +1189,8 @@ for (const [input, change, due, base, recorded] of inputCases) {
         assertEquals(f.refreshed()?.base, base);
         // This exact record is the next case's boundary, not a digest calculated by the test.
         const written = JSON.parse(f.state().outer.files[record]);
-        if (due.includes("converge")) assert(Number(written.converged) >= before && Number(written.converged) <= Math.floor(Date.now() / 1000));
-        else assertEquals(written.converged, previous);
+        if (due.includes("converge")) assert(Number(written.converged_app_dev) >= before && Number(written.converged_app_dev) <= Math.floor(Date.now() / 1000));
+        else assertEquals(written.converged_app_dev, previous);
         assertEquals(savedRecord(written), refreshedBoundary.records[recorded]);
       } finally {
         f.cleanup();
@@ -1358,11 +1455,14 @@ const fleetFiles = fileRules.map(([container, path]) => ({ container, path, cont
  * The record a passed refresh of the fixture's default inputs writes, with `converged` at the given time (seconds) and the oldest
  * token made at `tokens` (a day ago by default, as the fake's tokens are).
  */
-function seededRecord(converged: number, fleet = fixtureFleet, tokens = tokenMark(Date.now() - 86400_000)) {
+function seededRecord(converged: number | number[], fleet = fixtureFleet, tokens = tokenMark(Date.now() - 86400_000)): Record<string, string> {
+  const times = Array.isArray(converged) ? converged : [converged, converged, converged];
   return {
     code: sha256("a1d4"),
-    converge: sha256([...convergeInputs.map(() => "c3"), "1".repeat(64), "2".repeat(64), "3".repeat(64)].join(" ") + " " + pythonJson(fleet)),
-    converged: String(converged),
+    // One digest per Node: the listed `swamp` files, that Node's base intent digest and the fleet intent.
+    ...Object.fromEntries(convergeKeys.map((key, index) =>
+      [key, sha256([...convergeInputs.map(() => "c3"), String(index + 1).repeat(64)].join(" ") + " " + pythonJson(fleet))])),
+    ...Object.fromEntries(convergedKeys.map((key, index) => [key, String(times[index])])),
     grants: sha256("a1 c3"),
     rules: sha256(pythonJson(fleetFiles)),
     tokens,
@@ -1376,7 +1476,7 @@ let fixtureFleet: unknown;
 }
 const nowSeconds = () => Math.floor(Date.now() / 1000);
 /** A started fleet with the record of a passed refresh, so a short case needs only its own refresh. */
-function seeded(converged: number) {
+function seeded(converged: number | number[]) {
   const f = fixture(ruled(), { club: true, base: true });
   assert(f.run("start").ok);
   f.change((state) => {
@@ -1388,7 +1488,7 @@ function seeded(converged: number) {
 }
 
 Deno.test({
-  name: "a moved base intent of one Node converges the three Nodes one by one, and the result names why",
+  name: "a moved base intent of one Node converges that Node only, and the result names it and why",
   ignore: !hasAnsible,
   fn() {
     const before = nowSeconds();
@@ -1398,13 +1498,19 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      assertEquals(calls.filter(convergeApi), convergeCalls);
+      assertEquals(calls.filter(convergeApi), convergeCallsFor([2]));
+      // Only the due Node's update timers stop.
+      assertEquals(calls.filter((call) => call.includes("systemctl stop apt-daily.timer")).map((call) => call.split(" ")[2]), ["nested-app-dev"]);
       // The digest is read after the migrate decision and before the agents are awaited.
       assert(calls.indexOf(intentRead) < calls.findIndex((call) => call.endsWith("--fail https://10.45.0.1/api/v1/nodes")), calls.join("\n"));
       const result = f.refreshed()!;
-      assertEquals([result.converge, result.converge_reason, result.restart, result.base], ["ran", "changed", "no", "kept"]);
+      assertEquals([result.converge, result.converge_reason, result.converge_nodes, result.restart, result.base], ["ran", "changed", ["app-dev"], "no", "kept"]);
       const written = JSON.parse(f.state().outer.files[record]);
-      assert(written.converge !== seededRecord(0).converge && Number(written.converged) >= before, JSON.stringify(written));
+      const seededOne = seededRecord(before - 60);
+      // app-dev's digest and time move; the other two keep theirs.
+      assert(written.converge_app_dev !== seededOne.converge_app_dev && Number(written.converged_app_dev) >= before, JSON.stringify(written));
+      assertEquals([written.converge_gateway, written.converge_app_prod, written.converged_gateway, written.converged_app_prod],
+        [seededOne.converge_gateway, seededOne.converge_app_prod, seededOne.converged_gateway, seededOne.converged_app_prod]);
     } finally {
       f.cleanup();
     }
@@ -1412,20 +1518,21 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a converge older than seven days runs although no input changed, and the result names it stale",
+  name: "a Node whose converge is older than seven days converges alone although no input changed, and the result names it stale",
   ignore: !hasAnsible,
   fn() {
     const before = nowSeconds();
-    const f = seeded(before - 8 * 86400);
+    const f = seeded([before - 60, before - 60, before - 8 * 86400]);
     try {
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
-      assert(ran(f.calls(), parts.converge));
+      assertEquals(f.calls().filter(convergeApi), convergeCallsFor([3]));
       const result = f.refreshed()!;
-      assertEquals([result.converge, result.converge_reason], ["ran", "stale"]);
+      assertEquals([result.converge, result.converge_reason, result.converge_nodes], ["ran", "stale", ["app-prod"]]);
       const written = JSON.parse(f.state().outer.files[record]);
-      assertEquals(written.converge, seededRecord(0).converge);
-      assert(Number(written.converged) >= before, JSON.stringify(written));
+      assertEquals(written.converge_app_prod, seededRecord(0).converge_app_prod);
+      assert(Number(written.converged_app_prod) >= before, JSON.stringify(written));
+      assertEquals(written.converged_gateway, String(before - 60));
     } finally {
       f.cleanup();
     }
@@ -1445,7 +1552,7 @@ Deno.test({
       const result = f.refreshed()!;
       assertEquals([result.converge, result.converge_reason, result.record], ["ran", "digest_unreadable", "present"]);
       // Without its digest the next refresh converges again.
-      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", "converged", "grants", "rules", "tokens"]);
+      assertEquals(Object.keys(JSON.parse(f.state().outer.files[record])), ["code", ...convergedKeys.toSorted(), "grants", "rules", "tokens"]);
     } finally {
       f.cleanup();
     }

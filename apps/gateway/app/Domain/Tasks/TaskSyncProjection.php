@@ -12,11 +12,15 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
 
-/** Projects the terminal event of one `operation-task-sync` run: the two commits that the fetch stored, or the step that failed. */
+/**
+ * Projects the terminal event of one `operation-task-sync` run: the two commits that the fetch stored, or for a task copy the
+ * default head it imported and how far its branch is behind, or the step that failed.
+ */
 final readonly class TaskSyncProjection implements DirectOperationProjection, DirectOperationWorkflowInput
 {
     /**
-     * The run starts now, so the Gateway mints the read token now and writes it to the vault key that admission named.
+     * The run starts now, so the Gateway mints the read token now and writes it, as a Git header, to the vault key that admission
+     * named: a task VM's clone on Node 209 and a task copy's fetch on its Node send it the same way.
      *
      * @return array<string,mixed>
      */
@@ -43,11 +47,26 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
         $native = ValidatedData::object($data['result'] ?? []);
         $failed = in_array($data['status'] ?? null, ['failed', 'interrupted'], true);
         $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
-        $result = $failed ? ['error_code' => 'tasks.sync_failed', 'failed_step' => $step] : self::refs($operation, $native['refs'] ?? null);
+        $copy = isset(ValidatedData::object($operation->input)['copy']);
+        $result = $failed ? ['error_code' => 'tasks.sync_failed', 'failed_step' => $step]
+            : ($copy ? self::base($native['base'] ?? null) : self::refs($operation, $native['refs'] ?? null));
         $data['result'] = $result;
         $data['error_code'] = $failed ? 'tasks.sync_failed' : null;
 
         return app(DirectOperation::class)->project($operation, $data, $result);
+    }
+
+    /**
+     * The evidence of the copy's base phase: the default head now in `refs/remotes/origin/<default>`, the branch commit, how far
+     * the branch is behind and the copy's start. A run without it records no field.
+     *
+     * @return array<string,mixed>
+     */
+    private static function base(mixed $captured): array
+    {
+        $evidence = is_array($captured) && is_array($captured['evidence'] ?? null) ? $captured['evidence'] : [];
+
+        return array_intersect_key($evidence, array_flip(['default_branch', 'default_commit', 'branch', 'branch_commit', 'behind_by', 'start']));
     }
 
     /**

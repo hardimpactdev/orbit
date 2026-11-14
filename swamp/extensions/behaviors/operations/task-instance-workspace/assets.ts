@@ -19,6 +19,8 @@ const Phase = z.enum([
     "check",
     "commit",
     "commit-ref",
+    "base",
+    "base-cleanup",
 ]);
 // One guest command or Git read as the task check rules read a step: exit code and, for Git reads, stdout.
 const Run = z.object({
@@ -86,6 +88,19 @@ const Evidence = z.union([
         commit: Hash,
         changed: z.literal(true),
     }).strict(),
+    // task:sync of a copy: the default head now in refs/remotes/origin/<default>, and how far the branch is behind it.
+    z.object({
+        default_branch: z.string().min(1),
+        default_commit: Hash,
+        branch: z.string().min(1),
+        branch_commit: Hash,
+        behind_by: z.number().int().min(0),
+        start: Hash.nullable(),
+        bundled: z.boolean(),
+        changed: z.boolean(),
+    }).strict(),
+    z.object({ cleaned: z.literal(true), changed: z.literal(false) })
+        .strict(),
 ]);
 const Result = z.object({ phase: Phase, evidence: Evidence });
 const Args = z.object({
@@ -100,7 +115,7 @@ type Context = {
 // All machine work stays in Ansible; this method only bounds and validates its result.
 export const behavior = {
     type: "@nckrtl/task-instance-workspace",
-    version: "2026.11.14.2",
+    version: "2026.11.14.3",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

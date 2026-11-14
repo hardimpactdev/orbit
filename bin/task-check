@@ -4,7 +4,8 @@
 CI's plans choose the parts: bin/ci-build-plan selects the jobs and bin/ci-units plans the Swamp fixture units.
 Within a selected Pest job, the check runs the project's changed test files, the CLI tests that bin/cli-contract
 names for changed SDK fixtures, and the whole SDK suite, which takes seconds. The Gateway, CLI and docs suites
-are left to CI and named as skipped. Every part gets the time left as its limit; a part the budget stops or
+are left to CI and named as skipped. A change to what CI's own policy tests read (the CI registry and its
+fixture tomls, workflows, CI scripts, Swamp test files) adds those tests, tools/test_ci_*.py, before Pest and the fixtures. Every part gets the time left as its limit; a part the budget stops or
 leaves out is named as skipped. The output ends with a summary of at most SUMMARY_BYTES: one line per part with its
 outcome and seconds, then the last lines of each failed part, so the stored tail of the output always holds it.
 
@@ -13,6 +14,7 @@ outcome and seconds, then the last lines of each failed part, so the stored tail
 --only PARTS      comma-separated part names, such as pest,phpstan"""
 import argparse
 from contextlib import contextmanager
+from fnmatch import fnmatch
 from importlib.machinery import SourceFileLoader
 from importlib.util import module_from_spec, spec_from_loader
 import json
@@ -43,8 +45,8 @@ units = module('task_check_units', ROOT / 'bin/ci-units')
 # bin/cli-contract owns which CLI tests replay an SDK fixture.
 contract = module('task_check_contract', ROOT / 'bin/cli-contract')
 
-PARTS = ('ci-plan', 'docs-impact', 'check-flows', 'docs-lint', 'pint', 'phpstan', 'swamp-shape', 'fixture-population',
-         'pest', 'fixtures')
+PARTS = ('ci-plan', 'docs-impact', 'check-flows', 'docs-lint', 'pint', 'phpstan', 'swamp-shape', 'ci-policy',
+         'fixture-population', 'pest', 'fixtures')
 PHP_PROJECTS = review['PHP_PROJECTS']
 # The CI jobs that run a project's Pest suite or its static analysis. CI runs no PHPStan on apps/docs.
 PEST_JOBS = {'gateway-tests': 'apps/gateway', 'cli-tests': 'apps/cli', 'sdk-tests': 'packages/php-sdk', 'docs': 'apps/docs'}
@@ -52,6 +54,12 @@ STATIC_JOBS = {'gateway-static': 'apps/gateway', 'cli-static': 'apps/cli', 'sdk-
                'e2e-static': 'apps/e2e'}
 # The suites small enough to run whole. Each other suite runs only its changed and contract-mapped test files.
 FULL_SUITES = ('packages/php-sdk',)
+# The CI policy tests that CI's changes job runs on every PR, and the changed paths that select them here: what those tests read.
+# They check the CI registry and its fixture tomls, the workflows, the CI scripts and this check, their own evidence files, and
+# the Swamp test files whose cases and sources the registry pins. Other test files they do not read.
+CI_POLICY = ['python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_ci_*.py']
+CI_POLICY_INPUTS = ('.github/ci/*', '.github/workflows/*', 'tools/test_ci_*.py', 'tools/tests/*', 'tools/ci*', 'bin/ci-*',
+                    'bin/task-check', 'swamp/tests/*_test.py', 'swamp/tests/*_test.ts')
 COLLECT_SECONDS = 15
 FIXTURE_SETUP_SECONDS = 10
 OUTPUT_LINES = 80
@@ -323,7 +331,8 @@ def fixtures(plan, deadline, table):
     capacity = {**plan['budget'], 'shard_seconds': deadline - time.monotonic() - FIXTURE_SETUP_SECONDS, 'pr_shards': 1,
                 'shard_workers': workers}
     admitted, skipped = [], []
-    for unit in (unit for unit in planned if unit not in unrunnable):
+    # Cheapest first: a quick source check of the change runs before a long suite can take the budget, which CI runs anyway.
+    for unit in sorted((unit for unit in planned if unit not in unrunnable), key=lambda unit: costs[unit]):
         try:
             fits = capacity['shard_seconds'] > 0 and units.pack([(name, costs[name], 0) for name in (*admitted, unit)], capacity) is not None
         except ValueError:
@@ -363,6 +372,18 @@ def fixtures(plan, deadline, table):
     if failed or not_run or (code not in (0, None) and not stopped):
         return Part('fixtures', 'FAILED', seconds, detail, output)
     return Part('fixtures', 'passed' if passed else 'skipped', seconds, detail)
+
+
+def ci_policy_path(path):
+    """A path the CI policy tests read: the CI registry and its fixture tomls, a workflow, a CI script, their own evidence, or a
+    Swamp test file whose cases the registry pins."""
+    return any(fnmatch(path, pattern) for pattern in CI_POLICY_INPUTS)
+
+
+def ci_policy(paths, deadline):
+    if not any(ci_policy_path(path) for path in paths):
+        return Part('ci-policy', 'not selected', 0, 'no changed path that the CI policy tests read')
+    return timed('ci-policy', [CI_POLICY], deadline)
 
 
 def ci_plan(base, head):
@@ -474,6 +495,8 @@ def main(argv=None):
                              deadline, cwd=checkout))
         else:
             record(Part('swamp-shape', 'not selected', 0, 'the Swamp checks are not selected'))
+    if want('ci-policy'):
+        record(ci_policy(paths, deadline))
     if want('fixture-population'):
         record(fixture_population(plan, deadline))
     if want('pest'):

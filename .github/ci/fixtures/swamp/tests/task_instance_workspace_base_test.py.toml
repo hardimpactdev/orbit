@@ -1,0 +1,33 @@
+file = "swamp/tests/task_instance_workspace_base_test.py"
+slices = false
+cost = 68
+source_sha256 = "f6875ffb7768919b5dbd10e0962c0ea3447a2b9ec52571cca700eac3289ca6d2"
+cases = [
+  "test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main",
+  "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind",
+  "test_a_copy_whose_mirror_exists_syncs_without_the_default",
+  "test_only_the_base_child_reads_the_credential_and_the_shared_child_has_no_base",
+  "test_the_sync_takes_the_copy_path_by_its_copy_key_and_keeps_the_task_vm_path"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/_support/task_instance_workspace_base.py",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/task-copy-base-names.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/workflows/workflow-task-instance-workspace.yaml",
+  "swamp/workflows/workflow-operation-task-sync.yaml",
+  "swamp/workflows/workflow-task-copy-base.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main" = 12
+"test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind" = 26
+"test_a_copy_whose_mirror_exists_syncs_without_the_default" = 22
+"test_only_the_base_child_reads_the_credential_and_the_shared_child_has_no_base" = 3
+"test_the_sync_takes_the_copy_path_by_its_copy_key_and_keeps_the_task_vm_path" = 5

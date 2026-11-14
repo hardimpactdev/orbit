@@ -15,6 +15,7 @@ sequenceDiagram
   %%> Phases:
   %%> - preflight, before, after, receipt, export or discard
   %%> - check, commit or commit-ref, only from the task check child; they need no expected head
+  %%> - the same playbook also runs the base and base-cleanup phases of `task:sync`, through their own child `task-copy-base` (docs/cli/task/sync.mmd); this child takes no secret and no base input
   %%> - Ansible runs workspace commands as agent in /srv/workspace; Incus stdin is closed
   alt target or evidence differs
     N-->>SW: Refuse the phase

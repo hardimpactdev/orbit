@@ -278,3 +278,52 @@ Deno.test("nested clone input ships the composed pre-start policy and keeps the 
         } finally { await Deno.remove(folder, {recursive: true}); }
     }
 });
+
+// The clone part moved to clone_payload.ts as pure code motion: these are the bytes the inline code of write.ts built before.
+async function inlineClonePart(intent: { container: Record<string, unknown>; ssh_execution: { target: { user: string } } }, privatePath: string) {
+    const read = (name: string) => Deno.readTextFile(asset(name));
+    const container = intent.container;
+    const launcher = await read("scripts/instance_clone_launch.py");
+    const network = await read("ansible/instance_network.py");
+    const cloneNetwork = container.allowed_devices
+        ? network.split('if __name__ == "__main__":')[0] + await read("ansible/instance_nested.py") : network;
+    return {
+        clone_argv: ["python3", privatePath + "/launch.py", privatePath],
+        clone_stage_argv: ["python3", "-c", launcher, privatePath],
+        clone_payload: JSON.stringify({
+            launcher, script: await read("scripts/instance_clone.py"), container, guest: await read("scripts/instance_clone_guest.py"),
+            network: cloneNetwork, account: intent.ssh_execution.target.user,
+            bundle: {
+                node_services: await read("ansible/instance_node_services.py"), machine_name: await read("ansible/instance_machine_name.py"),
+                mail: await read("ansible/instance_mail.py"), bridge: await read("ansible/instance_bridge.py"),
+                node: await read("ansible/instance_node_runtime.py"),
+                ...(container.club_key ? { club_key: await read("ansible/instance_nested_club_key.sh") } : {}),
+            },
+        }),
+    };
+}
+
+for (const nested of [false, true]) {
+    Deno.test(`a ${nested ? "nested-fleet" : "plain"} clone gets the same clone part bytes as before the move`, async () => {
+        const { folder, intent, outputs } = await cloneInput(nested);
+        try {
+            const expected = await inlineClonePart(intent as never, outputs.clone_private);
+            assertEquals(outputs.clone_payload, expected.clone_payload);
+            assertEquals(outputs.clone_argv, expected.clone_argv);
+            assertEquals(outputs.clone_stage_argv, expected.clone_stage_argv);
+            assertEquals(Object.keys(outputs), ["path", "assets", "requirements", "collections", "clone_argv", "clone_private",
+                "clone_stage_argv", "clone_payload"]);
+        } finally { await Deno.remove(folder, { recursive: true }); }
+    });
+}
+
+Deno.test("an intent without a clone container gets the empty clone part", async () => {
+    const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
+    try {
+        const outputs = await behavior.methods.write.execute({ intent: { node_id: 3 }, path: folder + "/intent.json" }, {
+            extensionFile: asset, writeResource: () => Promise.resolve(null),
+        });
+        assertEquals([outputs.clone_argv, outputs.clone_stage_argv, outputs.clone_payload, outputs.clone_private],
+            [[], [], "", folder.replace("/tmp/orbit-ansible-", "/tmp/orbit-clone-0-")]);
+    } finally { await Deno.remove(folder, { recursive: true }); }
+});

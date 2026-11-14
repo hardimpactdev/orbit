@@ -64,6 +64,7 @@ tasks.pr_merge
 tasks.pr_ready
 tasks.publish
 tasks.script
+tasks.sync
 tasks.turn
 vault.setup
 vault.sync

@@ -407,7 +407,27 @@ A long value of the copy that is no secret is refused too, when the start tree l
 
 A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
 
-The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
+##### The base of a copy publish
+
+A copy's publish states the base it publishes against. After the token is minted and before the push, the run fetches the default branch head into its own scratch repository on the worker. That head is the one at publish time. Of the intent, the step reads only `remote`, `base` and `node_id`, which the publish intent already had. The run computes:
+
+| Field | Meaning |
+| --- | --- |
+| `base_commit` | The checked base: the merge base of the checked commit and the default head |
+| `default_commit` | The default branch head at publish time |
+| `behind_by` | The commits of the default branch that the checked commit lacks |
+| `overlapping_paths` | The paths that both the checked commit and the default branch changed since the base |
+| `overlapping_more` | How many overlapping paths lie beyond the listed ones: at most 100 paths in at most 3,000 bytes |
+
+`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
+
+These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text and the [waiver lines](#docs-impact-waivers-in-a-copy) the publish adds: the base commit, the default head, how far behind, and the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once, with any waiver line that followed it kept before the new section.
+
+The body stays within its 65,536-character limit: when the path list does not fit, the section names only their count, and when the section does not fit at all, the body has none; the result states the base either way.
+
+A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
+
+The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the five base fields for a copy: `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 
 #### Prepare a command
 
@@ -985,7 +1005,7 @@ A reviewer turn works on the checked candidate, detached, and Orbit checks the t
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
 
-[`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
+[`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet. Consults, a handoff check with hosted CI, prep and build do not run in a copy yet.
 
 The copy's `.env` holds its secrets. Git never takes it: every container create and clone names it in the checkout's own `info/exclude` ([what is built](/reference/development-containers#what-is-built)), so neither the check's commit nor an agent's commit holds it. A copy or container made before that line existed lacks it until its next create or clone: its check can still commit the file. The publish refusal `tasks.publish_secret_path` covers such a copy too: nothing of it is pushed. Cancel it and start the task again.
 
@@ -1031,8 +1051,36 @@ Copies of several groups can share a Node, and their checks, publishes and syncs
 | The check, commit and commit-ref phases of a copy's check | `task-instance-check-<node>-<group>` | 10,800 s, 600 s, 600 s |
 | The `.env` content check, the import and the push of a publish on 209 | `task-publish-content-<node>-<group>`, `task-publish-import-<node>-<group>`, `task-publish-push-<node>-<group>` | 240 s, 60 s, 60 s |
 | The clone and bundle of a sync on 209 | `task-sync-clone-<group>`, `task-sync-bundle-<group>` | 180 s, 60 s |
+| The base phase of a copy's sync, on its Node | `task-copy-base-<node>-<group>` | 600 s |
 
 One group never runs two of these at once, because the Gateway admits one task Operation of a group at a time. Every other step keeps its name by Node or one shared name. It runs 30 seconds or less, such as `ansible-input` and the evidence and cleanup steps, or only on a task VM, whose Node holds one group at a time. Swamp keeps each name as a definition for good, so only these steps get one per group. A publish that still fails on a behavior lock is retried, as [A refused automatic publish](#a-refused-automatic-publish) describes.
+
+### Bring main into a copy
+
+A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of a group with a task copy makes the default branch's newest head available in the copy as `refs/remotes/origin/<default branch>`. It is one `tasks.sync` Operation, and its run takes the [copy path](/cli/task/sync#how-it-works):
+
+1. The Gateway mints the sync's read token as the run starts, as a Git header, the same as for a task VM.
+2. On the Node, Git fetches the default branch into the copy's own mirror, `/var/lib/orbit/instance-repositories/<instance>.git`.
+3. The header is the environment of that one fetch alone. It is never written to a file.
+4. A copy without its mirror first gets one from the default's mirror. A copy whose mirror exists needs no default.
+5. The Node bundles the default branch without the commits that the copy holds already. A copy that holds the head gets no bundle.
+6. Root puts the bundle into a folder of the copy that root owns. As `agent`, Git fetches it into `refs/remotes/origin/<default branch>` and nothing else.
+7. The run reads the default head, the branch commit, how far the branch is behind and the copy's start commit.
+8. The run's cleanup step removes the bundles. The next sync of the copy, or its destroy, removes any that a cancel left.
+
+The sync never merges or rebases `task-<id>`. HEAD, the working tree, the index and the local branches stay as they are. The result is `{ default_branch, default_commit, branch, branch_commit, behind_by, start }`, where `behind_by` counts the commits of the default branch that `task-<id>` lacks. The agent merges or rebases in the copy, then checks again.
+
+The source is the Project's repository, for every Project. The trial Project's repository receives `main` only through its release runbook, so its copies see the last released main, not the newest commit on Orbit's own repository.
+
+| Rule | What happens |
+| --- | --- |
+| Copy turn | Refused with `tasks.copy_turn_unended` while a copy turn of the group may still run |
+| Check or publish | The group lock refuses the sync with `operation.target_busy` while either runs |
+| Container | Refused with `tasks.instance_not_running` when the copy's container does not run |
+| Credential | Minted per run; it is the environment of the Node's one fetch and is never written, so a killed run leaves none |
+| Older Gateway | Only an intent with the `copy` key takes the copy path. An older Gateway's run takes the task VM path, whose steps read no new key |
+
+A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.
 
 ### Workspace ownership
 
@@ -1206,6 +1254,8 @@ The admission checks an open external group with its own task VM workspace and w
 
 On Node 209 the run makes a bare clone of the default branch, fetches the task branch and writes one bundle of both. It copies the bundle to a private directory on the VM with official SSH, runs `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-<group>`, and reads the two commits. HEAD, the working tree and the local branches stay as they are. A clean up step removes both scratch directories on success and on failure. The result holds the two commits.
 
+A group whose workspace is a task copy takes the copy path instead: [bring main into a copy](#bring-main-into-a-copy).
+
 ## Project check
 
 A `tasks.check` operation runs the Project's configured check once, before the subtask's deliverables. Command builds add the runner plan as a command deliverable; they do not repeat the configured Project check as another command deliverable. Without a configured command, the build adds a Project-check review deliverable. A baseline can include setup commands. A handoff records command deliverables, the workspace tree and checked commit. The result keeps bounded, redacted output, and native history keeps each finished step, so recovery does not run a finished check step again.
@@ -1242,19 +1292,14 @@ The check runs at the repository root, as every task check does.
 
 The start commit is HEAD's merge base with `origin/main` when that ref exists, else with `main`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
 
-A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches, so its `origin/main` is the driver's to move. A driver that brings a newer main into the branch makes a bundle of the real `main` in a clone of the real repository, copies it into the copy's `/tmp`, and moves the copy's `origin/main` to it. Then the driver merges or rebases:
+A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches on its own. [`task:sync`](#bring-main-into-a-copy) moves its `origin/main` to the Project's newest main and reports `behind_by`; then the agent merges or rebases:
 
 ```bash
-# In a clone of the real repository, at the newest main:
-git bundle create main.bundle main
-# Copy it into the copy, for example from its Node:
-incus file push main.bundle <container>/tmp/main.bundle
-# In the copy's /srv/workspace:
-git fetch /tmp/main.bundle +main:refs/remotes/origin/main
+# In the copy's /srv/workspace, after task:sync:
 git merge origin/main        # or: git rebase origin/main
 ```
 
-The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths. Moving only `main` changes nothing, because `origin/main` comes first.
+The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. A sync alone, without a merge or rebase, leaves the merge base and the start commit where they were. If `origin/main` stays at the seed, merged commits count as changed paths. Moving only `main` changes nothing, because `origin/main` comes first.
 
 #### Docs-impact waivers in a copy
 
@@ -1270,7 +1315,7 @@ When a page is neither changed nor waived, the part's output names the file and 
 
 #### Parts
 
-[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check.
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check. The `ci-policy` part runs the CI policy tests, `python3 -m unittest discover -s tools -p 'test_ci_*.py'`, when the change touches what those tests read: the CI registry and its fixture tomls, the workflows, the CI scripts or a Swamp test file. It runs before Pest and the fixtures and prints the same summary line as every part.
 
 #### Stored result
 

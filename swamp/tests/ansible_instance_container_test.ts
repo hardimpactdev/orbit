@@ -2806,6 +2806,14 @@ Deno.test({
       f.intent.deployment = deployment;
       f.write();
 
+      // A task copy's proof resets its fleet with `fleet_reset`, which runs the reset; a failed reset names its tag and says why.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-reset.yml`,
+        `- name: Check the restores\n  ansible.builtin.assert: { that: false, fail_msg: "nested-gateway did not restore base: Snapshot not found", quiet: true }\n`);
+      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify({ commit: null }));
+      assert(!f.run("fleet_reset").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_reset_failed",
+        detail: "Check the restores: nested-gateway did not restore base: Snapshot not found" });
+
       // The refresh names what each part did; every later phase of the run keeps it in the result file, a failed one too.
       const refreshed = { migrate: "nothing", restart: "yes", converge: "ran", changed: 0, base: "kept", record: "present",
         seconds: { gateway: 14, converge: 70, ready: 3, base: 1 } };

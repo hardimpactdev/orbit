@@ -127,12 +127,162 @@ const PullRow = z.object({
     }).passthrough(),
 }).passthrough();
 
-/** One open PR lookup decides one update or one creation, with caller prose unchanged. */
+/** The most paths a base statement or a conflict names; the count beyond it is stated. */
+export const BASE_PATHS = 100;
+/**
+ * The most bytes a path list takes, with its prefix and its count: well under the 4,096 bytes of a failed step's detail that the
+ * Gateway keeps (NativeStepFailure), so a conflict line arrives whole, and small beside a pull request body's 65,536 characters.
+ */
+export const BASE_BYTES = 3000;
+const bytes = (text: string) => new TextEncoder().encode(text).length;
+
+/** The first paths whose quoted list fits `budget` bytes, at most BASE_PATHS of them, and how many are left out. */
+function bounded(paths: string[], budget: number) {
+    const shown: string[] = [];
+    let used = 2;
+    for (const path of paths) {
+        const size = bytes(JSON.stringify(path)) + (shown.length === 0 ? 0 : 2);
+        if (shown.length === BASE_PATHS || used + size > budget) break;
+        shown.push(path);
+        used += size;
+    }
+    return { shown, more: paths.length - shown.length };
+}
+export const BaseFacts = z.object({
+    base_commit: Sha,
+    default_commit: Sha,
+    behind_by: z.number().int().min(0),
+    overlapping_paths: z.array(z.string().min(1)).max(BASE_PATHS).refine(
+        (paths) => bytes(JSON.stringify(paths)) <= BASE_BYTES,
+    ),
+    overlapping_more: z.number().int().min(0),
+}).strict();
+export type BaseFacts = z.infer<typeof BaseFacts>;
+
+/** NUL-separated Git names, unique, in Git's order. */
+const names = (
+    text: string,
+) => [...new Set(text.split("\0").filter((name) => name !== ""))];
+
+/**
+ * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths and the merge-tree
+ * reply. Exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ */
+export function baseFacts(
+    exitCode: number,
+    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string>,
+) {
+    const head = files.head.trim(),
+        base = files.base.trim(),
+        behind = files.behind.trim();
+    const read = Sha.safeParse(head).success && Sha.safeParse(base).success &&
+        /^[0-9]+$/.test(behind);
+    if (exitCode === 3 && read) {
+        // merge-tree --name-only -z: the tree, then each conflicted path.
+        const conflicts = names(files.merge).slice(1);
+        if (conflicts.length > 0) {
+            // The prefix and the widest count take their bytes first.
+            const prefix = "tasks.publish_conflict: ";
+            const room = BASE_BYTES - bytes(prefix) -
+                bytes(` and ${conflicts.length} more`);
+            const { shown, more } = bounded(conflicts, room);
+            return {
+                facts: null,
+                error_code: prefix +
+                    shown.map((path) => JSON.stringify(path)).join(", ") +
+                    (more > 0 ? ` and ${more} more` : ""),
+            };
+        }
+    }
+    if (exitCode !== 0 || !read) {
+        return { facts: null, error_code: "tasks.publish_failed" };
+    }
+    const overlap = bounded(names(files.overlap), BASE_BYTES);
+    return {
+        facts: BaseFacts.parse({
+            base_commit: base,
+            default_commit: head,
+            behind_by: Number(behind),
+            overlapping_paths: overlap.shown,
+            overlapping_more: overlap.more,
+        }),
+        error_code: "",
+    };
+}
+
+/** Marks Orbit's own section, so a body that carries an earlier one gets it replaced, never twice. */
+export const BASE_MARK = "<!-- orbit:base -->";
+
+/**
+ * The body without an earlier Orbit section: its marker, heading and list lines go, and any text after it stays, such as the waiver
+ * lines a copy's publish appends to the caller's body (withWaivers), which may follow a section the caller's body carried.
+ */
+function withoutBase(body: string): string {
+    const lines = body.split("\n");
+    const at = lines.findIndex((line) => line.replace(/\r$/, "") === BASE_MARK);
+    if (at === -1) return body.trimEnd();
+    let end = at + 1;
+    if (lines[end]?.replace(/\r$/, "") === "## Base") end++;
+    if (lines[end]?.replace(/\r$/, "") === "") end++;
+    while (end < lines.length && /^(?:- |  - )/.test(lines[end])) end++;
+    return [
+        lines.slice(0, at).join("\n").trimEnd(),
+        lines.slice(end).join("\n").trim(),
+    ]
+        .filter((part) => part !== "").join("\n\n");
+}
+
+/**
+ * The body, then the fixed `## Base` section of a task copy's publish; without facts the body is left as it is. The body is the one
+ * the copy's .env content check read: the caller's text and the waiver lines (withWaivers). The whole stays within BodyLimit: a
+ * section whose path list does not fit names only their count, and one that does not fit at all is left out; the publish result
+ * states the base either way.
+ */
+export function withBase(body: string, facts: BaseFacts | null): string {
+    if (facts === null) return body;
+    const kept = withoutBase(body);
+    const code = (text: string) => "`" + text.replaceAll("`", "'") + "`";
+    const count = facts.overlapping_paths.length + facts.overlapping_more;
+    const listed = facts.overlapping_paths.length === 0
+        ? ["- Overlapping paths: none"]
+        : [
+            "- Overlapping paths:",
+            ...facts.overlapping_paths.map((path) => `  - ${code(path)}`),
+            ...(facts.overlapping_more > 0
+                ? [`  - and ${facts.overlapping_more} more`]
+                : []),
+        ];
+    const counted = [
+        `- Overlapping paths: ${count}, listed in the publish result`,
+    ];
+    const section = (paths: string[]) =>
+        (kept === "" ? "" : kept + "\n\n") + [
+            BASE_MARK,
+            "## Base",
+            "",
+            `- Checked base: ${code(facts.base_commit)}`,
+            `- Default branch head: ${code(facts.default_commit)}`,
+            `- Behind by: ${facts.behind_by} ${
+                facts.behind_by === 1 ? "commit" : "commits"
+            }`,
+            ...paths,
+        ].join("\n") + "\n";
+    for (const paths of count === 0 ? [listed] : [listed, counted]) {
+        const result = section(paths);
+        if (result.length <= BodyLimit) return result;
+    }
+    return body;
+}
+
+/** One open PR lookup decides one update or one creation, with caller prose unchanged but for the base section. */
 export function pullPlan(raw: unknown) {
-    const { input, steps } = z.object({
+    const { input, steps, base } = z.object({
         input: PublishInput,
         steps: ObjectValue,
+        // The JSON statement of "Check the base", or "" for a task VM or a run before that step.
+        base: z.string().optional(),
     }).parse(raw);
+    const facts = base ? BaseFacts.parse(JSON.parse(base)) : null;
     const none = { method: "", path: "", body: "", number: 0 };
     const item = run(steps, "read_pull");
     if (input.pull_request === null || !ran(item)) {
@@ -157,6 +307,7 @@ export function pullPlan(raw: unknown) {
             path,
             body: JSON.stringify({
                 ...input.pull_request,
+                body: withBase(input.pull_request.body, facts),
                 head: input.branch,
                 base: input.base,
             }),
@@ -173,7 +324,7 @@ export function pullPlan(raw: unknown) {
         path: `${path}/${row.number}`,
         body: JSON.stringify({
             title: input.pull_request.title,
-            body: input.pull_request.body,
+            body: withBase(input.pull_request.body, facts),
         }),
         number: row.number,
         error_code: "",

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Proof;
 
 use App\Domain\Fleet\FleetReboot;
+use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyTurn;
@@ -81,7 +83,9 @@ final readonly class ProofVerifyIntent
 
     /**
      * A task copy: Swamp reaches the runner through the copy's Node, `incus exec` and `runuser -u agent` (docs/cli/proof/proof.mdx#the-run).
-     * The copy has no restore of `base` yet, so both restores are off, the workflow runs its first batch only, and a copy proves once.
+     * Every batch, the first included, starts with the reset of the copy's inner fleet (`restore_first`, with `container` and `fleet`
+     * for the play), and no restore follows the last: the next proof resets first. Only a clone that keeps its fleet has one to reset;
+     * a Project's default Instance, whose fleet is the seed of every copy, is refused.
      *
      * @return array<string,mixed>
      */
@@ -92,11 +96,6 @@ final readonly class ProofVerifyIntent
         }
         $copy->requireReady();
         TaskCopyTurn::refuseUnended($group);
-        // A copy cannot restore `base` yet, and cases undo nothing: its fleet is in its start state only until a proof or a turn has run in it.
-        if (Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-            ->whereIn('kind', [OperationKinds::ProofVerify, OperationKinds::TasksCopyTurn])->exists()) {
-            throw new ResourceOperationException('proof.copy_fleet_used', 'A proof or an agent turn has already run in this task copy, which cannot restore its fleet yet. Start a new task copy.', 409);
-        }
         $target = $copy->intent();
         // Both names stand before the `--` of `incus exec`, which Swamp runs as root on the Node: neither may read as an option.
         foreach ($target['runtime'] as $name) {
@@ -104,11 +103,14 @@ final readonly class ProofVerifyIntent
                 throw new ResourceOperationException('tasks.no_workspace', 'The task copy has no valid recorded container.', 409);
             }
         }
+        $fleet = app(NestedFleetIntent::class)->forClone($copy->instance, $copy->runtime)
+            ?? throw new ResourceOperationException('proof.copy_fleet_missing', 'The task copy is not a clone that keeps its nested fleet, so the proof has no fleet to reset.', 409);
 
         return [
             'group_id' => $group->id, 'instance_id' => $copy->instance->id, 'node_id' => $copy->instance->node_id, 'command' => $command, 'file' => self::casesFile($command),
             'checkout_path' => TaskInstanceWorkspace::Root, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($copy->instance->node),
-            'copy' => $target['runtime'], 'restore_first' => false, 'final_restore' => false,
+            'copy' => $target['runtime'], 'restore_first' => true, 'final_restore' => false,
+            'container' => app(InstanceContainer::class)->intent($copy->instance, $copy->runtime), 'fleet' => $fleet,
         ];
     }
 }

@@ -28,7 +28,7 @@ const available =
         .outputSync().success;
 Deno.test({
     name:
-        "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing",
+        "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing",
     ignore: !available,
     fn() {
         const folder = Deno.makeTempDirSync();
@@ -84,6 +84,16 @@ Deno.test({
                 new URL("tasks/address-node.yml", root),
                 `${folder}/tasks/address-node.yml`,
             );
+            // The one rule that names a task copy's base scratch, shipped beside the playbook as it is on a Node.
+            Deno.copyFileSync(
+                new URL("tasks/task-copy-base-names.yml", root),
+                `${folder}/tasks/task-copy-base-names.yml`,
+            );
+            // A base scratch that a cancelled task:sync of this Instance left, named by its mirror's Instance, and another Instance's.
+            for (const name of ["orbit-task-base-mirror", "orbit-task-base-8"]) {
+                Deno.mkdirSync(`${folder}/task-base/${name}`, { recursive: true });
+                Deno.writeTextFileSync(`${folder}/task-base/${name}/base.bundle`, "bundle");
+            }
             Deno.writeTextFileSync(
                 `${folder}/bin/incus`,
                 `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${
@@ -173,6 +183,8 @@ Deno.test({
                         "ansible_become=false",
                         "-e",
                         "ansible_python_interpreter={{ ansible_playbook_python }}",
+                        "-e",
+                        `task_base_root=${folder}/task-base`,
                         `${folder}/instance-container-destroy.yml`,
                     ],
                     env: {
@@ -199,6 +211,8 @@ Deno.test({
                 Deno.readTextFileSync(`${folder}/state.json`),
             );
             assertEquals(Object.keys(state.containers), ["instance-8"]);
+            // The destroyed Instance's base scratch goes; another Instance's stays.
+            assertEquals([...Deno.readDirSync(`${folder}/task-base`)].map((entry) => entry.name), ["orbit-task-base-8"]);
             assertEquals([...Deno.readDirSync(`${folder}/hibernation`)].map((entry) => entry.name), ["app-instance-8.asleep"]);
             assert(!Deno.statSync(`${folder}/mail-state`).isFile);
             assertEquals([...Deno.readDirSync(`${folder}/mail-state`)].map((entry) => entry.name), ["instance-8"]);
@@ -249,6 +263,7 @@ Deno.test({
             Deno.writeTextFileSync(`${folder}/instance-container-destroy.yml`,
                 Deno.readTextFileSync(new URL("instance-container-destroy.yml", root)).replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`));
             Deno.copyFileSync(new URL("tasks/address-node.yml", root), `${folder}/tasks/address-node.yml`);
+            Deno.copyFileSync(new URL("tasks/task-copy-base-names.yml", root), `${folder}/tasks/task-copy-base-names.yml`);
             Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
             Deno.writeTextFileSync(`${folder}/bin/ufw`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-ufw.ts", import.meta.url).pathname}' "$@"\n`);
             for (const name of ["incus", "ufw"]) Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
@@ -269,7 +284,8 @@ Deno.test({
             const run = () => {
                 const done = new Deno.Command("ansible-playbook", {
                     args: ["-i", "localhost,", "--tags", "remove", "-e", "ansible_connection=local", "-e", "ansible_become=false",
-                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", `${folder}/instance-container-destroy.yml`],
+                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`,
+                        `${folder}/instance-container-destroy.yml`],
                     env: { ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG, HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
                         ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1" },
                 }).outputSync();

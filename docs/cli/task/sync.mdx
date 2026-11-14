@@ -1,10 +1,10 @@
 ---
 title: "task:sync"
 sidebarTitle: "task:sync"
-description: "Fetch the default branch and the branch of an external task group from origin into its VM workspace. API and MCP only."
+description: "Fetch the default branch, and for a task VM the group's branch, from origin into the group's workspace. API and MCP only."
 ---
 
-Bring the branch of the pull request and the default branch into the workspace of an external task group. A task VM holds no GitHub credential, so it cannot fetch. When origin moved, because main was merged into the branch or the owner pushed a correction, the author syncs, then merges or rebases, and the push fast-forwards.
+Bring the Project's default branch into the workspace of an external task group. A task VM or a task copy holds no GitHub credential, so it cannot fetch. When origin moved, because main was merged into the branch or the owner pushed a correction, the author syncs, then merges or rebases, and the push fast-forwards.
 
 There is no `orbit` command yet. Use the API or the MCP tool `task-sync`.
 
@@ -15,7 +15,17 @@ curl -X POST "$GATEWAY/api/v1/tasks/42/sync" \
 
 The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. It takes no body. The reply is `202` with the operation. Follow it with `operation:show` until it ends. A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs.
 
-The fetch writes `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` in the workspace. It does not touch HEAD, the working tree or the local branches.
+In a task VM, the fetch writes `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` in the workspace. It does not touch HEAD, the working tree or the local branches.
+
+## A task copy
+
+In a [task copy](/reference/tasks#task-copy), the sync writes only `refs/remotes/origin/<default branch>`. It fetches the default branch into the copy's mirror on its Node with the sync's read token, which is never written to a file and never enters the copy. Then it imports only the commits the copy lacks. It never merges or rebases `task-42`, and HEAD, the working tree, the index and the local branches stay as they are.
+
+The result names `default_commit`, the head it imported, `branch_commit`, `behind_by`, the commits of the default branch that `task-42` lacks, and `start`, the copy's start commit. To take the new main, merge or rebase in the copy yourself, then check again. [Bring main into a copy](/reference/tasks#bring-main-into-a-copy) has the details.
+
+The source is the Project's repository. When that repository receives main only at a release, the copy sees the last released main.
+
+The sync refuses a copy while a copy turn of the group may still run. While a check or a publish runs, the group lock refuses the sync with `operation.target_busy`.
 
 ## How it works
 
@@ -27,4 +37,6 @@ The fetch writes `refs/remotes/origin/<default branch>` and `refs/remotes/origin
 | --- | --- |
 | `tasks.group_closed`, `tasks.no_workspace`, `operation.target_busy` | the group has ended, has no workspace, or another operation runs on it |
 | `tasks.vm_resuming` | the task VM was parked; its resume is admitted |
-| `tasks.sync_failed` | a step of the run failed, such as the clone of a branch that does not exist on origin |
+| `tasks.instance_not_running` | the task copy's container does not run |
+| `tasks.copy_turn_unended` | a copy turn of the group may still run |
+| `tasks.sync_failed` | a step of the run failed, such as the clone of a branch that does not exist on origin; for a task copy also at once (422) when the Project has no GitHub repository or valid default branch |

@@ -1,8 +1,8 @@
 order = 360
-source_sha256 = "4d50f0c9bb9883c57fbfe3435503966bb276d54360b2a15f045775ac01eddf1c"
+source_sha256 = "b6d14813a466387a329b531a3c7c4f5a9bac312b01c5952fb9393581163fc50d"
 cases = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
-  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing",
+  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing",
   "a destroy deletes the inner volume its intent names, with its snapshots, after the container; another volume stays and a retry changes nothing",
 ]
 file = "swamp/tests/ansible_instance_container_destroy_test.ts"
@@ -18,6 +18,7 @@ inputs = [
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/tasks/task-copy-base-names.yml",
   "swamp/tests/fixtures/instance-container-incus.ts",
   "swamp/tests/fixtures/instance-container-ufw.ts",
   "swamp/workflows/workflow-operation-instance-destroy.yaml",
@@ -25,5 +26,5 @@ inputs = [
 
 [case_costs]
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
-  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
+  "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
   "a destroy deletes the inner volume its intent names, with its snapshots, after the container; another volume stays and a retry changes nothing" = 11 # estimate: local run on Beast, not a CI measurement

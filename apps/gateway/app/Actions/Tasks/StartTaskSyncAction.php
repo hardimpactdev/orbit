@@ -6,6 +6,8 @@ namespace App\Actions\Tasks;
 
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Tasks\TaskCopyTurn;
+use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskSyncIntent;
 use App\Domain\Tasks\TaskVmAwake;
@@ -22,8 +24,15 @@ final readonly class StartTaskSyncAction
         if (($existing = $this->idempotency->replay(OperationKinds::TasksSync)) !== null) {
             return $existing;
         }
-        TaskVmAwake::require($group);
+        // A task copy has no task VM to wake; a copy turn that may still run holds it (docs/reference/tasks.md#bring-main-into-a-copy).
+        $copy = TaskInstanceWorkspace::forGroup($group) !== null;
+        if (! $copy) {
+            TaskVmAwake::require($group);
+        }
+        $validate = $copy ? static function (Task $group): void {
+            TaskCopyTurn::refuseUnended($group);
+        } : static function (): void {};
 
-        return $this->operations->start($group, OperationKinds::TasksSync, [], static function (): void {}, $triggeredBy, $requestId, $this->intent->capture(...));
+        return $this->operations->start($group, OperationKinds::TasksSync, [], $validate, $triggeredBy, $requestId, $this->intent->capture(...));
     }
 }
