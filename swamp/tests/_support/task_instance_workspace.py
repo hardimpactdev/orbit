@@ -294,8 +294,8 @@ class CheckHarness(unittest.TestCase):
         return evidence, local['result']
 
     def finished(self, commits=True):
-        """The candidate, pin and finish steps by their CEL, then the parent's result read and end check. A clean checked tree
-        makes no commit."""
+        """The candidate, pin and finish steps by their CEL, then the parent's result read and end check. A clean head that an
+        earlier check recorded makes no commit."""
         if not self.cel('Commit the candidate', 'guard'):
             _, output = self.run_phase('commit', self.write_input('input'))
             self.assertIn(f'changed={int(commits)}', output)

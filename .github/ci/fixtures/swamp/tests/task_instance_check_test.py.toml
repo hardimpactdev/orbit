@@ -1,10 +1,10 @@
 file = "swamp/tests/task_instance_check_test.py"
 slices = false
-cost = 77
-source_sha256 = "09e858017958e82c1614ed5113c38b6f9b42871fb2416199d2200313d61402dd"
+cost = 93
+source_sha256 = "cf2cc1174ca8f8b163079aa9810f1a938d1429974c853c6c148d5b8420200a73"
 cases = [
   "test_check_runs_in_the_guest_and_commits_the_exact_candidate",
-  "test_a_clean_checked_tree_makes_no_commit_and_its_head_is_the_candidate",
+  "test_only_a_clean_recorded_candidate_makes_no_commit",
   "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing",
   "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch",
   "test_task_vm_intents_keep_the_task_vm_steps",
@@ -27,7 +27,7 @@ inputs = [
 # ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
 [case_costs]
 "test_check_runs_in_the_guest_and_commits_the_exact_candidate" = 25
-"test_a_clean_checked_tree_makes_no_commit_and_its_head_is_the_candidate" = 29
+"test_only_a_clean_recorded_candidate_makes_no_commit" = 45
 "test_failed_setup_keeps_output_skips_the_check_and_commits_nothing" = 12
 "test_a_moved_branch_refuses_before_any_command_and_leaves_no_scratch" = 5
 "test_task_vm_intents_keep_the_task_vm_steps" = 2

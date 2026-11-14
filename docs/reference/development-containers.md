@@ -1139,7 +1139,7 @@ Work is what lies beyond the Instance's baseline:
 - `commits`: commits on local branches that no remote-tracking ref, baseline head or published commit reaches.
 - **Remote refs.** The read compares with the remote refs as last fetched.
 - **Published commits.** A task copy never fetches. Its read names the commits that the task's publishes pushed.
-- **Check commits.** A handoff check of a clean tree adds no commit, so a published head that a later check found clean still reads `clean`. A commit with a changed tree after it counts.
+- **Check commits.** A check of a clean head that an earlier check recorded adds no commit. A published head that is checked again still reads `clean`; a commit with a changed tree after it counts.
 - **No upstream.** A branch without an upstream gets no special case.
 - `stashes`: stash entries that are not in the baseline.
 

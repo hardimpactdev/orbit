@@ -959,7 +959,7 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
-A handoff check in a copy commits only a changed tree, so a check of committed work leaves nothing that blocks the cancel.
+A handoff check in a copy makes no commit for a clean head that an earlier check recorded, so checking a published head again leaves nothing that blocks the cancel.
 
 The copy [starts clean](/reference/development-containers#a-task-copy-starts-clean): its tree is its start commit, the seed's commit, plus what Git ignores, so the default's modified and untracked files never reach a check or a pull request. The start's result names what the clean took as `workspace_cleaned`.
 
@@ -1562,11 +1562,9 @@ These reasons explain the design. Check them before you propose a change.
 
 A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
 
-In a task copy, a clean checked tree is already a commit, the implementer's `HEAD`, so it is the recorded commit and the check makes no empty one ([check phases](/reference/task-instance-workspace#check-phases)).
+The one exception is a task copy whose clean `HEAD` an earlier check already recorded: that commit is the recorded commit, and the check makes no empty one ([check phases](/reference/task-instance-workspace#check-phases)).
 
 The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
-
-A copy runs no handoff with hosted CI, so its clean-tree candidate keeps the implementer's message. That is an accepted risk: a skip directive in that message, such as `[skip ci]`, reaches the draft pull request's push, and GitHub then skips its CI. The skip-directive rule has one home, the Gateway's handoff message, and the Gateway never reads the copy's commit messages. The reviewer reads the commits before approval.
 
 ### An external turn records evidence without choosing the next step
 

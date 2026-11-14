@@ -56,18 +56,26 @@ class TaskInstanceCheckTest(SUPPORT["CheckHarness"]):
         self.assertEqual(json.loads(finish['result_json']), candidate)
         self.assertEqual(self.git('status', '--porcelain=v1'), '')
 
-    def test_a_clean_checked_tree_makes_no_commit_and_its_head_is_the_candidate(self):
-        # The implementer committed the work itself. An empty check commit would be unpublished work that blocks a cancel.
+    def test_only_a_clean_recorded_candidate_makes_no_commit(self):
+        # The implementer committed the work. Its head is clean but no check recorded it: it gets a fresh Orbit commit with the
+        # Gateway's cleaned message, so the implementer's skip directive never heads the candidate.
         self.git('add', '--all')
-        self.git('commit', '--quiet', '-m', 'Implementer work')
+        self.git('commit', '--quiet', '-m', 'Implementer work [skip ci]')
         head = self.git('rev-parse', 'HEAD')
         _, local = self.checked()
-        self.assertEqual((local['outcome'], local['head'], local['tree']), ('passed', head, self.git('rev-parse', 'HEAD^{tree}')), local)
-        candidate, finish = self.finished(commits=False)
-        self.assertEqual(candidate['commit'], head, candidate)
-        self.assertEqual(self.git('rev-parse', 'HEAD'), head)
-        self.assertEqual(self.git('rev-parse', 'refs/orbit/check-operations/' + str(CHECK['operation_id'])), head)
-        self.assertEqual(json.loads(finish['result_json']), candidate)
+        self.assertEqual((local['outcome'], local['head']), ('passed', head), local)
+        first, _ = self.finished()
+        self.assertEqual(self.git('rev-parse', first['commit'] + '^'), head)
+        self.assertEqual(self.git('log', '-1', '--format=%B', first['commit']).strip(), self.check['message'].strip())
+
+        # A second check of that clean, recorded head, such as after a publish, makes no commit: a cancel then finds no work.
+        self.steps = {}
+        _, local = self.checked()
+        self.assertEqual(local['head'], first['commit'], local)
+        second, finish = self.finished(commits=False)
+        self.assertEqual(second['commit'], first['commit'], second)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), first['commit'])
+        self.assertEqual(json.loads(finish['result_json']), second)
 
     def test_failed_setup_keeps_output_skips_the_check_and_commits_nothing(self):
         self.check.update({'phase': 'baseline', 'base': '', 'deliverables': [], 'command_deliverables': [],
