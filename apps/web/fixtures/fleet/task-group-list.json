@@ -22,8 +22,42 @@
                 "assistance_reason": "The reviewer needs the operator's discount policy.",
                 "questions": 3,
                 "escalations": 1,
-                "implementer_model": "gpt-5.5-codex",
-                "reviewer_model": "claude-opus-5-5",
+                "implementer_provider": null,
+                "implementer_model": "claude-sonnet-5-5",
+                "implementer_effort": null,
+                "reviewer_provider": null,
+                "reviewer_model": null,
+                "reviewer_effort": null,
+                "resolved_agents": {
+                    "implementer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-sonnet-5-5",
+                            "source": "group"
+                        },
+                        "effort": {
+                            "value": "medium",
+                            "source": "gateway"
+                        }
+                    },
+                    "reviewer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "high",
+                            "source": "gateway"
+                        }
+                    }
+                },
                 "tokens": 184200,
                 "line_diff": 96,
                 "lines_added": 142,
@@ -107,8 +141,42 @@
                 "assistance_reason": "The checkout build failed twice.",
                 "questions": 0,
                 "escalations": 0,
-                "implementer_model": "gpt-5.5-codex",
-                "reviewer_model": "claude-opus-5-5",
+                "implementer_provider": null,
+                "implementer_model": "claude-sonnet-5-5",
+                "implementer_effort": null,
+                "reviewer_provider": null,
+                "reviewer_model": null,
+                "reviewer_effort": null,
+                "resolved_agents": {
+                    "implementer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-sonnet-5-5",
+                            "source": "group"
+                        },
+                        "effort": {
+                            "value": "medium",
+                            "source": "gateway"
+                        }
+                    },
+                    "reviewer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "high",
+                            "source": "gateway"
+                        }
+                    }
+                },
                 "tokens": 12400,
                 "line_diff": 12,
                 "lines_added": 18,

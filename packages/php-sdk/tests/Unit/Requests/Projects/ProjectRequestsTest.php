@@ -10,6 +10,7 @@ use Orbit\Sdk\Requests\Projects\EnableProjectReviewAndMergeRequest;
 use Orbit\Sdk\Requests\Projects\ListProjectsRequest;
 use Orbit\Sdk\Requests\Projects\ShowProjectRequest;
 use Orbit\Sdk\Requests\Projects\UpdateProjectRequest;
+use Orbit\Sdk\Requests\Tasks\TaskAgentsInput;
 use Orbit\Sdk\Responses\Projects\ProjectResponse;
 use Orbit\Sdk\Responses\Projects\ProjectsResponse;
 use Saloon\Enums\Method;
@@ -187,6 +188,13 @@ describe('project requests', function (): void {
             ->toBe(['name' => 'Ofide', 'slug' => 'ofide'])
             ->and(new UpdateProjectRequest(projectId: 3, slug: 'ofide')->body()->all())
             ->toBe(['slug' => 'ofide']);
+    });
+
+    it('transports the copy turn agent defaults with the task_ prefix, and null to clear one', function (): void {
+        expect(new UpdateProjectRequest(projectId: 3, taskAgents: new TaskAgentsInput(['implementer_model' => 'claude-sonnet-5-5']))->body()->all())
+            ->toBe(['task_implementer_model' => 'claude-sonnet-5-5'])
+            ->and(new UpdateProjectRequest(projectId: 3, taskAgents: TaskAgentsInput::clearRole('implementer'))->body()->all())
+            ->toBe(['task_implementer_provider' => null, 'task_implementer_model' => null, 'task_implementer_effort' => null]);
     });
 
     it('transports a task check update and an explicit clear', function (): void {

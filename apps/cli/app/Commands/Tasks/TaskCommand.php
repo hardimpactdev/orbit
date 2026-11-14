@@ -24,6 +24,7 @@ use Orbit\Sdk\Responses\Tasks\SubtaskResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskAgentsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCommentResponse;
+use Orbit\Sdk\Responses\Tasks\TaskCopyAgentResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupResponse;
 use Orbit\Sdk\Responses\Tasks\TaskGroupsResponse;
 use Orbit\Sdk\Responses\Tasks\TaskPlaceHolderResponse;
@@ -344,8 +345,8 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
                 'Merge' => $group->reviewAndMerge->mergeStatus === null ? null : $group->reviewAndMerge->mergeStatus.($group->reviewAndMerge->mergeReason === null ? '' : ': '.$group->reviewAndMerge->mergeReason),
                 ...($group->reviewAndMerge->mergedSha === null ? [] : ['Merged commit' => $group->reviewAndMerge->mergedSha]),
             ]),
-            'Implementer model' => $group->implementerModel,
-            'Reviewer model' => $group->reviewerModel,
+            'Implementer agent' => self::copyAgent($group->implementerAgent),
+            'Reviewer agent' => self::copyAgent($group->reviewerAgent),
             'Tokens' => self::tokens($group->tokens),
             'Line diff' => self::lineDiff($group->lineDiff, $group->linesAdded, $group->linesDeleted),
             'Duration' => self::duration($group->durationMs),
@@ -868,5 +869,16 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         }
 
         return '';
+    }
+
+    /** A role's resolved copy turn agent with where its values come from: `claude / claude-opus-5-5 / high (project)`, or one source per value when they differ. */
+    private static function copyAgent(?TaskCopyAgentResponse $agent): ?string
+    {
+        if ($agent === null) {
+            return null;
+        }
+        $sources = array_unique([$agent->providerSource, $agent->modelSource, $agent->effortSource]);
+
+        return $agent->label().' ('.(count($sources) === 1 ? $sources[0] : "{$agent->providerSource} / {$agent->modelSource} / {$agent->effortSource}").')';
     }
 }

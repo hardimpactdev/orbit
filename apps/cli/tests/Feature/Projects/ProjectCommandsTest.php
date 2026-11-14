@@ -654,6 +654,23 @@ describe('project:update', function (): void {
             ->toBe(['source_access' => 'gh_cli', 'default_branch' => 'main']);
     });
 
+    it('sets and clears the Project copy turn agent defaults through the SDK request', function (): void {
+        $setClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--task-implementer-model' => 'claude-sonnet-5-5', '--task-reviewer-effort' => 'max'])->assertExitCode(0);
+        expect($setClient->getLastRequest()?->body()->all())->toBe(['task_implementer_model' => 'claude-sonnet-5-5', 'task_reviewer_effort' => 'max']);
+
+        $clearClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--clear-task-implementer-agent' => true])->assertExitCode(0);
+        expect($clearClient->getLastRequest()?->body()->all())->toBe(['task_implementer_provider' => null, 'task_implementer_model' => null, 'task_implementer_effort' => null]);
+    });
+
+    it('refuses a Project agent default with its clear before contacting the Gateway', function (): void {
+        $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--task-reviewer-model' => 'claude-haiku-5-5', '--clear-task-reviewer-agent' => true, '--json' => true])
+            ->expectsOutputToContain('project.agent_conflict')->assertExitCode(1);
+        expect($mockClient->getLastRequest())->toBeNull();
+    });
+
     it('refuses --task-check with --clear-task-check before contacting the Gateway', function (): void {
         $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
 

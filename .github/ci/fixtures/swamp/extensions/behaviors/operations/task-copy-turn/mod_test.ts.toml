@@ -1,5 +1,5 @@
 order = 370
-source_sha256 = "ac6def7fbdedb68bbbdb75c11b9ce52c7ba84411e38bab0738f2a2e5d98fab67"
+source_sha256 = "38a65334d3879a00ee77dd8611fb054b17408caaf1ea1347ef1f9d918b60ed60"
 cases = [
   "a completed run is done and over, and records the message transcript and the T3 thread",
   "a run that asks has its question stored and its run stopped: it asks for input, is over, and keeps every question in its own words",
@@ -10,12 +10,16 @@ cases = [
   "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
   "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
   "a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched",
+  "a new thread whose model T3's catalog does not offer is tasks.copy_turn_model_unoffered with the offered slugs, and nothing launched",
+  "a long refusal keeps the end of T3's message, where T3 names the refusal",
+  "a start T3 refused on stderr names T3's own message",
   "a continued turn whose thread list failed or printed no JSON is tasks.copy_turn_failed, not a missing thread",
   "a reviewer turn fails when its checkout could not be put on the candidate or was not restored after a run T3 ended",
   "a detached reviewer checkout without a restore holds the group whatever the run did",
   "a message without a run id keeps the transcript",
   "transcript text is redacted and bounded to the newest entries",
   "the method reads each evidence file on its own, so an oversized read keeps the start's end",
+  "the method reads the model evidence: a model the catalog does not offer fails with what it offers",
 ]
 file = "swamp/extensions/behaviors/operations/task-copy-turn/mod_test.ts"
 cost = 2
