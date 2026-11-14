@@ -9,6 +9,7 @@ from pathlib import Path
 HARNESS = runpy.run_path(str(Path(__file__).parent / '_support/task_instance_workspace_base.py'))
 SUPPORT, CHILD, SECRET = HARNESS['SUPPORT'], HARNESS['CHILD'], HARNESS['SECRET']
 SYNC = HARNESS['ROOT'] / 'workflows/workflow-operation-task-sync.yaml'
+SYNC_COPY = HARNESS['ROOT'] / 'workflows/workflow-operation-task-sync-copy.yaml'
 SHARED = HARNESS['ROOT'] / 'workflows/workflow-task-instance-workspace.yaml'
 
 
@@ -79,51 +80,45 @@ class TaskInstanceWorkspaceBaseTest(HARNESS['BaseHarness']):
         for word in ('vault.get(', 'git_authorization', 'git_credential', 'base-cleanup', 'Bring in the base', 'instance_id'):
             self.assertNotIn(word, shared)
 
-    def test_the_sync_takes_the_copy_path_by_its_copy_key_and_keeps_the_task_vm_path(self):
+    def test_the_copy_sync_workflow_calls_the_base_and_the_task_vm_workflow_has_no_copy_step(self):
         cel = self.root / 'cel.ts'
         cel.write_text(SUPPORT['CEL'])
         authorization = {'vault': 'orbit-control-inputs', 'key': 'task-sync-token-' + self.snapshot_id}
         workspace = {'repository': 'https://github.com/example/orbit.git', 'default_branch': 'main', 'branch': 'task-42'}
-        common = {'group_id': 42, 'instance_id': self.instance_id, 'project_id': 3, 'node_id': 7, 'workspace': workspace,
-                  'git_authorization': authorization, 'ssh_execution': {'target': {'node_id': 7}}}
-        copy = {**common, 'copy': {'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id,
-                                   'start': self.seed, 'mirror': '/var/lib/orbit/instance-repositories/12.git',
-                                   'source_mirror': '/var/lib/orbit/instance-repositories/11.git'}}
-        # What an older Gateway admits: a task VM intent without `copy`.
-        vm = {**common, 'checkout_path': '/home/orbit/projects/orbit'}
+        copy = {'group_id': 42, 'instance_id': self.instance_id, 'project_id': 3, 'node_id': 7, 'workspace': workspace,
+                'git_authorization': authorization, 'ssh_execution': {'target': {'node_id': 7}},
+                'copy': {'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id, 'start': self.seed,
+                         'mirror': '/var/lib/orbit/instance-repositories/12.git', 'source_mirror': '/var/lib/orbit/instance-repositories/11.git'}}
 
-        def value(step, field, intent, steps=None):
+        def value(step, field, steps=None):
             context = self.root / 'context.json'
-            context.write_text(json.dumps({'inputs': {'operation_id': 1, 'node_id': 7, 'kind': 'tasks.sync', 'intent': intent,
+            context.write_text(json.dumps({'inputs': {'operation_id': 1, 'node_id': 7, 'kind': 'tasks.sync', 'intent': copy,
                                                       'execution_secrets': {}}, 'steps': steps or {}, 'run': {'id': self.snapshot_id}}))
-            done = subprocess.run(['deno', 'run', '-A', str(cel), str(SYNC), step, field, str(context)],
+            done = subprocess.run(['deno', 'run', '-A', str(cel), str(SYNC_COPY), step, field, str(context)],
                                   capture_output=True, text=True, check=False, timeout=60)
             self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
             return json.loads(done.stdout)['value']
 
         for step in ('Bring in the base', 'Discard the base scratch'):
-            self.assertEqual((value(step, 'guard', copy), value(step, 'guard', vm)), (False, True), step)
-            self.assertEqual(value(step, 'workflow', copy), 'task-copy-base')
-            self.assertEqual(value(step, 'git_authorization', copy), authorization)
-        for step in ('Clone the refs', 'Bundle the refs', 'Prepare the VM directory', 'Copy the bundle', 'Fetch the refs', 'Read the refs',
-                     'Clean up the scratch', 'Clean up the VM directory'):
-            self.assertEqual((value(step, 'guard', copy), value(step, 'guard', vm)), (True, False), step)
-        self.assertEqual(value('Bring in the base', 'phase', copy), 'base')
+            self.assertEqual(value(step, 'workflow'), 'task-copy-base')
+            self.assertEqual(value(step, 'git_authorization'), authorization)
+        self.assertEqual(value('Bring in the base', 'phase'), 'base')
         # The child intent is the one the base phase runs with here, with the copy's own target and mirrors.
-        self.assertEqual(value('Bring in the base', 'intent', copy), {
+        self.assertEqual(value('Bring in the base', 'intent'), {
             'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id, 'instance_id': self.instance_id,
             'default_branch': 'main', 'repository': workspace['repository'], 'mirror': copy['copy']['mirror'],
-            'source_mirror': copy['copy']['source_mirror'], 'start': self.seed, 'ssh_execution': common['ssh_execution']})
-        self.assertEqual(value('Discard the base scratch', 'phase', copy), 'base-cleanup')
-        self.assertEqual(value('Discard the base scratch', 'intent', copy), {
+            'source_mirror': copy['copy']['source_mirror'], 'start': self.seed, 'ssh_execution': copy['ssh_execution']})
+        self.assertEqual(value('Discard the base scratch', 'phase'), 'base-cleanup')
+        self.assertEqual(value('Discard the base scratch', 'intent'), {
             'runtime': self.intent['runtime'], 'branch': 'task-42', 'snapshot_id': self.snapshot_id, 'instance_id': self.instance_id,
-            'ssh_execution': common['ssh_execution']})
+            'ssh_execution': copy['ssh_execution']})
         ok = {'status': 'succeeded'}
-        self.assertTrue(value('Confirm the sync', 'expr', copy, {'Bring in the base': ok, 'Discard the base scratch': ok}))
-        self.assertFalse(value('Confirm the sync', 'expr', copy, {'Bring in the base': ok, 'Discard the base scratch': {'status': 'failed'}}))
-        self.assertTrue(value('Confirm the sync', 'expr', vm, {'Read the refs': ok, 'Clean up the scratch': ok, 'Clean up the VM directory': ok}))
-        self.assertFalse(value('Confirm the sync', 'expr', vm, {'Bring in the base': ok, 'Discard the base scratch': ok}))
-
+        self.assertTrue(value('Confirm the sync', 'expr', {'Bring in the base': ok, 'Discard the base scratch': ok}))
+        self.assertFalse(value('Confirm the sync', 'expr', {'Bring in the base': ok, 'Discard the base scratch': {'status': 'failed'}}))
+        # The task VM's workflow is its own, as before the copy existed: no step of a copy.
+        vm_text = SYNC.read_text()
+        for word in ('task-copy-base', 'Bring in the base', 'inputs.intent.copy'):
+            self.assertNotIn(word, vm_text)
 
 if __name__ == '__main__':
     unittest.main()

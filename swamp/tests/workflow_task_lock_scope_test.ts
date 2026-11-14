@@ -68,8 +68,8 @@ Deno.test("a copy's base names its group only for the base phase, which runs up 
   assertEquals(scoped("workflow-task-copy-base.yaml", base(41), base(42)), ["Bring in the base"]);
 });
 
-Deno.test("the sync passes its group to both calls of the copy's base", () => {
-  const calls = steps("workflow-operation-task-sync.yaml").filter((step) => step.task.workflowIdOrName === "task-copy-base");
+Deno.test("the copy's sync passes its group to both calls of the copy's base", () => {
+  const calls = steps("workflow-operation-task-sync-copy.yaml").filter((step) => step.task.workflowIdOrName === "task-copy-base");
   assertEquals(calls.map((call) => call.name), ["Bring in the base", "Discard the base scratch"]);
   for (const call of calls) {
     const group = call.task.inputs?.group_id;
