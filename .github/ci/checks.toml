@@ -194,8 +194,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2534
-slices = 33
+cost = 1742
+slices = 41
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -205,11 +205,11 @@ inputs = [
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
-# ESTIMATE: completed hosted case bodies from PR runs 43529816432 and 43530610727, rounded up plus 1s,
-# never reducing an existing estimate. One case per slice; startup adds 6s.
-# The failed-run case uses a 140s planning estimate (149.0s observed); the existing
-# converge estimate stays 141s (151.5s observed). Both use the 40s runtime headroom.
-# Neither is a measured p90: collect five completed hosted samples before calibration.
+# One unit per case. Refreshed-boundary cases use the completed four-worker local
+# measurements in tools/tests/ci-fleet-cost-evidence.json: ceil(seconds * 2.1) + 1.
+# They are ESTIMATEs until hosted calibration; the planner adds 6s startup.
+# Earlier cases retain their prior estimates: hosted observations from runs
+# 43529816432 and 43530610727, or the marked local estimates below.
 [fixture.case_costs]
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 40
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
@@ -229,21 +229,29 @@ inputs = [
   "a refresh after the checkout moved migrates and restarts the nested Gateway before its only Doctor wait, and passes" = 77
   "a refresh waits for the three agents after the restart before it converges, and names the agent that stays offline" = 85
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 20
-  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 82
-  "a changed input alone runs its own part, once: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 114
-  "a changed input alone runs its own part, once: the code without a pending migration migrates, restarts and converges, and keeps base" = 108
-  "a changed input alone runs its own part, once: swamp converges" = 138
-  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 126
-  "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too" = 141 # local 70s on Beast, x2, plus 1s
-  "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three" = 140
-  "a deleted record runs every part and never fails the refresh" = 117
-  "a malformed record runs every part and never fails the refresh" = 117
-  "an unreadable record runs every part and never fails the refresh" = 116
-  "a failed digest read runs every part and never fails the refresh" = 106
-  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 101 # ESTIMATE: two refreshes and a reset, about 50s local, x2, plus 1s
-  "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges" = 138
-  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 103
-  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 100
+  "the saved refreshed fleet boundary matches a real first refresh and start" = 82
+  "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 27
+  "a changed input runs only its due parts: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 47
+  "the next refresh repeats no part: the code with a pending migration migrates, restarts, converges and retakes base of the nested Gateway" = 37
+  "a changed input runs only its due parts: the code without a pending migration migrates, restarts and converges, and keeps base" = 36
+  "the next refresh repeats no part: the code without a pending migration migrates, restarts and converges, and keeps base" = 42
+  "a changed input runs only its due parts: swamp converges" = 35
+  "the next refresh repeats no part: swamp converges" = 39
+  "a changed input runs only its due parts: the agent contract migrates, restarts and converges" = 30
+  "the next refresh repeats no part: the agent contract migrates, restarts and converges" = 44
+  "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 53
+  "a converge with changed tasks retakes base only for the changed Node and Gateway" = 47
+  "a converge without change counts retakes all three bases" = 50
+  "a missing base is retaken without another converge" = 48
+  "a failed refresh that changed a Node removes its old record and writes none" = 22
+  "a refresh after a failed run converges every part and retakes all three bases" = 63
+  "a deleted record runs every part and never fails the refresh" = 38
+  "a malformed record runs every part and never fails the refresh" = 42
+  "an unreadable record runs every part and never fails the refresh" = 40
+  "a failed digest read runs every part and never fails the refresh" = 32
+  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 46
+  "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 31
+  "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 24
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"

@@ -59,6 +59,8 @@ Migration Git fixtures use real temporary repositories to compare branches, comp
 
 The nested fleet step fixture runs the rules, start, refresh and reset of an Instance container's fleet against an Incus stand-in. The stand-in holds the device and configuration shape exported from the three nested containers of a task base.
 
+Refresh cases start from saved Incus state. A separate case runs the first refresh and start, then compares all persistent fields with that saved state. Each check of changed inputs, repeated refreshes, snapshots or failure recovery runs its own refresh. It does not rerun setup playbooks. The first refresh for each changed input verifies the exact record consumed by its repeat case.
+
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site. [Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. It runs two workers per Sabre shard to reduce timeouts caused by runner load. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
@@ -187,7 +189,7 @@ Measured container and fleet files declare costs by exact case name, with run ID
 
 A case cost is a high percentile of hosted runs, not one run. When a case is added or changed, declare its local time × 2.1, rounded up, plus one second, marked `ESTIMATE`. When the case has completed in at least five hosted pull request runs, replace the estimate with the 90th percentile of those completed times, rounded up, plus one second, and name the runs.
 
-The fleet refresh fixture uses one case per unit. Its planning estimates include the hosted refresh and record-recovery times; the two slowest cases use their own lanes and the runtime headroom. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
+The fleet refresh fixture uses one case per unit. Its costs combine hosted observations for earlier cases with local estimates for the split refresh cases. Before a CI sweep admits another change to a fleet input, compare completed `ci-unit-times-*.json` case bodies with `case_costs` on main, matching exact case names and source hashes. Warn on an observation above its estimate and recalibrate before the next affected PR; do not count deadline cuts as completed samples. This is a sweep check, not an automatic CI warning.
 
 The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case moves to after-merge only when its own cost plus startup exceeds the 150-second lane; name it and its percentile in the table.
 

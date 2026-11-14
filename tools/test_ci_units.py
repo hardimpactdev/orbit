@@ -2,6 +2,7 @@
 import contextlib
 import io
 import heapq
+import math
 import json
 import os
 from pathlib import Path
@@ -718,11 +719,14 @@ class PopulationTest(unittest.TestCase):
         self.assertEqual(len(result['deferred']), 25)
         self.assertEqual(result['capacity'], [{'file': 'swamp/cases.ts', 'seconds': 2650, 'shards': 7, 'workers': 28}])
 
-    def test_fleet_refresh_costs_keep_hosted_cases_inside_the_shard_deadline(self):
+    def test_fleet_refresh_costs_keep_every_case_and_bound_each_refresh(self):
         budget, fixtures, defaults = units.configuration()
         file = 'swamp/tests/ansible_instance_fleet_test.ts'
         evidence = json.loads((ROOT / 'tools/tests/ci-fleet-cost-evidence.json').read_text())
         result = units.plan([file], budget, fixtures, defaults)
+        for name in evidence['single_refresh_cases']:
+            self.assertIn(name, fixtures[file]['cases'])
+            self.assertLessEqual(fixtures[file]['case_costs'][name] + budget['slice_startup_seconds'], 90, name)
         self.assertFalse(result.get('capacity'))
         self.assertFalse(result['deferred'])
         self.assertFalse(result.get('excluded'))
@@ -734,7 +738,7 @@ class PopulationTest(unittest.TestCase):
                 cases = units.case_names(unit, fixtures)
                 self.assertEqual(len(cases), 1, unit)
                 seen.extend(cases)
-                seconds = sum(evidence['case_seconds'][name] for name in cases)
+                seconds = sum(math.ceil(evidence['case_seconds'][name] * evidence['estimate_factor']) + 1 for name in cases)
                 heapq.heapreplace(loads, loads[0] + seconds + budget['slice_startup_seconds'])
             self.assertLess(max(loads), budget['shard_deadline_seconds'], shard['name'])
         self.assertCountEqual(seen, fixtures[file]['cases'])
