@@ -35,7 +35,8 @@ sequenceDiagram
   %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`
   %%> - the role's copy model is a model name, and the role's effort is `low`, `medium`, `high`, `xhigh` or `max`; otherwise `tasks.copy_turn_model_invalid` or `tasks.copy_turn_effort_invalid`
   %%> - no other Operation of the group runs; otherwise `operation.target_busy`
-  %%> - no earlier turn of the group may still run in the copy. A turn is settled when T3 shows its thread with no active run and a reviewer's checkout is restored, clean on its branch at its tip. The latest turn of each thread whose result is not settled answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`, unless T3 in the copy now shows it settled; a check of the copy refuses the same way. A turn that asked and whose run Orbit stopped is settled, so it holds nothing
+  %%> - one rule settles a turn: T3 shows its thread with no active run, and a reviewer's checkout is clean on the task branch. A turn whose result shows that, or that a later turn's phase found so, is settled. A turn that asked and whose run Orbit stopped is settled
+  %%> - the latest turn of each thread that started a run and is not settled goes into the intent, to be settled first: its Operation, its title, and whether it was a reviewer's. A check, a publish or a proof of the copy cannot read T3: it answers `tasks.copy_turn_unended` with that Operation in `details.operation_id`, and the next turn settles it
   GW->>SW: Start one run<br/>operation-task-copy-turn
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
@@ -47,7 +48,8 @@ sequenceDiagram
   %%> What it does:
   %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
   %%> - first one `true` in the copy: a copy the phase cannot reach fails before anything is launched, so its group stays free
-  %%> - a continued turn first finds its T3 thread by its title with `t3 thread list`. A list that fails or is not JSON fails with `tasks.copy_turn_failed`; when T3 holds not exactly one thread of the title, the phase fails with `tasks.copy_thread_missing`. Nothing is launched
+  %%> - first, each earlier turn to settle: `t3 thread list` finds its thread by title, and a reviewer's turn also reads the checkout's changes and branch. A thread in no active state, or none of that title, has ended. When one has not, the phase fails with `tasks.copy_turn_unended` and launches nothing; the work in the copy stays
+  %%> - a continued turn then finds its T3 thread by its title with `t3 thread list`. A list that fails or is not JSON fails with `tasks.copy_turn_failed`; when T3 holds not exactly one thread of the title, the phase fails with `tasks.copy_thread_missing`. Nothing is launched
   %%> - a reviewer turn then requires a clean checkout on a branch, reads the branch's tip and checks the candidate out, detached; a checkout with changes fails with `tasks.copy_tree_dirty` before anything is launched. The detach mark is written as soon as the checkout is detached
   %%> - a new thread: `t3 thread start --provider --model --title --wait --json /srv/workspace -`; a continued one: `t3 thread send --wait --json THREAD -`. The prompt goes on stdin, bounded by `timeout` at 3,600 s
   %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back. Each read is bounded at 60 s
@@ -68,6 +70,7 @@ sequenceDiagram
   %%> - a reviewer turn with the detach mark and no restore that reads clean on its branch at its tip fails with `tasks.copy_review_unrestored`, whatever its run did, also when it failed or nothing was launched; the error keeps the run's own error
   %%> - keeps the message text of the thread, all its turns, redacted and bounded to 256 KiB with the newest kept; T3's CLI gives no tool items and no token use
   %%> - records whether the turn is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state, which a stopped run is not. An unrestored reviewer turn is never over
+  %%> - names the earlier turns it found settled; the Gateway counts them settled from then on
   Note over SW: cleanup
   %%> What it does:
   %%> - removes the private run folder
@@ -86,7 +89,7 @@ sequenceDiagram
     SW--xGW: Native failed result<br/>error code
     %%> Result:
     %%> - the thread is `failed` with T3's status as its error, and the transcript T3 had
-    %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy. Orbit stops only a run that asks. The group refuses more turns and checks with `tasks.copy_turn_unended` until T3 in the copy shows the run over and the checkout restored; the work stays in the copy. `task:cancel` still ends it with the copy
+    %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy; Orbit stops only a run that asks. The next turn settles it once T3 shows its run over and a reviewer's checkout is clean on the task branch, and is refused with `tasks.copy_turn_unended` while it is not. The work stays in the copy. `task:cancel` still ends it with the copy
   end
   loop until terminal
     CLI->>GW: operation:show<br/>Operation number
