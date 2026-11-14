@@ -180,7 +180,11 @@ A tool that asks for a narrower mode, such as Bun with its 0755 folders in `node
 
 The workspace is live while root does this: Git, the app or an agent may remove an entry between its listing and its change. An entry that is gone needs nothing. Any other error fails the pass and names the path, and the pass never follows a link.
 
-Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it. A workspace that only deployments write, such as a default's, gains one pack per deployment; Orbit does not repack it yet.
+Orbit's own Git commands in the workspace start no automatic maintenance (`maintenance.auto=false`, `gc.auto=0`): a fetch would otherwise repack in the background and remove pack files while the pass and the deploy steps run. The Git commands of the people and agents who work in the workspace still repack it.
+
+Each deployment's fetch adds one pack, so a deployment's checkout runs its own repack in the foreground, after the checkout and before the pass: `git repack -d --geometric=2`. It merges the small packs into the next larger one until each pack holds at least twice the objects of the packs after it. A deployment's one new pack merges in milliseconds, and the pack count stays near log2 of the history's size. It keeps every object and the group's mode. It has 30 seconds.
+
+A repack that fails or runs out of time does not fail the deployment: the checkout's output names it in one `orbit-workspace-repack=` line, and the next deployment tries again. A repack that ran out of time leaves its temporary files (`tmp_pack_*`, `tmp_idx_*`, `tmp_rev_*`); the next checkout removes them once they are an hour old. A workspace whose repack never fits in 30 seconds pays those seconds at each deployment and prints the line each time.
 
 There is one exception to "a URL reaches only `orbit`". An agent may start its own development server, such as `npm run dev`, as `agent`, and the Instance's Route reaches it on the server's own port. That server can read what `agent` can read. So only a private Route serves it, which only WireGuard peers reach; a public Route never does. [Agent development servers](#agent-development-servers) has the details.
 
@@ -1053,7 +1057,9 @@ On a container Instance, `env:sync` writes only the keys of the attached connect
 
 `orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
-Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+Then one step, `clone-t3`, runs until the thread is usable. It runs the `checkout` part of the workspace phase beside T3: the branch, the checkout mark and `.env`. Beside it, the step checks the agent settings and the note links, then waits for T3 and adds the T3 project at `/srv/workspace`. T3 has usually started with the copy ([T3 starts with the copy](#t3-starts-with-the-copy)). The T3 part never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs.
+
+When both parts have ended, the step checks the two sessions and the checkout. Before, these were three steps on two Swamp levels, and each step cost about 1 s before it did work.
 
 #### T3 starts with the copy
 
@@ -1065,13 +1071,17 @@ The image's `After=network-online.target` stays, because a drop-in cannot remove
 
 On a throwaway clone (2026-11-14, load 12-31), T3's unit started 0.35-0.43 s after systemd's userspace start. Without the drop-in it started 1.14-1.41 s after. The image keeps its unit. The drop-in is one of the agent files, so a migrated checkout with a T3 gets it too; the agent push makes its folder.
 
-The model environment reaches the copy step on its one SSH stdin. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
+The model environment reaches only the copy step, on its one SSH stdin. The T3 step's stdin is the workspace's private JSON; its agent part finds the model environment in place and fails without it. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
 
-The T3 step does not start a T3 that runs. It starts T3 when the copy was not started by this run, or when the run carried no model environment, as a run of an older Gateway does. A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
+The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started.
 
-Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy and the Club key, so both start when the Club key step ends or skips.
+A failed create stops its copy, and a retry writes the model environment again into a copy that is not running. Only a copy that a release before 2065 started and that still runs holds none: its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again.
 
-The sessions check waits for both lines, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+A T3 that failed at boot is started once more, after `systemctl reset-failed`, and the step names it as `restart:t3` in its changes. `timings.container.t3_files` is 1 when the copy step wrote T3's files, and `timings.t3.at_boot` is 1 when T3 ran as the T3 step began.
+
+Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). The T3 step is in the level after the copy and the Club key, so it starts when the Club key step ends or skips.
+
+The sessions check waits for both parts, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. A failed part writes its name into the step's private `t3.json`, and the result names the phase: `workspace` for the checkout, `t3` for the agent part or T3, `register` for the sessions check. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
 The levels and their measured seconds, with about 1.2 s of dispatch in each step:
 
@@ -1079,11 +1089,13 @@ The levels and their measured seconds, with about 1.2 s of dispatch in each step
 | --- | --- | --- |
 | (start) | Gateway admission, Swamp start | 3.8 |
 | `input` | the intent | 1.3 |
-| `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-workspace` beside `clone-t3` · `clone-sessions` · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.2 · 2.6 · 1.4 · 1.3 |
+| `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-t3` (the checkout beside T3, then the sessions check) · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.4 · 1.4 · 1.3 |
 | `publication` | `clone-route-csr-<i>` · `clone-route` (with its TLS probe), beside the `clone` job | 3 to 4 · 5 to 7 |
-| `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure, and the run-folder cleanup · `accepted` | 1.3 · 0.3 · 0 |
+| `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure · `accepted`, and the run-folder cleanup after a failure | 1.3 · 0 · 0 |
 
-A plain clone's create succeeds about 24 seconds after the click. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
+A ready create's `finish` removes the run folder itself, which can hold the clone's checked T3 sessions. The cleanup step then skips, and the run ends with `accepted`, without the cleanup's own 0.8-0.9 s (release 2071). A failed create keeps the folder for the container stop; the cleanup step removes it after. If `finish` cannot remove it, its `removed` output is false and the cleanup step runs.
+
+A plain clone's create succeeds about 22 seconds after the click, by these older step times. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
 
 When the run succeeds, the Gateway reads the [workspace baseline](#workspace-work-state) over SSH, before its transaction. Then, in one transaction, it records the T3 server, writes the baseline and turns the create `succeeded`. The clone stays `source_resolved` with its `starting_commit`, and its runtime is `running`. In the same transaction, after the create row is terminal, the Gateway admits `instance.complete` with the Instance lock. The create's result names it in `completion_operation_id`. The completion's vault copy and its Swamp start run after the commit.
 
@@ -1127,7 +1139,7 @@ An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no
 
 Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
 
-The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
+The container, checkout and T3 phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, T3's files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part, T3's first answer and its sessions check. Two parts are facts, 1 or 0: `t3_files` and `at_boot` ([T3 starts with the copy](#t3-starts-with-the-copy)). The create's result carries them as `timings`: names and seconds only.
 
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
@@ -1240,6 +1252,33 @@ Success turns the Route `active`, then the Instance `active` with `provisioning_
 A completion that publishes the Route holds its Nodes for the whole run; a completion with no publication holds none. A clone's create holds the Nodes only when they are free at its admission, and only until `clone-route` ends, so two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
 The create's terminal projection admits the first completion. A completion that ends moves a [task copy](/reference/tasks#task-copy) on: `active` makes its task run. A failure keeps the copy, and its task stays `reserved` and asks for assistance with the retry.
+
+#### A failed clone phase names its command
+
+Every phase of a clone's create and completion runs `swamp/scripts/instance_clone.py` on the Node. When one of its commands fails, the Operation's `error.detail` holds three things:
+
+1. The code line, such as `instance.container_services_failed: command incus exited 1`.
+2. What the command did, in public words, such as `(incus exec instance-7 python3 guest services)`. No option or `-c` program appears.
+3. The end of the command's stderr, in whole lines.
+
+The whole detail has at most 4,000 UTF-8 bytes. The native step adds its own words, and the Gateway keeps 4,096 bytes.
+
+Native run history keeps a step's stderr. So the script redacts the text before it prints it:
+
+- Each private value of at least 8 characters becomes `[REDACTED]`.
+- The private values are the strings of the framed vault value. Their lines and the values of their `KEY=VALUE` lines count too.
+- Credentials become `[REDACTED]` by their shape, as in the Gateway's redaction.
+- These shapes are URL user parts, `Authorization` and `Bearer` values, GitHub tokens, PEM blocks and 64-character hex strings.
+- A `password=` or `token=` pair loses its value.
+- The script drops a line that still holds an 8-character piece of a private value.
+
+The Gateway redacts the detail once more with the Instance's stored values.
+
+The guest phase in the container also hands on the stderr of its own failed `git`, `mkdir` or `systemctl`, on the lines after its diagnostic. It never hands on the stderr of `curl`, `php`, `t3` or `python3`: those commands can see a token that T3 issues in the container or a Project's value, and the Node script cannot know those to redact them. Any other failure of the guest names the error's type, and for a file error its cause and path.
+
+The `workspace` and `services` parts make no Incus file call. Incus serves a container's files through one `forkfile` helper per container, and the helper exits after about 15 seconds without a request. A request that reaches it just before that exit is never served: `incus file push` fails with `Error: error receiving version packet from server: server unexpectedly closed connection`. A completion's first file call comes about 15 seconds after the create's last one, so it could meet that exit.
+
+So the Node script puts the Node runtime helper (`/usr/local/libexec/orbit-instance-node-runtime.py`) in the guest's intent. The guest writes it, owned by root with mode 0755, in the exec it runs anyway. The other phases' file calls come seconds apart within one create. A failed one names its command and Incus's words. Nothing retries it.
 
 ### Clone the database
 
@@ -1596,7 +1635,8 @@ In the container, as `agent`:
 3. In parallel, the CLI issues the `Orbit Swamp` session for [Swamp drives T3](#swamp-drives-t3). PR 8 narrows its scopes.
 4. After T3 answers, `t3 project add` adds the workspace, once. During T3's start that call fails, so it waits.
 5. The tokens wait in the run's private folder, mode 0600. They never reach a log or a result.
-6. The sessions step reads the served environment and asks T3 about both sessions at `/api/auth/session`. It issues none. Its reply replaces the tokens in the private folder.
+6. When the checkout and T3's answer have ended, the T3 step checks both sessions at `/api/auth/session`, with the served environment. It issues none.
+7. The checked reply replaces the tokens in the private folder.
 
 Stock T3's CLI writes its sessions before and during the server's first start. So the two issues run while T3 starts and add no time of their own.
 

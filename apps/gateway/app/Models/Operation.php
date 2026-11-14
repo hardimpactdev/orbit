@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
 /**
- * One long operation that a job on the `operations` queue runs as named steps (docs/reference/operations.md).
+ * One long operation, started on the `operation-starts` queue and recorded by jobs on the `operations` queue, as named steps (docs/reference/operations.md).
  * `lock_key` holds the target from the start request to the terminal status; `state` keeps the values that one
  * step hands to the steps after it, so a resumed operation continues where it stopped. `state` never leaves the
  * Gateway.

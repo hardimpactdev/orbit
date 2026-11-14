@@ -1,0 +1,50 @@
+source_sha256 = "7be1e1a2609b1fefca3498c24cc1de946a9a81d84dd58ae9b1ca27c1debc25a9"
+cases = [
+  "the restart runs one tagged phase of the shipped playbook between the input and the result, and takes no secret",
+  "an idle running T3 restarts once and answers inside the container with the name; the result has the restart time",
+  "a container that froze or stopped after the read is skipped, and nothing restarts",
+  "a container whose /etc/machine-info lacks the name is skipped, and nothing restarts",
+  "a T3 that does not answer after the restart fails with conn.t3_unready, and the restart is not repeated",
+  "a T3 that answers without the name fails with conn.t3_label_mismatch",
+  "an idle T3 restarts: its monitor, its own git, providers and what stays in the claude session",
+  "a T3 terminal, open idle, running a command or an exec'd provider name, keeps the container busy",
+  "a turn's tool tree, in its own session, keeps the container busy however soon after the provider it started",
+  "an orphan left in T3's service, or a member line that does not parse, keeps the container busy",
+  "a read that fails, a MainPID outside the service, a descendant cgroup or an unreadable count keeps the container busy: it fails closed",
+  "the provider names of the process rule are the binaries the recipe ships",
+  "a member that exited between the list and its ps line may be left out, and the idle T3 restarts",
+]
+file = "swamp/tests/workflow_conn_environment_restart_test.ts"
+cost = 240
+# Hosted runs 43649460688 (main, Fixtures 07, cut at the 180 s unit ceiling) and 43648857940 (PR #3769, Fixtures 06, 106 s):
+# largest completed case time + 25%, rounded up + 1s. The last case has only a censored main receipt (3 s on the PR):
+# its 10 s is an ESTIMATE until a complete hosted run. Six slices keep each unit far below the ceiling.
+slices = 6
+inputs = [
+  "apps/gateway/resources/machine-software/recipe.json",
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/conn-environment-restart.yml",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/ansible/templates/t3-service-processes.j2",
+  "swamp/tests/fixtures/instance-container-incus.ts",
+  "swamp/workflows/workflow-operation-conn-environment-restart.yaml",
+]
+
+[case_costs]
+  "the restart runs one tagged phase of the shipped playbook between the input and the result, and takes no secret" = 2
+  "an idle running T3 restarts once and answers inside the container with the name; the result has the restart time" = 10
+  "a container that froze or stopped after the read is skipped, and nothing restarts" = 11
+  "a container whose /etc/machine-info lacks the name is skipped, and nothing restarts" = 13
+  "a T3 that does not answer after the restart fails with conn.t3_unready, and the restart is not repeated" = 10
+  "a T3 that answers without the name fails with conn.t3_label_mismatch" = 10
+  "an idle T3 restarts: its monitor, its own git, providers and what stays in the claude session" = 43
+  "a T3 terminal, open idle, running a command or an exec'd provider name, keeps the container busy" = 35
+  "a turn's tool tree, in its own session, keeps the container busy however soon after the provider it started" = 29
+  "an orphan left in T3's service, or a member line that does not parse, keeps the container busy" = 15
+  "a read that fails, a MainPID outside the service, a descendant cgroup or an unreadable count keeps the container busy: it fails closed" = 50
+  "the provider names of the process rule are the binaries the recipe ships" = 2
+  "a member that exited between the list and its ps line may be left out, and the idle T3 restarts" = 10

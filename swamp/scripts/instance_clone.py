@@ -11,6 +11,7 @@ import subprocess
 import sys
 import time
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 # The Node files a `boot_files` entry may name as its `source`: the Orbit root CA that each Node's base converge writes for its agent
@@ -23,6 +24,101 @@ INCUS_SOCKET = "/var/lib/incus/unix.socket"
 
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+
+# A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
+# step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.
+DETAIL_BYTES = 4000
+# The shortest private value that is replaced; shorter ones would blank ordinary words (the Gateway's LogRedactor::ShortestValue).
+SHORTEST_VALUE = 8
+
+
+class PhaseFailure(RuntimeError):
+    """A phase's failure with its public detail: the code line, then the redacted end of the command's stderr."""
+
+    def __init__(self, line, detail=""):
+        super().__init__(line)
+        self.line = line
+        self.detail = detail
+
+
+def private_values(*texts):
+    """Every private value a phase holds: each string of its framed stdin JSON (or the text itself), each line of it and each value
+    of a KEY=VALUE line, at least SHORTEST_VALUE characters long, longest first."""
+    values = set()
+
+    def add(text):
+        for piece in [text, *text.splitlines()]:
+            for value in (piece, piece.split("=", 1)[1].strip().strip("'\"") if "=" in piece else ""):
+                if len(value.strip()) >= SHORTEST_VALUE:
+                    values.add(value.strip())
+
+    def walk(item):
+        if isinstance(item, dict):
+            for value in item.values():
+                walk(value)
+        elif isinstance(item, list):
+            for value in item:
+                walk(value)
+        elif isinstance(item, str):
+            add(item)
+
+    for text in texts:
+        if not text:
+            continue
+        try:
+            walk(json.loads(text))
+        except ValueError:
+            pass
+        add(text)
+    return sorted(values, key=len, reverse=True)
+
+
+def public_text(text, values, room):
+    """The end of a command's stderr that may leave the Node, in at most `room` UTF-8 bytes. Known private values are replaced in one
+    pass; credentials in URLs, Authorization headers and `password=`-style pairs are replaced by shape; a line that still holds an
+    8-character piece of a private value is dropped; only whole lines are kept. The Gateway redacts the detail once more."""
+    text = text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")[-65536:]
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    if values:
+        text = re.sub("|".join(re.escape(value) for value in values), "[REDACTED]", text)
+    # The shapes of the Gateway's CommandActivityInputSanitizer::redactText, applied here because native run history keeps stderr.
+    text = re.sub(r"-----BEGIN [A-Z0-9 ]+-----.*?(?:-----END [A-Z0-9 ]+-----|\Z)", "[REDACTED]", text, flags=re.S)
+    text = re.sub(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@", r"\1[REDACTED]@", text)
+    text = re.sub(r"(?i)\b((?:proxy-)?authorization)\s*:\s*\S+(?:\s+\S+)?", r"\1: [REDACTED]", text)
+    text = re.sub(r"(?i)\bbearer\s+\S{8,}", "Bearer [REDACTED]", text)
+    text = re.sub(r"(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})(?![A-Za-z0-9])", "[REDACTED]", text)
+    text = re.sub(r"(?<![A-Fa-f0-9])[A-Fa-f0-9]{64}(?![A-Fa-f0-9])", "[REDACTED]", text)
+    text = re.sub(r"(?i)\b(\w*(?:password|passwd|secret|token|api[_-]?key|credential)\w*)\s*([=:])\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;&]+)",
+                  r"\1\2[REDACTED]", text)
+    # Pieces come from the values themselves, not from whole KEY=VALUE lines or files, whose keys are public words.
+    pieces = {value[i:i + SHORTEST_VALUE] for value in values if "\n" not in value and not re.match(r"[A-Za-z_][A-Za-z0-9_]*=", value)
+              for i in range(len(value) - SHORTEST_VALUE + 1)}
+    kept, used = [], 0
+    for line in reversed(text.strip().splitlines()):
+        if any(line[i:i + SHORTEST_VALUE] in pieces for i in range(len(line) - SHORTEST_VALUE + 1)):
+            continue
+        used += len(line.encode()) + 1
+        if used > room + 1:
+            break
+        kept.append(line)
+    return "\n".join(reversed(kept))
+
+
+def purpose(argv):
+    """What a command did, in public words: its program and plain arguments, such as `incus file push - instance-7/usr/...`.
+    Options, their values, `-c` programs and configuration pairs, long values and values with `=` never appear."""
+    words = []
+    skip = False
+    for word in argv:
+        if skip:
+            skip = False
+        elif word in {"--project", "--uid", "--gid", "--mode", "-c", "--output", "--write-out", "--unix-socket"}:
+            skip = True
+        elif not word.startswith("-") and ("=" not in word or word.startswith("/")) and "\n" not in word and len(word) <= 120:
+            words.append(word)
+        if len(words) == 8:
+            break
+    return " ".join(words)
 
 
 
@@ -73,27 +169,36 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "t3", "sessions", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "t3", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
     changes = []
     # The Club key script's own word, which the club-key phase prints for the Operation's result.
     club_outcome = None
-    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services"} else None
+    # The T3 step runs the checkout too, so the checkout's own bound holds there as well.
+    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services", "t3"} else None
     secret = sys.stdin.read()
     # Seconds per part of this phase, printed with its result; names only (docs/reference/development-containers.md#create).
     timings = {}
 
     class timed:
-        def __init__(self, part):
+        # `into`: the T3 step's checkout runs beside its T3 part and keeps its own seconds, printed as the checkout's.
+        def __init__(self, part, into=None):
             self.part = part
+            self.into = timings if into is None else into
 
         def __enter__(self):
             self.started = time.monotonic()
 
         def __exit__(self, *_):
-            timings[self.part] = round(timings.get(self.part, 0) + time.monotonic() - self.started, 2)
+            self.into[self.part] = round(self.into.get(self.part, 0) + time.monotonic() - self.started, 2)
+
+    def failure(code, argv, result, content=None):
+        """A failed command as the phase's failure: its code line, what it did, and the redacted end of its stderr."""
+        values = private_values(secret, content if isinstance(content, str) else None)
+        line = code + " (" + public_text(purpose(argv), values, 400) + ")"
+        return PhaseFailure(line, public_text(result.stderr or "", values, DETAIL_BYTES - len(line.encode()) - 2))
 
     def run(argv, content=None, check=True):
         remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
@@ -111,15 +216,9 @@ def main():
             env=dict(os.environ, LC_ALL="C", GIT_TERMINAL_PROMPT="0"),
         )
         if check and result.returncode:
-            # Tools may echo private input in stderr. Report the phase, never that output.
-            raise RuntimeError(
-                "instance.container_"
-                + phase
-                + "_failed: command "
-                + Path(argv[0]).name
-                + " exited "
-                + str(result.returncode)
-            )
+            # Tools may echo private input in stderr: only its redacted end leaves, after the code line.
+            raise failure("instance.container_" + phase + "_failed: command " + Path(argv[0]).name + " exited " + str(result.returncode),
+                          argv, result, content)
         return result
 
     def branch_commit():
@@ -128,12 +227,13 @@ def main():
         mirror lacks (`rev-parse` exit 1) starts at the seed; any other Git failure fails the phase."""
         mirror = Path(container["mirror"])
         if (mirror / "HEAD").exists():
-            held = run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(mirror), "rev-parse", "--verify",
-                        "--quiet", "refs/heads/" + container["branch"] + "^{commit}"], check=False)
+            argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(mirror), "rev-parse", "--verify",
+                    "--quiet", "refs/heads/" + container["branch"] + "^{commit}"]
+            held = run(argv, check=False)
             if held.returncode == 0:
                 return held.stdout.strip(), False
             if held.returncode != 1:
-                raise RuntimeError("instance.container_" + phase + "_failed: command git exited " + str(held.returncode))
+                raise failure("instance.container_" + phase + "_failed: command git exited " + str(held.returncode), argv, held)
         seed = container.get("clone", {}).get("seed_commit")
         if not seed:
             raise RuntimeError("instance.clone_source_unavailable")
@@ -151,14 +251,14 @@ def main():
         os.chmod(folder, 0o700)
         return owner
 
-    def inside(member, private=""):
+    def inside(member, private="", intent=None):
+        # `intent`: the checkout's own copy of the intent, so the T3 part beside it never reads a dict that it changes.
+        intent = container if intent is None else intent
         if member in {"workspace", "services"}:
-            # Install the shipped helper outside the app-owned store. Its only store
-            # entry runs as orbit inside the existing workspace launch below.
-            change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0",
-                              "--mode", "0755", "-", name + "/usr/local/libexec/orbit-instance-node-runtime.py"],
-                   json.loads(sys.argv[6])["node"])
-        payload = ["python3", "-c", guest, member, json.dumps(container)]
+            # The guest writes the shipped Node runtime helper itself, in this one exec: no Incus file call, whose helper may exit as
+            # the request reaches it (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command).
+            intent = {**intent, "node_runtime": json.loads(sys.argv[6])["node"]}
+        payload = ["python3", "-c", guest, member, json.dumps(intent)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:
             if member == 'check':
@@ -172,23 +272,21 @@ def main():
                     public = {key: evidence[key] for key in ('error_code', 'process_failure') if key in evidence}
                     print(json.dumps(public))
                     raise RuntimeError(public['error_code'])
-            # Only the guest's complete, output-free diagnostic may cross this boundary.
-            diagnostic = result.stderr.strip()
+            # The guest's own diagnostic line becomes the code line; any other first line, such as Incus's own error, makes it
+            # "command incus exited N". The rest of the stderr follows only as its redacted end.
+            first, _, rest = (result.stderr or "").strip().partition("\n")
             if re.fullmatch(
                 r"instance\.container_"
                 + member
                 + r"_failed: command (?:"
                 + "|".join(GUEST_COMMANDS)
                 + r") exited -?[0-9]+",
-                diagnostic,
+                first,
             ):
-                raise RuntimeError(diagnostic)
-            raise RuntimeError(
-                "instance.container_"
-                + member
-                + "_failed: command incus exited "
-                + str(result.returncode)
-            )
+                values = private_values(secret, private)
+                raise PhaseFailure(first, public_text(rest, values, DETAIL_BYTES - len(first.encode()) - 2))
+            raise failure("instance.container_" + member + "_failed: command incus exited " + str(result.returncode),
+                          project + ["exec", name, "--", "python3", "guest", member], result, private)
         return json.loads(result.stdout)
 
     if phase == "cleanup":
@@ -350,7 +448,7 @@ def main():
 
     def start_input():
         """The credential line and, from a Gateway that frames it (`model_environment.frame`), the model environment after the frame
-        line. An older Gateway sends the line alone; the T3 step then starts T3 as before."""
+        line. Without the frame the copy gets no T3 files, and the T3 step's agent part refuses: nothing else writes the model environment."""
         frame = container.get("clone", {}).get("model_environment", {}).get("frame")
         if frame:
             line, marker, model = secret.partition(frame + "\n")
@@ -394,9 +492,72 @@ def main():
             change(project + ["file", "push", "--uid", str(item["uid"]), "--gid", str(item["gid"]), "--mode", item["mode"], "-",
                               name + item["path"]], content)
 
+    def checkout(part, value):
+        """The checkout part of the workspace phase (`workspace` forwards the Process files too): the bundle when the mirror holds the
+        branch, then the guest's checkout. Returns the lines it prints: the commit and its JSON line with its own seconds."""
+        seconds = {}
+        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin. `workspace` forwards
+        # all of it; `checkout` and `services` read the same value and forward only their half, so two steps need no second copy.
+        workspace = json.loads(value)
+        environment = workspace["environment"]
+        processes = workspace["processes"]
+        # A value framed before the merge names existed has none; the guest then writes the render.
+        merge = workspace.get("merge")
+        private = {"environment": environment, "merge": merge}
+        if part == "workspace":
+            private = {"environment": environment, "processes": processes, "merge": merge}
+        git = [
+            "git",
+            "-c",
+            "core.hooksPath=/dev/null",
+            "-c",
+            "core.fsmonitor=false",
+            "-C",
+            container["mirror"],
+        ]
+        target, from_seed = branch_commit()
+        intent = dict(container, expected_commit=target)
+        bundle = folder / "workspace.bundle"
+        try:
+            # Only a fetched branch goes in as a bundle; the seed's own repository holds a branch at the seed's commit.
+            if not from_seed:
+                intent["bundle"] = "/tmp/orbit-workspace-" + folder.name + ".bundle"
+                with timed("bundle", seconds):
+                    run(
+                        git
+                        + [
+                            "bundle",
+                            "create",
+                            "--quiet",
+                            str(bundle),
+                            "refs/heads/" + container["branch"],
+                        ]
+                    )
+                    run(
+                        project
+                        + [
+                            "file",
+                            "push",
+                            "--uid",
+                            "1000",
+                            "--gid",
+                            "2760",
+                            "--mode",
+                            "0640",
+                            str(bundle),
+                            name + intent["bundle"],
+                        ]
+                    )
+            with timed("guest", seconds):
+                output = inside(part, json.dumps(private), intent)
+            # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
+            return ["orbit-commit=" + output.pop("commit"), json.dumps({**output, "timings": seconds})]
+        finally:
+            bundle.unlink(missing_ok=True)
+
     if phase == "container":
         boot = boot_files()
-        owner = private_folder()
+        private_folder()
         line, model = start_input()
         credential = folder / "git-credential"
         credential.write_text(line)
@@ -414,10 +575,11 @@ def main():
             # The copy's own ACL by its name; the list of every ACL on the Node took about a second.
             acl_timer = timed("acl")
             acl_timer.__enter__()
-            held = run(["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"], check=False)
+            acl_query = ["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"]
+            held = run(acl_query, check=False)
             # Incus answers a missing ACL with 404 "Network ACL not found"; anything else refuses before the copy.
             if held.returncode and "network acl not found" not in held.stderr.lower():
-                raise RuntimeError("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode))
+                raise failure("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode), acl_query, held)
             found = json.loads(held.stdout) if held.returncode == 0 else None
             if found is None:
                 change(
@@ -862,105 +1024,56 @@ def main():
         print(json.dumps(inside("check", "")))
         return
     elif phase in {"workspace", "checkout"}:
-        # Admission frames the private values and the clone's key names in one vault copy for native SSH stdin. `workspace` forwards
-        # all of it; `checkout` and `services` read the same value and forward only their half, so two steps need no second copy.
-        workspace = json.loads(secret)
-        environment = workspace["environment"]
-        processes = workspace["processes"]
-        # A value framed before the merge names existed has none; the guest then writes the render.
-        merge = workspace.get("merge")
-        private = {"environment": environment, "merge": merge}
-        if phase == "workspace":
-            private = {"environment": environment, "processes": processes, "merge": merge}
-        git = [
-            "git",
-            "-c",
-            "core.hooksPath=/dev/null",
-            "-c",
-            "core.fsmonitor=false",
-            "-C",
-            container["mirror"],
-        ]
-        target, from_seed = branch_commit()
-        container["expected_commit"] = target
-        bundle = folder / "workspace.bundle"
-        try:
-            # Only a fetched branch goes in as a bundle; the seed's own repository holds a branch at the seed's commit.
-            if not from_seed:
-                container["bundle"] = "/tmp/orbit-workspace-" + folder.name + ".bundle"
-                with timed("bundle"):
-                    run(
-                        git
-                        + [
-                            "bundle",
-                            "create",
-                            "--quiet",
-                            str(bundle),
-                            "refs/heads/" + container["branch"],
-                        ]
-                    )
-                    run(
-                        project
-                        + [
-                            "file",
-                            "push",
-                            "--uid",
-                            "1000",
-                            "--gid",
-                            "2760",
-                            "--mode",
-                            "0640",
-                            str(bundle),
-                            name + container["bundle"],
-                        ]
-                    )
-            with timed("guest"):
-                output = inside(phase, json.dumps(private))
-            # The guest's commit is its first checkout's, so a retry never reports a later commit of the user.
-            print("orbit-commit=" + output.pop("commit"))
-            print(json.dumps({**output, "timings": timings}))
-        finally:
-            bundle.unlink(missing_ok=True)
+        print("\n".join(checkout(phase, secret)))
         return
-    elif phase in {"t3", "sessions"}:
+    elif phase == "t3":
+        # One step until the thread is usable (docs/reference/development-containers.md#create): the checkout beside the agent part and
+        # T3's answer, then the check of both sessions against the running T3 and of the checkout. The model environment is already in
+        # the copy (the container phase wrote it before the first start); stdin is the workspace's private JSON.
         cached = folder / "t3.json"
+        def write_private(value):
+            owner = private_folder()
+            cached.write_text(json.dumps(value))
+            cached.chmod(0o600)
+            os.chown(cached, owner.pw_uid, owner.pw_gid)
 
         def part(name):
             # The part that runs now, written before it starts, so a failure or a timeout leaves it for the create result:
-            # clone-session-copy copies this file when clone-t3 fails. Success removes it before sessions reads the file.
-            owner = private_folder()
-            cached.write_text(json.dumps({"t3_part": name}))
-            cached.chmod(0o600)
-            os.chown(cached, owner.pw_uid, owner.pw_gid)
+            # clone-session-copy copies this file when this step fails. The checkout's name is written only when it failed and the
+            # T3 part did not; a failed T3 part keeps its own name. Success replaces the file with the checked sessions.
+            write_private({"t3_part": name})
 
-        def expected_commit():
-            container["expected_commit"] = branch_commit()[0]
-
-        if phase == "t3":
-            # One step, two guest phases in order: the agent's files from the model key on stdin, then T3's first start, which
-            # reads no private input. The step prints only T3's receipt; a failure names its own phase.
-            part("agent")
+        part("agent")
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            started = pool.submit(checkout, "checkout", secret)
             with timed("agent"):
-                inside("agent", secret)
+                inside("agent", "")
             part("t3")
-            expected_commit()
             with timed("t3"):
                 output = inside("t3", "")
-            # 1 when T3 already ran as the step began: the copy's boot started it.
-            timings["at_boot"] = 1 if output.pop("at_boot") else 0
-            cached.unlink()
-        else:
-            expected_commit()
-            with timed("guest"):
-                output = inside(phase, cached.read_text() if cached.exists() else "")
-        # The T3 step's reply is the two sessions it issued; the sessions step's is the checked registration, which replaces it.
-        reply = output.pop("private_reply", None)
-        if reply is not None:
-            owner = private_folder()
-            cached.write_text(json.dumps(reply))
-            cached.chmod(0o600)
-            os.chown(cached, owner.pw_uid, owner.pw_gid)
-        print(json.dumps({**output, "timings": timings}))
+            try:
+                checked_out = started.result()
+            except BaseException as error:
+                part("checkout")
+                # A Node command of the checkout names the checkout, as its guest part does.
+                prefix = "instance.container_t3_failed"
+                if isinstance(error, PhaseFailure) and error.line.startswith(prefix):
+                    raise PhaseFailure("instance.container_checkout_failed" + error.line[len(prefix):], error.detail) from None
+                if isinstance(error, RuntimeError) and str(error).startswith(prefix):
+                    raise RuntimeError("instance.container_checkout_failed" + str(error)[len(prefix):]) from None
+                raise
+        # 1 when T3 already ran as the step began: the copy's boot started it.
+        timings["at_boot"] = 1 if output.pop("at_boot") else 0
+        issued = output.pop("private_reply")
+        # The sessions check gets its own bound, as its own step had: a slow checkout never leaves it without time.
+        workspace_deadline = time.monotonic() + 55
+        part("sessions")
+        with timed("sessions"):
+            checked = inside("sessions", json.dumps(issued))
+        write_private(checked.pop("private_reply"))
+        # The checkout's two lines, then T3's receipt with the time the sessions were checked.
+        print("\n".join(checked_out))
+        print(json.dumps({**output, "checked_at": checked["checked_at"], "timings": timings}))
         return
     print(
         json.dumps(
@@ -977,6 +1090,10 @@ def main():
 
 try:
     main()
+except PhaseFailure as error:
+    # The Operation's error detail: the code line, then the redacted end of the failed command's stderr.
+    print(error.line + (":\n" + error.detail if error.detail else ""), file=sys.stderr)
+    raise SystemExit(1) from None
 except Exception as error:  # noqa: BLE001 - redact private subprocess failures at the command boundary.
     message = str(error)
     code = (

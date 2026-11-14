@@ -14,6 +14,11 @@ from contextlib import closing
 
 # Mirrored by the Node boundary; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
+# The Node's clone script hands this helper to the `workspace` and `services` parts in their intent.
+NODE_RUNTIME = "/usr/local/libexec/orbit-instance-node-runtime.py"
+# The commands whose own stderr follows the diagnostic line, for the Node's clone script to redact: none of them sees a token that T3
+# issues in the container or a Project's value, which that script could not know (development-containers.md).
+STDERR_COMMANDS = ("git", "mkdir", "systemctl")
 
 # Written by root after this Instance's first checkout; outside the workspace, so the agent cannot write it.
 CHECKOUT_MARK = "/var/lib/orbit/workspace-checkout"
@@ -253,7 +258,8 @@ def phase_main(phase, raw):
             timeout=timeout,
         )
         if check and r.returncode:
-            raise subprocess.CalledProcessError(r.returncode, command)
+            # Its stderr goes to the Node's clone script, which redacts it before any of it leaves the Node.
+            raise subprocess.CalledProcessError(r.returncode, command, stderr=r.stderr)
         return r
 
     def write(path, content, uid=0, gid=0, mode="0644"):
@@ -429,6 +435,8 @@ def phase_main(phase, raw):
         # No Process starts on a branch this Instance did not check out.
         assert json.loads(root(CHECKOUT_MARK).read_text())["instance_id"] == c["instance_id"]
         inputs = json.loads(private)
+        # The shipped Node runtime helper, outside the app-owned store; the Node store step below runs it as orbit.
+        write(NODE_RUNTIME, c["node_runtime"], 0, 0, "0755")
         php_settings = len(changes)
         if c["php"] is not None:
             # The same two settings as the container phase: the shared limit, and PHP Data Bridge from the runtime folder.
@@ -484,7 +492,7 @@ def phase_main(phase, raw):
         if web_config is not None:
             write(web_config["path"], web_config["content"])
         web_config_changed = len(changes) > before_web_config
-        node = run(["python3", "/usr/local/libexec/orbit-instance-node-runtime.py", "clone-fetch", json.dumps(c)], orbit=True, timeout=75, private_input=json.dumps(inputs.get("processes", {})))
+        node = run(["python3", NODE_RUNTIME, "clone-fetch", json.dumps({k: v for k, v in c.items() if k != "node_runtime"})], orbit=True, timeout=75, private_input=json.dumps(inputs.get("processes", {})))
         if json.loads(node.stdout)["status"] == "converted":
             changes.append("node-runtime")
         desired = c["units"] + c["processes"]
@@ -540,10 +548,10 @@ def phase_main(phase, raw):
             if r.returncode == 1:
                 git("config", "--global", k, v, agent=True)
                 changes.append(k)
-        files = c["clone"]["files"] + [
-            dict(c["clone"]["model_environment"], content=private)
-        ]
-        for f in files:
+        # The container phase wrote the model environment before the copy's first start; the agent part only finds it.
+        if not root(c["clone"]["model_environment"]["path"]).is_file():
+            raise RuntimeError("model environment missing")
+        for f in c["clone"]["files"]:
             value = f.get("content")
             if "json" in f:
                 p = root(f["path"])
@@ -726,7 +734,12 @@ if __name__ == "__main__":
             ),
             file=sys.stderr,
         )
+        # The end of the command's own stderr, on the lines after the diagnostic; the Node's clone script redacts it.
+        if command in STDERR_COMMANDS and error.stderr:
+            print(str(error.stderr)[-16384:].strip(), file=sys.stderr)
         raise SystemExit(1)
-    except Exception:  # noqa: BLE001 - private tool output must never reach native run history.
-        print("instance.container_" + sys.argv[1] + "_failed", file=sys.stderr)
+    except Exception as error:  # noqa: BLE001 - private tool output must never reach native run history.
+        # The error's type, and for a file error its cause and path; never another error's message.
+        cause = ": " + os.strerror(error.errno) + ": " + str(error.filename) if isinstance(error, OSError) and error.errno else ""
+        print("instance.container_" + sys.argv[1] + "_failed: " + type(error).__name__ + cause, file=sys.stderr)
         raise SystemExit(1)

@@ -7,13 +7,23 @@ type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
 /** The part a failed clone T3 step was running, from the run folder's `t3.json`, or null when the step left none. */
-async function t3Part(folder: string): Promise<"agent" | "t3" | null> {
+async function t3Part(folder: string): Promise<"agent" | "t3" | "checkout" | "sessions" | null> {
     try {
-        const parsed = z.object({t3_part: z.enum(["agent", "t3"])}).safeParse(JSON.parse(await Deno.readTextFile(folder + "/t3.json")));
+        const parsed = z.object({t3_part: z.enum(["agent", "t3", "checkout", "sessions"])}).safeParse(JSON.parse(await Deno.readTextFile(folder + "/t3.json")));
         return parsed.success ? parsed.data.t3_part : null;
     } catch (error) {
         if (error instanceof Deno.errors.NotFound || error instanceof SyntaxError) return null;
         throw error;
+    }
+}
+
+/** Removes the run folder (it may hold a clone's checked T3 sessions); true when it is gone. Any failure leaves it to the cleanup step. */
+async function removeFolder(folder: string): Promise<boolean> {
+    try {
+        await Deno.remove(folder, { recursive: true });
+        return true;
+    } catch (error) {
+        return error instanceof Deno.errors.NotFound;
     }
 }
 
@@ -29,7 +39,7 @@ async function resultFile(folder: string): Promise<unknown> {
 
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.14.2",
+    version: "2026.11.14.3",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -47,7 +57,6 @@ export const behavior = {
                 route: z.string(),
                 certificates: z.array(z.string()).default([]),
                 t3_observation: z.string().default(""),
-                sessions_observation: z.string().default(""),
                 route_observation: ObjectValue.default({}),
                 container: z.object({
                     mail: Step.nullable().default(null),
@@ -73,7 +82,6 @@ export const behavior = {
                     route: string;
                     certificates?: string[];
                     t3_observation?: string;
-                    sessions_observation?: string;
                     route_observation?: Record<string, unknown>;
                     container?: {
                         mail?: z.infer<typeof Step> | null;
@@ -102,8 +110,13 @@ export const behavior = {
                     const failure = containerFailure(file ?? await resultFile(args.folder));
                     if (failure !== null) value.stdout = JSON.stringify({...result, ...failure});
                 }
-                await ctx.writeResource("result", "create", value);
-                return value;
+                // A ready create's run folder goes here, so no cleanup step runs after the result (docs/cli/instance/container/create.mmd).
+                // The step's outputs are the stored receipt, so `removed` is known before it is stored. A failed create keeps the folder:
+                // stop-container reads it, and the cleanup step removes it after.
+                const removed = value.ready ? await removeFolder(args.folder) : false;
+                const done = {...value, removed};
+                await ctx.writeResource("result", "create", done);
+                return done;
             },
         },
         complete_result: {

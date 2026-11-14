@@ -86,8 +86,8 @@ return [
             'nice' => 0,
         ],
         // Jobs that record a Swamp run in its Operation (docs/reference/operations.md). One worker: the Gateway's memory is
-        // better spent on PHP-FPM, and a second job waits in the queue until the first ends. Run starts and Route promotions keep
-        // this one worker and its order; the projection of a run that just ended has its own worker below.
+        // better spent on PHP-FPM, and a second job waits in the queue until the first ends. Route promotions keep this one worker
+        // and its order; run starts and the projection of a run that just ended have their own workers below.
         'operations' => [
             'connection' => 'gateway',
             'queue' => ['operations'],
@@ -99,6 +99,22 @@ return [
             'memory' => 256,
             'tries' => 1,
             'timeout' => 1700,
+            'nice' => 0,
+        ],
+        // Native run starts (StartAdmittedSwampRun), four side by side, one per CPU of the Swamp Node. A start that waits up to its
+        // 120-second confirmation holds one of them, so other starts go on. Each start runs under its Operation's row lock and the
+        // target hold; the job timeout stays 150 seconds, below the longest one, so the Horizon unit's drain does not change.
+        'operation-starts' => [
+            'connection' => 'gateway',
+            'queue' => ['operation-starts'],
+            'balance' => false,
+            'minProcesses' => 4,
+            'maxProcesses' => 4,
+            'maxTime' => 0,
+            'maxJobs' => 0,
+            'memory' => 256,
+            'tries' => 1,
+            'timeout' => 150,
             'nice' => 0,
         ],
         // The projection of one Operation whose native run ended (ProjectEndedNativeRun), at once: a minute pass that runs on the
@@ -125,6 +141,7 @@ return [
             'task-vms' => [],
             'builds' => [],
             'operations' => [],
+            'operation-starts' => [],
             'operations-prompt' => [],
         ],
     ],

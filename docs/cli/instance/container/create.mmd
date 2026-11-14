@@ -115,13 +115,14 @@ sequenceDiagram
       %%> On failure:
       %%> - `instance.nested_club_key_not_tmpfs` or `instance.nested_club_key_delivery_failed`; the checkout and T3 do not run
     end
-    par checkout beside T3
-    SW->>C: Check out the workspace<br/>native clone-workspace
-    %%> Why beside: the T3 step never writes the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock; the join below checks both
-    %%> Why the same level: Swamp starts a level of steps only when the whole level before it has ended, in each job and across jobs; both depend on the copy and the Club key, so both start when that level ends
-    %%> What it does:
+    SW->>C: Check out and wait for T3<br/>native clone-t3
+    %%> When: after the copy and the Club key; a failed copy or Club key skips it
+    %%> Why one step: the checkout, T3 and the sessions check were three steps on two levels, each with about 1 s of Swamp start; one SSH call runs them, the checkout beside T3
+    %%> Why beside: the T3 part never writes the workspace; T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no Git lock
+    %%> SSH stdin: the workspace's private JSON; the model environment is already in the copy, written by the copy step before the first start
+    %%> Checkout, beside the agent part and T3:
     %%> - a branch in the Node's mirror goes in as a bundle; a branch the mirror lacks starts at the seed commit, which the seed's own repository holds, with no bundle; it is checked out in `/srv/workspace`; the group, setgid bits and default ACLs come with the clone
-    %%> - runs only the guest's `checkout` part: the bundle, the checkout mark, `.env`; PHP settings, Process files and units are the completion's `services` part; the step keeps its name, which Conn maps to its workspace row
+    %%> - runs only the guest's `checkout` part: the bundle, the checkout mark, `.env`; PHP settings, Process files and units are the completion's `services` part
     %%> - after the checkout it checks the branch and commit, then writes the root-owned mark `/var/lib/orbit/workspace-checkout` with the Instance id and commit; when the mark already names this Instance, a retry skips the fetch and checkout, so the branch never moves and the result's commit stays the mark's
     %%> - writes `.env` for `orbit` with group `work`: the default's file from the seed, with the clone's own connection keys, the keys of the connections it shares with its default and `APP_URL`, without the default's other connection and Reverb keys or a copy of its credentials; `APP_KEY` stays the default's, because the cloned data is encrypted with it
     %%> - `.env` names the clone's database before the completion creates it; nothing in the container reads it before the completion starts the units
@@ -131,36 +132,31 @@ sequenceDiagram
     %%> - excludes `/.env`, clears index flags, then `git reset --hard` and, after it, `git clean -d -ff` without `-x` until a dry run finds nothing new, with the task check's ignore rules: the default's modified and untracked files go, what the start commit's ignore rules name stays
     %%> - `git status --porcelain` must be empty, else the step fails
     %%> - the result carries the counts and the first 20 names of the reset and removed paths as `workspace_cleaned`; a clone without the mark keeps the default's tree
-    %%> On failure:
-    %%> - `failed_step: workspace`, `instance.create_workspace_failed`
-    and T3 beside the checkout
-    SW->>C: Wait for T3<br/>native clone-t3
-    %%> When: with the checkout; a failed copy or Club key skips it, as it skips the checkout
-    %%> What it does, in one step:
-    %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
+    %%> Agent part, then T3:
+    %%> - the agent part finds the model environment in place and writes the Claude Code and Codex settings that point at the model forwarder; a copy without the model environment fails the part
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all; files the copy step wrote are found in place
     %%> - the T3 part: a T3 that the copy's boot started is not started again (`timings.t3.at_boot` 1); a T3 that does not run is started here, and one that failed at boot is started once more after `reset-failed`, named `restart:t3`; T3 creates its identity at its first start
     %%> - while T3 starts or runs, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
     %%> - after T3 answers, the T3 project `/srv/workspace` is added as `agent`; during T3's start that call fails
-    %%> - a failed session issue fails this step with `instance.t3_unready`
-    %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
-    %%> On failure:
-    %%> - before each part the step writes the part's name to its private `t3.json`, and success removes it; on a failure or timeout `clone-session-copy` brings that file to the run, so the result keeps `failed_step: t3` with the part's code: `instance.create_agent_failed` or `instance.t3_unready`
-    %%> - the Operation's failure detail is the part's own line, `instance.container_agent_failed` or `instance.container_t3_failed`, or the timeout
-    %%> Why its own lock: the clone steps share one Swamp lock; T3 takes `ic-clone-t3-…`, so it runs beside the checkout
-    end
-    SW->>C: Register the T3 server<br/>native clone-register
-    %%> When: the join; the sessions check waits for T3 and the checkout, because it checks the branch and the checkout mark
-    %%> On a failed checkout: no sessions check, no registration; the container stop below still runs
-    %%> What it does:
-    %%> - the sessions check issues no session: it checks the two that the T3 step issued against the running T3
-    %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
+    %%> Sessions check, after both:
+    %%> - issues no session: it checks the two that the T3 part issued against the running T3, and the branch and the checkout mark
     %%> - checks no Process unit: the units start in the completion, whose check refuses a dead one with `instance.container_process_inactive`
+    %%> - the checked reply replaces the issued sessions in the private `t3.json`; the step prints the checkout's lines and T3's receipt, with when T3 answered and when the sessions passed
+    %%> On failure:
+    %%> - before each part the step writes the part's name to its private `t3.json`; the checkout's name is written only when the checkout failed and the T3 part did not; `clone-session-copy` brings that file to the run
+    %%> - the result's `failed_step` follows the part: `workspace` with `instance.create_workspace_failed`, `t3` with `instance.create_agent_failed` or `instance.t3_unready`, `register` with `instance.create_register_failed` for the sessions check
+    %%> - the Operation's failure detail is the part's own line, such as `instance.container_checkout_failed` or `instance.container_t3_failed`, or the timeout
+    SW->>N: Copy the checked sessions<br/>native clone-session-copy
+    %%> What it does: brings the checked reply from the Node's private folder to the run folder; after a failure, the failed part's name
+    SW->>C: Register the T3 server<br/>native clone-register
+    %%> What it does:
+    %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
   alt all steps pass in budget
     C-->>SW: T3 answers
     %%> When:
     %%> - `finish` starts when the clone steps and the publication have both ended; at the measured times the publication ends first
+    %%> - `finish` removes the run folder of a ready create itself, so the cleanup step skips and the run ends with `accepted`, without the cleanup's own 0.8-0.9 s; a failed create keeps the folder for the container stop, and the cleanup step removes it after
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Read baseline, record T3<br/>admit instance.complete
     %%> Before the transaction:

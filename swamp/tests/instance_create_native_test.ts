@@ -43,6 +43,7 @@ async function fixture(mode: Mode) {
     // What the real steps print: the checkout its commit and key names, the registration the T3 server it recorded.
     Deno.writeTextFileSync(`${folder}/workspace.out`, `orbit-commit=${commit}\n${JSON.stringify({ phase: "checkout", changes: [], environment: { copied: ["APP_NAME"], dropped: [] } })}\n`);
     Deno.writeTextFileSync(`${folder}/register.out`, JSON.stringify(server));
+    Deno.mkdirSync(`${folder}-run`);
     // One stub child for every child workflow: the legacy job's, which a clone skips, the clone's Route steps and the withdrawal. It
     // records its phase; the Route fails in route-failure mode and runs 30 s in route-cancel mode.
     const child = JSON.parse((await call("workflow", "create", "create-child")).stdout);
@@ -67,7 +68,8 @@ async function fixture(mode: Mode) {
             delete step.labels;
             if (name === "accepted") continue;
             if (name === "finish") {
-                ((step.task as RecordValue).inputs as RecordValue).folder = folder;
+                // The run folder that finish reads and, on a ready create, removes: its own, so the fixture's records stay.
+                ((step.task as RecordValue).inputs as RecordValue).folder = `${folder}-run`;
                 continue;
             }
             if ((step.task as RecordValue).type === "workflow") {
@@ -75,9 +77,10 @@ async function fixture(mode: Mode) {
                 continue;
             }
             let run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
-            if (name === "clone-workspace") run += mode === "workspace-failure" ? "; exit 3" : `; cat '${folder}/workspace.out'`;
+            // The T3 step runs the checkout: a failed checkout leaves its part's name in t3.json, which clone-session-copy brings to the run.
+            if (name === "clone-t3") run += mode === "workspace-failure" ? `; printf '{"t3_part":"checkout"}' > '${folder}-run/t3.json'; exit 3` : `; cat '${folder}/workspace.out'`;
             // A later clone step fails after the Route has published (Nick's question: what happens to the address).
-            if (name === "clone-t3" && mode === "route-then-t3-failure") run += "; sleep 3; exit 4";
+            if (name === "clone-t3" && mode === "route-then-t3-failure") run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'; sleep 3; exit 4`;
             if (name === "clone-register") run += `; cat '${folder}/register.out'`;
             // The publication runs beside the copy: a cancel while clone-route runs cuts the copy too.
             if (name === "clone-container" && mode === "route-cancel") run += "; sleep 30";
@@ -99,7 +102,10 @@ async function fixture(mode: Mode) {
     const history = async () => JSON.parse((await call("workflow", "history", "get", created.name)).stdout);
     const steps = async (): Promise<Record<string, RecordValue>> =>
         Object.fromEntries((await history()).jobs.flatMap((job: { steps: RecordValue[] }) => job.steps).map((step: RecordValue) => [step.name, step]));
-    return { folder, auth, created, input, steps, cleanup: () => Deno.removeSync(folder, { recursive: true }) };
+    return { folder, auth, created, input, steps, cleanup: () => {
+        Deno.removeSync(folder, { recursive: true });
+        if (exists(`${folder}-run`)) Deno.removeSync(`${folder}-run`, { recursive: true });
+    } };
 }
 
 /** Starts the run in its own process group; a cancel sends SIGTERM once the clone's Route child runs. */
@@ -141,11 +147,13 @@ Deno.test({ name: "pinned create: a normal clone ends ready at its registration 
         const done = await execute(f);
         assert(done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        for (const name of ["input", "clone-input", "clone-container", "clone-workspace", "clone-t3", "clone-sessions", "clone-session-copy",
-            "clone-register", "finish", "clone-private-cleanup", "cleanup", "accepted"]) {
+        for (const name of ["input", "clone-input", "clone-container", "clone-t3", "clone-session-copy",
+            "clone-register", "finish", "clone-private-cleanup", "accepted"]) {
             assertEquals(status(steps, name), "succeeded", name);
         }
-        for (const name of ["clone-club-key", "stop-container", "withdraw-route", "checkout", "container"]) assertEquals(status(steps, name), "skipped", name);
+        // finish removed the run folder of the ready create, so the cleanup step's level costs nothing.
+        for (const name of ["clone-club-key", "stop-container", "withdraw-route", "checkout", "container", "cleanup"]) assertEquals(status(steps, name), "skipped", name);
+        assertEquals(exists(`${f.folder}-run`), false);
         assertEquals(Object.keys(steps).filter((name) => /route-csr|clone-route|database|server-|fleet|services/.test(name) && status(steps, name) !== "skipped"), []);
         const value = result(steps);
         assertEquals([value.ready, value.failed_step, value.commit, value.t3, value.environment], [true, undefined, commit, server, { copied: ["APP_NAME"], dropped: [] }]);
@@ -158,16 +166,18 @@ Deno.test({ name: "pinned create: a normal clone ends ready at its registration 
     }
 } });
 
-Deno.test({ name: "pinned create: a failed workspace registers nothing, stops the container and removes the private folder", ignore: !binary, async fn() {
+Deno.test({ name: "pinned create: a failed checkout in the T3 step registers nothing, stops the container and removes the private folder", ignore: !binary, async fn() {
     const f = await fixture("workspace-failure");
     try {
         const done = await execute(f);
         assert(!done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        assertEquals([status(steps, "clone-workspace"), status(steps, "clone-t3"), status(steps, "clone-sessions"), status(steps, "clone-register")],
-            ["failed", "succeeded", "skipped", "skipped"]);
+        assertEquals([status(steps, "clone-t3"), status(steps, "clone-session-copy"), status(steps, "clone-register")],
+            ["failed", "succeeded", "skipped"]);
         assertEquals([status(steps, "stop-container"), status(steps, "withdraw-route"), status(steps, "clone-private-cleanup"), status(steps, "accepted")],
             ["succeeded", "skipped", "succeeded", "failed"]);
+        // A failed create keeps its run folder for the container stop; the cleanup step removes it after.
+        assertEquals([status(steps, "cleanup"), exists(`${f.folder}-run`)], ["succeeded", true]);
         const value = result(steps);
         assertEquals([value.ready, value.failed_step, value.error_code], [false, "workspace", "instance.create_workspace_failed"]);
         assert(exists(`${f.folder}/stop-container`));

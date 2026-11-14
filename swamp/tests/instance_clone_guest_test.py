@@ -6,6 +6,7 @@ import io
 import json
 import os
 import runpy
+import stat
 import subprocess
 import sys
 import tempfile
@@ -25,6 +26,8 @@ NO_MERGE = {"own": [], "drop": [], "guard": []}
 
 # The patched boundary below replaces subprocess.run; real Git still runs through this.
 REAL_RUN = subprocess.run
+# The Node runtime helper the Node script hands the `workspace` and `services` parts in their intent; the guest writes it.
+NODE_RUNTIME_SOURCE = "# the shipped orbit-instance-node-runtime.py\n"
 REAL_WALK = os.walk
 
 
@@ -350,7 +353,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
             patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(private))),
             contextlib.redirect_stdout(output),
         ):
-            GUEST.phase_main(phase, json.dumps(container))
+            GUEST.phase_main(phase, json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
         return json.loads(output.getvalue())
 
     def mark(self):
@@ -709,6 +712,11 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.assertIn("/srv/workspace/.env", first["changes"])
         self.assertEqual(second, {"phase": "services", "changes": second["changes"]})
         self.assertIn("start:orbit-process-19.service", second["changes"])
+        # The services part writes the Node runtime helper from its intent, root's and 0755, before the Node store step runs it.
+        helper = self.base / GUEST.NODE_RUNTIME.lstrip("/")
+        self.assertEqual((helper.read_text(), stat.S_IMODE(helper.stat().st_mode)), (NODE_RUNTIME_SOURCE, 0o755))
+        self.assertIn(GUEST.NODE_RUNTIME, second["changes"])
+        self.assertLess(second["changes"].index(GUEST.NODE_RUNTIME), second["changes"].index("start:orbit-process-19.service"))
 
     def test_checkout_starts_no_unit_and_writes_nothing_outside_the_workspace(self):
         self.fresh()
@@ -914,14 +922,12 @@ class CloneGuestTest(unittest.TestCase):
                 json.loads(content) for argv, content in calls if "exec" in argv
             ]
             self.assertEqual(delivered, [payload if merged else {**payload, "merge": None}])
-            self.assertEqual(timeouts[-1], 105)
-            self.assertEqual(elapsed[0], 111)
+            self.assertEqual(timeouts[-1], 107.5)
+            self.assertEqual(elapsed[0], 108.5)
 
-            installed = [(argv, content) for argv, content in calls if "file" in argv and "push" in argv and argv[-1].endswith("/usr/local/libexec/orbit-instance-node-runtime.py")]
-            self.assertEqual(len(installed), 1)
-            self.assertEqual(installed[0][1], "node-helper-source")
-            self.assertIn("/usr/local/libexec/orbit-instance-node-runtime.py", installed[0][0][-1])
-            self.assertLess(calls.index(installed[0]), next(i for i, (argv, _) in enumerate(calls) if "exec" in argv))
+            # The helper goes in the guest's intent, which writes it; no Incus file call carries it.
+            self.assertFalse(any(argv[-1].endswith("/usr/local/libexec/orbit-instance-node-runtime.py") for argv, _ in calls))
+            self.assertEqual(json.loads(next(argv for argv, _ in calls if "exec" in argv)[-1])["node_runtime"], "node-helper-source")
 
             self.assertNotIn("private", output.getvalue())
             # The result's commit is the guest's word, not the mirror's head.
@@ -1029,9 +1035,9 @@ class CloneGuestTest(unittest.TestCase):
         self.assertTrue(any('symbolic-ref' in argv for argv in commands))
         # Another branch, or a mark that names another Instance, still fails it.
         _, output, error = self.readiness('sessions', entrypoint=True, branch='other')
-        self.assertEqual((output, error), ('', 'instance.container_sessions_failed\n'))
+        self.assertEqual((output, error), ('', 'instance.container_sessions_failed: AssertionError\n'))
         _, output, error = self.readiness('sessions', entrypoint=True, mark={'instance_id': 8, 'commit': 'abc123'})
-        self.assertEqual((output, error), ('', 'instance.container_sessions_failed\n'))
+        self.assertEqual((output, error), ('', 'instance.container_sessions_failed: AssertionError\n'))
 
     def test_the_check_names_unit_states_of_a_dead_process_and_exits_without_private_log(self):
         commands, output, error = self.readiness('check', entrypoint=True, inactive=True)
@@ -1103,7 +1109,7 @@ class CloneGuestTest(unittest.TestCase):
 
     def test_sessions_without_the_t3_steps_sessions_fail_and_issue_none(self):
         commands, output, error = self.readiness("sessions", existing=False, entrypoint=True)
-        self.assertEqual((output, error), ("", "instance.container_sessions_failed\n"))
+        self.assertEqual((output, error), ("", "instance.container_sessions_failed: AssertionError\n"))
         self.assertFalse(any(argv[0] == "/opt/agent/bin/t3" for argv in commands))
 
     def test_the_t3_step_issues_both_sessions_while_t3_starts_and_adds_the_project_after_its_answer(self):
@@ -1176,6 +1182,27 @@ class CloneGuestTest(unittest.TestCase):
                 )
                 self.assertIn(["php", "-v"], commands)
 
+    def test_a_failed_git_mkdir_or_systemctl_hands_its_stderr_to_the_node_script_after_the_diagnostic(self):
+        # Only these commands' stderr follows the line; the Node's clone script redacts it (instance_clone_test.py
+        # ServicesPhaseFailureTest). curl, php and t3 hand nothing on (the tests below).
+        self.assertEqual(GUEST.STDERR_COMMANDS, ("git", "mkdir", "systemctl"))
+
+        def command(argv, **_kwargs):
+            actual = argv[4:] if argv[0] == "runuser" else argv
+            if actual[0] == "mkdir":
+                return subprocess.CompletedProcess(argv, 1, "", "mkdir: cannot create directory '/home/agent/.claude': Read-only file system\n")
+            return subprocess.CompletedProcess(argv, 0, "", "")
+
+        error = io.StringIO()
+        with tempfile.TemporaryDirectory() as folder, patch("subprocess.run", command), \
+                patch("pathlib.Path", lambda p: Path(folder) / str(p).lstrip("/")), \
+                patch("sys.argv", [str(SPEC.origin), "agent", json.dumps({"workspace": "/srv/workspace"})]), \
+                patch("sys.stdin", io.StringIO("")), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(error), \
+                self.assertRaises(SystemExit):
+            runpy.run_path(SPEC.origin, run_name="__main__")
+        self.assertEqual(error.getvalue(), "instance.container_agent_failed: command mkdir exited 1\n"
+                                           "mkdir: cannot create directory '/home/agent/.claude': Read-only file system\n")
+
     def test_command_failure_names_command_and_exit_code_without_private_output(self):
         _, output, error = self.readiness("sessions", fail="curl", entrypoint=True)
         self.assertEqual(output, "")
@@ -1230,6 +1257,7 @@ class CloneGuestTest(unittest.TestCase):
                 ),
                 patch.object(GUEST.subprocess, "run", command),
                 patch.object(GUEST.os, "walk", return_value=[]),
+                patch.object(GUEST.os, "chown"),
                 patch.object(
                     GUEST.sys,
                     "stdin",
@@ -1237,8 +1265,9 @@ class CloneGuestTest(unittest.TestCase):
                 ),
                 contextlib.redirect_stdout(output),
             ):
-                GUEST.phase_main("workspace", json.dumps(container))
-            self.assertEqual(json.loads(output.getvalue())["changes"], [])
+                GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
+            # Only the Node runtime helper is written: no PHP settings.
+            self.assertEqual(json.loads(output.getvalue())["changes"], [GUEST.NODE_RUNTIME])
             # The phase prints the names of the keys it kept from the default's file, never a value.
             self.assertEqual(json.loads(output.getvalue())["environment"], {"copied": ["PRIVATE"], "dropped": []})
             self.assertNotIn("env\\n", output.getvalue())
@@ -1280,7 +1309,7 @@ class CloneGuestTest(unittest.TestCase):
                 patch.object(GUEST.sys, "stdin", io.StringIO(json.dumps(inputs))),
                 contextlib.redirect_stdout(output),
             ):
-                GUEST.phase_main("workspace", json.dumps(container))
+                GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
             return env.read_text(), json.loads(output.getvalue())["environment"]
 
     def test_workspace_without_merge_names_writes_the_render_as_before(self):
@@ -1398,7 +1427,7 @@ class CloneGuestTest(unittest.TestCase):
                     ),
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
-                    GUEST.phase_main("workspace", json.dumps(container))
+                    GUEST.phase_main("workspace", json.dumps({**container, "node_runtime": NODE_RUNTIME_SOURCE}))
                 return list(commands)
 
             restart = ["systemctl", "restart", unit["name"]]
@@ -1441,6 +1470,9 @@ class CloneGuestTest(unittest.TestCase):
             settings.write_text(
                 json.dumps({"theme": "dark", "linkedEnvironmentsEnabled": False})
             )
+            # The container phase wrote the model environment before the first start; the agent part only finds it.
+            model = base / "home/agent/.config/orbit/model.env"
+            model.write_text("ORBIT_MODEL_KEY=seeded\n")
             container = {
                 "workspace": "/srv/workspace",
                 "clone": {
@@ -1504,8 +1536,14 @@ class CloneGuestTest(unittest.TestCase):
             self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
             self.assertEqual(run()["changes"], [])
             self.assertFalse(any("--replace-all" in argv for argv in commands))
+            self.assertEqual(model.read_text(), "ORBIT_MODEL_KEY=seeded\n")
             settings.write_text("{broken")
             with self.assertRaises(json.JSONDecodeError):
+                run()
+            # A copy without the model environment refuses: nothing else writes it.
+            settings.write_text("{}")
+            model.unlink()
+            with self.assertRaises(RuntimeError):
                 run()
 
 

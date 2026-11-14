@@ -27,6 +27,9 @@ enum GatewayQueue: string
     /** Jobs that record a Swamp run in its Operation, one at a time (docs/reference/operations.md). */
     case Operations = 'operations';
 
+    /** Native run starts, side by side: a start that waits for its confirmation holds one worker, not the others (docs/reference/operations.md). */
+    case OperationStarts = 'operation-starts';
+
     /** The projection of one Operation whose native run ended, at once and beside a running pass (docs/reference/operations.md). */
     case OperationsPrompt = 'operations-prompt';
 }

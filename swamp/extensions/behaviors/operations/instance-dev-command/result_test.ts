@@ -222,10 +222,10 @@ Deno.test("a clone's result carries the seconds of each part of its phases, name
         }).stdout);
     const launched = step('orbit-mail=unchanged\n{"phase":"container","changed":true,"timings":{"acl":0.01,"copy":0.4,"firewall":1.2,"Bad Name":3,"start":"x"}}\n');
     const checkout = step(`orbit-commit=${commit}\n{"phase":"checkout","changes":[],"timings":{"guest":0.6}}\n`);
-    assertEquals(result({ mail: launched, workspace: checkout }, {
-        t3_observation: '{"phase":"t3","ready_at":"2026-11-14T12:48:42.202Z","timings":{"agent":0.5,"t3":4.1}}',
-        sessions_observation: '{"phase":"sessions","checked_at":"2026-11-14T12:48:46.033Z","timings":{"guest":2.4}}',
-    }).timings, { container: { acl: 0.01, copy: 0.4, firewall: 1.2 }, checkout: { guest: 0.6 }, t3: { agent: 0.5, t3: 4.1 }, sessions: { guest: 2.4 } });
+    // The T3 step prints the checkout's lines, then its own line with the sessions check's seconds.
+    const t3 = `${checkout.outputs.stdout}{"phase":"t3","ready_at":"2026-11-14T12:48:42.202Z","checked_at":"2026-11-14T12:48:43.033Z","timings":{"agent":0.5,"t3":4.1,"sessions":0.2}}`;
+    assertEquals(result({ mail: launched, workspace: step(t3) }, { t3_observation: t3 }).timings,
+        { container: { acl: 0.01, copy: 0.4, firewall: 1.2 }, checkout: { guest: 0.6 }, t3: { agent: 0.5, t3: 4.1, sessions: 0.2 } });
     // A phase that printed no timings (a release before them), or failed, gives none; no phase at all gives no `timings`.
     assertEquals(result({ mail: launched, workspace: { status: "failed", outputs: { stdout: checkout.outputs.stdout } } }).timings,
         { container: { acl: 0.01, copy: 0.4, firewall: 1.2 } });
@@ -316,8 +316,9 @@ Deno.test("a clone finishes only with its registered T3 server, which the receip
 Deno.test("readiness records only timestamps from the T3 checks and the Route TLS probe", () => {
     const result = JSON.parse(createResult(intent, {
         ...phases,
-        t3_observation: JSON.stringify({ ready_at: "2026-11-10T20:00:01Z", private_reply: "never copy" }),
-        sessions_observation: JSON.stringify({ checked_at: "2026-11-10T20:00:02Z", token: "never copy" }),
+        // The T3 step's output: the checkout's lines, then T3's line with both times.
+        t3_observation: `orbit-commit=${commit}\n{"phase":"checkout","changes":[]}\n` +
+            JSON.stringify({ phase: "t3", ready_at: "2026-11-10T20:00:01Z", checked_at: "2026-11-10T20:00:02Z", token: "never copy" }),
         route_observation: {
             "Sign certificate": { finishedAt: "2026-11-10T20:00:09Z" },
             "Probe the site over TLS-0": { target: { finishedAt: "2026-11-10T20:00:03Z", stdout: "never copy" } },
@@ -459,4 +460,26 @@ Deno.test("a clone's Route publication never decides its create: published, fail
     const fallen = JSON.parse(createResult({...admitted, container: {mail: null}}, {...phases, container: {...container, processes: "succeeded", seed: "succeeded"},
         route: "failed", certificates: ["succeeded"]}).stdout);
     assertEquals([fallen.ready, fallen.failed_step, fallen.route_publication], [false, "route", undefined]);
+});
+
+Deno.test("a ready create's finish removes its run folder; a failed create keeps it for the container stop and the cleanup step", async () => {
+    const { behavior } = await import("./assets.ts");
+    const run = async (ready: boolean) => {
+        const folder = await Deno.makeTempDir({ prefix: "orbit-ansible-" });
+        // The checked T3 sessions wait in the run folder until it goes.
+        await Deno.writeTextFile(`${folder}/t3.json`, '{"gateway":{"token":"never kept"}}');
+        try {
+            const checkout = ready ? { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } } : { status: "failed", outputs: { stdout: "" } };
+            const done = await behavior.methods.create_result.execute({
+                intent: { ...intent, setup_steps: [] }, folder, checkout, database: "succeeded", setup: "skipped", processes: [], route: "skipped",
+            }, { writeResource: async () => undefined });
+            let kept = true;
+            try { await Deno.stat(folder); } catch { kept = false; }
+            return [done.ready, done.removed, kept];
+        } finally {
+            await Deno.remove(folder, { recursive: true }).catch(() => undefined);
+        }
+    };
+    assertEquals(await run(true), [true, true, false]);
+    assertEquals(await run(false), [false, false, true]);
 });
