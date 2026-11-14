@@ -62,6 +62,7 @@ sequenceDiagram
   %%> - Stopped (after a host reboot or a sleep that fell back to a stop): the boot below, `wake: started`
   %%> - Running (after a reboot with `boot.autostart`): no start and no resume, `wake: already_running`
   %%> - a Frozen container without the marker is resumed; the result says `marker_found: false`
+  %%> - before the boot, the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
   %%> - boot: `incus start`; nftables, T3, FrankenPHP and the enabled Process units start with the container
   %%> - waits until each desired-running unit is active, then until FrankenPHP answers, else `instance.web_unready`
   %%> - a 5xx answer gets up to 5 s to clear; an app that answers 5xx by itself is then served as it is

@@ -173,6 +173,7 @@ export const behavior = {
                     account: (args.intent.ssh_execution as { target: { user: string } }).target.user,
                     bundle: {
                         node_services: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_services.py")),
+                        machine_name: await Deno.readTextFile(ctx.extensionFile("ansible/instance_machine_name.py")),
                         mail: await Deno.readTextFile(ctx.extensionFile("ansible/instance_mail.py")),
                         bridge: await Deno.readTextFile(ctx.extensionFile("ansible/instance_bridge.py")),
                         node: await Deno.readTextFile(ctx.extensionFile("ansible/instance_node_runtime.py")),

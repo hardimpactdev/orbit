@@ -482,7 +482,7 @@ The dynamic linker reads its cache, `/etc/ld.so.cache`:
 
 ### The machine name
 
-A container Instance has a presented name, `<instance name>.<project slug>`, such as `task-5003.dlf-leden` or `default.shop`. It is the name a person sees for the machine, never `instance-<id>`. A new clone's T3 server shows it from its first start.
+A container Instance presents itself as `<instance name>.<project slug>`, such as `task-5003.dlf-leden` or `default.shop`. Its T3 server shows that name. Its hostname is the same text when the slug is a lowercase hostname label and the name fits in 63 characters; otherwise it is the long form below. A person never sees `instance-<id>` as the machine's name.
 
 `instance-<id>` stays the Incus name. It is the machine key: the ACL, the UFW comments, the mail state folder, the Node mirror `<id>.git` and the certificate scopes `app-instance-<id>` keep it. An Operation's `input` keeps it too, as `container.name`; it is the Incus name, not the presented name.
 
@@ -494,9 +494,48 @@ A container Instance has a presented name, `<instance name>.<project slug>`, suc
 
 **Unique on every Node.** An Instance name is unique in its Project, and a slug is unique, so a short name is unique. A 64-character name can equal no short one. It carries the Instance ID, so it can equal no other Instance's.
 
-For a slug such as `My_App`, a person sees `default.My_App` as T3's label; the kernel hostname is the mapped 64-character form.
+For a slug such as `My_App`, a person sees `default.My_App` as T3's label, and `hostname` answers with the mapped 64-character form.
 
 **What the Gateway sends.** Every container intent carries `machine_name`, with `hostname` and `pretty`. The host intent of an app-dev Node carries `machine_names`: the project, container and both names of each runtime on the Node. A clone's boot files include `/etc/machine-info`, so a new clone's T3 shows the name from its first start.
+
+#### The files
+
+`instance_machine_name.py` holds the text of the three files, and every writer runs its `render` or `hosts` command on the Node:
+
+- **`/etc/hostname`** holds the hostname alone.
+- **`/etc/machine-info`** is Orbit's whole file: `PRETTY_HOSTNAME=<name>`. The clone's boot file writes the same text.
+- **`/etc/hosts`** gets its `127.0.1.1` line: the hostname, its first label, the running kernel hostname and the Incus name, each once.
+
+The running kernel hostname and the Incus name stay on the hosts line, so the kernel hostname resolves before and after the next boot.
+
+The converge reads the running kernel hostname of a running container. A container that is frozen at the converge gets no such alias, and neither does a running container whose `hostname` read fails or takes more than 5 seconds, until a later converge reads it. So if a renamed Project's running container is frozen before the next converge, its kernel hostname stops resolving after it thaws, and `sudo` warns until the container's next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
+
+Where each path writes the name:
+
+| Path | When |
+|---|---|
+| Create of a default, a move | The container phase, right after the first start: the files, then the kernel hostname at once |
+| Clone and task copy | `/etc/machine-info` as a boot file before the first start; the rest in the private names pass right after it |
+| Start, wake, deployment | Only a stopped container: the start phase writes the files through the file API before it boots it. A running or frozen container gets nothing |
+| Node converge | The files, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
+
+T3 starts with a clone's copy, at its boot: `/etc/orbit/instance` is the last boot file. Its label is right from its first start, because `/etc/machine-info` is a boot file too. The kernel hostname, `/etc/hostname` and the `127.0.1.1` line come from the private names pass after `incus start` returns, so T3 has already started when they change.
+
+No path restarts T3 for its name, and only a new container gets its kernel hostname at once. A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
+
+#### Existing Instances
+
+An existing Instance gets its name without a new container. The converge of its Node writes the files. The kernel hostname takes the name at the container's next start, and T3 its label at T3's next start, such as a stopped container's next start or an agent folder update. T3's environment ID, threads, sessions and pairings do not depend on the name.
+
+A rename of the Project (`project:update --slug`) writes no container file itself. The containers take the new name at their next start or at the next converge of their Node.
+
+Three writers change `/etc/hosts` of a container: the converge writes the `127.0.1.1` line; `env:sync` and a start write the private names block; a clone's post-start pass writes both, but only into its new copy. The converge can run while an `env:sync` or a start writes the same file. If both write at once, one can drop the other's change.
+
+This does not block: each writer keeps the other's lines when it runs, so the next writer of the lost part restores it. A lost block comes back at the next `env:sync` or start; a lost `127.0.1.1` line comes back at the next converge, and the kernel takes its name at the next boot anyway.
+
+A presented name that equals one of the container's private names, such as an Instance `reverb` in a Project with the slug `orbit` beside the private name `reverb.orbit`, would shadow that name in `/etc/hosts`. Choose another Instance name in that case.
+
+Incus does not keep the name. A copy's own metadata holds the stock templates `/etc/hostname` and `/etc/hosts` (`when: [create, copy]`), which write the Incus name at the first start after a create or a copy. That is why the hostname and the hosts line come right after that start, and why a start writes nothing into a container that never started. `/etc/machine-info` has no template.
 
 ### Trust
 
@@ -1097,11 +1136,11 @@ The clone script writes these, so a new clone works with no converge or `env:syn
 | Trust | Before the first start | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
 | `NO_PROXY` | Before the first start | The composed value in the `environment.*` keys and in both drop-ins, with the private names. See [proxy settings](#proxy-settings-in-a-container) |
 | Private names | Right after the first start | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
-| Machine name | Before the first start | `/etc/machine-info` with `PRETTY_HOSTNAME`, which T3's first start reads. See [the machine name](#the-machine-name) |
+| Machine name | Before and right after the first start | `/etc/machine-info` before it; the kernel hostname, `/etc/hostname` and the `127.0.1.1` line right after it. See [the machine name](#the-machine-name) |
 
 The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
 
-Right after the start, the clone script reads `/etc/hosts` with `incus exec … cat`, as `env:sync` does. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
+Right after the start, the clone script writes `/etc/hostname`, sets the kernel hostname and reads `/etc/hosts` in one `incus exec`, as `env:sync` reads it. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
 
 Orbit does not change the template instead. The template lives in each container's own metadata, copied from its default. A new image would not reach existing defaults, and editing each default's metadata would add hidden state.
 

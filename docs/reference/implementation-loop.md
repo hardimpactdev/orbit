@@ -907,7 +907,9 @@ The `instance:restore` workflow fixture evaluates every expression of `operation
 
 The destroy release fixture evaluates the guard and environment of `Release the Route Nodes` and the retry guard of `Withdraw the Route`, then runs the release command with a stand-in `curl` for a granted, a refused and an unreachable call. It needs no Node or Gateway.
 
-The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture gives each retained case its own slice: 70 since the four cases of a wake that resumes a frozen container, which carry estimates like the four cases of a wake's start before them. A new case there raises the slice count with it.
+The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture gives each retained case its own slice: 71 since the four cases of a wake that resumes a frozen container, which carry estimates like the four cases of a wake's start before them. A new case there raises the slice count with it.
+
+At 71 retained cases the file nearly fills the eight pull request shards. With the table of 2026-11-14, a 72nd case of more than about 15 declared seconds needs a ninth shard; a 1-second case still fits. So the presented machine name's checks joined existing cases: its create and running-start checks the private names case, which writes the same `/etc/hosts`, and its stopped-start checks the `boot.autostart` start case. Both costs are new estimates.
 
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 

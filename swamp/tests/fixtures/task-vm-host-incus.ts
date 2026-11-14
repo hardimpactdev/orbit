@@ -346,6 +346,12 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
     state.folder_restarts ??= [];
     state.folder_restarts.push({project, name: action, unit: command[2], marked: Deno.statSync(`${folder}/opt/orbit-${kind}/.restart`).isFile});
   }
+  // The running kernel hostname: the container's name unless the test sets `kernel_hostnames`.
+  if (command[0] === "hostname" && command.length === 1) {
+    if ((state.kernel_failures ?? []).includes(action)) fail("Failed to retrieve PID of executing child process");
+    console.log(state.kernel_hostnames?.[action] ?? action);
+    Deno.exit(0);
+  }
   // The CA bundle: `update-ca-certificates` builds it from the local CA files, here only Orbit's root.
   if (command[0] === "update-ca-certificates") {
     state.files ??= {};
@@ -407,7 +413,10 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   }
   const pulled = state.files?.[args[2]] ?? (args[2].endsWith("/var/lib/dpkg/status") && instance(args[2].split("/")[0])
     ? { content: dpkgStatus(args[2].split("/")[0]) } : undefined);
-  if (pulled === undefined) fail("Error: not found");
+  // A read that fails for another reason, as a container that changes its state mid-read makes it.
+  if ((state.pull_failures ?? []).includes(args[2])) fail("Failed to retrieve PID of executing child process");
+  // Incus 7 reads files over SFTP and answers a missing one with exactly this text.
+  if (pulled === undefined) fail("file does not exist");
   Deno.stdout.writeSync(new TextEncoder().encode(pulled.content));
 } else if (family === "file" && action === "create") {
   // Symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.

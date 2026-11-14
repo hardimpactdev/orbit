@@ -94,7 +94,7 @@ if (args[0] === "query") {
           ...Object.fromEntries(device.settings.map((setting) => [setting.slice(0, setting.indexOf("=")), setting.slice(setting.indexOf("=") + 1)]))};
       }
       console.log(JSON.stringify({ name: parts[1], status: container.status, query, devices: container.added ?? {},
-        expanded_devices: devices, expanded_config: {...Object.fromEntries((container.config ?? []).map((value: string) => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; })), ...(container.inherited_config ?? {})}, config: { "volatile.uuid": container.uuid } }));
+        expanded_devices: devices, expanded_config: {...Object.fromEntries((container.config ?? []).map((value: string) => { const split = value.indexOf("="); return [value.slice(0, split), value.slice(split + 1)]; })), ...(container.inherited_config ?? {})}, config: { "volatile.uuid": container.uuid, ...(container.volatile ?? {}) } }));
     }
   } else fail(`Unexpected query ${route}`);
   Deno.exit(0);
@@ -311,6 +311,16 @@ if (family === "list") {
     const name = target.slice(0, target.indexOf("/"));
     Deno.removeSync(rootfs(name) + target.slice(name.length), { recursive: args.includes("--force") });
   }
+} else if (family === "file" && args[1] === "pull") {
+  // A file of the container's root file system on stdout, whatever its state, as the file API reads it.
+  const [, , target] = args;
+  const name = target.slice(0, target.indexOf("/"));
+  const path = rootfs(name) + target.slice(name.length);
+  // Incus 7 reads files over SFTP and answers a missing one with exactly this text.
+  if (!exists(path)) fail("file does not exist");
+  Deno.stdout.writeSync(Deno.readFileSync(path));
+  state.pulls ??= [];
+  state.pulls.push(target);
 } else if (family === "file" && args[1] === "push") {
   const createDirs = args.indexOf("--create-dirs");
   if (createDirs >= 0) args.splice(createDirs, 1);
@@ -429,6 +439,13 @@ if (family === "list") {
       for (const unit of command.slice(3)) console.log(inactive.includes(unit) ? "inactive" : "active");
       Deno.exit(inactive.length > 0 ? 3 : 0);
     }
+    Deno.exit(0);
+  }
+  if (command[0] === "hostname") {
+    // The kernel hostname: the container name until a `hostname -F` sets it from the container's file.
+    if (command[1] === "-F") state.containers[name].hostname = Deno.readTextFileSync(inside(name, command[2])).trim();
+    else console.log(state.containers[name].hostname ?? name);
+    save();
     Deno.exit(0);
   }
   if (command[0] === "python3" && command[1] === "-c" && command.at(-1) === "proxy" && command[2].includes("def write_proxy_environment")) {

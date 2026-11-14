@@ -241,6 +241,8 @@ Registering again replaces the stored session. The job registers on each server 
 
 A clone of a container default runs its own T3 server. Its create flow registers it ([T3 registration](/reference/development-containers#t3-registration-and-pairing)): the run issues and checks the sessions in the container, and the Gateway records the server from the run's result through the plug-in point `InstanceLifecycleContribution`, which this extension contributes.
 
+The Gateway's label stays `<project> / <instance>`. The T3 server itself shows the [machine name](/reference/development-containers#the-machine-name) `<instance>.<project slug>`. A client keeps the label it stored for a saved server when it paired.
+
 - The record names the Instance and its Node, with the URL `http://<Node WireGuard address>:<T3 port>` and the label `<project> / <instance>`.
 - The Gateway reads the session from the vault key the result names. It does not call T3 again: the run made the checks above in the container.
 - A new record starts with its cleanup done. Recording a server again bumps the cleanup revision and starts the cleanup.
