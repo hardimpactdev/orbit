@@ -10,6 +10,9 @@ use Saloon\Enums\Method;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 
+beforeEach(fn () => MockClient::destroyGlobal());
+afterEach(fn () => MockClient::destroyGlobal());
+
 it('restarts one Instance or each container of a Node', function (string $request, string $path): void {
     $request = new $request(42);
 
