@@ -278,19 +278,21 @@ class TaskCopyPublishTest(unittest.TestCase):
 
     ENV = 'APP_NAME=Orbit\nAPP_DEBUG=true\nDB_PORT=8080\nexport APP_KEY="base64:c2VjcmV0LWtleS1ub3QtcmVhbA=="\r\nDB_PASSWORD=\'pa55-w0rd-xyz\'\nPEM="line-one-abcdefgh\\nline-two-ijklmnop"\n# old token-in-a-comment-123\n'
 
-    def content_check(self, repository, start, copy=None, rendered='', pull_request=None):
-        directory = Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
+    def content_check(self, repository, start, copy=None, rendered='', pull_request=None, club=None, directory=None):
+        """The step's own script. `club` is a nested-fleet copy's Club key; without it the step's vault read gets the render again."""
+        directory = directory or Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
         (directory / 'environment').write_text(self.ENV if copy is None else copy)
         step = 'Check the .env content'
-        intent = {**self.copy, 'pull_request': pull_request}
+        workspace = {**self.copy['workspace'], **({} if club is None else {'club_key': True})}
+        intent = {**self.copy, 'workspace': workspace, 'pull_request': pull_request}
         run = self.cel(step, 'run', intent, {})
-        # The pull request text comes through the step's own expressions, with the pinned CEL engine.
-        pull = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL_TITLE', 'ORBIT_PULL_BODY']}
+        # The pull request text and the Club key flag come through the step's own expressions, with the pinned CEL engine.
+        names = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL_TITLE', 'ORBIT_PULL_BODY', 'ORBIT_NESTED']}
         return subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=120,
                               env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
                                    'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
                                    'ORBIT_FILE': str(directory / 'environment'), 'ORBIT_START': start, 'ORBIT_ENVIRONMENT': rendered,
-                                   **pull})
+                                   'ORBIT_CLUB': rendered if club is None else club, **names})
 
     def copy_repository(self, files=None):
         work = self.root / ('work-' + uuid.uuid4().hex)
@@ -390,6 +392,79 @@ class TaskCopyPublishTest(unittest.TestCase):
         for pull in [{'title': 'Use pa55-w0rd-xyz', 'body': 'Done.'}, {'title': 'Fix', 'body': 'Key base64:c2VjcmV0LWtleS1ub3QtcmVhbA== set'}]:
             self.refused(self.content_check(repository, start, pull_request=pull), 'pull request title or body')
 
+    CLUB = 'club-0123456789abcdef-not-a-real-key'
+
+    def test_a_nested_copy_refuses_its_club_key_without_naming_it(self):
+        for name, files, message in [('in a file', {'notes/swamp.txt': 'key=' + self.CLUB + '\n'}, 'x'),
+                                     ('in a commit message', {'app.txt': 'other\n'}, 'use ' + self.CLUB)]:
+            with self.subTest(name):
+                # Even a start tree that already holds the key does not make it public.
+                work, start = self.copy_repository({'docs/old.txt': self.CLUB + '\n'})
+                self.commit(work, message, files)
+                done = self.content_check(self.candidate(work), start, club=self.CLUB + '\n')
+                self.refused(done)
+                self.assertNotIn(self.CLUB, done.stdout + done.stderr)
+                self.assertNotIn('club', done.stderr.lower())
+        # The same commit from a copy without a Club key passes: no other reference holds that value.
+        work, start = self.copy_repository()
+        self.commit(work, 'x', {'notes/swamp.txt': 'key=' + self.CLUB + '\n'})
+        self.assertEqual(self.content_check(self.candidate(work), start).returncode, 0)
+
+    def test_without_a_club_key_the_second_read_of_the_render_adds_nothing(self):
+        work, start = self.copy_repository()
+        # A whole line of the render that a new file repeats is public through the start tree, and not checked again as a Club key.
+        self.commit(work, 'x', {'config/app.env': 'APP_NAME=Orbit\nDB_PORT=8080\n'})
+        done = self.content_check(self.candidate(work), start, rendered='APP_NAME=Orbit\nDB_PORT=8080\n')
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_club_key_reference_is_read_only_for_a_nested_copy(self):
+        """The vault key is picked by the workspace flag, never by testing execution_secrets: evaluate the vault.get arguments."""
+        raw = next(step for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for step in job['steps']
+                   if step['name'] == 'Check the .env content')['task']['inputs']['env']['ORBIT_CLUB']
+        self.assertTrue(raw.startswith('${{ vault.get(') and raw.endswith(') }}'), raw)
+        probe = self.root / 'probe.yaml'
+        probe.write_text(yaml.safe_dump({'jobs': [{'name': 'j', 'steps': [{'name': 'probe', 'task': {'inputs': {
+            'arguments': '${{ [' + raw[len('${{ vault.get('):-len(') }}')] + '] }}'}}}]}]}))
+        secrets = {'environment': {'vault': 'orbit-control-inputs', 'key': 'task-publish-environment-7'},
+                   'club_key': {'vault': 'orbit-control-inputs', 'key': 'nested-fleet-club-api-key'}}
+
+        def arguments(workspace, execution_secrets):
+            file = self.root / 'probe.json'
+            file.write_text(json.dumps({'inputs': {'intent': {**self.copy, 'workspace': workspace}, 'execution_secrets': execution_secrets}}))
+            done = subprocess.run(['deno', 'run', '-A', str(self.root / 'cel.ts'), str(probe), 'probe', 'arguments', str(file)],
+                                  capture_output=True, text=True, check=False, timeout=60)
+            self.assertEqual(done.returncode, 0, done.stderr)
+            return json.loads(done.stdout)['value']
+
+        nested = {**self.copy['workspace'], 'club_key': True}
+        self.assertEqual(arguments(nested, secrets), ['orbit-control-inputs', 'nested-fleet-club-api-key'])
+        normal = {'environment': secrets['environment']}
+        self.assertEqual(arguments(self.copy['workspace'], normal), ['orbit-control-inputs', 'task-publish-environment-7'])
+        self.assertEqual(self.cel('Check the .env content', 'env.ORBIT_NESTED', {**self.copy, 'workspace': nested}, {}), '1')
+        self.assertEqual(self.cel('Check the .env content', 'env.ORBIT_NESTED', self.copy, {}), '')
+
+    def test_a_failed_content_check_leaves_no_reference_or_grep_input_after_the_cleanup(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'x', {'.env.h41': self.ENV})
+        directory = Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
+        done = self.content_check(self.candidate(work), start, club=self.CLUB, directory=directory)
+        self.refused(done, "file '.env.h41'")
+        self.assertTrue((directory / 'content/checked').exists() and (directory / 'environment').exists())
+        jobs = {job['name']: job for job in yaml.safe_load(PUBLISH.read_text())['jobs']}
+        # The cleanup job follows a failed publish job too, and its step has no dependency that a failure could skip.
+        self.assertEqual(jobs['cleanup']['dependsOn'], [{'job': 'publish', 'condition': {'type': 'completed'}}])
+        step = next(item for item in jobs['cleanup']['steps'] if item['name'] == 'Remove local scratch')
+        self.assertNotIn('dependsOn', step)
+        self.assertNotIn('guard', step)
+        failed = {'Create publication scratch': {'status': 'succeeded', 'outputs': {'stdout': str(directory) + '\n'}},
+                  'Check the .env content': {'status': 'failed'}}
+        env = {name: self.cel('Remove local scratch', 'env.' + name, self.copy, failed) for name in ['ORBIT_DIRECTORY', 'ORBIT_GH_DIRECTORY']}
+        self.assertEqual(env['ORBIT_DIRECTORY'], str(directory))
+        cleanup = subprocess.run(['/bin/sh', '-c', self.cel('Remove local scratch', 'run', self.copy, failed)], capture_output=True,
+                                 text=True, check=False, timeout=60, env={'PATH': os.environ['PATH'], **env})
+        self.assertEqual(cleanup.returncode, 0, cleanup.stderr)
+        self.assertFalse(directory.exists())
+
     def test_an_error_in_the_content_check_refuses_without_the_content_code(self):
         work, start = self.copy_repository()
         self.commit(work, 'agent work', {'app.txt': 'changed\n'})
@@ -402,7 +477,7 @@ class TaskCopyPublishTest(unittest.TestCase):
         absent = subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=60,
                                 env={'PATH': os.environ['PATH'], 'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
                                      'ORBIT_FILE': str(directory / 'environment'), 'ORBIT_START': start, 'ORBIT_ENVIRONMENT': '',
-                                     'ORBIT_PULL_TITLE': '', 'ORBIT_PULL_BODY': ''})
+                                     'ORBIT_PULL_TITLE': '', 'ORBIT_PULL_BODY': '', 'ORBIT_NESTED': '', 'ORBIT_CLUB': ''})
         self.assertEqual(absent.returncode, 1)
         self.assertTrue(absent.stderr.startswith('tasks.publish_secret_unchecked'), absent.stderr)
 

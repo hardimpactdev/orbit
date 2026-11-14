@@ -378,7 +378,11 @@ After the import, a step on 209 checks every commit from the copy's start to the
 
 A second step then checks the content. It takes every object that is new in the range: file contents, file names and commit messages, also of commits that a later commit undoes. It refuses with `tasks.publish_secret_content` when one holds the whole `.env`, or one of its values of 8 bytes or more that the start tree does not already hold. The pull request title and body are checked the same way.
 
-The values come from two references: the copy's own file, fetched from its Node beside the bundle, and the Gateway's render of the Instance's stored values. A value is read as Orbit writes it, with its escapes undone, and as a default's file may hold it: after `export`, before an inline comment, or in a commented-out line. The refusal names the commit and the object, and the file only when its path holds no value. Any error of the check refuses with `tasks.publish_secret_unchecked`. The token is minted only after the check succeeded.
+The values come from two references: the copy's own file, fetched from its Node beside the bundle, and the Gateway's render of the Instance's stored values.
+
+A copy in the nested-fleet project also holds the [Club key](/reference/development-containers#the-club-key-of-the-nested-gateway) of its inner Swamp, so its run also reads the key's one vault entry, `nested-fleet-club-api-key`. That key counts as a value even if the start tree holds it; like every value, it must be 8 bytes or more. A hit on it refuses like any other, with no hint which secret matched.
+
+A value is read as Orbit writes it, with its escapes undone, and as a default's file may hold it: after `export`, before an inline comment, or in a commented-out line. The refusal names the commit and the object, and the file only when its path holds no value. Any error of the check refuses with `tasks.publish_secret_unchecked`. The token is minted only after the check succeeded.
 
 The content check catches copies and plain lines, not transformed text. It misses:
 
@@ -389,7 +393,7 @@ The content check catches copies and plain lines, not transformed text. It misse
 - an old value from before an `env:update` during the task;
 - the `.env.testing` of a copy with a test database;
 - a value in an unpushed start commit, because the start tree counts as public;
-- every secret that is not in this `.env`.
+- every secret that is not in this `.env` or, for a nested-fleet copy, the Club key.
 
 A long value of the copy that is no secret is refused too, when the start tree lacks it: its `APP_URL`, a host address or a user name. So is such a value in new commits of the default branch that the task branch merged. Remove it from the branch history and check again.
 

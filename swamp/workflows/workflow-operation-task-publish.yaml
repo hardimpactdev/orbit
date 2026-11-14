@@ -79,6 +79,8 @@ inputs:
             snapshot_id: {type: string, format: uuid}
             start: {type: string, pattern: '^(?:[a-f0-9]{40}|[a-f0-9]{64})$'}
             environment_path: {type: string, minLength: 1, pattern: '^[^/]'}
+            # A nested-fleet copy holds the Club key; its run names it in execution_secrets.club_key.
+            club_key: {type: boolean}
           required: [runtime, branch, snapshot_id, start, environment_path]
           additionalProperties: false
         pull_request:
@@ -170,13 +172,13 @@ inputs:
     # Vault references only. A task copy's run also names the .env Orbit renders for the Instance (docs/reference/tasks.md#task-copy).
     execution_secrets:
       type: object
-      propertyNames: {enum: [github_token, git_authorization, environment]}
-      maxProperties: 3
+      propertyNames: {enum: [github_token, git_authorization, environment, club_key]}
+      maxProperties: 4
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^task-publish-(?:token-[a-f0-9-]{36}|environment-[1-9][0-9]*)$'}
+          key: {type: string, pattern: '^(?:task-publish-(?:token-[a-f0-9-]{36}|environment-[1-9][0-9]*)|nested-fleet-club-api-key)$'}
         required: [vault, key]
         additionalProperties: false
   required:
@@ -593,7 +595,8 @@ jobs:
     # The .env content leaves a copy under no name: neither the whole file nor one of its values of 8 bytes or more that the start
     # tree does not already hold, in any object new in the range or in the pull request text. Both references count: the copy's file,
     # which the agent can change, and the render of the Instance's stored values (docs/reference/tasks.md#task-copy). An error refuses
-    # too. A refusal names a path only when the path holds no value.
+    # too. A refusal names a path only when the path holds no value. A nested-fleet copy's Club key is one more value. The cleanup
+    # job's "Remove local scratch" removes these files after a failure too.
     labels:
       role: swamp
     queueTimeout: 30
@@ -628,6 +631,7 @@ jobs:
           }
           if [ ! -f "$ORBIT_FILE" ] || [ -L "$ORBIT_FILE" ]; then echo 'tasks.publish_secret_unchecked: the copy has no .env file' >&2; exit 1; fi
           printf '%s' "$ORBIT_ENVIRONMENT" >"$work/rendered"
+          printf '%s\n' "$ORBIT_CLUB" >"$work/club"
           printf '%s\n%s\n' "$ORBIT_PULL_TITLE" "$ORBIT_PULL_BODY" >"$work/pull"
           # Each value as written and unescaped: KEY=VALUE also in a comment line, quotes and inline comments removed; other lines whole.
           awk -v quote="'" '
@@ -662,6 +666,8 @@ jobs:
             timeout 60 git -C "$ORBIT_REPOSITORY" grep -a -h -o -F -f "$work/values" "$ORBIT_START" -- >"$work/public" || [ $? -eq 1 ]
             grep -v -x -F -f "$work/public" "$work/values" >"$work/checked" || [ $? -eq 1 ]
           fi
+          # The Club key of a nested-fleet copy counts as a value, also if the start tree holds it; a hit reads like any other.
+          if [ -n "$ORBIT_NESTED" ]; then awk '{ sub(/\r$/, ""); gsub(/^[ \t]+|[ \t]+$/, "") } length($0) >= 8' "$work/club" >>"$work/checked"; fi
           timeout 60 git -C "$ORBIT_REPOSITORY" rev-list --objects "$range" -- >"$work/objects"
           for file in "$ORBIT_FILE" "$work/rendered"; do
             if [ -s "$file" ]; then
@@ -695,6 +701,9 @@ jobs:
           ORBIT_FILE: ${{ steps["Create publication scratch"].outputs.stdout.trim() + "/environment" }}
           ORBIT_START: ${{ inputs.intent.workspace.start }}
           ORBIT_ENVIRONMENT: ${{ vault.get(inputs.execution_secrets.environment.vault, inputs.execution_secrets.environment.key) }}
+          # Without a Club key the step reads the render again and ORBIT_NESTED is empty, so it adds nothing.
+          ORBIT_NESTED: '${{ has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
+          ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.environment.vault, has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
           ORBIT_PULL_TITLE: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.title }}'
           ORBIT_PULL_BODY: '${{ inputs.intent.pull_request == null ? "" : inputs.intent.pull_request.body }}'
     dependsOn:

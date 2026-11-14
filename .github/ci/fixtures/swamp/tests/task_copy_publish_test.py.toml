@@ -1,4 +1,4 @@
-source_sha256 = "ff0d427d3ff1ef82777bfe937d37fc4e2d5edfdb2df93290089d8c3415244969"
+source_sha256 = "352fc02e3e315d8b040951017f6e1076d867e23d487a8eda960090b78561f2e5"
 cases = [
   "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
   "test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it",
@@ -17,11 +17,15 @@ cases = [
   "test_a_refusal_never_names_a_path_that_holds_a_value",
   "test_a_file_name_at_the_top_names_its_commit",
   "test_the_content_check_refuses_a_value_in_the_pull_request_text",
+  "test_a_nested_copy_refuses_its_club_key_without_naming_it",
+  "test_without_a_club_key_the_second_read_of_the_render_adds_nothing",
+  "test_the_club_key_reference_is_read_only_for_a_nested_copy",
+  "test_a_failed_content_check_leaves_no_reference_or_grep_input_after_the_cleanup",
   "test_an_error_in_the_content_check_refuses_without_the_content_code",
 ]
 file = "swamp/tests/task_copy_publish_test.py"
-# ESTIMATE: local 35.2s for the whole file of 18 cases (python3 -I, Beast, load 9) x 2.1, rounded up, plus 1s; runs took 26-35s. Keep the estimate until five completed hosted samples establish p90.
-cost = 75
+# ESTIMATE: local 36.6s for the whole file of 22 cases (python3 -I, Beast, load 7-9) x 2.1, rounded up, plus 1s; runs took 30-37s, one 43s run under a parallel load. Keep the estimate until five completed hosted samples establish p90.
+cost = 78
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/task-instance-workspace.yml",

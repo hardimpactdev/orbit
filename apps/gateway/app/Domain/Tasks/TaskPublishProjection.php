@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\InstancePlacement;
+use App\Domain\Instances\NestedFleetClubKey;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationWorkflowInput;
@@ -35,11 +37,18 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
         if (! isset($operation->input['workspace'])) {
             return $input;
         }
-        $instance = Instance::query()->findOrFail(ValidatedData::integer($operation->input['instance_id']));
-        $environment = app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
-            'task-publish-environment-'.$operation->id, app(DevelopmentCreateEnvironment::class)->content($instance));
+        $instance = Instance::query()->with('runtime')->findOrFail(ValidatedData::integer($operation->input['instance_id']));
+        $secrets = [...ValidatedData::object($input['execution_secrets']), 'environment' => app(SwampCommandStep::class)->executionCopy('orbit-control-inputs',
+            'task-publish-environment-'.$operation->id, app(DevelopmentCreateEnvironment::class)->content($instance))];
+        // A nested-fleet copy also holds the Club key in its /run: the check refuses it like a value of the .env.
+        $club = $instance->runtime?->incus_project === InstancePlacement::NestedProject ? NestedFleetClubKey::reference() : null;
+        if ($club === null) {
+            return [...$input, 'execution_secrets' => $secrets];
+        }
+        $intent = ValidatedData::object($input['intent']);
 
-        return [...$input, 'execution_secrets' => [...ValidatedData::object($input['execution_secrets']), 'environment' => $environment]];
+        return ['intent' => [...$intent, 'workspace' => [...ValidatedData::object($intent['workspace']), 'club_key' => true]],
+            'execution_secrets' => [...$secrets, 'club_key' => $club]];
     }
 
     /** Only the check's own refusal line names content; any other failure of the check refuses as unchecked. */
