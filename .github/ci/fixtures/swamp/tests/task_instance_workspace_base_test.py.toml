@@ -1,0 +1,26 @@
+file = "swamp/tests/task_instance_workspace_base_test.py"
+slices = false
+cost = 55
+source_sha256 = "311192ff108ef6372f9562236af9725d1cc8369b3a00d91f595b0467a830e5d9"
+cases = [
+  "test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main",
+  "test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind",
+  "test_only_the_base_step_of_the_child_reads_the_credential"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/_support/task_instance_workspace_base.py",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/workflows/workflow-task-instance-workspace.yaml"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_copy_behind_main_gets_only_what_it_lacks_as_origin_main" = 16
+"test_nothing_new_makes_no_bundle_and_a_merged_branch_is_not_behind" = 37
+"test_only_the_base_step_of_the_child_reads_the_credential" = 2

@@ -1,0 +1,25 @@
+file = "swamp/tests/task_instance_workspace_base_cleanup_test.py"
+slices = false
+cost = 36
+source_sha256 = "73f614482569f9daae806f1a6257b20a86d4a70f64d86cf5465c285cc68cc1c7"
+cases = [
+  "test_a_failed_fetch_leaves_no_credential_and_no_bundle",
+  "test_a_sync_cancelled_during_the_fetch_leaves_nothing_after_base_cleanup",
+  "test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/_support/task_instance_workspace_base.py",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/ansible/tasks/ssh-execution-*.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_failed_fetch_leaves_no_credential_and_no_bundle" = 9
+"test_a_sync_cancelled_during_the_fetch_leaves_nothing_after_base_cleanup" = 11
+"test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup" = 16
