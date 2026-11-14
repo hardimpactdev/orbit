@@ -67,14 +67,13 @@ type Phases = {
     /** The statuses of the Route's CSR and signing steps, which run beside the checkout. */
     certificates?: string[];
     t3_observation?: string;
-    sessions_observation?: string;
     route_observation?: Record<string, unknown>;
     /** A container default's phases, which run instead of the checkout, the database and the setup. */
     container?: Container | null;
     /** A nested-fleet default's result file from the run folder, which names what its start did with the Club key. */
     club_key_file?: unknown;
     /** The part of a clone's T3 step that ran when it failed or timed out, from the step's `t3.json` in the run folder. */
-    t3_part?: "agent" | "t3" | null;
+    t3_part?: "agent" | "t3" | "checkout" | "sessions" | null;
 };
 type Container = {
     mail?: Phase;
@@ -243,7 +242,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     // The container step's own output is the one `mail` names: the clone-container step, whose last line carries its timings.
     const timings = (intent.container as {clone?: unknown} | null)?.clone != null ? cloneTimings({
         container: {phase: "container", output: container?.mail}, checkout: {phase: "checkout", output: container?.workspace},
-        t3: {phase: "t3", output: phases.t3_observation}, sessions: {phase: "sessions", output: phases.sessions_observation},
+        t3: {phase: "t3", output: phases.t3_observation},
     }) : null;
     // A clone's Route publication never decides its create: the create ends at the registration, and a Route that is not published
     // gets its completion's publication (docs/reference/development-containers.md#the-address-during-the-create). The Gateway reads
@@ -283,13 +282,16 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
             }
             : {}),
     };
-    if (phases.t3_observation || phases.sessions_observation) {
+    if (phases.t3_observation) {
+        // The T3 step prints the checkout's lines before its own JSON line: the first JSON line with the key is read.
         const observed = (raw: string | undefined, key: string): string | null => {
-            if (!raw) return null;
-            try {
-                const value = JSON.parse(raw)[key];
-                return typeof value === "string" && Number.isFinite(Date.parse(value)) ? new Date(value).toISOString() : null;
-            } catch { return null; }
+            for (const line of (raw ?? "").split("\n")) {
+                try {
+                    const value = JSON.parse(line)?.[key];
+                    if (typeof value === "string" && Number.isFinite(Date.parse(value))) return new Date(value).toISOString();
+                } catch { continue; }
+            }
+            return null;
         };
         const probeTimes: string[] = [];
         const collect = (value: unknown): void => {
@@ -301,7 +303,7 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         for (const [name, value] of Object.entries(phases.route_observation ?? {})) if (name.startsWith("Probe the site over TLS")) collect(value);
         Object.assign(result, { readiness: {
             t3_answers_at: observed(phases.t3_observation, "ready_at"),
-            sessions_checked_at: observed(phases.sessions_observation, "checked_at"),
+            sessions_checked_at: observed(phases.t3_observation, "checked_at"),
             route_ready_at: probeTimes.sort().at(-1) ?? null,
         } });
     }
@@ -331,12 +333,13 @@ function containerOutcomes(
     if (clone !== null) {
         return [
             ["clone", container.launch === "succeeded", container.launch === "failed"],
-            ["workspace", commit !== null, container.workspace?.status === "failed"],
-            ["t3", container.t3 === "succeeded", container.t3 === "failed"],
+            // One step runs the checkout, T3 and the sessions check; the part it was running names the phase that failed.
+            ["workspace", commit !== null, container.workspace?.status === "failed" && phases.t3_part === "checkout"],
+            ["t3", container.t3 === "succeeded", container.t3 === "failed" && phases.t3_part !== "checkout" && phases.t3_part !== "sessions"],
             [
                 "register",
                 container.register === "succeeded" && typeof container.server === "string",
-                container.register === "failed",
+                container.register === "failed" || (container.t3 === "failed" && phases.t3_part === "sessions"),
             ],
         ];
     }

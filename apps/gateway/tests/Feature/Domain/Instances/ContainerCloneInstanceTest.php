@@ -366,7 +366,8 @@ it('starts a clone without copying the Project development deploy commands that 
     expect($run['intent']['container']['steps'])->toBe([])
         ->and(array_keys($run['execution_secrets']))->not->toContain('step_0')
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('development-deploy-operation-'.$operation->id.'-step-0')
-        ->and($run['execution_secrets']['model_environment']['key'])->toBe('instance-create-model-'.$operation->id);
+        // The model environment rides only in the copy step's framed copy: the T3 step reads the workspace's JSON.
+        ->and(array_keys($run['execution_secrets']))->not->toContain('model_environment');
 });
 
 it('always sends the server_valkey key in the create run intent, before any workflow reads it', function (): void {
@@ -391,13 +392,13 @@ it('starts the run with the placeholder model key in the vault and the template 
 
     $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
 
-    $put = collect($vault->puts)->firstWhere('key', 'instance-create-model-'.$operation->id);
+    $put = collect($vault->puts)->firstWhere('key', 'instance-create-clone-'.$operation->id);
     // The create's run copies no database: the completion's run does, with the template copy of the default's.
     expect($run['intent']['server_database'])->toBeNull()
         ->and(collect($vault->puts)->pluck('key')->filter(fn (string $key): bool => str_starts_with($key, 'database-create-'))->all())->toBe([]);
     [, $complete] = completionRunOf($operation);
     $fill = ValidatedData::stringList(ValidatedData::object(ValidatedData::object($complete['intent'])['server_database'])['fill']);
-    expect($run['execution_secrets']['model_environment'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-model-'.$operation->id])
+    expect(array_keys($run['execution_secrets']))->not->toContain('model_environment')
         ->and($put['value'])->toContain("ANTHROPIC_BASE_URL=http://10.253.0.1:8319\n")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         ->and($fill[13])->toStartWith('DROP DATABASE IF EXISTS')
@@ -413,9 +414,10 @@ it('frames the model environment after the credential line on the copy step stdi
 
     // clone-container reads `git_credential`; for a clone it names the copy that also holds the model environment after the frame line.
     $framed = collect($vault->puts)->firstWhere('key', 'instance-create-clone-'.$operation->id);
-    $model = collect($vault->puts)->firstWhere('key', 'instance-create-model-'.$operation->id);
     expect($run['execution_secrets']['git_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-clone-'.$operation->id])
-        ->and($framed['value'])->toEndWith(InstanceContainer::ModelEnvironmentFrame."\n".$model['value'])
+        ->and($framed['value'])->toContain(InstanceContainer::ModelEnvironmentFrame."\nANTHROPIC_BASE_URL=")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
+        // The framed copy is the only one: no step reads a separate model copy.
+        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-create-model-'.$operation->id)
         ->and($run['intent']['container']['clone']['model_environment']['frame'])->toBe(InstanceContainer::ModelEnvironmentFrame)
         ->and($run['intent']['container']['clone']['t3']['condition'])->toBe(InstanceContainer::InstanceFile)
         ->and(collect($run['intent']['container']['clone']['files'])->where('before_start', true)->pluck('path')->all())
@@ -679,7 +681,7 @@ describe('the clone\'s create result', function (): void {
         $caller->accessibleNodes()->attach($node->id);
         $diagnostic = 'instance.container_sessions_failed: command php exited 1';
         $failure = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [[
-            'name' => 'clone-sessions', 'status' => 'failed',
+            'name' => 'clone-t3', 'status' => 'failed',
             'error' => 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')',
         ]]]]], $operation);
 
@@ -693,7 +695,7 @@ describe('the clone\'s create result', function (): void {
             ->assertOk()->assertJsonPath('data.error_code', 'instance.create_register_failed')
             ->assertJsonPath('data.error.code', 'instance.create_register_failed')
             ->assertJsonPath('data.error.detail', 'exec failed on 1/1 host(s): target (exit 1: '.$diagnostic.')')
-            ->assertJsonPath('data.failed_step', 'clone-sessions')
+            ->assertJsonPath('data.failed_step', 'clone-t3')
             ->assertJsonPath('data.result.recovery.state', 'retained_for_retry')
             ->assertJsonPath('data.result.recovery.retry.command', 'instance:create')
             ->assertJsonPath('data.result.recovery.destroy.command', 'instance:destroy');
@@ -1194,9 +1196,9 @@ it('names retained create resources and proves the advertised recovery paths', f
 })->with([
     'clone-input' => [true, 'clone', false, 'failed'],
     'clone-container' => [true, 'clone', false, 'failed'],
-    'clone-workspace' => [true, 'workspace', false, 'failed'],
-    'clone-t3' => [true, 't3', true, 'failed'],
-    'clone-sessions' => [true, 'register', true, 'failed'],
+    'clone-t3, its checkout' => [true, 'workspace', false, 'failed'],
+    'clone-t3, its T3 part' => [true, 't3', true, 'failed'],
+    'clone-t3, its sessions check' => [true, 'register', true, 'failed'],
     'clone-register' => [true, 'register', true, 'failed'],
     'default-container' => [false, 'container', false, 'failed'],
     'default-workspace' => [false, 'workspace', false, 'failed'],

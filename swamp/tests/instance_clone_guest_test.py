@@ -1470,6 +1470,9 @@ class CloneGuestTest(unittest.TestCase):
             settings.write_text(
                 json.dumps({"theme": "dark", "linkedEnvironmentsEnabled": False})
             )
+            # The container phase wrote the model environment before the first start; the agent part only finds it.
+            model = base / "home/agent/.config/orbit/model.env"
+            model.write_text("ORBIT_MODEL_KEY=seeded\n")
             container = {
                 "workspace": "/srv/workspace",
                 "clone": {
@@ -1533,8 +1536,14 @@ class CloneGuestTest(unittest.TestCase):
             self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
             self.assertEqual(run()["changes"], [])
             self.assertFalse(any("--replace-all" in argv for argv in commands))
+            self.assertEqual(model.read_text(), "ORBIT_MODEL_KEY=seeded\n")
             settings.write_text("{broken")
             with self.assertRaises(json.JSONDecodeError):
+                run()
+            # A copy without the model environment refuses: nothing else writes it.
+            settings.write_text("{}")
+            model.unlink()
+            with self.assertRaises(RuntimeError):
                 run()
 
 

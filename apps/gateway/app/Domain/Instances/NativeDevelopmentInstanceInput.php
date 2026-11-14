@@ -92,8 +92,6 @@ final readonly class NativeDevelopmentInstanceInput
             'execution_secrets' => [...$copies,
                 ...($container === null || (ValidatedData::object($container)['clone'] ?? null) !== null ? []
                     : app(DevelopmentDeploySteps::class)->copies($operation, $instance->project, ValidatedData::object($container)['steps'])),
-                // A clone's placeholder model key and model origin, for T3's unit.
-                ...($model === null ? [] : ['model_environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-model-'.$operation->id, $model)]),
                 // Process environments for a default, or the clone workspace's environment and Process files.
                 ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
                     ValidatedData::string($processEnvironments))]),

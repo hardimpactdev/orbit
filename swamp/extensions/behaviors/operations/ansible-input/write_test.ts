@@ -10,7 +10,7 @@ const flow = parse(Deno.readTextFileSync(asset("workflows/workflow-operation-ins
     jobs: { steps: CloneStep[] }[];
 };
 const cloneSteps = flow.jobs.flatMap((job) => job.steps).filter((step) =>
-    ["clone-input", "clone-container", "clone-workspace", "clone-t3", "clone-sessions", "clone-private-cleanup"].includes(step.name));
+    ["clone-input", "clone-container", "clone-t3", "clone-private-cleanup"].includes(step.name));
 const cel = new Environment({ unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
     .registerFunction("vaultget(dyn, dyn): string", () => "fixture-private-credential");
 const bytes = (text: string) => new TextEncoder().encode(text).length;
@@ -157,7 +157,7 @@ Deno.test("the fleet reboot finalizer reports a fixed error when private callbac
 Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", async () => {
     const { folder, intent, outputs } = await cloneInput();
     try {
-        assert(cloneSteps.length >= 6);
+        assert(cloneSteps.length >= 4);
         const sizes: Record<string, number> = {};
         for (const step of cloneSteps) {
             const argv = render(step.task.inputs.argv!, outputs, intent) as string[];

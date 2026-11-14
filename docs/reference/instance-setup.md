@@ -13,7 +13,7 @@ covers:
 
 # Instance setup and teardown
 
-[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace. Its create runs the checkout part of the workspace phase, which reads `.env` from one private vault copy. One T3 step writes the agent's files and then starts T3. It runs beside the checkout in the same Swamp step level, and the sessions check waits for both before registration.
+[Instance containers](/reference/development-containers#processes) use the Project's development deploy steps to build the default, then install its development Process definitions. A clone inherits that workspace. Its create runs one T3 step until the thread is usable. That step runs the checkout part of the workspace phase, which reads `.env` from one private vault copy. Beside the checkout, it writes the agent's files and waits for T3. When both have ended, it checks the sessions, and registration follows.
 
 When the admission took the free Route Nodes, the create's job `publication` publishes the clone's address beside the copy ([the address during the create](/reference/development-containers#the-address-during-the-create)). The clone's [completion](/reference/development-containers#complete-a-clone) then installs its own Process records; a clone of a default with a Valkey target gets its [own Valkey user](/reference/development-containers#a-clones-valkey-user) before its Processes start.
 

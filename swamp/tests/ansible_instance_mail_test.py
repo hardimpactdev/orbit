@@ -665,7 +665,7 @@ class MailPhase(unittest.TestCase):
         self.assertNotIn("clone-mail", steps)
         self.assertNotIn("mail", steps)
         self.assertNotIn("clone-node-store", steps)
-        self.assertIn("clone-container", str(steps["clone-workspace"]["dependsOn"]))
+        self.assertIn("clone-container", str(steps["clone-t3"]["dependsOn"]))
         self.assertIn('steps["clone-container"]', str(steps["finish"]))
         self.assertIn("steps.container", str(steps["finish"]))
         source = (ROOT / "swamp/scripts/instance_clone.py").read_text()
