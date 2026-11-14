@@ -51,7 +51,8 @@ sequenceDiagram
     %%> - the copy gets its own bridge address and ACL, and the proxy device `t3`: NAT from the Node's WireGuard address and the T3 port to T3's port 3773
     %%> - the container's ACL lets the Node's Caddy reach port 8080, WireGuard peers reach port 3773, and the container reach its database server's port
     %%> - UFW: a route rule admits WireGuard peers to T3, below a deny for the task VM range; a rule admits the container to its database server's port
-    %%> - a default with a remote Node service target: writes the base `NO_PROXY` files into the stopped copy before its first start, so units start without the default's hosts
+    %%> - before the first start, the stopped copy gets the Orbit root in its CA bundle when the seed's bundle lacks it, so Chromium trusts Orbit's sites; a copy without a bundle refuses
+    %%> - before the first start, the stopped copy gets the plan's private names in `/etc/hosts` and the composed `NO_PROXY` drop-ins, the bytes `env:sync` writes, so the clone resolves its own Route names at first boot
     %%> - a nested-fleet copy starts only through the start guard: its config and devices exactly as the intent writes them, no `inner-pool` device without an inner volume in the intent, and a root volume without `zfs.delegate`
     %%> - starts the copy: nftables, `hidepid` and the image's units start; T3 does not, because `/etc/orbit/instance` does not exist yet
     %%> Mail:
