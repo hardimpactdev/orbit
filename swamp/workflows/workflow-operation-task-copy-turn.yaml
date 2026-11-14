@@ -29,7 +29,7 @@ jobs:
           inputs:
             intent: '${{ {"runtime": inputs.intent.runtime, "ssh_execution": inputs.intent.ssh_execution, "turn": inputs.intent.turn} }}'
             path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
-      # The turn's own bound is intent.turn.seconds (3,600 s); this covers it, the kill grace, the thread read and the SSH set-up.
+      # The turn's own bound is intent.turn.seconds (3,600 s); this covers it, the 30 s kill grace, two 120 s reads and the SSH set-up.
       - name: Run the turn
         labels: {role: swamp}
         writes: true
@@ -40,7 +40,7 @@ jobs:
           behaviorName: '${{ "task-copy-turn-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 3900 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"
+            run: timeout 4000 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, "$ORBIT_ANSIBLE/task-copy-turn.yml"
             env:
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
               ANSIBLE_FORCE_COLOR: '0'

@@ -1250,6 +1250,7 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 
 - **No stop of just the turn.** The CLI has no interrupt. A turn cut by its bound may go on in the container.
 - **Cancel ends it.** `task:cancel` destroys the copy, and the run ends with it.
+- **The group waits for the cancel.** A turn whose run may still go on leaves its group refusing turns and checks with `tasks.copy_turn_unended`.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
 - **No effort setting.** T3 runs the model at its own default effort.

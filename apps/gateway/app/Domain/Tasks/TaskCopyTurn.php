@@ -9,6 +9,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\AgentThread;
@@ -52,6 +53,7 @@ final readonly class TaskCopyTurn
         if ($data->role !== TaskThreadRole::Implementer->value || $data->thread !== 'new' || $data->model !== null || $data->check !== null) {
             throw new ResourceOperationException('tasks.copy_turn_unsupported', 'A turn in a task copy starts a new implementer thread with the copy\'s model.', 422);
         }
+        self::refuseUnended($group);
         $task = $this->operations->requireCurrentSubtask($group, $data->subtask);
         [$provider, $model] = self::model();
         $target = $workspace->intent();
@@ -72,6 +74,22 @@ final readonly class TaskCopyTurn
             'turn' => ['t3' => InstanceContainer::T3, 'provider' => $provider, 'model' => $model, 'seconds' => self::TurnSeconds,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id, 'prompt' => $prompt],
         ];
+    }
+
+    /**
+     * Refuses more work on a group while an earlier turn may still run in its copy. T3's CLI cannot stop a run, so a turn whose run
+     * started and whose result does not show T3's run over (its bound cut the wait, a cancel or a lost phase) leaves the agent writing
+     * in the checkout. Only `task:cancel` ends it, with the copy. Called by the turn and by the check of a copy.
+     */
+    public static function refuseUnended(Task $group): void
+    {
+        $unended = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->whereIn('status', OperationStatus::terminalValues())->orderBy('id')->get()
+            ->first(static fn (Operation $turn): bool => ($turn->state['swamp_run_id'] ?? null) !== null && ($turn->result['ended'] ?? null) !== true);
+        if ($unended instanceof Operation) {
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy. Run task:cancel to end it with the copy.', 409,
+                details: ['operation_id' => $unended->id]);
+        }
     }
 
     /**

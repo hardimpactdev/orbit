@@ -25,6 +25,7 @@ sequenceDiagram
   %%> - the group owns its copy and the copy is `active`; otherwise `tasks.no_workspace` or `tasks.copy_not_ready`, and nothing is recorded
   %%> - a new implementer thread with the copy's model; a reviewer turn, a continued thread or a caller's model answers `tasks.copy_turn_unsupported`
   %%> - no other Operation of the group runs; otherwise `operation.target_busy`
+  %%> - no earlier turn of the group may still run in the copy: a turn whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`
   GW->>SW: Start one run<br/>operation-task-copy-turn
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
@@ -37,11 +38,13 @@ sequenceDiagram
   %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
   %%> - `t3 thread start --provider --model --title --wait --json /srv/workspace -` with the prompt on stdin, bounded by `timeout` at 3,600 s
   %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back
+  %%> - writes each evidence file as soon as its command ends: the launch mark, the start's end, the read; a cut phase still tells whether a turn was launched
   %%> - T3's CLI issues its own full-access session inside the copy and revokes it when it exits; the replies stay in the run folder, never in a log
   Note over SW: result
   %%> What it does:
   %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`
   %%> - keeps the message text of the thread, redacted and bounded to 256 KiB; T3's CLI gives no tool items and no token use
+  %%> - records whether T3's run is over: the start printed its end, nothing was launched, or T3 holds no thread of this title
   Note over SW: cleanup
   %%> What it does:
   %%> - removes the private run folder
@@ -58,7 +61,7 @@ sequenceDiagram
     SW--xGW: Native failed result<br/>error code
     %%> Result:
     %%> - the thread is `failed` with T3's status as its error, and the transcript T3 had
-    %%> - a turn cut by its bound may still run in the copy: the stock CLI cannot stop a run; `task:cancel` destroys the copy, and the run ends with it
+    %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy: the stock CLI cannot stop a run. The group then refuses more turns and checks with `tasks.copy_turn_unended`; `task:cancel` destroys the copy, and the run ends with it
   end
   loop until terminal
     CLI->>GW: operation:show<br/>Operation number

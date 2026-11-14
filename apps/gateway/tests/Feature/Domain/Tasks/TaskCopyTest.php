@@ -6,6 +6,7 @@ use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
@@ -21,6 +22,8 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCancelIntent;
+use App\Domain\Tasks\TaskCheckIntent;
+use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -577,7 +580,7 @@ describe('a turn of a group that owns a copy', function (): void {
         $transcript = [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => ''],
             ['id' => 'run:1:1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Committed d867aba2.', 'at' => '']];
 
-        $ended = copyTurnEnded($turn, 'succeeded', ['state' => 'done', 'error' => null, 't3_thread_id' => 'mcp:66105c2c', 'run_id' => 'run:1', 'transcript' => $transcript]);
+        $ended = copyTurnEnded($turn, 'succeeded', ['state' => 'done', 'error' => null, 'ended' => true, 't3_thread_id' => 'mcp:66105c2c', 'run_id' => 'run:1', 'transcript' => $transcript]);
 
         $thread = AgentThread::query()->where('task_group_id', $group->id)->sole();
         expect($ended->status)->toBe(OperationStatus::Succeeded)
@@ -593,20 +596,16 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(array_column($read['data']['entries'] ?? $read['entries'] ?? [], 'text'))->toBe(['Run Doctor.', 'Committed d867aba2.']);
     });
 
-    it('records a turn that ran past its bound as failed with tasks.turn_timeout, and records nothing for a cancelled turn', function (): void {
+    it('records a turn that ran past its bound as failed with tasks.turn_timeout', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $timedOut = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'The turn ran longer than its bound.',
-            'error_code' => 'tasks.turn_timeout', 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]);
+            'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]);
 
         expect($timedOut->error_code)->toBe('tasks.turn_timeout')
             ->and(AgentThread::query()->findOrFail($timedOut->input['thread_id'])->only(['state', 'error']))
             ->toBe(['state' => AgentThreadState::Failed, 'error' => 'The turn ran longer than its bound.']);
-
-        $cancelled = copyTurnEnded(copyTurn($group), 'cancelled', []);
-
-        expect(AgentThread::query()->findOrFail($cancelled->input['thread_id'])->state)->toBeNull();
     });
 
     it('is stopped by the group\'s cancel before the copy\'s destroy is admitted', function (): void {
@@ -618,6 +617,57 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect($turn->refresh()->status)->toBe(OperationStatus::Cancelled)
             ->and(Operation::query()->findOrFail($cancel->result['destroy_operation_id'])->kind)->toBe('instance.destroy');
+    });
+
+    it('refuses more turns and checks while an earlier turn may still run in the copy, until task:cancel', function (string $status, array $shaped): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $cut = copyTurnEnded(copyTurn($group), $status, $shaped);
+        $subtask = $group->tasks()->firstOrFail();
+
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_unended 409')
+            ->and(copyRefusal(fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null)))
+            ->toBe('tasks.copy_turn_unended 409')
+            ->and(Operation::query()->where('kind', 'tasks.check')->exists())->toBeFalse()
+            // A cancelled turn records nothing on its thread.
+            ->and(AgentThread::query()->findOrFail($cut->input['thread_id'])->state)->toBe($status === 'cancelled' ? null : AgentThreadState::Failed);
+        try {
+            copyTurn($group);
+        } catch (ResourceOperationException $error) {
+            expect($error->details)->toBe(['operation_id' => $cut->id]);
+        }
+
+        expect(app(TaskCancelIntent::class)->start($group->refresh(), 'test', null)->status)->toBe(OperationStatus::Succeeded);
+    })->with([
+        'a wait cut by the bound' => ['failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]],
+        'a cancelled run' => ['cancelled', []],
+        'a phase that wrote no end' => ['failed', ['state' => 'failed', 'error' => 'No end.', 'error_code' => 'tasks.copy_turn_failed', 'ended' => false, 't3_thread_id' => null, 'run_id' => null, 'transcript' => []]],
+    ]);
+
+    it('admits the next turn after a turn whose T3 run ended, also a failed one', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'T3 run failed: api_error_529', 'error_code' => 'tasks.turn_failed', 'ended' => true,
+            't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'transcript' => []]);
+
+        expect(copyTurn($group)->kind)->toBe('tasks.copy_turn');
+    });
+
+    it('marks the thread failed when Swamp refuses to start the turn, so the subtask points at no silent thread', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+
+        // As StartSwampRun::refuse leaves it: the Operation failed before any run.
+        $turn->forceFill(['status' => 'failed', 'error_code' => 'operation.start_refused', 'finished_at' => now()])->save();
+        app(TaskCopyTurnProjection::class)->refused($turn);
+
+        expect(AgentThread::query()->findOrFail($turn->input['thread_id'])->only(['state', 'error']))
+            ->toBe(['state' => AgentThreadState::Failed, 'error' => 'Swamp refused to start the turn.'])
+            // A turn that never started a run leaves the group free.
+            ->and(copyTurn($group)->kind)->toBe('tasks.copy_turn');
     });
 
     it('serves a T3 thread only from its archive', function (): void {

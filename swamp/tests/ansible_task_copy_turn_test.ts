@@ -53,6 +53,8 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
     assert rest[2] == '3600' and rest[3] == '/opt/orbit-agent/current/agent/bin/t3' and rest[4:6] == ['thread', 'start'], rest
     assert rest[-4:] == ['--wait', '--json', '/srv/workspace', '-'], rest
     mode = os.environ['T3_START']
+    if mode == 'garbled':
+        mode = 'completed'
     if mode == 'timeout':
         sys.exit(124)
     if mode == 'refused':
@@ -63,13 +65,16 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
 assert rest[0] == '/usr/bin/timeout' and rest[1] == '120' and rest[2] == '/opt/orbit-agent/current/agent/bin/t3', rest
 if rest[3:5] == ['thread', 'list']:
     titles = [] if os.environ['T3_START'] == 'refused' else ['Orbit task 4970 thread 77']
+    if os.environ['T3_START'] == 'garbled':
+        print('not json')
+        sys.exit(0)
     print(json.dumps([{'threadId': thread, 'status': 'running', 'title': t} for t in titles] + [{'threadId': 'other', 'status': 'completed', 'title': 'Another'}]))
     sys.exit(0)
 assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8] == thread, rest
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
-async function phase(start: string, change: Record<string, unknown> = {}): Promise<{ ok: boolean; output: string; result: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] }> {
+async function phase(start: string, change: Record<string, unknown> = {}): Promise<{ ok: boolean; output: string; launched: boolean; start: Record<string, unknown> | null; read: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] }> {
     const folder = Deno.makeTempDirSync();
     try {
         Deno.mkdirSync(`${folder}/bin`);
@@ -84,11 +89,13 @@ async function phase(start: string, change: Record<string, unknown> = {}): Promi
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
         const read = (path: string) => { try { return Deno.readTextFileSync(path); } catch { return null; } };
-        const result = read(`${folder}/run/result.json`);
+        const json = (name: string) => { const text = read(`${folder}/run/${name}`); return text === null ? null : JSON.parse(text); };
         return {
             ok: done.success,
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
-            result: result === null ? null : JSON.parse(result),
+            launched: read(`${folder}/run/launch.json`) !== null,
+            start: json("start.json"),
+            read: json("read.json"),
             calls: (read(`${folder}/calls`) ?? "").split("\n").filter(Boolean).map((line) => JSON.parse(line)),
         };
     } finally {
@@ -103,9 +110,8 @@ Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's mo
     const start = done.calls[0];
     assertEquals(start.stdin, turn.prompt);
     assertEquals(start.args.slice(21, 29), ["--provider", "claudeAgent", "--model", "claude-opus-5-5", "--title", turn.title, "--wait", "--json"]);
-    assertEquals(done.result!.start_exit, 0);
-    assertEquals(JSON.parse(done.result!.start as string).status, "completed");
-    assertEquals(done.result!.show_exit, 0);
+    assertEquals([done.launched, done.start!.start_exit, JSON.parse(done.start!.start as string).status], [true, 0, "completed"]);
+    assertEquals([done.read!.list_exit, done.read!.found, done.read!.show_exit], [0, 1, 0]);
     // The phase never prints the agent's text: every T3 reply stays in the run folder.
     assertEquals(done.output.includes("Subtask: Doctor note"), false);
 } });
@@ -113,16 +119,23 @@ Deno.test({ name: "a completed turn sends the prompt on stdin with the copy's mo
 Deno.test({ name: "a turn cut by its bound still reads the thread it started; a refused start reads none", ignore: !available, async fn() {
     const cut = await phase("timeout");
     assert(cut.ok, cut.output);
-    assertEquals([cut.result!.start_exit, cut.result!.start, cut.result!.show_exit], [124, "", 0]);
+    assertEquals([cut.launched, cut.start!.start_exit, cut.start!.start, cut.read!.found, cut.read!.show_exit], [true, 124, "", 1, 0]);
     const refused = await phase("refused");
     assert(refused.ok, refused.output);
-    assertEquals([refused.result!.start_exit, refused.result!.show_exit, refused.calls.length], [1, null, 2]);
+    assertEquals([refused.start!.start_exit, refused.read!.list_exit, refused.read!.found, refused.read!.show_exit, refused.calls.length], [1, 0, 0, null, 2]);
 } });
 
 Deno.test({ name: "an intent outside the admitted shape runs nothing in the copy", ignore: !available, async fn() {
     for (const change of [{ t3: "/tmp/t3" }, { title: "Something else" }, { seconds: 7200 }, { model: "a b" }]) {
         const refused = await phase("completed", change);
         assert(!refused.ok, JSON.stringify(change));
-        assertEquals([refused.result, refused.calls.length], [null, 0]);
+        assertEquals([refused.launched, refused.start, refused.read, refused.calls.length], [false, null, null, 0]);
     }
+} });
+
+Deno.test({ name: "a thread list that is not JSON reads as no thread, and the start's end is still written", ignore: !available, async fn() {
+    const garbled = await phase("garbled");
+    assert(garbled.ok, garbled.output);
+    assertEquals([JSON.parse(garbled.start!.start as string).status, garbled.read!.list_exit, garbled.read!.found, garbled.read!.show_exit, garbled.calls.length],
+        ["completed", null, 0, null, 2]);
 } });
