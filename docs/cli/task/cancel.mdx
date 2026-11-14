@@ -5,21 +5,36 @@ description: "Cancel the selected task or subtask. The Gateway removes the task'
 ---
 
 ```bash
-orbit task:cancel [task] [--yes] [--idempotency-key=KEY] [--json]
+orbit task:cancel [task] [--yes] [--discard] [--idempotency-key=KEY] [--json]
 ```
 
 | Option | Meaning |
 | --- | --- |
-| `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. |
+| `--yes` | Confirm without a prompt. Required for `--json` and `-n` calls. It never discards work. |
+| `--discard` | Destroy a task copy that holds work origin lacks, or whose workspace cannot be read. The API and MCP field is `discard: true`. |
 | `--idempotency-key=KEY` | Reuse a key to retry this operation start. |
 
 In a terminal, the task list leaves out `settling`, `waiting_for_review`, and `completed` tasks. Before it asks, the CLI reads the task and names it and its Instance in the question. The question defaults to No. A `--json` or `-n` call without `--yes` fails with `input.confirmation_required`. Declining fails with `input.cancelled`. Neither changes the task. A `completed` task, or a `settling` task with a pull request, fails with `tasks.not_cancellable`; complete a settling task instead. Pass the task ID to cancel a `settling` task without a pull request. When the task holds a workspace or a task VM, origin's task branch must already reach its latest approved commit. Otherwise the call fails with `tasks.approved_work_unpublished`, names the commit, and changes nothing; run [`task:publish`](/cli/task/publish) first, which resumes a parked VM. A failed GitHub read fails the same way. The [tasks reference](/reference/tasks#cancel-a-stuck-task) describes the rule.
 
 When the task has a running Operation, such as its task start, the cancel asks it to stop and answers `operation.target_busy` with its id if it is still running. Run the cancel again once that Operation has ended. An Operation that timed out can still hold the task while nothing proves that its run ended, for up to an hour. The cancel then answers `operation.target_busy` with its id too, before it admits the destroy of the task's copy.
 
-When the task owns a task copy (see [`task:start`](/cli/task/start#a-task-copy)), the cancel first reads the copy's workspace. It then admits `instance:destroy` of the copy with force and records the cancel at once. Its result names the destroy Operation as `destroy_operation_id` and holds the read as `workspace`. The read gives `unpushed` commits, `uncommitted`, `modified`, `untracked` and `stashes` counts and the `head`. A stopped or unreachable copy reads `state: unknown` with its `reason`. The cancel does not wait for that work: nothing is pushed first. When the destroy succeeds, a task that still runs becomes `cancelled` and lets go of the copy; a task that is already `failed` stays `failed` and lets go of it. While the copy's create or an earlier destroy still runs, the cancel answers `operation.target_busy` with that Operation's id. When the destroy fails, the task keeps the copy and runs on; cancel again.
+When the task owns a task copy (see [`task:start`](/cli/task/start#a-task-copy)), the cancel first reads the copy's workspace. The read gives `unpushed` commits, `uncommitted`, `modified`, `untracked` and `stashes` counts and the `head`. A stopped or unreachable copy reads `state: unknown` with its `reason`.
 
-A child ID cancels only that child’s turn/check and keeps its parent workspace. The Gateway derives ownership from the selected row.
+Before `task:publish`, the task branch exists only in the copy, so the cancel guards that work:
+
+| Copy reads | Without `--discard` | With `--discard` |
+| --- | --- | --- |
+| `clean` | The cancel goes on. | The cancel goes on. |
+| `dirty`: unpushed commits, uncommitted or untracked files, or stashes | HTTP 409 `tasks.copy_unpublished_work`. Its details carry the counts and the `head`. | The cancel goes on and the work goes with the copy. |
+| `unknown` | HTTP 409 `tasks.copy_workspace_unknown`. Its details carry the `reason`. | The cancel goes on. |
+
+`--yes` only confirms the question; it never means discard. Both refusals come before the cancel stops running work, so they change nothing. A copy never fetches, so the read also counts as on origin every commit that a succeeded `task:publish` of the task pushed, and its history. A published copy with no later work reads `clean`; a commit made after the publish still counts.
+
+The read runs before the task's lock. A commit made in the copy between the read and the destroy, by a T3 run that outlived its Operation or a direct reply in the copy's T3, goes with the copy without `--discard`.
+
+The cancel then records itself under the task's lock and admits `instance:destroy` of the copy with force, in the destroy's one transaction. The destroy's checks and the Schedule stop run before that transaction: its replication slot check, then the stop of the copy's Schedules, which writes `schedule.destroy` Operations and removes the Schedules in Swamp. An Operation that takes the task's lock first refuses the cancel with `operation.target_busy`, and no destroy is admitted. The copy's Schedules then stay stopped. The cancel is recorded as succeeded at once. Its result names the destroy Operation as `destroy_operation_id` and holds the read as `workspace`. The cancel does not wait for the destroy, and nothing is pushed first. When the destroy succeeds, a task that still runs becomes `cancelled` and lets go of the copy; a task that is already `failed` stays `failed` and lets go of it. While the copy's create or an earlier destroy still runs, the cancel answers `operation.target_busy` with that Operation's id. When the destroy fails, the task keeps the copy and runs on; cancel again. The copy may then be stopped or half removed and read `unknown`, so the second cancel may refuse with `tasks.copy_workspace_unknown`; pass `--discard` then.
+
+A child ID cancels only that child’s turn/check and keeps its parent workspace. It destroys nothing, so it ignores `--discard`. The Gateway derives ownership from the selected row.
 
 ## How it works
 

@@ -26,7 +26,8 @@ final class CancelTaskGroupCommand extends TaskCommand
     protected $signature = 'task:cancel
         {task? : Numeric Task ID}
         {--idempotency-key= : Reuse a key to retry this operation start}
-        {--yes : Confirm without prompting}
+        {--yes : Confirm without prompting; never discards work}
+        {--discard : Destroy a task copy that holds work origin lacks, or whose workspace cannot be read}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -74,7 +75,7 @@ final class CancelTaskGroupCommand extends TaskCommand
 
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'tasks.cancel.'.Str::uuid();
-        $operation = $this->send($connector, new CancelTaskRequest($groupId, $key), TaskCancellationResponse::class);
+        $operation = $this->send($connector, new CancelTaskRequest($groupId, $key, $this->option('discard') === true), TaskCancellationResponse::class);
 
         $operation = $operation instanceof TaskCancellationResponse ? $operation->result : null;
         if ($operation instanceof SubtaskResponse) {

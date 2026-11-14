@@ -1,5 +1,5 @@
 order = 1380
-source_sha256 = "386cdf317e4d00bc170871e404d5f2b7190c51e9d6d8de8beac62a9632c9ce1b"
+source_sha256 = "5979775b2734498960994a60c88efc5a038025711f6937e581f252ddd950ac5c"
 cases = [
   "test_real_remote_host_exact_acl_and_untranslated_bridge_endpoint",
   "test_proxy_bypass_reaches_exec_manager_and_app_login_and_repeat_is_unchanged",
@@ -13,6 +13,8 @@ cases = [
   "test_other_container_retains_shared_bridge_endpoint_but_not_this_containers_forward_rule",
   "test_remote_destroy_and_failed_migrate_restore_remove_only_their_owned_path",
   "test_previous_gateway_local_intent_has_no_new_required_fields",
+  "test_the_one_renderer_gives_the_drop_ins_that_the_writer_writes_and_its_command_prints_them",
+  "test_the_hosts_renderer_keeps_other_lines_replaces_orbits_block_and_drops_it_without_names",
 ]
 file = "swamp/tests/instance_node_service_access_test.py"
 cost = 20

@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design: docs/reference/tasks.md#complete-and-cleanup. Orchestrator 2026-11-08: keeping approved work is a precondition of completion, not a step of it; removal never wakes a task VM; the release refuses a VM that resumes.
+  %% Target design: docs/reference/tasks.md#complete-and-cleanup. Orchestrator 2026-11-08: keeping approved work is a precondition of completion, not a step of it; removal never wakes a task VM; the release refuses a VM that resumes. Orchestrator 2026-11-14: a task copy goes through its normal instance.destroy, as on cancel.
   %% status: draft
   %% command: task:complete
   %% kind: tasks.complete
@@ -37,6 +37,7 @@ sequenceDiagram
   %%> What it does:
   %%> - stores how the watched pull request ended, stops the running implementer, reviewer and checks, and marks the group `completed`
   %%> - runs the Project teardown in the guest and copies the agent transcripts, only while the VM is `ready`; a parked VM is never started
+  alt the task holds a VM
   Note over GW: Admit the release<br/>VM row locked · re-read
   %%> Requirements:
   %%> - no other Operation is open on the VM: a resume that boots it refuses the release with HTTP 409 `operation.target_busy`; the group still completes and asks for `removal_failure` assistance, and a later complete retries
@@ -49,3 +50,15 @@ sequenceDiagram
   Note over GW: Delete the Node record<br/>Instance · group unbound
   %%> Result:
   %%> - the Node and the workspace Instance go, and the group no longer names the workspace
+  else the task owns a task copy
+  Note over GW: Admit the copy's destroy<br/>instance.destroy · force
+  %%> Requirements:
+  %%> - no other Operation holds the copy; an open destroy of it is reused, so a repeated complete admits no second one
+  %%> What it does:
+  %%> - admits the normal `instance.destroy` of the copy with force, the destroy that `task:cancel` admits
+  %%> Why:
+  %%> - origin already has the approved work, which the compare above proved, so complete needs no `--discard`: what else the copy holds goes with it
+  %%> Result:
+  %%> - the group is `completed` at once and still names the copy; when the destroy succeeds the group lets go of it and stays `completed`
+  %%> - when the destroy fails, the group stays `completed` and keeps the copy; a later complete admits the destroy again
+  end

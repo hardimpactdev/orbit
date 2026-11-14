@@ -89,3 +89,20 @@ it('finishes a no-change maintenance group whose VM is gone at admission, and th
         ->and($this->group->refresh()->status)->toBe(TaskGroupStatus::Completed)
         ->and($this->subtask->refresh()->status)->toBe(TaskStatus::Completed);
 });
+
+it('accepts discard: true and refuses a discard that is not a boolean', function (): void {
+    test()->withHeader('Idempotency-Key', 'cancel-discard-bad')->postJson("/api/v1/tasks/{$this->group->id}/cancel", ['discard' => 'yes'])
+        ->assertStatus(422);
+    expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Todo);
+
+    test()->withHeader('Idempotency-Key', 'cancel-discard')->postJson("/api/v1/tasks/{$this->group->id}/cancel", ['discard' => true])
+        ->assertStatus(202)->assertJsonPath('data.status', 'succeeded');
+    expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});
+
+it('accepts the empty JSON object the SDK sends for a cancel without discard', function (): void {
+    test()->call('POST', "/api/v1/tasks/{$this->group->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+        'HTTP_IDEMPOTENCY_KEY' => 'cancel-empty-object'], content: '{}')
+        ->assertStatus(202)->assertJsonPath('data.status', 'succeeded');
+    expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});

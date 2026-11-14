@@ -31,22 +31,24 @@ final readonly class TaskCancelIntent
         return $this->admit($group, 'project-maintenance', null, 'tasks.maintenance_finish');
     }
 
-    public function start(Task $group, string $caller, ?string $request): Operation
+    /** `$discard`: the caller lets the destroy of a task copy take work that origin lacks, or a copy that cannot be read. */
+    public function start(Task $group, string $caller, ?string $request, bool $discard = false): Operation
     {
-        return $this->admit($group, $caller, $request, 'tasks.cancel');
+        return $this->admit($group, $caller, $request, 'tasks.cancel', $discard);
     }
 
-    private function admit(Task $group, string $caller, ?string $request, string $kind): Operation
+    private function admit(Task $group, string $caller, ?string $request, string $kind, bool $discard = false): Operation
     {
         app(RequireTasksExtensionAction::class)->execute();
         if (($replay = $this->keys->replay($kind)) !== null) {
             return $replay;
         }
         // A group that owns a task copy ends through the copy's destroy (TaskCopyEnd); the read of its workspace runs before any lock.
-        $copy = $kind === 'tasks.cancel' && ! TaskVm::forGroup($group) instanceof TaskVm ? TaskInstanceWorkspace::forGroup($group) : null;
-        $workspace = $copy === null ? null : app(TaskCopyEnd::class)->workspace($copy->instance);
+        // The copy and its read travel as one pair, so no check on the read can be skipped while the destroy still runs.
+        $workspace = $kind === 'tasks.cancel' && ! TaskVm::forGroup($group) instanceof TaskVm ? TaskInstanceWorkspace::forGroup($group) : null;
+        $copy = $workspace === null ? null : ['instance' => $workspace->instance, 'read' => app(TaskCopyEnd::class)->workspace($group, $workspace->instance)];
 
-        return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $workspace): Operation {
+        return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $discard): Operation {
             if (($replay = $this->keys->replay($kind)) !== null) {
                 return $replay;
             }
@@ -68,17 +70,18 @@ final readonly class TaskCancelIntent
                 self::eligible($group->refresh(), $kind);
                 $this->review->assertOnOrigin($group);
                 if ($copy !== null) {
-                    TaskCopyEnd::assertFree($copy->instance);
+                    TaskCopyEnd::assertFree($copy['instance']);
+                    TaskCopyEnd::assertDiscardable($copy['read'], $discard);
                 }
                 $this->operations->cancelOpen($group);
                 // An ended Operation can still hold the group: a timed-out one whose run nothing has proven ended. The cancel refuses
-                // before it admits the copy's destroy, so a refused cancel changes nothing.
+                // before it admits the copy's destroy; one that takes the lock later refuses the record, in the destroy's transaction.
                 $held = Operation::query()->where('lock_key', OperationStore::lockKey('task_group', $group->id))->value('id');
                 if ($held !== null) {
                     throw new ResourceOperationException('operation.target_busy', 'Another Operation owns this target.', 409, details: ['operation_id' => $held]);
                 }
-                if ($copy !== null && $workspace !== null) {
-                    return app(TaskCopyEnd::class)->cancel($group, $copy->instance, $workspace, $caller, $request);
+                if ($copy !== null) {
+                    return app(TaskCopyEnd::class)->cancel($group, $copy['instance'], $copy['read'], $caller, $request);
                 }
             } elseif (Operation::query()->where('target_type', 'task_group')->where('target_id', $group->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {

@@ -26,6 +26,9 @@ use Illuminate\Support\Str;
  */
 final readonly class TaskCopyTurn
 {
+    /** The driver of a copy turn's thread. T3's CLI cannot stop a run, so the registry holds no driver for it. */
+    public const string Driver = 't3';
+
     /** How long the agent's turn may run before Swamp ends its wait; the bound of a task VM turn. */
     public const int TurnSeconds = 3600;
 
@@ -64,7 +67,7 @@ final readonly class TaskCopyTurn
         // unless the caller asks for a new one; `--thread=ID` may only name it.
         $recorded = $role === TaskThreadRole::Implementer ? $task->implementer_agent_thread_id : $group->reviewer_agent_thread_id;
         $current = $recorded === null ? null : AgentThread::query()->where('task_group_id', $group->id)->where('role', $role->value)
-            ->where('driver', 't3')->where('runtime_key', $runtime)->find($recorded);
+            ->where('driver', self::Driver)->where('runtime_key', $runtime)->find($recorded);
         if ($data->thread !== null && $data->thread !== 'new' && (int) $data->thread !== $current?->id) {
             throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must be the role\'s thread that this turn continues in the task copy.', 422);
         }
@@ -84,7 +87,7 @@ final readonly class TaskCopyTurn
             $provider = InstanceContainer::claudeInstance($effort);
             $thread = AgentThread::query()->create([
                 'task_group_id' => $group->id, 'task_id' => $task->id, 'node_id' => $instance->node_id,
-                'driver' => 't3', 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
+                'driver' => self::Driver, 'runtime_key' => $runtime, 'external_id' => (string) Str::uuid(),
                 'role' => $role->value, 'model' => $model, 'effort' => $effort,
             ]);
         }

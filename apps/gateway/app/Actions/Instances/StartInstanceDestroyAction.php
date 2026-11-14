@@ -39,6 +39,7 @@ use App\Models\RouteAnalyticsTracking;
 use App\Models\RouteTarget;
 use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
+use Closure;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -57,8 +58,14 @@ final readonly class StartInstanceDestroyAction
     /**
      * `$cancelCompletion`: a running `instance.complete` of the clone is cancelled, and the removal is admitted to start after it ends,
      * in the same transaction (docs/reference/conn.md#remove-an-instance). Without it such a removal refuses with `operation.target_busy`.
+     *
+     * `$within`: a caller that records its own intent with the removal, such as the cancel of a task copy (TaskCopyEnd). It runs in the
+     * removal's transaction after every read of the admission, gets the closure that records the removal, and returns the Operation
+     * that this call returns. A refusal it throws rolls the transaction back, so no removal is admitted.
+     *
+     * @param  (Closure(Closure(): Operation): Operation)|null  $within
      */
-    public function execute(Instance $instance, bool $force, ?string $caller = null, ?string $requestId = null, bool $cancelCompletion = false): Operation
+    public function execute(Instance $instance, bool $force, ?string $caller = null, ?string $requestId = null, bool $cancelCompletion = false, ?Closure $within = null): Operation
     {
         $kind = InstanceDestroyKind::forInstance($instance);
         if (($replay = $this->idempotency->replay($kind)) !== null) {
@@ -82,29 +89,37 @@ final readonly class StartInstanceDestroyAction
         $members = array_column(is_array($snapshot['members'] ?? null) ? $snapshot['members'] : [], 'instance_id');
         app(NativeSchedules::class)->removeForInstances($members === [] ? [$instance->id] : ValidatedData::integerList($members));
 
-        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind, $completion): Operation {
+        return DB::transaction(function () use ($instance, $snapshot, $caller, $requestId, $kind, $completion, $within): Operation {
             if (($replay = $this->idempotency->replay($kind)) !== null) {
                 return $replay;
             }
-            $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
-            if ($completion !== null) {
-                // After the record, which took the Instance and marked it removing: the order the completion's projection uses.
-                $running = Operation::query()->lockForUpdate()->findOrFail($completion);
-                if (! $running->status->terminal() && ! isset($running->state['swamp_run_id'])) {
-                    // No run is bound: the cancel ends a queued completion here with no Swamp call. One whose start is in flight only
-                    // records the request; the start's bind forwards it with the run's id (StartSwampRun::bind).
-                    app(CancelOperationAction::class)->execute($running);
-                } elseif (! $running->status->terminal()) {
-                    // The cancel is recorded with the removal. After the commit the cancel action records the request for Swamp, which is
-                    // asked after the response, never inside a transaction; the reconciler asks again on each pass.
-                    app(OperationStore::class)->change($running, ['cancel_requested_at' => $running->cancel_requested_at ?? now()]);
-                    DB::afterCommit(static fn () => app(CancelOperationAction::class)->execute($running));
-                }
-            }
-            $input['run_budget_seconds'] = $this->budget($input);
+            $record = fn (): Operation => $this->record($instance, $snapshot, $caller, $requestId, $kind, $completion);
 
-            return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
+            return $within === null ? $record() : $within($record);
         });
+    }
+
+    /** @param array<string, mixed> $snapshot */
+    private function record(Instance $instance, array $snapshot, ?string $caller, ?string $requestId, string $kind, ?int $completion): Operation
+    {
+        $input = app(DirectInstanceDestroyIntent::class)->record($snapshot);
+        if ($completion !== null) {
+            // After the record, which took the Instance and marked it removing: the order the completion's projection uses.
+            $running = Operation::query()->lockForUpdate()->findOrFail($completion);
+            if (! $running->status->terminal() && ! isset($running->state['swamp_run_id'])) {
+                // No run is bound: the cancel ends a queued completion here with no Swamp call. One whose start is in flight only
+                // records the request; the start's bind forwards it with the run's id (StartSwampRun::bind).
+                app(CancelOperationAction::class)->execute($running);
+            } elseif (! $running->status->terminal()) {
+                // The cancel is recorded with the removal. After the commit the cancel action records the request for Swamp, which is
+                // asked after the response, never inside a transaction; the reconciler asks again on each pass.
+                app(OperationStore::class)->change($running, ['cancel_requested_at' => $running->cancel_requested_at ?? now()]);
+                DB::afterCommit(static fn () => app(CancelOperationAction::class)->execute($running));
+            }
+        }
+        $input['run_budget_seconds'] = $this->budget($input);
+
+        return $this->operations->execute($kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId);
     }
 
     /** The clone's completion that holds the Instance lock, if one runs. */

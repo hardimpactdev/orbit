@@ -491,11 +491,12 @@ it('resets the default\'s proxy bypass for reverb.orbit before a clone\'s first 
     $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
     $intent = app(InstanceContainer::class)->intent($clone, $clone->runtime()->firstOrFail());
 
-    $files = collect($intent['clone']['boot_files'])->keyBy('path');
+    // The clone script writes the drop-ins from the clone's base value before the first start, so reverb.orbit goes.
     expect($intent)->not->toHaveKey('private_names')->not->toHaveKey('proxy_environment')
         ->and($intent['config']['environment.NO_PROXY'])->not->toContain('reverb.orbit')
-        ->and($files['/etc/systemd/system.conf.d/99-orbit-node-services.conf']['content'])->not->toContain('reverb.orbit')
-        ->and($files['/etc/profile.d/99-orbit-node-services.sh']['content'])->not->toContain('reverb.orbit');
+        ->and($intent['clone']['proxy_environment'])->toBe(['NO_PROXY' => $intent['config']['environment.NO_PROXY'],
+            'no_proxy' => $intent['config']['environment.no_proxy']])
+        ->and($intent['clone']['proxy_environment']['no_proxy'])->not->toContain('reverb.orbit');
 });
 
 it('starts a clone that a Gateway admitted before the merge names existed, with no names: the clone writes the render', function (): void {

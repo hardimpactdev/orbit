@@ -957,7 +957,7 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 ### Task copy
 
-A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) destroys it; the cancel result records the copy's unpushed work. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
+A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
 The copy [starts clean](/reference/development-containers#a-task-copy-starts-clean): its tree is its start commit, the seed's commit, plus what Git ignores, so the default's modified and untracked files never reach a check or a pull request. The start's result names what the clean took as `workspace_cleaned`.
 
@@ -977,8 +977,8 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
 | Failed create | The task is `failed`, and Orbit destroys the copy with force. A refused start or a cancel before the run counts too, and so does a failed or cancelled completion |
-| Kept copy | After an expired run budget or a failed destroy, the task keeps the copy until `task:cancel` or `instance:destroy --force` |
-| End | When the copy's destroy succeeds, a running task is `cancelled` and a failed task stays `failed`. Both let go of the copy |
+| Kept copy | After an expired run budget or a failed destroy, the task keeps the copy until `task:cancel`, `task:complete` or `instance:destroy --force` |
+| End | When the copy's destroy succeeds, a running task is `cancelled`, a failed task stays `failed` and a completed task stays `completed`. All let go of the copy |
 
 A held publish leaves the checked commit in the copy. An operator adds a Project to `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` once the publish guard for `.env` content is live; a copy of any other Project is a plain clone, so the nested-fleet cap does not count it.
 
@@ -1407,6 +1407,10 @@ A task that holds no VM and no workspace, such as one in `todo` or one that wait
 
 Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 
+- **Work only a task copy holds.** A cancel refuses a [task copy](#task-copy) with work origin lacks. It returns HTTP 409 `tasks.copy_unpublished_work` with the counts.
+- **Published commits.** A succeeded `task:publish` put its commit and that commit's history on origin. They do not count.
+- **Unread task copy.** A cancel refuses a copy it cannot read: HTTP 409 `tasks.copy_workspace_unknown`, with the reason.
+- **Discard.** `discard: true` (CLI `--discard`) lets the cancel destroy that work; `--yes` never does. Complete needs no discard, because origin has the approved work.
 - **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
 - **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
 - **Refused admission.** `tasks.not_cancellable`, `task_vm.release_refused` and a busy VM Operation change nothing.
@@ -1427,6 +1431,14 @@ Swamp requests group completion or cancellation through the API. The Gateway sto
 `task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
 Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
+
+### Task copy cleanup
+
+A task whose workspace is a [task copy](#task-copy) has no task VM. `task:complete` admits the copy's normal `instance.destroy` with force, as `task:cancel` does, marks the task `completed` and answers HTTP 200 with the task. An open destroy of the copy is reused. When the destroy succeeds, the task lets go of the copy and stays `completed`. When it fails, the task keeps the copy, and completing again admits a new destroy.
+
+A cancel of a copy records the `tasks.cancel` Operation under the group's lock key and admits the destroy in one transaction, record first. An Operation that holds or takes the group lock refuses the record with `operation.target_busy`, and the transaction admits no destroy.
+
+A copy turn runs on the `t3` driver, which the driver registry does not hold. Its turn is its `tasks.copy_turn` Operation, which complete stops as it stops every running group Operation, so the subtask stop interrupts no `t3` thread.
 
 ### Task VM cleanup
 
