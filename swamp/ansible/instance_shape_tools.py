@@ -2,7 +2,8 @@
 
 The fleet refresh runs it as root in the default's container, before the seed snapshot, with the workspace as its one argument:
 `python3 -I -c <this file> /srv/workspace`. A copy of the seed then holds the tools at the place where the proof runner and
-bin/swamp-shape-gate look for them, so no copy builds them and no copy needs python3-venv.
+bin/swamp-shape-gate look for them, so no copy builds them and no copy needs python3-venv. The same step keeps the host programs that
+fixture units run, zip, unzip and jq, so a task check in a copy finds them.
 
 The workspace's own bin/swamp-shape-gate names and builds the tools from its three pin files, so the names are those of the commit the
 refresh checked out, and there is no second copy of a version or of the naming rule. The gate and the proof runner take the tools as
@@ -10,9 +11,10 @@ ready when the venv holds `.complete`, so this script writes that marker only wh
 marker that `tool_path` writes, installs the collections, and writes it again. A failure or a stop in between leaves a venv that no
 reader takes as ready, and the runner builds its own tools in its cache.
 
-When the tools of these pins are ready, it only reads them, and removes the tools of other pins when there are any. Otherwise it
-installs python3-venv when it is missing, builds the venv with the gate's own `tool_path`, installs the collections into a partial
-folder and renames it, unless they are there already, and removes the tools of other pins.
+When the tools of these pins are ready and every package is installed, it only reads them, and removes the tools of other pins when
+there are any. When only packages are missing, it installs them with one apt-get install. Otherwise it installs the missing packages,
+builds the venv with the gate's own `tool_path`, installs the collections into a partial folder and renames it, unless they are there
+already, and removes the tools of other pins.
 
 It never fails: its last line on standard output is one JSON object, {"tools": "present" | "built" | "failed", "reason": ...}.
 Everything its programs print goes to standard error. A failed step leaves no folder that a reader takes as complete.
@@ -25,7 +27,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-PACKAGE = 'python3-venv'
+# python3-venv builds the venv; the fixture units run zip, unzip and jq.
+PACKAGES = ('python3-venv', 'zip', 'unzip', 'jq')
 
 
 def names(workspace):
@@ -39,18 +42,23 @@ def collections_ready(collections):
     return (collections / 'ansible_collections').is_dir()
 
 
-def package_installed():
-    read = subprocess.run(['dpkg-query', '--show', '--showformat=${Status}', PACKAGE], capture_output=True, text=True, check=False)
-    return read.returncode == 0 and read.stdout.strip() == 'install ok installed'
+def missing_packages():
+    def installed(package):
+        read = subprocess.run(['dpkg-query', '--show', '--showformat=${Status}', package], capture_output=True, text=True, check=False)
+        return read.returncode == 0 and read.stdout.strip() == 'install ok installed'
+
+    return [package for package in PACKAGES if not installed(package)]
 
 
-def install_package():
+def install_packages(packages):
+    if not packages:
+        return
     # The image deletes the package index, and apt reaches its mirror through the egress proxy that its own setting names.
     # An update timer of the container may hold the apt lock for a while: wait for it up to 120 s instead of failing at once.
     environment = {**os.environ, 'DEBIAN_FRONTEND': 'noninteractive'}
     lock = ['-o', 'DPkg::Lock::Timeout=120']
     subprocess.run(['apt-get', *lock, 'update'], check=True, env=environment)
-    subprocess.run(['apt-get', *lock, 'install', '--yes', '--no-install-recommends', '--', PACKAGE], check=True, env=environment)
+    subprocess.run(['apt-get', *lock, 'install', '--yes', '--no-install-recommends', '--', *packages], check=True, env=environment)
 
 
 def build_venv(gate, tools, venv):
@@ -99,16 +107,23 @@ def keep(workspace):
     except Exception:  # noqa: BLE001 - any failure to read the gate is the one reason `names`
         return {'tools': 'failed', 'reason': 'names'}
     names_of = {'venv': venv.name, 'collections': collections.name}
+    read = {}
+    # The read is a step too, so an error in it is the result's `package`, not a run without a result line.
+    failed = run((('package', lambda: read.update(missing=missing_packages())),), venv, collections)
+    if failed:
+        return failed
+    missing = read['missing']
     if (venv / '.complete').is_file() and collections_ready(collections):
+        steps = [('package', lambda: install_packages(missing))] if missing else []
         # A cleanup that failed before is done here, so old tools do not stay in every seed.
-        if not tools.is_dir() or not other_pins(tools, venv, collections):
-            return {'tools': 'present', 'reason': 'current', **names_of}
-        return run((('cleanup', lambda: remove_other_pins(tools, venv, collections)),), venv, collections) or {
-            'tools': 'present', 'reason': 'current', **names_of}
+        if tools.is_dir() and other_pins(tools, venv, collections):
+            steps.append(('cleanup', lambda: remove_other_pins(tools, venv, collections)))
+        return run(steps, venv, collections) or (
+            {'tools': 'built', 'reason': 'missing', **names_of} if missing else {'tools': 'present', 'reason': 'current', **names_of})
     # A reader of /opt/orbit-shape-gate is `agent`, not root.
     os.umask(0o022)
     return run((
-        ('package', lambda: None if package_installed() else install_package()),
+        ('package', lambda: install_packages(missing)),
         ('venv', lambda: build_venv(gate, tools, venv)),
         ('collections', lambda: install_collections(workspace, venv, collections)),
         ('collections', lambda: mark_ready(venv)),
