@@ -40,6 +40,8 @@ final class UpdateProjectCommand extends GatewayCommand
         {--task-reviewer-effort= : Default reviewer effort}
         {--clear-task-implementer-agent : Clear the implementer defaults, so the Gateway defaults apply}
         {--clear-task-reviewer-agent : Clear the reviewer defaults}
+        {--task-pr-mode= : review_before_pr or pr_when_done: the mode of task copy groups that set none}
+        {--clear-task-pr-mode : Remove the Project\'s mode, so its task groups use the Gateway\'s default}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -119,6 +121,17 @@ final class UpdateProjectCommand extends GatewayCommand
             return self::FAILURE;
         }
 
+        $taskPrMode = $this->stringOption('task-pr-mode');
+        $clearTaskPrMode = $this->option('clear-task-pr-mode') === true;
+
+        if ($taskPrMode !== null && $clearTaskPrMode) {
+            return $this->renderGatewayFailure('project.task_pr_mode_conflict', 'Choose either --task-pr-mode or --clear-task-pr-mode.');
+        }
+
+        if ($taskPrMode !== null && ! in_array($taskPrMode, ['review_before_pr', 'pr_when_done'], true)) {
+            return $this->renderGatewayFailure('project.task_pr_mode_invalid', 'The task pull request mode must be review_before_pr or pr_when_done.');
+        }
+
         if (! $taskWorkspaceRouted['valid']) {
             return $this->renderGatewayFailure(
                 'project.task_workspace_routed_invalid',
@@ -127,7 +140,7 @@ final class UpdateProjectCommand extends GatewayCommand
         }
 
         if ($name === null && $type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null
-            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null) {
+            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null && $taskPrMode === null && ! $clearTaskPrMode) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -157,6 +170,8 @@ final class UpdateProjectCommand extends GatewayCommand
                 mergeCheck: $clearMergeCheck ? null : $mergeCheck,
                 mergeCheckProvided: $clearMergeCheck || $mergeCheck !== null,
                 taskAgents: $taskAgents,
+                taskPrMode: $taskPrMode,
+                taskPrModeProvided: $taskPrMode !== null || $clearTaskPrMode,
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],
