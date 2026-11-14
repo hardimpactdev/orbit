@@ -118,6 +118,7 @@ final readonly class NodeDesiredConvergeInput
             'agent' => [...$agent, 'sha256' => $delivery->pin($node), 'url' => $delivery->artifacts()[AgentDelivery::key($node)]['url'] ?? null],
             'cli' => app(CliConvergePlan::class)->nodeInput($node), 'kernel' => NodeKernelPolicy::intent(), 'updates' => NodeUpdatePolicy::for($node), 'recipe' => $recipe->json,
             'vp_lock' => VitePlusRuntimeLock::read($recipe->tools['vp']->forArchitecture('amd64')),
-            'tools' => $tools, 'network' => $network, ...($playbook === null ? [] : ['playbook' => $playbook])];
+            'tools' => $tools, 'network' => $network, 'role_units' => NodeRoleUnits::for($node),
+            ...($playbook === null ? [] : ['playbook' => $playbook])];
     }
 }

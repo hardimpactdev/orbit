@@ -1643,7 +1643,7 @@ The converge digest follows what a base converge of a nested Node reads, so a re
 | Input | What it holds |
 | --- | --- |
 | The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and its imports, the playbook and the task files it reaches, and the play's configuration and modules |
-| The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target and the CLI plan |
+| The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target, the CLI plan and the units of the Node's roles (`NodeRoleUnits`) |
 | The fleet intent | The fleet's names, layout, checkout and proxy |
 
 A cover test, `swamp/tests/fleet_converge_inputs_test.ts`, walks the playbook and the imports. It fails on a file that the list does not hold.
