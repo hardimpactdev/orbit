@@ -1228,7 +1228,7 @@ The title is the group title. The body holds the group brief, the completed subt
 | --- | --- |
 | `working` | The work is not done yet |
 | `waiting_for_release` | The work is done, and Orbit does not publish by itself: the mode is `review_before_pr`, or the done check recorded `review_before_pr` |
-| `publishing` | A publish of the done check runs |
+| `publishing` | A publish of the done check runs, or the tick starts one within a minute because the group and its done check are in `pr_when_done` |
 | `refused` | The automatic publish of the done check was refused |
 | `published` | The group has its pull request |
 
