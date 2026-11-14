@@ -1,8 +1,9 @@
 ---
 # env:sync on a container Instance (docs/cli/env/sync.mdx): add the attached connections' network paths, write only their keys
 # into the container's .env in place, then restart what runs. Database paths are only added. The path to an attached websocket app's
-# private endpoint, with its private name, is reconciled: a removed app's rule, firewall rule and hosts line go. The values come only
-# from ORBIT_CONNECTION_ENVIRONMENT.
+# private endpoint, with its private name, is reconciled: a removed app's rule, firewall rule and hosts line go. So are a clone's own-site
+# rules: the plan's `reconciled` names the descriptions it owns and the rules it keeps. The values come only from
+# ORBIT_CONNECTION_ENVIRONMENT.
 - name: Address the Instance Node
   hosts: localhost
   connection: local
@@ -56,23 +57,23 @@
           loop: "{{ plan.egress }}"
           loop_control: { label: "{{ item.destination }}:{{ item.destination_port }}" }
 
-        # The websocket rule is the one the plan names, or none: a rule of a removed app, or of the app's old address, goes.
-        - name: Reconcile the websocket egress rule
+        # A rule of a reconciled description is one the plan names, or it goes: a removed websocket app's rule, the app's old address,
+        # or the own-site rules of a Route that turned public.
+        - name: Reconcile the described egress rules
           vars:
-            connection_websocket_rules: "{{ [] if plan.websocket is none else [plan.websocket.egress] }}"
             connection_other_egress: >-
               {{ connection_acl.egress | default([]) | rejectattr('description', 'defined') | list
                  + (connection_acl.egress | default([]) | selectattr('description', 'defined')
-                    | rejectattr('description', 'equalto', 'Orbit websocket app') | list) }}
-            connection_held_websocket: >-
+                    | rejectattr('description', 'in', plan.reconciled.descriptions) | list) }}
+            connection_held_described: >-
               {{ connection_acl.egress | default([]) | selectattr('description', 'defined')
-                 | selectattr('description', 'equalto', 'Orbit websocket app') | list }}
+                 | selectattr('description', 'in', plan.reconciled.descriptions) | list }}
           ansible.builtin.set_fact:
-            connection_egress: "{{ connection_other_egress + connection_missing_egress + connection_websocket_rules }}"
-            connection_websocket_changed: "{{ connection_held_websocket != connection_websocket_rules }}"
+            connection_egress: "{{ connection_other_egress + connection_missing_egress + plan.reconciled.egress }}"
+            connection_described_changed: "{{ connection_held_described != plan.reconciled.egress }}"
 
         - name: Add the missing egress rules
-          when: connection_missing_egress | length > 0 or connection_websocket_changed | bool
+          when: connection_missing_egress | length > 0 or connection_described_changed | bool
           ansible.builtin.command:
             argv: [incus, network, acl, edit, "{{ container.acl }}", --project, default]
             stdin: >-

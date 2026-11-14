@@ -471,6 +471,27 @@ cp "${folder}/artifacts/$(basename "$prev")" "$out"`,
             ruleset:
                 "table inet orbit_instance_dev_ports\ndelete table inet orbit_instance_dev_ports\ntable inet orbit_instance_dev_ports {}\n",
         },
+        own_site: {
+            acl: ["443", "444"].map((port) => ({
+                action: "allow",
+                destination: "10.253.0.1/32",
+                protocol: "tcp",
+                destination_port: port,
+                state: "enabled",
+            })),
+            rules: [["443", "orbit:instances-own-site"], ["444", "orbit:instances-own-dev"]].map(([port, comment]) => ({
+                comment,
+                action: "allow",
+                direction: "in",
+                source: "any",
+                destination: "10.253.0.1",
+                port,
+                protocol: "tcp",
+                in_interface: "orbitinst0",
+                out_interface: null,
+                family: "v4",
+            })),
+        },
         ids: 201 * 65536,
         profile_config: {
             "environment.VP_HOME": "/var/lib/orbit/vite-plus-home",
