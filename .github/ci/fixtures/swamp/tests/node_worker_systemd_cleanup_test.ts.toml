@@ -7,8 +7,9 @@ cases = [
 file = "swamp/tests/node_worker_systemd_cleanup_test.ts"
 cost = 3
 after_merge_cases = ["systemd restarts the rendered worker policy despite a lingering connection child"]
-reason = "Requires a running systemd user manager and DBUS_SESSION_BUS_ADDRESS, absent in hosted fixture setup (ignored in run 43020616292). Full-set execution must supply these prerequisites; an ignored case remains a failure there."
+reason = "Requires a running systemd user manager and DBUS_SESSION_BUS_ADDRESS, absent in hosted fixture setup (ignored in run 43020616292). The full-set runner supplies these prerequisites; an ignored case remains a failure there."
 inputs = [
+  "tools/ci-runners/user-manager.sh",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",

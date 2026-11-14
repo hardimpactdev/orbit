@@ -132,3 +132,5 @@ When splitting a shared test registry, preserve admission order as well as recor
 For Python fixture registration, whole-file costs and shared test harnesses, follow [fixture policy](../../../docs/reference/implementation-loop.md#ci-budget).
 
 Saved fixture boundaries need pre-merge producer checks when their source tasks change. Declare required cases through [fixture admission](../../../docs/reference/implementation-loop.md#ci-budget); test that pressure cannot defer them and that insufficient capacity fails Required.
+
+A deferred fixture is covered only after its real assertions run. For native auth and user-systemd prerequisites, follow [Main full set](../../../docs/reference/main-full-set.md); check named case receipts, since an ignored case or setup refusal does not test the product.

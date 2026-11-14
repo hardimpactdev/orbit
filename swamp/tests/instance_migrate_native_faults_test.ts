@@ -1,6 +1,7 @@
 /** Pinned native DAG and real finish receipts. Placement and machine effects are local fixtures; Ansible proves the effects. */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
+import { nativeAuth } from "./_support/native_auth.ts";
 import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
@@ -23,11 +24,12 @@ const exists = (path: string) => {
 
 async function nativeFixture(mode: Mode, clone = false) {
     const folder = Deno.makeTempDirSync({ prefix: "orbit-ansible-" });
+    const auth = await nativeAuth(folder);
     const call = async (...args: string[]) => {
         const done = await new Deno.Command(binary!, {
             args: [...args, "--json"],
             cwd: folder,
-            env: { SWAMP_NO_INBOX_NOTICE: "1" },
+            ...auth,
         }).output();
         return {
             ok: done.success,
@@ -172,6 +174,7 @@ export const behavior = { type: "@fixture/route-proof", version: "2026.11.11.1",
     };
     return {
         folder,
+        auth,
         call,
         created,
         input,
@@ -203,7 +206,7 @@ for (
                         "--json",
                     ],
                     cwd: f.folder,
-                    env: { SWAMP_NO_INBOX_NOTICE: "1" },
+                    ...f.auth,
                     stdin: "piped",
                     stdout: "piped",
                     stderr: "piped",
@@ -328,7 +331,7 @@ for (const mode of ["mail-failure", "mail-invalid"] as const) {
                 try {
                     const child = new Deno.Command(binary!, {
                         args: ["workflow", "run", f.created.name, "--stdin", "--json"],
-                        cwd: f.folder, env: {SWAMP_NO_INBOX_NOTICE: "1"},
+                        cwd: f.folder, ...f.auth,
                         stdin: "piped", stdout: "piped", stderr: "piped",
                     }).spawn();
                     const writer = child.stdin.getWriter();

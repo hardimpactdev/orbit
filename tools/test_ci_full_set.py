@@ -285,6 +285,34 @@ class PrerequisitesTest(unittest.TestCase):
             self.assertIn('pinned FrankenPHP prerequisite: FAILED', results[0]['reason'])
             fixture_api.run.assert_not_called()
 
+    def test_systemd_case_gets_the_runner_bus_even_without_a_login_session(self):
+        file = 'swamp/tests/node_worker_systemd_cleanup_test.ts'
+        for selected in (file, 'swamp/unrelated.ts'):
+            plan = sample_plan()
+            plan['shards'][0]['units'] = [selected]
+            plan['units'][0]['unit'] = selected
+            plan['budget'] = {'shard_deadline_seconds': 2100}
+            fixture_api = SimpleNamespace(CANCELLED=Mock(), gate=SimpleNamespace(Step=lambda *a, **kw: SimpleNamespace(name=a[1])))
+            fixture_api.run_unit = Mock(return_value={'status': 'passed'})
+            observed = {}
+            def execute(*_args):
+                observed.update({key: os.environ.get(key) for key in ('XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS')})
+                return 0
+            fixture_api.run = execute
+            with tempfile.TemporaryDirectory() as scratch, \
+                    patch.dict(full.run_shard.__globals__, {'api': lambda: fixture_api}), \
+                    patch.dict(os.environ, XDG_RUNTIME_DIR='/wrong', DBUS_SESSION_BUS_ADDRESS='wrong'), \
+                    patch.object(os, 'getuid', return_value=1234), \
+                    patch.object(full.run_shard.__globals__['signal'], 'signal'):
+                output = Path(scratch) / 'times.json'
+                output.with_suffix('.swamp').write_text('/pinned/swamp')
+                output.with_suffix('.frankenphp').write_text('/pinned/frankenphp')
+                self.assertEqual(full.run_shard(plan, '01', output), 0)
+            if selected == file:
+                self.assertEqual(observed, {'XDG_RUNTIME_DIR': '/run/user/1234', 'DBUS_SESSION_BUS_ADDRESS': 'unix:path=/run/user/1234/bus'})
+            else:
+                self.assertEqual(observed, {'XDG_RUNTIME_DIR': '/wrong', 'DBUS_SESSION_BUS_ADDRESS': 'wrong'})
+
 
 class RangeTest(unittest.TestCase):
     def test_skipped_pushes_use_last_published_completion_instead_of_event_before(self):
