@@ -1257,6 +1257,23 @@
         that: restore_seed != ''
         fail_msg: instance.fleet_seed_missing
         quiet: true
+    # The seed of an Instance with an inner volume is a pair: the volume goes back to its snapshot of the same name, or nothing does.
+    - name: Read the inner volume's snapshots
+      when: container.inner_volume is defined
+      ansible.builtin.command:
+        argv:
+          - incus
+          - query
+          - "--"
+          - "/1.0/storage-pools/{{ container.inner_volume.pool }}/volumes/custom/{{ container.inner_volume.name }}/snapshots?project={{ container.project }}&recursion=1"
+      register: restore_volume_snapshots
+      changed_when: false
+    - name: Require the inner volume's half of the seed
+      when: container.inner_volume is defined
+      ansible.builtin.assert:
+        that: restore_seed in (restore_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | list)
+        fail_msg: instance.fleet_seed_missing
+        quiet: true
     - name: Read the container's state
       ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
       register: restore_read
@@ -1267,6 +1284,11 @@
       changed_when: true
     - name: Restore the container to the newest seed
       ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'restore', container.name, restore_seed] }}" }
+      changed_when: true
+    - name: Restore the inner volume to the same seed
+      when: container.inner_volume is defined
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'restore', container.inner_volume.pool, container.inner_volume.name, restore_seed] }}"
       changed_when: true
 
 # Orbit delivers the Swamp Club key of a nested fleet at each start into the tmpfs `/run`, so no seed holds it. The key file that was
@@ -1317,17 +1339,34 @@
         argv: [incus, query, "--", "/1.0/instances/{{ container.name }}/snapshots?project={{ container.project }}&recursion=1"]
       register: seed_snapshots
       changed_when: false
+    # The seed of an Instance with an inner volume is a pair: the container snapshot and the volume snapshot of the same name
+    # (docs/reference/development-containers.md#the-inner-volume). Every other Instance, Instance 2454 among them, reads no volume.
+    - name: Read the inner volume's snapshots
+      when: container.inner_volume is defined
+      ansible.builtin.command:
+        argv:
+          - incus
+          - query
+          - "--"
+          - "/1.0/storage-pools/{{ container.inner_volume.pool }}/volumes/custom/{{ container.inner_volume.name }}/snapshots?project={{ container.project }}&recursion=1"
+      register: seed_volume_snapshots
+      changed_when: false
     - name: Name the seed
       ansible.builtin.set_fact:
         container_commit: "{{ seed_head.stdout | trim }}"
         seed_name: "seed-{{ seed_head.stdout | trim }}"
         seed_names: "{{ seed_snapshots.stdout | from_json | map(attribute='name') | select('match', '^seed-') | list }}"
+        # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part.
+        seed_volume_names: >-
+          {{ (seed_volume_snapshots.stdout | from_json | map(attribute='name') | map('regex_replace', '^.*/', '') | select('match', '^seed-') | list)
+             if container.inner_volume is defined else [] }}
     # Every passed deployment retakes the seed, also at the same commit: the default's caches and built files move on, and a clone must
     # copy them as they are now. A nested-fleet default's deployment (its intent has `fleet` too) seeds before its refresh, so a
     # failure restores a seed with the fleet, and after it, so the seed holds the refreshed fleet and its record.
     - name: Snapshot the container with the Processes stopped
       when: >-
         seed_name not in seed_names
+        or (container.inner_volume is defined and seed_name not in seed_volume_names)
         or intent.deployment is defined
         or (node_runtime_result | default({})).get('seed_refresh_required', false)
       block:
@@ -1341,6 +1380,31 @@
               {{ incus_project + ['snapshot', 'create', container.name, seed_name]
                  + (['--reuse'] if seed_name in seed_names else []) }}
           changed_when: true
+        # The other half of the pair, at once, with the Processes still stopped. A failure deletes both halves of this name, so no
+        # reader ever finds a container seed without its volume seed: a clone then refuses with instance.default_seed_moved, and an
+        # older pair, which the run deletes only after both halves exist, stays for a restore.
+        - name: Snapshot the inner volume with the seed's name
+          when: container.inner_volume is defined
+          block:
+            - name: Snapshot the inner volume
+              ansible.builtin.command:
+                argv: >-
+                  {{ incus_project + ['storage', 'volume', 'snapshot', 'create', container.inner_volume.pool, container.inner_volume.name,
+                                      seed_name] + (['--reuse'] if seed_name in seed_volume_names else []) }}
+              changed_when: true
+          rescue:
+            - name: Delete the container half of the seed
+              ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, seed_name] }}" }
+              changed_when: true
+              failed_when: false
+            - name: Delete the volume half of the seed
+              ansible.builtin.command:
+                argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, seed_name] }}"
+              changed_when: true
+              failed_when: false
+            - name: Fail the seed
+              ansible.builtin.fail:
+                msg: instance.seed_volume_snapshot_failed
       always:
         - name: Start the Processes again
           when: units | length > 0
@@ -1358,6 +1422,12 @@
     - name: Delete the older seeds
       ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'delete', container.name, item] }}" }
       loop: "{{ seed_names | reject('equalto', seed_name) | list }}"
+      changed_when: true
+    - name: Delete the older seeds of the inner volume
+      when: container.inner_volume is defined
+      ansible.builtin.command:
+        argv: "{{ incus_project + ['storage', 'volume', 'snapshot', 'delete', container.inner_volume.pool, container.inner_volume.name, item] }}"
+      loop: "{{ seed_volume_names | reject('equalto', seed_name) | list }}"
       changed_when: true
 
 - name: Check the container

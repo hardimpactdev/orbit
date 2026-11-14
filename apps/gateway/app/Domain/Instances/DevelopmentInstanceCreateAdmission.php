@@ -53,7 +53,6 @@ final readonly class DevelopmentInstanceCreateAdmission
         $this->assertContainer($project, $default);
         $this->assertActive($default);
         $this->assertSeed($default);
-        $this->assertNoInnerVolume($default);
 
         return $default;
     }
@@ -89,14 +88,6 @@ final readonly class DevelopmentInstanceCreateAdmission
     {
         if ($default->runtime?->seed_commit === null) {
             $this->missingSeed();
-        }
-    }
-
-    /** The clone does not copy an inner volume yet (docs/reference/development-containers.md#the-inner-volume). */
-    public function assertNoInnerVolume(Instance $default): void
-    {
-        if ($default->runtime?->inner_volume !== null) {
-            throw new ResourceOperationException('instance.inner_volume_clone_unavailable', 'The Project\'s default has an inner volume, whose clone is not built yet.', 409);
         }
     }
 

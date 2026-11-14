@@ -53,6 +53,10 @@ if (args[0] === "query") {
     // A container's root volume: the keys a test gives it in `volume_config`.
     if (!state.containers[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "container", config: state.containers[parts[4]].volume_config ?? {} }));
+  } else if (parts[0] === "storage-pools" && parts[3] === "custom" && parts[5] === "snapshots") {
+    // A custom volume's snapshots, by their own names.
+    if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
+    console.log(JSON.stringify((state.volumes[parts[4]].snapshots ?? []).map((name: string) => ({ name }))));
   } else if (parts[0] === "storage-pools" && parts[3] === "custom") {
     if (!state.volumes?.[parts[4]]) fail("Storage pool volume not found");
     console.log(JSON.stringify({ name: parts[4], type: "custom", config: state.volumes[parts[4]].config }));
@@ -182,6 +186,23 @@ if (family === "list") {
   if (Object.values(state.containers).some((row) => Object.values((row as {added?: Record<string, {settings?: string[]}>}).added ?? {})
     .some((device) => device.settings?.includes(`source=${name}`)))) fail("Storage volume is still in use");
   delete state.volumes[name];
+} else if (family === "storage" && args[1] === "volume" && args[2] === "snapshot") {
+  // A custom volume's snapshot: `volume_snapshot_fails` holds a create that Incus refuses.
+  const [, , , verb, , name, snapshot] = args;
+  const volume = state.volumes?.[name];
+  if (!volume) fail("Storage pool volume not found");
+  volume.snapshots ??= [];
+  if (verb === "create") {
+    if (state.volume_snapshot_fails) fail("Failed to create volume snapshot");
+    if (volume.snapshots.includes(snapshot) && !args.includes("--reuse")) fail("Snapshot already exists");
+    volume.snapshots = [...volume.snapshots.filter((s: string) => s !== snapshot), snapshot];
+  } else if (verb === "restore") {
+    if (!volume.snapshots.includes(snapshot)) fail("Snapshot not found");
+    volume.restored = [...(volume.restored ?? []), snapshot];
+  } else if (verb === "delete") {
+    if (!volume.snapshots.includes(snapshot)) fail("Snapshot not found");
+    volume.snapshots = volume.snapshots.filter((s: string) => s !== snapshot);
+  } else fail(`Unexpected volume snapshot ${verb}`);
 } else if (family === "config" && args[1] === "device" && args[2] === "add") {
   const [, , , name, device, type, ...settings] = args;
   state.containers[name].added ??= {};
