@@ -51,6 +51,36 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
             'execution_secrets' => [...$secrets, 'club_key' => $club]];
     }
 
+    /**
+     * The base a task copy's publish states: the merge base of the checked commit and the default head at publish time, how far
+     * behind, and the paths both sides changed, bounded with the count beyond. A task VM publish, or a run that started on the
+     * workflow before the base step, has no statement and records none of the fields.
+     *
+     * @return array<string,mixed>
+     */
+    private static function base(mixed $captured): array
+    {
+        if (! is_string($captured) || trim($captured) === '') {
+            return [];
+        }
+        $facts = ValidatedData::object(json_decode($captured, true, flags: JSON_THROW_ON_ERROR));
+
+        return array_intersect_key($facts, array_flip(['base_commit', 'default_commit', 'behind_by', 'overlapping_paths', 'overlapping_more']));
+    }
+
+    /**
+     * The paths of a refused conflict, from the check's line `tasks.publish_conflict: "a", "b" and N more`: at most 100, then the count.
+     *
+     * @return array{conflicting_paths: list<string>, conflicting_more: int}
+     */
+    private static function conflict(string $detail): array
+    {
+        preg_match('/\Atasks\.publish_conflict: (.*?)(?: and ([1-9][0-9]*) more)?\z/s', $detail, $match);
+        $paths = json_decode('['.($match[1] ?? '').']', true);
+
+        return ['conflicting_paths' => is_array($paths) ? array_values(array_filter($paths, is_string(...))) : [], 'conflicting_more' => (int) ($match[2] ?? 0)];
+    }
+
     /** Only the check's own refusal line names content; any other failure of the check refuses as unchecked. */
     private static function contentCode(mixed $detail): string
     {
@@ -68,15 +98,16 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
             if ($status === OperationStatus::Succeeded) {
                 $pull = isset($native['pull_receipt']) ? ValidatedData::object(json_decode(ValidatedData::string($native['pull_receipt']), true, flags: JSON_THROW_ON_ERROR)) : [];
                 $result = ['branch' => $operation->input['branch'], 'commit' => $operation->input['commit'],
-                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null];
+                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null, ...self::base($native['base'] ?? null)];
             } elseif (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)) {
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
-                $code = in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed'))));
+                $code = $step === 'Check the base' && is_string($detail) && str_starts_with($detail, 'tasks.publish_conflict: ') ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')))));
                 $data['error_code'] = $code;
-                $result = ['error_code' => $code];
+                // A conflict names its paths, as the check's one line lists them.
+                $result = ['error_code' => $code, ...($code === 'tasks.publish_conflict' ? self::conflict(ValidatedData::string($detail)) : [])];
             } else {
                 $result = [];
             }
