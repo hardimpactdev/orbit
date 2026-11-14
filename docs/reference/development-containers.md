@@ -1753,6 +1753,10 @@ A rollback destroys the copies made after the conversion, restores `pre-idmap-<t
 
 The seed of such a default is a pair: the container snapshot `seed-<commit>` and the volume snapshot of the same name. A container snapshot does not hold an attached custom volume, so the name ties the two. The [seed step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) takes the volume's half right after the container's, with the Processes still stopped, wherever it takes the seed. It retakes the pair when the volume's half is missing.
 
+Right before the volume's half, the step flushes the volume: `sync -f` on `/srv/inner-pool`, as root in the container. A snapshot of the volume is a snapshot of its block device, so it holds only what btrfs has committed, and btrfs commits every 30 s. Without the flush, a copy lacked an inner pool made 23 s before the seed.
+
+A failed flush takes no volume half and fails with `instance.seed_volume_flush_failed`; the old pair stays. There is no freeze: the two halves are separate snapshots anyway, so a freeze adds nothing over the flush and btrfs's crash consistency; each half is a point in time as after a power cut.
+
 A [retake](#a-retake-keeps-the-seed) takes both new halves under `next-<commit>` when the seed's name is taken. A failed volume snapshot deletes both new halves and fails with `instance.seed_volume_snapshot_failed`, so no reader finds half a pair. The old pair stays whole, also at the same commit. Older pairs go only after both new halves exist. A failed refresh checks that both halves exist before it restores anything; a failed restore of the volume after the container's fails the run.
 
 A deployment retakes the two halves one after the other. So a clone of such a default is not admitted while a deployment of the default is open (`instance.default_seed_in_flight`), as the refresh waits for an open clone (`instance.clone_in_flight`). A default without an inner volume has no such wait.
@@ -2243,6 +2247,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.refresh_failed` | none | An Activity row, not an API error: a refresh that a release admitted failed. It names the Operation, its code and its detail; see [Refresh after a release](#refresh-after-a-release) |
 | `instance.container_seed_failed` | 502 | The seed step could not take the new snapshot. The error detail names why, such as `No free ID range for the new seed`. The old seed stays; see [A retake keeps the seed](#a-retake-keeps-the-seed) |
 | `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both new halves are deleted and the old pair stays; see [The seed pair](#the-seed-pair) |
+| `instance.seed_volume_flush_failed` | 502 | The flush of the [inner volume](#the-seed-pair) before its snapshot failed. The new container half is deleted and the old pair stays |
 | `instance.default_seed_incomplete` | 409 | The default's seed has no half on its [inner volume](#the-inner-volume), such as a seed taken before the pair existed. Deploy the default once |
 | `instance.default_seed_in_flight` | 409 | A clone of a default with an [inner volume](#the-inner-volume) while a deployment of the default is open. Create the clone when it ends |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
