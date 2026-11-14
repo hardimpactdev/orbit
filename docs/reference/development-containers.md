@@ -506,16 +506,20 @@ For a slug such as `My_App`, a person sees `default.My_App` as T3's label, and `
 - **`/etc/machine-info`** is Orbit's whole file: `PRETTY_HOSTNAME=<name>`. The clone's boot file writes the same text.
 - **`/etc/hosts`** gets its `127.0.1.1` line: the hostname, its first label, the running kernel hostname and the Incus name, each once.
 
-The running kernel hostname and the Incus name stay on the hosts line, so the kernel hostname resolves before and after the next boot. The converge reads the running kernel hostname of a running container. A container that is frozen at the converge gets no such alias. So if a renamed Project's running container is frozen before the next converge, its kernel hostname stops resolving after it thaws, and `sudo` warns until the container's next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
+The running kernel hostname and the Incus name stay on the hosts line, so the kernel hostname resolves before and after the next boot.
+
+The converge reads the running kernel hostname of a running container. A container that is frozen at the converge gets no such alias, and neither does a running container whose `hostname` read fails or takes more than 5 seconds, until a later converge reads it. So if a renamed Project's running container is frozen before the next converge, its kernel hostname stops resolving after it thaws, and `sudo` warns until the container's next boot. Orbit's [private names](#private-names-of-the-access-plan) block and every other line of `/etc/hosts` stay. Each writer of the file keeps the other's lines, so their order never matters.
 
 Where each path writes the name:
 
 | Path | When |
 |---|---|
 | Create of a default, a move | The container phase, right after the first start: the files, then the kernel hostname at once |
-| Clone and task copy | `/etc/machine-info` as a boot file before the first start; the rest in the private names pass right after it. T3's first start already has the name |
+| Clone and task copy | `/etc/machine-info` as a boot file before the first start; the rest in the private names pass right after it |
 | Start, wake, deployment | Only a stopped container: the start phase writes the files through the file API before it boots it. A running or frozen container gets nothing |
 | Node converge | The files, in running, stopped and frozen containers, through the file API. Nothing restarts and the kernel hostname stays |
+
+T3 starts with a clone's copy. Its label is right from its first start, because the boot file came first; the kernel hostname, `/etc/hostname` and the `127.0.1.1` line may follow after T3 started.
 
 No path restarts T3 for its name, and only a new container gets its kernel hostname at once. A clone whose hostname step fails fails its create with `instance.clone_private_names_failed`, as a failed private names write does.
 
@@ -1136,7 +1140,7 @@ The clone script writes these, so a new clone works with no converge or `env:syn
 
 The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
 
-Right after the start, the clone script sets the kernel hostname and reads `/etc/hosts` in one `incus exec`, as `env:sync` reads it. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
+Right after the start, the clone script writes `/etc/hostname`, sets the kernel hostname and reads `/etc/hosts` in one `incus exec`, as `env:sync` reads it. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
 
 Orbit does not change the template instead. The template lives in each container's own metadata, copied from its default. A new image would not reach existing defaults, and editing each default's metadata would add hidden state.
 

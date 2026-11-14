@@ -298,8 +298,8 @@ def main():
         hostname and reads /etc/hosts; instance_node_services.py `hosts` renders the private names block and instance_machine_name.py
         `hosts` the `127.0.1.1` line, each keeping the other's lines; /etc/hosts is pushed as root with 0644 only when it changes. It runs
         after the start, because the copy's own Incus templates (`/etc/hosts` and `/etc/hostname`: `when: [create, copy]`, copied from
-        its default) rewrite both files at the first start, and before the T3 step, so T3's first start already has its name;
-        `/etc/machine-info` came before the start as a boot file. A seed's block goes when the plan has no name. Any failure, the
+        its default) rewrite both files at the first start. T3 starts with the copy, so it may run by then: its label comes from
+        `/etc/machine-info`, a boot file written before the start, so it is right from T3's first start. A seed's block goes when the plan has no name. Any failure, the
         hostname's among them, fails the create by its own name (docs/reference/development-containers.md#what-a-clone-has-at-its-first-start)."""
         try:
             hostname = container["machine_name"]["hostname"]

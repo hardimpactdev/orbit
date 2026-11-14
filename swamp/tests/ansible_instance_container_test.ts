@@ -1611,7 +1611,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start and before a stopped container's boot, never into a running one",
+  name: "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start, never into a running one",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1661,41 +1661,13 @@ Deno.test({
       const calls = () => Deno.readTextFileSync(`${f.folder}/calls`).split("\n").filter(Boolean).map((line) => JSON.parse(line) as string[])
         .map((call) => call[0] === "--project" ? call.slice(2) : call);
       const nameFiles = (list: string[][]) => list.filter((call) => call[0] === "file" && /instance-7\/etc\/(hostname|machine-info|hosts)$/.test(call.at(-1)!));
-      const t3Restarts = () => (f.state().systemctl ?? []).filter((call: string[]) => call.includes("t3.service") && call[0] !== "start").length;
-      let before = calls().length;
+      const before = calls().length;
       const removed = f.run("start");
       assert(removed.ok, removed.output);
       assertEquals(Deno.readTextFileSync(hosts), "127.0.0.1 localhost\n10.1.1.1 operator\n");
       // That start of the running container read none of the name files and wrote only the private names' /etc/hosts, even for the
       // new name: the converge owns the name files.
       assertEquals(nameFiles(calls().slice(before)).filter((call) => call[1] === "pull" || !call.at(-1)!.endsWith("/etc/hosts")), []);
-      // A stopped container whose Incus templates are still pending gets nothing: its first start would write over the files.
-      assert(f.run("stop").ok);
-      let state = f.state();
-      state.containers["instance-7"].volatile = { "volatile.apply_template": "copy" };
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      before = calls().length;
-      assert(f.run("start").ok);
-      assertEquals(nameFiles(calls().slice(before)), []);
-      assert(f.run("stop").ok);
-      state = f.state();
-      delete state.containers["instance-7"].volatile;
-      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      // A stopped container gets the files before its boot, through the file API, keeping the other hosts lines; no exec sets the
-      // hostname and T3 does not restart.
-      before = calls().length;
-      const booted = f.run("start");
-      assert(booted.ok, booted.output);
-      const since = calls().slice(before);
-      const start = since.findIndex((call) => call[0] === "start");
-      assert(start > 0, JSON.stringify(since));
-      assert(nameFiles(since).every((call) => since.indexOf(call) < start));
-      assertEquals(nameFiles(since).filter((call) => call[1] === "push").map((call) => call.at(-1)),
-        ["instance-7/etc/hostname", "instance-7/etc/machine-info", "instance-7/etc/hosts"]);
-      assertEquals(Deno.readTextFileSync(`${etc}/machine-info`), "PRETTY_HOSTNAME=default.Store\n");
-      assertEquals(Deno.readTextFileSync(hosts), "127.0.1.1\tdefault.store default instance-7\n127.0.0.1 localhost\n10.1.1.1 operator\n");
-      assert(!since.some((call) => call[0] === "exec" && call.includes("hostname")));
-      assertEquals(t3Restarts(), 0);
     } finally {
       f.cleanup();
     }
@@ -2042,16 +2014,42 @@ function rootSizeShapes(f: ReturnType<typeof fixture>) {
 }
 
 Deno.test({
-  name: "a normal container start never writes boot.autostart",
+  name: "a normal container start never writes boot.autostart; a stopped one gets the presented machine name before its boot, unless its Incus templates are pending",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
-    try {
-      assert(f.run("container").ok);
+    const etc = `${f.folder}/containers/instance-7/etc`;
+    // Each Incus call without its leading `--project <name>`, and the calls on the machine name's files.
+    const calls = () => incusCalls(f).map((call) => call[0] === "--project" ? call.slice(2) : call);
+    const nameFiles = (list: string[][]) => list.filter((call) => call[0] === "file" && /instance-7\/etc\/(hostname|machine-info|hosts)$/.test(call.at(-1)!));
+    const stopped = (volatile?: Record<string, string>) => {
       const state = f.state();
       state.containers["instance-7"].status = "Stopped";
+      if (volatile) state.containers["instance-7"].volatile = volatile;
+      else delete state.containers["instance-7"].volatile;
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+    };
+    try {
+      assert(f.run("container").ok);
+      Object.assign(f.container, { machine_name: { hostname: "default.store", pretty: "default.Store" } });
+      f.write();
+      // A stopped container whose Incus templates are still pending gets nothing: its first start would write over the files.
+      stopped({ "volatile.apply_template": "copy" });
+      let before = calls().length;
       assert(f.run("start").ok);
+      assertEquals(nameFiles(calls().slice(before)), []);
+      // A stopped container gets the files before its boot, through the file API; no exec sets the hostname and T3 does not restart.
+      stopped();
+      before = calls().length;
+      assert(f.run("start").ok);
+      const since = calls().slice(before);
+      const start = since.findIndex((call) => call[0] === "start");
+      assert(start > 0, JSON.stringify(since));
+      assert(nameFiles(since).every((call) => since.indexOf(call) < start));
+      assertEquals(nameFiles(since).filter((call) => call[1] === "push").map((call) => call.at(-1)), ["instance-7/etc/hostname", "instance-7/etc/machine-info"]);
+      assertEquals(Deno.readTextFileSync(`${etc}/machine-info`), "PRETTY_HOSTNAME=default.Store\n");
+      assert(!since.some((call) => call[0] === "exec" && call.includes("hostname")));
+      assert(!(f.state().systemctl ?? []).some((call: string[]) => call.includes("t3.service") && call[0] !== "start"));
       assert(!incusCalls(f).some((args) => args.includes("config") && args.includes("set")), JSON.stringify(incusCalls(f)));
       assert(!f.state().containers["instance-7"].config.some((value: string) => value.startsWith("boot.")));
     } finally { f.cleanup(); }
