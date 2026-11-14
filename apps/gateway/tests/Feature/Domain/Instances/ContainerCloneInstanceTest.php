@@ -211,7 +211,15 @@ describe('a clone of the container default', function (): void {
                 ['home' => '/home/agent', 'directories' => ['/home/agent/.pki', '/home/agent/.pki/nssdb'], 'path' => '/home/agent/.pki/nssdb/pkcs11.txt',
                     'entry' => "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
                     'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'directory_mode' => '0700', 'library' => 'libp11-kit0', 'version' => '0.26.2-2'],
+                // Playwright's browsers beside its package, for units and for login shells, the task check among them. Only a new clone
+                // gets them: no running container changes.
+                ['path' => '/etc/systemd/system.conf.d/91-orbit-browsers.conf', 'content' => "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n",
+                    'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                ['path' => '/etc/profile.d/91-orbit-browsers.sh', 'content' => "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
+                    'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ])
+            // The converge writes only the shared files into existing containers, and the browser setting is not one of them.
+            ->and(collect(InstanceImage::shared())->pluck('path')->all())->not->toContain('/etc/profile.d/91-orbit-browsers.sh')
             ->and($clone['files'][0]['content'])->toBe("# Managed by Orbit.\nORBIT_INSTANCE_ID={$id}\nORBIT_INSTANCE=feature\nORBIT_PROJECT=tool\nORBIT_PROJECT_ID={$default->project_id}\nORBIT_PROJECT_NAME=\"tool\"\nORBIT_NODE={$node->name}\nORBIT_URL=\n")
             ->and($clone['files'][1]['content'])->toContain('base_url = "http://10.253.0.1:8319/v1"')
             ->and($clone['files'][2])->toBe(['path' => '/home/agent/.claude.json', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]])

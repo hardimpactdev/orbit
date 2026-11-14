@@ -443,7 +443,23 @@ The recipe pins each library and font as a Debian package of its Ubuntu snapshot
 - **Fonts.** `/etc/fonts/fonts.conf` names `/opt/orbit-runtime/current/fonts` and maps the generic families to them. Fontconfig reads it by default, also the copy inside Chromium. Each user keeps its font cache in its own `~/.cache/fontconfig`.
 - **Sandbox.** A container has no user namespaces, so Chromium runs without its own sandbox. Playwright starts it so by default. No setting of the Node changes.
 - **The browser.** It is no part of the folder. Each Playwright version pins its own browser build.
-- **The download.** The Project's own Playwright downloads that build through the [egress proxy](#egress-and-dns) into the user's `~/.cache/ms-playwright`, such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
+- **The download.** The Project's own Playwright downloads that build through the [egress proxy](#egress-and-dns), such as with `bunx playwright install chromium`. No Instance can change a binary that another Instance runs.
+- **Where the build goes.** `PLAYWRIGHT_BROWSERS_PATH=0` puts it beside the Project's Playwright, in `node_modules/playwright-core/.local-browsers`, not in a user's `~/.cache/ms-playwright`. See [Playwright browsers](#playwright-browsers).
+
+#### Playwright browsers
+
+The default's deploy steps run as `orbit`, and a [task check](#a-task-copy-starts-clean) runs as `agent`. A browser in one user's cache is not visible to the other. The dependency folder is shared by both users through the group `work`. A Project ignores `node_modules` in its `.gitignore`, so the folder survives the clean of a task copy. The seed carries it, and a clone gets it with no copy and no download. The build always matches the Project's own Playwright version.
+
+So a Project whose check runs browser tests installs the browser in a [development deploy step](/reference/deployments#development-deploy-steps) of its own, after its JavaScript install, such as `bunx playwright install chromium`. The step downloads only when the Project's Playwright version changed. Otherwise it does nothing.
+
+| Where | What sets `PLAYWRIGHT_BROWSERS_PATH=0` |
+| --- | --- |
+| Deploy steps of a default Instance | The intent's `environment` list |
+| A new clone: its units (T3, its agents and their commands) and login shells (the task check runs `bash -lc`) | Two boot files, `/etc/systemd/system.conf.d/91-orbit-browsers.conf` and `/etc/profile.d/91-orbit-browsers.sh`, written before the copy's first start |
+
+The setting is not a [shared file](#existing-containers), and it is not on the Incus profile or in the image. So the converge changes no existing container: a running clone whose agent installed a browser into `~/.cache/ms-playwright` keeps finding it. A default gets the setting at its next deployment, and only its later clones get the boot files.
+
+A fresh JavaScript install can drop the folder. With the same Playwright version, `bun install`, `npm install` and `pnpm install` keep it. A new Playwright version replaces the package folder, and `npm ci` deletes `node_modules`. The deploy step runs after the install, so the default's seed always holds the build. An agent that reinstalls `node_modules` in a task copy, or changes the Playwright version, runs the Project's own install command again, such as `bunx playwright install chromium`, before it runs browser tests.
 - **The trust module.** One more package, `browser-p11-kit-modules`, gives only p11-kit's trust module, at `pkcs11/p11-kit-trust.so`. It adds nothing to `lib` or `fonts`. [Trust](#trust) says why.
 
 ### Existing containers
@@ -785,7 +801,7 @@ The first default Instance and its deployments are built for the Nodes of the [b
 | Git | The Node fetches with the read token into its mirror `/var/lib/orbit/instance-repositories/<id>.git`. A bundle carries the branch into the container, and `orbit` checks it out in `/srv/workspace` |
 | Checkout path | The workspace's path on the Node, inside the container's root file system. It keeps the path unique on the Node; Orbit never works in it from the Node |
 | `.env` | In the workspace's application directory, for `orbit` with group `work`, mode 0640. Git never takes it: see [the `.env` stays out of Git](#the-env-stays-out-of-git) |
-| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, and the [proxy settings](#proxy-settings-in-a-container) |
+| Deploy steps | Each runs as `orbit` at `/srv/workspace`, from its own vault copy. Its environment holds only `HOME`, `USER`, `LOGNAME`, `PATH`, the runtime folder's `VP_HOME` and `VP_NO_UPDATE_CHECK=1`, the [proxy settings](#proxy-settings-in-a-container), and `PLAYWRIGHT_BROWSERS_PATH=0` ([Playwright browsers](#playwright-browsers)) |
 | `PATH` | The Project's PHP build, then the runtime folder's `bin`, then the system folders |
 | FrankenPHP | The unit `orbit-frankenphp.service` runs `frankenphp run --config /etc/orbit/frankenphp.Caddyfile --adapter caddyfile` as `orbit` on port 8080. The Route proxies to the bridge address; the Node runs no PHP pool for it |
 | Seed | The first build and each passed deployment, also at the same commit, take `seed-<commit>` with the units stopped. Older seeds go; the runtime row records the commit |
