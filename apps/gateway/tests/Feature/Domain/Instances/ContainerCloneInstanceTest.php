@@ -273,7 +273,7 @@ describe('a clone of the container default', function (): void {
             ->and($clone['files'][3])->toBe(['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true]])
             // T3 starts without default dependencies: `sysinit.target` held each boot's start about 0.6 s.
             ->and($clone['files'][4])->toBe(['path' => '/etc/systemd/system/t3.service.d/10-orbit-boot.conf', 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
-                'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=\nAfter=nftables.service local-fs.target systemd-journald.socket\nConflicts=shutdown.target\nBefore=shutdown.target\n"])
+                'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"])
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
