@@ -262,8 +262,8 @@ Deno.test("the shipped launcher stages a stage copy's first line and gives the c
         assertEquals(JSON.parse(await Deno.readTextFile(outputs.clone_private + "/input.json")), JSON.parse(outputs.clone_payload));
         // A later phase runs from the staged folder, as clone-t3 does.
         assertEquals((await execute(clean)).code, 0);
-        // A copy without its JSON line, or a second launch on a staged folder, names the stage and stages nothing.
-        for (const stdin of ["fixture-private-credential\n", "{}\nfixture-private-credential\n"]) {
+        // A copy without its JSON line, with a line that is no stage, or a second launch on a staged folder names the stage.
+        for (const stdin of ["fixture-private-credential\n", "{}\nfixture-private-credential\n", "[]\nfixture-private-credential\n"]) {
             const refused = await execute(argv, stdin, env);
             assertEquals(refused.code, 1);
             assertEquals(new TextDecoder().decode(refused.stderr).trim(), "instance.clone_input_failed");

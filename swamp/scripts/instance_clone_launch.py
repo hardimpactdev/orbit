@@ -35,7 +35,7 @@ def main():
             return
         else:
             payload = json.loads((folder / "input.json").read_text())
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
         print("instance.clone_input_failed", file=sys.stderr)
         raise SystemExit(1) from None
     script = folder / "clone.py"

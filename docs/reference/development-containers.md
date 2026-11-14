@@ -1075,6 +1075,8 @@ The Gateway also writes a clone's stage copy, `instance-create-stage-<operation>
 
 The scripts take about 187 KB, more than one command argument may hold, so they cross the copy step's one SSH stdin, framed in one vault value. Its reference is `clone_stage`. The destroy deletes it with the clone copy. The workflow reads it from the release after the one whose Gateway first writes it; until then the `input` and `clone-input` steps stage the scripts.
 
+Once the workflow reads it, a clone runs the scripts of the Gateway release that admitted it. A release loads Swamp before its Gateway switches, so a create admitted just before a release runs the older scripts on the newer workflow. A change to the clone script's phases, its argument list, or the lines and timings that `finish` reads must work across that one release: the newer workflow and result reader must accept what the older scripts do and print.
+
 The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started.
 
 A failed create stops its copy, and a retry writes the model environment again into a copy that is not running. Only a copy that a release before 2065 started and that still runs holds none: its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again.
