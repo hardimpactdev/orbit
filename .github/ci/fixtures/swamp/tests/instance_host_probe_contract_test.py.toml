@@ -1,4 +1,4 @@
-source_sha256 = "6b7b93b00cce6235f26f6017bd3cde3207727ad452d6a41eb78a1baf598a81a6"
+source_sha256 = "8bdf3378280cb09dc1f215a63562a443e8005ba45e6a25a1210bfd4777d2b5fb"
 cases = ["test_the_shipped_host_profile_passes_the_probe_guard_before_start"]
 file = "swamp/tests/instance_host_probe_contract_test.py"
 slices = false

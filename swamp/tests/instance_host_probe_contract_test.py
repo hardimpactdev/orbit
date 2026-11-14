@@ -49,7 +49,8 @@ class HostProbeContractTest(unittest.TestCase):
                          'instances': {'project': 'orbit-instances', 'nested': {'project': 'orbit-instances-nested'},
                                        'incus': 'incus', 'ids': 215172736,
                                        'network': 'orbitinst0', 'nic_acl': 'orbitinst0-proxy', 'pool': 'fixture-pool',
-                                       'address': '192.0.2.1/24', 'stock': 'fixture-image', 'profile_config': {},
+                                       'address': '192.0.2.1/24', 'stock': 'fixture-image',
+                                       'profile_config': {'environment.PATH': '/opt/orbit/runtime/current/bin:/usr/bin:/bin'},
                                        'folders': {'runtime': {'path': '/opt/orbit/runtime'},
                                                    'agent': {'path': '/opt/orbit/agent'}}}}
             (folder / 'tasks/probe-contract.yml').write_text(yaml.safe_dump([*profiles, probe], sort_keys=False))
@@ -69,6 +70,7 @@ class HostProbeContractTest(unittest.TestCase):
             profile = state['profile']
             self.assertNotIn('size', profile['devices']['root'], 'This is the host profile, not a sized Instance intent')
             self.assertEqual(profile['devices']['root']['pool'], 'fixture-pool')
+            self.assertEqual(profile['config']['environment.PATH'], variables['instances']['profile_config']['environment.PATH'])
             self.assertEqual(state['containers'], {}, 'The shipped probe cleanup must run')
             calls = state['calls']
             volume = ['query', '--', '/1.0/storage-pools/fixture-pool/volumes/container/orbit-clone-probe-copy?project=orbit-instances-nested']
