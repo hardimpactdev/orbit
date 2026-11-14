@@ -38,14 +38,27 @@ const idle = [...base, " 3630   389  3630 ?        claude", " 3631  3630  3630 ?
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
 /** One run of the phase against a container in `status`, whose /etc/machine-info holds `written`, and whose T3 (the fixture's) answers `label` or not at all. */
-async function restart(options: { status?: string; down?: boolean; label?: string; written?: string; ps?: string[]; main?: number; unreadable?: boolean; children?: number; broken?: boolean }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
+async function restart(options: { status?: string; down?: boolean; label?: string; written?: string; ps?: string[]; main?: number; unreadable?: boolean; children?: number; statMissing?: boolean; psFails?: number[]; exited?: number[] }): Promise<{ ok: boolean; output: string; result: Record<string, unknown>; systemctl: string[][] }> {
     const folder = Deno.makeTempDirSync();
     try {
         for (const dir of ["bin", "run", "containers/instance-7/etc"]) Deno.mkdirSync(`${folder}/${dir}`, { recursive: true });
         Deno.writeTextFileSync(`${folder}/containers/instance-7/etc/machine-info`, options.written ?? "PRETTY_HOSTNAME=clone.shop\n");
         Deno.writeTextFileSync(`${folder}/state.json`, JSON.stringify({
-            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop", ps: options.ps ?? idle, t3_main: options.main ?? 389, procs_unreadable: options.unreadable === true,
-            t3_children: options.children ?? 0, procs_fail: options.broken === true } } }));
+            containers: { "instance-7": { status: options.status ?? "Running", t3: !options.down, t3_label: options.label ?? "clone.shop", } } }));
+        // T3's service as the phase's read finds it: the cgroup files, a /proc folder per live member, and stand-ins for systemctl and ps.
+        const rootfs = `${folder}/containers/instance-7`;
+        const cgroup = `${rootfs}/sys/fs/cgroup/system.slice/t3.service`;
+        Deno.mkdirSync(cgroup, { recursive: true });
+        const members = (options.ps ?? idle).map((line) => /^\s*(\d+)\s/.exec(line)?.[1] ?? "9999");
+        if (!options.unreadable) Deno.writeTextFileSync(`${cgroup}/cgroup.procs`, members.map((pid) => `${pid}\n`).join(""));
+        if (!options.statMissing) Deno.writeTextFileSync(`${cgroup}/cgroup.stat`, `nr_descendants ${options.children ?? 0}\nnr_dying_descendants 0\n`);
+        for (const pid of members) if (!(options.exited ?? []).includes(Number(pid))) Deno.mkdirSync(`${rootfs}/proc/${pid}`, { recursive: true });
+        Deno.writeTextFileSync(`${folder}/ps-table`, (options.ps ?? idle).map((line, index) => `${members[index]}\t${line}\n`).join(""));
+        Deno.writeTextFileSync(`${folder}/ps-fails`, (options.psFails ?? []).map((pid) => `${pid}\n`).join(""));
+        Deno.writeTextFileSync(`${folder}/bin/systemctl`, `#!/bin/sh\necho ${options.main ?? 389}\n`);
+        Deno.writeTextFileSync(`${folder}/bin/ps`, `#!/bin/sh\nfor p; do :; done\ngrep -qx "$p" '${folder}/ps-fails' && exit 1\nline=$(grep "^$p\t" '${folder}/ps-table' | cut -f2-) || exit 1\nprintf '%s\\n' "$line"\n`);
+        Deno.chmodSync(`${folder}/bin/systemctl`, 0o755);
+        Deno.chmodSync(`${folder}/bin/ps`, 0o755);
         Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
         Deno.chmodSync(`${folder}/bin/incus`, 0o755);
         Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
@@ -169,8 +182,9 @@ Deno.test({ name: "an orphan left in T3's service, or a member line that does no
     }
 } });
 
-Deno.test({ name: "a read that fails, a MainPID outside the service or a child cgroup keeps the container busy: it fails closed", ignore: !available, async fn() {
-    for (const options of [{ unreadable: true }, { main: 0 }, { main: 777 }, { ps: [] as string[] }, { children: 1 }, { broken: true }]) {
+Deno.test({ name: "a read that fails, a MainPID outside the service, a descendant cgroup or an unreadable count keeps the container busy: it fails closed", ignore: !available, async fn() {
+    // A ps that fails for a member still alive, after it printed the members before it, as a read that broke half way.
+    for (const options of [{ unreadable: true }, { main: 0 }, { main: 777 }, { ps: [] as string[] }, { children: 1 }, { statMissing: true }, { psFails: [3631] }]) {
         const run = await restart(options);
         assert(run.ok, run.output);
         assertEquals(run.result, { answer: "busy", reason: "processes_unreadable" });
@@ -193,3 +207,9 @@ Deno.test("the provider names of the process rule are the binaries the recipe sh
     assertEquals(list("providers").sort(), bins.sort());
     assert(list("session_providers").every((name) => list("providers").includes(name)));
 });
+
+Deno.test({ name: "a member that exited between the list and its ps line may be left out, and the idle T3 restarts", ignore: !available, async fn() {
+    const run = await restart({ ps: [...idle, " 3700  3630  3700 ?        bash"], psFails: [3700], exited: [3700] });
+    assert(run.ok, run.output);
+    assertEquals(run.result.answer, "restarted");
+} });

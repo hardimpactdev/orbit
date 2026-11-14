@@ -23,7 +23,7 @@
 {%- if ns.main == 0 or ns.main not in pids or ns.children != 0 -%}
 {{ {'readable': false} | to_json }}
 {%- else -%}
-{%- set provider_pids = procs | selectattr('ppid', 'equalto', ns.main) | selectattr('comm', 'in', providers) | map(attribute='pid') | list -%}
+{%- set provider_pids = procs | selectattr('ppid', 'equalto', ns.main) | selectattr('tty', 'equalto', '?') | selectattr('comm', 'in', providers) | map(attribute='pid') | list -%}
 {%- set session_pids = procs | selectattr('pid', 'in', provider_pids) | selectattr('comm', 'in', session_providers) | map(attribute='pid') | list -%}
 {%- set counts = {'terminals': 0, 'commands': unparsed | length} -%}
 {%- for p in procs if p.pid != ns.main -%}

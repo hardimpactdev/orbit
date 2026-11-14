@@ -67,8 +67,8 @@
           ansible.builtin.set_fact:
             restart_result: { answer: skipped, reason: name_not_written }
 
-        # The last guard, one read before the restart: systemd's MainPID of t3.service, its child cgroups and its exact members, with
-        # each one's parent, session, tty and name. The rule is the table in docs/reference/development-containers.md#existing-instances,
+        # The last guard, one read before the restart: systemd's MainPID of t3.service, its descendant cgroups (cgroup.stat) and its
+        # exact members, with each one's parent, session, tty and name. Only a member that has exited may lack its line. The rule is the table in docs/reference/development-containers.md#existing-instances,
         # applied by templates/t3-service-processes.j2. A read that fails keeps the container busy.
         - name: Read the processes of T3's service
           when: restart_result is not defined
@@ -84,8 +84,9 @@
               - -c
               - >-
                 set -eu; main=$(systemctl show -p MainPID --value t3.service); cg=/sys/fs/cgroup/system.slice/t3.service;
-                procs=$(cat "$cg/cgroup.procs"); echo "main $main"; echo "children $(find "$cg" -mindepth 1 -maxdepth 1 -type d | wc -l)";
-                for p in $procs; do ps -o pid=,ppid=,sid=,tty=,comm= -p "$p" || true; done
+                procs=$(cat "$cg/cgroup.procs"); echo "main $main";
+                echo "children $(sed -n 's/^nr_descendants //p' "$cg/cgroup.stat" | grep . || echo -1)";
+                for p in $procs; do ps -o pid=,ppid=,sid=,tty=,comm= -p "$p" || [ ! -d "/proc/$p" ]; done
           register: restart_ps
           changed_when: false
           failed_when: false
