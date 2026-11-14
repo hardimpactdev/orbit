@@ -277,6 +277,31 @@ describe('the session handle', function (): void {
     });
 });
 
+describe('the session handle refusals and polling', function (): void {
+    it('refuses a hold when the Gateway admin session ended or the Instance is being removed', function (): void {
+        $this->environment->forceFill(['admin_session_expires_at' => now()->subMinute()])->save();
+        readHeld($this->phone, $this->environment)->assertStatus(409)->assertJsonPath('error.code', 'conn.session_expired');
+
+        $this->environment->forceFill(['admin_session_expires_at' => now()->addDays(20)])->save();
+        // The removal's own records are not the subject; the refusal reads only the status.
+        DB::unprepared('DROP TRIGGER instances_removal_status_update');
+        $instance = Instance::query()->findOrFail($this->environment->instance_id);
+        $instance->update(['status' => InstanceState::Removing]);
+        readHeld($this->phone, $this->environment)->assertStatus(409)->assertJsonPath('error.code', 'instance.removal_conflict');
+        expect(Operation::query()->where('kind', 'conn.session_hold')->exists())->toBeFalse();
+    });
+
+    it('lets its Node follow the hold on the Conn Operation read, and no other Node', function (): void {
+        $id = readHeld($this->phone, $this->environment)->assertStatus(202)->json('data.id');
+        test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->getJson("/api/v1/conn/operations/{$id}")
+            ->assertOk()->assertJsonPath('data.kind', 'conn.session_hold')->assertJsonPath('data.id', $id);
+
+        $other = heldNode('laptop', '10.44.0.78');
+        NodeAccess::query()->create(['consumer_node_id' => $other->id, 'serving_node_id' => $this->host->id]);
+        test()->withServerVariables(['REMOTE_ADDR' => $other->wireguard_ip])->getJson("/api/v1/conn/operations/{$id}")->assertNotFound();
+    });
+});
+
 describe('installed clients', function (): void {
     it('keeps held pairings out of the default pairing list; include_held adds them', function (): void {
         ConnPairing::query()->create(['node_id' => $this->phone->id, 'conn_environment_id' => $this->environment->id, 'client_label' => 'phone via Orbit device00',
@@ -340,6 +365,28 @@ describe('renewal', function (): void {
         InstanceRuntime::query()->where('instance_id', $this->environment->instance_id)->update(['power_state' => 'running']);
         app(ConnInstanceLifecycle::class)->projectWake(Instance::query()->findOrFail($this->environment->instance_id));
         expect(holdOperation($this->phone, $this->environment)->input['renews_pairing_id'])->not->toBeNull();
+    });
+
+    it('runs the held sweep in the hourly renewal tick', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $old = ConnPairing::query()->where('held', true)->sole();
+        $this->travel(24)->days();
+        $this->environment->forceFill(['admin_session_expires_at' => now()->addDays(20)])->save();
+
+        $this->artisan('conn:environments:renew')->assertSuccessful();
+
+        expect(holdOperation($this->phone, $this->environment)->input['renews_pairing_id'])->toBe($old->id);
+    });
+
+    it('withdraws and revokes a held session whose Node lost its access another way', function (): void {
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($this->phone, $this->environment));
+        $held = ConnPairing::query()->where('held', true)->sole();
+        NodeAccess::query()->where('consumer_node_id', $this->phone->id)->delete();
+
+        app(ConnHeldSessionSweep::class)->run();
+
+        expect($held->fresh())->session->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes()[0]->input['pairing_ids'])->toBe([$held->id]);
     });
 
     it('admits an owed revoke again while the server could not take it', function (): void {
