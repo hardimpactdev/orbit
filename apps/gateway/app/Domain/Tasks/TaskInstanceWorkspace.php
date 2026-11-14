@@ -55,17 +55,12 @@ final readonly class TaskInstanceWorkspace
 
     /**
      * Refuses what the container check cannot run yet, before a check row exists: the hosted CI push needs the Node-side
-     * push of publication, and the CI cache setup program reads the Gateway mirror from a task VM. There is no task VM fallback.
-     *
-     * @param  list<array{name: string, command: string, timeout_seconds: int}>  $setup
+     * push of publication. There is no task VM fallback.
      */
-    public static function refuseUnavailable(?string $hostedCheck, array $setup): void
+    public static function refuseUnavailable(?string $hostedCheck): void
     {
         if ($hostedCheck !== null) {
             throw new ResourceOperationException('tasks.instance_hosted_check_unavailable', 'A container task workspace cannot run a hosted handoff check yet.', 409);
-        }
-        if (in_array('@orbit/ci-caches', array_column($setup, 'command'), true)) {
-            throw new ResourceOperationException('tasks.instance_setup_unavailable', 'A container task workspace cannot run the @orbit/ci-caches setup step.', 409);
         }
     }
 }
