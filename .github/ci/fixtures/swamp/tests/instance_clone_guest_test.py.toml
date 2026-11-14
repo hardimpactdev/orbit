@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "c94eaff3f43ecd76c30e38e725c57f35396622dca6b9ecf705a22f7055a4cf0b"
+source_sha256 = "8389e896821b061fdc2693fef2894aedacb4345d53c742e4c2d8ab337b17ca21"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -16,6 +16,8 @@ cases = [
   "test_a_multi_line_value_and_crlf_lines_keep_their_form",
   "test_without_a_clone_host_or_a_default_host_nothing_changes",
   "test_a_first_run_on_another_branch_checks_out_the_fetched_commit_and_marks_it",
+  "test_the_checkout_keeps_the_env_out_of_git_once_and_keeps_the_exclude_files_lines",
+  "test_an_application_folder_names_its_own_env_and_a_missing_exclude_file_is_made",
   "test_a_first_run_on_a_seed_branch_of_the_same_name_still_checks_out_the_fetched_commit",
   "test_a_retry_never_moves_the_branch_this_instance_checked_out",
   "test_sessions_refuse_a_workspace_without_this_instances_mark",

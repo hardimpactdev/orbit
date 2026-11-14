@@ -260,6 +260,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.commit(self.origin, "fetched")
         self.expected = self.head(self.origin)
         self.git(self.base, "clone", "--quiet", str(self.origin), str(self.workspace))
+        self.exclude_users = []
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
@@ -292,6 +293,11 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
         def command(argv, **_kwargs):
             actual = argv[4:] if argv[0] == "runuser" else argv
+            if GUEST.EXCLUDE_PROGRAM in actual:
+                # The exclude write runs for real in the workspace; it must run as orbit, never as root.
+                self.exclude_users.append(argv[2] if argv[0] == "runuser" else "root")
+                return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
+                                env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null"))
             if commands is not None and actual[0] != "git":
                 commands.append(actual)
             if actual[0] == "git" and actual[-3:] == ["config", "--global", "user.name"]:
@@ -347,6 +353,35 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.assertEqual((self.branch(), self.head(self.workspace)), ("proof", self.expected))
         self.assertEqual(self.mark(), ({"instance_id": 9, "commit": self.expected}, 0o600))
         self.assertFalse((self.base / "tmp/proof.bundle").exists())
+
+    def test_the_checkout_keeps_the_env_out_of_git_once_and_keeps_the_exclude_files_lines(self):
+        # The seed copy: the default's .env, which the Project's .gitignore does not name, and an exclude line of its own.
+        self.seed("main", self.older)
+        (self.workspace / ".env").write_text("APP_KEY=base64:fixture-key\n")
+        exclude = self.workspace / ".git/info/exclude"
+        exclude.write_text("# local\n*.log")
+        first = self.phase("checkout")
+        self.assertIn("exclude", first["changes"])
+        self.assertEqual(exclude.read_text(), "# local\n*.log\n/.env\n")
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertEqual(self.exclude_users, ["orbit"])
+        # A retry, and a clone of this clone, find the line and add nothing.
+        self.assertNotIn("exclude", self.phase("checkout")["changes"])
+        self.assertNotIn("exclude", self.phase("workspace")["changes"])
+        self.assertEqual(exclude.read_text(), "# local\n*.log\n/.env\n")
+
+    def test_an_application_folder_names_its_own_env_and_a_missing_exclude_file_is_made(self):
+        self.seed("main", self.older)
+        exclude = self.workspace / ".git/info/exclude"
+        exclude.unlink(missing_ok=True)
+        container = {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
+                     "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/apps/web/.env",
+                     "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
+        (self.workspace / "apps/web").mkdir(parents=True)
+        self.phase("checkout", container)
+        self.assertEqual(exclude.read_text(), "/apps/web/.env\n")
+        (self.workspace / "apps/web/.env").write_text("APP_KEY=base64:fixture-key\n")
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
 
     def test_a_first_run_on_a_seed_branch_of_the_same_name_still_checks_out_the_fetched_commit(self):
         # The default's own branch has the target's name but an older head; a mark of another Instance does not count.

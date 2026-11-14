@@ -196,6 +196,22 @@ def rewrite_default_hosts(text, keys, hosts):
     return "".join(out), sorted(rewritten)
 
 
+# Run as orbit in the checkout: names one path, relative to the checkout, once in Git's own info/exclude.
+EXCLUDE_PROGRAM = r"""
+import os, re, subprocess, sys
+path = subprocess.run(["git", "rev-parse", "--git-path", "info/exclude"], capture_output=True, text=True, check=True).stdout.strip()
+entry = ("/" + re.sub(r"([\\*?\[])", r"\\\1", sys.argv[1])).encode()
+data = open(path, "rb").read() if os.path.isfile(path) else b""
+if entry in data.splitlines():
+    print("unchanged")
+    sys.exit(0)
+os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+with open(path, "ab") as stream:
+    stream.write((b"" if not data or data.endswith(b"\n") else b"\n") + entry + b"\n")
+print("changed")
+"""
+
+
 def phase_main(phase, raw):
     c = json.loads(raw)
     changes = []
@@ -323,7 +339,18 @@ def phase_main(phase, raw):
             environment_keys["shared"] = sorted(set(merge["shared"]) & written)
         if env != updated:
             write(c["environment_file"], updated, 1000, 2760, "0640")
+        exclude_environment()
         return {"environment": environment_keys, "commit": checked_out["commit"]}
+
+    def exclude_environment():
+        """Git never takes the `.env`, also when the Project's .gitignore does not name it: one line in the checkout's own
+        info/exclude, written once, as orbit, who owns the checkout. Its other lines and the Project's files stay as they are
+        (development-containers.md)."""
+        if not c["environment_file"].startswith(ws + "/"):
+            return
+        written = run(["python3", "-I", "-c", EXCLUDE_PROGRAM, c["environment_file"][len(ws) + 1:]], orbit=True)
+        if written.stdout.strip() == "changed":
+            changes.append("exclude")
 
     def services():
         """The rest of the workspace: PHP settings, file rights, Process files, web config, the Node store and the units."""
