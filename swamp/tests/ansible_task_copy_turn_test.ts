@@ -467,3 +467,12 @@ Deno.test({ name: "a reviewer's detach the copy still holds is undone once every
     assertEquals([undetached.settle!.settled, git(undetached.calls).slice(0, 6)], [[9], ["rev-parse --verify --quiet refs/orbit/review-detach",
         "symbolic-ref --quiet --short HEAD", "status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", "update-ref -d refs/orbit/review-detach"]]);
 } });
+
+Deno.test({ name: "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing", ignore: !available, async fn() {
+    const reviewer = { operation_id: 9, title: "Orbit task 4970 thread 76", branch: "task-4970" };
+    const refused = await phase("completed", { model: "claude-opus-9", settle: [reviewer] }, "dirty", "questions", "completed",
+        { T3_MARK: "a".repeat(40), T3_DETACHED: "1" });
+    assert(!refused.ok && refused.output.includes("tasks.copy_turn_model_unoffered"), refused.output);
+    assertEquals([refused.model!.accepted, refused.settle, refused.launched, refused.start, git(refused.calls)], [false, null, false, null, []]);
+    assertEquals(refused.calls.some((call) => call.args.includes("--kill-after=30") || call.args.includes("list")), false);
+} });

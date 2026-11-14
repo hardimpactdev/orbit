@@ -1,5 +1,5 @@
 order = 380
-source_sha256 = "b6423efe35c4c5dda0b631b8f1f725a001e46709517e95fcc860db25faeebe15"
+source_sha256 = "f3d528e69c0d525d53726552f182a03e9ae308fbb7e82d7e986be09ab7572e41"
 cases = [
   "the workflow writes only the turn's target into the phase input, runs the shipped playbook with its settings, and asserts the shaped result",
   "the turn's lock is its copy's: two copies on one Node turn side by side, one copy still takes one turn at a time",
@@ -22,9 +22,10 @@ cases = [
   "a question the helper cannot read stops nothing; a reviewer that asks is stopped before its checkout is restored",
   "an earlier turn whose run T3 shows over is settled before the launch; one still running launches nothing",
   "a reviewer's detach the copy still holds is undone once every run is over; without it the tree is never touched",
+  "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing",
 ]
 file = "swamp/tests/ansible_task_copy_turn_test.ts"
-cost = 182
+cost = 185
 # Local Deno case times on Beast rounded up by one second; not CI measurements.
 slices = 1
 inputs = [
@@ -60,3 +61,4 @@ inputs = [
   "a continued thread keeps its model: the catalog is not read" = 5
   "a catalog entry without a slug is left out, and a model list that is no list or holds no valid entry skips the check" = 11
   "the start evidence keeps stderr only when the start failed, and only its last 4096 characters" = 5
+  "a refused model while an earlier turn waits to be settled settles nothing, touches no checkout and launches nothing" = 3

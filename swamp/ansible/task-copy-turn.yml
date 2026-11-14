@@ -131,7 +131,7 @@
               model_entries | default(none) is none
               or intent.turn.model in (model_entries | map(attribute='slug') | list) + (model_entries | map(attribute='aliases', default=[]) | flatten)
             fail_msg: tasks.copy_turn_model_unoffered
-    # An earlier turn that may still run is settled first by one rule: T3 lists its thread in no active state, or none of its title, and
+    # An earlier turn that may still run is settled before any launch, by one rule: T3 lists its thread in no active state, or none of its title, and
     # a reviewer's detach is undone. The copy's ref `refs/orbit/review-detach` marks a detach in effect, at the tip the branch had: only
     # with it, and once no earlier run can still write, is the checkout restored as after a reviewer's turn. Without it nothing in the
     # tree is touched. While a run goes on, nothing is touched or launched, and the work in the copy stays.
