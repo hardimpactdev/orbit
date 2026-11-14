@@ -6,6 +6,9 @@ covers:
   - apps/gateway/extensions/conn/src/Domain/{ConnEnvironmentRestart,ConnEnvironmentRestartDecision,ConnEnvironmentRestartProjection}.php
   - apps/gateway/extensions/conn/src/Actions/AdmitConnEnvironmentRestartAction.php
   - apps/gateway/extensions/conn/src/Http/Controllers/ConnEnvironmentRestartController.php
+  - apps/cli/app/Commands/Conn/**
+  - packages/php-sdk/src/{Requests,Responses}/Conn/**
+  - swamp/ansible/conn-environment-restart.yml
 ---
 
 Restart the T3 server of one running container Instance, so that it shows the Instance's [machine name](/reference/development-containers#the-machine-name), `<instance>.<project slug>`. Stock T3 reads the name only when it starts. A container that ran before the name existed still shows `instance-<id>` until its T3 starts again. [Existing Instances](/reference/development-containers#existing-instances) explains when to run this command, and why no schedule runs it.
