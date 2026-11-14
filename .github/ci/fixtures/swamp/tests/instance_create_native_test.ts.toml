@@ -1,5 +1,5 @@
 order = 860
-source_sha256 = "3d746426191ac5ac05598bb92f78be3226b3f7f22892e218a2d47cbece87d288"
+source_sha256 = "2f424e58bd60d565206d5b8d95bb87574cf2251a40a9d38782af307bf3ade7bb"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
   "pinned create: a failed workspace registers nothing, stops the container and removes the private folder",
@@ -9,6 +9,7 @@ cost = 30
 after_merge = true
 reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
+  "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",
   "swamp/workflows/workflow-operation-instance-create.yaml",
   "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",

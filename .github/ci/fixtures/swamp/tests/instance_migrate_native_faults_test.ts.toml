@@ -1,5 +1,5 @@
 order = 840
-source_sha256 = "0d4fccef895c1000477c88d0d751a27164f1d60decc9584981c8a045f08d0521"
+source_sha256 = "ab1d1b4d7a8e8ed8d5f157fc7c627055fbdc7a49780dae104b845bdc70ce36f3"
 cases = [
   "pinned migrate failure: real native finish proves restoration, including the restore Route child after a lost root",
   "pinned migrate timeout: real native finish proves restoration, including the restore Route child after a lost root",
@@ -16,6 +16,7 @@ cost = 100
 after_merge = true
 reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
+  "swamp/tests/_support/native_auth.ts",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/requirements.txt",

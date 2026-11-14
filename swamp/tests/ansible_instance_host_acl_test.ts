@@ -15,7 +15,8 @@ Deno.test({
             const audit = calls.findIndex((call) => call.includes("/1.0/instances?all-projects=true&recursion=1"));
             assert(profile >= 0 && profile < audit);
             assert(!calls.some((call) => call.includes("security.acls.default.egress.action=allow")));
-            assertEquals(calls.filter((call) => call.includes("/1.0/instances?all-projects=true&recursion=1")).length, 2);
+            // Moving NICs, reconciling container files, and the final NIC audit each read all projects.
+            assertEquals(calls.filter((call) => call.includes("/1.0/instances?all-projects=true&recursion=1")).length, 3);
             // No own ACL: even the image builder inherits only the common proxy paths, with reject defaults.
             const state = f.state();
             const nic = state.profiles["orbit-instances"].devices.eth0;

@@ -228,6 +228,11 @@ def run_shard(plan, name, output):
             save(output, initial)
             return 1
         os.environ[variable] = receipt.read_text()
+    # The runner service is not a login session. Its managed user manager lives
+    # at the standard per-UID socket; do not inherit another user's bus.
+    if any(unit.split('#')[0] == 'swamp/tests/node_worker_systemd_cleanup_test.ts' for unit in shard['units']):
+        runtime = f'/run/user/{os.getuid()}'
+        os.environ.update(XDG_RUNTIME_DIR=runtime, DBUS_SESSION_BUS_ADDRESS=f'unix:path={runtime}/bus')
     budget = {**plan['budget'], 'shard_deadline_seconds': max(.001, deadline - time.monotonic())}
     return fixture_api.run(shard['units'], budget, plan['fixtures'], output)
 
