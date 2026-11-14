@@ -161,7 +161,8 @@
     fail_msg: instance.nested_fleet_image_unavailable
     quiet: true
 
-# A new nested-fleet default (only its intent has `inner_volume`) holds its inner fleet on its own btrfs volume
+# A new nested-fleet default holds its inner fleet on its own btrfs volume (a copy's intent has `inner_volume` too, but a copy runs the
+# native clone, never this phase)
 # (docs/reference/development-containers.md#the-inner-volume). The create makes the volume before the container; a retry reuses it,
 # and the start guard checks its keys before every start. Every other Instance, Instance 2454 among them, skips these tasks.
 - name: Make the inner volume
@@ -1265,7 +1266,9 @@
           - incus
           - query
           - "--"
-          - "/1.0/storage-pools/{{ container.inner_volume.pool }}/volumes/custom/{{ container.inner_volume.name }}/snapshots?project={{ container.project }}&recursion=1"
+          - >-
+            /1.0/storage-pools/{{ container.inner_volume.pool }}/volumes/custom/{{ container.inner_volume.name
+            }}/snapshots?project={{ container.project }}&recursion=1
       register: restore_volume_snapshots
       changed_when: false
     - name: Require the inner volume's half of the seed
@@ -1348,7 +1351,9 @@
           - incus
           - query
           - "--"
-          - "/1.0/storage-pools/{{ container.inner_volume.pool }}/volumes/custom/{{ container.inner_volume.name }}/snapshots?project={{ container.project }}&recursion=1"
+          - >-
+            /1.0/storage-pools/{{ container.inner_volume.pool }}/volumes/custom/{{ container.inner_volume.name
+            }}/snapshots?project={{ container.project }}&recursion=1
       register: seed_volume_snapshots
       changed_when: false
     - name: Name the seed

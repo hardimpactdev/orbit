@@ -116,8 +116,8 @@ sequenceDiagram
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:
     %%> - stops the container and restores its newest seed by creation time: the one "Keep the current seed" took, or a newer one
-    %%> - a default with an inner volume restores the volume to its snapshot of the same name too
-    %%> - refuses `instance.fleet_seed_missing` when no seed is left, or when the inner volume lacks the seed's half; it then restores nothing
+    %%> - a default with an inner volume restores the volume to its snapshot of the same name too; a failed volume restore fails the run with the container already restored
+    %%> - refuses `instance.fleet_seed_missing` when no seed is left, or when the inner volume lacks the seed's half; both are checked before anything is restored
     SW->>N: Start on the old seed<br/>Ansible · tags start
     %%> What it does:
     %%> - starts it through `start`, so the start delivers what every start delivers

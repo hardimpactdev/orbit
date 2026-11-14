@@ -2603,7 +2603,9 @@ Deno.test({
         assert(seeded.ok, seeded.output);
         // The seed tasks for the volume run their expressions and skip.
         for (const task of ["Read the inner volume's snapshots", "Snapshot the inner volume", "Delete the older seeds of the inner volume"]) {
-          assert(/skipping: \[node\]/.test(seeded.output.split(`TASK [${task}]`)[1] ?? ""), `${shape}: ${task}`);
+          // Only the task's own lines, up to the next task header.
+          const own = (seeded.output.split(`TASK [${task}]`)[1] ?? "").split("\nTASK [")[0];
+          assert(/skipping: \[node\]/.test(own) && !/(ok|changed): \[node\]/.test(own), `${shape}: ${task}`);
         }
         f.intent.fleet = fleetIntent();
         f.write();

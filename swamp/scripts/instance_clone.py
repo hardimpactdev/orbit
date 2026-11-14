@@ -394,9 +394,10 @@ def main():
                     volumes = f"/1.0/storage-pools/{inner['pool']}/volumes/custom/"
                     seeds = run(["incus", "query", volumes + clone["inner_volume"] + f"/snapshots?project={container['project']}&recursion=1"],
                                 check=False)
-                    # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part.
+                    # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part. A container seed without its
+                    # volume half is a seed taken before the pair existed: the default's next passed deployment takes the pair.
                     if seeds.returncode or clone["snapshot"] not in [row["name"].split("/")[-1] for row in json.loads(seeds.stdout)]:
-                        raise RuntimeError("instance.default_seed_moved")
+                        raise RuntimeError("instance.default_seed_incomplete")
                     # No container yet: a volume of this name is left from a failed copy, so it is copied again from this seed.
                     if run(["incus", "query", volumes + inner["name"] + f"?project={container['project']}"], check=False).returncode == 0:
                         change(project + ["storage", "volume", "delete", inner["pool"], inner["name"]])

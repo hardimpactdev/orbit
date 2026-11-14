@@ -26,6 +26,7 @@ sequenceDiagram
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
   %%> - a nested-fleet Project: the Node has the nested-fleet switch, else the placement rule refuses
+  %%> - a nested-fleet default whose runtime records an inner volume, while a deployment of it is open: `instance.default_seed_in_flight` (409) before any record, since the deployment retakes the two halves of the seed one after the other
   %%> - a nested-fleet default whose runtime records an inner volume: the clone's runtime records its own `inner-<id>`, and `container.clone` names the default's volume; every other clone, a copy of the first nested-fleet default included, records none
   %%> Result:
   %%> - the Instance is reserved with its runtime record: container name, bridge address, the lowest free T3 port from 3800 and the default as clone source
@@ -49,7 +50,7 @@ sequenceDiagram
     %%> - the copy supplies the full root disk device (type, path, pool and size), whether the seed inherits it or stores it locally
     %%> - `incus copy` of the default container's snapshot `seed-<commit>`, a ZFS clone; a stopped default needs no start
     %%> Inner volume (a clone whose intent has `inner_volume` only; every other clone makes no volume call and copies the container as before):
-    %%> - the default's volume must hold its own snapshot `seed-<commit>`, the other half of the seed, else `instance.default_seed_moved` before any change
+    %%> - the default's volume must hold its own snapshot `seed-<commit>`, the other half of the seed, else `instance.default_seed_incomplete` before any change; a deployment of the default takes the pair
     %%> - before the container: `incus storage volume copy` of that snapshot to `inner-<id>`, a ZFS clone; Incus gives the copy a new btrfs fsid (about 4 s in the 2026-11-14 test); a volume of that name without its container, left by a failed copy, is deleted and copied again
     %%> - the container copy sets the disk `inner-pool` to `source=inner-<id>`, so the copy never attaches the default's volume
     %%> - a failed container copy deletes the volume it copied, so a failed create leaves no volume without its container

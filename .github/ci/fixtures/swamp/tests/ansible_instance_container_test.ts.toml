@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "3e113d0d7da128bda63adc38837d93ee850787239726d17cb6cc7177eff260ee"
+source_sha256 = "b71ce11e804c3dc62a1e3a11e3e4621e9258e7f33cad5d8eee27ba25e2ddf85a"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",

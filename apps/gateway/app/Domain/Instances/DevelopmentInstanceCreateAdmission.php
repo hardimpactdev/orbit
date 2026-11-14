@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\OperationKinds;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Routes\RouteDomain;
 use App\Domain\Shared\LifecycleStatus;
@@ -16,6 +18,7 @@ use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeRole;
+use App\Models\Operation;
 use App\Models\Project;
 
 /** Read-only create conditions. Host bridge and shared-folder readiness remain in InstanceContainer::reserve(). */
@@ -53,6 +56,7 @@ final readonly class DevelopmentInstanceCreateAdmission
         $this->assertContainer($project, $default);
         $this->assertActive($default);
         $this->assertSeed($default);
+        $this->assertNoSeedInFlight($default);
 
         return $default;
     }
@@ -88,6 +92,26 @@ final readonly class DevelopmentInstanceCreateAdmission
     {
         if ($default->runtime?->seed_commit === null) {
             $this->missingSeed();
+        }
+    }
+
+    /**
+     * The seed of a default with an inner volume is two snapshots, which a deployment retakes one after the other, also under the same
+     * name. A copy that read one half before the retake and the other after it would hold a fleet record over other fleet disks, so a
+     * clone of such a default is not admitted while its deployment is open; the refresh waits for an open clone the same way
+     * (instance.clone_in_flight). A default without an inner volume, Instance 2454 among them, has a one-snapshot seed and no such wait
+     * (docs/reference/development-containers.md#the-seed-pair).
+     */
+    public function assertNoSeedInFlight(Instance $default): void
+    {
+        if ($default->runtime?->inner_volume === null) {
+            return;
+        }
+        $open = Operation::query()->where('kind', OperationKinds::InstanceDeploy)->where('target_type', 'instance')
+            ->where('target_id', $default->id)->whereNotIn('status', OperationStatus::terminalValues())->exists();
+        if ($open) {
+            throw new ResourceOperationException('instance.default_seed_in_flight',
+                'The Project\'s default is retaking its seed in a deployment; create the clone when that deployment ends.', 409);
         }
     }
 

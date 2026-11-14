@@ -276,6 +276,25 @@ describe('a task start on the copy path', function (): void {
             ->toMatchArray(['name' => 'instance-'.$copy->id, 'inner_volume' => 'inner-'.$copy->id]);
     });
 
+    it('refuses a copy of a default with an inner volume while its deployment retakes the seed pair; a default without one is admitted', function (bool $volume): void {
+        $default = copySource();
+        if ($volume) {
+            InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
+        }
+        Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+            'status' => 'running', 'input' => [], 'state' => [], 'result' => null]);
+        $group = copyGroup($default->project);
+        $before = copyRows();
+
+        if ($volume) {
+            // docs/reference/development-containers.md#the-seed-pair: a copy must not read one half before the retake and one after.
+            expect(copyRefusal(fn () => startCopy($group)))->toBe('instance.default_seed_in_flight 409')->and(copyRows())->toBe($before);
+        } else {
+            // Instance 2454's shape: a one-snapshot seed, admitted during a deployment as before.
+            expect(startCopy($group)->kind)->toBe('instance.create');
+        }
+    })->with(['inner volume' => true, 'no inner volume (Instance 2454)' => false]);
+
     it('gives a task copy of a nested-fleet default without an inner volume (Instance 2454\'s shape) none: no volume in its record, intent or devices', function (): void {
         $default = copySource();
         $group = copyGroup($default->project);

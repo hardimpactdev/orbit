@@ -125,6 +125,11 @@ class BranchSelectionTest(unittest.TestCase):
             self.prepare(sha="f" * 40)
 
 
+# NestedFleetInnerVolume::Config: the keys of a copy's inner volume.
+INNER_CONFIG = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mount_options": "user_subvol_rm_allowed,discard",
+                "security.shifted": "true"}
+
+
 class CloneTest(unittest.TestCase):
     def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None):
         calls = []
@@ -997,9 +1002,6 @@ class CloneTest(unittest.TestCase):
                     self.assertEqual(error, "instance.container_network_unsafe\n")
                     self.assertFalse(starts)
 
-    INNER_CONFIG = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mount_options": "user_subvol_rm_allowed,discard",
-                    "security.shifted": "true"}
-
     def inner_clone(self, **fixture):
         """A copy of a nested-fleet default with an inner volume (docs/reference/development-containers.md#the-inner-volume)."""
         allowed = {
@@ -1017,11 +1019,11 @@ class CloneTest(unittest.TestCase):
             read["expanded_config"] = {**config, "volatile.uuid": "abc-123"}
             read["expanded_devices"] = copy.deepcopy(allowed)
 
-        inner = {"name": "inner-7", "pool": "orbit-instances", "size": "30GiB", "config": self.INNER_CONFIG, "device": "inner-pool",
+        inner = {"name": "inner-7", "pool": "orbit-instances", "size": "30GiB", "config": INNER_CONFIG, "device": "inner-pool",
                  "path": "/srv/inner-pool", "inner_pool": {"name": "inner", "source": "/srv/inner-pool/pool"}}
         overrides = {"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config, "inner_volume": inner,
                      "clone": {"source": "instance-1", "snapshot": "seed", "inner_volume": "inner-1", "t3": {"device": "t3"}}, **fixture}
-        return self.clone(effective, overrides=overrides, volumes={"custom/inner-7": {**self.INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}})
+        return self.clone(effective, overrides=overrides, volumes={"custom/inner-7": {**INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}})
 
     def test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start(self):
         calls, _, error = self.inner_clone()
@@ -1035,12 +1037,12 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(calls[container_copy][-2:], ["--device", "inner-pool,source=inner-7"])
         # The guard admits the copy's volume with exactly its keys, as the Ansible start passes them.
         guard = next(call for call in calls if call[:2] == ["python3", "-c"] and len(call) == 8)
-        self.assertEqual(json.loads(guard[7]), {"inner-pool": {**self.INNER_CONFIG, "size": "30GiB"}})
+        self.assertEqual(json.loads(guard[7]), {"inner-pool": {**INNER_CONFIG, "size": "30GiB"}})
         self.assertFalse(any(call[3:6] == ["storage", "volume", "delete"] for call in calls))
 
     def test_a_copy_with_an_inner_volume_refuses_a_seed_whose_volume_half_is_gone_before_any_change(self):
         calls, _, error = self.inner_clone(fixture_volume_seeds=["seed-older"])
-        self.assertEqual(error, "instance.default_seed_moved\n")
+        self.assertEqual(error, "instance.default_seed_incomplete\n")
         self.assertFalse(any("copy" in call or "storage" in call for call in calls))
 
     def test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts(self):
