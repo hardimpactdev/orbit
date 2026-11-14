@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "1150498a31ccfad8b23c17db9eed06d012daa43264a5e01fc5fd5805b19ed54e"
+source_sha256 = "044b7a9d2dff3b5248ba1f2b664f75efa076b2abb790ce34ed7c578bcf666453"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -32,8 +32,7 @@ cases = [
   "the agent phase trusts only its workspace and preserves other Git settings on reruns",
   "the agent can commit with its default identity and keeps each configured identity value",
   "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
-  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none",
-  "the presented machine name: a create writes it after its first start; a stopped start writes it before the boot; running and frozen get nothing; T3 never restarts",
+  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start and before a stopped container's boot, never into a running one",
   "start refuses a NIC with missing ACL before starting the container",
   "start refuses a NIC with permissive default before starting the container",
   "start refuses a NIC with bridge union ACL before starting the container",
@@ -92,7 +91,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4107
+cost = 4080
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   # The deploy-step record across four checkouts (45s locally, run in full before the PR): a 72nd slice would defer the whole file. The PR
@@ -170,7 +169,7 @@ inputs = [
 ]
 
 [case_costs]
-  "the presented machine name: a create writes it after its first start; a stopped start writes it before the boot; running and frozen get nothing; T3 never restarts" = 78 # ESTIMATE: local time * 2.1, rounded up + 1s
+  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none; the presented machine name goes in after a create's first start and before a stopped container's boot, never into a running one" = 81 # ESTIMATE: local time * 2.1, rounded up + 1s
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 72 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 43.6-73.7s
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 135 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s; plus 11s ESTIMATE for three workspace runs of the .env exclude (local 5s x 2.1, rounded up)
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s
@@ -196,7 +195,6 @@ inputs = [
   "the agent phase trusts only its workspace and preserves other Git settings on reruns" = 54 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 34.2-55.3s
   "the agent can commit with its default identity and keeps each configured identity value" = 67 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 32.7-67.1s
   "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes" = 41 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 24.5-41.1s
-  "container writes the access plan's private names into /etc/hosts and its composed proxy environment, keeps other lines, and removes the names when the plan has none" = 30 # ESTIMATE: local 26s, one create and four starts
   "start refuses a NIC with missing ACL before starting the container" = 35 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 20.1-34.4s
   "start refuses a NIC with permissive default before starting the container" = 36 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 15.9-34.6s
   "start refuses a NIC with bridge union ACL before starting the container" = 35 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 16.3-33.9s

@@ -907,6 +907,8 @@ The destroy release fixture evaluates the guard and environment of `Release the 
 
 The container fixture cases that deliver the Club key of a nested fleet carry estimated costs (local time × 2.1, rounded up, plus one second) until a hosted run measures them. The table marks each one `ESTIMATE`. The container fixture gives each retained case its own slice: 70 since the four cases of a wake that resumes a frozen container, which carry estimates like the four cases of a wake's start before them. A new case there raises the slice count with it.
 
+At 71 retained cases the file fills the eight pull request shards: a 72nd case needs a ninth shard, whatever its cost. The presented machine name's start-phase steps therefore joined the existing private names case, which writes the same `/etc/hosts`; its cost is a new estimate.
+
 When a fixture gains cases, collect its registrations with `bin/ci-units collect --file PATH` and update its inventory and cost keys together. Include the production inputs the new cases exercise. The Ansible structure test also checks parsed command argument types before module validation can coerce them.
 
 Migration copy fixtures use real Git trees and filesystem modes. They cover empty link targets, nested ignored directories, excluded Git/submodule paths and prediction before downtime. The final check inspects the copied tree and catches changes made after prediction. Tests also cover guaranteed Git metadata and refusal of metadata left behind, plus safe mode restoration with protected stdin data and directory descriptors.
