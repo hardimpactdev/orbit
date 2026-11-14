@@ -74,8 +74,8 @@ final class TaskPublicationData extends Data
             return new self($mode, $source, self::Working);
         }
         $refusal = $group->publish_refusal;
-        if (is_array($refusal) && ($refusal['check_id'] ?? null) === $check->id) {
-            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, null, is_string($refusal['code'] ?? null) ? $refusal['code'] : null);
+        if ($refusal !== null && $refusal['check_id'] === $check->id) {
+            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, null, $refusal['code']);
         }
         $failed = (clone $publishes)->where('input->check', $check->id)->whereIn('status', [OperationStatus::Failed->value, OperationStatus::Interrupted->value])->first();
         if ($failed instanceof Operation) {

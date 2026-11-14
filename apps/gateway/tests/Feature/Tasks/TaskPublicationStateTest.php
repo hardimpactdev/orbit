@@ -81,7 +81,7 @@ it('lists the waiting and the refused task copies under releases in task:status'
         'title' => 'Add the export', 'state' => 'waiting_for_release', 'check_id' => $world->check->id, 'commit' => TaskCopyDoneFixture::Commit, 'error_code' => null]]);
 
     publicationPublish($world, OperationStatus::Failed, 'tasks.push_failed');
-    expect(app(ShowTasksStatusAction::class)->execute()->toArray()['releases'][0])->toMatchArray(['state' => 'refused', 'error_code' => 'tasks.push_failed']);
+    expect(data_get(app(ShowTasksStatusAction::class)->execute()->toArray(), 'releases.0'))->toMatchArray(['state' => 'refused', 'error_code' => 'tasks.push_failed']);
 
     $world->turn->update(['finished_at' => now()->addMinute()]);
     expect(app(ShowTasksStatusAction::class)->execute()->toArray()['releases'])->toBe([]);

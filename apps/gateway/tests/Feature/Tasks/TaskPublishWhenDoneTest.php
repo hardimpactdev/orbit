@@ -54,11 +54,11 @@ it('publishes the done check of a pr_when_done group by itself, as a ready pull 
         ->and($operation->triggered_by)->toBe('gateway:pr-when-done')
         ->and($operation->input['check'])->toBe($world->check->id)
         ->and($operation->input['commit'])->toBe(TaskCopyDoneFixture::Commit)
-        ->and($operation->input['pull_request']['title'])->toBe('Add the export')
-        ->and($operation->input['pull_request']['draft'])->toBeFalse()
-        ->and($operation->input['pull_request']['body'])->toContain('Export the board as CSV.')
-        ->and($operation->input['pull_request']['body'])->toContain('- Write the export')
-        ->and($operation->input['pull_request']['body'])->toContain('Checked commit `'.TaskCopyDoneFixture::Commit.'`, handoff check '.$world->check->id.'.')
+        ->and(data_get($operation->input, 'pull_request.title'))->toBe('Add the export')
+        ->and(data_get($operation->input, 'pull_request.draft'))->toBeFalse()
+        ->and(data_get($operation->input, 'pull_request.body'))->toContain('Export the board as CSV.')
+        ->and(data_get($operation->input, 'pull_request.body'))->toContain('- Write the export')
+        ->and(data_get($operation->input, 'pull_request.body'))->toContain('Checked commit `'.TaskCopyDoneFixture::Commit.'`, handoff check '.$world->check->id.'.')
         ->and(isset($operation->input['workspace']))->toBeTrue()
         ->and(app(OperationIdempotency::class)->key)->toBeNull();
 });
@@ -138,7 +138,7 @@ it('prints one JSON object per tick and does nothing while the extension is off'
 
     app(TaskExtensionState::class)->enable();
     Artisan::call('task:pr-when-done');
-    expect(json_decode(Artisan::output(), true)['groups'][0]['result'])->toBe('admitted');
+    expect(data_get(json_decode(Artisan::output(), true), 'groups.0.result'))->toBe('admitted');
 });
 
 it('releases a waiting group\'s done check without --check, with the same title and body and a ready pull request', function (): void {
@@ -150,7 +150,7 @@ it('releases a waiting group\'s done check without --check, with the same title 
     expect($operation->kind)->toBe(OperationKinds::TasksPublish)
         ->and($operation->input['check'])->toBe($world->check->id)
         ->and($operation->input['pull_request'])->toBe(TaskDonePublication::for($world->group, $world->check)->pull_request)
-        ->and($operation->input['pull_request']['draft'])->toBeFalse()
+        ->and(data_get($operation->input, 'pull_request.draft'))->toBeFalse()
         ->and($world->group->refresh()->publish_refusal)->toBeNull();
 });
 

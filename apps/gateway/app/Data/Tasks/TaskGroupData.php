@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Compute\VmPower;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskPlaces;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskPrModeChoice;

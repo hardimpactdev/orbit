@@ -30,6 +30,7 @@ final readonly class DocsImpact
         'project-documents:probes:reconcile' => 'docs/reference/project-documents.md',
         'project-documents:probes:repair' => 'docs/reference/project-documents.md',
         'task:pr-gate' => 'docs/reference/tasks.md',
+        'task:pr-when-done' => 'docs/reference/tasks.md',
         'tasks:pr-gate' => 'docs/reference/tasks.md',
         'task:tick' => 'docs/reference/tasks.md',
         'orbit:activity-finalize-interrupted' => 'docs/cli/activity/index.mdx',
