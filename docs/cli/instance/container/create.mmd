@@ -161,6 +161,7 @@ sequenceDiagram
     C-->>SW: T3 answers
     %%> When:
     %%> - `finish` starts when the clone steps and the publication have both ended; at the measured times the publication ends first
+    %%> - `finish` removes the run folder of a ready create itself, so the cleanup step skips and the run ends one Swamp level sooner; a failed create keeps the folder for the container stop, and the cleanup step removes it after
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Read baseline, record T3<br/>admit instance.complete
     %%> Before the transaction:
