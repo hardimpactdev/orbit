@@ -90,11 +90,13 @@ if (command[0] === "sh" && command[1] === "-c" && command[2].includes('cat > "$1
   state.outer.modes[path] = [...command[2].matchAll(/(?:chown|chmod) (\S+) /g)].map((match) => match[1]).join(" ");
   done();
 }
-// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail.
+// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail. A path under
+// `swamp/` that `digests` does not name has the ID `c3`.
 if (command[0] === "git" && command.includes("rev-parse")) {
   if (state.digestsFail) fail("fatal: not a git repository");
-  const digests = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1", swamp: "c3" }) };
-  done(command.slice(command.indexOf("rev-parse") + 1).map((object) => digests[object.slice("HEAD:".length)]).join("\n"));
+  const digests: Record<string, string> = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1" }) };
+  done(command.slice(command.indexOf("rev-parse") + 1).map((object) => object.slice("HEAD:".length))
+    .map((path) => digests[path] ?? (path.startsWith("swamp/") ? "c3" : "")).join("\n"));
 }
 
 if (command[0] === "incus") {
@@ -236,6 +238,14 @@ if (command[0] === "incus") {
     }
     // A checkout that moved under the running nested Gateway (`schemaBehind`): Doctor is unhealthy until the migrate and a restart after it.
     // `pendingMigration`: the migrate applies one (Laravel prints each migration); otherwise it prints that nothing was due.
+    // The nested Gateway's digest of each named Node's base converge intent (`orbit:node-converge-digest`): `intentDigests` names a
+    // Node's digest, `intentDigestFail` makes the command fail.
+    if (rest[0] === "php" && rest.includes("orbit:node-converge-digest")) {
+      if (state.intentDigestFail) fail("The base intent of app-dev cannot be built: RuntimeException");
+      const own: Record<string, string> = { gateway: "1", "app-dev": "2", "app-prod": "3" };
+      const nodes = rest.slice(rest.indexOf("--base") + 1);
+      done(JSON.stringify(Object.fromEntries(nodes.map((node) => [node, state.intentDigests?.[node] ?? own[node].repeat(64)]))));
+    }
     if (rest[0] === "php" && rest.includes("migrate")) {
       state.migrated = true;
       const applied = state.pendingMigration || state.schemaBehind;

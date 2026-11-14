@@ -288,7 +288,7 @@ describe('the result of a start', function (): void {
         SwampNodeFixture::ensure();
         placeClubKey($this->clubEnvironment, FakeNestedClubKey);
         $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
-        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'changed' => 0, 'base' => 'kept', 'base_containers' => [], 'record' => 'present',
+        $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'converge_reason' => 'stale', 'changed' => 0, 'base' => 'kept', 'base_containers' => [], 'record' => 'present',
             'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1]];
         $deploy = static function (array $file) use ($instance): Operation {
             $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
@@ -306,6 +306,8 @@ describe('the result of a start', function (): void {
             ->and($deploy(['commit' => $commit, 'club_key' => 'unchanged'])->result)->not->toHaveKey('fleet_refresh')
             // Words the refresh does not use, or a count that is no count, are not recorded.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'base' => 'maybe']])->result)->not->toHaveKey('fleet_refresh')
+            // Why the converge ran or was skipped is one of the refresh's own words.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'converge_reason' => 'because']])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'changed' => '3']])->result)->not->toHaveKey('fleet_refresh')
             // Unknown parts of `seconds` are dropped.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'seconds' => ['gateway' => 2, 'secret' => 'x']]])->result['fleet_refresh']['seconds'])

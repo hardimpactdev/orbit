@@ -47,6 +47,7 @@ final readonly class DocsImpact
         'orbit:activity-redact' => 'docs/cli/activity/index.mdx',
         'orbit:bootstrap' => 'docs/reference/gateway-trust.md',
         'orbit:node-provision' => 'docs/reference/node-agent.md',
+        'orbit:node-converge-digest' => 'docs/reference/node-provisioning.md',
         'task:collect-t3-metrics' => 'docs/reference/tasks.md',
         'problems:collect' => 'docs/reference/tasks.md',
         'problems:file' => 'docs/reference/tasks.md',
