@@ -66,6 +66,7 @@ A remote target keeps its real numeric host and port, including in an applicatio
 | `instance.node_service_port_required` | The Process publishes several TCP host ports; select one with `--port`. |
 | `instance.node_service_port_unpublished` | The active Docker Process does not publish the selected TCP host port. |
 | `instance.node_service_port_reserved` | Orbit reserves this port for infrastructure or a registered Database server on the service Node. |
+| `instance.dev_band_reserved` | A same-Node target publishes in 5173 to 5199, the [development band](/reference/development-containers#the-own-site-from-inside) of Instance containers. |
 | `instance.host_unavailable` | The Node has no Instance bridge configuration; converge its app-dev role first. |
 | `instance.node_service_listener_private` | The publication has no eligible same-Node bind, or no unique remote private WireGuard bind. |
 | `instance.node_service_environment_conflict` | Another attachment owns one of the key names. |

@@ -101,6 +101,7 @@ The `websocket`, `analytics`, AI router, and Metrics sites also wait for their c
 | Service metrics scrape site on port 9103 | A selected Ingress Node | The WireGuard address |
 | `reverb.orbit`, `analytics.orbit`, and `collector.ai-router.orbit` | The Node that runs the role or collector | The WireGuard address |
 | `reverb.orbit` on port 8443, the only site on that port, for [container Instances](/reference/websocket-apps#reach-from-a-container) | The Node that runs the `websocket` role | The WireGuard address |
+| A container clone's own sites on 443 and 444 | The clone's Node | The Instance bridge's gateway address |
 
 An extension adds its own site source through the [Caddy site source plug-in point](/reference/extensions#plug-in-points). The build renders it after core's sources. Its sites must not use a core source name, such as `gateway`, and its certificate record must not use a core slug. The contribution's test pins those identities; the build does not reject them at runtime. The AI router collector site comes from such a source.
 
@@ -119,6 +120,10 @@ When the withdrawal build fails, or the old Reverb does not stop, or the new Nod
 Caddy sends a connection for a specific address only to the sites bound to that address, and every other connection to the `0.0.0.0` sites. Only public Ingress sites bind `0.0.0.0`, so no private site joins the public listener. A public Ingress site also binds the WireGuard and LAN addresses, because a Router forwards to those addresses and public traffic can arrive on the LAN address behind NAT. Router and workload sites never bind `0.0.0.0`, on an Ingress Node or elsewhere.
 
 A container clone's private Route also has a development site on port 444 of the WireGuard address only, with the WireGuard-only client guards. The Node's nftables table sends WireGuard connections on free ports from 1024 to it; see [Agent development servers](/reference/development-containers#agent-development-servers).
+
+The same Route also has two own sites on the Instance bridge's gateway address: the Route's site on 443 and the development site on 444. Each admits only the clone's own bridge address, so a sibling container gets no answer. They are separate blocks from the WireGuard and LAN sites, which stay as they were; see [the own site from inside](/reference/development-containers#the-own-site-from-inside).
+
+The build's address check (`caddy.check-addresses`) leaves out the bridge's gateway address. That check catches a wrong stored WireGuard or LAN address; the bridge address is Orbit's own, and the converge makes it. Every Node allows a [non-local bind](/reference/node-provisioning#kernel-policy), so Caddy loads a bind to it while the bridge is down. So a down bridge fails no build for the Node: the own sites only serve nothing until the bridge is back.
 
 A Node that is the Router, the Ingress, and `app-prod` serves its private sites on the WireGuard and LAN addresses, and only its public sites on every address:
 
@@ -144,6 +149,7 @@ Every site that is not public aborts a client outside the ranges it admits, righ
 | `gateway.orbit`, `metrics.orbit`, the service metrics scrape site, `reverb.orbit`, `analytics.orbit`, and `collector.ai-router.orbit` | The VPN subnet |
 | Router and workload sites on an Ingress Node | Private and shared address space (`private_ranges` and `100.64.0.0/10`) and the VPN subnet |
 | Router and workload sites on any other Node, and public Ingress sites | Every client |
+| A container clone's own sites on the bridge's gateway address | The clone's own bridge address |
 
 The guard closes two paths that the listener alone leaves open. Linux accepts a packet for the WireGuard address on any interface, so a LAN neighbour can reach it through the LAN address when the firewall admits HTTPS to any destination, as an Ingress firewall does. A port forward can also send public traffic to the LAN address of an Ingress Node.
 

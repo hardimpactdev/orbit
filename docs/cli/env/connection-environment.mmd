@@ -30,7 +30,7 @@ sequenceDiagram
   SW->>N: Write the connection keys<br/>Ansible · tags environment
   %%> What it does:
   %%> - adds the missing database egress rules, bridge endpoints and UFW rules; removes none of them
-  %%> - reconciles the websocket path: keeps only the rule and UFW rule the plan names, writes the plan's private names into `/etc/hosts`
+  %%> - reconciles the websocket path and a clone's own-site rules by description: keeps only the rules and the UFW rule the plan names, writes the plan's private names into `/etc/hosts`
   %%> - replaces each key's line in `.env`, adds a missing key at the end; a `${...}` value stays and is named
   %%> - every other byte stays; the lines reach the Node script on stdin, never argv or a log
   %%> - a changed file clears Laravel's config cache and try-restarts the Instance's running units

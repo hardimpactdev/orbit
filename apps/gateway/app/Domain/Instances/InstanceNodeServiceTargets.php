@@ -72,6 +72,9 @@ final class InstanceNodeServiceTargets
         if (! array_any($mappings[$port], static fn (DockerPublishedPort $mapping): bool => in_array($mapping->bindAddress, [null, '0.0.0.0', $bridge], true))) {
             throw new ResourceOperationException('instance.node_service_listener_private', 'The published port must bind to 0.0.0.0 or the Instance bridge address.', 422);
         }
+        foreach ($mappings[$port] as $mapping) {
+            InstanceDevPorts::assertOutsideBand($node, $mapping);
+        }
 
         return $port;
     }

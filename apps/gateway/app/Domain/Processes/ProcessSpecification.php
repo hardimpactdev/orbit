@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Domain\Processes;
 
 use App\Data\Processes\AddProcessData;
+use App\Domain\DatabaseConnections\DockerPublishedPort;
+use App\Domain\Instances\InstanceDevPorts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Process;
 use SensitiveParameter;
@@ -28,6 +30,13 @@ final readonly class ProcessSpecification
         // A container's Processes are `orbit` units in it: no Docker, and no preset that names Node paths.
         if ($target->container !== null && ($data->runtime !== ProcessRuntime::Systemd || $data->preset !== null)) {
             throw new ResourceOperationException('process.target_unsupported', 'A Process in an Instance container must be an ordinary systemd Process.', 409);
+        }
+        // A TCP publication on every address or on the Instance bridge address must stay out of the containers' development band.
+        foreach ($data->runtime === ProcessRuntime::Docker ? $data->ports : [] as $spec) {
+            $mapping = str_contains($spec, '/') && ! str_ends_with($spec, '/tcp') ? null : DockerPublishedPort::parse($spec);
+            if ($mapping !== null) {
+                InstanceDevPorts::assertOutsideBand($target->node, $mapping);
+            }
         }
         $workingDirectory =
             $data->workingDirectory

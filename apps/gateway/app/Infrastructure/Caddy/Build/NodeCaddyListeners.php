@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Caddy\Build;
 
 use App\Domain\Extensions\ConfigValue;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Routes\RouteRenderContext;
 use App\Models\Node;
@@ -25,6 +26,7 @@ final readonly class NodeCaddyListeners
 
     /**
      * @param  list<string>  $explicit  The WireGuard address, then the LAN address when the Node has one.
+     * @param  ?string  $bridge  The Instance bridge's gateway address, when the Node has an Instance bridge.
      */
     private function __construct(
         public bool $ingress,
@@ -33,6 +35,7 @@ final readonly class NodeCaddyListeners
         private string $vpnSubnet,
         private ?string $taskVmRange,
         private ?string $swampHost,
+        public ?string $bridge,
     ) {}
 
     /**
@@ -50,6 +53,7 @@ final readonly class NodeCaddyListeners
             vpnSubnet: $vpnSubnet,
             taskVmRange: $taskVmRange,
             swampHost: $swampHost,
+            bridge: InstanceHostIntent::gateway($node),
         );
     }
 
@@ -58,7 +62,7 @@ final readonly class NodeCaddyListeners
      * connection to a specific address reaches only the sites bound to it: a Router forwards to those addresses,
      * and public traffic can arrive on the LAN address behind NAT. Every other site binds only the addresses its
      * clients use, so no private site joins the public listener. An empty list means the Node has no WireGuard
-     * address.
+     * address. A container's own site binds only the Instance bridge's gateway address: no other client reaches that listener.
      *
      * @return list<string>
      */
@@ -68,6 +72,7 @@ final readonly class NodeCaddyListeners
             CaddyListenerRule::Public => [self::Wildcard, ...$this->explicit],
             CaddyListenerRule::Wildcard => $this->wireGuard === null ? [] : $this->explicit,
             CaddyListenerRule::WireGuard, CaddyListenerRule::Shared => $this->wireGuard === null ? [] : [$this->wireGuard],
+            CaddyListenerRule::Bridge => $this->bridge === null ? [] : [$this->bridge],
         };
     }
 
@@ -75,14 +80,16 @@ final readonly class NodeCaddyListeners
      * The client ranges a site admits, or null when it admits every client. WireGuard-only sites admit the VPN
      * subnet, so a LAN neighbour that routes to the WireGuard address gets no answer. Private sites on an Ingress
      * Node, whose firewall admits public HTTP and HTTPS, admit private address space and the VPN subnet, so a public
-     * client that reaches the LAN address, for example through a port forward, gets no answer.
+     * client that reaches the LAN address, for example through a port forward, gets no answer. A container's own site admits only
+     * its own container's bridge address, so no sibling container reaches it.
      */
-    public function clients(CaddyListenerRule $rule): ?string
+    public function clients(CaddySite $site): ?string
     {
-        return match ($rule) {
+        return match ($site->listener) {
             CaddyListenerRule::Public => null,
             CaddyListenerRule::Wildcard => $this->ingress ? self::PrivateClients.' '.$this->vpnSubnet : null,
             CaddyListenerRule::WireGuard, CaddyListenerRule::Shared => $this->vpnSubnet,
+            CaddyListenerRule::Bridge => ($site->client ?? throw new \LogicException("The {$site->describe()} names no client.")).'/32',
         };
     }
 
@@ -90,11 +97,11 @@ final readonly class NodeCaddyListeners
      * The task VM range a site refuses, or null. A task VM runs agent code as root, and the hub lets it reach
      * the shared WireGuard listener of the Gateway and `websocket` Nodes. So once task VMs are configured, every
      * site except the Gateway API, Reverb and the configured Swamp site refuses the range, inside the VPN subnet
-     * it otherwise admits.
+     * it otherwise admits. A container's own site admits one bridge address, never a task VM, so it needs no refusal.
      */
     public function refused(CaddySite $site): ?string
     {
-        if (in_array($site->source, self::TaskVmSources, true)
+        if ($site->listener === CaddyListenerRule::Bridge || in_array($site->source, self::TaskVmSources, true)
             || ($this->swampHost !== null && $site->port === 443 && $site->listener !== CaddyListenerRule::Public
                 && array_map(strtolower(...), $site->hosts) === [$this->swampHost])) {
             return null;
