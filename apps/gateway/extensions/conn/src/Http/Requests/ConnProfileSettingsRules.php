@@ -6,6 +6,7 @@ namespace Orbit\Extensions\Conn\Http\Requests;
 
 use Closure;
 use Illuminate\Validation\Validator;
+use Orbit\Extensions\Conn\Domain\ConnAttachedThreads;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
 
 /**
@@ -35,6 +36,11 @@ final class ConnProfileSettingsRules
 
     private const int MaxDeviceStringChars = 512;
 
+    /** An environment id has no colon, as in a workspace's `projectRefs`. */
+    private const string EnvironmentId = '/\A[^\s:]{1,255}\z/';
+
+    private const string ThreadId = '/\A\S{1,255}\z/';
+
     /**
      * The rules for one section value. A null value passes only where `$nullable` says the section can
      * be cleared, and never for `workspaces`.
@@ -50,6 +56,7 @@ final class ConnProfileSettingsRules
         return match (true) {
             $section === ConnProfileSections::Workspaces => self::workspaces($path),
             $section === ConnProfileSections::Appearance => self::appearance($path),
+            $section === ConnProfileSections::AttachedThreads => self::attachedThreads($path),
             default => self::deviceSection($path),
         };
     }
@@ -98,6 +105,25 @@ final class ConnProfileSettingsRules
         ];
     }
 
+    /**
+     * The attached set: `{"schema": 1, "threads": [{"environmentId": "...", "threadId": "..."}]}`. The list sits in an
+     * object, so an empty set keeps its shape. Whether each environment may be named is checked on the locked profile
+     * ({@see ConnAttachedThreads}).
+     *
+     * @return array<string, list<mixed>>
+     */
+    public static function attachedThreads(string $path): array
+    {
+        return [
+            $path => ['array:schema,threads'],
+            "{$path}.schema" => ['required', 'integer:strict', 'min:1', 'max:1000'],
+            "{$path}.threads" => ['present', 'list', 'max:'.ConnProfileSections::MaxAttachedThreads, self::distinctThreads(...)],
+            "{$path}.threads.*" => ['array:environmentId,threadId'],
+            "{$path}.threads.*.environmentId" => ['required', 'string', 'regex:'.self::EnvironmentId],
+            "{$path}.threads.*.threadId" => ['required', 'string', 'regex:'.self::ThreadId],
+        ];
+    }
+
     /** @return array<string, list<mixed>> */
     public static function deviceSection(string $path): array
     {
@@ -128,6 +154,7 @@ final class ConnProfileSettingsRules
     {
         $limit = match (true) {
             $section === ConnProfileSections::Appearance => ConnProfileSections::MaxAppearanceBytes,
+            $section === ConnProfileSections::AttachedThreads => ConnProfileSections::MaxAttachedThreadsBytes,
             ConnProfileSections::deviceType($section) !== null => ConnProfileSections::MaxDeviceBytes,
             default => null,
         };
@@ -181,6 +208,32 @@ final class ConnProfileSettingsRules
                 }
             }
         };
+    }
+
+    /** The attached set names each thread once. */
+    private static function distinctThreads(string $attribute, mixed $value, Closure $fail): void
+    {
+        if (! is_array($value)) {
+            return;
+        }
+
+        $seen = [];
+
+        foreach ($value as $thread) {
+            if (! is_array($thread) || ! is_string($thread['environmentId'] ?? null) || ! is_string($thread['threadId'] ?? null)) {
+                continue;
+            }
+
+            $key = $thread['environmentId'].':'.$thread['threadId'];
+
+            if (isset($seen[$key])) {
+                $fail("The {$attribute} field names the thread {$key} more than once.");
+
+                return;
+            }
+
+            $seen[$key] = true;
+        }
     }
 
     /** A device value is a scalar, null, or a short list of scalars, with strings of at most 512 characters. */
