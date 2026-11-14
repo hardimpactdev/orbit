@@ -106,9 +106,11 @@ final readonly class TaskCopyTurn
     }
 
     /**
-     * Refuses more work on a group while an earlier turn may still run in its copy. T3's CLI cannot stop a run, so a turn whose run
-     * started and whose result does not show T3's run over (its bound cut the wait, a cancel or a lost phase) leaves the agent writing
-     * in the checkout. Only `task:cancel` ends it, with the copy. Called by the turn and by the check, the publish and the proof of a copy.
+     * Refuses more work on a group while an earlier turn may still run in its copy or left its checkout to the reviewer. T3's CLI cannot
+     * stop a run, so a turn whose run started and whose result does not show T3's run over (its bound cut the wait, a cancel or a lost
+     * phase) leaves the agent writing in the checkout; a reviewer turn whose checkout is not restored leaves it off the task branch. The
+     * result's `ended` says both. Only `task:cancel` ends it, with the copy. Called by the turn and by the check, the publish and the
+     * proof of a copy.
      *
      * T3 runs the turns of one thread in order, so only the latest turn of each thread counts. A turn that ended waiting for an answer
      * writes nothing until it gets one: it holds every other turn and check, but not the turn that continues its own thread.
@@ -122,7 +124,7 @@ final readonly class TaskCopyTurn
             ->first(static fn (Operation $turn, int $thread): bool => ($turn->state['swamp_run_id'] ?? null) !== null && ($turn->result['ended'] ?? null) !== true
                 && ! (($turn->result['state'] ?? null) === AgentThreadState::AskingForInput->value && $thread === $continuing));
         if ($unended instanceof Operation) {
-            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy. Run task:cancel to end it with the copy.', 409,
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. Run task:cancel to end it with the copy.', 409,
                 details: ['operation_id' => $unended->id]);
         }
     }

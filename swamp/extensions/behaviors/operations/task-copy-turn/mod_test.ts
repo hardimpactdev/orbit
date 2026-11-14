@@ -15,7 +15,7 @@ const transcript: { id: string; kind: "message"; label: string; text: string; at
 const started = (status: string, error: string | null = null) =>
     JSON.stringify({ threadId: thread, runId: run, status, reply: status === "completed" ? "Committed d867aba2." : null, error });
 const read = { list_exit: 0, found: 1, status: "completed", show_exit: 0, show };
-const none = { resumed: null, review: null, restore: null };
+const none = { resumed: null, review: null, detached: false, restore: null };
 const turn = (start_exit: number, start: string, change: Partial<Evidence> = {}) => shapeTurn({ ...none, launched: true, start: { start_exit, start }, read, ...change });
 
 Deno.test("a completed run is done and over, and records the message transcript and the T3 thread", () => {
@@ -75,22 +75,37 @@ Deno.test("a continued turn whose thread list failed or printed no JSON is tasks
 
 Deno.test("a reviewer turn fails when its checkout could not be put on the candidate or was not restored after a run T3 ended", () => {
     const ready = { ready: true, error_code: null };
-    assertEquals(turn(0, started("completed"), { review: ready, restore: { restored: true } }).state, "done");
-    assertEquals(turn(2, started("waiting"), { review: ready, restore: { restored: true } }).state, "asking_for_input");
+    assertEquals(turn(0, started("completed"), { review: ready, detached: true, restore: { restored: true } }).state, "done");
+    assertEquals(turn(2, started("waiting"), { review: ready, detached: true, restore: { restored: true } }).state, "asking_for_input");
     for (const restore of [{ restored: false }, null]) {
-        assertEquals(turn(0, started("completed"), { review: ready, restore }), {
-            state: "failed", error: "The checkout was not restored after the reviewer's turn.", error_code: "tasks.copy_review_unrestored", ended: true,
+        assertEquals(turn(0, started("completed"), { review: ready, detached: true, restore }), {
+            state: "failed", error: "The checkout was not restored after the reviewer's turn.", error_code: "tasks.copy_review_unrestored", ended: false,
             t3_thread_id: thread, run_id: run, transcript,
         });
     }
-    // A failed run keeps its own error code.
-    assertEquals(turn(124, "", { review: ready, restore: { restored: false }, read: { ...read, status: "running" } }).error_code, "tasks.turn_timeout");
     assertEquals(shapeTurn({ ...none, review: { ready: false, error_code: "tasks.copy_tree_dirty" }, launched: false, start: null, read: null }), {
         state: "failed", error: "The checkout had changes or no branch, so the reviewer could not be put on the candidate.", error_code: "tasks.copy_tree_dirty",
         ended: true, t3_thread_id: null, run_id: null, transcript: [],
     });
     assertEquals(shapeTurn({ ...none, review: { ready: false, error_code: "tasks.copy_turn_failed" }, launched: false, start: null, read: null }).error_code,
         "tasks.copy_turn_failed");
+});
+
+Deno.test("a detached reviewer checkout without a restore holds the group whatever the run did", () => {
+    const ready = { ready: true, error_code: null };
+    // (B) The run failed and the restore could not reset the checkout: the turn is unrestored, not only failed, and holds the group.
+    const failed = turn(1, started("failed", "api_error_529"), { review: ready, detached: true, restore: { restored: false } });
+    assertEquals([failed.state, failed.error_code, failed.ended, failed.error],
+        ["failed", "tasks.copy_review_unrestored", false, "The checkout was not restored after the reviewer's turn. The run: T3 run failed: api_error_529"]);
+    // (C) A cancel cut the phase after the detach and before the launch mark: nothing ran, but nothing was restored either.
+    const cut = shapeTurn({ ...none, review: null, detached: true, launched: false, start: null, read: null });
+    assertEquals([cut.state, cut.error_code, cut.ended], ["failed", "tasks.copy_review_unrestored", false]);
+    // A run cut by its bound and restored stays held by its run, with its own error.
+    const timeout = turn(124, "", { review: ready, detached: true, restore: { restored: true }, read: { ...read, status: "running" } });
+    assertEquals([timeout.error_code, timeout.ended], ["tasks.turn_timeout", false]);
+    // A failed run whose checkout was restored keeps its own error and is free.
+    const restored = turn(1, started("failed", "api_error_529"), { review: ready, detached: true, restore: { restored: true } });
+    assertEquals([restored.error_code, restored.ended], ["tasks.turn_failed", true]);
 });
 
 Deno.test("a message without a run id keeps the transcript", () => {
@@ -126,10 +141,11 @@ Deno.test("the method reads each evidence file on its own, so an oversized read 
         Deno.writeTextFileSync(`${folder}/read.json`, JSON.stringify({ ...read, show: "x".repeat(16777217) }));
         const done = await behavior.methods.result.execute({ folder }, context);
         assertEquals([done.successful, done.turn.state, done.turn.ended, done.turn.transcript.length, written.length], [true, "done", true, 0, 3]);
-        // A reviewer's turn is done only with its restore evidence.
+        // A reviewer's turn is done only with its restore evidence once its checkout was detached.
         Deno.writeTextFileSync(`${folder}/review.json`, JSON.stringify({ ready: true, error_code: null }));
+        Deno.writeTextFileSync(`${folder}/detach.json`, "{}");
         const unrestored = await behavior.methods.result.execute({ folder }, context);
-        assertEquals([unrestored.successful, unrestored.turn.error_code], [false, "tasks.copy_review_unrestored"]);
+        assertEquals([unrestored.successful, unrestored.turn.error_code, unrestored.turn.ended], [false, "tasks.copy_review_unrestored", false]);
         Deno.writeTextFileSync(`${folder}/restore.json`, JSON.stringify({ restored: true }));
         assertEquals((await behavior.methods.result.execute({ folder }, context)).successful, true);
     } finally {

@@ -3,7 +3,7 @@
 # the role's thread to continue it, waits for its run and reads the thread back. The CLI issues its T3 session inside the container
 # and revokes it at exit, so no credential reaches the Node, Swamp or the Gateway. The title names the Orbit thread, so a run cut by
 # its bound is still found, and a continued turn finds its thread. A reviewer works on the checked candidate, detached, and the task
-# branch is checked out again after its turn. Ansible keeps the raw replies out of its log and writes them to the run folder only;
+# branch is checked out again at its tip after its turn. Ansible keeps the raw replies out of its log and writes them to the run folder only;
 # `@nckrtl/task-copy-turn` bounds and redacts them. Each T3 read is bounded at 60 s and each Git command at 20 s.
 - name: Address the recorded copy Node
   hosts: localhost
@@ -118,6 +118,12 @@
               - review_status.stdout == ''
               - review_branch.rc == 0 and review_branch.stdout | length > 0
             fail_msg: tasks.copy_tree_dirty
+        # The restore requires the branch at this commit again: a reviewer that commits on it or moves it leaves it unrestored.
+        - name: Read the branch's tip
+          ansible.builtin.command:
+            argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
+          register: review_tip
+          changed_when: false
         - name: Check the candidate out
           ansible.builtin.command:
             argv: "{{ copy_git + ['checkout', '--quiet', '--detach', intent.turn.candidate] }}"
@@ -125,6 +131,18 @@
         - name: Name the branch to restore
           ansible.builtin.set_fact:
             review_restore: "{{ review_branch.stdout }}"
+        # From here the checkout is the reviewer's until `restore.json` says it is restored: a phase cut before that holds the group.
+        - name: Mark the checkout as detached
+          ansible.builtin.copy:
+            content: "{}"
+            dest: "{{ run }}/detach.json"
+            mode: "0600"
+          delegate_to: localhost
+          become: false
+          no_log: true
+          vars:
+            ansible_connection: local
+            ansible_python_interpreter: "{{ ansible_playbook_python }}"
       rescue:
         - name: Name the refusal
           ansible.builtin.set_fact:
@@ -230,8 +248,9 @@
                 ansible_connection: local
                 ansible_python_interpreter: "{{ ansible_playbook_python }}"
       always:
-        # After a reviewer turn, also a failed or cut one: what the reviewer changed goes, and the task branch is checked out again. A run
-        # that still goes on may change it again; its group then holds until task:cancel destroys the copy.
+        # After a reviewer turn, also a failed or cut one: what the reviewer changed goes, and the task branch is checked out again at
+        # the tip it had. A checkout that is not clean on that branch and tip, or a run that still goes on and may change it again, holds
+        # its group until task:cancel destroys the copy.
         - name: Restore the checkout after the reviewer
           when: review_restore is defined
           block:
@@ -257,6 +276,11 @@
                 argv: "{{ copy_git + ['symbolic-ref', '--quiet', '--short', 'HEAD'] }}"
               register: restored_branch
               changed_when: false
+            - name: Read the restored tip
+              ansible.builtin.command:
+                argv: "{{ copy_git + ['rev-parse', '--verify', 'HEAD'] }}"
+              register: restored_tip
+              changed_when: false
           rescue:
             - name: Name the failed restore
               ansible.builtin.set_fact:
@@ -266,7 +290,8 @@
               ansible.builtin.copy:
                 content: >-
                   {{ {'restored': not review_unrestored | default(false) and restored_status.stdout | default('x') == ''
-                      and restored_branch.stdout | default('') == review_restore} | to_json }}
+                      and restored_branch.stdout | default('') == review_restore
+                      and restored_tip.stdout | default('') == review_tip.stdout} | to_json }}
                 dest: "{{ run }}/restore.json"
                 mode: "0600"
               delegate_to: localhost

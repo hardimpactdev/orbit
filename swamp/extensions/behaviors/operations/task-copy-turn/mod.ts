@@ -10,9 +10,9 @@ const Folder = z.string().regex(/^\/tmp\/orbit-ansible-[0-9a-f-]{36}$/);
 
 // What `task-copy-turn.yml` writes, each file as soon as its command ended: for a continued turn `continue.json` with the exit code of
 // `t3 thread list` (null when it printed no JSON) and how many T3 threads carry its title, for a reviewer turn `review.json` with whether
-// the candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
+// the candidate is checked out, `detach.json` as soon as the reviewer's candidate is checked out, `launch.json` before the start, `start.json` with the exit code and stdout of `t3 thread start` or
 // `t3 thread send` with `--wait --json`, `read.json` with what `t3 thread list` found and `t3 thread show` read, and for a reviewer
-// turn `restore.json` with whether the checkout is clean on its branch again.
+// turn `restore.json` with whether the checkout is clean on its branch at its tip again.
 const Resumed = z.object({ list_exit: z.number().int().nullable(), found: z.number().int() }).strict();
 const Review = z.object({ ready: z.boolean(), error_code: z.enum(["tasks.copy_tree_dirty", "tasks.copy_turn_failed"]).nullable() }).strict();
 const Restore = z.object({ restored: z.boolean() }).strict();
@@ -30,6 +30,7 @@ const Active = new Set(["preparing", "queued", "starting", "running", "waiting"]
 export type Evidence = {
     resumed: z.infer<typeof Resumed> | null;
     review: z.infer<typeof Review> | null;
+    detached: boolean;
     launched: boolean;
     start: z.infer<typeof Start> | null;
     read: z.infer<typeof Read> | null;
@@ -51,7 +52,8 @@ export const Turn = z.object({
     state: z.enum(["done", "asking_for_input", "failed"]),
     error: z.string().nullable(),
     error_code: z.string().regex(/^tasks\.[a-z_]+$/).optional(),
-    // Whether T3's run is known to be over. A run that may still go on in the copy keeps its group from more work until task:cancel.
+    // Whether the copy is known to be free of this turn: T3's run is over and a reviewer's checkout is restored. A turn that is not
+    // keeps its group from more work until task:cancel.
     ended: z.boolean(),
     t3_thread_id: z.string().nullable(),
     run_id: z.string().nullable(),
@@ -87,13 +89,14 @@ function transcript(shown: z.infer<typeof Shown> | null): Turn["transcript"] {
 }
 
 /**
- * The turn as Orbit records it. A reviewer turn that T3 ended but whose checkout is not clean on its branch again fails: the reviewer
- * must leave nothing in the copy.
+ * The turn as Orbit records it. A reviewer turn whose checkout was detached and is not restored, clean on its branch at its tip, fails
+ * and holds its group, whatever its run did: the next turn or check would work on what the reviewer left.
  */
 export function shapeTurn(evidence: Evidence): Turn {
     const turn = shapeRun(evidence);
-    if (evidence.review === null || !evidence.launched || evidence.restore?.restored === true || turn.state === "failed") return turn;
-    return { ...turn, state: "failed", error: "The checkout was not restored after the reviewer's turn.", error_code: "tasks.copy_review_unrestored" };
+    if (!evidence.detached || evidence.restore?.restored === true) return turn;
+    const run = turn.state === "failed" ? ` The run: ${turn.error}` : "";
+    return { ...turn, state: "failed", ended: false, error: `The checkout was not restored after the reviewer's turn.${run}`, error_code: "tasks.copy_review_unrestored" };
 }
 
 /**
@@ -161,18 +164,19 @@ const Result = z.object({ successful: z.boolean(), turn: Turn });
 
 export const behavior = {
     type: "@nckrtl/task-copy-turn",
-    version: "2026.11.14.3",
+    version: "2026.11.14.4",
     resources: { result: { schema: Result, lifetime: "1d", garbageCollection: 10 } },
     methods: {
         result: {
             description: "Read, bound and redact the evidence of one turn in a task copy",
             arguments: z.object({ folder: Folder }),
             async execute(args: { folder: string }, ctx: Context) {
-                const launched = await Deno.stat(args.folder + "/launch.json").then(() => true, () => false);
+                const marked = (name: string) => Deno.stat(`${args.folder}/${name}`).then(() => true, () => false);
                 const turn = Turn.parse(shapeTurn({
                     resumed: await evidence(args.folder + "/continue.json", 1024, Resumed),
                     review: await evidence(args.folder + "/review.json", 1024, Review),
-                    launched,
+                    detached: await marked("detach.json"),
+                    launched: await marked("launch.json"),
                     start: await evidence(args.folder + "/start.json", StartBytes, Start),
                     read: await evidence(args.folder + "/read.json", ReadBytes, Read),
                     restore: await evidence(args.folder + "/restore.json", 1024, Restore),

@@ -918,6 +918,7 @@ describe('a turn of a group that owns a copy', function (): void {
         'a wait cut by the bound' => ['failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]],
         'a cancelled run' => ['cancelled', []],
         'a phase that wrote no end' => ['failed', ['state' => 'failed', 'error' => 'No end.', 'error_code' => 'tasks.copy_turn_failed', 'ended' => false, 't3_thread_id' => null, 'run_id' => null, 'transcript' => []]],
+        'a reviewer checkout left unrestored' => ['failed', ['state' => 'failed', 'error' => 'Unrestored.', 'error_code' => 'tasks.copy_review_unrestored', 'ended' => false, 't3_thread_id' => 'mcp:1', 'run_id' => 'run:1', 'transcript' => []]],
     ]);
 
     it('admits the next turn after a turn whose T3 run ended, also a failed one', function (): void {

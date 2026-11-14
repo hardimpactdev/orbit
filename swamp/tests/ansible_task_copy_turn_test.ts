@@ -50,8 +50,8 @@ Deno.test("the turn's lock is its copy's: two copies on one Node turn side by si
 const available = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 
 // Validates the Incus boundary, then answers as T3's CLI and Git would. `T3_START` picks the start's or the send's behaviour; `missing`
-// lists no thread of the turn's title and `listfail` fails the list. `T3_TREE` is the checkout: `dirty` has changes before the turn, and
-// `stuck` keeps changes after the restore.
+// lists no thread of the turn's title and `listfail` fails the list. `T3_TREE` is the checkout: `dirty` has changes before the turn,
+// `stuck` keeps changes after the restore, `moved` has the branch at another commit after it, and `locked` fails the reset.
 const SHIM = `#!/usr/bin/env python3
 import json, os, sys
 args = sys.argv[1:]
@@ -71,6 +71,11 @@ if rest[:5] == ['/usr/bin/timeout', '20', 'git', '-C', '/srv/workspace']:
         print(' M app.php' if (tree == 'dirty' and not restored) or (tree == 'stuck' and restored) else '', end='')
     elif git == ['symbolic-ref', '--quiet', '--short', 'HEAD']:
         print('task-4970')
+    elif git == ['rev-parse', '--verify', 'HEAD']:
+        print('e' * 40 if tree == 'moved' and restored else 'a' * 40)
+    elif git == ['reset', '--quiet', '--hard'] and tree == 'locked':
+        sys.stderr.write('index.lock exists')
+        sys.exit(128)
     else:
         assert git in (['checkout', '--quiet', '--detach', 'c' * 40], ['reset', '--quiet', '--hard'], ['clean', '--quiet', '-fd'], ['checkout', '--quiet', 'task-4970']), git
     sys.exit(0)
@@ -104,7 +109,7 @@ assert rest[3:8] == ['thread', 'show', '--messages', '200', '--json'] and rest[8
 print(json.dumps({'thread': {'threadId': thread, 'status': 'running'}, 'messages': [{'role': 'user', 'runId': 'run:1', 'text': 'Subtask: Doctor note'}]}))
 `;
 
-type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; launched: boolean;
+type Phase = { ok: boolean; output: string; resumed: Record<string, unknown> | null; review: Record<string, unknown> | null; detached: boolean; launched: boolean;
     start: Record<string, unknown> | null; read: Record<string, unknown> | null; restore: Record<string, unknown> | null; calls: { args: string[]; stdin: string }[] };
 async function phase(start: string, change: Record<string, unknown> = {}, tree = "clean"): Promise<Phase> {
     const folder = Deno.makeTempDirSync();
@@ -128,6 +133,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
             output: new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr),
             resumed: json("continue.json"),
             review: json("review.json"),
+            detached: read(`${folder}/run/detach.json`) !== null,
             launched: read(`${folder}/run/launch.json`) !== null,
             start: json("start.json"),
             read: json("read.json"),
@@ -183,13 +189,13 @@ const git = (calls: Phase["calls"]) => calls.map((call) => call.args.slice(15)).
 Deno.test({ name: "a reviewer works on the candidate, detached, and the task branch is checked out again after its turn", ignore: !available, async fn() {
     const done = await phase("completed", { candidate });
     assert(done.ok, done.output);
-    assertEquals(git(done.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD", `checkout --quiet --detach ${candidate}`,
-        "reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970", "status --porcelain", "symbolic-ref --quiet --short HEAD"]);
+    assertEquals(git(done.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD", `checkout --quiet --detach ${candidate}`,
+        "reset --quiet --hard", "clean --quiet -fd", "checkout --quiet task-4970", "status --porcelain", "symbolic-ref --quiet --short HEAD", "rev-parse --verify HEAD"]);
     // The candidate is checked out before the launch, and the branch only after the read.
     const order = done.calls.map((call) => call.args.slice(15).join(" "));
     assert(order.findIndex((args) => args.includes("--detach")) < order.findIndex((args) => args.includes("--kill-after=30")));
     assert(order.findIndex((args) => args.includes("thread show")) < order.findIndex((args) => args.includes("reset --quiet --hard")));
-    assertEquals([done.review, done.launched, done.restore], [{ ready: true, error_code: null }, true, { restored: true }]);
+    assertEquals([done.review, done.detached, done.launched, done.restore], [{ ready: true, error_code: null }, true, true, { restored: true }]);
     // A run cut by its bound is restored too.
     const cut = await phase("timeout", { candidate });
     assert(cut.ok, cut.output);
@@ -200,12 +206,18 @@ Deno.test({ name: "a reviewer turn on a checkout with changes launches nothing a
     const dirty = await phase("completed", { candidate }, "dirty");
     assert(!dirty.ok, dirty.output);
     assert(dirty.output.includes("tasks.copy_tree_dirty"), dirty.output);
-    assertEquals([dirty.review, dirty.launched, dirty.restore], [{ ready: false, error_code: "tasks.copy_tree_dirty" }, false, null]);
+    assertEquals([dirty.review, dirty.detached, dirty.launched, dirty.restore], [{ ready: false, error_code: "tasks.copy_tree_dirty" }, false, false, null]);
     assertEquals(git(dirty.calls), ["status --porcelain", "symbolic-ref --quiet --short HEAD"]);
     // The phase records the failed restore; the result maps it to tasks.copy_review_unrestored.
     const stuck = await phase("completed", { candidate }, "stuck");
     assert(stuck.ok, stuck.output);
     assertEquals([stuck.review, stuck.launched, stuck.restore], [{ ready: true, error_code: null }, true, { restored: false }]);
+    // A branch at another commit after the turn, or a reset that fails (a run that ended holding the index lock), is unrestored too.
+    for (const tree of ["moved", "locked"]) {
+        const unrestored = await phase(tree === "locked" ? "failed" : "completed", { candidate }, tree);
+        assert(unrestored.ok, unrestored.output);
+        assertEquals([unrestored.detached, unrestored.restore], [true, { restored: false }], tree);
+    }
 } });
 
 Deno.test({ name: "a turn cut by its bound still reads the thread it started; a refused start reads none; an unreachable copy launches nothing", ignore: !available, async fn() {
