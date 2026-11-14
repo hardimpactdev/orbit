@@ -968,6 +968,19 @@ contexts:
     fleet_due: {converge: false}
     fleet_recorded: {converged: '1794610740'}
     fleet_tokens_mark: null
+  # The inner Doctor's body at the end of refresh 21617 (one issue, its numbers made up), and a body that is no Doctor body.
+  fleet-doctor-disk-low:
+    fleet_ready_doctor:
+      rc: 0
+      stdout_lines:
+      - '{"data":{"healthy":false,"nodes":[{"node_id":3,"node_name":"app-dev","healthy":false,"families":[{"family":"node","status":"drift","checked":4,"issues":[{"code":"node.disk_low","kind":"drift","resource_type":"node","resource_id":3,"resource_name":"app-dev","summary":"The root filesystem has low free space.","expected":"at least 2 GiB and 10% free","observed":"2883584 KiB free of 26214400 KiB"}]}]}]}}'
+      - HTTP 200
+  fleet-doctor-gateway-error:
+    fleet_ready_doctor:
+      rc: 0
+      stdout_lines:
+      - '<html>Bad Gateway</html>'
+      - HTTP 502
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -2083,6 +2096,17 @@ cases:
   field: ansible.builtin.command.stdin
   context: fleet-record-write-no-tokens
   expected: '{"code": "a1", "converged": "1794610740"}'
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_issues
+  context: fleet-doctor-disk-low
+  expected:
+  - 'node.disk_low on app-dev: The root filesystem has low free space. (2883584 KiB free of 26214400 KiB)'
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_issues
+  context: fleet-doctor-gateway-error
+  expected: []
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
@@ -2122,20 +2146,32 @@ non_command_output:
   reason: Validates the admitted path of T3's command, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[4]
-  reason: Validates the admitted T3 provider instance, not command output.
+  field: ansible.builtin.assert.that[3]
+  reason: Validates the admitted path of the runtime's Node.js, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[5]
-  reason: Validates the admitted model, not command output.
+  reason: Validates the admitted T3 provider instance, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[6]
-  reason: Validates the admitted reviewer candidate commit, not command output.
+  reason: Validates the admitted model, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[7]
+  reason: Validates the admitted reviewer candidate commit, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[8]
   reason: Validates the admitted thread title, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[13]
+  reason: Validates the admitted titles of the earlier turns to settle, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[14]
+  reason: Validates the admitted task branches of the earlier reviewer turns to settle, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
   field: ansible.builtin.copy.content

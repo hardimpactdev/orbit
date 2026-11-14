@@ -8,7 +8,8 @@
 - { name: Check what the start promises, ansible.builtin.import_tasks: instance-fleet-reach.yml }
 
 # curl writes the status code on a last line of its own; `000` when no response came. The failure says what the last poll got: the
-# status and the first 300 characters of the body, or curl's error when no response came. Doctor's body holds no secret.
+# status and every issue of a Doctor body (code, Node, summary and what it observed, each issue at most 240 characters, at most 12 of
+# them), the first 300 characters of any other body, or curl's error when no response came. Doctor's body holds no secret.
 - name: Wait for Doctor of the nested Gateway
   ansible.builtin.command:
     argv: >-
@@ -27,11 +28,28 @@
     fleet_doctor_status: "{{ fleet_doctor_last[5:] if fleet_doctor_last is match('HTTP [0-9]{3}$') else '000' }}"
     fleet_doctor_body: "{{ fleet_doctor_lines[:-1] | join(' ') | trim }}"
     fleet_doctor_error: "{{ fleet_ready_doctor.stderr | default('', true) | trim or ('exit ' ~ fleet_ready_doctor.rc | default('none')) }}"
+    # Each issue of a Doctor body as `code on Node: summary (observed)`, bounded, so a long first issue never hides the others.
+    fleet_doctor_issues: >-
+      {%- set out = [] -%}
+      {%- if fleet_doctor_body is match('^\\{"data":\\{.*\\}\\}$') -%}
+      {%-   for node in (fleet_doctor_body | from_json).data.nodes | default([]) -%}
+      {%-     for family in node.families | default([]) -%}
+      {%-       for issue in family.issues | default([]) -%}
+      {%-         set _ = out.append((issue.code | default('?') ~ ' on ' ~ issue.resource_name | default(node.node_name | default('?', true), true) ~ ': '
+                     ~ issue.summary | default('') ~ ((' (' ~ issue.observed ~ ')') if issue.observed | default(none) is not none else ''))[:240]) -%}
+      {%-       endfor -%}
+      {%-     endfor -%}
+      {%-   endfor -%}
+      {%- endif -%}
+      {{ out }}
   ansible.builtin.assert:
     that: fleet_ready_doctor.stdout is match('\{"data":\{"healthy":true')
     fail_msg: >-
       Readiness check 'doctor' failed after {{ fleet_ready_seconds | default(300) }} s:
       {{ ('no response: ' ~ fleet_doctor_error) if fleet_doctor_status == '000'
+         else ('HTTP ' ~ fleet_doctor_status ~ ': ' ~ fleet_doctor_issues[:12] | join('; ')
+               ~ ('; and ' ~ (fleet_doctor_issues | length - 12) ~ ' more' if fleet_doctor_issues | length > 12 else ''))
+         if fleet_doctor_issues | length > 0
          else ('HTTP ' ~ fleet_doctor_status ~ ': ' ~ (fleet_doctor_body or '(empty body)')[:300]) }}
     quiet: true
 

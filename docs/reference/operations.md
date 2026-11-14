@@ -125,7 +125,9 @@ For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,90
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. A maintainer must update the fixed row once the history holds author turns.
 
-`tasks.copy_turn` has a fixed 4,200 seconds. Its Ansible phase ends after 4,050 seconds: the turn's own bound of 3,600 seconds, the 30-second kill grace, three T3 reads of up to a minute each, a reviewer's checkout and restore of up to 160 seconds, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
+`tasks.copy_turn` has a fixed 4,560 seconds. Its Ansible phase ends after 4,400 seconds.
+
+That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds six T3 or helper calls of up to a minute each: the settle's list, the list of a continued turn, the question's read and stop, and the list and show after the turn. It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a VM place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 

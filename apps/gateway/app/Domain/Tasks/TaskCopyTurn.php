@@ -25,11 +25,17 @@ use Illuminate\Support\Str;
  */
 final readonly class TaskCopyTurn
 {
-    /** The driver of a copy turn's thread. T3's CLI cannot stop a run, so the registry holds no driver for it. */
+    /**
+     * The driver of a copy turn's thread. Orbit stops a copy's run only inside a turn's phase, where it stops a run that asks through
+     * the stock T3 server in the copy; the registry holds no driver for it.
+     */
     public const string Driver = 't3';
 
     /** How long the agent's turn may run before Swamp ends its wait; the bound of a task VM turn. */
     public const int TurnSeconds = 3600;
+
+    /** How an implementer in a copy asks: T3 has no other way to hand a question back, and Orbit ends the turn at it. */
+    public const string AskRule = 'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.';
 
     public function __construct(private TaskOperations $operations, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates) {}
 
@@ -71,7 +77,11 @@ final readonly class TaskCopyTurn
             throw new ResourceOperationException('tasks.thread_role_mismatch', 'The thread must be the role\'s thread that this turn continues in the task copy.', 422);
         }
         $thread = $data->thread === 'new' ? null : $current;
-        self::refuseUnended($group, $thread?->id);
+        // An earlier turn that may still run is settled first, by this turn's own phase in the copy (docs/cli/task/copy-turn.mmd).
+        // A reviewer's turn names the task branch its checkout goes back to, should the copy still hold its detach.
+        $settle = array_map(static fn (Operation $turn): array => ['operation_id' => $turn->id,
+            'title' => ValidatedData::string(ValidatedData::object($turn->input['turn'])['title']),
+            'branch' => ($turn->input['candidate'] ?? null) === null ? null : ValidatedData::string($turn->input['branch'])], self::unsettled($group));
         $candidate = null;
         if ($role === TaskThreadRole::Reviewer) {
             $check = TaskCheck::query()->where('task_id', $task->id)->find($data->check);
@@ -94,40 +104,70 @@ final readonly class TaskCopyTurn
         app(TaskBroadcasts::class)->threadChanged($thread->id);
         $target = $workspace->intent();
         // The phase checks the candidate out for the reviewer and the task branch out again after it (docs/cli/task/copy-turn.mmd).
-        $prompt = $candidate === null ? $data->prompt : $data->prompt."\n\nThe checked commit under review: {$candidate}. The checkout holds it, "
+        // A turn that continues a thread whose last turn asked answers it: the questions come first, in the agent's own words.
+        $prompt = $provider === null && $thread->questions !== null ? self::asked($thread->questions)."\n\nAnswer:\n".$data->prompt : $data->prompt;
+        $prompt = $candidate === null ? $prompt."\n\n".self::AskRule : $prompt."\n\nThe checked commit under review: {$candidate}. The checkout holds it, "
             .'detached. Orbit checks the task branch out again after this turn and discards every change in the checkout.';
 
         return [
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
-            'turn' => ['t3' => InstanceContainer::T3, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
-                'candidate' => $candidate, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
+            'turn' => ['t3' => InstanceContainer::T3, 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
+                'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt)],
         ];
     }
 
     /**
-     * Refuses more work on a group while an earlier turn may still run in its copy or left its checkout to the reviewer. T3's CLI cannot
-     * stop a run, so a turn whose run started and whose result does not show T3's run over (its bound cut the wait, a cancel or a lost
-     * phase) leaves the agent writing in the checkout; a reviewer turn whose checkout is not restored leaves it off the task branch. The
-     * result's `ended` says both. Only `task:cancel` ends it, with the copy. Called by the turn and by the check, the publish and the
-     * proof of a copy.
-     *
-     * T3 runs the turns of one thread in order, so only the latest turn of each thread counts: keyed by thread, the later turn replaces the earlier. A turn that ended waiting for an answer
-     * writes nothing until it gets one: it holds every other turn and check, but not the turn that continues its own thread.
+     * Refuses a check, a publish or a proof of the copy while an earlier turn is not settled: none of them can read T3 in the copy. The
+     * next turn settles it in its own phase.
      */
-    public static function refuseUnended(Task $group, ?int $continuing = null): void
+    public static function refuseUnended(Task $group): void
     {
-        $unended = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-            ->where('kind', OperationKinds::TasksCopyTurn)->whereIn('status', OperationStatus::terminalValues())->orderBy('id')->get()
-            ->keyBy(static fn (Operation $turn): int => ValidatedData::integer($turn->input['thread_id']))
-            ->first(static fn (Operation $turn, int $thread): bool => ($turn->state['swamp_run_id'] ?? null) !== null && ($turn->result['ended'] ?? null) !== true
-                && ! (($turn->result['state'] ?? null) === AgentThreadState::AskingForInput->value && $thread === $continuing));
+        $unended = self::unsettled($group)[0] ?? null;
         if ($unended instanceof Operation) {
-            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. Run task:cancel to end it with the copy.', 409,
-                details: ['operation_id' => $unended->id]);
+            throw new ResourceOperationException('tasks.copy_turn_unended', 'An earlier turn may still run in the task copy or left its checkout unrestored. '
+                .'The next task:turn settles it once its run ended; task:cancel ends it with the copy.', 409, details: ['operation_id' => $unended->id]);
         }
+    }
+
+    /**
+     * The group's copy turns that started a run and are not settled. One rule settles a turn: T3 shows its thread with no active run,
+     * and a reviewer's detach is undone (docs/cli/task/copy-turn.mmd). The turn's own result records that as `ended`; a later turn's phase that
+     * found it so names it in its result's `settled`. A turn that asked and whose run Orbit stopped ended.
+     *
+     * @return list<Operation>
+     */
+    public static function unsettled(Task $group): array
+    {
+        $turns = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
+            ->where('kind', OperationKinds::TasksCopyTurn)->whereIn('status', OperationStatus::terminalValues())->orderBy('id')->get();
+        $settled = $turns->flatMap(static fn (Operation $turn): array => ValidatedData::integerList($turn->result['settled'] ?? []))->all();
+
+        return array_values($turns->filter(static fn (Operation $turn): bool => ($turn->state['swamp_run_id'] ?? null) !== null
+            && ($turn->result['ended'] ?? null) !== true && ! in_array($turn->id, $settled, true))->all());
+    }
+
+    /**
+     * The questions a thread's last turn asked, each with its header and options, as the next turn quotes them.
+     *
+     * @param  list<array<string, mixed>>  $questions
+     */
+    public static function asked(array $questions): string
+    {
+        $lines = ['You asked in your last turn:'];
+        foreach ($questions as $question) {
+            $header = ValidatedData::string($question['header'] ?? '');
+            $lines[] = ($header === '' ? '' : "[{$header}] ").ValidatedData::string($question['question']);
+            foreach (is_array($question['options'] ?? null) ? $question['options'] : [] as $option) {
+                $option = ValidatedData::object($option);
+                $description = ValidatedData::string($option['description'] ?? '');
+                $lines[] = '- '.ValidatedData::string($option['label']).($description === '' ? '' : ': '.$description);
+            }
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

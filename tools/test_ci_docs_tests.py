@@ -39,6 +39,15 @@ class DocsTestsPolicyTest(unittest.TestCase):
             self.assertNotIn(selection, script)
         self.assertIn('bin/check-flows', steps[-1]['run'])
 
+    def test_docs_impact_gate_can_replay_cli_contracts(self):
+        # The gate runs bin/cli-contract --changed, which needs the CLI's vendor/bin/pest.
+        steps = JOB['steps']
+        install = next(i for i, step in enumerate(steps)
+                       if step.get('run') == 'composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts')
+        gate = next(i for i, step in enumerate(steps) if step.get('id') == 'docs-body')
+        self.assertLess(install, gate)
+        self.assertEqual(steps[gate]['if'], steps[install]['if'])
+
     def test_python_contract_wrapper_discovers_all_files_and_rejects_zero_tests(self):
         source = (ROOT / 'apps/docs/tests/Feature/OpenApiExtensionsTest.php').read_text()
         self.assertIn("'python3', '-m', 'unittest', 'discover'", source)
