@@ -6,6 +6,7 @@ namespace Orbit\Extensions\Conn\Actions;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Operations\OperationStore;
@@ -36,7 +37,7 @@ final readonly class AdmitConnEnvironmentRestartAction
 
         return $this->operations->execute(self::Kind, 'instance', $instance->id, $runtime->node_id, [
             'instance_id' => $instance->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $instance->id, 't3_port' => InstanceHostIntent::T3Port, 'name' => $name, 'read_at' => $readAt->utc()->format('Y-m-d\TH:i:s.v\Z'),
+            'intent' => ['instance_id' => $instance->id, 't3_port' => InstanceHostIntent::T3Port, 'name' => $name, 'machine_info' => InstanceMachineName::machineInfo($name), 'read_at' => $readAt->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]],
         ], $triggeredBy, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
     }

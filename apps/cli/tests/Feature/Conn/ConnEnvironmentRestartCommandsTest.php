@@ -43,7 +43,7 @@ function restartAnswers(): array
     ]];
 }
 
-it('walks a Node, follows each admitted restart to its end, and prints one answer per Instance in JSON', function (array $final, string $answer, ?string $reason, int $exit): void {
+it('walks a Node, follows each admitted restart to its end, and prints one answer per Instance in JSON', function (array $final, string $answer, ?string $reason, int $exit, array $counts = []): void {
     $mock = MockClient::global([
         RestartNodeConnEnvironmentsRequest::class => MockResponse::make(['data' => restartAnswers(), 'meta' => ['request_id' => RestartRequestId]]),
         ShowOperationRequest::class => MockResponse::make(['data' => $final, 'meta' => ['request_id' => RestartRequestId]]),
@@ -53,7 +53,7 @@ it('walks a Node, follows each admitted restart to its end, and prints one answe
 
     expect($code)->toBe($exit)->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR))->toBe(['restarts' => [
         ['instance_id' => 3, 'instance' => 'default', 'answer' => 'current', 'reason' => null, 'operation_id' => null],
-        ['instance_id' => 4, 'instance' => 'clone', 'answer' => $answer, 'reason' => $reason, 'operation_id' => 9],
+        ['instance_id' => 4, 'instance' => 'clone', 'answer' => $answer, 'reason' => $reason, 'operation_id' => 9, ...$counts],
         ['instance_id' => 5, 'instance' => 'review', 'answer' => 'busy', 'reason' => 't3_working', 'operation_id' => null],
         ['instance_id' => 6, 'instance' => 'asleep', 'answer' => 'skipped', 'reason' => 'frozen', 'operation_id' => null],
     ]]);
@@ -61,7 +61,7 @@ it('walks a Node, follows each admitted restart to its end, and prints one answe
     $mock->assertSent(ShowOperationRequest::class);
 })->with([
     'restarted' => [restartOperation('succeeded', 4, ['answer' => 'restarted', 'window_ms' => 6100]), 'restarted', null, 0],
-    'busy in the run' => [restartOperation('succeeded', 4, ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 1]), 'busy', 'processes: 1 terminal(s), 1 command(s)', 0],
+    'busy in the run' => [restartOperation('succeeded', 4, ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 1]), 'busy', 'processes', 0, ['terminals' => 1, 'commands' => 1]],
     'failed' => [restartOperation('failed', 4, ['answer' => 'failed', 'error_code' => 'conn.t3_unready'], 'conn.t3_unready'), 'failed', 'conn.t3_unready', 1],
 ]);
 
@@ -83,4 +83,17 @@ it('refuses an Instance ID that is not a positive number before it calls the Gat
     expect(Artisan::call('conn:environment-restart', ['instance' => 'abc', '--json' => true, '--no-interaction' => true]))->toBe(1)
         ->and(Artisan::output())->toContain('instance.id_invalid');
     $mock->assertNothingSent();
+});
+
+it('names the counts of a busy run in the human line', function (): void {
+    MockClient::global([
+        RestartConnEnvironmentRequest::class => MockResponse::make(['data' => ['restarts' => [
+            ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation_id' => 9],
+        ]], 'meta' => ['request_id' => RestartRequestId]]),
+        ShowOperationRequest::class => MockResponse::make(['data' => restartOperation('succeeded', 4, ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 2]),
+            'meta' => ['request_id' => RestartRequestId]]),
+    ]);
+
+    expect(Artisan::call('conn:environment-restart', ['instance' => 4, '--no-interaction' => true]))->toBe(0)
+        ->and(Artisan::output())->toContain('4 clone: busy (processes: 1 terminal(s), 2 command(s))');
 });

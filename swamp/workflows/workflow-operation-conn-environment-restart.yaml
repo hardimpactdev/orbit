@@ -15,6 +15,7 @@ inputs:
         instance_id: {type: integer, minimum: 1}
         t3_port: {type: integer, minimum: 1, maximum: 65535}
         name: {type: string, minLength: 3, maxLength: 255}
+        machine_info: {type: string, pattern: '^PRETTY_HOSTNAME=.+\n$'}
         read_at: {type: string}
         container:
           type: object
@@ -24,7 +25,7 @@ inputs:
           required: [project, name]
           additionalProperties: false
         ssh_execution: {type: object}
-      required: [instance_id, t3_port, name, read_at, container, ssh_execution]
+      required: [instance_id, t3_port, name, machine_info, read_at, container, ssh_execution]
       additionalProperties: false
     # The common Gateway envelope always supplies an empty map; this workflow accepts no secrets.
     execution_secrets: {type: object, properties: {}, additionalProperties: false}

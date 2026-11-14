@@ -1,38 +1,48 @@
-{#- The processes of a container's t3.service that a T3 restart would end and that are a user's: `lines` is `ps -e -o
-    pid=,ppid=,etimes=,cgroup=,comm=` run in the container (docs/reference/development-containers.md#the-restart-window).
-    T3's main process is the one whose parent is outside the service. It may go, as may these of its children: the resource monitor,
-    and an idle provider (`claude`, `codex`) with the one `sh` it started with that runs nothing. Every other child of T3 is a
-    terminal shell (node-pty forks it from T3), open or running something: a restart would lose its state. Every other process is a
-    turn's tool or command, or what a terminal runs. Prints JSON {"terminals": n, "commands": n}: shells, and the commands of a turn or a terminal. -#}
+{#- The processes of a container's t3.service that a T3 restart would end and that are a user's (docs/reference/development-containers.md#the-restart-window).
+    `lines` is the output of the restart phase's read in the container: `main <MainPID>`, then `pid ppid etimes comm` for each pid of
+    t3.service's cgroup.procs. It fails closed: an unreadable read, a MainPID of 0 or one that is not in the service prints
+    {"readable": false}.
+    May go: systemd's MainPID of t3.service (T3); these direct children of it: the resource monitor, T3's own `git` (a terminal's git
+    is a child of its shell), and a provider (`claude`, `codex`, the recipe's binary names); and each descendant of a provider that
+    started within 10 s of the provider, the session's own setup such as its `sh` and stdio MCP servers.
+    Counted as `terminals`: every other direct child of T3, a shell node-pty forked, open idle or running something.
+    Counted as `commands`: every other process, such as what a terminal runs, a provider's descendant started later (a turn's tool,
+    or a dev server an earlier turn left), or a process whose parent left the service (an orphan of a backgrounded command).
+    Prints JSON {"readable": true, "terminals": n, "commands": n}. -#}
+{%- set ns = namespace(main=0, readable=true) -%}
 {%- set procs = [] -%}
 {%- for line in lines -%}
-  {%- set f = line.split(None, 4) -%}
-  {%- if f | length == 5 and f[3].endswith('/system.slice/t3.service') -%}
-    {%- set _ = procs.append({'pid': f[0] | int, 'ppid': f[1] | int, 'age': f[2] | int, 'comm': f[4] | trim}) -%}
+  {%- set f = line.split(None, 3) -%}
+  {%- if f | length == 2 and f[0] == 'main' and f[1] is match('^[0-9]+$') -%}
+    {%- set ns.main = f[1] | int -%}
+  {%- elif f | length == 4 and f[0] is match('^[0-9]+$') and f[1] is match('^[0-9]+$') and f[2] is match('^[0-9]+$') -%}
+    {%- set _ = procs.append({'pid': f[0] | int, 'ppid': f[1] | int, 'age': f[2] | int, 'comm': f[3] | trim}) -%}
   {%- endif -%}
 {%- endfor -%}
 {%- set pids = procs | map(attribute='pid') | list -%}
-{%- set parents = procs | map(attribute='ppid') | list -%}
-{%- set main = procs | rejectattr('ppid', 'in', pids) | map(attribute='pid') | list -%}
-{%- set allowed = [] + main -%}
-{%- set providers = [] -%}
+{%- if ns.main == 0 or ns.main not in pids -%}
+{{ {'readable': false} | to_json }}
+{%- else -%}
+{%- set by_pid = dict(procs | map(attribute='pid') | zip(procs)) -%}
+{%- set providers = procs | selectattr('ppid', 'equalto', ns.main) | selectattr('comm', 'in', ['claude', 'codex']) | list -%}
+{%- set provider_age = dict(providers | map(attribute='pid') | zip(providers | map(attribute='age'))) -%}
 {%- set counts = {'terminals': 0, 'commands': 0} -%}
-{%- for p in procs if p.ppid in main -%}
-  {%- if p.comm == 't3-resource-mon' -%}
-    {%- set _ = allowed.append(p.pid) -%}
-  {%- elif p.comm in ['claude', 'codex'] -%}
-    {%- set _ = allowed.append(p.pid) -%}
-    {%- set _ = providers.append(p) -%}
-  {%- endif -%}
-{%- endfor -%}
-{%- for provider in providers -%}
-  {%- for p in procs if p.ppid == provider.pid and p.comm == 'sh' and p.pid not in parents and (p.age - provider.age) | abs <= 5 -%}
-    {%- if loop.first -%}
-      {%- set _ = allowed.append(p.pid) -%}
+{%- for p in procs if p.pid != ns.main -%}
+  {%- set walk = namespace(at=p.ppid, provider=0, depth=0) -%}
+  {%- for _ in range(32) if walk.provider == 0 and walk.at in by_pid and walk.at != ns.main -%}
+    {%- if walk.at in provider_age -%}
+      {%- set walk.provider = walk.at -%}
+    {%- else -%}
+      {%- set walk.at = by_pid[walk.at].ppid -%}
     {%- endif -%}
   {%- endfor -%}
+  {%- if p.ppid == ns.main and p.comm in ['t3-resource-mon', 'git', 'claude', 'codex'] -%}
+  {%- elif walk.provider != 0 and p.age >= provider_age[walk.provider] - 10 -%}
+  {%- elif p.ppid == ns.main -%}
+    {%- set _ = counts.update({'terminals': counts.terminals + 1}) -%}
+  {%- else -%}
+    {%- set _ = counts.update({'commands': counts.commands + 1}) -%}
+  {%- endif -%}
 {%- endfor -%}
-{%- for p in procs if p.pid not in allowed -%}
-  {%- set _ = counts.update({'terminals': counts.terminals + 1} if p.ppid in main else {'commands': counts.commands + 1}) -%}
-{%- endfor -%}
-{{ counts | to_json }}
+{{ {'readable': true, 'terminals': counts.terminals, 'commands': counts.commands} | to_json }}
+{%- endif -%}

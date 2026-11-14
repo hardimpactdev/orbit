@@ -45,10 +45,10 @@ trait RestartsConnEnvironments
         return in_array('failed', array_column($lines, 'answer'), true) ? self::FAILURE : self::SUCCESS;
     }
 
-    /** @return array{instance_id: int, instance: string, answer: string, reason: string|null, operation_id: int|null} */
+    /** @return array{instance_id: int, instance: string, answer: string, reason: string|null, operation_id: int|null, terminals?: int, commands?: int} */
     private function restartLine(GatewayConnector $connector, ConnEnvironmentRestartResponse $restart): array
     {
-        [$answer, $reason] = [$restart->answer, $restart->reason];
+        [$answer, $reason, $counts] = [$restart->answer, $restart->reason, []];
         if ($restart->answer === 'restarting' && $restart->operationId !== null) {
             if ($this->option('json') !== true) {
                 $this->writeHumanMessage("{$restart->instanceId} {$restart->instance}: restarting T3 (Operation {$restart->operationId})");
@@ -58,17 +58,17 @@ trait RestartsConnEnvironments
             [$answer, $reason] = $operation->succeeded() && in_array($result['answer'] ?? null, ['restarted', 'skipped', 'busy'], true)
                 ? [(string) $result['answer'], is_string($result['reason'] ?? null) ? $result['reason'] : null]
                 : ['failed', $operation->errorCode ?? $operation->status];
-            // The run's last guard names what T3's service runs: a restart would end it.
-            if ($reason === 'processes' && is_int($result['terminals'] ?? null) && is_int($result['commands'] ?? null)) {
-                $reason = "processes: {$result['terminals']} terminal(s), {$result['commands']} command(s)";
-            }
+            // The run's last guard counts what T3's service runs: a restart would end it.
+            $counts = $reason === 'processes' && is_int($result['terminals'] ?? null) && is_int($result['commands'] ?? null)
+                ? ['terminals' => $result['terminals'], 'commands' => $result['commands']] : [];
         }
         if ($this->option('json') !== true) {
-            $this->writeHumanMessage("{$restart->instanceId} {$restart->instance}: {$answer}".($reason === null ? '' : " ({$reason})"));
+            $detail = $counts === [] ? $reason : "{$reason}: {$counts['terminals']} terminal(s), {$counts['commands']} command(s)";
+            $this->writeHumanMessage("{$restart->instanceId} {$restart->instance}: {$answer}".($detail === null ? '' : " ({$detail})"));
         }
 
         return ['instance_id' => $restart->instanceId, 'instance' => $restart->instance, 'answer' => $answer, 'reason' => $reason,
-            'operation_id' => $restart->operationId];
+            'operation_id' => $restart->operationId, ...$counts];
     }
 
     /** Each restart ends within its run budget; the Operation never retries, so the follow reads until it is terminal. */

@@ -154,7 +154,7 @@ it('admits one restart on the Instance lock with an intent that holds no session
         ->and($operation->lock_key)->toBe('instance:'.$clone->id)
         ->and($operation->triggered_by)->toBe('node:1')
         ->and($operation->input)->toBe(['instance_id' => $clone->id, 'conn_environment_id' => $environment->id,
-            'intent' => ['instance_id' => $clone->id, 't3_port' => InstanceHostIntent::T3Port, 'name' => 'clone.shop', 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
+            'intent' => ['instance_id' => $clone->id, 't3_port' => InstanceHostIntent::T3Port, 'name' => 'clone.shop', 'machine_info' => "PRETTY_HOSTNAME=clone.shop\n", 'read_at' => now()->utc()->format('Y-m-d\TH:i:s.v\Z'),
                 'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name]]])
         ->and(json_encode($operation->input))->not->toContain('gateway-session');
 });
@@ -215,6 +215,7 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
     'restarted, with its window from the read' => ['succeeded', ['answer' => 'restarted', 'restart_at' => '2026-11-14T12:00:07.500000Z'], 'window', null],
     'interrupted' => ['interrupted', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
     'busy with a terminal' => ['succeeded', ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 2], ['answer' => 'busy', 'reason' => 'processes', 'terminals' => 1, 'commands' => 2], null],
+    'busy, its processes unreadable' => ['succeeded', ['answer' => 'busy', 'reason' => 'processes_unreadable'], ['answer' => 'busy', 'reason' => 'processes_unreadable'], null],
     'stopped after the read' => ['succeeded', ['answer' => 'skipped', 'reason' => 'stopped'], ['answer' => 'skipped', 'reason' => 'stopped'], null],
 ]);
 
