@@ -31,6 +31,8 @@ A separate hosted report job sets the non-required `Main full set` commit status
 
 Manual dispatch can supply an older base to check deferred work from an earlier range on current main. Each dispatch has its own status context, separate from the push result. An invalid base leaves a failed plan and a red status.
 
+### Queue and coverage
+
 All deferred shards use the existing managed Sabre pool, with two workers per shard and at most five executing shards per run. The pool has five runners shared with the exhaustive sweep, so overlapping pushes add queued work without taking hosted slots from Required. During sustained merge traffic this queue can grow; runs retain their exact SHA instead of replacing pending coverage.
 
 Unit and shard deadlines are the full set's existing limits. There is no eight-shard admission limit in this receiver: every selected deferred case must appear once in its plan and in its results. A missing registration, result, or prerequisite fails its own report. A wholly deferred file runs its whole live population, including new cases missing from its saved inventory. Receiver changes add explicit after-merge populations without changing the required plan. An empty selection is reported explicitly. Neither this report nor the exhaustive full set gates a merge or release.
