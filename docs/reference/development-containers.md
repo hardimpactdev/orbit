@@ -552,11 +552,17 @@ Only T3's service restarts. The run first checks that `/etc/machine-info` holds 
 | A process whose parent left the service, such as a backgrounded `nohup` server that PID 1 adopted | `busy`, counted in `commands` |
 | A member line the read cannot parse | `busy`, counted in `commands` |
 
+The `claude` session allowance depends on Claude Code starting each tool shell in a session of its own, as the pinned recipe version does. Measure it again on each Claude Code bump in the recipe.
+
 An open idle shell counts because a restart loses its state. After a restart, T3 spawns a new shell only when a client opens the terminal again. It starts in the directory the client names and replays the saved scrollback. The old shell's directory, variables, jobs and history are gone.
 
-The read fails closed. When it cannot be read, `MainPID` is 0 or not a member, or a cgroup sits below the service, the answer is `busy` with `processes_unreadable`, and nothing restarts.
+An accepted limit: an MCP server that starts a long-running child without detaching keeps that child in the provider's session, and the restart ends it.
 
-So the restart ends T3, its monitor and `git` calls, an idle provider with no descendant outside the `claude` session, and a terminal or command that started in the second between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here. A turn that has not run a tool yet shows only its provider, so it is cut, and T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
+The read fails closed. When it cannot be read, `ps` fails for a member that is still alive, `MainPID` is 0 or not a member, or `cgroup.stat` counts a cgroup below the service, the answer is `busy` with `processes_unreadable`, and nothing restarts.
+
+So the restart ends T3, its monitor and `git` calls, an idle provider with no descendant outside the `claude` session, and a terminal or command that started in the moment (about a second) between the read and the restart. Stock T3 0.1.7 keeps a provider session after its turn and has no idle release, so that session ends here.
+
+A turn with no live tool process outside the provider's session is cut, for example one that runs Grep, Read or Edit, or whose Bash command already ended. T3 continues it after its start. Orbit Processes run in their own `orbit-*` units and do not restart.
 
 A frozen or stopped container is skipped. T3 reads the name at its next start.
 
@@ -572,7 +578,7 @@ The run's process read narrows the window for a turn that runs a tool, and for e
 
 What a user sees:
 
-- **A turn in the window** that has not run a tool yet is cut. T3 0.1.7 marks that run cancelled as it stops.
+- **A turn in the window** with no live tool process outside the provider's session is cut. T3 0.1.7 marks that run cancelled as it stops.
 - **The cut turn continues.** T3 continues it in a new run after its start. The T3 setting `continueThreadsAfterServerUpdate` does this, and it is on by default.
 - **A connected client** shows *Reconnecting…* and reconnects by itself. Its backoff starts at one second.
 - **An unsent draft stays.** T3's client keeps drafts in the browser (`t3code:composer-drafts:v1`), never on the server.

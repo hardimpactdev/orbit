@@ -41,8 +41,8 @@ sequenceDiagram
   %%> - `systemctl try-restart t3.service`; nothing else restarts, and the kernel hostname stays
   %%> - then reads the label inside the container on T3's port until it is the name, about 84 s at most
   %%> What a user sees:
-  %%> - a turn that started after the read and runs no tool yet is cut; T3 records it as cancelled and continues it after its start
-  %%> - an open T3 terminal is not ended unless it opens in the second between that read and the restart; Orbit Processes do not restart
+  %%> - a turn with no live tool process outside the provider's session is cut (Grep, Read or Edit, or an ended Bash command); T3 continues it
+  %%> - an open T3 terminal is not ended unless it opens in the moment (about a second) between that read and the restart; Orbit Processes do not restart
   %%> - a connected client shows Reconnecting… and reconnects; an unsent draft stays in the browser
   alt T3 answers with its name
     %% path: restarted

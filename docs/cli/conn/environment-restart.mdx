@@ -51,7 +51,7 @@ The Gateway answers with HTTP 200 and one answer per Instance. For a restart it 
 
 Running the command again on a restarted Instance answers `current`.
 
-**What a user sees.** The run restarts nothing while a T3 terminal is open or a command runs in T3's service; [Existing Instances](/reference/development-containers#existing-instances) has the rule. A terminal that opens in the second between that read and the restart is ended. A turn that has not run a tool yet is cut, and T3 continues it after its start. Orbit Processes do not restart. A Conn or T3 client that is connected shows *Reconnecting…* and reconnects by itself. A draft that was not sent stays: the client keeps it in the browser. [Restart for the machine name](/reference/conn#restart-for-the-machine-name) has the details.
+**What a user sees.** The run restarts nothing while a T3 terminal is open or a command runs in T3's service; [Existing Instances](/reference/development-containers#existing-instances) has the rule. A terminal that opens in the moment (about a second) between that read and the restart is ended. A turn with no live tool process outside the provider's session is cut, for example one that runs Grep, Read or Edit, or whose Bash command already ended; T3 continues it. Orbit Processes do not restart. A Conn or T3 client that is connected shows *Reconnecting…* and reconnects by itself. A draft that was not sent stays: the client keeps it in the browser. [Restart for the machine name](/reference/conn#restart-for-the-machine-name) has the details.
 
 The API is `POST /api/v1/conn/instances/{instance}/t3-restart`. The Conn extension must be on.
 
