@@ -72,7 +72,13 @@ final readonly class CancelOperationAction
         }
         if (! $operation->status->terminal() && isset($operation->state['swamp_run_id'])) {
             if (DirectOperation::owns($operation) && app(DirectOperation::class)->usesNativeTerminal($operation)) {
-                app(CancelSwampRun::class)->execute($operation);
+                // While a database copy runs, the request is recorded and the reconciler forwards it when the copy has ended.
+                if (app(NativeRunCancellation::class)->holdsForCopy($operation)) {
+                    // Recorded again, so an earlier request whose forward window has closed cannot swallow this one.
+                    app(NativeRunCancellation::class)->request($operation, again: true);
+                } else {
+                    app(CancelSwampRun::class)->execute($operation);
+                }
             }
         } elseif (app(NativeRunCancellation::class)->outlivesTimeout($operation)) {
             // The Gateway ended it at its budget; the native run may still be going. Ask Swamp again.

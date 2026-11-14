@@ -418,6 +418,12 @@ A cancelled container create with its original Instance still retained for retry
 
 A cancelled deploy or rollback records its history row as `failed` with `deployment.cancelled`. Orbit never undoes the steps that ran.
 
+A cancel does not cut a database copy that already runs. A clone's database fill (`server-database-fill` and `clone-server-database-fill` of `instance.create`, `server-database-fill` of `instance.complete`) runs on the database server; Swamp's cancel would end only its SSH client, and the copy would run on. So while that step runs, the Gateway records the request and does not send it. The step's end event (succeeded or failed) asks the reconciler for a pass at once; when a pass already runs or waits, the next pass sends it, within about a minute.
+
+The fill ends by itself within its 600-second limit. A step that still shows `running` 60 seconds past that limit has lost its end event: the Gateway then sends the cancel anyway and logs `operation.cancel_copy_bound_passed`. The window of one hour in which the reconciler forwards a request still counts from the request. An operator's cancel follows the same rule: it cannot cut the copy.
+
+While the cancel waits, the Operation shows `cancel_requested`, keeps its target lock and its Route hold, and other Route writes on those Nodes wait. A cancel that arrives while the run's start is in flight goes on as soon as the run is bound.
+
 A parent that waits for children passes the request to every nonterminal child in the same transaction.
 
 An Operation that the Gateway timed out is terminal, yet its native run may still be going. Cancelling it asks Swamp again to cancel the run. Ending a task group (`task:cancel`) asks Swamp to cancel the runs of the group's timed-out Operations before it destroys the VM, so no run keeps waiting on a VM that is gone.

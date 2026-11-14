@@ -422,7 +422,9 @@ A clone's create ends when its thread is usable; its [completion](/cli/instance/
 
 The removal starts when the completion has ended. The completion's SSH and shell steps take the abort at once: Swamp ends their connection to the Node. Its own `withdraw-route` step takes back a Route it published, and the removal then deletes the container, the clone's database, the Route, the completion's vault copies and the records.
 
-One step can outlive the cancel: a database fill already running on the database server. The cancel ends the connection to it, not the copy, which runs on until it ends or reaches its 600-second limit. A PostgreSQL copy that commits after the removal dropped the clone's database leaves that database on the server. A MySQL copy keeps its session on the database, so the removal refuses to drop it with `database.in_use` and fails; a new removal after the copy has ended finishes it.
+A database fill that already runs is not cut: the cancel waits until the fill has ended, within its 600-second limit ([Cancel an operation](/reference/operations#cancel-an-operation)). Meanwhile the removal shows `waiting` and the completion keeps the clone's lock and its Route hold. Then the completion takes the cancel, withdraws its Route and ends, and the removal drops a database that no copy touches.
+
+Three cases are not covered. A run that the Gateway times out or loses during the fill gets the cancel at once, so its copy can still outlive it. A cancel that reaches Swamp in the moment the fill starts, before the Gateway has recorded that start, can cut it. A CLI destroy of a clone whose create still runs its fill is admitted beside the create, and can race that copy.
 
 The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
 

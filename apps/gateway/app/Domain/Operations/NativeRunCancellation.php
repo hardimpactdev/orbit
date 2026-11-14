@@ -9,6 +9,7 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Operation;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -19,6 +20,20 @@ final readonly class NativeRunCancellation
 {
     /** How long after a request the reconciler keeps forwarding it; a run that outlives that is lost. */
     public const int ForwardMinutes = 60;
+
+    /**
+     * The steps that copy a clone's database on its database server, per kind, with the bound in seconds that each step's own
+     * `timeout` gives it. A cancel ends only the SSH client of such a step: the copy runs on, and a removal could then drop a
+     * database the copy still creates. So a cancel waits until the step has ended (docs/reference/operations.md#cancel-an-operation).
+     * `NativeRunCancellationTest` ties each name and bound to the workflow files.
+     */
+    public const array CopySteps = [
+        'instance.create' => ['server-database-fill' => 600, 'clone-server-database-fill' => 600],
+        'instance.complete' => ['server-database-fill' => 600],
+    ];
+
+    /** A copy step that still shows `running` this long past its bound has lost its end event: the cancel goes on anyway. */
+    public const int CopyMarginSeconds = 60;
 
     public function __construct(private OperationStore $store) {}
 
@@ -54,7 +69,47 @@ final readonly class NativeRunCancellation
 
         return is_string($requested) && ! isset($state['native_cancel_confirmed_at'])
             && Carbon::parse($requested)->greaterThan(now()->subMinutes(self::ForwardMinutes))
-            && (! $operation->status->terminal() || $this->outlivesTimeout($operation));
+            && (! $operation->status->terminal() || $this->outlivesTimeout($operation))
+            && ! $this->holdsForCopy($operation);
+    }
+
+    /**
+     * True while a live run's database copy step runs, within its bound and margin: the cancel waits for the step's end, and the
+     * progress of that end asks the reconciler to forward it at once. A timed-out run is not held: nothing would end it.
+     */
+    public function holdsForCopy(Operation $operation): bool
+    {
+        $steps = self::CopySteps[$operation->kind] ?? [];
+        $progress = $operation->state['native_progress'] ?? null;
+        if ($steps === [] || $operation->status->terminal() || ! is_array($progress) || ! is_array($progress['active'] ?? null)) {
+            return false;
+        }
+        foreach ($progress['active'] as $row) {
+            $step = is_array($row) ? ($row['step'] ?? null) : null;
+            if (! is_string($step) || ! isset($steps[$step])) {
+                continue;
+            }
+            $since = is_string($row['started_at'] ?? null) ? $row['started_at'] : ($row['observed_at'] ?? null);
+            if (is_string($since) && Carbon::parse($since)->greaterThan(now()->subSeconds($steps[$step] + self::CopyMarginSeconds))) {
+                return true;
+            }
+            Log::warning('operation.cancel_copy_bound_passed', ['operation_id' => $operation->id, 'step' => $step, 'since' => $since]);
+        }
+
+        return false;
+    }
+
+    /**
+     * True when the step event ends one of the kind's database copy steps.
+     *
+     * @param  array<string, mixed>  $event
+     */
+    public static function endsCopy(Operation $operation, array $event): bool
+    {
+        $step = $event['stepId'] ?? null;
+
+        return in_array($event['kind'] ?? null, ['step_completed', 'step_failed'], true)
+            && is_string($step) && isset((self::CopySteps[$operation->kind] ?? [])[$step]);
     }
 
     /** True for a failed Operation that the Gateway timed out and whose native run has no recorded end. */

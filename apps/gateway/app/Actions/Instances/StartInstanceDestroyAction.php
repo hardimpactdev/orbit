@@ -92,7 +92,8 @@ final readonly class StartInstanceDestroyAction
                 // After the record, which took the Instance and marked it removing: the order the completion's projection uses.
                 $running = Operation::query()->lockForUpdate()->findOrFail($completion);
                 if (! $running->status->terminal() && ! isset($running->state['swamp_run_id'])) {
-                    // No run is bound: the cancel ends it here, with no Swamp call, so no start can slip in after the commit.
+                    // No run is bound: the cancel ends a queued completion here with no Swamp call. One whose start is in flight only
+                    // records the request; the start's bind forwards it with the run's id (StartSwampRun::bind).
                     app(CancelOperationAction::class)->execute($running);
                 } elseif (! $running->status->terminal()) {
                     // The cancel is recorded with the removal; Swamp is asked to stop the run after the commit, never inside it.

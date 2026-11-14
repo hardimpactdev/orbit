@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\NativeRunCancellation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
@@ -14,13 +15,16 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\CancelSwampRun;
 use App\Infrastructure\Swamp\NativeRunProgress;
+use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Symfony\Component\Yaml\Yaml;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -433,4 +437,158 @@ it('keeps a lockless script timeout unchanged and forwards an explicit renewed c
         ->and($expired->state['native_cancel_requested_at'])->toBe($renewed)
         ->and($expired->state)->toHaveKey('native_cancel_confirmed_at')
         ->and($expired->state['native_timeout'])->not->toHaveKey('native_terminal_status');
+});
+
+/** A running `instance.complete` or `instance.create` whose run is bound, and whose step `$step` started `$seconds` ago. */
+function copyingRun(string $kind = 'instance.complete', ?string $step = 'server-database-fill', int $seconds = 5, ?int $index = null): Operation
+{
+    $address = '10.44.1.'.(Node::query()->count() + 10);
+    $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'copy-'.uniqid(), 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit']));
+    $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'instance', 'target_id' => 1, 'node_id' => $node->id,
+        'input' => ['instance_id' => 1], 'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => RUN], 'sequence' => 1, 'attempts' => 1,
+        'started_at' => now()->subMinutes(2)]);
+    if ($step !== null) {
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_started', 'stepId' => $step, 'jobId' => 'complete', 'seq' => 1,
+            'startedAt' => now()->subSeconds($seconds)->toIso8601ZuluString('millisecond'), ...($index === null ? [] : ['forEachIndex' => $index])]);
+    }
+
+    return $operation->refresh();
+}
+
+function cancelRecorded(Operation $operation, int $minutesAgo = 0): Operation
+{
+    $operation->update(['cancel_requested_at' => now()->subMinutes($minutesAgo),
+        'state' => [...$operation->state, 'native_cancel_requested_at' => now()->subMinutes($minutesAgo)->toISOString()]]);
+
+    return $operation->refresh();
+}
+
+describe('a cancel while a database copy runs', function (): void {
+    it('is held while the copy step runs and forwarded at once when the step ends', function (string $end, string $kind, string $step): void {
+        Queue::fake();
+        $operation = cancelRecorded(copyingRun($kind, $step));
+        $cancellation = app(NativeRunCancellation::class);
+        expect($cancellation->awaitsForwarding($operation))->toBeFalse();
+
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => $end, 'stepId' => $step, 'jobId' => 'complete', 'seq' => 2]);
+
+        expect($cancellation->awaitsForwarding($operation->refresh()))->toBeTrue();
+        Queue::assertPushed(ReconcileSwampOperations::class);
+    })->with([
+        'completion fill succeeded' => ['step_completed', 'instance.complete', 'server-database-fill'],
+        'completion fill failed' => ['step_failed', 'instance.complete', 'server-database-fill'],
+        'clone create fill succeeded' => ['step_completed', 'instance.create', 'clone-server-database-fill'],
+        'host create fill failed' => ['step_failed', 'instance.create', 'server-database-fill'],
+    ]);
+
+    it('forwards at once while another step runs, with no progress yet, and for a kind without a copy step', function (): void {
+        $cancellation = app(NativeRunCancellation::class);
+        expect($cancellation->awaitsForwarding(cancelRecorded(copyingRun(step: 'clone-services'))))->toBeTrue()
+            ->and($cancellation->awaitsForwarding(cancelRecorded(copyingRun(step: null))))->toBeTrue()
+            ->and($cancellation->awaitsForwarding(cancelRecorded(copyingRun('instance.deploy', 'server-database-fill'))))->toBeTrue();
+    });
+
+    it('holds a forEach item of a copy step by its bare step name and lets its end release it', function (): void {
+        Queue::fake();
+        $operation = cancelRecorded(copyingRun(index: 0));
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeFalse();
+
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_completed', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
+
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($operation->refresh()))->toBeTrue();
+    });
+
+    it('still counts the one-hour forward window from the request', function (): void {
+        $operation = cancelRecorded(copyingRun(), minutesAgo: NativeRunCancellation::ForwardMinutes + 1);
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_completed', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
+
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($operation->refresh()))->toBeFalse();
+    });
+
+    it('forwards anyway and logs it when the copy step shows running past its bound, as when its end event never arrives', function (): void {
+        Log::spy();
+        $bound = NativeRunCancellation::CopySteps['instance.complete']['server-database-fill'];
+        $operation = cancelRecorded(copyingRun(seconds: $bound + NativeRunCancellation::CopyMarginSeconds + 1));
+
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
+        Log::shouldHaveReceived('warning')->withArgs(fn (string $message, array $context): bool => $message === 'operation.cancel_copy_bound_passed'
+            && $context['operation_id'] === $operation->id && $context['step'] === 'server-database-fill')->once();
+        expect(app(NativeRunCancellation::class)->awaitsForwarding(cancelRecorded(copyingRun(seconds: $bound))))->toBeFalse();
+    });
+
+    it('lets an operator cancel record the request and send nothing to Swamp while the copy runs', function (string $kind, string $step): void {
+        Queue::fake();
+        $operation = copyingRun($kind, $step);
+        $socket = reconcileSocket($operation, 'running');
+
+        app(CancelOperationAction::class)->execute($operation);
+
+        expect($operation->refresh()->cancel_requested_at)->not->toBeNull()
+            ->and($operation->state['native_cancel_requested_at'] ?? null)->not->toBeNull()
+            ->and(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel')
+            ->and(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeFalse();
+    })->with([['instance.complete', 'server-database-fill'], ['instance.create', 'clone-server-database-fill']]);
+
+    it('forwards a cancel recorded while the start was in flight as soon as the run binds', function (): void {
+        Queue::fake();
+        $operation = copyingRun(step: null);
+        $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-instance-complete']],
+            'cancel_requested_at' => now(), 'attempts' => 0]);
+        $bind = new ReflectionMethod(StartSwampRun::class, 'bind');
+
+        $bind->invoke(app(StartSwampRun::class), $operation->refresh(), RUN);
+
+        expect($operation->refresh()->state['native_cancel_requested_at'] ?? null)->not->toBeNull();
+        Queue::assertPushed(ReconcileSwampOperations::class);
+    });
+
+    it('names, for each kind, steps that exist in its workflow with the bound of their own timeout, and every server copy step', function (): void {
+        $kinds = collect(app(DirectOperation::class)->definitions())->filter(fn (array $definition): bool => isset($definition['workflow']))
+            ->mapWithKeys(fn (array $definition, string $kind): array => [$definition['workflow'] => $kind]);
+        $found = [];
+        // Every workflow file, child workflows too: a step that runs the server database fill must belong to a kind and be listed.
+        foreach (glob(base_path('../../swamp/workflows/*.yaml')) as $file) {
+            if (! str_contains((string) file_get_contents($file), 'server_database.fill')) {
+                continue;
+            }
+            $flow = Yaml::parseFile($file);
+            foreach (collect($flow['jobs'] ?? [])->flatMap(fn (array $job): array => $job['steps'] ?? []) as $step) {
+                $argv = $step['task']['inputs']['argv'] ?? '';
+                if (str_contains(is_string($argv) ? $argv : (string) json_encode($argv), 'server_database.fill')) {
+                    $found[$kinds[$flow['name']] ?? $flow['name']][$step['name']] = $step['task']['inputs']['argv'];
+                }
+            }
+        }
+        expect(array_keys($found))->toEqualCanonicalizing(array_keys(NativeRunCancellation::CopySteps));
+        foreach (NativeRunCancellation::CopySteps as $kind => $steps) {
+            expect(array_keys($found[$kind]))->toEqualCanonicalizing(array_keys($steps));
+            foreach ($steps as $step => $bound) {
+                expect($found[$kind][$step])->toStartWith('${{ ["timeout", "'.$bound.'"]');
+            }
+        }
+    });
+
+    it('sends no cancel that a copy step started to hold after the pass read the Operation', function (): void {
+        $operation = cancelRecorded(copyingRun(step: 'server-database-check'));
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeTrue();
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_started', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
+        $socket = reconcileSocket($operation, 'running');
+        $forward = new ReflectionMethod(ReconcileSwampOperations::class, 'forwardCancel');
+
+        $forward->invoke(new ReconcileSwampOperations, $operation, app(CancelSwampRun::class), app(OperationStore::class));
+
+        expect(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel')
+            ->and($operation->refresh()->state['native_cancel_confirmed_at'] ?? null)->toBeNull();
+    });
+
+    it('records a held operator cancel again when an earlier request\'s window has closed', function (): void {
+        Queue::fake();
+        $operation = cancelRecorded(copyingRun(), minutesAgo: NativeRunCancellation::ForwardMinutes + 5);
+
+        app(CancelOperationAction::class)->execute($operation);
+        app(NativeRunProgress::class)->apply($operation->id, RUN, ['kind' => 'step_completed', 'stepId' => 'server-database-fill', 'jobId' => 'complete', 'seq' => 2]);
+
+        expect(app(NativeRunCancellation::class)->awaitsForwarding($operation->refresh()))->toBeTrue();
+    });
 });
