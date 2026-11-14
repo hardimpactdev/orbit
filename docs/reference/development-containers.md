@@ -2,7 +2,7 @@
 title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
-  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
+  - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
@@ -1768,7 +1768,7 @@ The refusal names the volume and its key, for example `volume inner-pool block.m
 
 The clone probe writes only `security.idmap.isolated=true`, so its guard admits only that key. A container of `orbit-instances` keeps its NIC guard, with the same program and arguments as before.
 
-The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused.
+The root disk's `size` is the one device key that may be larger than the intent's, as [The root disk](#the-root-disk) explains. Any other form than `<n>GiB` is refused. The host converge's clone probe inherits the shared profile's root disk, which names no size. For the probe, the guard admits only a root without a size.
 
 After a host reboot, Incus restores the containers that were running, without the guard. A nested-fleet container has `boot.autostart=false`, so it stays stopped. An Orbit start of the Instance, such as its deployment, starts it again through the guard. A container made before the key existed gets it at its next start, before the guard reads it: it is the one key a start writes, and Incus applies it without a restart.
 
@@ -1851,7 +1851,7 @@ A delegated ZFS dataset is not used: a copy would need one host clone per child 
 
 ### The inner volume
 
-A new nested-fleet default gets its own volume for the inner fleet, as the task VM had its seed disk. Its runtime records the volume's name in `inner_volume`, and the intent carries it as `container.inner_volume`. The [first default's create](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) makes it:
+A new nested-fleet default gets its own volume for the inner fleet, as the task VM had its seed disk. Its runtime records the volume's name in `inner_volume`, and the intent carries it as `container.inner_volume`. An existing default gets it in its [conversion](#convert-a-default): the operator makes the volume by hand, and `gateway:instance-inner-volume` records the same name. The [first default's create](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create-default.mmd) makes it:
 
 | Part | Value |
 | --- | --- |
@@ -1867,7 +1867,7 @@ On the host this is one volume and one device on one container: no pool, profile
 
 A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots.
 
-The first nested-fleet default and every Instance without `inner_volume`, its copies included, keep today's shape: no step makes, snapshots, copies or checks a volume for them.
+Every Instance without `inner_volume`, the first nested-fleet default before its conversion and its copies included, keeps today's shape: no step makes, snapshots, copies or checks a volume for it.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
@@ -1892,20 +1892,83 @@ A copy keeps its size for its whole life. So copies made before a conversion kee
 
 #### Convert a default
 
-An operator converts a nested-fleet default once, outside any task turn. The steps:
+A nested-fleet default made before the inner volume existed, Instance 2454, has the full size and keeps its inner fleet on a directory pool in its root disk. One announced window converts it to the small size and moves the fleet onto its own [inner volume](#the-inner-volume). It runs once, outside any task turn. A full rehearsal on a copy of 2454 on 2026-11-14 timed each step; the seconds below are from it.
 
-1. Stop the default. Its copies keep running; their ranges do not change.
-2. Take a container snapshot `pre-idmap-<time>`. Incus needs a free range of the old size for it, for a moment.
-3. Set `security.idmap.size` to `1165536` on the container.
-4. Run `php artisan gateway:instance-idmap-size <id> 1165536` on the Gateway host. It records the size and clears the default's seed, so clones refuse until a new seed exists.
-5. Start the outer container and its inner containers once by hand. The inner Incus then rewrites the owners of their files on its pool, once.
-6. Deploy the default. Its start passes the guard with the new size, and the deployment takes a new seed. New copies get the small size.
+Before the window:
 
-At step 5 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
+- The release that adds `btrfs-progs` to [the pinned shape tools](#the-pinned-shape-tools) is live, and the default's last deployment result has `tools` not `failed`. Without it the inner Incus cannot make the pool (`Required tool "btrfs" is missing`).
+- No copy is being created and no task turn runs on the Project. Automatic release is paused.
+- No copy of the default has an unfinished create. Destroy such a copy first: a retry after the window would copy the default's own disk, and its guard would refuse it.
+- The Node has two free ranges of the full size: one for the snapshot, one for a rollback start. The pool has room for the 30 GiB volume.
 
-The command refuses a size other than the two above with `instance.idmap_size_invalid`, and its message names the floor of 1,065,536. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone. It holds the default's row lock, as a task copy's admission does.
+Who runs each step: **B** is a hand step on the Node, **G** a command on the Gateway host, **P** a product Operation.
 
-A rollback destroys the copies made after the conversion, restores `pre-idmap-<time>`, which brings back the old size and so the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more.
+| Step | Who | Action | Time on the copy |
+| --- | --- | --- | --- |
+| 1 | B | Stop the inner fleet (`incus stop nested-app-prod nested-app-dev nested-gateway` inside the container), then the container | about 20 s |
+| 2 | B | `incus snapshot create instance-<id> pre-window`. It needs a free full-size range for a moment; without one, stop here, start the container and deploy it | 0.2 s |
+| 3 | B | Set the small size; create `inner-<id>` with the keys of [The inner volume](#the-inner-volume); attach it as the disk `inner-pool` | about 1.5 s |
+| 4 | G | `php artisan gateway:instance-idmap-size <id> 1165536` and `php artisan gateway:instance-inner-volume <id> inner-<id>` | about 1 to 2 min with the hand-off |
+| 5 | B | Start the container by hand. The inner containers autostart on the old pool, and the inner Incus remaps their files to the new range | 32.8 s for about 250,000 files; allow 1.5 min under load |
+| 6 | B | Inside the container: `incus admin waitready`; stop the three; `incus storage create inner btrfs source=/srv/inner-pool/pool`; `incus move <container> --storage inner` for each | moves 82.6, 67.5 and 72.3 s |
+| 7 | B | Start the three once and stop them; retake each `base`; check that each root disk has `pool=inner` and that nothing uses `topology-seed`; stop the container | starts under 1 s, `base` 1.2 to 3.5 s each |
+| 8 | P | `orbit instance:deploy <id>`: the guard, the Club key, the fleet, Doctor, `base`, the shape tools and the [seed pair](#the-seed-pair) with the flush | about 4.5 min |
+| 9 | P | `orbit instance:create <project> <node> window-check --wait-active` must reach `active` with its own `inner-<clone id>`, size 1,165,536 and a healthy fleet; then destroy it. The window is done only then | about 1 min |
+| 10 | B | Later: delete the directory pool `topology-seed` after seed rotation | |
+
+Notes on the steps:
+
+Every hand command on the Node takes `--project orbit-instances-nested`. Step 3 in full is three commands:
+
+```
+incus config set instance-<id> security.idmap.size=1165536
+incus storage volume create orbit-instances inner-<id> zfs.block_mode=true block.filesystem=btrfs block.mount_options=user_subvol_rm_allowed,discard security.shifted=true size=30GiB
+incus config device add instance-<id> inner-pool disk pool=orbit-instances source=inner-<id> path=/srv/inner-pool
+```
+
+The device takes no other key, because the guard compares it exactly. The size change moves no file on the host.
+
+More notes on the steps:
+
+- Each command of step 4 clears the seed, so new clones refuse with `instance.default_missing` from here. The second prints the device and volume keys that the start guard will require. Compare them with the Node before step 8.
+- The inner containers have `boot.autostart=true`, so the remap runs at the outer start of step 5, before the move.
+- The fleet that runs after step 5 is whole: the old pool with the new map. The moves copy files that are already remapped, and the starts of step 7 walk no file.
+- Step 7 stops the container, so that the product start of step 8 runs the guard and delivers the Club key.
+- From the seed of step 8 on, clones are admitted again.
+
+On the copy the fleet was down about 5 minutes; on 2454, with its load and the two Gateway commands and the deployment, expect about 10 to 13 minutes. The container's own workspace and T3 are down only for the two outer restarts, steps 1 to 5 and the deployment's restart. Copies made before the window keep their full size and their directory pool and still start: their runtime records their own shape.
+
+The start guard names each half-converted shape:
+
+| The Node has | The records have | The guard refuses |
+| --- | --- | --- |
+| The disk `inner-pool` | No inner volume | `inner-pool` |
+| No disk `inner-pool` | The inner volume | `inner-pool` |
+| The full size | The small size | `config security.idmap.size` |
+| A volume key other than above | The inner volume | `volume inner-pool <key>` |
+
+Each refusal fails the start with `instance.container_network_unsafe` and leaves the container stopped. A deployment that fails before its seed cannot restore: the default's only seed has no volume half, so the restore refuses with `instance.fleet_seed_missing` and changes nothing. Then run the rollback.
+
+**Rollback** (rehearsed: 12.6 s by hand and a 27 s product start):
+
+1. Destroy every copy made after step 8.
+2. **B** Stop the fleet and the container. Delete any seed newer than `pre-window`: ZFS restores only the newest snapshot, and only one without clones.
+3. **B** `incus snapshot restore instance-<id> pre-window`. It brings back the full size, the directory pool and the old inner map, with no walk back, and drops the disk.
+4. **B** `incus storage volume delete orbit-instances inner-<id> --project orbit-instances-nested`.
+5. **G** `php artisan gateway:instance-idmap-size <id> 101000000` and `php artisan gateway:instance-inner-volume <id> --clear`.
+6. **P** `orbit instance:deploy <id>`: the start, the Club key and a new seed.
+
+The rollback needs any free full-size range, not the old one. It loses what the container wrote after step 2.
+
+`gateway:instance-idmap-size` refuses a size other than the two above with `instance.idmap_size_invalid`, and its message names the floor of 1,065,536. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone.
+
+`gateway:instance-inner-volume` takes only the name the product reserves for that default, `inner-<id>`. Any other name is `instance.inner_volume_name_invalid`, because a wrong record would point every clone at a volume that is not its own.
+
+It also refuses a container outside the nested project with `instance.inner_volume_not_nested`, a copy with `instance.inner_volume_not_default`, a Project without `nested_fleet` with `instance.inner_volume_nested_flag_off`, an open Operation on the default with `operation.target_busy` and an open create of a copy with `instance.clone_in_flight`. `--clear` refuses while a copy with an inner volume exists (`instance.inner_volume_copies_with_volume`). A run that would change nothing, the same name again or `--clear` without a record, refuses with `instance.inner_volume_unchanged` and keeps the seed.
+
+The command reads nothing on the Node: the start guard reads the volume and the device itself, so a second check would be a second copy of its rule. It prints the record before and after, and the guard's keys, as one JSON line.
+
+Both commands hold the default's row lock, as a task copy's admission does, and clear the seed.
 
 #### The seed pair
 
@@ -2147,15 +2210,17 @@ The proof runner in a copy needs the pinned Ansible controller of `bin/swamp-sha
 
 The same step keeps three host programs that Swamp fixture units run: `zip`, `unzip` and `jq`. A [task check](/reference/implementation-loop#the-scoped-task-check) in a copy runs those units, so the copy needs them too.
 
+It also keeps `btrfs-progs`. The inner Incus needs it for its btrfs pool on the [inner volume](#the-inner-volume). The nested image carries it since PR #3706, so a new nested-fleet default has it from its image. A default made from an older image, Instance 2454 among them, keeps that image and lacks it until this step installs it. [Convert a default](#convert-a-default) needs it inside the container before the inner pool can be made.
+
 The step sends `swamp/ansible/instance_shape_tools.py` into the outer container and runs it as root, with the workspace as its argument. The script loads the checkout's own `bin/swamp-shape-gate`. The gate names the tools from its three pin files: `/opt/orbit-shape-gate/venv-<digest>` from `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`, and `/opt/orbit-shape-gate/collections-<digest>` from `swamp/ansible/requirements.yml`. The gate also builds the venv. So the step, the gate and the proof runner always use the same names, and no version or naming rule exists twice.
 
 | State in the default | What the step does | Result |
 | --- | --- | --- |
-| The venv has `.complete`, the collections folder has `ansible_collections`, and the four packages are installed | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
+| The venv has `.complete`, the collections folder has `ansible_collections`, and the five packages are installed | Reads only, in about 1 s. Removes the tools of other pins if an earlier cleanup failed | `tools: present`, `tools_reason: current` |
 | The tools are ready, but a package is missing | Installs the missing packages with one `apt-get install` | `tools: built`, `tools_reason: missing` |
 | Anything else | Builds the tools, as the list below says | `tools: built`, `tools_reason: missing` |
 
-The four packages are `python3-venv`, `zip`, `unzip` and `jq`. The step reads each one with `dpkg-query`. The image lacks `zip`, `unzip` and `jq`. So the first refresh after this change installs five packages, with `libjq1` and `libonig5`, about 0.75 MB. The `apt-get update` and the install add an estimated 10 to 20 s, once. The step changes no image and moves no image alias.
+The five packages are `python3-venv`, `zip`, `unzip`, `jq` and `btrfs-progs`. The step reads each one with `dpkg-query`. The image lacks `zip`, `unzip` and `jq`; an image older than PR #3706 also lacks `btrfs-progs`. So the first refresh that finds a package missing installs it, with `libjq1` and `libonig5` for `jq`, about 0.75 MB. The `apt-get update` and the install add an estimated 10 to 20 s, once. For a default that lacks only `btrfs-progs`, the next refresh reports `tools: built`, `tools_reason: missing` once; the install alone took 1.4 s in a copy of Instance 2454. Later refreshes report `tools: present`. The step changes no image and moves no image alias.
 
 A build does five things:
 

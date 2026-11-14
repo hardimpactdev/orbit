@@ -3,7 +3,8 @@
 The fleet refresh runs it as root in the default's container, before the seed snapshot, with the workspace as its one argument:
 `python3 -I -c <this file> /srv/workspace`. A copy of the seed then holds the tools at the place where the proof runner and
 bin/swamp-shape-gate look for them, so no copy builds them and no copy needs python3-venv. The same step keeps the host programs that
-fixture units run, zip, unzip and jq, so a task check in a copy finds them.
+fixture units run, zip, unzip and jq, so a task check in a copy finds them, and btrfs-progs, which the inner Incus needs for its pool on
+the inner volume: a default made before the nested image carried it keeps the image it was made from.
 
 The workspace's own bin/swamp-shape-gate names and builds the tools from its three pin files, so the names are those of the commit the
 refresh checked out, and there is no second copy of a version or of the naming rule. The gate and the proof runner take the tools as
@@ -27,8 +28,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-# python3-venv builds the venv; the fixture units run zip, unzip and jq.
-PACKAGES = ('python3-venv', 'zip', 'unzip', 'jq')
+# python3-venv builds the venv; the fixture units run zip, unzip and jq; the inner Incus's btrfs pool needs btrfs-progs.
+PACKAGES = ('python3-venv', 'zip', 'unzip', 'jq', 'btrfs-progs')
 
 
 def names(workspace):
