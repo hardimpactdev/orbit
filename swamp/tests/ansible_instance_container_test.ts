@@ -301,7 +301,7 @@ Deno.test({
       const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
       const snapshots = calls.filter((call) => call.includes("snapshot") && call.includes("create"));
       assertEquals(snapshots.length, 2);
-      assert(snapshots[1].includes("--reuse"), "the old immutable seed cannot acquire the converted store");
+      assert(snapshots[1].some((arg) => arg.startsWith("next-")), "the converted store is taken beside the old immutable seed");
       assertEquals(f.state().containers["instance-7"].snapshots, before.containers["instance-7"].snapshots);
       const stops = f.state().systemctl.filter((call: string[]) => call[0] === "stop").length;
       const again = f.run("seed");
@@ -341,8 +341,94 @@ Deno.test({
       assert(redeployed.ok, redeployed.output);
       const creates = snapshotCreates();
       assertEquals(creates.length, 2);
-      assert(creates[1].includes("--reuse"), "the same-commit seed is replaced in place");
+      // The new seed is taken beside the old one, and only then does the old one go: never `--reuse`, which deletes first.
+      assert(!creates[1].includes("--reuse"), "a retake never deletes the seed before the new one exists");
+      assert(creates[1].includes(`next-${head}`), creates[1].join(" "));
+      const calls = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+        .filter((call) => call.includes("snapshot"));
+      const at = (verb: string, name: string) => calls.findIndex((call) => call.includes(verb) && call.includes(name));
+      assert(at("create", `next-${head}`) < at("delete", `seed-${head}`), "the old seed goes only after the new one exists");
+      assert(at("delete", `seed-${head}`) < at("rename", `next-${head}`));
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a retake on a host with no free ID range keeps the old seed, starts the Processes again and names the cause",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        const done = f.run(phase);
+        assert(done.ok, done.output);
+      }
+      const head = git(f.source, "rev-parse", "HEAD");
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      const full = f.state();
+      full.no_id_range = true;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(full));
+      const stops = full.systemctl.filter((call: string[]) => call[0] === "stop").length;
+      const starts = full.systemctl.filter((call: string[]) => call[0] === "start").length;
+
+      // The same commit: Incus would delete the old seed first with `--reuse`; the retake keeps it.
+      assert(!f.run("seed").ok);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      assertEquals(f.result(), { error_code: "instance.container_seed_failed",
+        detail: "No free ID range for the new seed: every isolated range of root's subordinate IDs is held by a container. The old seed stays." });
+      const after = f.state().systemctl;
+      assertEquals(after.filter((call: string[]) => call[0] === "stop").length, stops + 1);
+      assertEquals(after.filter((call: string[]) => call[0] === "start").length, starts + 1);
+
+      // A new commit keeps the older seed too, and takes no half of the new one.
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
+      git(f.source, "commit", "--quiet", "-am", "second");
+      for (const phase of ["start", "fetch", "checkout"]) {
+        const done = f.run(phase);
+        assert(done.ok, done.output);
+      }
+      assert(!f.run("seed").ok);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      assertEquals((f.result() as { error_code: string }).error_code, "instance.container_seed_failed");
+
+      // With a free range again, the next run takes the new seed and drops the old one.
+      const freed = f.state();
+      freed.no_id_range = false;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(freed));
+      const done = f.run("seed");
+      assert(done.ok, done.output);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${git(f.source, "rev-parse", "HEAD")}`]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace", "processes", "seed"]) {
+        const done = f.run(phase);
+        assert(done.ok, done.output);
+      }
+      const head = git(f.source, "rev-parse", "HEAD");
+      const state = f.state();
+      state.containers["instance-7"].snapshots = [`next-${head}`, "next-0000"];
+      Deno.renameSync(`${f.folder}/snapshots/instance-7/seed-${head}`, `${f.folder}/snapshots/instance-7/next-${head}`);
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const done = f.run("seed");
+      assert(done.ok, done.output);
+      assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      const creates = Deno.readTextFileSync(`${f.folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[])
+        .filter((call) => call.includes("snapshot") && call.includes("create"));
+      assertEquals(creates.length, 1, "the finished retake is the seed: no new snapshot outside a deployment");
     } finally {
       f.cleanup();
     }
@@ -2550,11 +2636,96 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       const failed = f.run("seed");
       assert(!failed.ok);
-      assertEquals(f.result(), { error_code: "instance.seed_volume_snapshot_failed" });
+      assertEquals(f.result(), { error_code: "instance.seed_volume_snapshot_failed",
+        detail: "Snapshot the inner volume: Failed to create volume snapshot. The old seed stays." });
       // No half pair: the new container snapshot is gone, and the older pair stays for a restore.
       assertEquals(seedPair(f), {container: [`seed-${first}`], volume: [`seed-${first}`]});
       // The Processes run again after the failure.
       assert(failed.output.includes("TASK [Start the Processes again]"), failed.output);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      const head = git(f.source, "rev-parse", "HEAD");
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      const set = (key: string, value: boolean) => {
+        const state = f.state();
+        state[key] = value;
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      };
+      // The volume half fails: Incus with `--reuse` would have deleted both old halves by now.
+      set("volume_snapshot_fails", true);
+      assert(!f.run("seed").ok);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      assertEquals((f.result() as { error_code: string }).error_code, "instance.seed_volume_snapshot_failed");
+      // The container half fails for want of an ID range.
+      set("volume_snapshot_fails", false);
+      set("no_id_range", true);
+      assert(!f.run("seed").ok);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      assertEquals(f.result(), { error_code: "instance.container_seed_failed",
+        detail: "No free ID range for the new seed: every isolated range of root's subordinate IDs is held by a container. The old seed stays." });
+      // With a free range, both new halves exist before either old half goes.
+      set("no_id_range", false);
+      const done = f.run("seed");
+      assert(done.ok, done.output);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      const calls = incusCalls(f).map((call) => call.join(" "));
+      const last = (part: string) => calls.findLastIndex((call) => call.includes(part));
+      const deletes = Math.min(last(`snapshot delete instance-7 seed-${head}`), last(`snapshot delete orbit-instances inner-7 seed-${head}`));
+      assert(last(`snapshot create instance-7 next-${head}`) < deletes && last(`snapshot create orbit-instances inner-7 next-${head}`) < deletes,
+        JSON.stringify(calls));
+      assert(!calls.some((call) => call.includes("--reuse")), "no retake deletes a seed before the new one exists");
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok);
+      const head = git(f.source, "rev-parse", "HEAD");
+      // The run stopped after it deleted the old container half: the new pair is whole under next-, the old volume half stays.
+      const whole = f.state();
+      whole.containers["instance-7"].snapshots = [`next-${head}`];
+      whole.volumes["inner-7"].snapshots = [`seed-${head}`, `next-${head}`];
+      Deno.renameSync(`${f.folder}/snapshots/instance-7/seed-${head}`, `${f.folder}/snapshots/instance-7/next-${head}`);
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(whole));
+      let done = f.run("seed");
+      assert(done.ok, done.output);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      const takes = () => incusCalls(f).filter((call) => call.includes("create") && call.includes("snapshot")).length;
+      const before = takes();
+      // The run stopped between the two renames: the container half has the name, the volume half is still next-. Only that stop
+      // leaves this state, so the volume half takes the name too and nothing is taken again.
+      const between = f.state();
+      between.volumes["inner-7"].snapshots = [`next-${head}`];
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(between));
+      done = f.run("seed");
+      assert(done.ok, done.output);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      assertEquals(takes(), before);
+      // A next- container half without its volume half is no whole retake: it goes, and the seed pair stays as it is.
+      const lone = f.state();
+      lone.containers["instance-7"].snapshots = [`seed-${head}`, `next-${head}`];
+      Deno.mkdirSync(`${f.folder}/snapshots/instance-7/next-${head}`, { recursive: true });
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(lone));
+      done = f.run("seed");
+      assert(done.ok, done.output);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
     } finally { f.cleanup(); }
   },
 });

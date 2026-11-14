@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "297348b01a67c364d7a574bd5229d199fb3650876cf5c17a0d20faa7214c9619"
+source_sha256 = "2c2961e19dc54c2b5fa56601492238b62e786dda20adf56517e96d634913f17a"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -11,6 +11,8 @@ cases = [
   "test_target_created_after_admission_is_not_silently_reused",
   "test_unreadable_remote_fails_without_creating_a_branch",
   "test_unreachable_frozen_commit_fails_without_using_current_tip",
+  "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy",
+  "test_a_replaced_seed_still_refuses_as_moved",
   "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
@@ -79,7 +81,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 135
+cost = 137
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -175,3 +177,5 @@ inputs = [
   "test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
   "test_a_volume_left_by_a_failed_copy_without_its_container_is_copied_again_from_the_seed" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
   "test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy" = 1
+  "test_a_replaced_seed_still_refuses_as_moved" = 1
