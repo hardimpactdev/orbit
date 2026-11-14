@@ -13,6 +13,7 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCheckIntent;
 use App\Domain\Tasks\TaskCheckKind;
 use App\Domain\Tasks\TaskCheckProjection;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
@@ -208,3 +209,42 @@ it('projects the receipt of the Instance check as it projects a task VM check', 
         ->and($check->commit_sha)->toBe(str_repeat('d', 40))
         ->and($check->output)->toBe('checked new');
 });
+
+/** Runs a handoff check of the copy's subtask to its terminal result with this outcome. */
+function instanceCheckFinished(Task $group, Task $subtask, string $outcome, string $status = 'succeeded'): TaskCheck
+{
+    $operation = app(TaskCheckIntent::class)->start($group, new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
+    $receipt = ['outcome' => $outcome, 'exit_code' => $outcome === 'passed' ? 0 : 1, 'output' => '', 'head_before' => str_repeat('a', 40), 'tree_before' => str_repeat('b', 40),
+        'head' => str_repeat('a', 40), 'tree' => str_repeat('b', 40), 'changed_paths' => [], 'failed_step' => null, 'evidence' => null,
+        'check_id' => $operation->input['check_id'], 'group_id' => $group->id, 'subtask' => $subtask->id, 'phase' => 'handoff', 'deliverables' => [], 'commit' => str_repeat('d', 40), 'ci' => null];
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
+    app(TaskCheckProjection::class)->apply($operation->refresh(), ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => $status,
+        'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_receipt' => ['result_json' => json_encode($receipt, JSON_THROW_ON_ERROR)]]]);
+
+    return TaskCheck::query()->sole();
+}
+
+it('records the mode in effect on a passed handoff check of a task copy', function (?TaskPrMode $group, string $gateway, TaskPrMode $recorded): void {
+    config(['orbit.tasks.pr_mode' => $gateway]);
+    [$owner, $subtask] = instanceCheckWorld();
+    $owner->update(['pr_mode' => $group]);
+
+    expect(instanceCheckFinished($owner->refresh(), $subtask, 'passed')->pr_mode)->toBe($recorded);
+})->with([
+    'the Gateway default' => [null, 'review_before_pr', TaskPrMode::ReviewBeforePr],
+    'the Gateway in pr_when_done' => [null, 'pr_when_done', TaskPrMode::PrWhenDone],
+    'the group' => [TaskPrMode::PrWhenDone, 'review_before_pr', TaskPrMode::PrWhenDone],
+]);
+
+it('records no mode on a check that did not pass, and none when the Gateway setting is no mode', function (string $outcome, string $gateway): void {
+    config(['orbit.tasks.pr_mode' => $gateway]);
+    [$owner, $subtask] = instanceCheckWorld();
+
+    $check = instanceCheckFinished($owner, $subtask, $outcome);
+
+    expect($check->status->value)->toBe($outcome)->and($check->pr_mode)->toBeNull();
+})->with([
+    'failed' => ['failed', 'pr_when_done'],
+    'invalid setting' => ['passed', 'merge_when_green'],
+]);
