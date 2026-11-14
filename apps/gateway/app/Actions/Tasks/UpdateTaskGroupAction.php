@@ -6,6 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskExecutionLock;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -54,6 +55,10 @@ final readonly class UpdateTaskGroupAction
                     throw new ResourceOperationException('tasks.preview_closed', 'Preview cannot change after a task group has ended.', 409);
                 }
                 $locked->preview = $data->preview;
+            }
+            if ($data->agents !== []) {
+                TaskCopyAgent::assertChangeable($locked, $data->agents);
+                $locked->fill($data->agents);
             }
             $locked->title = $data->title ?? $locked->title;
             $locked->brief = $data->brief ?? $locked->brief;

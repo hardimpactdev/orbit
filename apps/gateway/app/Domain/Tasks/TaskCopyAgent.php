@@ -24,7 +24,11 @@ final readonly class TaskCopyAgent
     /** A model slug as T3's `--model` takes it. */
     public const string ModelPattern = '/\A[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\z/D';
 
-    /** The columns of the values: `implementer_provider` … on a group, `task_implementer_provider` … on a Project with `task_`. @return list<string> */
+    /**
+     * The columns of the values: `implementer_provider` … on a group, `task_implementer_provider` … on a Project with `task_`.
+     *
+     * @return list<string>
+     */
     public static function columns(string $prefix = ''): array
     {
         $columns = [];
@@ -62,7 +66,7 @@ final readonly class TaskCopyAgent
         $provided = [];
         foreach (self::columns($prefix) as $column) {
             if (array_key_exists($column, $validated)) {
-                $provided[substr($column, strlen($prefix))] = is_string($validated[$column]) ? $validated[$column] : null;
+                $provided[$column] = is_string($validated[$column]) ? $validated[$column] : null;
             }
         }
 

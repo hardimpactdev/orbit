@@ -34,6 +34,8 @@ final readonly class UpdateProjectData
         public ?string $name = null,
         public bool $nestedFleetProvided = false,
         public bool $nestedFleet = false,
+        /** @var array<string, string|null> the copy turn agent defaults to change, keyed by Project column; null clears one (TaskCopyAgent) */
+        public array $taskAgents = [],
     ) {}
 
     public function hasChanges(): bool
@@ -49,7 +51,7 @@ final readonly class UpdateProjectData
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
             || $this->reviewAndMergeProvided
-            || $this->mergeCheckProvided || $this->nestedFleetProvided;
+            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [];
     }
 
     /** The nested-fleet flag travels alone, so its refusal has no other write to undo. */
@@ -57,14 +59,14 @@ final readonly class UpdateProjectData
     {
         return $this->code !== null || $this->name !== null || $this->typeProvided || $this->sourceAccessProvided
             || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->reviewAndMergeProvided || $this->mergeCheckProvided
-            || $this->hasReconcilableChanges();
+            || $this->taskAgents !== [] || $this->hasReconcilableChanges();
     }
 
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {
         return $this->name !== null || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided
-            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided;
+            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [];
     }
 
     public function hasReconcilableChanges(): bool
@@ -91,6 +93,7 @@ final readonly class UpdateProjectData
             'review_and_merge' => $this->reviewAndMergeProvided ? $this->reviewAndMerge : null,
             'merge_check' => $this->mergeCheckProvided ? $this->mergeCheck : null,
             'nested_fleet' => $this->nestedFleetProvided ? $this->nestedFleet : null,
+            'task_agents' => $this->taskAgents,
             'provided' => [
                 $this->typeProvided,
                 $this->slugProvided,

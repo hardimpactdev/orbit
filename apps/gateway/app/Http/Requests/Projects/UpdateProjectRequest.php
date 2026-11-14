@@ -12,6 +12,7 @@ use App\Domain\Projects\ReviewAndMergeRequirements;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\SourceControl\GitRepositoryOrigin;
 use App\Domain\SourceControl\ProjectRoot;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
 use Illuminate\Foundation\Http\FormRequest;
@@ -38,6 +39,7 @@ final class UpdateProjectRequest extends FormRequest
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
             'nested_fleet' => ['sometimes', 'boolean:strict'],
             'merge_check' => ['sometimes', 'nullable', 'string', 'max:255'],
+            ...TaskCopyAgent::rules('task_'),
         ];
     }
 
@@ -47,7 +49,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet'],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', ...TaskCopyAgent::columns('task_')],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -71,6 +73,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('task_workspace_routed')
                 && ! $this->exists('merge_check')
                 && ! $this->exists('nested_fleet')
+                && ! $this->hasAny(TaskCopyAgent::columns('task_'))
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
             }
@@ -133,6 +136,7 @@ final class UpdateProjectRequest extends FormRequest
             mergeCheck: is_string($validated['merge_check'] ?? null) && trim($validated['merge_check']) !== '' ? trim($validated['merge_check']) : null,
             nestedFleetProvided: array_key_exists('nested_fleet', $validated),
             nestedFleet: ($validated['nested_fleet'] ?? false) === true,
+            taskAgents: TaskCopyAgent::provided($validated, 'task_'),
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,
         );
     }

@@ -32,6 +32,12 @@ final class ProjectData extends Data
         public ?bool $isLaravel = null,
         public bool $maintenance = false,
         public bool $nestedFleet = false,
+        public ?string $taskImplementerProvider = null,
+        public ?string $taskImplementerModel = null,
+        public ?string $taskImplementerEffort = null,
+        public ?string $taskReviewerProvider = null,
+        public ?string $taskReviewerModel = null,
+        public ?string $taskReviewerEffort = null,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -54,6 +60,12 @@ final class ProjectData extends Data
             isLaravel: $project->is_laravel,
             maintenance: $project->maintenance,
             nestedFleet: $project->nested_fleet,
+            taskImplementerProvider: $project->task_implementer_provider,
+            taskImplementerModel: $project->task_implementer_model,
+            taskImplementerEffort: $project->task_implementer_effort,
+            taskReviewerProvider: $project->task_reviewer_provider,
+            taskReviewerModel: $project->task_reviewer_model,
+            taskReviewerEffort: $project->task_reviewer_effort,
         );
     }
 }

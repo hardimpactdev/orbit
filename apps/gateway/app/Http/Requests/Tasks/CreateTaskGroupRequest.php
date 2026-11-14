@@ -7,6 +7,7 @@ namespace App\Http\Requests\Tasks;
 use App\Data\Tasks\CreateTaskData;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
@@ -56,6 +57,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'review' => ['sometimes', 'string', Rule::enum(TaskReviewMode::class)],
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
+            ...TaskCopyAgent::rules(),
             'subtasks' => ['sometimes', 'array', 'max:50'],
             'subtasks.*.title' => ['required', 'string', 'max:160'],
             'subtasks.*.brief' => ['required', 'string', 'max:8000'],
@@ -91,6 +93,7 @@ final class CreateTaskGroupRequest extends FormRequest
                     'review',
                     'preview',
                     'current_recipe',
+                    ...TaskCopyAgent::columns(),
                     'subtasks',
                 ]);
         } catch (UnexpectedValueException $exception) {
@@ -126,6 +129,7 @@ final class CreateTaskGroupRequest extends FormRequest
             currentRecipe: $this->boolean('current_recipe'),
             orchestration: TaskOrchestration::from($this->string('orchestration', TaskOrchestration::External->value)->toString()),
             review: TaskReviewMode::from($this->string('review', TaskReviewMode::Manual->value)->toString()),
+            agents: TaskCopyAgent::provided($this->validated()),
         );
     }
 

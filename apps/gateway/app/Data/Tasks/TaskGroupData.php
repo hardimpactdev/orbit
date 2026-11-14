@@ -6,11 +6,13 @@ namespace App\Data\Tasks;
 
 use App\Domain\Compute\VmPower;
 use App\Domain\Tasks\AssistanceKind;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPlaces;
 use App\Domain\Tasks\TaskReviewMode;
+use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Route;
@@ -25,6 +27,7 @@ final class TaskGroupData extends Data
 {
     /**
      * @param  list<TaskData>  $subtasks
+     * @param  array<string, array<string, array{value: string, source: string}>>  $resolvedAgents  each role's copy turn agent and where each value comes from (TaskCopyAgent)
      */
     public function __construct(
         public int $id,
@@ -46,8 +49,8 @@ final class TaskGroupData extends Data
         public ?AssistanceKind $assistanceKind,
         public ?string $assistanceQuestion,
         public ?string $assistanceReason,
-        public string $implementerModel,
-        public string $reviewerModel,
+        public ?string $implementerModel,
+        public ?string $reviewerModel,
         public ?int $tokens,
         public ?int $lineDiff,
         public ?int $linesAdded,
@@ -66,6 +69,11 @@ final class TaskGroupData extends Data
         public ?string $lastActivityAt = null,
         public ?string $previewUrl = null,
         public ?TaskPlaceWaitData $capacityWait = null,
+        public ?string $implementerProvider = null,
+        public ?string $implementerEffort = null,
+        public ?string $reviewerProvider = null,
+        public ?string $reviewerEffort = null,
+        public array $resolvedAgents = [],
     ) {}
 
     /** @return array<string, mixed> */
@@ -118,6 +126,14 @@ final class TaskGroupData extends Data
             assistanceReason: $group->assistance_reason,
             implementerModel: $group->implementer_model,
             reviewerModel: $group->reviewer_model,
+            implementerProvider: $group->implementer_provider,
+            implementerEffort: $group->implementer_effort,
+            reviewerProvider: $group->reviewer_provider,
+            reviewerEffort: $group->reviewer_effort,
+            resolvedAgents: [
+                TaskThreadRole::Implementer->value => TaskCopyAgent::resolve($group, TaskThreadRole::Implementer),
+                TaskThreadRole::Reviewer->value => TaskCopyAgent::resolve($group, TaskThreadRole::Reviewer),
+            ],
             tokens: $group->tokens,
             lineDiff: $group->line_diff,
             linesAdded: $group->lines_added,
