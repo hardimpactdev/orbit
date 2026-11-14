@@ -49,9 +49,13 @@
   changed_when: process_disable.rc == 0
   failed_when: process_disable.rc != 0 and 'does not exist' not in process_disable.stderr and 'not loaded' not in process_disable.stderr
 
-- name: Remove the unit file and the Process folder
+# Its boot link too: a link left by a unit file that is already gone is not removed by `disable`.
+- name: Remove the unit file, its boot link and the Process folder
   when: process_action == 'destroy'
-  ansible.builtin.command: { argv: "{{ as_root + ['rm', '-rf', '--', '/etc/systemd/system/' ~ process_unit, process_folder] }}" }
+  ansible.builtin.command:
+    argv: >-
+      {{ as_root + ['rm', '-rf', '--', '/etc/systemd/system/' ~ process_unit,
+         '/etc/systemd/system/multi-user.target.wants/' ~ process_unit, process_folder] }}
   changed_when: true
 
 - name: Reload systemd after the removal

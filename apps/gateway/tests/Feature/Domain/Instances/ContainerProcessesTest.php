@@ -234,7 +234,9 @@ describe('the Process target of a container Instance', function (): void {
 
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
             ->deleteJson('/api/v1/processes/'.$this->process->id, ['instance' => $this->instance->id + 1000])
-            ->assertStatus(422)->assertJsonPath('error.code', 'process.instance_mismatch');
+            ->assertStatus(422)->assertJsonPath('error.code', 'process.instance_mismatch')
+            // The named Instance reaches admission: the message names it, not a missing one.
+            ->assertJsonPath('error.message', "Process [{$this->process->id}] is not a Process of Instance [".($this->instance->id + 1000).'].');
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
             ->deleteJson('/api/v1/processes/'.$this->process->id, ['instance' => 'abc'])
             ->assertStatus(422);

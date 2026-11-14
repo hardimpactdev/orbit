@@ -852,7 +852,7 @@ Deno.test({
       const rootfs = `${f.folder}/containers/${f.container.name}`;
       const exists = (path: string) => {
         try {
-          Deno.statSync(`${rootfs}${path}`);
+          Deno.lstatSync(`${rootfs}${path}`);
           return true;
         } catch {
           return false;
@@ -873,10 +873,16 @@ Deno.test({
       assertEquals(f.result(), { state: "removed", output: "" });
       assertEquals([exists(`/etc/systemd/system/${paused.name}`), exists("/etc/orbit/processes/42")], [false, false]);
       assertEquals([exists(`/etc/systemd/system/${worker.name}`), exists("/etc/orbit/processes/41")], [true, true]);
+      assert(!exists(`/etc/systemd/system/multi-user.target.wants/${paused.name}`));
       const destroyCalls = calls().slice(beforeDestroy);
       assert(destroyCalls.includes(`disable --now -- ${paused.name}`), destroyCalls.join("\n"));
       assert(destroyCalls.includes("daemon-reload"));
       assertEquals(destroyCalls.filter((call: string) => call.includes(worker.name)), []);
+      // A unit already gone, with a boot link left behind, converges: the link goes and the check passes.
+      Deno.symlinkSync(`/etc/systemd/system/${paused.name}`, `${rootfs}/etc/systemd/system/multi-user.target.wants/${paused.name}`);
+      assert(f.run("process", { ORBIT_PROCESS_ACTION: "destroy" }).ok);
+      assertEquals(f.result(), { state: "removed", output: "" });
+      assert(!exists(`/etc/systemd/system/multi-user.target.wants/${paused.name}`));
       Object.assign(f.control, { process_id: 41, name: worker.name });
       f.write();
 

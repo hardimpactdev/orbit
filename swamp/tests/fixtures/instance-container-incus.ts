@@ -29,6 +29,15 @@ const uuid = (name: string) => {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20, 32)}`;
 };
 const rootfs = (name: string) => `${folder}/containers/${name}`;
+/** A path exists as a file or folder (a link counts only when its target exists). */
+const exists = (path: string) => {
+  try {
+    Deno.statSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+};
 /** A container path inside its folder; other arguments stay as they are. */
 const inside = (name: string, value: string) =>
   /^\/(srv|tmp|etc|home|usr\/local)\//.test(value) ? rootfs(name) + value : value;
@@ -261,6 +270,12 @@ if (family === "list") {
     // A started unit runs and a stopped one does not, unless the test holds it in `failing`.
     const units = command.slice(command.indexOf("--") + 1);
     const wants = `${rootfs(name)}/etc/systemd/system/multi-user.target.wants`;
+    // systemd refuses to disable a Process unit whose file is gone, and leaves its boot link.
+    if (command[1] === "disable" && units.some((unit) => unit.startsWith("orbit-process-") && !exists(`${rootfs(name)}/etc/systemd/system/${unit}`))) {
+      save();
+      console.error(`Failed to disable unit: Unit file ${units[0]} does not exist.`);
+      Deno.exit(1);
+    }
     if (command[1] === "enable" || command[1] === "disable") {
       Deno.mkdirSync(wants, { recursive: true });
       for (const unit of units) {
