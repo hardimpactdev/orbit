@@ -640,6 +640,8 @@ The existing reconciler ends an unstarted admission at its 600-second budget wit
 
 A native refusal is a reply to the start's own message id that arrives before any root event confirms a run. It comes in one of two shapes: a `type: error` message, or a root `type: event` whose `event.kind` is `error` and that names no `runId`. Serve sends the second when it rejects a start whose inputs fail the workflow's schema (`input_validation_failed`) or whose expressions fail to resolve at run start (`workflow_execution_failed`); `type: done` follows it.
 
+The error event is a refusal only when every earlier event of the request was a pre-run one: `validating_inputs`, `superseded_runs` or `evaluating_workflow`. Serve saves a run right before it yields `started`, and drops a `started` event it cannot send. So after any other event, such as a `started` for another workflow or an unknown kind, a run may exist, and the start stays `swamp.start_uncertain`.
+
 The Gateway fails the Operation at once with `swamp.start_refused` and releases its target hold. It logs the remote code and message, redacted of the run token. It does not wait out the 120-second confirmation window, which would hold the single start worker for every other start.
 
 If confirmation is lost after submission, the Operation records `swamp.start_uncertain`. The Operation stays running, keeps its target hold and has no invented native binding. A timeout does not prove that no run exists. The start path neither searches nor resubmits. A worker failure during submission follows the same uncertain path. Replaying the same idempotent request returns the same Operation and queues no additional work. A repeat without that key still obeys the target hold while the start job waits.

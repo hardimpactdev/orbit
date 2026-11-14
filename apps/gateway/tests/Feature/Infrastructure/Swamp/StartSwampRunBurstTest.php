@@ -301,6 +301,60 @@ it('fails a start that serve rejects at run start in seconds and frees its targe
         && $context['remote_type'] === 'event:error' && $context['remote_code'] === $code && ! str_contains($context['remote_message'], "\n"))->once();
 })->with('serve start rejections');
 
+/** Runs one admitted create's start against serve's `$reply`, on a clock read once per 0.2 s receive wait; returns the clock. */
+function startAgainst(Operation $operation, array $reply): float
+{
+    $serve = new BurstLimitedServe(limit: 100);
+    $serve->rejection = $reply;
+    app()->instance(WebSocketClient::class, $serve);
+    $now = 0.0;
+    app()->instance(StartSwampRun::class, new StartSwampRun($serve, static function () use (&$now): float {
+        return $now += 0.2;
+    }));
+    $ran = [];
+    runDueStarts($ran);
+
+    return $now;
+}
+
+it('binds a run whose started event came before a root error event, and refuses nothing', function (): void {
+    [$operation] = burstCreates(1);
+    $run = (string) Str::uuid();
+
+    startAgainst($operation, [
+        ['type' => 'event', 'event' => ['kind' => 'validating_inputs', 'seq' => 1]],
+        ['type' => 'event', 'event' => ['kind' => 'started', 'workflowName' => 'operation-instance-create', 'runId' => $run, 'seq' => 2]],
+        ['type' => 'event', 'event' => ['kind' => 'error', 'error' => ['code' => 'workflow_execution_failed', 'message' => 'Workflow execution failed'], 'seq' => 3]],
+        ['type' => 'done'],
+    ]);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->state['swamp_run_id'])->toBe($run)
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->lock_key)->not->toBeNull();
+});
+
+it('keeps a start uncertain when an event that is not a pre-run one came before the root error event', function (array $earlier): void {
+    [$operation] = burstCreates(1);
+
+    $clock = startAgainst($operation, [
+        ['type' => 'event', 'event' => ['kind' => 'validating_inputs', 'seq' => 1]],
+        ['type' => 'event', 'event' => $earlier + ['seq' => 2]],
+        ['type' => 'event', 'event' => ['kind' => 'error', 'error' => ['code' => 'workflow_execution_failed', 'message' => 'Workflow execution failed'], 'seq' => 3]],
+        ['type' => 'done'],
+    ]);
+
+    // A run may exist behind a start the Gateway could not read, so the start waits out its confirmation and holds its target.
+    expect($clock)->toBeGreaterThan(120.0)
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->error_code)->toBe('swamp.start_uncertain')
+        ->and($operation->lock_key)->not->toBeNull()
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull();
+})->with([
+    'an unknown kind' => [['kind' => 'run_saved']],
+    'a started event for another workflow' => [['kind' => 'started', 'workflowName' => 'operation-other', 'runId' => '0f0e0d0c-0b0a-4908-8706-050403020100']],
+]);
+
 it('does not fail a start that a duplicate job began while its deferral could not be queued', function (): void {
     [$operation] = burstCreates(1);
     $operation->forceFill(['status' => OperationStatus::Running, 'started_at' => now()])->save();
