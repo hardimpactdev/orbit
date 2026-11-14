@@ -290,3 +290,37 @@ Deno.test({ name: "a failed pause closes the inner cgroups it opened as well, an
     assert(stopped.ok, stopped.output);
     assertEquals([stopped.result, stopped.status, stopped.record], [{ sleep: "stopped", swap_subtree: 0 }, "Stopped", null]);
 } });
+
+Deno.test({ name: "a resume's swap close writes 0 to the container and to each recorded cgroup that still exists, never climbs out, and removes the record", ignore: !available, async fn() {
+    const folder = Deno.makeTempDirSync();
+    try {
+        const cgroup = `${folder}/cgroup/lxc.payload.orbit-instances_instance-7`;
+        const files: Record<string, string> = {
+            [`${cgroup}/memory.swap.max`]: "max",
+            [`${cgroup}/lxc.payload.nested-gateway/memory.swap.max`]: "max",
+            [`${cgroup}/system.slice/polkit.service/memory.swap.max`]: "33554432",
+            [`${folder}/cgroup/escape/memory.swap.max`]: "max",
+        };
+        for (const [path, value] of Object.entries(files)) {
+            Deno.mkdirSync(path.split("/").slice(0, -1).join("/"), { recursive: true });
+            Deno.writeTextFileSync(path, value);
+        }
+        Deno.mkdirSync(`${folder}/shm`);
+        // A short-lived unit's cgroup went while the container slept; a record line that climbs out is never followed.
+        Deno.writeTextFileSync(`${folder}/shm/app-instance-7.swap`,
+            "lxc.payload.nested-gateway/memory.swap.max\nsystem.slice/systemd-hostnamed.service/memory.swap.max\n../escape/memory.swap.max\n");
+        Deno.writeTextFileSync(`${folder}/play.yml`, JSON.stringify([{ hosts: "localhost", gather_facts: false,
+            vars: { container: { instance_id: 7, project: "orbit-instances", name: "instance-7" } },
+            tasks: [{ name: "Close the swap", "ansible.builtin.include_tasks": { file: `${shipped}/tasks/instance-container-swap.yml` }, vars: { swap: "close" } }] }]));
+        const done = await new Deno.Command("ansible-playbook", {
+            args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
+                "-e", `cgroup_root=${folder}/cgroup`, "-e", `swap_record_directory=${folder}/shm`, `${folder}/play.yml`],
+            env: { ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
+        }).output();
+        assert(done.success, new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr));
+        assertEquals(Object.keys(files).map((path) => Deno.readTextFileSync(path)), ["0", "0", "33554432", "max"]);
+        assert(!(() => { try { return Deno.statSync(`${folder}/shm/app-instance-7.swap`).isFile; } catch { return false; } })());
+    } finally {
+        Deno.removeSync(folder, { recursive: true });
+    }
+} });
