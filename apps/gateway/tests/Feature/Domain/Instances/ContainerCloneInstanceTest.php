@@ -18,8 +18,10 @@ use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -260,6 +262,8 @@ describe('a clone of the container default', function (): void {
                     'uid' => 0, 'gid' => 0, 'mode' => '0644'],
                 ['path' => '/etc/profile.d/91-orbit-browsers.sh', 'content' => "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
                     'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+                // The presented machine name, which T3 reads as its label at its first start.
+                ['path' => '/etc/machine-info', 'content' => "PRETTY_HOSTNAME=feature.tool\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ])
             // The converge writes only the shared files into existing containers, and the browser setting is not one of them.
             ->and(collect(InstanceImage::shared())->pluck('path')->intersect(['/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh'])->all())->toBe([])
@@ -550,6 +554,44 @@ it('never copies the default\'s Reverb app keys or a copy of its secret into a c
     expect($operation->input['environment_clone']['drop'])->toContain(...WebSocketAppEnvProjection::Keys)
         ->and($operation->input['environment_clone']['guard'])->toContain('REVERB_APP_SECRET')
         ->and(json_encode($operation->input))->not->toContain('reverb-secret-value');
+});
+
+it('gives the default, a clone and a task copy the presented machine name, never the Incus name', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $default->project->update(['slug' => 'dlf-leden']);
+    $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'external-connections')->target_id);
+    $copy = Instance::query()->findOrFail(containerCreate($default->project, $node, 'task-5003')->target_id);
+
+    foreach ([[$default, 'default.dlf-leden'], [$clone, 'external-connections.dlf-leden'], [$copy, 'task-5003.dlf-leden']] as [$instance, $name]) {
+        $intent = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail());
+
+        expect($intent['machine_name'])->toBe(['hostname' => $name, 'pretty' => $name])
+            ->and($intent['name'])->toBe('instance-'.$instance->id);
+        // A copy's T3 reads its label at its first start: the machine-info file is a boot file, written before that start.
+        $bootFiles = $intent['clone']['boot_files'] ?? [];
+        expect(array_values(array_filter($bootFiles, static fn (array $file): bool => ($file['path'] ?? null) === '/etc/machine-info')))
+            ->toBe($instance->is($default) ? [] : [['path' => '/etc/machine-info', 'content' => "PRETTY_HOSTNAME={$name}\n", 'uid' => 0, 'gid' => 0, 'mode' => '0644']]);
+    }
+});
+
+it('hands the Node converge the presented machine name of every container its runtimes record', function (): void {
+    $node = containerDefaultNode();
+    $default = seededDefault($node);
+    $default->project->update(['slug' => 'My_App']);
+    $clone = Instance::query()->findOrFail(containerCreate($default->project, $node, 'feature')->target_id);
+    $hostname = static fn (Instance $instance): string => InstanceMachineName::hostname($instance->id, $instance->name, $default->project_id, 'My_App');
+
+    expect(app(InstanceHostIntent::class)->for($node)['machine_names'])->toBe([
+        ['project' => 'orbit-instances', 'container' => 'instance-'.$default->id, 'hostname' => $hostname($default), 'pretty' => 'default.My_App'],
+        ['project' => 'orbit-instances', 'container' => 'instance-'.$clone->id, 'hostname' => $hostname($clone), 'pretty' => 'feature.My_App'],
+    ]);
+
+    // A slug change (project:update --slug) writes no container file itself: the next start and the next converge take the new name.
+    $default->project->update(['slug' => 'shop']);
+    expect(array_column(app(InstanceHostIntent::class)->for($node)['machine_names'], 'pretty'))->toBe(['default.shop', 'feature.shop'])
+        ->and(app(InstanceContainer::class)->intent($clone->refresh(), $clone->runtime()->firstOrFail())['machine_name'])
+        ->toBe(['hostname' => 'feature.shop', 'pretty' => 'feature.shop']);
 });
 
 it('resets the default\'s proxy bypass for reverb.orbit before a clone\'s first start: the clone holds no app of the default', function (): void {
