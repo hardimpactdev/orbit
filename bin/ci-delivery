@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared fast gate, exact main CI delivery evidence, and independent fixture reports."""
+"""Shared PR/main gate, exact main CI delivery evidence, and fixture reports."""
 import argparse
 import json
 import os
@@ -11,6 +11,16 @@ import time
 
 
 def validate(needs):
+    needs = dict(needs)
+    if needs['changes']['result'] != 'success':
+        sys.exit('Build input selection failed')
+    capacity = json.loads(needs['changes']['outputs']['fixture_capacity'])
+    if capacity:
+        sys.exit(f'Required fixture capacity exceeded: {capacity}')
+    fixture_shards = json.loads(needs['changes']['outputs']['fixture_shards'])
+    fixture_result = needs.pop('fixtures')['result']
+    if fixture_result != 'success' and not (fixture_shards == [] and fixture_result == 'skipped'):
+        sys.exit(f'Required fixtures failed: {fixture_result}')
     selected = json.loads(needs['changes']['outputs']['jobs'])
     selected['proof-run'] = os.environ['PROOF_REQUIRED'] == 'true'
     selected['gateway-release'] = needs['changes']['outputs']['gateway_release'] == 'true'
@@ -179,7 +189,7 @@ def release_summary(run, jobs):
     link = report['html_url'] if report else run['html_url']
     return (f"## Main delivery evidence\n\nCommit: `{run['head_sha']}`\n\n"
             f"[Source CI]({run['html_url']}) · [{REPORT}: {state}]({link})\n\n"
-            'Duplicate main fixtures and Main full set report independently. Their pending or red results do not gate delivery.\n')
+            'Selected main fixtures must pass unless a verified PR tree receipt reuses them. Main full set and report publication remain independent.\n')
 
 
 def causal_prs(pages, repository, sha):
@@ -203,7 +213,7 @@ def fixture_summary(needs, sha, run_url, jobs, prs):
             f'Tested main SHA: `{sha}`\n\n[Source CI]({run_url}) · [Fixture report]({report_url})\n\n'
             f'Input selection: {changes["result"]}; fixture matrix: {outcome}; selected shards: {len(shards)}.\n\n'
             f'Capacity errors: `{json.dumps(capacity)}`\n\n'
-            'This result is independent of main delivery. PR Required checks remains strict.\n\n')
+            'Selected main fixtures gate delivery and Required checks. This report links the evidence; report publication does not gate delivery.\n\n')
     if prs:
         body += 'Causal merged PR' + ('s' if len(prs) > 1 else '') + ': ' + ', '.join(f'#{n}' for n in prs) + '. Attribution uses the exact merge SHA.\n\n'
     else:
