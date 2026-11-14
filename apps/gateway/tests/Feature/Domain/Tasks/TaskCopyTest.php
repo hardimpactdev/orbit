@@ -138,8 +138,8 @@ function copySource(string $slug = 'trial', bool $nested = true): Instance
         'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => $nested]);
     $default = Instance::query()->findOrFail(containerCreate($project, $node->refresh())->target_id);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
-    // The nested-fleet default that tasks copy today was made before the inner volume, so it records none; a default made with one
-    // cannot be copied yet (docs/reference/development-containers.md#the-inner-volume).
+    // The nested-fleet default that tasks copy today was made before the inner volume, so it records none
+    // (docs/reference/development-containers.md#the-inner-volume); a test that needs the volume sets it.
     InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
         ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running, 'inner_volume' => null]);
 
@@ -254,14 +254,62 @@ describe('a task start on the copy path', function (): void {
         Queue::assertNotPushed(AdmitTaskVm::class);
     });
 
-    it('refuses a task of a nested-fleet default made with an inner volume before any record, until the clone copies the volume', function (): void {
+    it('gives a task copy of a nested-fleet default with an inner volume its own volume, copied from the default\'s seed, and removes it with the copy', function (): void {
         $default = copySource();
         InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
         $group = copyGroup($default->project);
+
+        $operation = startCopy($group);
+
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $container = containerIntentOf($operation);
+        $clone = ValidatedData::object($container['clone']);
+        // docs/reference/development-containers.md#the-inner-volume: the copy's own volume, from the default's volume snapshot of the seed's name.
+        expect(InstanceRuntime::query()->where('instance_id', $copy->id)->sole()->inner_volume)->toBe('inner-'.$copy->id)
+            ->and(ValidatedData::object($container['inner_volume'])['name'])->toBe('inner-'.$copy->id)
+            ->and($clone['inner_volume'])->toBe('inner-'.$default->id)
+            ->and($clone['snapshot'])->toBe('seed-'.str_repeat('c', 40))
+            ->and(ValidatedData::object($container['allowed_devices'])['inner-pool'])->toBe(['type' => 'disk', 'pool' => InstanceHostIntent::Pool,
+                'source' => 'inner-'.$copy->id, 'path' => '/srv/inner-pool']);
+
+        $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
+        $group->update(['status' => TaskGroupStatus::Failed]);
+        new DestroyTaskCopy($copy->id)->handle(app(StartInstanceDestroyAction::class));
+        expect(Operation::query()->where('kind', 'instance.destroy')->sole()->input['container_destroy'])
+            ->toMatchArray(['name' => 'instance-'.$copy->id, 'inner_volume' => 'inner-'.$copy->id]);
+    });
+
+    it('refuses a copy of a default with an inner volume while its deployment retakes the seed pair; a default without one is admitted', function (bool $volume): void {
+        $default = copySource();
+        if ($volume) {
+            InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
+        }
+        Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+            'status' => 'running', 'input' => [], 'state' => [], 'result' => null]);
+        $group = copyGroup($default->project);
         $before = copyRows();
 
-        expect(copyRefusal(fn () => startCopy($group)))->toBe('instance.inner_volume_clone_unavailable 409')
-            ->and(copyRows())->toBe($before);
+        if ($volume) {
+            // docs/reference/development-containers.md#the-seed-pair: a copy must not read one half before the retake and one after.
+            expect(copyRefusal(fn () => startCopy($group)))->toBe('instance.default_seed_in_flight 409')->and(copyRows())->toBe($before);
+        } else {
+            // Instance 2454's shape: a one-snapshot seed, admitted during a deployment as before.
+            expect(startCopy($group)->kind)->toBe('instance.create');
+        }
+    })->with(['inner volume' => true, 'no inner volume (Instance 2454)' => false]);
+
+    it('gives a task copy of a nested-fleet default without an inner volume (Instance 2454\'s shape) none: no volume in its record, intent or devices', function (): void {
+        $default = copySource();
+        $group = copyGroup($default->project);
+
+        $operation = startCopy($group);
+
+        $copy = Instance::query()->findOrFail($operation->target_id);
+        $container = containerIntentOf($operation);
+        expect(InstanceRuntime::query()->where('instance_id', $copy->id)->sole()->inner_volume)->toBeNull()
+            ->and($container)->not->toHaveKey('inner_volume')
+            ->and(ValidatedData::object($container['clone']))->not->toHaveKey('inner_volume')
+            ->and(ValidatedData::object($container['allowed_devices']))->not->toHaveKey('inner-pool');
     });
 
     it('admits a plain clone for a Project whose default is a container: no nested project, no fleet, no Club key', function (): void {
@@ -716,6 +764,28 @@ describe('a cancel of a group that owns a copy', function (): void {
 });
 
 describe('a complete of a group that owns a copy', function (): void {
+    it('removes a copy with an inner volume and its volume in the one destroy that a cancel or a complete admits', function (string $end): void {
+        $default = copySource();
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
+        $group = copyGroup($default->project);
+        $copy = finishedCopy($group, startCopy($group));
+        if ($end === 'cancel') {
+            $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
+                'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 0, 'names' => []],
+                'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 0, 'branch_count' => 0, 'branches' => []]];
+            app(TaskCancelIntent::class)->start($group->refresh(), 'test', null, discard: true);
+        } else {
+            $group->update(['status' => TaskGroupStatus::Settling]);
+            $group->tasks()->update(['status' => TaskStatus::Completed]);
+            app(CompleteTaskGroupAction::class)->execute($group->refresh());
+        }
+
+        // docs/reference/development-containers.md#copies-of-the-volume: the copy's own volume, never the default's.
+        $destroy = Operation::query()->where('kind', 'instance.destroy')->sole();
+        expect($destroy->target_id)->toBe($copy->id)
+            ->and($destroy->input['container_destroy'])->toMatchArray(['name' => 'instance-'.$copy->id, 'inner_volume' => 'inner-'.$copy->id]);
+    })->with(['cancel', 'complete']);
+
     it('admits the copy\'s destroy with force, completes the group and lets go of the copy when the destroy succeeds', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));

@@ -125,6 +125,11 @@ class BranchSelectionTest(unittest.TestCase):
             self.prepare(sha="f" * 40)
 
 
+# NestedFleetInnerVolume::Config: the keys of a copy's inner volume.
+INNER_CONFIG = {"zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mount_options": "user_subvol_rm_allowed,discard",
+                "security.shifted": "true"}
+
+
 class CloneTest(unittest.TestCase):
     def clone(self, damaged=None, nic_acl="orbitinst0-proxy", mail=None, overrides=None, real_git=False, mail_code=None, transcript=None, node_service_code=None, rootfs=None, existing=None, network_check=None, volumes=None):
         calls = []
@@ -255,6 +260,14 @@ class CloneTest(unittest.TestCase):
                         else:
                             local.unlink()
                     return subprocess.CompletedProcess(argv, 1 if errors else 0, "", "\n".join(errors))
+                if argv[:2] == ["incus", "query"] and "/volumes/custom/" in argv[2]:
+                    # The default's inner volume and its seed snapshots, and the copy's own volume, absent unless a failed copy left it.
+                    if "snapshots?" in argv[2]:
+                        return subprocess.CompletedProcess(argv, 0, json.dumps([{"name": name} for name in container.get("fixture_volume_seeds", ["seed"])]), "")
+                    return subprocess.CompletedProcess(argv, 0 if container.get("fixture_volume_left") else 1, "{}" if container.get("fixture_volume_left") else "",
+                                                       "" if container.get("fixture_volume_left") else "Error: Storage pool volume not found")
+                if argv[3:4] == ["copy"] and container.get("fixture_copy_fails"):
+                    return subprocess.CompletedProcess(argv, 1, "", "Error: Failed creating instance from snapshot")
                 if argv[:2] == ["incus", "query"]:
                     if "snapshots?" in argv[2]:
                         output = json.dumps([{"name": "seed"}])
@@ -272,7 +285,7 @@ class CloneTest(unittest.TestCase):
                         output = "[]"
                     else:
                         output, status = (json.dumps(read), 0) if read else ("", 1)
-                elif "copy" in argv:
+                elif argv[3:4] == ["copy"]:
                     copied.append(True)
                     device = {"type": "nic", "network": "orbitinst0"}
                     for arg in argv:
@@ -988,6 +1001,76 @@ class CloneTest(unittest.TestCase):
                 else:
                     self.assertEqual(error, "instance.container_network_unsafe\n")
                     self.assertFalse(starts)
+
+    def inner_clone(self, **fixture):
+        """A copy of a nested-fleet default with an inner volume (docs/reference/development-containers.md#the-inner-volume)."""
+        allowed = {
+            "root": {"type": "disk", "path": "/", "pool": "orbit-instances", "size": "40GiB"},
+            "eth0": {"type": "nic", "network": "orbitinst0", "ipv4.address": "10.253.0.2",
+                     "security.acls": "orbitinst0-proxy,instance-7", "security.acls.default.egress.action": "reject",
+                     "security.acls.default.ingress.action": "reject",
+                     "security.ipv4_filtering": "true", "security.mac_filtering": "true"},
+            "t3": {"type": "proxy", "listen": "tcp:10.44.0.7:3800", "connect": "tcp:10.253.0.2:3773", "nat": "true"},
+            "inner-pool": {"type": "disk", "pool": "orbit-instances", "source": "inner-7", "path": "/srv/inner-pool"},
+        }
+        config = {"security.idmap.isolated": "true"}
+
+        def effective(read):
+            read["expanded_config"] = {**config, "volatile.uuid": "abc-123"}
+            read["expanded_devices"] = copy.deepcopy(allowed)
+
+        inner = {"name": "inner-7", "pool": "orbit-instances", "size": "30GiB", "config": INNER_CONFIG, "device": "inner-pool",
+                 "path": "/srv/inner-pool", "inner_pool": {"name": "inner", "source": "/srv/inner-pool/pool"}}
+        overrides = {"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config, "inner_volume": inner,
+                     "clone": {"source": "instance-1", "snapshot": "seed", "inner_volume": "inner-1", "t3": {"device": "t3"}}, **fixture}
+        return self.clone(effective, overrides=overrides, volumes={"custom/inner-7": {**INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}})
+
+    def test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start(self):
+        calls, _, error = self.inner_clone()
+        self.assertEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        volume_copy = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed", "orbit-instances/inner-7"])
+        container_copy = next(index for index, call in enumerate(calls) if call[3:4] == ["copy"])
+        start = calls.index(project + ["start", "instance-7"])
+        self.assertLess(volume_copy, container_copy)
+        self.assertLess(container_copy, start)
+        self.assertEqual(calls[container_copy][-2:], ["--device", "inner-pool,source=inner-7"])
+        # The guard admits the copy's volume with exactly its keys, as the Ansible start passes them.
+        guard = next(call for call in calls if call[:2] == ["python3", "-c"] and len(call) == 8)
+        self.assertEqual(json.loads(guard[7]), {"inner-pool": {**INNER_CONFIG, "size": "30GiB"}})
+        self.assertFalse(any(call[3:6] == ["storage", "volume", "delete"] for call in calls))
+
+    def test_a_copy_with_an_inner_volume_refuses_a_seed_whose_volume_half_is_gone_before_any_change(self):
+        calls, _, error = self.inner_clone(fixture_volume_seeds=["seed-older"])
+        self.assertEqual(error, "instance.default_seed_incomplete\n")
+        self.assertFalse(any("copy" in call or "storage" in call for call in calls))
+
+    def test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts(self):
+        calls, _, error = self.inner_clone(fixture_copy_fails=True)
+        self.assertNotEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        copied = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed", "orbit-instances/inner-7"])
+        self.assertIn(project + ["storage", "volume", "delete", "orbit-instances", "inner-7"], calls[copied:])
+        self.assertFalse(any(call[3:4] == ["start"] for call in calls))
+
+    def test_a_volume_left_by_a_failed_copy_without_its_container_is_copied_again_from_the_seed(self):
+        calls, _, error = self.inner_clone(fixture_volume_left=True)
+        self.assertEqual(error, "")
+        project = ["incus", "--project", "orbit-instances-nested"]
+        delete = calls.index(project + ["storage", "volume", "delete", "orbit-instances", "inner-7"])
+        self.assertEqual(calls[delete + 1], project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed", "orbit-instances/inner-7"])
+
+    def test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before(self):
+        # A normal Instance's copy, and a nested-fleet copy of a default without an inner volume (Instance 2454's shape).
+        for shape, overrides in [("normal", {}), ("nested without volume", {"project": "orbit-instances-nested",
+                                                                             "allowed_devices": {}, "config": {}})]:
+            with self.subTest(shape=shape):
+                calls, _, _ = self.clone(overrides=overrides)
+                self.assertFalse(any("storage" in call or "/volumes/custom/" in " ".join(call) for call in calls))
+                container_copy = next(call for call in calls if call[3:4] == ["copy"])
+                self.assertFalse(any(arg.startswith("inner-pool") for arg in container_copy))
+                guards = [call for call in calls if call[:2] == ["python3", "-c"]]
+                self.assertTrue(all(len(call) <= 7 for call in guards))
 
     def test_nested_guard_admits_the_live_shape_of_the_first_nested_container(self):
         # The expanded config of the first nested-fleet container on a real Node, made before `boot.autostart`; the guard's

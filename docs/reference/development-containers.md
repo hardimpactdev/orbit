@@ -1679,11 +1679,27 @@ A new nested-fleet default gets its own volume for the inner fleet, as the task 
 
 On the host this is one volume and one device on one container: no pool, profile or project key, no kernel module setting and no host package. Incus formats the volume with the host's `mkfs.btrfs`. The container does not see the block device; it reaches the host's btrfs code only through file operations and the subvolume calls of its own file system, and the volume's size caps its space.
 
-A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots. The first nested-fleet default and every Instance without `inner_volume` keep today's shape; no step makes or checks a volume for them. Until the clone copies the volume too, a clone of a default with an inner volume refuses with `instance.inner_volume_clone_unavailable` (409) before any record.
+A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots.
+
+The first nested-fleet default and every Instance without `inner_volume`, its copies included, keep today's shape: no step makes, snapshots, copies or checks a volume for them.
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
 In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:100000000`, plus `1000:1` for the [workspace mapping](#fleet-rules). The range fits inside the outer 101,000,000 IDs.
+
+#### The seed pair
+
+The seed of such a default is a pair: the container snapshot `seed-<commit>` and the volume snapshot of the same name. A container snapshot does not hold an attached custom volume, so the name ties the two. The [seed step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) takes the volume's half right after the container's, with the Processes still stopped, wherever it takes the seed. It retakes the pair when the volume's half is missing.
+
+A failed volume snapshot deletes both halves of that name and fails with `instance.seed_volume_snapshot_failed`, so no reader finds half a pair. Older pairs go only after both new halves exist. A retake at the same commit has no older pair: the default then has no seed, and clones refuse, until its next passed deployment. A failed refresh checks that both halves exist before it restores anything; a failed restore of the volume after the container's fails the run.
+
+A deployment retakes the two halves one after the other. So a clone of such a default is not admitted while a deployment of the default is open (`instance.default_seed_in_flight`), as the refresh waits for an open clone (`instance.clone_in_flight`). A default without an inner volume has no such wait.
+
+#### Copies of the volume
+
+A copy of such a default, a plain clone or a task copy, gets its own volume `inner-<copy id>`, which its runtime records. The [clone step](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) checks that the default's volume holds the seed's half, else `instance.default_seed_incomplete`. It copies that snapshot to the new volume. Then it copies the container with its disk `inner-pool` set to the new volume, before the first start. Both copies are ZFS clones. Incus gives the copied volume a new btrfs fsid, so copies never share one. In the 2026-11-14 test the two copies took 3.8 to 4.2 s and the outer start about 1 s.
+
+The start guard admits the copy's volume with exactly the keys above. A failed container copy deletes the volume it copied. A volume without its container, left by a failed copy, is deleted and copied again. Destroy of the copy deletes its volume. A copy shares blocks with the default's seed until it goes, as a container copy does.
 
 ### Fleet rules
 
@@ -2131,9 +2147,12 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.web_unready` | 502 | FrankenPHP gave no answer within 30 seconds of a wake. The asleep marker stays |
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
-| `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore. The default stays as the run left it |
+| `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore, or the [inner volume](#the-inner-volume) lacks the seed's half. Nothing is restored, and the default stays as the run left it |
 | `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The Operation's result `fleet_drift` names each difference. Nothing changed |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
+| `instance.seed_volume_snapshot_failed` | 502 | The snapshot of the [inner volume](#the-inner-volume) failed after the container's. Both halves of that name are deleted; see [The seed pair](#the-seed-pair) |
+| `instance.default_seed_incomplete` | 409 | The default's seed has no half on its [inner volume](#the-inner-volume), such as a seed taken before the pair existed. Deploy the default once |
+| `instance.default_seed_in_flight` | 409 | A clone of a default with an [inner volume](#the-inner-volume) while a deployment of the default is open. Create the clone when it ends |
 | `instance.container_process_inactive` | 502 | A required unit is inactive when a clone records its sessions. The Operation names the unit and records its states, exit status and restart count |
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
 | `instance.database_clone_unsupported` | 422 | A clone names another Database server than the default's, or the default has no database on a server to clone |

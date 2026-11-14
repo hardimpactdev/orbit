@@ -114,7 +114,6 @@ If the cleanup does not finish, the Instance stays marked failed with `details.c
 | `instance.host_unavailable` | The container Node is not prepared, its bridge or its T3 ports are full, or its runtime folder lacks the Project's PHP build. |
 | `project.source_defaults_incomplete` | The Project's source defaults are incomplete, or a web-serving Project in a container has no PHP version. |
 | `operation.kind_unavailable` | The request needs a part of the container runtime that is not built yet, or a clone needs Conn or the model router guard. |
-| `instance.inner_volume_clone_unavailable` | The Project's `default` has an [inner volume](/reference/development-containers#the-inner-volume), whose clone is not built yet. Orbit records nothing. |
 | `instance.nested_fleet_host_unavailable` | The Project has `nested_fleet` on, and the Node has nested-fleet hosting off. Orbit records nothing. See [Nested fleet setting](/reference/projects#nested-fleet-setting). |
 | `instance.nested_fleet_container_required` | The Project has `nested_fleet` on, and the result would not be a container: the Node is not on the build list, or the default is a host checkout. Orbit records nothing. |
 | `instance.nested_fleet_image_unavailable` | The Project has `nested_fleet` on, and the Node's last converge failed to build the nested-fleet image. The create of the default makes no container. Converge the Node again; see [The nested-fleet image](/reference/development-containers#the-nested-fleet-image). |

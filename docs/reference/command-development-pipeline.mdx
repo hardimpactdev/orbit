@@ -25,7 +25,7 @@ Each flow has its own trigger. The first three run for a task. The others keep a
 - **Task start.** `task:start` runs for every task group. It takes a free place in the host's task pool, mints a new identity for its VM, copies the host's base VM snapshot with that identity and adds its hub peer, runs the release's converge (a no-op on a current image) and starts the task branch. The containers start with the VM.
 - **`base` restore.** It runs for each proof batch, and when the author wants a clean fleet.
 - **Release.** Publication of the PR, or the end of a group, deletes its VM, seed clone and identity volume, removes its hub peer and deletes its Node.
-- **Refresh (stage 6).** A verified release admits it after Horizon starts; admission is best effort and does not wait. A daily schedule also admits it, and it converges the host's base VM, snapshots it and proves the snapshot with one task start. The target refreshes the nested-fleet default Instance on each switched-on Node and takes its seed snapshot.
+- **Refresh (stage 6).** A verified release admits it after Horizon starts; admission is best effort and does not wait. A daily schedule also admits it, and it converges the host's base VM, snapshots it and proves the snapshot with one task start. The target refreshes the nested-fleet default Instance on each switched-on Node and takes its seed snapshot, with the volume's snapshot of the same name when the default has an inner volume.
 - **Image build from the recipe.** It runs only for a new host or a new base OS.
 
 ## 1. Prep
@@ -95,7 +95,7 @@ The checkout is already mounted when the containers boot, but the restored datab
 
 ## 6. Per-Node seed refresh
 
-When `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on, after each verified Gateway release Orbit deploys each nested-fleet default Instance on a Node with the nested-fleet switch to the release commit. The run refreshes the inner fleet, retakes `base` and takes the seed snapshot that a task or a new Instance of the Project clones. [Refresh after a release](/reference/development-containers#refresh-after-a-release) owns the rules.
+When `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on, after each verified Gateway release Orbit deploys each nested-fleet default Instance on a Node with the nested-fleet switch to the release commit. The run refreshes the inner fleet, retakes `base` and takes the seed snapshot that a task or a new Instance of the Project clones. A default with an [inner volume](/reference/development-containers#the-seed-pair) has a seed of two snapshots of one name, the container's and the volume's, and each copy clones both. [Refresh after a release](/reference/development-containers#refresh-after-a-release) owns the rules.
 
 Until the last proof runs in containers, the task VM refresh stays in the code: a verified release and a daily schedule admit it, and per host it converges the base VM, snapshots it and proves the snapshot with one task start. Every host holds it today ([Off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). [Old paths](/reference/old-paths) says when it goes.
 

@@ -386,6 +386,23 @@ def main():
                 )
                 if clone["snapshot"] not in [row["name"] for row in snapshots]:
                     raise RuntimeError("instance.default_seed_moved")
+                # A copy of a default with an inner volume copies the volume's snapshot of the same seed name first, then the container
+                # with its disk on the new volume (docs/reference/development-containers.md#the-inner-volume). Every other copy has no
+                # `inner_volume` and runs the container copy alone, as before.
+                inner = container.get("inner_volume")
+                if inner is not None:
+                    volumes = f"/1.0/storage-pools/{inner['pool']}/volumes/custom/"
+                    seeds = run(["incus", "query", volumes + clone["inner_volume"] + f"/snapshots?project={container['project']}&recursion=1"],
+                                check=False)
+                    # Incus may name a volume snapshot `<volume>/<snapshot>`; the seed name is the last part. A container seed without its
+                    # volume half is a seed taken before the pair existed: the default's next passed deployment takes the pair.
+                    if seeds.returncode or clone["snapshot"] not in [row["name"].split("/")[-1] for row in json.loads(seeds.stdout)]:
+                        raise RuntimeError("instance.default_seed_incomplete")
+                    # No container yet: a volume of this name is left from a failed copy, so it is copied again from this seed.
+                    if run(["incus", "query", volumes + inner["name"] + f"?project={container['project']}"], check=False).returncode == 0:
+                        change(project + ["storage", "volume", "delete", inner["pool"], inner["name"]])
+                    change(project + ["storage", "volume", "copy", inner["pool"] + "/" + clone["inner_volume"] + "/" + clone["snapshot"],
+                                      inner["pool"] + "/" + inner["name"]])
                 argv = project + [
                     "copy",
                     clone["source"] + "/" + clone["snapshot"],
@@ -416,7 +433,17 @@ def main():
                 # The NIC accepts only its own IPv4 and MAC address.
                 for key, value in nic_filters(network_check).items():
                     argv += ["--device", "eth0," + key + "=" + value]
-                change(argv)
+                if inner is None:
+                    change(argv)
+                else:
+                    # The seed's disk names the default's volume; the copy's names its own.
+                    argv += ["--device", inner["device"] + ",source=" + inner["name"]]
+                    try:
+                        change(argv)
+                    except Exception:
+                        # A failed container copy leaves no volume behind: the volume belongs to the copy, which does not exist.
+                        run(project + ["storage", "volume", "delete", inner["pool"], inner["name"]], check=False)
+                        raise
                 read = json.loads(
                     run(
                         [
@@ -568,7 +595,11 @@ def main():
             ).stdout
             checked = run(
                 ["python3", "-c", network_check, container["network"], "eth0"]
-                + ([json.dumps(container["allowed_devices"]), json.dumps(container["config"])] if "allowed_devices" in container else []),
+                + ([json.dumps(container["allowed_devices"]), json.dumps(container["config"])] if "allowed_devices" in container else [])
+                # The one volume besides the root that the guard admits, with exactly its keys, as the Ansible start passes it. A copy
+                # without an inner volume passes no third argument, as before, and the guard admits no volume.
+                + ([json.dumps({container["inner_volume"]["device"]: {**container["inner_volume"]["config"], "size": container["inner_volume"]["size"]}})]
+                   if "allowed_devices" in container and "inner_volume" in container else []),
                 effective,
                 check=False,
             )

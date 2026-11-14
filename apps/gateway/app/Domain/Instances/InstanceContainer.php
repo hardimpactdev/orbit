@@ -147,7 +147,8 @@ final readonly class InstanceContainer
         }
         // The one placement decision, recorded once; a clone lives in the project its default's runtime records.
         $placed = InstancePlacement::place($instance->project()->firstOrFail(), $node, true);
-        $incusProject = $source?->runtime()->firstOrFail()->incus_project ?? $placed;
+        $sourceRuntime = $source?->runtime()->firstOrFail();
+        $incusProject = $sourceRuntime->incus_project ?? $placed;
         $folders = $this->folders();
         $bridge = Node::query()->whereKey($node->id)->value('instance_bridge');
         if (! is_string($bridge)) {
@@ -177,9 +178,10 @@ final readonly class InstanceContainer
             'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port,
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
-            // Only a new nested-fleet default gets an inner volume; a clone copies its default (docs/reference/development-containers.md#the-inner-volume).
-            'inner_volume' => $source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject
-                ? NestedFleetInnerVolume::name(self::name($instance)) : null,
+            // A new nested-fleet default gets an inner volume, and a copy of a default with one gets its own copy of it; every other
+            // runtime, Instance 2454 and its copies among them, records none (docs/reference/development-containers.md#the-inner-volume).
+            'inner_volume' => ($source === null && $instance->name === DefaultInstanceName::Name && $incusProject === InstancePlacement::NestedProject)
+                || $sourceRuntime?->inner_volume !== null ? NestedFleetInnerVolume::name(self::name($instance)) : null,
         ]);
     }
 
@@ -385,7 +387,9 @@ final readonly class InstanceContainer
         return [
             // The default's mirror on the Node holds the seed's commit: a new branch starts there, without the network.
             ...($source === null ? [] : ['source' => $source->container_name, 'snapshot' => 'seed-'.ValidatedData::string($source->seed_commit),
-                'seed_commit' => ValidatedData::string($source->seed_commit), 'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id))]),
+                'seed_commit' => ValidatedData::string($source->seed_commit), 'source_mirror' => self::mirror(Instance::query()->findOrFail($source->instance_id)),
+                // The default's inner volume, whose snapshot of the seed's name the copy's own volume starts from.
+                ...($source->inner_volume === null ? [] : ['inner_volume' => $source->inner_volume])]),
             // A task copy starts from its start commit alone: the checkout drops the default's modified and untracked files
             // (docs/reference/development-containers.md#a-task-copy-starts-clean). Every other clone keeps the default's tree, and no key.
             ...($source !== null && $instance->task_workspace_owner_id !== null ? ['clean_workspace' => true] : []),
