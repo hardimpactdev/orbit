@@ -1704,7 +1704,7 @@ The first nested-fleet default and every Instance without `inner_volume`, its co
 
 `TaskVmNestedFleet` in `apps/gateway/app/Domain/TaskVms/TaskVmNestedFleet.php` holds every address, MAC, memory limit, subnet and path of the fleet. This page names none of them twice.
 
-In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:65536`, plus `1000:1` for the [workspace mapping](#fleet-rules). The first nested-fleet default, and every default made from an image before 2026-11-14, gives `1000000:100000000` until its [conversion](#convert-a-default). Either range fits inside the outer map.
+In the outer container, `/etc/subuid` and `/etc/subgid` give root `1000000:65536`, plus `1000:1` for the [workspace mapping](#fleet-rules). The first nested-fleet default, and every default made from a nested-fleet image built before the release that brought the ID map size, gives `1000000:100000000` until its [conversion](#convert-a-default). Either range fits inside the outer map.
 
 ### The ID map size
 
@@ -1712,7 +1712,7 @@ Each nested-fleet runtime records the size of its isolated ID map in `idmap_size
 
 | Runtime | Size |
 | --- | --- |
-| A new nested-fleet default | 101,000,000 |
+| A new nested-fleet default, or a migrated nested Instance | 101,000,000 |
 | A copy, a plain clone or a task copy | Its default's size at the copy's reservation |
 | A converted default | 1,165,536: the inner Incus's base of 1,000,000, its range of 65,536 and 100,000 spare |
 | A normal container | None: Incus's 65,536 |
@@ -1735,9 +1735,9 @@ An operator converts a nested-fleet default once, outside any task turn. The ste
 
 At step 6 the inner containers' stored maps do not fit the new inner range, so the inner Incus maps them again. That rewrite is a walk over their files, so it takes minutes on a large pool.
 
-The command refuses a size other than the two above with `instance.idmap_size_invalid`. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`.
+The command refuses a size other than the two above with `instance.idmap_size_invalid`. It refuses an Instance that is not a nested-fleet default with `instance.idmap_size_not_nested_default`. It refuses a default that an open Operation holds with `operation.target_busy`. It refuses a size below a copy's recorded size with `instance.idmap_size_copies_smaller`, so a rollback waits until the small copies are gone. It holds the default's row lock, as a task copy's admission does.
 
-A rollback restores `pre-idmap-<time>`, which brings back the old config and the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more. Copies made after the conversion must be destroyed first.
+A rollback destroys the copies made after the conversion, restores `pre-idmap-<time>`, which brings back the old config and the old inner range, and runs the command with `101000000`. The inner Incus rewrites the owners once more.
 
 #### The seed pair
 
@@ -2198,7 +2198,9 @@ However, two starts within the same moment can still both pass. Then the later c
 
 ### The Doctor warning
 
-Each read is kept on the Node: how many full-size ranges of 101,000,000 are free (up to 2), how many normal containers still fit before one would land in a full-size gap and split it (up to 10), and when it was read. Doctor reads it without reaching the Node. While the Node records a nested runtime of 101,000,000, it warns with `node.id_ranges_low` when fewer than 2 full-size ranges or fewer than 4 normal slots are free. The warning names the read's time, so an old read shows. A Node with only converted nested runtimes needs no full-size range, so it does not warn.
+Each read is kept on the Node: how many full-size ranges of 101,000,000 are free (up to 2), how many normal containers still fit before one would land in a full-size gap and split it (up to 10), and when it was read. Doctor reads it without reaching the Node.
+
+While the Node records a nested-fleet default of 101,000,000, it warns with `node.id_ranges_low` when fewer than 2 full-size ranges or fewer than 4 normal slots are free. The warning names the read's time, so an old read shows. Copies keep their size but retake no seed, so a Node whose nested defaults are all converted does not warn, even while old copies of 101,000,000 remain. Only a task copy start refreshes the read, so the warning can stay until the next one.
 
 ## Errors
 

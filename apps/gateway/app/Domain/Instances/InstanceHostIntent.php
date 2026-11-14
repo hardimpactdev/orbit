@@ -15,6 +15,7 @@ use App\Infrastructure\WireGuard\PeerDnsPolicy;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\TaskVm;
+use LogicException;
 
 /**
  * The container branch of the `app-dev` role converge (docs/reference/development-containers.md#nodes): the Incus project on the
@@ -149,7 +150,7 @@ final readonly class InstanceHostIntent
         $nested = $settings?->nested_fleet === true;
         $nestedMaps = InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)->pluck('idmap_size');
         $nestedRuntimes = $nestedMaps->count();
-        $nestedIds = $nestedMaps->sum(static fn (mixed $size): int => is_int($size) ? $size : self::TaskPlaceIds);
+        $nestedIds = $nestedMaps->sum(static fn (mixed $size): int => is_int($size) ? $size : throw new LogicException('A nested-fleet runtime records its ID map size.'));
         $taskContainers = $taskHost?->containers;
         $taskIds = $taskContainers instanceof NodeTaskVmContainersData ? ($taskContainers->task_places + $taskContainers->ci_places + 1) * self::TaskPlaceIds : 0;
         $subnet = Ipv4Subnet::from($cidr);

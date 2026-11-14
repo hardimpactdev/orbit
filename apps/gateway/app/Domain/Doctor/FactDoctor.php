@@ -12,6 +12,7 @@ use App\Domain\Firewall\FirewallInspectionInput;
 use App\Domain\Firewall\LiveFirewallSnapshot;
 use App\Domain\Fleet\FleetReboot;
 use App\Domain\Fleet\FleetRebootAlerts;
+use App\Domain\Instances\DefaultInstanceName;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\NodeFacts\NodeAgentLiveness;
@@ -21,7 +22,7 @@ use App\Domain\Nodes\ManagedNodeEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\Nodes\NodeRoleServiceCatalog;
-use App\Models\InstanceRuntime;
+use App\Models\Instance;
 use App\Models\Node;
 use App\Models\NodeFact;
 use App\Models\TaskVm;
@@ -163,8 +164,8 @@ final readonly class FactDoctor
     }
 
     /**
-     * A warning from the last ID map read the Gateway kept (docs/reference/development-containers.md#isolated-id-ranges). Only a Node
-     * with a container of the full nested size needs a full-size range free for its seed; a converted one fits anywhere.
+     * A warning from the last ID map read the Gateway kept (docs/reference/development-containers.md#the-doctor-warning). Only a Node
+     * with a nested default of the full size needs a full-size range free for its seed and its copies; old copies retake no seed.
      */
     private function idRanges(DoctorFamilyInspection $check): void
     {
@@ -173,8 +174,9 @@ final readonly class FactDoctor
         // Only a Node with a kept read that shows few ranges asks for its runtimes, so most Nodes cost no query.
         if (is_array($read) && is_int($read['full'] ?? null) && is_int($read['small'] ?? null) && is_string($read['read_at'] ?? null)
             && ($read['full'] < 2 || $read['small'] < self::IdRangeSmallSlots)
-            && InstanceRuntime::query()->where('node_id', $node->id)->where('incus_project', InstancePlacement::NestedProject)
-                ->where('idmap_size', InstanceHostIntent::TaskPlaceIds)->exists()) {
+            && Instance::query()->where('node_id', $node->id)->where('name', DefaultInstanceName::Name)
+                ->whereHas('runtime', static fn ($runtime) => $runtime->where('incus_project', InstancePlacement::NestedProject)
+                    ->where('idmap_size', InstanceHostIntent::TaskPlaceIds))->exists()) {
             $check->issue('node.id_ranges_low', $node->id, $node->name,
                 'Few isolated ID ranges are free: a seed retake or copy of a full-size nested default may find none.',
                 'at least 2 full-size ranges and '.self::IdRangeSmallSlots.' normal slots free',

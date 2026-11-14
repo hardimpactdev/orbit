@@ -40,12 +40,26 @@ final class InstanceIdMapSizeCommand extends Command
         if ($instance === null || $runtime === null || $instance->name !== DefaultInstanceName::Name || $runtime->incus_project !== InstancePlacement::NestedProject) {
             return $this->refuse('instance.idmap_size_not_nested_default', 'Only a nested-fleet default with a container records an ID map size.');
         }
-        $open = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
-            ->whereNotIn('status', OperationStatus::terminalValues())->value('id');
-        if (is_int($open)) {
-            return $this->refuse('operation.target_busy', "Operation {$open} holds the default; run this when it has ended.");
+        // The same row lock as a task copy's admission, so no copy reads the old seed while the record changes.
+        $refusal = DB::transaction(static function () use ($instance, $runtime, $size): ?array {
+            Instance::query()->whereKey($instance->id)->lockForUpdate()->first();
+            $open = Operation::query()->where('target_type', 'instance')->where('target_id', $instance->id)
+                ->whereNotIn('status', OperationStatus::terminalValues())->value('id');
+            if (is_int($open)) {
+                return ['operation.target_busy', "Operation {$open} holds the default; run this when it has ended."];
+            }
+            // A copy keeps its size for life. A rollback below a copy's size would hand that copy, or a retry of its reservation, a seed with a
+            // larger inner range than its map holds.
+            if (InstanceRuntime::query()->where('clone_source_instance_id', $instance->id)->where('idmap_size', '<', (int) $size)->exists()) {
+                return ['instance.idmap_size_copies_smaller', 'Destroy the copies made at the smaller size first.'];
+            }
+            InstanceRuntime::query()->whereKey($runtime->id)->update(['idmap_size' => (int) $size, 'seed_commit' => null]);
+
+            return null;
+        });
+        if ($refusal !== null) {
+            return $this->refuse(...$refusal);
         }
-        DB::transaction(static fn () => InstanceRuntime::query()->whereKey($runtime->id)->update(['idmap_size' => (int) $size, 'seed_commit' => null]));
         $this->line(json_encode(['instance_id' => $instance->id, 'idmap_size' => (int) $size, 'from' => $runtime->idmap_size, 'seed_commit' => null], JSON_THROW_ON_ERROR));
         $this->info('Recorded. Clones refuse until the next passed deployment of the default takes a new seed.');
 

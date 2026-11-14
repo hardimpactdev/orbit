@@ -10,6 +10,7 @@ use App\Domain\Tasks\TaskRuntime;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
+use LogicException;
 
 /**
  * The one placement rule that every writer of an Instance or its runtime passes before it writes anything
@@ -118,7 +119,7 @@ final readonly class InstancePlacement
             'security.syscalls.intercept.mknod' => 'true',
             'security.syscalls.intercept.setxattr' => 'true',
             'security.idmap.isolated' => 'true',
-            'security.idmap.size' => (string) ($idmapSize ?? InstanceHostIntent::TaskPlaceIds),
+            'security.idmap.size' => (string) ($idmapSize ?? throw new LogicException('A nested-fleet runtime records its ID map size.')),
             'limits.memory' => '12GiB',
             'boot.autostart' => 'false',
         ] : [];

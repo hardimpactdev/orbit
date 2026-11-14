@@ -26,6 +26,7 @@ use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\DB;
+use LogicException;
 
 /**
  * The start of a task whose Project's tasks run as copies (docs/cli/task/start.mmd): one clone of the Project's default Instance,
@@ -172,7 +173,8 @@ final readonly class TaskCopyStart
      */
     private static function rangeSize(InstanceRuntime $runtime): int
     {
-        return $runtime->incus_project === InstancePlacement::NestedProject ? ($runtime->idmap_size ?? InstanceHostIntent::TaskPlaceIds) : InstanceHostIntent::IdMapSize;
+        return $runtime->incus_project === InstancePlacement::NestedProject
+            ? ($runtime->idmap_size ?? throw new LogicException('A nested-fleet runtime records its ID map size.')) : InstanceHostIntent::IdMapSize;
     }
 
     /**

@@ -470,19 +470,28 @@ describe('the id map size', function (): void {
             })(),
             default => $default,
         };
+        if ($case === 'a rollback under a small copy') {
+            InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
+            recordedNestedInstance($default->project, $node, 'small', $default);
+        }
         if ($case === 'an open Operation') {
             DB::table('operations')->insert(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $node->id,
                 'status' => 'running', 'input' => '{}', 'state' => '{}', 'created_at' => now(), 'updated_at' => now()]);
         }
-        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $target->id, 'size' => $case === 'another size' ? '65536' : '1165536'])
-            ->expectsOutputToContain($code)->assertFailed();
+        $size = match ($case) {
+            'another size' => '65536',
+            'a rollback under a small copy' => '101000000',
+            default => '1165536',
+        };
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $target->id, 'size' => $size])->expectsOutputToContain($code)->assertFailed();
         expect(InstanceRuntime::query()->where('instance_id', $default->id)->first(['idmap_size', 'seed_commit'])?->only(['idmap_size', 'seed_commit']))
-            ->toBe(['idmap_size' => 101000000, 'seed_commit' => str_repeat('a', 40)]);
+            ->toBe(['idmap_size' => $case === 'a rollback under a small copy' ? 1165536 : 101000000, 'seed_commit' => str_repeat('a', 40)]);
     })->with([
         'another size' => ['another size', 'instance.idmap_size_invalid'],
         'a clone' => ['a clone', 'instance.idmap_size_not_nested_default'],
         'a normal default' => ['a normal default', 'instance.idmap_size_not_nested_default'],
         'an open Operation' => ['an open Operation', 'operation.target_busy'],
+        'a rollback under a small copy' => ['a rollback under a small copy', 'instance.idmap_size_copies_smaller'],
     ]);
 
     it('warns in Doctor from the kept ID map read while a full-size nested container is on the Node, and not after its conversion', function (): void {
@@ -500,9 +509,12 @@ describe('the id map size', function (): void {
         expect($issues())->toBe([]);
 
         DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 0, 'small' => 0, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        // An old copy keeps the full size but retakes no seed, so only the default's own size counts.
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('a', 40)]);
+        $copy = recordedNestedInstance($default->project, $node, 'feature', $default);
         expect($issues())->toHaveCount(1);
         InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
-        expect($issues())->toBe([]);
+        expect($copy->runtime()->value('idmap_size'))->toBe(101000000)->and($issues())->toBe([]);
     });
 
     it('fills the full size for every nested runtime that exists when the column comes, and none for a normal one', function (): void {
