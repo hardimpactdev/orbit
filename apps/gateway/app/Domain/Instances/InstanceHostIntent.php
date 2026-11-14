@@ -63,6 +63,13 @@ final readonly class InstanceHostIntent
 
     public const string TrustDirectory = '/etc/ssl/certs';
 
+    /**
+     * The runtime folder's PKCS#11 trust module, relative to a folder version: Chromium reads local roots only from the user's NSS
+     * store, and this module gives that store the system bundle (docs/reference/development-containers.md#trust). It sits outside
+     * `lib`, which the dynamic linker reads, so its name never enters a container's linker cache.
+     */
+    public const string TrustModule = 'pkcs11/p11-kit-trust.so';
+
     public const int AgentUid = 2750;
 
     public const int OrbitUid = 1000;

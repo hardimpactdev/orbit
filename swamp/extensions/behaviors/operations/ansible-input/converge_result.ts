@@ -9,10 +9,17 @@ const Failure = z.object({
     rc: ReturnCode.optional(),
 }).strict().refine((failure) => (failure.reason === "command_failed") === (failure.rc !== undefined) &&
     (failure.reason !== "hidden" || failure.task === null));
+// A container without Chromium's trust store and why (docs/reference/development-containers.md#trust): the reasons have fixed shapes,
+// so no other text of a container reaches the result.
+const BrowserTrust = z.array(z.object({
+    container: z.string().regex(/^[a-z0-9-]{1,63}\/[A-Za-z0-9-]{1,63}$/),
+    reason: z.string().regex(/^(no agent home|not running|version mismatch: (not installed|unreadable|[0-9A-Za-z.+:~-]{1,64}) != [0-9A-Za-z.+:~-]{1,64}|path refused: \/home\/agent(\/[A-Za-z0-9._-]{1,64}){0,3} is (file|directory|symlink|other|unknown)|store failed: (timeout|exit [0-9]{1,3}|[A-Za-z]{1,40}))$/),
+}).strict()).max(1000);
 export const Result = z.object({
     phases: z.array(z.object({ name: z.enum(phases), status: z.enum(["succeeded", "failed", "skipped"]), changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative() }).strict()).length(7),
     changed: z.number().int().nonnegative(), elapsed_seconds: z.number().finite().nonnegative(), cleanup_complete: z.boolean(),
     tools: z.array(z.object({ id: z.number().int().positive(), status: z.enum(["installed", "failed"]), installed_version: z.string().min(1).max(255).regex(/^[^\x00-\x20\x7f]+$/).nullable() }).strict().refine((tool) => tool.status === "failed" || tool.installed_version !== null)).max(10000),
+    browser_trust: BrowserTrust,
     failure: Failure.optional(),
     failed_phase: z.enum(phases).optional(), error_code: z.literal("operation.native_failed").optional(),
 }).strict();
@@ -85,6 +92,7 @@ function fatalFailure(report: z.infer<typeof Report>): z.infer<typeof Failure> |
 export async function convergeResult(folder: string) {
     const summaries: z.infer<typeof Result>["phases"] = [];
     let tools: z.infer<typeof Result>["tools"] = [];
+    let browserTrust: z.infer<typeof BrowserTrust> = [];
     let failed: typeof phases[number] | undefined;
     let failure: z.infer<typeof Failure> | undefined;
     for (const name of phases) {
@@ -102,6 +110,9 @@ export async function convergeResult(folder: string) {
                         Object.values(report.stats).every((stat) => stat.failures === 0 && stat.unreachable === 0)
                     ? "succeeded" : "failed";
                 if (status === "failed") failure = fatalFailure(report);
+                if (name === "roles") {
+                    browserTrust = z.object({ browser_trust: BrowserTrust }).strict().parse(JSON.parse(await Deno.readTextFile(`${folder}/roles-result.json`))).browser_trust;
+                }
                 if (name === "tools") {
                     tools = Result.shape.tools.parse(JSON.parse(await Deno.readTextFile(`${folder}/tools-result.json`)));
                     if (new Set(tools.map((tool) => tool.id)).size !== tools.length) status = "failed";
@@ -115,7 +126,7 @@ export async function convergeResult(folder: string) {
         summaries.push({ name, status, changed, elapsed_seconds: elapsed });
     }
     return Result.parse({ phases: summaries, changed: summaries.reduce((sum, phase) => sum + phase.changed, 0),
-        elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, cleanup_complete: false,
+        elapsed_seconds: summaries.reduce((sum, phase) => sum + phase.elapsed_seconds, 0), tools, browser_trust: browserTrust, cleanup_complete: false,
         ...(failure ? { failure } : {}),
         ...(failed ? { failed_phase: failed, error_code: "operation.native_failed" } : {}) });
 }

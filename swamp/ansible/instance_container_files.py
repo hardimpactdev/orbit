@@ -11,6 +11,13 @@ Nothing restarts: every later process reads the files by itself.
 - The root CA goes in as the Node holds it and under its hashed name in the CA directory, where OpenSSL, curl and PHP look it up.
   A container that trusted an older root loses that root's hashed name. A running container whose CA bundle lacks the root runs
   `update-ca-certificates`; a stopped or frozen one gets the bundle at its wake.
+- Chromium reads local roots only from the user's NSS store. `agent`'s store, `~/.pki/nssdb`, gets the runtime folder's trust
+  module in `pkcs11.txt`: a missing store is made with only that entry, and a store without the entry gets it appended; nothing
+  else in the file changes. `agent` owns these paths, so root never writes through them: only a running container gets the store,
+  written by `agent` itself. A stopped or frozen container (which can wake at any moment) gets it at the next converge that finds it
+  running. A container without `/home/agent`, with a path of another type, or whose library of the module (read from its dpkg
+  status) is not the exact version the module needs gets no store; in the last case `agent` removes an Orbit entry it already has.
+  Each is listed in `browser_trust` with its reason, and the run still passes: one container's own state never fails the converge.
 - `incus exec` refuses a frozen container, so a frozen one gets only file writes and deletes.
 
 The Node keeps a digest of the library names it last applied to every container, so a changed folder reaches stopped containers
@@ -29,14 +36,16 @@ from pathlib import Path
 SONAME = re.compile(r"^lib.+\.so(\.[0-9]+)?$")
 LINKER_CONFIGURATION = "/etc/ld.so.conf.d/zz-orbit-browser.conf"
 CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
-
-
+# A Debian version as dpkg writes it; anything else in a container's status file is not repeated.
+VERSION = re.compile(r"^[0-9A-Za-z.+:~-]{1,64}$")
 class IncusFailure(Exception):
     pass
 
 
-def incus(*args, stdin=None, ok=(0,)):
-    result = subprocess.run(["incus", *args], input=stdin, capture_output=True, text=True, check=False)
+def incus(*args, stdin=None, ok=(0,), timeout=None):
+    # A container's own bytes, such as its dpkg status or what its user prints, need not be UTF-8: they never fail a decode.
+    result = subprocess.run(["incus", *args], input=stdin, capture_output=True, text=True, errors="surrogateescape", check=False,
+                            timeout=timeout)
     if result.returncode not in ok:
         raise IncusFailure(f"incus {args[0]} {args[1] if len(args) > 1 else ''}: {result.stderr.strip()[:200]}")
     return result
@@ -59,6 +68,60 @@ def pull(project, name, path):
     return result.stdout if result.returncode == 0 else None
 
 
+def installed(status, package):
+    """The version of an installed amd64 package in a dpkg status file, or None."""
+    for stanza in (status or "").split("\n\n"):
+        fields = dict(line.split(": ", 1) for line in stanza.splitlines() if ": " in line and not line.startswith(" "))
+        if fields.get("Package") == package and fields.get("Architecture") == "amd64" and fields.get("Status") == "install ok installed":
+            return fields.get("Version")
+    return None
+
+
+def as_agent(project, name, trust, mode):
+    """The store script (files/instance-browser-trust.sh) as `agent`, bounded inside the container and on the Node."""
+    lines = trust["entry"].splitlines()
+    return incus("exec", "--project", project, name, "--user", str(trust["uid"]), "--group", str(trust["gid"]), "--cwd", "/",
+                 "--env", f"HOME={trust['home']}", "--", "timeout", "30", "sh", "-c", trust["script"], "instance-browser-trust", mode, trust["home"], trust["path"],
+                 lines[0], lines[1], trust["entry"], *trust["directories"], ok=range(256), timeout=60)
+
+
+def store(project, name, status, label, trust, summary):
+    """`agent`'s NSS store names the trust module (docs/reference/development-containers.md#trust); the reason it does not, or None.
+    Only `agent` writes it, and only in a running container: a stopped or frozen one can wake while the step runs."""
+    if status != "Running":
+        return "not running"
+    held = installed(pull(project, name, "/var/lib/dpkg/status"), trust["library"])
+    mismatch = None
+    if held != trust["version"]:
+        shown = "not installed" if held is None else held if VERSION.match(held) else "unreadable"
+        mismatch = f"version mismatch: {shown} != {trust['version']}"
+    result = as_agent(project, name, trust, "remove" if mismatch else "write")
+    words = result.stdout.split()
+    if result.returncode == 3:
+        return "no agent home"
+    if result.returncode == 4 and len(words) == 2 and words[0] in [*trust["directories"], trust["path"]]:
+        return f"path refused: {words[0]} is {words[1]}"
+    if result.returncode == 124:
+        return "store failed: timeout"
+    if result.returncode != 0 or words not in (["created"], ["appended"], ["removed"], ["unchanged"]):
+        return f"store failed: exit {result.returncode}"
+    if words != ["unchanged"]:
+        summary["written"].append(label + trust["path"])
+    return mismatch
+
+
+def browser_trust(project, name, status, label, trust, summary):
+    """The store, or its reason in `browser_trust`. Nothing here fails the container or the run."""
+    try:
+        reason = store(project, name, status, label, trust, summary)
+    except subprocess.TimeoutExpired:
+        reason = "store failed: timeout"
+    except Exception as failure:  # noqa: BLE001 - one container's store never stops its other work or the next container
+        reason = f"store failed: {type(failure).__name__}"
+    if reason is not None:
+        summary["browser_trust"].append({"container": label, "reason": reason})
+
+
 def link_target(project, name, path):
     """Where a symlink in the container points, or None when the path is missing or is no link. The files API answers a link
     with its target as an absolute path."""
@@ -74,7 +137,7 @@ def delete(project, name, path):
         raise IncusFailure(f"incus file delete {path}: {result.stderr.strip()[:200]}")
 
 
-def container(project, row, files, trust, libraries, names, libraries_changed, summary):
+def container(project, row, files, trust, browser, libraries, names, libraries_changed, summary):
     name, status = row["name"], row["status"]
     label = f"{project}/{name}"
     if status not in ("Running", "Stopped", "Frozen"):
@@ -121,15 +184,16 @@ def container(project, row, files, trust, libraries, names, libraries_changed, s
             summary["frozen"].append(label)
     except IncusFailure as failure:
         summary["failed"].append(f"{label}: {failure}")
+    browser_trust(project, name, status, label, browser, summary)
 
 
-def converge(projects, files, trust_spec, libraries, state):
+def converge(projects, files, trust_spec, browser, libraries, state):
     names = library_names(libraries)
     digest = hashlib.sha256("\n".join(names).encode()).hexdigest()
     state_file = Path(state)
     libraries_changed = (state_file.read_text().strip() if state_file.is_file() else "") != digest
     summary = {"written": [], "removed": [], "ldconfig": [], "ca_bundle": [], "cache_dropped": [], "frozen": [], "skipped": [],
-               "failed": []}
+               "browser_trust": [], "failed": []}
     try:
         pem = Path(trust_spec["source"]).read_text()
     except OSError:
@@ -149,12 +213,12 @@ def converge(projects, files, trust_spec, libraries, state):
     # One list of every project, as the folder's restart reads it: a project that does not exist yet has no containers.
     rows = json.loads(incus("query", "/1.0/instances?all-projects=true&recursion=1").stdout)
     for row in sorted((row for row in rows if row.get("project") in projects), key=lambda row: (row["project"], row["name"])):
-        container(row["project"], row, files, trust, libraries, names, libraries_changed, summary)
+        container(row["project"], row, files, trust, browser, libraries, names, libraries_changed, summary)
     if summary["failed"]:
         print(json.dumps({"error_code": "instance.host_unavailable", **summary}))
         return 1
     # The digest serves stopped containers. A skipped one has not seen these libraries, so the next converge drops a stopped cache
-    # again; a frozen one keeps its cache and gets the check at its wake.
+    # again; a frozen one keeps its cache and gets the check at its wake. A container listed in `browser_trust` has seen them.
     if not summary["skipped"]:
         state_file.parent.mkdir(parents=True, exist_ok=True)
         state_file.write_text(digest + "\n")
@@ -164,4 +228,4 @@ def converge(projects, files, trust_spec, libraries, state):
 
 if __name__ == "__main__":
     spec = json.loads(sys.argv[1])
-    sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["libraries"], spec["state"]))
+    sys.exit(converge(spec["projects"], spec["files"], spec["trust"], spec["browser_trust"], spec["libraries"], spec["state"]))

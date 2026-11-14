@@ -1,7 +1,9 @@
 ---
 # The image's shared files in every existing Instance container (docs/reference/development-containers.md#existing-containers):
 # the linker and font configuration that reach the runtime folder's `lib` and `fonts`, the system Git setting for the workspace, and the
-# Node's Orbit root CA (docs/reference/development-containers.md#trust).
+# Node's Orbit root CA, and the runtime folder's trust module in `agent`'s NSS store, which Chromium reads
+# (docs/reference/development-containers.md#trust). A container that cannot take the store is listed with its reason; it never
+# fails the step.
 # A container made from an older image gets them here, running, stopped or frozen, in the Instance project and the nested-fleet one.
 # Nothing restarts: T3, the agents and the Processes keep running, and each later process reads the files by itself.
 - name: Write the image's shared files into each existing container
@@ -16,6 +18,8 @@
               | map('selectattr', 'key', 'in', ['path', 'content', 'mode']) | map('items2dict') | list,
             'trust': {'source': instance_trust_source, 'path': '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                       'directory': '/etc/ssl/certs'},
+            'browser_trust': instances.image.browser_trust
+              | combine({'script': lookup('ansible.builtin.file', playbook_dir ~ '/files/instance-browser-trust.sh')}),
             'libraries': instances.folders.runtime.path ~ '/current/lib',
             'state': '/var/lib/orbit/instance-container-libraries'} | to_json }}
     stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_container_files.py') }}"
@@ -27,3 +31,8 @@
     {{ ((container_files.stdout | from_json).written + (container_files.stdout | from_json).removed + (container_files.stdout | from_json).ldconfig
        + (container_files.stdout | from_json).ca_bundle + (container_files.stdout | from_json).cache_dropped) | length > 0 }}
   failed_when: container_files.rc != 0
+
+# The converge's Operation result names each container without the store and why (operation-node-converge.yml).
+- name: Keep the containers without the browser trust store
+  ansible.builtin.set_fact:
+    instance_browser_trust: "{{ (container_files.stdout | from_json).browser_trust }}"

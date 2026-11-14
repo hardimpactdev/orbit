@@ -54,6 +54,24 @@ it('pins the browser libraries and fonts as Debian packages of the recipe\'s Ubu
     expect(array_column(InstanceFolderPlan::for($recipe->instances)['runtime']['parts'], 'archive', 'name')['browser-libnss3'])->toBe('deb');
 });
 
+it('gives the runtime folder one trust module for Chromium, at its own path outside lib, with the exact library it needs', function (): void {
+    $recipe = new RecipeLoader()->decode(recipeWithInstances(static fn () => null));
+    $part = $recipe->instances->runtime['browser-p11-kit-modules'];
+    $plan = array_column(InstanceFolderPlan::for($recipe->instances)['runtime']['parts'], null, 'name');
+
+    // docs/reference/development-containers.md#trust: p11-kit's trust module reads the system bundle; the package pins its own
+    // library at its own version, so the part's version is the one the container's libp11-kit0 must have.
+    expect($part->version)->toBe('0.26.2-2')
+        ->and($part->trustModule)->toBe(['path' => 'usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so', 'library' => 'libp11-kit0'])
+        ->and($part->artifact->location)->toBe('https://snapshot.ubuntu.com/ubuntu/20261103T000000Z/pool/main/p/p11-kit/p11-kit-modules_0.26.2-2_amd64.deb')
+        ->and($part->artifact->digest)->toBe('633ac53737f9a284acc3df4d1d717857902fe04a222f19331c7b18092fe2448b')
+        ->and($plan['browser-p11-kit-modules']['trust_module'])->toBe(['source' => 'usr/lib/x86_64-linux-gnu/pkcs11/p11-kit-trust.so',
+            'path' => 'pkcs11/p11-kit-trust.so', 'library' => 'libp11-kit0'])
+        // Only this part names a module; no other part changes its shape.
+        ->and(array_keys(array_filter($plan, static fn (array $entry): bool => isset($entry['trust_module']))))->toBe(['browser-p11-kit-modules'])
+        ->and(str_starts_with($plan['browser-p11-kit-modules']['trust_module']['path'], 'lib/'))->toBeFalse();
+});
+
 it('reads a part without `bin` as files that give the folder no program', function (): void {
     $bridge = new RecipeLoader()->decode(recipeWithInstances(static fn () => null))->instances->runtime['php-data-bridge'];
 
@@ -137,6 +155,22 @@ it('refuses a malformed folder part', function (Closure $change, string $message
     'Vite+ with a second program' => [static function (array &$recipe): void {
         $recipe['instances']['runtime']['vite-plus']['bin']['vpx'] = 'vp';
     }, "expected the runtime folder's one Vite+ part, with the one program vp"],
+    'no trust module' => [static function (array &$recipe): void {
+        unset($recipe['instances']['runtime']['browser-p11-kit-modules']['trust_module']);
+    }, 'instances.runtime: expected exactly one part with a trust_module.'],
+    'two trust modules' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['browser-libnss3']['trust_module'] = $recipe['instances']['runtime']['browser-p11-kit-modules']['trust_module'];
+    }, 'instances.runtime: expected exactly one part with a trust_module.'],
+    'a trust module in the agent folder' => [static function (array &$recipe): void {
+        $recipe['instances']['agent']['p11-kit'] = $recipe['instances']['runtime']['browser-p11-kit-modules'];
+    }, 'instances.agent.p11-kit.trust_module: expected a Debian package part of the runtime folder.'],
+    'a trust module of a tarball' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['php-data-bridge']['trust_module'] = $recipe['instances']['runtime']['browser-p11-kit-modules']['trust_module'];
+        unset($recipe['instances']['runtime']['browser-p11-kit-modules']);
+    }, 'instances.runtime.php-data-bridge.trust_module: expected a Debian package part of the runtime folder.'],
+    'a trust module out of the package' => [static function (array &$recipe): void {
+        $recipe['instances']['runtime']['browser-p11-kit-modules']['trust_module']['path'] = '../../etc/p11-kit-trust.so';
+    }, 'expected a relative path to a module inside the package'],
     'an empty folder' => [static function (array &$recipe): void {
         $recipe['instances']['agent'] = new stdClass;
     }, 'instances.agent: expected at least one part'],

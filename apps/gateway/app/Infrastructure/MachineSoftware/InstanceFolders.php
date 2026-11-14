@@ -22,4 +22,16 @@ final readonly class InstanceFolders
         public array $php = [],
         public ?VitePlusHome $vitePlus = null,
     ) {}
+
+    /** The runtime folder's one part with Chromium's trust module; the loader requires exactly one (docs/reference/development-containers.md#trust). */
+    public function trustModule(): FolderPin
+    {
+        foreach ($this->runtime as $part) {
+            if ($part->trustModule !== null) {
+                return $part;
+            }
+        }
+
+        throw new \LogicException('The runtime folder holds no trust module.');
+    }
 }

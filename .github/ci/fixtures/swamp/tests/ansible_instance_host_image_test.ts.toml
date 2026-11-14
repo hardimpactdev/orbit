@@ -1,5 +1,5 @@
 order = 60
-source_sha256 = "4ca9f634c7d8c79fe693641f8d15f73e03db9da5a9371014ba01364ddcc3f003"
+source_sha256 = "9031cba878dd71e0b13ed0e505e45eb50d305f036fee915ae86b1b1ee2de667c"
 cases = [
   "the saved dir host system boundary matches the shipped tasks",
   "the saved dir host prepare boundary matches the shipped tasks",
@@ -17,6 +17,9 @@ cases = [
   "a Node without its Instance pool is refused before anything changes",
   "a directory pool skips the clone probe: a copy there is a full copy",
   "an image that keeps a sudo path is never published",
+  "the image names the trust module in agent's NSS store, after it checked the module's library in the build container",
+  "an image whose libp11-kit0 is 0.25.5-3 is never published and gets no NSS store",
+  "an image whose libp11-kit0 is not installed is never published and gets no NSS store",
   "orbit-instance-build refuses an inherited unguarded profile NIC before starting",
   "orbit-clone-probe-copy refuses an inherited unguarded profile NIC before starting",
   "prepared publication clears inherited stock build ownership",
@@ -35,8 +38,8 @@ cases = [
 file = "swamp/tests/ansible_instance_host_image_test.ts"
 # ESTIMATE: completed Beast run, four workers, each case ceil(local seconds x 2.1) + 1.
 # Cases use verified boundaries; every case remains in Required. No timeout increase.
-cost = 712
-slices = 30
+cost = 752
+slices = 33
 inputs = [
   "apps/gateway/app/Domain/Instances/InstanceImage.php",
   "bin/swamp-shape-gate",
@@ -107,6 +110,10 @@ inputs = [
   "the nested-fleet audit judges visudo by its exit code, not by what it prints" = 2
 
 # Verify the persistent host state before a host-task change can merge.
+  "the image names the trust module in agent's NSS store, after it checked the module's library in the build container" = 20 # ESTIMATE: Beast 8s * 2.1, rounded up + 1s
+  "an image whose libp11-kit0 is 0.25.5-3 is never published and gets no NSS store" = 10 # ESTIMATE: Beast 2-4s * 2.1, rounded up + 1s
+  "an image whose libp11-kit0 is not installed is never published and gets no NSS store" = 10 # ESTIMATE: Beast 2-4s * 2.1, rounded up + 1s
+
 [mandatory_cases]
 "swamp/ansible/tasks/instance-host.yml" = [
   "the saved dir host prepare boundary matches the shipped tasks",

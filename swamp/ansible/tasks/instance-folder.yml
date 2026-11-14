@@ -48,11 +48,19 @@
       loop_control: { label: "{{ item.name }}" }
       changed_when: true
     # A Debian package part gives no program: its libraries go into `lib`, which each container's `ld.so` reads through
-    # `/etc/ld.so.conf.d/zz-orbit-browser.conf`, and its fonts into `fonts`, which `/etc/fonts/fonts.conf` names.
+    # `/etc/ld.so.conf.d/zz-orbit-browser.conf`, and its fonts into `fonts`, which `/etc/fonts/fonts.conf` names. The trust module's
+    # package gives only its module, at its own path outside `lib` (docs/reference/development-containers.md#trust).
     - name: Gather the libraries and fonts of the Debian packages
       when: folder.parts | selectattr('archive', 'equalto', 'deb') | list | length > 0
       ansible.builtin.command:
-        argv: "{{ ['python3', '-I', '-', folder_stage] + (folder.parts | selectattr('archive', 'equalto', 'deb') | map(attribute='name') | list) }}"
+        argv:
+          - python3
+          - -I
+          - "-"
+          - "{{ folder_stage }}"
+          - >-
+            {{ folder.parts | selectattr('archive', 'equalto', 'deb') | map('dict2items') | map('selectattr', 'key', 'in', ['name', 'version', 'trust_module'])
+               | map('items2dict') | list | to_json }}
         stdin: "{{ lookup('ansible.builtin.file', playbook_dir ~ '/instance_folder_debs.py') }}"
       register: folder_debs
       changed_when: true

@@ -191,7 +191,9 @@ mkdir -p "$2/node_modules/vite-plus" && cp "$2/package-lock.json" "$2/node_modul
                             archive: "tar",
                             sha256: vp,
                             bin: [],
-                        }],
+                        },
+                        // Every runtime folder holds the trust module's part (docs/reference/development-containers.md#trust).
+                        ...f.instances.folders.runtime.parts.filter((part) => "trust_module" in part)],
                         vite_plus: {
                             part: "vite-plus",
                             binary: "vp",

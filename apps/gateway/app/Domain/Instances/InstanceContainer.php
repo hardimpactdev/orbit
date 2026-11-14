@@ -380,8 +380,10 @@ final readonly class InstanceContainer
      * runs at boot when the cache is empty, so the copy's first start builds a cache that knows the runtime folder's `lib`; the
      * dynamic linker ignores an empty cache until then (docs/reference/development-containers.md#existing-containers). Last, the
      * Node's Orbit root CA: the clone script reads it on the Node and adds its hashed name (docs/reference/development-containers.md#trust).
+     * And `agent`'s NSS store, which names the trust module for Chromium: the clone script makes it or appends the entry
+     * (InstanceImage::browserTrust).
      *
-     * @return list<array<string, int|string>>
+     * @return list<array<string, int|string|list<string>>>
      */
     private static function bootFiles(): array
     {
@@ -391,6 +393,7 @@ final readonly class InstanceContainer
             ['path' => '/etc/ld.so.cache', 'content' => '', 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
             ['source' => InstanceHostIntent::TrustSource, 'path' => InstanceHostIntent::TrustFile, 'hash_directory' => InstanceHostIntent::TrustDirectory,
                 'uid' => 0, 'gid' => 0, 'mode' => '0644'],
+            InstanceImage::browserTrust(),
         ];
     }
 

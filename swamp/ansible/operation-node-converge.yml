@@ -75,6 +75,17 @@
       loop: "{{ intent.roles }}"
       loop_control: { loop_var: role_plan, label: "{{ role_plan.role }}" }
       tags: [roles]
+    # Each Instance container that could not take Chromium's trust store, with its reason, for the Operation result
+    # (docs/reference/development-containers.md#trust). Only an Instance container host lists any.
+    - name: Record the containers without the browser trust store
+      ansible.builtin.copy:
+        dest: "{{ orbit_run }}/roles-result.json"
+        content: "{{ {'browser_trust': instance_browser_trust | default([])} | to_json }}"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      changed_when: false
+      tags: [roles]
     - name: Start the independent Tool observations
       ansible.builtin.set_fact: { tool_results: [] }
       tags: [tools]
