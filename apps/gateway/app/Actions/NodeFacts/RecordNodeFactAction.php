@@ -59,7 +59,8 @@ final readonly class RecordNodeFactAction
     /**
      * The agent omits a filesystem it has not read yet, so its first `host` report after a start can lack `/`. That
      * means "no reading yet", not "no root filesystem": the stored `/` reading stays. It carries `observed_at`, the
-     * observation time of the stored report that held it, and `kept_since`, when the first report without it arrived.
+     * observation time of the stored row that held it (a row is written only on a change, so the reading was confirmed
+     * then or later), and `kept_since`, when the Gateway received the first report without it.
      * A later reading of `/` replaces it. Doctor stops trusting a kept reading after {@see FactDoctor::KeptRootSeconds}.
      *
      * @param  array<string, mixed>  $data

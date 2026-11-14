@@ -25,7 +25,7 @@ Human output lists Node, Family, Status, Checked, Resource and Finding. JSON ret
 
 Doctor compares the Gateway's records with three facts: `host` (platform, architecture and filesystem space), `units` (role services, Process units and containers, and awake markers) and `ufw` (whether UFW is enabled, and its rules). The agent's liveness gives the agent check. There is no Swamp run, SSH read or repair action.
 
-A check whose fact has not arrived yet, or cannot be read, gives one unverifiable `<family>.inspection_failed` finding for the family and Node: "not observed yet". Other checks continue. The root filesystem check also accepts a `/` reading that the Gateway [kept from an earlier report](/reference/node-agent#facts), but only for 180 seconds after the agent's first report without `/`. After that it is unverifiable. A Node without an observing agent, such as a Mac, gets its lifecycle checks only. A parked task VM gets an informational finding and no other check.
+A check whose fact has not arrived yet, or cannot be read, gives one unverifiable `<family>.inspection_failed` finding for the family and Node: "not observed yet". Other checks continue. The root filesystem check also accepts a `/` reading that the Gateway [kept from an earlier report](/reference/node-agent#facts), but only for 180 seconds after the Gateway received the agent's first report without `/`. After that it is unverifiable. A Node without an observing agent, such as a Mac, gets its lifecycle checks only. A parked task VM gets an informational finding and no other check.
 
 ## What each family checks
 

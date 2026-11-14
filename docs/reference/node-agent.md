@@ -92,9 +92,11 @@ Retained Schedule log reads, Node-timer account resolution, and named-user resol
 
 The Gateway stores a host's `free` bytes rounded down to 256 MiB. Free space moves with every log line, so without the rounding each `host` report would write a row.
 
-A `host` report without a `/` entry keeps the stored `/` entry. The agent leaves out a filesystem it has not read yet, so its first report after a start can lack `/`. That happens on a Gateway Node at boot: its first reports fail at once, before the disk sampler's first pass, and the retry sends the same report again.
+A `host` report without a `/` entry keeps the stored `/` entry. The agent leaves out a filesystem it has not read yet. So after any agent start, the first host read can run before the disk sampler's first pass, and its report lacks `/`. On a Gateway Node at boot this is the likely case: its first reports fail at once, so the host read comes milliseconds after the start, and the retry later sends that same report.
 
-The kept entry gets `observed_at`, the observation time of the stored report that held it, and `kept_since`, when the first report without `/` arrived. A repeated report without `/` keeps both times. The next report with `/` replaces the entry. Doctor uses a kept entry for 180 seconds (three host intervals) after `kept_since`; after that the disk check is unverifiable. A Node that never reported `/` has nothing to keep.
+The kept entry gets two times. `observed_at` is the agent's observation time of the stored row that held the reading; the Gateway writes a row only when it changes, so the reading was confirmed then or later. `kept_since` is when the Gateway received the first report without `/`. A repeated report without `/` keeps both times. The next report with `/` replaces the entry.
+
+Doctor uses a kept entry for 180 seconds (three host intervals) after `kept_since`, by the Gateway clock; after that the disk check is unverifiable. Doctor does not bound the age of the reading itself: a copy of an Instance starts with the reading from its seed snapshot. A Node that never reported `/` has nothing to keep.
 
 The agent sends a fact when it changed, and again every 10 minutes.
 
