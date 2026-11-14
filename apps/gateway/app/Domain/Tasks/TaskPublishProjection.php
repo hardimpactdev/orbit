@@ -69,13 +69,14 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
     }
 
     /**
-     * The paths of a refused conflict, from the check's line `tasks.publish_conflict: "a", "b" and N more`: at most 100, then the count.
+     * The paths of a refused conflict, from the check's line `tasks.publish_conflict: "a", "b" and N more`, wherever it stands in the
+     * step's detail: at most 100 paths in at most 3,000 bytes, so the line fits the detail the Gateway keeps, then the count.
      *
      * @return array{conflicting_paths: list<string>, conflicting_more: int}
      */
     private static function conflict(string $detail): array
     {
-        preg_match('/\Atasks\.publish_conflict: (.*?)(?: and ([1-9][0-9]*) more)?\z/s', $detail, $match);
+        preg_match('/^tasks\.publish_conflict: (.*?)(?: and ([1-9][0-9]*) more)?$/m', $detail, $match);
         $paths = json_decode('['.($match[1] ?? '').']', true);
 
         return ['conflicting_paths' => is_array($paths) ? array_values(array_filter($paths, is_string(...))) : [], 'conflicting_more' => (int) ($match[2] ?? 0)];
@@ -103,7 +104,7 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
-                $code = $step === 'Check the base' && is_string($detail) && str_starts_with($detail, 'tasks.publish_conflict: ') ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+                $code = $step === 'Check the base' && is_string($detail) && preg_match('/^tasks\.publish_conflict: /m', $detail) === 1 ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
                     ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')))));
                 $data['error_code'] = $code;
                 // A conflict names its paths, as the check's one line lists them.

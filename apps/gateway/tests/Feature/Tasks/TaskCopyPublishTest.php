@@ -18,6 +18,7 @@ use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskPublishProjection;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceEnvironmentValue;
@@ -304,4 +305,35 @@ it('fails a base read that could not run without the conflict code', function ()
 
     expect($projected->error_code)->toBe('tasks.publish_failed')
         ->and($projected->result)->toBe(['error_code' => 'tasks.publish_failed']);
+});
+
+it('keeps a long conflict through the stored step failure, with its code and its bounded paths', function (): void {
+    [$group, $operation, $run] = runningCopyPublish();
+    // "Check the base" names at most 3,000 bytes of paths and the count of the rest; the run's step error carries that line after
+    // other output, and the Gateway keeps the last 4,096 bytes of it, without an incomplete first line.
+    $paths = array_map(static fn (int $index): string => "apps/gateway/app/Domain/Tasks/Long/Folder/Name/Changed{$index}.php", range(0, 299));
+    $shown = [];
+    $used = 2;
+    foreach ($paths as $path) {
+        $size = strlen(json_encode($path, JSON_UNESCAPED_SLASHES)) + ($shown === [] ? 0 : 2);
+        if ($used + $size > 3000 - strlen('tasks.publish_conflict: ') - strlen(' and 300 more')) {
+            break;
+        }
+        $shown[] = $path;
+        $used += $size;
+    }
+    $line = 'tasks.publish_conflict: '.implode(', ', array_map(static fn (string $path): string => json_encode($path, JSON_UNESCAPED_SLASHES), $shown))
+        .' and '.(300 - count($shown)).' more';
+    $error = str_repeat("deno: an earlier line of the step's output\n", 60).$line;
+    $failure = app(NativeStepFailure::class)->fromRun(['status' => 'failed', 'jobs' => [['steps' => [
+        ['name' => 'Check the base', 'status' => 'failed', 'error' => $error, 'completedAt' => now()->toIso8601String()],
+    ]]]], $operation);
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => $failure]);
+
+    expect(strlen($line))->toBeLessThanOrEqual(3000)
+        ->and($projected->error_code)->toBe('tasks.publish_conflict')
+        ->and($projected->result)->toBe(['error_code' => 'tasks.publish_conflict', 'conflicting_paths' => $shown, 'conflicting_more' => 300 - count($shown)])
+        ->and($group->refresh()->pr_url)->toBeNull();
 });

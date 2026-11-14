@@ -1,5 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1";
 import {
+    BASE_BYTES,
     BASE_MARK,
     BASE_PATHS,
     baseFacts,
@@ -398,4 +399,32 @@ Deno.test("the Base section keeps the body within its limit", () => {
     // A body at the limit gets no section; the publish result still states the base.
     const limit = "x".repeat(BodyLimit);
     assertEquals(withBase(limit, facts), limit);
+});
+
+Deno.test("a long conflict or overlap stays within its byte bound and counts the rest", () => {
+    const paths = Array.from(
+        { length: 300 },
+        (_, index) =>
+            `apps/gateway/app/Domain/Tasks/Long/Folder/Name/Changed${index}.php`,
+    );
+    const bytes = (text: string) => new TextEncoder().encode(text).length;
+    const refused = baseFacts(
+        3,
+        files({ merge: ["d".repeat(40), ...paths].join("\0") + "\0" }),
+    ).error_code;
+    assertEquals(refused.startsWith('tasks.publish_conflict: "apps/'), true);
+    assertEquals(bytes(refused) <= BASE_BYTES, true);
+    const shown = refused.split('", "').length;
+    assertEquals(refused.endsWith(` and ${300 - shown} more`), true);
+    const stated = baseFacts(0, files({ overlap: paths.join("\0") + "\0" }))
+        .facts;
+    assertEquals(
+        bytes(JSON.stringify(stated?.overlapping_paths)) <= BASE_BYTES,
+        true,
+    );
+    assertEquals(
+        (stated?.overlapping_paths.length ?? 0) +
+            (stated?.overlapping_more ?? 0),
+        300,
+    );
 });

@@ -129,11 +129,32 @@ const PullRow = z.object({
 
 /** The most paths a base statement or a conflict names; the count beyond it is stated. */
 export const BASE_PATHS = 100;
+/**
+ * The most bytes a path list takes, with its prefix and its count: well under the 4,096 bytes of a failed step's detail that the
+ * Gateway keeps (NativeStepFailure), so a conflict line arrives whole, and small beside a pull request body's 65,536 characters.
+ */
+export const BASE_BYTES = 3000;
+const bytes = (text: string) => new TextEncoder().encode(text).length;
+
+/** The first paths whose quoted list fits `budget` bytes, at most BASE_PATHS of them, and how many are left out. */
+function bounded(paths: string[], budget: number) {
+    const shown: string[] = [];
+    let used = 2;
+    for (const path of paths) {
+        const size = bytes(JSON.stringify(path)) + (shown.length === 0 ? 0 : 2);
+        if (shown.length === BASE_PATHS || used + size > budget) break;
+        shown.push(path);
+        used += size;
+    }
+    return { shown, more: paths.length - shown.length };
+}
 export const BaseFacts = z.object({
     base_commit: Sha,
     default_commit: Sha,
     behind_by: z.number().int().min(0),
-    overlapping_paths: z.array(z.string().min(1)).max(BASE_PATHS),
+    overlapping_paths: z.array(z.string().min(1)).max(BASE_PATHS).refine(
+        (paths) => bytes(JSON.stringify(paths)) <= BASE_BYTES,
+    ),
     overlapping_more: z.number().int().min(0),
 }).strict();
 export type BaseFacts = z.infer<typeof BaseFacts>;
@@ -160,29 +181,30 @@ export function baseFacts(
         // merge-tree --name-only -z: the tree, then each conflicted path.
         const conflicts = names(files.merge).slice(1);
         if (conflicts.length > 0) {
-            const shown = conflicts.slice(0, BASE_PATHS).map((path) =>
-                JSON.stringify(path)
-            ).join(", ");
-            const more = conflicts.length - BASE_PATHS;
+            // The prefix and the widest count take their bytes first.
+            const prefix = "tasks.publish_conflict: ";
+            const room = BASE_BYTES - bytes(prefix) -
+                bytes(` and ${conflicts.length} more`);
+            const { shown, more } = bounded(conflicts, room);
             return {
                 facts: null,
-                error_code: `tasks.publish_conflict: ${shown}${
-                    more > 0 ? ` and ${more} more` : ""
-                }`,
+                error_code: prefix +
+                    shown.map((path) => JSON.stringify(path)).join(", ") +
+                    (more > 0 ? ` and ${more} more` : ""),
             };
         }
     }
     if (exitCode !== 0 || !read) {
         return { facts: null, error_code: "tasks.publish_failed" };
     }
-    const overlap = names(files.overlap);
+    const overlap = bounded(names(files.overlap), BASE_BYTES);
     return {
         facts: BaseFacts.parse({
             base_commit: base,
             default_commit: head,
             behind_by: Number(behind),
-            overlapping_paths: overlap.slice(0, BASE_PATHS),
-            overlapping_more: Math.max(overlap.length - BASE_PATHS, 0),
+            overlapping_paths: overlap.shown,
+            overlapping_more: overlap.more,
         }),
         error_code: "",
     };

@@ -415,9 +415,9 @@ A copy's publish states the base it publishes against. After the token is minted
 | `default_commit` | The default branch head at publish time |
 | `behind_by` | The commits of the default branch that the checked commit lacks |
 | `overlapping_paths` | The paths that both the checked commit and the default branch changed since the base |
-| `overlapping_more` | How many overlapping paths lie beyond the first 100 |
+| `overlapping_more` | How many overlapping paths lie beyond the listed ones: at most 100 paths in at most 3,000 bytes |
 
-`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
+`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100 in at most 3,000 bytes so the refusal fits the step detail Orbit keeps, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
 
 These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text and the [waiver lines](#docs-impact-waivers-in-a-copy) the publish adds: the base commit, the default head, how far behind, and the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once, with any waiver line that followed it kept before the new section.
 

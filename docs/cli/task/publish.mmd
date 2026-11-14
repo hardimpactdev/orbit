@@ -139,8 +139,8 @@ sequenceDiagram
     %%> - it writes its statement and exit code to the private scratch; Swamp keeps no stderr of a failed command step
     Note over SW: Check the base
     %%> How:
-    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`, at most 100 paths, with `overlapping_more` counting the rest
-    %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming at most 100 conflicting paths and the count beyond, before the push; any other error fails with `tasks.publish_failed`
+    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`, at most 100 paths in at most 3,000 bytes, with `overlapping_more` counting the rest
+    %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming at most 100 conflicting paths in at most 3,000 bytes, so the line fits the 4,096 bytes of detail the Gateway keeps, and the count beyond, before the push; any other error fails with `tasks.publish_failed`
     %%> - a copy pushes only after this step succeeded; a skip of it is never a pass
     %%> - `behind_by` and overlapping paths never refuse on their own
   end
