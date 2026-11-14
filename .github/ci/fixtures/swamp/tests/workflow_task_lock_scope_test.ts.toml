@@ -1,0 +1,22 @@
+order = 1470
+source_sha256 = "82764c504e2af43ac5825197932f8be567ec75142cae5db1b6f59af6447cae44"
+cases = [
+  "two publishes of copies on one Node share no behavior name",
+  "the publish passes its group to every workspace phase",
+  "two workspace phases on one Node share only their short input, evidence and cleanup steps",
+  "two copy checks on one Node share only their short input, evidence and cleanup steps",
+  "two syncs share only their short scratch cleanup on 209; each VM is its own group's",
+]
+file = "swamp/tests/workflow_task_lock_scope_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-task-publish.yaml",
+  "swamp/workflows/workflow-operation-task-sync.yaml",
+  "swamp/workflows/workflow-task-instance-check.yaml",
+  "swamp/workflows/workflow-task-instance-workspace.yaml",
+]

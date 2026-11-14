@@ -63,7 +63,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-sync-clone" }}
+      behaviorName: ${{ ("task-sync-clone-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: |
@@ -96,7 +96,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-sync-bundle" }}
+      behaviorName: ${{ ("task-sync-bundle-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: |

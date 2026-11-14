@@ -200,7 +200,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-scratch-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-scratch-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 5 mktemp -d /tmp/orbit-task-publish-XXXXXXXX
@@ -216,6 +216,7 @@ jobs:
       workflowIdOrName: task-instance-workspace
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: preflight
         intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution} }}'
     dependsOn:
@@ -232,6 +233,7 @@ jobs:
       workflowIdOrName: task-instance-workspace
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: export
         intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint, "candidate": {"head": inputs.intent.commit, "tree": inputs.intent.tree}, "worker_bundle": steps["Create publication scratch"].outputs.stdout.trim() + "/candidate.bundle", "environment_path": inputs.intent.workspace.environment_path, "worker_environment": steps["Create publication scratch"].outputs.stdout.trim() + "/environment", "proposed_body_path": ".git/orbit/proposed-pr-bodies/" + inputs.intent.branch + ".md", "worker_proposed_body": steps["Create publication scratch"].outputs.stdout.trim() + "/proposed-body"} }}'
     dependsOn:
@@ -246,7 +248,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-index-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-index-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: exec
       inputs:
         hosts: name:target
@@ -285,7 +287,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-add-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-add-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: exec
       inputs:
         hosts: name:target
@@ -324,7 +326,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-tree-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-tree-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: exec
       inputs:
         hosts: name:target
@@ -362,7 +364,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-head-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-head-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: exec
       inputs:
         hosts: name:target
@@ -398,7 +400,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-verify-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-verify-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: verify
       inputs:
         input: ${{ inputs.intent }}
@@ -416,7 +418,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-export-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-export-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: exec
       inputs:
         hosts: name:target
@@ -455,7 +457,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-copy-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-copy-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: copy
       inputs:
         hosts: name:target
@@ -485,7 +487,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-init-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-init-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 git init --quiet --bare --template= --object-format="$ORBIT_OBJECT_FORMAT" "$ORBIT_REPOSITORY"
@@ -509,7 +511,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-import-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-import-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 60 git -C "$ORBIT_REPOSITORY" fetch --quiet --no-tags "$ORBIT_BUNDLE" "$ORBIT_REF:refs/heads/candidate"
@@ -532,7 +534,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-bundle-read-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-bundle-read-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 10 git -C "$ORBIT_REPOSITORY" rev-parse refs/heads/candidate 'refs/heads/candidate^{tree}'
@@ -551,7 +553,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-imported-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-imported-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: imported
       inputs:
         input: ${{ inputs.intent }}
@@ -570,7 +572,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-environment-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-environment-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: >-
@@ -602,7 +604,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-waivers-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-waivers-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: waivers
       inputs:
         input: ${{ inputs.intent }}
@@ -625,7 +627,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-content-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-content-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: |
@@ -750,7 +752,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-content-read-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-content-read-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: content
       inputs:
         directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
@@ -789,7 +791,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-push-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-push-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 60 git -C "$ORBIT_REPOSITORY" push --porcelain -- "$ORBIT_REMOTE" "$ORBIT_REFSPEC" >"$ORBIT_DIRECTORY/push.stdout" 2>"$ORBIT_DIRECTORY/push.stderr"
@@ -824,7 +826,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-pushed-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-pushed-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: pushed
       inputs:
         directory: ${{ steps["Create publication scratch"].outputs.stdout.trim() }}
@@ -840,7 +842,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-pull-read-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-pull-read-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 gh api --method GET "$ORBIT_PATH" -f state=open -f head="$ORBIT_HEAD" -f per_page=100 >"$ORBIT_DIRECTORY/pulls.json" 2>/dev/null
@@ -866,7 +868,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-pull-plan-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-pull-plan-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: pull
       inputs:
         input: ${{ inputs.intent }}
@@ -884,7 +886,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-pull-write-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-pull-write-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 gh api --method "$ORBIT_METHOD" "$ORBIT_PATH" --input "$ORBIT_BODY_FILE" >"$ORBIT_DIRECTORY/pull.json" 2>/dev/null
@@ -911,7 +913,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/task-publication-data'
-      behaviorName: ${{ "task-publish-pull-result-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-pull-result-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: written
       inputs:
         input: ${{ inputs.intent }}
@@ -938,7 +940,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-revoke-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-revoke-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 30 gh api --method DELETE installation/token 2>/dev/null
@@ -958,7 +960,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "task-publish-remote-cleanup-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-remote-cleanup-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: exec
       inputs:
         hosts: name:target
@@ -995,6 +997,7 @@ jobs:
       workflowIdOrName: task-instance-workspace
       inputs:
         node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
         phase: discard
         intent: '${{ {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "checkout_fingerprint": steps["Preflight the copy"].outputs.evidence.evidence.checkout_fingerprint} }}'
     allowFailure: true
@@ -1005,7 +1008,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "task-publish-local-cleanup-" + string(inputs.intent.node_id) }}
+      behaviorName: ${{ ("task-publish-local-cleanup-" + string(inputs.intent.node_id) + "-" + string(inputs.intent.group_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 10 rm -rf -- "$ORBIT_DIRECTORY" "$ORBIT_GH_DIRECTORY"
