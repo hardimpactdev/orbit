@@ -13,10 +13,10 @@
       "public_key": "ssh-ed25519 fixture",
       "target": {"name": "target", "node_id": 9, "host": "10.44.0.9", "user": "orbit", "port": 22, "host_keys": ["ssh-ed25519 fixture-public-key"]}
     },
-    "copy": {"project": "orbit-instances", "name": "instance-2747"},
-    "restore_first": false,
+    "copy": {"project": "orbit-instances-nested", "name": "instance-2747"},
+    "restore_first": true,
     "final_restore": false,
-    "container": {"instance_id": 2747, "project": "orbit-instances", "name": "instance-2747", "workspace": "/srv/workspace"},
+    "container": {"instance_id": 2747, "project": "orbit-instances-nested", "name": "instance-2747", "workspace": "/srv/workspace"},
     "fleet": {"guests": {"gateway": "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod"}}
   }
 }

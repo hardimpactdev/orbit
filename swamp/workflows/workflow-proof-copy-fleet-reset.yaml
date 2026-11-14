@@ -1,0 +1,77 @@
+id: 52243c38-a4d0-4300-8ffb-5787c1927d5a
+name: proof-copy-fleet-reset
+description: >-
+  Reset the inner fleet of a task copy to `base` before a proof batch (docs/cli/proof/proof.mmd): the phase `fleet_reset` of
+  instance-container.yml from the copy's Node, as root in the copy's container. It stops the three nested containers, restores `base`,
+  starts them, migrates the nested Gateway forward and waits for Doctor (docs/reference/development-containers.md#reset).
+queueTimeout: 30
+labels: {role: swamp}
+vaults: []
+inputs:
+  type: object
+  properties:
+    # {container, fleet, ssh_execution} of the proof's intent: the Gateway admits it only for a clone that keeps its fleet. The reset
+    # only tests that the Club key is there; it needs no secret.
+    intent: {type: object}
+  required: [intent]
+  additionalProperties: false
+jobs:
+  - name: reset
+    steps:
+      - name: input
+        labels: {role: swamp}
+        writes: true
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/ansible-input'
+          behaviorName: ${{ "ansible-input" }}
+          methodName: write
+          inputs:
+            intent: '${{ inputs.intent }}'
+            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+      # About 16 s on the inner volume; each restore has 45 s and readiness 300 s. The name is the copy's, so proofs in two copies on one
+      # Node reset side by side. It records its own seconds.
+      - name: Reset the inner fleet
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: input, condition: {type: succeeded}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: '${{ "proof-copy-fleet-reset-" + string(inputs.intent.container.instance_id) }}'
+          methodName: execute
+          inputs:
+            run: s=$(date +%s%N); timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_reset "$ORBIT_ANSIBLE/instance-container.yml"; rc=$?; echo $(( ($(date +%s%N) - s) / 1000000 )) > "$ORBIT_RUN/reset_ms"; exit $rc
+            env:
+              ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+              ANSIBLE_FORCE_COLOR: '0'
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+              ORBIT_RUN_ID: '${{ run.id }}'
+              ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+              ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+              ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+      # The phase's result file, with the reset's seconds when it ran.
+      - name: result
+        labels: {role: swamp}
+        dependsOn: [{step: Reset the inner fleet, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "proof-copy-fleet-reset-result" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 /opt/orbit/ansible/venv/bin/python -I -c 'import json,os,sys; r=os.environ["ORBIT_RUN"]; d=json.load(open(r+"/result.json")); f=r+"/reset_ms"; d.update({"reset_seconds":round(int(open(f).read())/1000,1)} if os.path.exists(f) else {}); sys.stdout.write(json.dumps(d))'
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+      - name: cleanup
+        labels: {role: swamp}
+        dependsOn: [{step: result, condition: {type: always}}]
+        task:
+          type: behavior
+          behaviorType: command/shell
+          behaviorName: ${{ "proof-copy-fleet-reset-cleanup" }}
+          methodName: execute
+          inputs:
+            run: timeout 5 rm -rf -- "$ORBIT_RUN"
+            env:
+              ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'

@@ -663,6 +663,10 @@
    "Read the changed files": "unreviewed",
    "Read the manifest SHAs": "unreviewed"
   },
+  "proof-copy-fleet-reset": {
+   "result": "read-only",
+   "cleanup": "idempotent"
+  },
   "proof-fleet-restore": {
    "Read the container state": "read-only",
    "Wait for cloud-init": "read-only",

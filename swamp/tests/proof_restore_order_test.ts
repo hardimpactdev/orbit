@@ -348,3 +348,24 @@ Deno.test("boot wait refuses an unsettled boot, a timeout and an inactive requir
         await Deno.remove(dir, { recursive: true });
     }
 });
+
+// A task copy resets its inner fleet with the play of the Instance container; the VM restore above stays VM-shaped.
+Deno.test("a copy's batch resets with proof-copy-fleet-reset, which runs fleet_reset; the VM restore is unchanged", async () => {
+    const batch = stepsOf(await workflow("proof-fleet-verify-batch"));
+    assertEquals(named(batch, "reset").task.workflowIdOrName, "proof-copy-fleet-reset");
+    assertEquals(named(batch, "restore").task.workflowIdOrName, "proof-fleet-restore");
+    for (const step of ["restore", "reset"]) {
+        assert(
+            named(batch, "setup").dependsOn?.some((dependency) => dependency.step === step),
+            `setup must wait for ${step}`,
+        );
+    }
+    const reset = stepsOf(await workflow("proof-copy-fleet-reset"));
+    assert(requiresSuccess(reset, "Reset the inner fleet", "input"));
+    assert(
+        JSON.stringify(named(reset, "Reset the inner fleet").task).includes(
+            "--tags fleet_reset",
+        ),
+    );
+    assert(!reset.some((step) => step.task.workflowIdOrName === "proof-fleet-restore"));
+});
