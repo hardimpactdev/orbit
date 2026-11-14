@@ -12,6 +12,7 @@ uncovered:
   restarted: "The same fixture as main."
   not-back: "Need a fixture clone whose t3.service fails to start after the restart, to prove failed with conn.t3_unready and one try-restart only."
   busy: "Need the same fixture clone with a running turn (a thread status running). The case expects answer busy with t3_working, no conn.environment_restart Operation, and the same ActiveEnterTimestamp of t3.service before and after (systemctl show -p ActiveEnterTimestamp t3.service)."
+  processes: "Need the same fixture clone with an open T3 terminal running sleep 300. The case expects answer busy with processes (1 terminal, 1 command), the sleep still running, and the same ActiveEnterTimestamp of t3.service."
   frozen: "Need the same fixture clone put to sleep with instance:sleep (frozen). The case expects answer skipped with frozen, no Operation, and the container still Frozen."
   "conn.t3_unready": "As not-back."
   "conn.t3_label_mismatch": "Need a fixture whose /etc/machine-info changes between the Gateway read and the restart; the real-Ansible fixture covers it."

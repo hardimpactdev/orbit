@@ -337,7 +337,9 @@ The intent holds the Instance, its container, T3's port in the container, the na
 
 The Node form walks the Node's container Instances by ID and reads each one right before its own admission.
 
-The run checks that `/etc/machine-info` holds the name (else `skipped` with `name_not_written`), restarts T3 in the container, and reads its label inside the container until it is the name. It succeeds as `restarted` with `window_ms`, or fails as `failed` with `conn.t3_unready` or `conn.t3_label_mismatch`. T3 terminals end with T3. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
+The run checks that `/etc/machine-info` holds the name (else `skipped` with `name_not_written`), and reads the processes of T3's service: an open terminal, what it runs, or a turn's tool process answers `busy` with `processes` and the counts, and nothing restarts.
+
+Otherwise the run restarts T3 in the container and reads its label inside the container until it is the name. It succeeds as `restarted` with `window_ms`, or fails as `failed` with `conn.t3_unready` or `conn.t3_label_mismatch`. T3 terminals are never ended. The Operation does not retry. T3's environment ID, threads, sessions and pairings stay, so devices keep their pairings. A connected client reconnects, and an unsent draft stays in its browser. A turn that started after the read is cut, and T3 continues it after its start.
 
 ## Thread index
 

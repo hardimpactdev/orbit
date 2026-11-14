@@ -34,18 +34,24 @@ sequenceDiagram
     %%> - one Operation holding the Instance's lock; the intent has no session
   end
   GW-->>CLI: 200 · one answer each<br/>restarting has operation_id
-  SW->>N: Restart T3<br/>name · try-restart · label
+  SW->>N: Restart T3<br/>name · processes · restart
   %%> What it does:
   %%> - stops with `skipped` when the container no longer runs, or `name_not_written` when /etc/machine-info lacks the name
+  %%> - right before the restart, reads the processes of T3's service: a terminal shell, what it runs, or a turn's tool process answers `busy` `processes`
   %%> - `systemctl try-restart t3.service`; nothing else restarts, and the kernel hostname stays
   %%> - then reads the label inside the container on T3's port until it is the name, about 84 s at most
   %%> What a user sees:
-  %%> - a turn that started after the read is cut; T3 records it as cancelled and continues it after its start
-  %%> - T3 terminals and every process started in them end; Orbit Processes do not restart
+  %%> - a turn that started after the read and runs no tool yet is cut; T3 records it as cancelled and continues it after its start
+  %%> - T3 terminals and their processes are never ended; Orbit Processes do not restart
   %%> - a connected client shows Reconnecting… and reconnects; an unsent draft stays in the browser
   alt T3 answers with its name
     %% path: restarted
     SW-->>GW: Run succeeded<br/>restarted · window_ms
+  else T3 runs a terminal or a turn's command
+    %% path: processes
+    SW-->>GW: Run succeeded<br/>busy · processes
+    %%> Result:
+    %%> - the counts of terminal shells and commands; nothing restarted, and a later run takes it
   else T3 does not come back
     %% path: not-back
     SW--xGW: Run failed<br/>conn.t3_unready
