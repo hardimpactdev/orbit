@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
  * @property string $command
  * @property int $timeout_seconds
  * @property int $position
+ * @property list<string>|null $inputs
  * @property-read Project $project
  */
 final class ProjectDevelopmentDeployStep extends Model
@@ -32,6 +33,7 @@ final class ProjectDevelopmentDeployStep extends Model
         'command',
         'timeout_seconds',
         'position',
+        'inputs',
     ];
 
     /** @return BelongsTo<Project, $this> */
@@ -47,6 +49,7 @@ final class ProjectDevelopmentDeployStep extends Model
             'timeout_seconds' => 'integer',
             'required' => 'boolean',
             'position' => 'integer',
+            'inputs' => 'array',
         ];
     }
 }

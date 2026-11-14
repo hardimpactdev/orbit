@@ -334,6 +334,11 @@ describe('project requests', function (): void {
     it('does not keep the replaced Project request class name', function (): void {
         expect(class_exists('Orbit\\Sdk\\Requests\\Projects\\RemoveAppRequest'))->toBeFalse();
     });
+    it('sends task_pr_mode only when provided, and null to clear it', function (): void {
+        expect(new UpdateProjectRequest(projectId: 3, taskPrMode: 'pr_when_done', taskPrModeProvided: true)->body()->all())->toBe(['task_pr_mode' => 'pr_when_done'])
+            ->and(new UpdateProjectRequest(projectId: 3, taskPrModeProvided: true)->body()->all())->toBe(['task_pr_mode' => null])
+            ->and(new UpdateProjectRequest(projectId: 3, name: 'App')->body()->all())->not->toHaveKey('task_pr_mode');
+    });
 });
 
 function project_gateway_connector(MockClient $mockClient): GatewayConnector

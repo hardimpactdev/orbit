@@ -136,7 +136,7 @@ it('deploys a container default as the container variant, whose commands need no
         ->and($snapshot['variant'])->toBe('container')
         ->and($snapshot['needs_vp'])->toBeFalse()
         ->and($snapshot['steps'])->toBe([['name' => 'npm-build', 'phase' => 'before_activation', 'required' => true, 'timeout_seconds' => 300,
-            'command_digest' => hash('sha256', 'npm run build')]])
+            'command_digest' => hash('sha256', 'npm run build'), 'inputs' => []]])
         ->and(InstanceDeploymentIntent::admitted($operation))->toMatchArray(['variant' => 'container', 'user' => null, 'served' => [], 'shared_paths' => []]);
 });
 

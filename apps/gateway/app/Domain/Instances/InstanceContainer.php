@@ -39,6 +39,9 @@ final readonly class InstanceContainer
 
     public const string Image = 'orbit-instance';
 
+    /** The root disk size of every container but a nested-fleet default, and the smallest one that a default's setting may name. */
+    public const string RootSize = '40GiB';
+
     public const string FrankenPhpUnit = 'orbit-frankenphp.service';
 
     public const string FrankenPhpConfig = '/etc/orbit/frankenphp.Caddyfile';
@@ -64,6 +67,12 @@ final readonly class InstanceContainer
 
     /** The placeholder model key and the model origin, which T3's unit hands to Claude Code and Codex. */
     public const string ModelEnvironment = '/home/agent/.config/orbit/model.env';
+
+    /**
+     * The line after a clone's credential line on `clone-container`'s stdin; the model environment follows it. The copy's first boot then
+     * starts T3 (docs/reference/development-containers.md#t3-starts-with-the-copy). Git's credential store skips the line and the rest.
+     */
+    public const string ModelEnvironmentFrame = '#orbit-model-environment';
 
     /** T3's command in a container, from the agent release its image holds. */
     public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
@@ -259,11 +268,13 @@ final readonly class InstanceContainer
 
         return [
             'instance_id' => $instance->id, 'project' => $runtime->incus_project, 'name' => $runtime->container_name,
+            // The Incus name above is the machine key; the machine presents this name as its hostname and as T3's label.
+            'machine_name' => InstanceMachineName::intent($instance),
             'config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096',
                 ...InstancePlacement::config($runtime->incus_project, $runtime->idmap_size),
                 ...(! $ownProxy && ! isset($clone['proxy_environment']) ? []
                     : array_combine(array_map(static fn (string $key): string => 'environment.'.$key, ['NO_PROXY', 'no_proxy']), array_values($proxy)))],
-            'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => '40GiB',
+            'root_disk_pool' => InstanceHostIntent::Pool, 'root_disk_size' => self::rootSize($instance, $runtime),
             // A runtime recorded in the nested-fleet project starts from the nested-fleet image; every other one from the normal image.
             'image' => $runtime->incus_project === InstancePlacement::NestedProject ? InstanceImage::NestedAlias : self::Image,
             'address' => $runtime->bridge_address, 'network' => InstanceHostIntent::Network,
@@ -321,6 +332,24 @@ final readonly class InstanceContainer
     }
 
     /**
+     * The root disk size: the Gateway setting for a nested-fleet default, whose quota also counts the seeds its copies pin; 40GiB for
+     * every other container, a copy among them (docs/reference/development-containers.md#the-root-disk).
+     */
+    public static function rootSize(Instance $instance, InstanceRuntime $runtime): string
+    {
+        if ($instance->name !== DefaultInstanceName::Name || $runtime->incus_project !== InstancePlacement::NestedProject) {
+            return self::RootSize;
+        }
+        $size = config('instances.nested_default_root_size');
+        if (! is_string($size) || preg_match('/^[1-9][0-9]*GiB$/', $size) !== 1 || (int) $size < (int) self::RootSize) {
+            throw new ResourceOperationException('instance.nested_root_size_invalid',
+                'ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE must be a size in GiB of at least '.self::RootSize.', such as 80GiB.', 503);
+        }
+
+        return $size;
+    }
+
+    /**
      * The exact effective devices that the start guard of a nested-fleet container permits: its root disk, NIC, the two read-only
      * shared folders, a clone's T3 proxy and the disk of an inner volume (docs/reference/development-containers.md#the-container).
      *
@@ -329,7 +358,7 @@ final readonly class InstanceContainer
     private function allowedDevices(Instance $instance, InstanceRuntime $runtime): array
     {
         return [
-            'root' => ['type' => 'disk', 'path' => '/', 'pool' => InstanceHostIntent::Pool, 'size' => '40GiB'],
+            'root' => ['type' => 'disk', 'path' => '/', 'pool' => InstanceHostIntent::Pool, 'size' => self::rootSize($instance, $runtime)],
             'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => InstanceHostIntent::Network,
                 'ipv4.address' => $runtime->bridge_address, 'security.port_isolation' => 'true',
                 'security.acls' => InstanceHostIntent::NicAcl.','.$runtime->container_name,
@@ -406,26 +435,29 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project'],
-            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600'],
+                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
+            'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame],
             // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py
             // `proxy-files`): the composed one, with the copy's private names and a nested fleet's inner fleet. A copy of a default with a
             // Node service elsewhere gets it even at the base, so that host goes. Absent, the seed's drop-ins stay.
             ...($ownProxy || $resetProxy ? ['proxy_environment' => $proxy] : []),
             // The container phase writes these before a copy's first start, so its first boot, T3 included, reads them: the files every
             // container needs, which a seed taken before them lacks. A container that a migrate builds from the image has the files already.
-            ...($source === null ? [] : ['boot_files' => self::bootFiles()]),
+            // The machine-info file is one of them: T3's first start reads its label from it (InstanceMachineName).
+            ...($source === null ? [] : ['boot_files' => [...self::bootFiles(), InstanceMachineName::bootFile($instance)]]),
+            // `before_start`: the files T3 and its providers read at its start. The container phase writes them before the copy's first start, with the
+            // model environment, and the file T3's unit waits for last; the agent part finds them in place.
             'files' => [
-                ['path' => self::InstanceFile, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
+                ['path' => self::InstanceFile, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => "# Managed by Orbit.\n"
                     ."ORBIT_INSTANCE_ID={$instance->id}\nORBIT_INSTANCE={$instance->name}\nORBIT_PROJECT={$project->slug}\n"
                     ."ORBIT_PROJECT_ID={$project->id}\nORBIT_PROJECT_NAME=".InstanceEnvironmentRenderer::quote(str_replace(["\r", "\n"], ' ', $project->name))."\n"
                     ."ORBIT_NODE={$node->name}\nORBIT_URL=".($url ?? '')."\n"
                     .($this->servesDevPorts($instance, $runtime) ? 'ORBIT_DEV_PORTS='.InstanceDevPorts::First.'-'.InstanceDevPorts::Last."\n"
                         .'ORBIT_DEV_PORTS_TAKEN='.implode(',', app(InstanceDevPorts::class)->excluded($node))."\n" : '')],
-                ['path' => '/home/agent/.codex/config.toml', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
-                ['path' => '/home/agent/.claude.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
+                ['path' => '/home/agent/.codex/config.toml', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'content' => $codex],
+                ['path' => '/home/agent/.claude.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['hasCompletedOnboarding' => true]],
                 // A task copy's turns pick their effort through these instances: stock T3's CLI takes none.
-                ['path' => '/home/agent/.t3/userdata/settings.json', 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
+                ['path' => '/home/agent/.t3/userdata/settings.json', 'before_start' => true, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'json' => ['linkedEnvironmentsEnabled' => true,
                     ...($instance->task_workspace_owner_id === null ? [] : ['providerInstances' => self::claudeInstances()])]],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.

@@ -1074,3 +1074,49 @@ it('registers one task family with direct selectors and no old aliases', functio
             ->and($commands[$name]->getDefinition()->hasOption('subtask'))->toBeFalse();
     }
 });
+
+describe('the pull request mode of a task group', function (): void {
+    it('sends the mode task:create names', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+        expect(Artisan::call('task:create', ['title' => 'Mode', '--project' => '1', '--brief' => 'Work', '--pr-mode' => 'pr_when_done', '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))
+            ->toBe(['project_id' => 1, 'title' => 'Mode', 'brief' => 'Work', 'pr_mode' => 'pr_when_done']);
+    });
+
+    it('sends the mode task:update names', function (): void {
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-update/updated'));
+        expect(Artisan::call('task:update', ['task' => '1', '--pr-mode' => 'review_before_pr', '--json' => true]))->toBe(0);
+        expect(json_decode($mock->getLastRequest()?->body()->all(), true, flags: JSON_THROW_ON_ERROR))->toBe(['pr_mode' => 'review_before_pr']);
+    });
+
+    it('refuses a value that is no mode, and the mode on a subtask, before a Gateway request', function (string $command, array $options, string $code): void {
+        $mock = MockClient::global([]);
+        expect(Artisan::call($command, [...$options, '--json' => true]))->toBe(1);
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error']['code'])->toBe($code);
+        $mock->assertNothingSent();
+    })->with([
+        'create' => ['task:create', ['title' => 'Mode', '--project' => '1', '--brief' => 'Work', '--pr-mode' => 'merge_when_green'], 'task.pr_mode_invalid'],
+        'update' => ['task:update', ['task' => '1', '--pr-mode' => 'merge_when_green'], 'task.pr_mode_invalid'],
+        'subtask' => ['task:create', ['--parent' => '1', 'title' => 'Step', '--brief' => 'Work', '--pr-mode' => 'pr_when_done'], 'task.option_invalid'],
+    ]);
+
+    it('shows the mode, its source and the publication of a task copy group', function (): void {
+        $reply = json_decode(gateway_fixture('tasks/task-show/default')['body'], true, flags: JSON_THROW_ON_ERROR);
+        $reply['data'] = [...$reply['data'], 'pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => ['mode' => 'review_before_pr',
+            'mode_source' => 'project', 'state' => 'refused', 'check_id' => 17, 'commit' => str_repeat('b', 40), 'operation_id' => null, 'error_code' => 'tasks.copy_publish_held']];
+        MockClient::global([ShowTaskRequest::class => MockResponse::make($reply)]);
+
+        expect(Artisan::call('task:show', ['task' => '1']))->toBe(0);
+        expect(Artisan::output())->toContain('Pull request mode')->toContain('review_before_pr (project)')->toContain('refused: tasks.copy_publish_held');
+    });
+
+    it('lists the groups waiting for release in task:status', function (): void {
+        $reply = json_decode(gateway_fixture('tasks/task-status/enabled')['body'], true, flags: JSON_THROW_ON_ERROR);
+        $reply['data']['releases'] = [['id' => 42, 'project_id' => 7, 'project' => '<project>', 'project_code' => 'ORB', 'title' => 'Add the export',
+            'state' => 'waiting_for_release', 'check_id' => 17, 'commit' => str_repeat('b', 40), 'error_code' => null]];
+        MockClient::global([ShowTasksStatusRequest::class => MockResponse::make($reply)]);
+
+        expect(Artisan::call('task:status'))->toBe(0);
+        expect(Artisan::output())->toContain('Waiting for release')->toContain('ORB-42')->toContain('waiting_for_release');
+    });
+});

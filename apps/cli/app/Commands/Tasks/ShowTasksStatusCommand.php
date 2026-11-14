@@ -12,6 +12,7 @@ use Orbit\Sdk\Responses\Tasks\TaskAssistanceResponse;
 use Orbit\Sdk\Responses\Tasks\TaskCapacityResponse;
 use Orbit\Sdk\Responses\Tasks\TaskMergeResponse;
 use Orbit\Sdk\Responses\Tasks\TaskPlaceQueueResponse;
+use Orbit\Sdk\Responses\Tasks\TaskReleaseResponse;
 use Orbit\Sdk\Responses\Tasks\TasksStatusResponse;
 
 final class ShowTasksStatusCommand extends TaskCommand
@@ -53,6 +54,7 @@ final class ShowTasksStatusCommand extends TaskCommand
         ]));
         $this->renderAssistance($status->assistance ?? []);
         $this->renderMerges($status->merges);
+        $this->renderReleases($status->releases);
         $this->renderCapacity($status->capacity);
         $this->writeHumanMessage("Request ID: {$status->requestId}");
 
@@ -104,6 +106,29 @@ final class ShowTasksStatusCommand extends TaskCommand
                 ], $failures),
             ));
         }
+    }
+
+    /**
+     * Task copy groups whose pull request waits for `task:publish <task>`, or whose automatic publish was refused.
+     *
+     * @param  list<TaskReleaseResponse>  $groups
+     */
+    private function renderReleases(array $groups): void
+    {
+        if ($groups === []) {
+            return;
+        }
+
+        $this->writeSection('Waiting for release');
+        ConsoleWriter::write($this->output, $this->humanRenderer()->table(
+            ['Group', 'Title', 'State', 'Code'],
+            array_map(static fn (TaskReleaseResponse $group): array => [
+                $group->reference(),
+                $group->title,
+                $group->state,
+                $group->errorCode,
+            ], $groups),
+        ));
     }
 
     /** @param list<TaskMergeResponse> $groups */

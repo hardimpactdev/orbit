@@ -33,6 +33,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
         private readonly ?array $deliverables = null,
         private readonly ?array $topology = null,
         private readonly ?TaskAgentsInput $agents = null,
+        private readonly ?string $prMode = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -63,6 +64,7 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
                 'brief' => $this->brief,
                 'status' => $this->status,
                 'preview' => $this->preview,
+                'pr_mode' => $this->prMode,
                 'position' => $this->position,
                 'deliverables' => $this->deliverables,
                 'topology' => $this->topology,

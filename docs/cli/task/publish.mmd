@@ -2,6 +2,7 @@ sequenceDiagram
   %% Target design: ADR 0244 task, R2-R4, swamp-tasks-model. Nick 2026-11-06: a task VM never holds a GitHub credential; the push step mints its token when it runs, not at admission (an installation token lives one hour). docs/reference/tasks.md#publish-an-external-group.
   %% Tightened: flow-tighten 2026-11-02, rule 16 (no tip read: a push without force refuses a divergent tip and pushes nothing for an identical one); rule 22 (no shipped scripts: task VM work is `@swamp/ssh exec` argv, 209 work is inline `git` and `gh api`; one workspace check, since import checks the bundled commit and tree).
   %% Task copy (2026-11-14): a group whose workspace is a task copy exports through its container's workspace phase; the push stays on the worker. The .env Orbit wrote never leaves a copy: the range from the copy's start is checked before the mint. docs/reference/tasks.md#task-copy.
+  %% Task group modes (ADR 0257): a copy group's done check publishes without --check, by a person's release or by the task:pr-when-done tick (docs/cli/task/pr-when-done.mmd), with the same admission and run. docs/reference/tasks.md#task-group-modes.
   %% status: migrated
   %% command: task:publish
   %% kind: tasks.publish
@@ -19,24 +20,28 @@ sequenceDiagram
   CLI->>GW: task:publish 42<br/>--check=17
   %%> Command:
   %%> - `orbit task:publish 42 --check=17`
-  %%> - syntax: `[task] --check=ID [--title=TEXT --body=TEXT [--draft]] [--idempotency-key=KEY] [--json]`
+  %%> - syntax: `[task] [--check=ID [--title=TEXT --body=TEXT [--draft]]] [--idempotency-key=KEY] [--json]`
   %%> Input:
   %%> - the task group, and the passed handoff check whose commit is published
   %%> - optionally a title and body together, to open or update the pull request; without them it only pushes
+  %%> - a task copy's group may omit `--check`, `--title` and `--body`: the release of its done check, with Orbit's title and body, as a ready pull request
   Note over GW: Check the candidate<br/>task #5165 · record the key names
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
   %%> - group 42 is an open external group with its own task VM workspace, or with its own task copy whose container runs (`tasks.instance_not_running`) and has a start commit
   %%> - a task copy's Project is released for publishing: a nested-fleet trial Project, or listed in the Gateway's `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`; otherwise HTTP 409 `tasks.copy_publish_held`, and the checked commit stays in the copy
   %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
+  %%> - a task copy's last completion did not fail (`tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`), and the copy is `active` (`tasks.copy_not_ready`)
   %%> - group 42 is provisioned: while its `tasks.provision` Operation waits or runs, the publish answers `tasks.not_provisioned` (409) with that Operation's ID in `details.operation_id`
   %%> - a task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
+  %%> - without `--check`: the group's work is done, else `tasks.not_done`; the done check is the check, and the request is the same from here on (docs/reference/tasks.md#when-the-work-is-done)
   %%> - no other task runs on group 42; the Gateway holds one lock per group
   %%> What it does:
   %%> - captures the repository, default branch, commit, checked tree and the task VM's SSH target
   %%> - for a task copy: its Node's SSH target, its container, its start commit and the path of the `.env` Orbit wrote, from the Instance's record
   %%> - names two `task-publish-token-<uuid>` vault keys for the token and the Git authorization header; it mints and writes no value at admission
+  %%> - the `task:pr-when-done` tick admits through this same step, keyed `pr-when-done:<group>:<check>`; its refusal is stored on the group as the publication's error code
   %%> Result:
   %%> - task #5165 recorded with the full intent
   GW->>SW: Start run, full intent<br/>operation-task-publish
@@ -63,6 +68,7 @@ sequenceDiagram
     %%> How:
     %%> - the workspace phase bundles the branch as `agent`, checks its head and tree against the candidate, and fetches it to this worker; the Node keeps no copy
     %%> - the Node also pulls the copy's `.env` as a regular file and fetches it beside the bundle; its bytes enter no result or log
+    %%> - and the copy's proposed pull request body for the task branch, `.git/orbit/proposed-pr-bodies/task-GROUP.md`, when it is a regular file of at most 64 KiB: data, never run; without it the publish sends the caller's text
   else a task VM
     SW->>N: Read the index
     %%> How:
@@ -99,12 +105,16 @@ sequenceDiagram
   %%> How:
   %%> - typed data compares the imported commit and tree without a second workspace observation
   opt a task copy
+    Note over SW: Add the waiver lines
+    %%> How:
+    %%> - typed data writes the PR title and body: the caller's body, then each `Docs-unaffected:` line of the proposed body that the body lacks, in the file's order, while the body stays within 65,536 characters
+    %%> - the next checks read this text, so the PR gets exactly what they checked; a copy without a pull request skips the step
     Note over SW: Check the environment file
     %%> How:
     %%> - every commit from the copy's start to the candidate must hold the `.env` path exactly as the start does; a commit that adds it, even one a later commit removes, refuses with `tasks.publish_secret_path` before any token exists
     Note over SW: Check the .env content
     %%> How:
-    %%> - every object new in the range (file contents, file names, commit messages) and the pull request title and body are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
+    %%> - every object new in the range (file contents, file names, commit messages) and the final pull request title and body, waiver lines included, are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
     %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`
     Note over SW: Read the .env check
     %%> How:
@@ -167,6 +177,7 @@ sequenceDiagram
     %%> Result:
     %%> - a PR receipt makes the group watch its PR and release its VM; a branch-only push keeps its workspace
     %%> - a task copy stays until `task:cancel` or the group's end; its group keeps its status
+    %%> - Orbit merges no pull request that a task copy's publish opened (`tasks.copy_pr_no_merge`); a person merges it on GitHub
     %%> - task #5165 succeeds
     opt PR receipt
       GW->>SW: Delete the task VM
@@ -187,6 +198,7 @@ sequenceDiagram
     Note over GW: Mark the task failed<br/>group kept · rerun after a fix
     %%> Result:
     %%> - task #5165 fails; group 42 and its workspace stay as they are
+    %%> - a publish that the `task:pr-when-done` tick started shows the group's publication as `refused` with this code; the tick does not start the same done check again
     %%> On GitHub:
     %%> - a push or PR that started stays; there is no rollback
     %%> Retry:

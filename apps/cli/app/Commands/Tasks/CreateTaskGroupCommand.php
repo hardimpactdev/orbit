@@ -43,6 +43,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--reviewer-provider= : Reviewer provider in a task copy}
         {--reviewer-model= : Reviewer model in a task copy}
         {--reviewer-effort= : Reviewer effort in a task copy}
+        {--pr-mode= : review_before_pr or pr_when_done: what Orbit does once the work of a task copy is done}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -53,7 +54,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         $child = $this->option('parent') !== null;
         $unsupported = $child
             ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe', 'implementer-provider', 'implementer-model', 'implementer-effort',
-                'reviewer-provider', 'reviewer-model', 'reviewer-effort']
+                'reviewer-provider', 'reviewer-model', 'reviewer-effort', 'pr-mode']
             : ['deliverables', 'topology'];
         foreach ($unsupported as $option) {
             if (! in_array($this->option($option), [null, false], true)) {
@@ -72,6 +73,10 @@ final class CreateTaskGroupCommand extends TaskCommand
         $review = $this->option('review');
         if ($review !== null && ! in_array($review, ['manual', 'automatic'], true)) {
             return $this->renderGatewayFailure('task.review_invalid', 'Review must be manual or automatic.');
+        }
+        $prMode = $this->prModeOption('pr-mode');
+        if ($prMode === false) {
+            return self::FAILURE;
         }
         $status = $this->option('status');
 
@@ -137,6 +142,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 currentRecipe: $this->option('current-recipe') === true ? true : null,
                 review: is_string($review) ? $review : null,
                 agents: $agents,
+                prMode: $prMode,
             ),
             TaskRecordResponse::class,
             ['Create task group', 'Creating task group', 'Created task group'],

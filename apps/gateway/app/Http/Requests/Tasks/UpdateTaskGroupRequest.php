@@ -8,6 +8,7 @@ use App\Data\Tasks\UpdateTaskData;
 use App\Data\Tasks\UpdateTaskGroupData;
 use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
@@ -47,6 +48,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::enum(TaskGroupStatus::class)],
+            'pr_mode' => ['sometimes', 'string', Rule::enum(TaskPrMode::class)],
             ...TaskCopyAgent::rules(),
         ];
     }
@@ -57,7 +59,7 @@ final class UpdateTaskGroupRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->route('task') instanceof Task && $this->route('task')->parent_id !== null
                 ? ['title', 'brief', 'position', 'deliverables', 'topology', 'status']
-                : ['title', 'brief', 'status', 'preview', ...TaskCopyAgent::fields()]);
+                : ['title', 'brief', 'status', 'preview', 'pr_mode', ...TaskCopyAgent::fields()]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -73,6 +75,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             status: is_string($status) ? TaskGroupStatus::from($status) : null,
             preview: is_bool($this->validated('preview')) ? $this->validated('preview') : null,
             agents: TaskCopyAgent::provided($this->validated()),
+            prMode: is_string($this->validated('pr_mode')) ? TaskPrMode::from($this->validated('pr_mode')) : null,
         );
     }
 

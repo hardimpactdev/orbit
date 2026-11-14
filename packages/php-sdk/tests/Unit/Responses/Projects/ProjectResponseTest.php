@@ -52,4 +52,9 @@ describe(ProjectResponse::class, function (): void {
             ->and($response->root)
             ->toBeNull();
     });
+    it('maps task_pr_mode, null included, and leaves it out when the Gateway sends none', function (): void {
+        expect(ProjectResponse::fromGatewayData(['id' => 3, 'task_pr_mode' => 'pr_when_done'], 'request-id')->taskPrMode)->toBe('pr_when_done')
+            ->and(ProjectResponse::fromGatewayData(['id' => 3, 'task_pr_mode' => null], 'request-id')->toArray())->toMatchArray(['task_pr_mode' => null])
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('task_pr_mode');
+    });
 });

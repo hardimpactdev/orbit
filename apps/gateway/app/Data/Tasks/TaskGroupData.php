@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace App\Data\Tasks;
 
 use App\Domain\Compute\VmPower;
+use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPlaces;
+use App\Domain\Tasks\TaskPrMode;
+use App\Domain\Tasks\TaskPrModeChoice;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\TaskVms\TaskVmState;
@@ -85,6 +89,9 @@ final class TaskGroupData extends Data
         public ?string $reviewerProvider = null,
         public ?string $reviewerEffort = null,
         public array $resolvedAgents = [],
+        public ?TaskPrMode $prMode = null,
+        public ?string $prModeSource = null,
+        public ?TaskPublicationData $publication = null,
     ) {}
 
     /** @return array<string, mixed> */
@@ -137,6 +144,12 @@ final class TaskGroupData extends Data
     {
         $taskable = $group->taskable;
         $status = $group->groupStatus();
+        // Only a task copy's group has a mode (docs/reference/tasks.md#task-group-modes).
+        try {
+            $mode = TaskInstanceWorkspace::forGroup($group) === null ? null : TaskPrModeChoice::of($group);
+        } catch (ResourceOperationException) {
+            $mode = null;
+        }
 
         return new self(
             lastActivityAt: $activity['last_activity_at'],
@@ -149,6 +162,9 @@ final class TaskGroupData extends Data
             currentRecipe: $group->current_recipe ?? false,
             review: $group->review_mode,
             reviewAndMerge: TaskReviewAndMergeData::fromModel($group),
+            prMode: $mode?->mode,
+            prModeSource: $mode?->source,
+            publication: TaskPublicationData::fromModel($group),
 
             id: $group->id,
             parentId: null,

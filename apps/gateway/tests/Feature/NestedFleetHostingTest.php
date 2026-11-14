@@ -11,6 +11,7 @@ use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
+use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -175,8 +176,10 @@ describe('the recorded Incus project', function (): void {
             ->and($intent['config'])->not->toHaveKeys(['raw.lxc', 'raw.idmap', 'security.privileged'])
             // A nested runtime starts from the nested-fleet image; the normal intent below keeps `orbit-instance`.
             ->and($intent['image'])->toBe('orbit-instance-nested')
+            // The default's root size is the Gateway setting; a copy keeps 40GiB, whose quota counts only its own blocks.
+            ->and($intent['root_disk_size'])->toBe($clone ? '40GiB' : '80GiB')
             ->and($intent['allowed_devices'])->toBe([
-                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => '40GiB'],
+                'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => $clone ? '40GiB' : '80GiB'],
                 'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => 'orbitinst0', 'ipv4.address' => $runtime->bridge_address,
                     'security.port_isolation' => 'true', 'security.acls' => 'orbitinst0-proxy,'.$runtime->container_name,
                     'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject',
@@ -187,6 +190,33 @@ describe('the recorded Incus project', function (): void {
                 ...($clone ? ['t3' => ['type' => 'proxy', 'listen' => 'tcp:10.44.0.7:'.$runtime->t3_port, 'connect' => 'tcp:'.$runtime->bridge_address.':3773', 'nat' => 'true']] : []),
             ]);
     })->with([false, true]);
+});
+
+describe('the root disk size', function (): void {
+    it('gives a nested-fleet default the setting\'s size, and a copy and a normal default 40GiB', function (): void {
+        config(['instances.nested_default_root_size' => '120GiB']);
+        $node = containerDefaultNode();
+        $default = recordedNestedInstance(containerDefaultProject(), $node);
+        $default->runtime()->firstOrFail()->update(['seed_commit' => str_repeat('a', 40)]);
+        $copy = recordedNestedInstance($default->project, $node, 'feature', $default);
+        $normal = Instance::query()->create(['project_id' => otherProject('normal')->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal/default']);
+        app(InstanceContainer::class)->reserve($normal, $node);
+        $sizes = array_map(static function (Instance $instance): array {
+            $intent = app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail());
+
+            return [$intent['root_disk_size'], $intent['allowed_devices']['root']['size'] ?? null];
+        }, [$default, $copy, $normal]);
+
+        expect($sizes)->toBe([['120GiB', '120GiB'], ['40GiB', '40GiB'], ['40GiB', null]]);
+    });
+
+    it('refuses a setting that is not a GiB size of at least 40GiB', function (mixed $size): void {
+        config(['instances.nested_default_root_size' => $size]);
+        $instance = recordedNestedInstance(containerDefaultProject(), containerDefaultNode());
+
+        expect(fn () => app(InstanceContainer::class)->intent($instance, $instance->runtime()->firstOrFail()))
+            ->toThrow(fn (ResourceOperationException $error) => expect($error->errorCode)->toBe('instance.nested_root_size_invalid'));
+    })->with(['39GiB', '80GB', '080GiB', '80 GiB', '', null, 80]);
 });
 
 describe('the inner volume', function (): void {
@@ -247,8 +277,12 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             'name' => 'default', 'checkout_path' => '/test/default']), $node->refresh());
         $expected = app(BaselineNormalInstanceHostIntent::class)->for($node);
         $actual = app(InstanceHostIntent::class)->for($node);
-        // `own_site` came after the frozen copy: every Node gets it alike, and ContainerDevPortsTest pins it.
-        expect(json_encode(array_diff_key($actual ?? [], ['own_site' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
+        // `own_site` came after the frozen copy: every Node gets it alike, and ContainerDevPortsTest pins it. So did `machine_names`,
+        // the presented name of each container for the converge's files; ContainerCloneInstanceTest pins it.
+        $default = Instance::query()->where('name', 'default')->sole();
+        expect($actual['machine_names'] ?? null)->toBe([['project' => 'orbit-instances', 'container' => 'instance-'.$default->id,
+            ...InstanceMachineName::intent($default)]])
+            ->and(json_encode(array_diff_key($actual ?? [], ['own_site' => true, 'machine_names' => true]), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR))
             ->and($actual)->not->toHaveKeys(['nested', 'runtime_projects']);
     })->with(['absent', 'off'])->with([false, true]);
 
@@ -273,9 +307,20 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             $files = array_search('files', array_keys($expected['clone']), true);
             $expected['clone'] = [...array_slice($expected['clone'], 0, $files, true), 'boot_files' => $actual['clone']['boot_files'],
                 ...array_slice($expected['clone'], $files, null, true)];
+            // The second change: T3 starts with the copy (development-containers.md#t3-starts-with-the-copy). The unit's condition file,
+            // the model environment's frame line, and the files that go in before the first start.
+            $expected['clone']['t3']['condition'] = '/etc/orbit/instance';
+            $expected['clone']['model_environment']['frame'] = '#orbit-model-environment';
+            foreach ($expected['clone']['files'] as $index => $file) {
+                $expected['clone']['files'][$index] = ['path' => $file['path'], 'before_start' => true, ...array_diff_key($file, ['path' => true])];
+            }
+            expect(array_column($actual['clone']['files'], 'before_start', 'path'))->toBe(['/etc/orbit/instance' => true,
+                '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
                 ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
-                    '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh']);
+                    '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh',
+                    // The presented machine name that T3's first start reads (InstanceMachineName::bootFile).
+                    '/etc/machine-info']);
         }
         expect(json_encode($containers->intent($instance, $runtime), JSON_THROW_ON_ERROR))->toBe(json_encode($expected, JSON_THROW_ON_ERROR));
     })->with([false, true]);
@@ -334,6 +379,9 @@ function normalContainerSinceMain(Instance $instance, InstanceRuntime $runtime):
 {
     $expected = app(BaselineNormalInstanceContainer::class)->intent($instance, $runtime);
     $expected['environment'][] = 'PLAYWRIGHT_BROWSERS_PATH=0';
+    // The presented machine name came after main, right after the Incus name (InstanceMachineName).
+    $name = array_search('name', array_keys($expected), true) + 1;
+    $expected = [...array_slice($expected, 0, $name, true), 'machine_name' => InstanceMachineName::intent($instance), ...array_slice($expected, $name, null, true)];
 
     return $expected;
 }

@@ -10,6 +10,7 @@ final readonly class TasksStatusResponse
      * @param  list<TaskAssistanceResponse>|null  $assistance  Null when this route does not report assistance.
      * @param  string|null  $lastTickAt  Retired scheduler observation; null.
      * @param  list<TaskMergeResponse>  $merges  Open tasks with a pull request that Orbit reviews and merges. Empty when this route does not report them.
+     * @param  list<TaskReleaseResponse>  $releases  Task copy groups waiting for release or refused. Empty when this route does not report them.
      */
     public function __construct(
         public bool $enabled,
@@ -18,6 +19,7 @@ final readonly class TasksStatusResponse
         public ?string $lastTickAt = null,
         public array $merges = [],
         public TaskCapacityResponse $capacity = new TaskCapacityResponse([], []),
+        public array $releases = [],
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -42,6 +44,7 @@ final readonly class TasksStatusResponse
             $lastTickAt,
             array_key_exists('merges', $data) ? array_map(static fn (array $group): TaskMergeResponse => TaskMergeResponse::fromGatewayData($group, $requestId), self::rows($data['merges'], $requestId)) : [],
             TaskCapacityResponse::fromGatewayData($data['capacity'] ?? null, $requestId),
+            array_key_exists('releases', $data) ? array_map(static fn (array $group): TaskReleaseResponse => TaskReleaseResponse::fromGatewayData($group, $requestId), self::rows($data['releases'], $requestId)) : [],
         );
     }
 
@@ -63,6 +66,7 @@ final readonly class TasksStatusResponse
      *     merges: list<array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, status: string,
      *         pr_url: string|null, pr_branch: string|null, merge_status: string|null, merge_reason: string|null}>,
      *     capacity: array{hosts: list<array<string, mixed>>, queue: list<array<string, mixed>>},
+     *     releases: list<array{id: int, project_id: int, project: string|null, project_code: string|null, title: string, state: string, check_id: int|null, commit: string|null, error_code: string|null}>,
      *     request_id: string
      * }
      */
@@ -81,6 +85,7 @@ final readonly class TasksStatusResponse
             'last_tick_at' => $this->lastTickAt,
             'merges' => array_map(static fn (TaskMergeResponse $group): array => $group->toArray(), $this->merges),
             'capacity' => $this->capacity->toArray(),
+            'releases' => array_map(static fn (TaskReleaseResponse $group): array => $group->toArray(), $this->releases),
             'request_id' => $this->requestId,
         ];
     }

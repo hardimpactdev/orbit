@@ -1,4 +1,4 @@
-source_sha256 = "65cec06095493ae5456adacf24f3b2119a59633c7a5bdd626131002b0277c68f"
+source_sha256 = "d74338800eaf1f9afe1ac4cb6f70798b3227b2d0087bec02a7c550d4357e5cfe"
 cases = [
   "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
   "test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it",
@@ -6,6 +6,7 @@ cases = [
   "test_the_candidate_holds_no_environment_file_that_the_create_excluded",
   "test_the_native_end_check_runs_after_a_success_on_either_path",
   "test_a_copy_runs_its_export_and_only_a_succeeded_bundle_step_starts_the_import",
+  "test_the_export_names_the_task_branch_proposed_body_and_its_worker_path",
   "test_the_environment_file_never_leaves_a_copy_in_any_commit_of_the_range",
   "test_a_copy_mints_only_after_its_content_check_passed",
   "test_the_content_check_passes_a_clean_range_and_public_or_short_values",
@@ -17,6 +18,8 @@ cases = [
   "test_a_refusal_never_names_a_path_that_holds_a_value",
   "test_a_file_name_at_the_top_names_its_commit",
   "test_the_content_check_refuses_a_value_in_the_pull_request_text",
+  "test_the_content_check_reads_the_final_body_with_the_waiver_lines",
+  "test_the_content_check_refuses_as_unchecked_when_the_pull_request_text_is_missing",
   "test_a_nested_copy_refuses_its_club_key_without_naming_it",
   "test_without_a_club_key_the_second_read_of_the_render_adds_nothing",
   "test_the_club_key_reference_is_read_only_for_a_nested_copy",
@@ -24,8 +27,8 @@ cases = [
   "test_an_error_in_the_content_check_refuses_without_the_content_code",
 ]
 file = "swamp/tests/task_copy_publish_test.py"
-# ESTIMATE: local 36.6s for the whole file of 22 cases (python3 -I, Beast, load 7-9) x 2.1, rounded up, plus 1s; runs took 30-37s, one 43s run under a parallel load. Keep the estimate until five completed hosted samples establish p90.
-cost = 78
+# ESTIMATE: local 36.6s for the whole file of 22 cases (python3 -I, Beast, load 7-9) plus 0.72s for its three content-check and export-intent cases (driver run of 8eb9e97ec4, load 5-8: 0.42s, 0.26s, 0.04s) = 37.4s x 2.1, rounded up, plus 1s. The three Ansible proposed-body export cases run in task_copy_publish_proposed_body_test.py. Keep the estimate until five completed hosted samples establish p90.
+cost = 80
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/task-instance-workspace.yml",

@@ -20,6 +20,7 @@ sequenceDiagram
   %%> What it records:
   %%> - the copy's Incus project and container, its Node as the SSH target and the cases file; no secret, and no step calls back
   %%> Refuses:
+  %%> - a copy whose last completion failed: `tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`
   %%> - a group without a copy, a copy that is not active or not running, a Project without a nested fleet, a copy turn that may still run, or another operation on the group
   %%> - a copy where a proof or an agent turn already ran, until a copy can restore `base`
   GW-->>CLI: 202 Accepted<br/>operation ID
