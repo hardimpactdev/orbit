@@ -614,9 +614,9 @@ A normal container without these keeps the image's value only. Every writer of t
 | Units: T3, its agents, each Process | `/etc/systemd/system.conf.d/99-orbit-node-services.conf`, and systemd's manager environment | A unit's next start |
 | Login shells | `/etc/profile.d/99-orbit-node-services.sh` | The next login shell |
 
-A create and a clone write the keys. A clone of a nested-fleet default also writes both files before its first start, so its first boot, T3 included, reads the value. The Node service apply writes the files and the manager environment when a target changes.
+A create and a clone write the keys. A clone of a nested-fleet default also writes both files before its first start, so its first boot, T3 included, reads the value. `instance_node_services.py` is the one writer of the files and the manager environment, through its function `write_proxy_environment` and its command `proxy`. The Node service apply calls it when a target changes. The [start of a stopped clone](#a-stopped-nested-fleet-clone-starts) also calls it.
 
-A nested-fleet container made before these keys, such as the Orbit default, keeps the image's value until a later fleet step writes them. Its copies do not wait for that: each copy gets the keys and the files at its create.
+A nested-fleet container made before these keys, such as the Orbit default, keeps the image's value until a start phase writes the composed value. Its copies do not wait for that: each copy gets the keys and the files at its create.
 
 A container takes no DNS server from DHCP (`/etc/netplan/90-orbit-no-dns.yaml`), and its resolver has no fallback (`/etc/systemd/resolved.conf.d/90-orbit-no-dns.conf`). So a name lookup in a container fails at once.
 
@@ -1605,7 +1605,9 @@ The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check 
 
 A success records `power_state` `running`. The result also gives `nested_fleet_club_key`.
 
-Each step leaves what already runs as it is, so a start of a running copy only checks it. The start does not wait for T3: T3 starts with the container, as at every boot. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
+Each step leaves what already runs as it is, so a start of a running copy only checks it and writes its proxy bypass. The start does not wait for T3: T3 starts with the container, as at every boot.
+
+Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-container) for units and login shells. T3 restarts once so that it reads the value, but only when the write changed the drop-ins or the manager environment and this start booted the container. Incus records each start as `last_used_at`. A copy that was already running keeps its T3, because someone may work in it. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
 
 ### Reset
 
@@ -1642,7 +1644,7 @@ Each phase runs on the Node and reaches the inner Incus with `incus exec` into t
 | --- | --- | --- |
 | Check | `instance-fleet-check.yml` | Waits for the inner Incus and compares the fleet with its rules. It changes nothing |
 | Rules | `instance-fleet-rules.yml` | Applies the fleet rules below to the stopped fleet, then checks them |
-| Start | `instance-fleet-start.yml` | Compares the fleet with its rules, starts the stopped nested containers and brings up `wg-nested`. It then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor |
+| Start | `instance-fleet-start.yml` | Checks the rules, starts the stopped nested containers, brings up `wg-nested`. Then checks the containers and the tunnel (`instance-fleet-reach.yml`), never Doctor. A stopped clone's start adds `instance-fleet-proxy.yml` |
 | Refresh | `instance-fleet-refresh.yml` | Migrates and restarts the nested Gateway, converges the three nested Nodes, waits for readiness (`instance-fleet-ready.yml`), stops the fleet and takes `base` again |
 | Resume | `instance-fleet-resume.yml` | Runs the start, then waits for readiness: the fleet after a passed refresh, or the fleet of a restored seed |
 | Reset | `instance-fleet-reset.yml` | Restores `base` on the three nested containers, then runs the start and waits for readiness |

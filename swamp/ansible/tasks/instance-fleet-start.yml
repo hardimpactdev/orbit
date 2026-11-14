@@ -1,7 +1,7 @@
 ---
 # Start the nested fleet of an Instance container: check the fleet rules, start the three nested containers, link the Club key and bring
-# up the operator tunnel `wg-nested`. It ends with what a start can promise (instance-fleet-reach.yml): the containers run and the
-# tunnel reaches the hub. It never waits for Doctor: in a deployment the checkout has just moved under a running nested Gateway, whose
+# up the operator tunnel `wg-nested`. The start of a stopped clone also keeps the fleet off the egress proxy (instance-fleet-proxy.yml).
+# It ends with what a start can promise (instance-fleet-reach.yml): the containers run and the tunnel reaches the hub. It never waits for Doctor: in a deployment the checkout has just moved under a running nested Gateway, whose
 # schema and processes the refresh brings to the checkout first (docs/cli/instance/container/fleet-refresh.mmd). The deployment and the
 # reset use it; instance-fleet-resume.yml adds the readiness. Input: instance-fleet.yml.
 # The tunnel is made with `ip` and `wg`, never `wg-quick`, which segfaults in the Instance container. Its key is the operator key that the
@@ -117,5 +117,10 @@
   when: "'UP' not in (fleet_tunnel_address.stdout | from_json | first).flags"
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['ip', 'link', 'set', fleet_tunnel, 'up'] }}" }
   changed_when: true
+
+# Only the start of a stopped nested-fleet clone writes the copy's proxy bypass and restarts T3 (instance-fleet-proxy.yml).
+- name: Keep the inner fleet off the egress proxy in a started copy
+  when: fleet_proxy_restart_t3 | default(false) | bool
+  ansible.builtin.include_tasks: instance-fleet-proxy.yml
 
 - { name: Check what the start promises, ansible.builtin.import_tasks: instance-fleet-reach.yml }

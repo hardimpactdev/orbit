@@ -194,7 +194,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2534
+cost = 2596
 slices = 33
 inputs = [
   "bin/swamp-shape-gate",
@@ -202,6 +202,7 @@ inputs = [
   "swamp/ansible/requirements.txt",
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/ansible/tasks/instance-fleet*.yml",
+  "swamp/ansible/instance_node_services.py",
   "swamp/tests/fixtures/instance-fleet-*",
 ]
 
@@ -244,6 +245,8 @@ inputs = [
   "a changed input alone runs its own part, once: the agent contract migrates, restarts and converges" = 138
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 103
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 100
+  "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
+  "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_container_test.ts"

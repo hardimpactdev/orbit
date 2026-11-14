@@ -8,7 +8,7 @@ import { assert, assertEquals, assertStringIncludes } from "jsr:@std/assert@1";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "files", "start", "reach", "ready", "refresh", "converge-node", "reset", "resume", ""];
+const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "converge-node", "reset", "resume", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -24,6 +24,8 @@ const proxy = {
   NO_PROXY: "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
   no_proxy: "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
 };
+/** The Instance container's own proxy bypass (InstanceNodeServiceTargets::proxyEnvironment): the image's base and the inner fleet. */
+const outerBypass = "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24";
 const dropIn = "[Service]\nEnvironment=" + Object.entries(proxy).map(([key, value]) => `"${key}=${value}"`).join(" ") + "\n";
 const environment = Object.fromEntries(Object.entries(proxy).map(([key, value]) => [`environment.${key}`, value]));
 const units = ["/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf", "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf"];
@@ -66,6 +68,8 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
     const name = phase === "" ? "instance-fleet.yml" : `instance-fleet-${phase}.yml`;
     Deno.copyFileSync(new URL(`tasks/${name}`, root), `${folder}/tasks/${name}`);
   }
+  // The fleet's proxy bypass sends instance_node_services.py `proxy` into the container; the play's folder holds it.
+  Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
     "- name: Run one phase of the fleet step",
     "  hosts: localhost",
@@ -97,7 +101,10 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
     containers, tunnel: null, hubKey, nodes,
   }));
   Deno.writeTextFileSync(`${folder}/run/intent.json`, JSON.stringify({
-    container: { project: "orbit-instances-nested", name: "instance-9", workspace: "/srv/workspace" },
+    container: { project: "orbit-instances-nested", name: "instance-9", workspace: "/srv/workspace",
+      config: { "environment.NO_PROXY": outerBypass, "environment.no_proxy": outerBypass }, clone: { t3: { unit: "t3.service" } },
+      // Admitted at 22:59:00Z; the fake's container last started at 23:00:00Z, inside the Operation.
+      bridge_admitted_at: 1794610740000000 },
     fleet: {
       guests,
       layout: {
@@ -1090,6 +1097,67 @@ Deno.test({
       const calls = f.calls();
       assert(!calls.some((call) => call.startsWith("incus config device") || call.startsWith("incus snapshot create")), calls.join("\n"));
       assert(!calls.includes(recordWrite));
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(withStatus("Running"), { club: true });
+    f.change((state) => state.tunnel = structuredClone(tunnelUp));
+    const proxyCalls = (calls: string[]) => calls.filter((call) => call.startsWith("python3 -c <instance_node_services.py> proxy") || call.includes("try-restart"));
+    const restart = ["-e", "fleet_proxy_restart_t3=true"];
+    try {
+      // A deployment's or a create's fleet start: no write and no restart.
+      const plain = f.run("start");
+      assert(plain.ok, plain.output);
+      assertEquals(proxyCalls(f.calls()), []);
+      assertEquals(f.state().outer.proxy, undefined);
+      // instance.start of a copy that this Operation started: the one writer runs, and T3 restarts once because the value changed.
+      const first = f.run("start", restart);
+      assert(first.ok, first.output);
+      assertEquals(proxyCalls(f.calls()), ["python3 -c <instance_node_services.py> proxy", "systemctl try-restart -- t3.service"]);
+      assertEquals(f.state().outer.proxy, { NO_PROXY: outerBypass, no_proxy: outerBypass });
+      // A copy that already has the value: the writer runs, T3 stays.
+      const again = f.run("start", restart);
+      assert(again.ok, again.output);
+      assertEquals(proxyCalls(f.calls()), ["python3 -c <instance_node_services.py> proxy"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
+  ignore: !hasAnsible,
+  fn() {
+    const restart = ["-e", "fleet_proxy_restart_t3=true"];
+    const f = fixture(withStatus("Running"), { club: true });
+    // The container last started at 22:58:00Z, before the Operation's admission at 22:59:00Z: somebody may work in it.
+    f.change((state) => {
+      state.tunnel = structuredClone(tunnelUp);
+      state.outer.lastUsedAt = "2026-11-13T22:58:00.000000000Z";
+    });
+    try {
+      const running = f.run("start", restart);
+      assert(running.ok, running.output);
+      const calls = f.calls();
+      assert(calls.includes("python3 -c <instance_node_services.py> proxy"), calls.join("\n"));
+      assert(!calls.some((call) => call.includes("try-restart")), calls.join("\n"));
+      assertEquals(f.state().outer.proxy, { NO_PROXY: outerBypass, no_proxy: outerBypass });
+      f.change((state) => {
+        delete state.outer.proxy;
+        state.outer.proxyConflict = true;
+      });
+      const conflict = f.run("start", restart);
+      assert(!conflict.ok);
+      assertStringIncludes(conflict.output, "instance.node_service_unit_conflict");
+      assert(!f.calls().some((call) => call.includes("try-restart")));
     } finally {
       f.cleanup();
     }

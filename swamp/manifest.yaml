@@ -85,6 +85,7 @@ additionalFiles:
   - ansible/tasks/instance-fleet-start.yml
   - ansible/tasks/instance-fleet-reach.yml
   - ansible/tasks/instance-fleet-ready.yml
+  - ansible/tasks/instance-fleet-proxy.yml
   - ansible/tasks/instance-fleet-refresh.yml
   - ansible/tasks/instance-fleet-converge-node.yml
   - ansible/tasks/instance-fleet-files.yml
