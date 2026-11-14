@@ -1,0 +1,73 @@
+---
+# The swap of a sleeping container (docs/reference/development-containers.md#sleep-and-wake). `swap` is `open` (the freeze, before
+# the pause) or `close` (every resume: a wake's start, a deployment's or a start's `start` on a Frozen container, a freeze's rescue).
+# Incus writes `memory.swap.max = 0` for the container's cgroup, and an inner Incus (a nested-fleet container) writes 0 for its own
+# containers below it: a cgroup with 0 keeps its pages in RAM even when its parent may swap. So the sleep opens every cgroup of the
+# subtree that holds exactly 0 and records the inner ones in `swap_record`, which only root writes; a cgroup with its own limit stays.
+# The close writes 0 to the container's own cgroup and to each recorded path that still exists: a short-lived unit's cgroup may be
+# gone after the sleep, and that never fails a resume. `swap_quiet` lets a rescue go on after a failed write of its own cgroup.
+- name: Name the swap record
+  ansible.builtin.set_fact:
+    swap_cgroup: "{{ cgroup_root | default('/sys/fs/cgroup') }}/lxc.payload.{{ container.project }}_{{ container.name }}"
+    swap_record: "{{ swap_record_directory | default('/dev/shm/orbit/hibernation') }}/app-instance-{{ container.instance_id }}.swap"
+
+- name: Let the container's memory go to swap
+  when: swap == 'open'
+  ansible.builtin.command: { argv: [tee, "{{ swap_cgroup }}/memory.swap.max"], stdin: "max", stdin_add_newline: false }
+  changed_when: true
+
+# One call for the whole subtree: about 120 files on a nested-fleet copy, opened in 0.05 s. It prints each path it opened.
+- name: Let the inner cgroups' memory go to swap
+  when: swap == 'open'
+  ansible.builtin.command:
+    argv:
+      - find
+      - "{{ swap_cgroup }}"
+      - -mindepth
+      - "2"
+      - -name
+      - memory.swap.max
+      - -exec
+      - sh
+      - -c
+      - 'for f; do [ "$(cat -- "$f")" = 0 ] || continue; printf max > "$f" && printf "%s\n" "$f"; done'
+      - sh
+      - "{}"
+      - +
+  register: swap_opened
+  changed_when: swap_opened.stdout_lines | length > 0
+
+- name: Record the opened inner cgroups
+  when: swap == 'open'
+  ansible.builtin.copy:
+    content: "{{ (swap_opened.stdout_lines | map('replace', swap_cgroup ~ '/', '') | list + ['']) | join('\n') if swap_opened.stdout_lines else '' }}"
+    dest: "{{ swap_record }}"
+    mode: "0600"
+
+- name: Note how many inner cgroups the sleep opened
+  when: swap == 'open'
+  ansible.builtin.set_fact:
+    swap_subtree: "{{ swap_opened.stdout_lines | length }}"
+
+- name: Read the swap record
+  when: swap == 'close'
+  ansible.builtin.slurp: { src: "{{ swap_record }}" }
+  register: swap_recorded
+  failed_when: false
+
+# Only paths below the container's cgroup: the record holds names relative to it, and none climbs out.
+- name: Keep the container's memory out of swap
+  when: swap == 'close'
+  ansible.builtin.command:
+    argv: >-
+      {{ ['sh', '-c', 'cd -- "$1" || exit 1; shift; printf 0 > memory.swap.max || exit 1; '
+          ~ 'for f; do [ -e "$f" ] || continue; printf 0 2>/dev/null > "$f" || [ ! -e "$f" ] || exit 1; done', 'sh', swap_cgroup]
+         + ((swap_recorded.content | default('') | b64decode).splitlines()
+            | select | reject('search', '(^/|(^|/)\.\.(/|$))') | list) }}
+  register: swap_closed
+  changed_when: true
+  failed_when: swap_closed.rc != 0 and not swap_quiet | default(false) | bool
+
+- name: Remove the swap record
+  when: swap == 'close'
+  ansible.builtin.file: { path: "{{ swap_record }}", state: absent }

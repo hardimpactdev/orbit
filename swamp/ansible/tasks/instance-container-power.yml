@@ -35,8 +35,9 @@
     mode: "0644"
 
 # The freeze keeps every process and its memory: a wake resumes it in a fraction of a second. Incus writes `memory.swap.max = 0`
-# from `limits.memory`; the sleep opens swap for this cgroup only, freezes, then reclaims, so no frozen process pulls a page back.
-# A wake writes 0 again; a stop drops the cgroup with its setting. A container that is already Frozen or Stopped stays so.
+# from `limits.memory`; the sleep opens swap for the container's cgroup subtree (instance-container-swap.yml), freezes, then
+# reclaims, so no frozen process pulls a page back. Every resume closes it again; a stop drops the cgroups with their settings. A
+# container that is already Frozen or Stopped stays so.
 - name: Read the container before the freeze
   when: power == 'freeze'
   ansible.builtin.command: { argv: [incus, query, "--", "/1.0/instances/{{ container.name }}?project={{ container.project }}"] }
@@ -47,22 +48,23 @@
   when: power == 'freeze'
   ansible.builtin.set_fact:
     container_cgroup: "{{ cgroup_root | default('/sys/fs/cgroup') }}/lxc.payload.{{ container.project }}_{{ container.name }}"
+    # A nested-fleet container holds the Club key in /run and the tunnel `wg-nested`, which only a deployment or a start gives back.
+    freeze_nested: "{{ container.project == 'orbit-instances-nested' }}"
 
 - name: Freeze the container
   when: power == 'freeze' and (freeze_read.stdout | from_json).status == 'Running'
   block:
     - name: Let the container's memory go to swap
-      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "max", stdin_add_newline: false }
-      changed_when: true
+      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [always]} }
+      vars: { swap: open }
     - name: Pause the container
       ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", pause, "{{ container.name }}"] }
       changed_when: true
   rescue:
     # A failed swap write or pause leaves the container running: it serves again as before, without the marker.
     - name: Close swap again after the failed freeze
-      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "0", stdin_add_newline: false }
-      changed_when: true
-      failed_when: false
+      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [always]} }
+      vars: { swap: close, swap_quiet: true }
     - name: Remove the marker after the failed freeze
       ansible.builtin.file: { path: "{{ marker }}", state: absent }
     - name: Refuse the failed freeze
@@ -93,6 +95,7 @@
 # Swap that cannot take the memory (it is full) leaves the app in RAM. A frozen container would then hold that RAM, which a sleep
 # exists to free, so the sleep stops the container instead: its next wake is a boot behind the same marker. A clean stop of a frozen
 # container times out, so it resumes first. A failed resume fails the sleep with the container frozen behind its marker: asleep.
+# A nested-fleet container is never stopped: it runs again as before the sleep, and the sleep fails.
 - name: Note whether the memory stayed in RAM
   when: power == 'freeze'
   ansible.builtin.set_fact:
@@ -105,19 +108,32 @@
   ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", resume, "{{ container.name }}"] }
   changed_when: true
 
+- name: Keep a nested-fleet container running when its memory stayed in RAM
+  when: power == 'freeze' and freeze_held | bool and freeze_nested | bool
+  block:
+    - name: Close swap again for the running nested-fleet container
+      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [always]} }
+      vars: { swap: close, swap_quiet: true }
+    - name: Remove the marker of the running nested-fleet container
+      ansible.builtin.file: { path: "{{ marker }}", state: absent }
+    - name: Refuse the sleep of the nested-fleet container
+      ansible.builtin.fail: { msg: instance.container_freeze_failed }
+
 - name: Stop the container whose memory stayed in RAM
-  when: power == 'freeze' and freeze_held | bool
+  when: power == 'freeze' and freeze_held | bool and not freeze_nested | bool
   block:
     - name: Stop the container
       ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", stop, --timeout, "30", "{{ container.name }}"] }
       register: freeze_stopped
       changed_when: true
+    # The stop dropped the cgroups with their settings; the boot of the next wake writes Incus's own.
+    - name: Remove the swap record of the stopped container
+      ansible.builtin.file: { path: "{{ swap_record }}", state: absent }
   rescue:
     # The resumed container runs: as after a failed freeze, it serves again without the marker and swaps no more.
     - name: Close swap again after the failed stop
-      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "0", stdin_add_newline: false }
-      changed_when: true
-      failed_when: false
+      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [always]} }
+      vars: { swap: close, swap_quiet: true }
     - name: Remove the marker after the failed stop
       ansible.builtin.file: { path: "{{ marker }}", state: absent }
     - name: Refuse the failed stop
@@ -130,6 +146,8 @@
       sleep: >-
         {{ 'stopped' if freeze_stopped is defined and freeze_stopped is not skipped
            else 'frozen' if (freeze_read.stdout | from_json).status in ['Running', 'Frozen'] else 'stopped' }}
+      # The inner cgroups this freeze opened: only the wake's run closes them, so the Gateway skips the Node's resume when it is not 0.
+      swap_subtree: "{{ 0 if freeze_stopped is defined and freeze_stopped is not skipped else swap_subtree | default(0) | int }}"
 
 # A wake's start (instance-container.yml, `start` with the marker in the intent) waited for every desired-running unit. FrankenPHP
 # then answers once it listens: `intent.web.ready_seconds` tries 1 s apart, each bounded by curl's own 2 s. Only no answer at all
