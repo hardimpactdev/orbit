@@ -1,5 +1,5 @@
 order = 1050
-source_sha256 = "2e24b36ce1ff19a07789017d5c9e2a6ae7f3671e7aa24c312ad42d062b55779e"
+source_sha256 = "f5e756e7a6f1742966877bd1b68cc861fa7ef699ddf65b87ea8fd7cba69a0c53"
 cases = [
   "the check is an assert that holds for the commit under proof, with or without the newline that git prints",
   "the check fails for a clone of main, for an unreadable workspace and for a partial commit",
@@ -21,6 +21,7 @@ inputs = [
   "swamp/proof/batches.yaml",
   "swamp/proof/runner/runner.py",
   "swamp/proof/runner/spec.py",
+  "swamp/tests/_support/swamp_workflow.ts",
   "swamp/workflows/workflow-operation-proof-run.yaml",
   "swamp/workflows/workflow-proof-fleet-verify.yaml",
 ]

@@ -8,15 +8,18 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofVerifyIntent;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
+use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Tests\Support\SwampNodeFixture;
 
@@ -63,6 +66,47 @@ function verifyVm(int $projectId, string $checkout = '/home/orbit/apps/orbit/wor
     $group->taskable()->associate($instance)->save();
 
     return $guest;
+}
+
+/**
+ * A task copy of a nested-fleet Project: the group owns a running container Instance on Beast, with no task VM. Returns an operator
+ * Node with Gateway access, which names the group.
+ *
+ * @return array{Node, Task, Instance, InstanceRuntime}
+ */
+function verifyCopy(?string $container = null, string $incusProject = 'orbit-instances'): array
+{
+    $beast = Node::withoutEvents(fn (): Node => Node::query()->create([
+        'name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.9', 'public_ssh_port' => 22,
+        'wireguard_ip' => '10.44.0.9', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
+    ]));
+    $beast->forceFill(['instance_bridge' => '10.253.0.0/24'])->saveQuietly();
+    $project = Project::query()->create(['name' => 'orbit-trial', 'slug' => 'orbit-trial', 'repository_url' => 'https://github.com/hardimpactdev/orbit-trial.git',
+        'default_branch' => 'main', 'root' => 'public']);
+    $project->forceFill(['nested_fleet' => true])->save();
+    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Work', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running]);
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $beast->id, 'name' => 'task-1', 'checkout_path' => '/srv/task-1',
+        'status' => InstanceState::Active, 'branch' => 'task-1', 'task_workspace_owner_id' => $group->id]);
+    $runtime = InstanceRuntime::query()->create(['node_id' => $beast->id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test',
+        'instance_id' => $instance->id, 'incus_project' => $incusProject, 'container_name' => $container ?? 'instance-'.$instance->id, 'bridge_address' => '10.253.0.5',
+        'seed_commit' => str_repeat('c', 40)]);
+    $group->taskable()->associate($instance)->save();
+    $mini = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'mini', 'status' => 'active', 'platform' => 'macos', 'architecture' => 'arm64',
+        'public_ssh_host' => '10.44.0.12', 'wireguard_ip' => '10.44.0.12', 'user' => 'nckrtl']));
+
+    return [$mini, $group->refresh(), $instance, $runtime];
+}
+
+/** Admits the proof of a named group; the run start after the commit needs a Swamp server the suite has not. */
+function verifyGroup(Node $caller, Task $group): void
+{
+    try {
+        app(ProofVerifyIntent::class)->start($caller, 'firewall:allow', $group->id, 'mini', null);
+    } catch (ResourceOperationException $error) {
+        if (! str_starts_with($error->errorCode, 'swamp.')) {
+            throw $error;
+        }
+    }
 }
 
 describe('orbit proof admission', function (): void {
@@ -128,6 +172,7 @@ describe('orbit proof admission', function (): void {
         expect($operation->target_type)->toBe('task_group')->and($operation->target_id)->toBe($group->id)->and($operation->node_id)->toBe($guest->id)
             ->and($operation->input)->toMatchArray(['group_id' => $group->id, 'command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml',
                 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'restore_first' => true, 'final_restore' => true])
+            ->and($operation->input)->not->toHaveKey('copy')
             ->and($operation->input['ssh_execution']['target'])->toMatchArray(['node_id' => $guest->id, 'host' => '10.44.0.150', 'user' => 'orbit', 'host_keys' => ['ssh-ed25519 fixture-public-key']])
             ->and(TaskVm::query()->count())->toBe(1)->and(Task::topLevel()->count())->toBe(1);
     });
@@ -165,6 +210,77 @@ describe('orbit proof admission', function (): void {
         $guest = verifyVm($orbit->id, '');
 
         expect(verifyRefused(fn () => app(ProofVerifyIntent::class)->start($guest, 'firewall:allow', null, 'tvm-700', null))->errorCode)->toBe('tasks.no_workspace');
+    });
+
+    it('records the intent of a task copy: its container, its Node as the SSH target, the guest checkout and no restore', function (): void {
+        config(['proof.project' => 46]);
+        [$mini, $group, $instance, $runtime] = verifyCopy();
+
+        verifyGroup($mini, $group);
+
+        $operation = Operation::query()->where('kind', 'proof.verify')->sole();
+        $fixture = ValidatedData::object(ValidatedData::object(json_decode((string) file_get_contents(base_path('../../swamp/tests/fixtures/proof-verify-copy.json')), true,
+            flags: JSON_THROW_ON_ERROR))['intent']);
+        expect($operation->target_id)->toBe($group->id)->and($operation->node_id)->toBe($instance->node_id)
+            ->and(array_keys($operation->input))->toEqualCanonicalizing(array_keys($fixture))
+            ->and($operation->input)->toMatchArray(['group_id' => $group->id, 'instance_id' => $instance->id, 'command' => 'firewall:allow',
+                'file' => 'swamp/proof/firewall/allow.cases.yaml', 'checkout_path' => TaskInstanceWorkspace::Root, 'restore_first' => false, 'final_restore' => false,
+                'copy' => ['project' => 'orbit-instances', 'name' => $runtime->container_name]])
+            ->and(ValidatedData::object(ValidatedData::object($operation->input['ssh_execution'])['target']))->toMatchArray(['node_id' => $instance->node_id, 'host' => '10.44.0.9', 'user' => 'orbit'])
+            ->and(TaskVm::query()->count())->toBe(0);
+    });
+
+    it('refuses a task copy that cannot hold a proof, and records nothing', function (Closure $arrange, string $code): void {
+        [$mini, $group, $instance, $runtime] = verifyCopy();
+        $arrange($group, $instance, $runtime);
+        $before = Operation::query()->count();
+
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($mini, 'firewall:allow', $group->id, 'mini', null));
+
+        expect($refusal->errorCode)->toBe($code)->and(Operation::query()->count())->toBe($before);
+    })->with([
+        'a Project without a nested fleet' => [fn (Task $group) => $group->project->forceFill(['nested_fleet' => false])->save(), 'proof.wrong_project'],
+        'a copy that is not active yet' => [fn (Task $group, Instance $instance) => $instance->forceFill(['status' => InstanceState::SourceResolved])->save(), 'tasks.copy_not_ready'],
+        'a stopped container' => [fn (Task $group, Instance $instance, InstanceRuntime $runtime) => $runtime->update(['power_state' => 'stopped']), 'tasks.instance_not_running'],
+        'a copy turn that may still run' => [fn (Task $group) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id,
+            'status' => OperationStatus::Failed, 'input' => [], 'state' => ['swamp_run_id' => 'run-1'], 'result' => []]), 'tasks.copy_turn_unended'],
+        'a copy where a proof already ran' => [fn (Task $group) => Operation::query()->create(['kind' => 'proof.verify', 'target_type' => 'task_group', 'target_id' => $group->id,
+            'status' => OperationStatus::Succeeded, 'input' => []]), 'proof.copy_fleet_used'],
+        'a copy where an agent turn ended' => [fn (Task $group) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => $group->id,
+            'status' => OperationStatus::Succeeded, 'input' => [], 'result' => ['ended' => true]]), 'proof.copy_fleet_used'],
+        'a copy turn that runs' => [fn (Task $group, Instance $instance) => Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group',
+            'target_id' => $group->id, 'node_id' => $instance->node_id, 'status' => OperationStatus::Running, 'input' => []]), 'operation.target_busy'],
+    ]);
+
+    it('refuses a recorded Incus project or container name that reads as an option of incus exec', function (?string $container, string $project): void {
+        [$mini, $group, $instance, $runtime] = verifyCopy($container, $project);
+
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($mini, 'firewall:allow', $group->id, 'mini', null));
+
+        expect($refusal->errorCode)->toBe('tasks.no_workspace')->and(Operation::query()->where('kind', 'proof.verify')->count())->toBe(0);
+    })->with([
+        'a container that is an option' => ['--force', 'orbit-instances'],
+        'a container that adds an argument' => ['instance-1 --project=default', 'orbit-instances'],
+        'a container that ends the options' => ['--', 'orbit-instances'],
+        'a container on another remote' => ['beast:instance-1', 'orbit-instances'],
+        'a project that is an option' => [null, '-p'],
+        'a project that adds an argument' => [null, 'orbit-instances exec instance-1'],
+    ]);
+
+    it('keeps the task VM path for a group that has a task VM and a recorded container Instance', function (): void {
+        $orbit = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
+        config(['proof.project' => $orbit->id]);
+        $guest = verifyVm($orbit->id);
+        $guest->forceFill(['instance_bridge' => '10.253.1.0/24'])->saveQuietly();
+        $instance = Instance::query()->where('task_workspace_owner_id', Task::topLevel()->sole()->id)->sole();
+        InstanceRuntime::query()->create(['node_id' => $guest->id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test',
+            'instance_id' => $instance->id, 'incus_project' => 'orbit-instances', 'container_name' => 'workspace', 'bridge_address' => '10.253.1.5', 'seed_commit' => str_repeat('c', 40)]);
+
+        verifyStart($guest);
+
+        $operation = Operation::query()->where('kind', 'proof.verify')->sole();
+        expect($operation->input)->not->toHaveKey('copy')->and($operation->input['checkout_path'])->toBe('/home/orbit/apps/orbit/workspace')
+            ->and($operation->input['restore_first'])->toBeTrue();
     });
 
     it('names the cases file of a command', function (): void {
