@@ -9,6 +9,7 @@ covers:
   - apps/gateway/database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php
   - apps/gateway/database/migrations/2027_02_03_000001_add_instance_to_conn_environments.php
   - apps/gateway/database/migrations/2027_02_10_000000_add_renewal_to_conn_environments.php
+  - apps/gateway/database/migrations/2027_02_15_000000_create_conn_threads_table.php
 ---
 
 # Conn layer
@@ -32,6 +33,8 @@ Conn uses the existing [node access](/cli/node/access-add) edges. It has no gran
 | Server list, pairing list, show, create and revoke | Node access to the Node that registered the server. The list shows only those servers. |
 | `GET /me`, `PUT /me/profile`, profiles and settings, Conn Operation show and cancel | Node access to at least one Node: the [collection rule](/cli/node#authority) that `node:list` uses. |
 | Project list | Node access to at least one Node. The list shows only the Projects whose default Instance runs on a Node the caller has node access to. |
+| Thread index list, `GET /threads` | Node access to at least one Node. The list covers only the container servers the server list shows the caller. |
+| Thread record, `POST /environments/{environment_id}/threads` | Node access to the Node that serves the server. |
 | Thread start, `POST /projects/{id}/instances` | Node access to the Node of the Project's default Instance. |
 | `POST /environments`, registration | No edge. |
 
@@ -236,6 +239,46 @@ The `Orbit Swamp` session of the container is not renewed: nothing uses it yet. 
 | `conn.response_invalid` | An answer did not have T3's shape. |
 | `conn.renewal_incomplete` | The session was issued, but the run ended before it was stored. |
 | `conn.renewal_failed` | The run failed without a `conn.*` code. |
+
+## Thread index
+
+The Gateway keeps an index of the threads on each container T3 server. A device reads one list from the Gateway to find a Project's or an Instance's threads. It connects to a server only when it opens one of that server's threads, not to every server at launch. The [index chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/conn/thread-index.mmd) has the steps. Host servers, those with no Instance, have no index.
+
+### A row
+
+The table `conn_threads` holds one row per thread: the server's environment, its Instance, T3's thread id, the title, T3's thread `status` as `state`, `needs_input`, the time of the last user message and of the last run's end, and `seen_at`. A thread needs input when T3 holds a blocking runtime request for it, such as an approval or a question; a request that says `blocking: false` does not count, as for the idle sleep. `seen_at` is when the Gateway last read the thread on its server, or heard of it through a write-through. The index lists the shell's `threads`; an archived thread leaves it.
+
+The index stores no message text. The title is the only text, and it can still leak: T3 names a thread after its first message by default, so a title can carry a customer name, a bug, a branch or a pasted secret. So the index has the same readers as the server list. A caller reads the rows of a server only through node access to that server's Node, the [rule above](#access). A write-through records the thread id in Activity, never its title.
+
+### The poll
+
+Every minute, one pass reads the shell of every container server whose Instance runs: `GET /api/orchestration/shell` with the admin session the Gateway holds and renews, and `x-t3-orchestration-protocol: 2`, the read of the [idle sleep](#the-idle-sleeps-read). It writes nothing in the container. All servers are read at once; each has 3 seconds to connect and 10 seconds in total, so one server never holds the pass. The pass is the command `conn:threads:read`, a unique job on the `problems` queue of the [Gateway queue](/reference/gateway-queue#scheduled-work). It waits behind task work and never runs on `operations`; it ends within seconds, so a release's Horizon hand-over waits at most one pass.
+
+A server's read replaces its rows: each listed thread is written, and a thread that left the shell leaves the index. A row that a write-through recorded after the read began stays. A server that is not read keeps its rows and their `seen_at`, and its record says why in `threads_read_error`:
+
+| Reason | Meaning |
+| --- | --- |
+| `conn.environment_asleep` | The Instance sleeps or is stopped. It is not read, and its error stays as it was. |
+| `conn.session_expired` | The Gateway's session ended; its [renewal](#renewal-of-an-instance-server) comes first. |
+| `conn.server_unreachable` | The server did not answer within its bounds. |
+| `conn.session_rejected`, `conn.request_refused` | T3 refused the read. |
+| `conn.response_invalid` | The shell did not have the shape the index reads. |
+
+### The switch
+
+Every read of a server by the index waits for the operator's switch `ORBIT_CONN_THREAD_INDEX_POLL` (`orbit.conn.thread_index_poll`): the minute poll, the list's read-through and the last read before a sleep. It is off by default. Turn it on in `/home/orbit/shared/gateway.env` and [apply the env change](/reference/gateway-recovery#apply-an-env-change); no release is needed, and the next scheduler tick sees it. While it is off, the routes and the write-through still run: the list shows only written-through rows and reads no server.
+
+### Write-through
+
+A thread is in the index at once when Orbit or Conn starts it. Conn records a thread it started with `POST /environments/{environment_id}/threads`, after it launched the thread on the server. A task copy's turn records the thread that `t3 thread start` made, with the turn's title, when the turn's projection commits. Both go through one rule: the row is written with `seen_at` now and keeps the state of the last read, null for a new row. A thread that an agent or a user starts on the server by other means appears with the next read.
+
+### The list
+
+`GET /threads` returns the rows of the covered servers, the newest user message first, and `meta.environments`: every covered server with its `power_state`, `read_at` and `read_error`, also a server without threads. `project` and `instance`, both optional positive ids, narrow it. While the switch is on, the list first reads through each running server whose last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds.
+
+### Sleep and removal
+
+Before a sleep is admitted, from the idle sleep or from [`instance:sleep`](/cli/instance/sleep), the index reads the server one last time, outside the Instance lock, with the poll's bounds. The sleep switch does not matter: the index's switch does. A failed read keeps the rows and does not stop the sleep. An asleep or stopped Instance keeps its last rows with their `seen_at` until it wakes and the next read runs. Destroying the Instance removes its server record, and the rows go with it.
 
 ## Threads in an Orbit Project
 
@@ -483,6 +526,8 @@ Every endpoint is under `https://gateway.orbit/api/v1/conn` and answers `{"data"
 | `POST /environments/{environment_id}/pairings` | `{"renew": true}`, optional | Operation (202) |
 | `POST /environments/{environment_id}/pairings/revoke` | `{"node_id": 4, "pairing_id": 7}`, both optional | Operation (202) |
 | `POST /environments/{environment_id}/renew` | — | Operation (202) |
+| `GET /threads` | `project`, `instance` query, both optional | list of thread, and `meta.environments` |
+| `POST /environments/{environment_id}/threads` | `{"thread_id": "a1b2", "title": "Fix the login"}` | thread (201, or 200 when recorded already) |
 
 The objects:
 
@@ -493,7 +538,9 @@ The objects:
   "settings": {"profile_id": 1, "version": 3, "settings": {"workspaces": []}, "sections": {"workspaces": {"version": 1, "updated_at": "2026-10-08T10:00:00+00:00", "updated_by": "phone"}}, "updated_at": "2026-10-08T10:00:00+00:00"},
   "environment": {"environment_id": "env-beast", "label": "beast", "url": "http://10.44.0.30:3773", "server_version": "0.9.1", "registered_by": "beast", "registered_at": "2026-10-08T09:00:00+00:00", "admin_session_expires_at": "2026-11-07T09:00:00+00:00", "status": "registered", "instance_id": null, "power_state": null, "project_id": null, "project_name": null, "project_slug": null, "instance_name": null, "node_name": null, "instance_url": null, "renewal_error_code": null, "renewal_checked_at": null},
   "project": {"id": 3, "slug": "mealou", "name": "Mealou", "node_id": 7, "node_name": "beast", "instance_domain_suffix": ".mealou.test", "cloneable": true, "cloneable_reason": null, "checks": [{"key": "default_instance", "label": "Default Instance", "status": "pass"}, {"key": "container", "label": "Runs in a container", "status": "pass"}, {"key": "active", "label": "Active", "status": "pass"}, {"key": "seed_snapshot", "label": "Seed snapshot", "status": "pass"}, {"key": "node_access", "label": "Node access", "status": "pass"}, {"key": "source_access", "label": "Source access", "status": "pass"}, {"key": "source_defaults", "label": "Source defaults", "status": "pass"}, {"key": "production_placement", "label": "Development placement", "status": "pass"}, {"key": "node_active_linux", "label": "Active Linux Node", "status": "pass"}, {"key": "app_dev_role", "label": "App-dev role", "status": "pass"}, {"key": "source_profile", "label": "Source metadata", "status": "pass"}, {"key": "php_readiness", "label": "PHP readiness", "status": "pass"}, {"key": "runtime_contributions", "label": "Conn runtime", "status": "pass"}, {"key": "model_route", "label": "Model router", "status": "pass"}, {"key": "native_create", "label": "Create support", "status": "pass"}]},
-  "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null}
+  "pairing": {"id": 7, "environment_id": "env-beast", "node_id": 4, "node_name": "phone", "client_label": "phone via Orbit k3j9x0qa", "issued_at": "2026-10-08T10:00:00+00:00", "expires_at": "2026-10-08T10:05:00+00:00", "revoked_at": null},
+  "thread": {"environment_id": "env-fix-login", "instance_id": 12, "project_id": 3, "thread_id": "a1b2", "title": "Fix the login", "state": "waiting", "needs_input": true, "last_user_message_at": "2026-11-14T11:55:00+00:00", "last_run_completed_at": null, "seen_at": "2026-11-14T12:00:00+00:00"},
+  "meta.environments": [{"environment_id": "env-fix-login", "instance_id": 12, "power_state": "running", "read_at": "2026-11-14T12:00:00+00:00", "read_error": null}]
 }
 ```
 
@@ -513,6 +560,7 @@ The objects:
 | `conn.admin_scope_missing` | 422 | The registered session is not an admin session. |
 | `conn.session_expired` | 409 | The Gateway's admin session on that server expired. |
 | `conn.environment_not_instance` | 409 | A renewal asked for a host server; its host renews it. |
+| `conn.thread_index_unsupported` | 409 | A thread record named a host server; only container servers have an index. |
 | `conn.pairing_in_progress` | 409 | A Gateway session cleanup waits for a pairing that runs with the earlier session. |
 | `conn.pairing_revoked` | 409 | A renewal asked for a server where the Node's newest pairing was revoked. Pair without `renew` to bring it back. |
 | `conn.server_unreachable` | 502 | The T3 server did not answer. |
@@ -520,7 +568,7 @@ The objects:
 | `conn.request_refused` | 502 | The T3 server refused the call with another status; `details` has its status and reason. |
 | `conn.response_invalid` | 502 | The T3 server's answer did not have T3's shape. |
 
-Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the admin session. A settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. A replace records the document version it replaced and the names of the sections it sent. A patch records each section name with the version the client sent.
+Every call is recorded as command activity with the calling Node. A registration records its environment id, label, and URL, never the admin session. A settings write records only section names and versions, because the document can hold workspace pictures, themes, and device values. A replace records the document version it replaced and the names of the sections it sent. A patch records each section name with the version the client sent. A thread record records the thread id, never the title. The thread list is a read and records no activity.
 
 ## Why it works this way
 

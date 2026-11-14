@@ -2,7 +2,7 @@
 title: "Extensions"
 description: "How an optional Gateway feature lives in its own directory, contributes to core through plug-in points, and stays behind one switch."
 covers:
-  - apps/gateway/app/Domain/Instances/InstanceLifecycleContribution*.php
+  - apps/gateway/app/Domain/Instances/{InstanceLifecycleContribution,InstanceThreadContribution}*.php
   - apps/gateway/app/{Domain,Actions}/Extensions/**
   - apps/gateway/app/Providers/{ExtensionServiceProvider,TasksServiceProvider}.php
   - apps/gateway/app/Domain/{Projects/ProjectRemovalHook,GatewayReleases/GatewayReleaseCleanup,Activity/ActivityInputRedaction,Gateway/ExactRequestBody,Fleet/NodeFootprintArtifact,Routes/ContributedPrivateHostnames,Routes/RouteKind,Routes/InstanceTrackingPublication,Nodes/RoleName,Nodes/ContributedNodeRole,Nodes/NodeRoleRemovalGuard,Processes/ProcessRemovalGuard,Processes/ProcessOwnershipClaim,DatabaseConnections/DatabaseConnectionUpdateHook,DatabaseConnections/DatabaseConnectionRemovalGuard}.php
@@ -107,6 +107,7 @@ Core receives tagged implementations through constructor parameters marked with 
 | `App\Domain\Gateway\ExactRequestBody` | The request body size check | `matches()` |
 | `App\Domain\Instances\InstanceLifecycleContribution` | Container Instance create, completion, migrate, destroy and wake | `assertCreateAvailable()`, `projectCreate()`, `registered()`, `projectDestroy()` and `projectWake()` |
 | `App\Domain\Instances\Power\InstanceAgentActivity` | The idle sleep of a development container | `read()` |
+| `App\Domain\Instances\InstanceThreadContribution` | A task copy's turn and the admission of a container sleep | `recordThread()` and `beforeSleep()` |
 
 `DirectOperationContribution::definitions()` contributes fixed workflow and projection declarations to the shared direct-start helper. Providers tag contributions with this interface. Declarations remain available while an extension is disabled so existing Operations can finish; family admission keeps its extension gate. Conn and Vault contribute their converted kind declarations. Conn session cleanup projects the native child receipt and needs no private-material provider. Core imports neither extension. Native bootstrap reads use execution-copy vault references, so core registers no Gateway-local bootstrap identity source. A declaration may select a typed `NativeGitHubTokenIssuer` at the existing numeric Operation GitHub mint endpoint.
 
@@ -121,6 +122,8 @@ Destroy calls `projectDestroy()` after native success, inside the projection tra
 `InstanceAgentActivity::read()` runs in each runtime hibernator sweep, once per container clone that is otherwise idle. Conn contributes the read of the clone's T3 server. While Conn is off, its contribution returns nothing, and no clone sleeps: the idle sleep treats a clone it cannot read as active.
 
 A successful wake calls `projectWake()` after its projection commits; it must not block or fail the wake. Conn admits the renewal of a session that ends within seven days or has ended, and does nothing while it is off.
+
+`InstanceThreadContribution::recordThread()` receives the T3 thread that a task copy's turn started, with the turn's title, after the turn's projection commits. `beforeSleep()` runs when a sleep of a container is asked for, from the idle sleep or `instance:sleep`, before the Instance lock and the admission. Neither may fail its caller. Conn contributes its [thread index](/reference/conn#thread-index): it records the thread, and reads the server one last time while the index's switch is on. While Conn is off, both do nothing.
 
 `ProcessOwnershipClaim::forNode()` checks a named Node Process before a service claims it; `assertClaimable()` checks explicitly selected Processes. Both call the core Instance attachment dependency guard before owner state or runtime changes, including while extensions are off. This shared admission introduces no plug-in point. Analytics checks its collector and selected storage Processes; the AI router checks its collector before enabling owner state or adopting its runtime. A dependent Node service target refuses with `process.node_service_ownership_conflict`, naming every affected Instance. A refusal preserves ownership, Process configuration and attachment records.
 
