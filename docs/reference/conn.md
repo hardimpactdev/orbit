@@ -134,9 +134,9 @@ A workspace covers its `projectRefs` and every project whose logical key is in `
 
 `attachedThreads` is the profile's list of threads: the sidebar of every device on the profile. A thread is attached when it is on this list. Detaching a thread removes it from the list. It never touches the T3 server or the thread, which stays as it is on its Instance.
 
-A device connects to a container T3 server only while the profile has a thread of it attached. The servers a device connects to are the environments in `attachedThreads.threads` that `GET /environments` lists for that device. So each device keeps to its own [node access](#access). The Gateway adds no field for this set: the device derives it from the two reads it already makes.
+A device connects to a container T3 server only while the profile has a thread of it attached. The container servers a device connects to are the environments in `attachedThreads.threads` that `GET /environments` lists for that device with an `instance_id`. So each device keeps to its own [node access](#access). The Gateway adds no field for this set: the device derives it from the two reads it already makes.
 
-When the last thread of an environment is detached, the environment leaves the set. Every device on the profile then disconnects from it at its next read. Host servers are not in this set: a device keeps them connected as before.
+When the last thread of a container server is detached, the server leaves the set. Every device on the profile then disconnects from it at its next read. A thread of a host server may be attached too, so it shows in the profile's list. A device keeps host servers connected whether or not one of their threads is attached.
 
 Write the section with `PATCH`, as the whole set, with the section version the client read:
 
@@ -155,6 +155,7 @@ The Gateway checks each entry on the locked profile, after the version check:
 - **Merge safety.** A device may carry an entry it cannot see itself. A merge never fails on another device's access.
 - **New environment.** An environment that is not in the stored set must exist. The writing Node must also have node access to its Node, as for `GET /environments`.
 - **Refusal.** A new environment that fails this check refuses the request with `validation.failed` (422). The error names the field, such as `…threads.1.environmentId`.
+- **Recovery.** The client removes the named entries from its set and retries. A refusal like this follows the removal of a server whose thread the client had just attached.
 - **Gone environment.** The Gateway drops an entry whose environment was deleted from what it stores.
 
 The check uses the writer's access, not the access of the profile's other Nodes. The writer is the only identity a request carries, and a write needs no binding to the profile. So a Node attaches only servers it may reach, which are also the only ones it can pick.
@@ -177,7 +178,7 @@ A profile from before this section has no `attachedThreads` key and no version f
 
 The document has a version, and so has each section. A new profile starts at document version 1 with no workspaces. Every write adds 1 to the document version. A write also adds 1 to the version of each section it changed. A section with no recorded version is at version 0. This includes a section written before sections had versions.
 
-`GET /profiles/{id}/settings` returns `sections`: for each section that was written, its `version`, the time of the last write in `updated_at`, and the name of the Node that wrote it in `updated_by`, or `null` when Orbit wrote it. A section that is not listed is at version 0.
+`GET /profiles/{id}/settings` returns `sections`: for each section that was written, its `version`, the time of the last write in `updated_at`, and the name of the Node that wrote it in `updated_by`. It is `null` when Orbit wrote the section, or when the Node was removed since. A section that is not listed is at version 0.
 
 There are two ways to write. Prefer `PATCH`.
 
