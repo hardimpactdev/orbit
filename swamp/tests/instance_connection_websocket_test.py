@@ -144,6 +144,60 @@ class ComposedProxyWriteTest(unittest.TestCase):
         self.assertIn('skipping: [localhost]', output)
 
 
+class PrivateNamesWriteTest(unittest.TestCase):
+    """env:sync writes the plan's private names through tasks/instance-private-names.yml, whose text comes from the one renderer,
+    instance_node_services.py `hosts`, that the clone also runs before its copy's first start: both write the same bytes."""
+
+    NAMES = ({'name': 'feature.tool.test', 'host': '10.253.0.1', 'port': 443},)
+
+    def run_step(self, hosts, names):
+        executable = shutil.which('ansible-playbook')
+        self.assertIsNotNone(executable, 'Pinned Ansible is required')
+        tasks = yaml.safe_load(PLAYBOOK.read_text())[1]['tasks'][0]['block']
+        task = next(task for task in tasks if task['name'] == 'Write the private names of the access plan')
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            if hosts is not None:
+                (root / 'hosts').write_text(hosts)
+            # The container's root shell reads the fixture's hosts file; the file push records what it would write.
+            (root / 'as-root').write_text('#!/bin/sh\nexec cat -- "$(dirname "$0")/hosts"\n')
+            (root / 'incus').write_text('#!/bin/sh\nprintf "%s\\0" "$@" > "$(dirname "$0")/argv"\ncat > "$(dirname "$0")/pushed"\n')
+            for name in ('as-root', 'incus'):
+                (root / name).chmod(0o755)
+            shutil.copyfile(ROOT / 'swamp/ansible/instance_node_services.py', root / 'instance_node_services.py')
+            (root / 'tasks').symlink_to(ROOT / 'swamp/ansible/tasks')
+            play = [{'hosts': 'localhost', 'connection': 'local', 'gather_facts': False,
+                     'vars': {'plan': {'private_names': list(names)}, 'as_root': [str(root / 'as-root')],
+                              'container': {'project': 'orbit-instances', 'name': 'instance-7'}},
+                     'tasks': [{**task, 'vars': {**task['vars'], 'private_names_push': [str(root / 'incus'), '--project', 'orbit-instances']}}]}]
+            path = root / 'play.yml'
+            path.write_text(yaml.safe_dump(play))
+            result = subprocess.run([executable, '-i', 'localhost,', str(path)], capture_output=True, text=True, timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            pushed = (root / 'pushed').read_text() if (root / 'pushed').exists() else None
+            argv = (root / 'argv').read_text().split('\0')[:-1] if pushed is not None else []
+            return pushed, argv
+
+    def rendered(self, hosts, names):
+        result = subprocess.run(['python3', '-c', (ROOT / 'swamp/ansible/instance_node_services.py').read_text(), 'hosts'],
+                                input=json.dumps({'hosts': hosts, 'private_names': names}), text=True, capture_output=True, check=True)
+        return json.loads(result.stdout)['content']
+
+    def test_the_names_go_in_with_the_one_renderers_bytes_and_an_unchanged_file_is_not_written(self):
+        seed = '127.0.0.1 localhost\n# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n'
+        pushed, argv = self.run_step(seed, self.NAMES)
+        self.assertEqual(pushed, self.rendered(seed, self.NAMES))
+        self.assertEqual(pushed, '127.0.0.1 localhost\n# BEGIN Orbit private names\n10.253.0.1 feature.tool.test\n# END Orbit private names\n')
+        self.assertEqual(argv, ['--project', 'orbit-instances', 'file', 'push', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+                                'instance-7/etc/hosts'])
+        self.assertEqual(self.run_step(pushed, self.NAMES), (None, []))
+
+    def test_no_name_drops_the_block_and_a_missing_file_with_no_name_stays_missing(self):
+        pushed, _ = self.run_step('127.0.0.1 localhost\n# BEGIN Orbit private names\n10.1.1.9 a.test\n# END Orbit private names\n', [])
+        self.assertEqual(pushed, '127.0.0.1 localhost\n')
+        self.assertEqual(self.run_step(None, []), (None, []))
+
+
 class NoKeyRunTest(unittest.TestCase):
     """A sync with no key to write, such as after a websocket app's remove, skips the key writer and reports unchanged."""
 

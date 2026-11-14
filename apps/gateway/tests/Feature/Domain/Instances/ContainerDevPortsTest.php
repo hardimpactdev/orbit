@@ -461,6 +461,8 @@ describe('the container side of the own site', function (): void {
             ])
             ->and($container['proxy_environment']['NO_PROXY'])->toEndWith(',feature.tool.test,api.feature.tool.test')
             ->and($container['config']['environment.NO_PROXY'])->toBe($container['proxy_environment']['NO_PROXY'])
+            // The clone script writes the same value into the copy's drop-ins before its first start, so the first boot has the names.
+            ->and($container['clone']['proxy_environment'])->toBe($container['proxy_environment'])
             // The Node's own-site rows admit the bridge side: no bridge endpoint and no per-Instance UFW rule for the gateway address.
             ->and(array_filter($container['bridge_endpoints'], static fn (array $endpoint): bool => $endpoint['host'] === '10.253.0.1'))->toBe([])
             ->and(array_filter(app(InstanceContainer::class)->nodeEndpoints($world['node']), static fn (array $endpoint): bool => $endpoint['host'] === '10.253.0.1'))->toBe([])

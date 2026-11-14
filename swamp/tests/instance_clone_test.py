@@ -18,6 +18,9 @@ from unittest.mock import patch
 
 SCRIPT = Path(__file__).parents[1] / "scripts/instance_clone.py"
 NETWORK_CHECK = SCRIPT.parents[1] / "ansible/instance_network.py"
+NODE_SERVICES = SCRIPT.parents[1] / "ansible/instance_node_services.py"
+# The renderer's commands: the clone runs the bundle's instance_node_services.py with these before the copy's first start.
+RENDERS = ("hosts", "proxy-files")
 
 
 class BranchSelectionTest(unittest.TestCase):
@@ -176,11 +179,23 @@ class CloneTest(unittest.TestCase):
                 self.decoding[id(argv)] = kwargs.get("errors")
                 if real_git and argv[0] in {"git", "timeout"}:
                     return real_run(argv, **kwargs)
+                if argv[:2] == ["python3", "-c"] and argv[3:] in ([render] for render in RENDERS):
+                    # The one renderer: the bundle's instance_node_services.py, whose real source answers here.
+                    return real_run(["python3", "-c", NODE_SERVICES.read_text(), *argv[3:]], **kwargs)
                 if argv[:2] == ["python3", "-c"]:
                     return real_run(argv, **{**kwargs, "env": {**kwargs.get("env", os.environ), "PATH": guard_env["PATH"]}})
                 if argv[0] == "openssl":
                     return real_run(argv, **kwargs)
                 output, status = "", 0
+                if argv[0] == "curl" and argv[3] == "-":
+                    # A file's bytes and its headers on stderr: from `fixture_files` (path: content, or the headers and content),
+                    # else missing.
+                    held = container.get("fixture_files", {}).get(urllib.parse.unquote(argv[-1].split("&path=", 1)[1]))
+                    if held is None:
+                        return subprocess.CompletedProcess(argv, 0, "", "404    ")
+                    held = held if isinstance(held, dict) else {"content": held}
+                    headers = {"type": "file", "uid": "0", "gid": "0", "mode": "0644", **held}
+                    return subprocess.CompletedProcess(argv, 0, held["content"], "200 {type} {uid} {gid} {mode}".format(**headers))
                 if argv[0] == "curl":
                     # The files API's type header, read from the copy's real root file system; a link is never followed.
                     local = root / urllib.parse.unquote(argv[-1].split("&path=", 1)[1]).lstrip("/")
@@ -351,7 +366,8 @@ class CloneTest(unittest.TestCase):
         self.assertEqual([self.inputs[id(call)] for call in pushes], [item["content"] for item in self.BOOT_FILES])
         copy = next(i for i, call in enumerate(calls) if "copy" in call)
         start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
-        apply = next(i for i, c in enumerate(calls) if c[:2] == ["python3", "-c"] and c[2] == 'print(\'{"status":"unchanged"}\')')
+        apply = next(i for i, c in enumerate(calls) if c[:2] == ["python3", "-c"] and c[2] == 'print(\'{"status":"unchanged"}\')'
+                     and c[-1] not in RENDERS)
         self.assertTrue(all(copy < calls.index(call) < start < apply for call in pushes))
 
     def test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start(self):
@@ -390,8 +406,16 @@ class CloneTest(unittest.TestCase):
         digest = subprocess.run(["openssl", "x509", "-noout", "-subject_hash"], input=pem, text=True, capture_output=True, check=True)
         return pem, digest.stdout.strip()
 
-    def clone_trusting(self, node_ca, clone, **kwargs):
-        """A clone whose Node holds `node_ca` (None: the file is missing) at the one allowed source path."""
+    # The seed's CA bundle: the public roots only, as a seed taken before the Orbit root reached it holds.
+    PUBLIC_BUNDLE = "-----BEGIN CERTIFICATE-----\nUFVCTElD\n-----END CERTIFICATE-----\n"
+    BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
+
+    def clone_trusting(self, node_ca, clone, bundle=PUBLIC_BUNDLE, **kwargs):
+        """A clone whose Node holds `node_ca` (None: the file is missing) at the one allowed source path, and whose seed holds `bundle`
+        (None: no bundle) as its CA bundle."""
+        overrides = kwargs.pop("overrides", {})
+        kwargs["overrides"] = {**overrides, "fixture_files": {**({} if bundle is None else {self.BUNDLE: bundle}),
+                                                              **overrides.get("fixture_files", {})}}
         original = Path.read_text
 
         def read_text(path, *args, **kw):
@@ -450,6 +474,120 @@ class CloneTest(unittest.TestCase):
         first_push = next(i for i, call in enumerate(calls) if call[3:5] == ["file", "push"] and "ca-certificates" in call[-1])
         self.assertLess(calls.index(delete), first_push)
         self.assertIn(f"instance-7/etc/ssl/certs/{new_digest}.0", [call[-2] for call in calls if call[3:5] == ["file", "create"]])
+
+    def bundle_pushes(self, calls):
+        return [call for call in calls if call[3:5] == ["file", "push"] and call[-1] == "instance-7" + self.BUNDLE]
+
+    def test_a_seed_bundle_without_the_root_gets_it_once_with_its_owner_and_mode_before_the_first_start(self):
+        pem, _ = self.certificate("Orbit Test Root")
+        # No newline at the end of the seed's bundle: the root still starts on its own line.
+        held = {"content": self.PUBLIC_BUNDLE.rstrip("\n"), "uid": "0", "gid": "0", "mode": "0644"}
+        calls, _, error = self.clone_trusting(pem, {"boot_files": [self.TRUST]}, bundle=held)
+        self.assertEqual(error, "")
+        pushes = self.bundle_pushes(calls)
+        self.assertEqual([call[3:] for call in pushes],
+                         [["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", "instance-7" + self.BUNDLE]])
+        self.assertEqual(self.inputs[id(pushes[0])], self.PUBLIC_BUNDLE + pem)
+        self.assertEqual(self.inputs[id(pushes[0])].count(pem), 1)
+        # The bundle is read through the local API's socket, after the root's own file and links, and before the start.
+        read = next(call for call in calls if call[0] == "curl" and call[-1].endswith(urllib.parse.quote(self.BUNDLE)))
+        self.assertIn("/var/lib/incus/unix.socket", read)
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        root = next(i for i, call in enumerate(calls) if call[3:5] == ["file", "push"] and call[-1].endswith("orbit-managed-root-ca.crt"))
+        self.assertLess(root, calls.index(read))
+        self.assertLess(calls.index(pushes[0]), start)
+
+    def test_a_seed_bundle_with_the_root_stays_as_it_is(self):
+        pem, _ = self.certificate("Orbit Test Root")
+        # The same certificate with other line breaks is still the root: it is never added twice.
+        lines = pem.splitlines()
+        rewrapped = "\n".join([lines[0], "".join(lines[1:-1]), lines[-1]]) + "\n"
+        for case, bundle in (("as written", self.PUBLIC_BUNDLE + pem), ("rewrapped", rewrapped + self.PUBLIC_BUNDLE)):
+            with self.subTest(case=case):
+                calls, _, error = self.clone_trusting(pem, {"boot_files": [self.TRUST]}, bundle=bundle)
+                self.assertEqual(error, "")
+                self.assertEqual(self.bundle_pushes(calls), [])
+                self.assertIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
+    def test_a_copy_without_a_regular_bundle_refuses_the_create_before_its_first_start(self):
+        pem, _ = self.certificate("Orbit Test Root")
+        for case, bundle in (("missing", None), ("a link", {"content": "/elsewhere", "type": "symlink"})):
+            with self.subTest(case=case):
+                calls, _, error = self.clone_trusting(pem, {"boot_files": [self.TRUST]}, bundle=bundle)
+                self.assertEqual(error, "instance.clone_trust_bundle_refused\n")
+                self.assertEqual(self.bundle_pushes(calls), [])
+                self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
+    def test_a_clone_without_the_trust_entry_reads_no_bundle(self):
+        calls, _, error = self.clone_with({"boot_files": self.BOOT_FILES})
+        self.assertEqual(error, "")
+        self.assertFalse(any(call[0] == "curl" and call[-1].endswith(urllib.parse.quote(self.BUNDLE)) for call in calls))
+
+    NAMES = ({"name": "feature.tool.test", "host": "10.253.0.1", "port": 443}, {"name": "api.feature.tool.test", "host": "10.253.0.1", "port": 443})
+    BLOCK = "# BEGIN Orbit private names\n10.253.0.1 feature.tool.test\n10.253.0.1 api.feature.tool.test\n# END Orbit private names\n"
+
+    def renderer(self, command, plan):
+        result = subprocess.run(["python3", "-c", NODE_SERVICES.read_text(), command], input=json.dumps(plan), text=True,
+                                capture_output=True, check=True)
+        return json.loads(result.stdout)
+
+    def hosts_pushes(self, calls):
+        return [call for call in calls if call[3:5] == ["file", "push"] and call[-1] == "instance-7/etc/hosts"]
+
+    def test_the_plans_private_names_reach_the_copys_hosts_before_its_first_start_with_env_syncs_bytes(self):
+        seed = "127.0.0.1 localhost\n# BEGIN Orbit private names\n10.44.0.3 reverb.orbit\n# END Orbit private names\n10.1.1.1 operator\n"
+        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed}})
+        self.assertEqual(error, "")
+        pushes = self.hosts_pushes(calls)
+        self.assertEqual([call[3:] for call in pushes],
+                         [["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", "instance-7/etc/hosts"]])
+        # The seed's block goes, the plan's comes after every other line: the bytes of the one renderer that env:sync runs.
+        expected = "127.0.0.1 localhost\n10.1.1.1 operator\n" + self.BLOCK
+        self.assertEqual(self.inputs[id(pushes[0])], expected)
+        self.assertEqual(self.renderer("hosts", {"hosts": seed, "private_names": self.NAMES})["content"], expected)
+        # The clone runs the bundle's renderer, not a copy of it.
+        render = next(call for call in calls if call[:2] == ["python3", "-c"] and call[3:] == ["hosts"])
+        self.assertEqual(render[2], 'print(\'{"status":"unchanged"}\')')
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        self.assertLess(calls.index(pushes[0]), start)
+
+    def test_a_clone_without_names_drops_the_seeds_block_and_leaves_a_plain_hosts_file_alone(self):
+        seed = "127.0.0.1 localhost\n"
+        calls, _, error = self.clone_with({}, overrides={"fixture_files": {"/etc/hosts": seed + self.BLOCK}})
+        self.assertEqual(error, "")
+        self.assertEqual([self.inputs[id(call)] for call in self.hosts_pushes(calls)], [seed])
+        for case, files in (("plain", {"/etc/hosts": seed}), ("missing", {})):
+            with self.subTest(case=case):
+                calls, _, error = self.clone_with({}, overrides={"fixture_files": files})
+                self.assertEqual(error, "")
+                self.assertEqual(self.hosts_pushes(calls), [])
+        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_files": {"/etc/hosts": seed + self.BLOCK}})
+        self.assertEqual(error, "")
+        self.assertEqual(self.hosts_pushes(calls), [])
+
+    def test_a_linked_hosts_file_refuses_the_create(self):
+        calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES,
+                                                         "fixture_files": {"/etc/hosts": {"content": "/elsewhere", "type": "symlink"}}})
+        self.assertEqual(error, "instance.clone_private_names_refused\n")
+        self.assertEqual(self.hosts_pushes(calls), [])
+        self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
+
+    def test_the_composed_proxy_value_reaches_both_drop_ins_before_the_first_start_with_the_one_writers_bytes(self):
+        proxy = {"NO_PROXY": "localhost,10.253.0.1,feature.tool.test", "no_proxy": "localhost,10.253.0.1,feature.tool.test"}
+        calls, _, error = self.clone_with({"proxy_environment": proxy}, overrides={"node_services": [{"port": 3308}]})
+        self.assertEqual(error, "")
+        pushes = self.pushes(calls)
+        files = self.renderer("proxy-files", {"proxy_environment": proxy})["files"]
+        self.assertEqual([call[-1] for call in pushes], ["instance-7/" + path for path in files])
+        for call in pushes:
+            self.assertEqual(call[3:12], ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644"])
+        self.assertEqual([self.inputs[id(call)] for call in pushes], list(files.values()))
+        self.assertEqual(files["etc/profile.d/99-orbit-node-services.sh"],
+                         "# Managed by Orbit: attached Node service.\nexport NO_PROXY=" + proxy["NO_PROXY"] + " no_proxy=" + proxy["no_proxy"] + "\n")
+        start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
+        apply = next(i for i, c in enumerate(calls) if c[:2] == ["python3", "-c"] and c[2] == 'print(\'{"status":"unchanged"}\')'
+                     and c[-1] not in RENDERS)
+        self.assertTrue(all(calls.index(call) < start < apply for call in pushes))
 
     STORE = {"home": "/home/agent", "directories": ["/home/agent/.pki", "/home/agent/.pki/nssdb"], "path": "/home/agent/.pki/nssdb/pkcs11.txt",
              "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
@@ -555,7 +693,8 @@ class CloneTest(unittest.TestCase):
         removed = next(c for c in calls if 'file' in c and 'delete' in c)
         self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-node-service-3308.socket', removed)
         start = calls.index(['incus', '--project', 'orbit-instances', 'start', 'instance-7'])
-        apply = next(i for i, c in enumerate(calls) if c[:2] == ['python3', '-c'] and c[2] == 'print(\'{"status":"unchanged"}\')')
+        apply = next(i for i, c in enumerate(calls) if c[:2] == ['python3', '-c'] and c[2] == 'print(\'{"status":"unchanged"}\')'
+                     and c[-1] not in RENDERS)
         self.assertLess(start, apply)
 
     def test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry(self):
@@ -616,7 +755,8 @@ class CloneTest(unittest.TestCase):
                     calls, _, error = self.clone(mail={"port": 1025}, overrides=selection, real_git=selection is not None)
                     self.assertEqual(error, "")
                     self.assertFalse(any("ansible-playbook" in call for call in calls))
-                    mail_call = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"] and '"status":"unchanged"' in call[2])
+                    mail_call = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"] and '"status":"unchanged"' in call[2]
+                                     and call[-1] not in RENDERS)
                     start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
                     self.assertLess(start, mail_call)
             self.assertEqual(fixture.git("-C", str(fixture.mirror), "rev-parse", "refs/heads/mail-branch").stdout.strip(), fixture.tip)
