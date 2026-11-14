@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 $implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
 $reviewerEffort = env('ORBIT_TASKS_REVIEWER_EFFORT');
+// A copy turn agent key that is unset or empty keeps its shipped default.
+$copyAgent = static function (string $key, string $default): string {
+    $value = env($key);
+
+    return is_string($value) && $value !== '' ? $value : $default;
+};
 $configuredHome = env('ORBIT_HOME');
 $userHome = getenv('HOME');
 $orbitHome = base_path('.orbit');
@@ -104,14 +110,14 @@ return [
         // (TaskCopyAgent). The provider and the effort pick the copy's T3 provider instance.
         'copy_agents' => [
             'implementer' => [
-                'provider' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER', 'claude'),
-                'model' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claude-opus-5-5'),
-                'effort' => (string) env('ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT', 'medium'),
+                'provider' => $copyAgent('ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER', 'claude'),
+                'model' => $copyAgent('ORBIT_TASKS_COPY_IMPLEMENTER_MODEL', 'claude-opus-5-5'),
+                'effort' => $copyAgent('ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT', 'medium'),
             ],
             'reviewer' => [
-                'provider' => (string) env('ORBIT_TASKS_COPY_REVIEWER_PROVIDER', 'claude'),
-                'model' => (string) env('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claude-opus-5-5'),
-                'effort' => (string) env('ORBIT_TASKS_COPY_REVIEWER_EFFORT', 'high'),
+                'provider' => $copyAgent('ORBIT_TASKS_COPY_REVIEWER_PROVIDER', 'claude'),
+                'model' => $copyAgent('ORBIT_TASKS_COPY_REVIEWER_MODEL', 'claude-opus-5-5'),
+                'effort' => $copyAgent('ORBIT_TASKS_COPY_REVIEWER_EFFORT', 'high'),
             ],
         ],
         // A group reserved longer than this returns to todo on the next tick. Keep it well above the slowest workspace provision.

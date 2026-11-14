@@ -1085,6 +1085,26 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and($reviewer->input['turn'])->toMatchArray(['provider' => 'claudeHigh', 'model' => 'claude-opus-5-5']);
     });
 
+    it('reads an empty Gateway agent key as its shipped default, and a set one as itself', function (): void {
+        $keys = ['ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER' => '', 'ORBIT_TASKS_COPY_IMPLEMENTER_MODEL' => '', 'ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT' => '',
+            'ORBIT_TASKS_COPY_REVIEWER_PROVIDER' => '', 'ORBIT_TASKS_COPY_REVIEWER_MODEL' => 'claude-sonnet-5-5', 'ORBIT_TASKS_COPY_REVIEWER_EFFORT' => ''];
+        foreach ($keys as $key => $value) {
+            $_SERVER[$key] = $_ENV[$key] = $value;
+        }
+        try {
+            $agents = (require config_path('orbit.php'))['tasks']['copy_agents'];
+        } finally {
+            foreach (array_keys($keys) as $key) {
+                unset($_SERVER[$key], $_ENV[$key]);
+            }
+        }
+
+        expect($agents)->toBe([
+            'implementer' => ['provider' => 'claude', 'model' => 'claude-opus-5-5', 'effort' => 'medium'],
+            'reviewer' => ['provider' => 'claude', 'model' => 'claude-sonnet-5-5', 'effort' => 'high'],
+        ]);
+    });
+
     it('resolves each value of a new thread on its own: the group\'s, else the Project\'s, else the Gateway\'s', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
