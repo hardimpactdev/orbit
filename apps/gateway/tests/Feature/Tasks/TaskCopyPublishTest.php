@@ -244,3 +244,64 @@ it('names a refused environment file, its content and an unchecked content with 
     'typed read of a refusal' => ['Read the .env check', "tasks.publish_secret_content: a value of the .env is in the file 'notes/a.txt' (".str_repeat('c', 40).') in commit '.str_repeat('d', 40), 'tasks.publish_secret_content'],
     'typed read of an error' => ['Read the .env check', 'tasks.publish_secret_unchecked', 'tasks.publish_secret_unchecked'],
 ]);
+
+/** A copy publish admitted and running, as its run's terminal event finds it. */
+function runningCopyPublish(): array
+{
+    [$group, $check] = copyPublishWorld();
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+    $run = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+
+    return [$group, $operation->refresh(), $run];
+}
+
+it('states the base of a copy publish in its result and publishes, behind or not', function (int $behind, array $overlap): void {
+    [$group, $operation, $run] = runningCopyPublish();
+    $base = ['base_commit' => str_repeat('a', 40), 'default_commit' => str_repeat('c', 40), 'behind_by' => $behind, 'overlapping_paths' => $overlap, 'overlapping_more' => 0];
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['base' => json_encode($base),
+            'pull_receipt' => json_encode(['pull_request_number' => 7, 'pull_request_url' => 'https://github.com/example/trial/pull/7'])]]);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['branch' => 'task-'.$group->id, 'commit' => str_repeat('b', 40), 'pull_request_number' => 7,
+            'pull_request_url' => 'https://github.com/example/trial/pull/7', ...$base])
+        ->and($group->refresh()->pr_url)->toBe('https://github.com/example/trial/pull/7');
+})->with([
+    'level with the default branch' => [0, []],
+    'behind, no path changed on both sides' => [3, []],
+    'behind, a path changed on both sides without a conflict' => [2, ['app/Models/Order.php']],
+]);
+
+it('records no base for a run that started on the workflow before the base step', function (): void {
+    [$group, $operation, $run] = runningCopyPublish();
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => []]);
+
+    expect($projected->status)->toBe(OperationStatus::Succeeded)
+        ->and($projected->result)->toBe(['branch' => 'task-'.$group->id, 'commit' => str_repeat('b', 40), 'pull_request_number' => null, 'pull_request_url' => null]);
+});
+
+it('refuses a real conflict with the default branch, names its paths and publishes nothing', function (): void {
+    [$group, $operation, $run] = runningCopyPublish();
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [],
+        'failure' => ['failed_step' => 'Check the base', 'detail' => 'tasks.publish_conflict: "app/Order.php", "docs/a, b.md" and 3 more']]);
+
+    expect($projected->error_code)->toBe('tasks.publish_conflict')
+        ->and($projected->result)->toBe(['error_code' => 'tasks.publish_conflict', 'conflicting_paths' => ['app/Order.php', 'docs/a, b.md'], 'conflicting_more' => 3])
+        ->and($group->refresh()->pr_url)->toBeNull();
+});
+
+it('fails a base read that could not run without the conflict code', function (): void {
+    [, $operation, $run] = runningCopyPublish();
+
+    $projected = app(TaskPublishProjection::class)->apply($operation, ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => ['failed_step' => 'Check the base', 'detail' => 'tasks.publish_failed']]);
+
+    expect($projected->error_code)->toBe('tasks.publish_failed')
+        ->and($projected->result)->toBe(['error_code' => 'tasks.publish_failed']);
+});

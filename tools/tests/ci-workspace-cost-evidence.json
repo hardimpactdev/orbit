@@ -59,6 +59,17 @@
         "test_a_sync_cancelled_after_the_push_leaves_no_bundle_after_base_cleanup": 7.889,
         "test_the_next_base_removes_what_an_earlier_sync_of_the_copy_left": 8.17
       }
+    },
+    "swamp/tests/task_copy_publish_base_test.py": {
+      "source_sha256": "95d4f4c5515f5aca3026e07c0a28b8a03cfdb0d28985ade164c86628c3c36592",
+      "case_seconds": {
+        "test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing": 0.255,
+        "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes": 0.237,
+        "test_a_branch_behind_with_a_shared_path_and_no_conflict_is_stated_and_publishes_once": 0.501,
+        "test_a_real_conflict_is_refused_with_its_paths_before_the_push": 0.243,
+        "test_a_read_that_fails_never_states_a_base_or_lets_the_push_run": 0.208,
+        "test_only_a_copy_reads_its_base_with_the_push_authorization_and_known_intent_keys": 0.311
+      }
     }
   }
 }

@@ -1,5 +1,15 @@
 import { assertEquals } from "jsr:@std/assert@1";
-import { imported, PublishInput, pullPlan, pushed, verify } from "./publish.ts";
+import {
+    BASE_MARK,
+    BASE_PATHS,
+    baseFacts,
+    imported,
+    PublishInput,
+    pullPlan,
+    pushed,
+    verify,
+    withBase,
+} from "./publish.ts";
 
 export function publishInput(withPr = true) {
     return PublishInput.parse({
@@ -143,7 +153,11 @@ Deno.test("an open PR is updated, otherwise one is opened, with caller prose unc
 Deno.test("a draft PR is opened as a draft and an open PR keeps its draft state", () => {
     const input = PublishInput.parse({
         ...publishInput(),
-        pull_request: { title: "Spec", body: "Chart, page and cases", draft: true },
+        pull_request: {
+            title: "Spec",
+            body: "Chart, page and cases",
+            draft: true,
+        },
     });
     const create = pullPlan({ input, steps: steps() });
     assertEquals(JSON.parse(create.body), {
@@ -184,4 +198,130 @@ Deno.test("a duplicate, wrong base or failed lookup refuses the write", () => {
     const other = open();
     other.head.repo.full_name = "fork/shop";
     assertEquals(plan(JSON.stringify([other])).method, "POST");
+});
+
+const files = (
+    overrides: Partial<
+        Record<"head" | "base" | "behind" | "overlap" | "merge", string>
+    > = {},
+) => ({
+    head: "c".repeat(40) + "\n",
+    base: "a".repeat(40) + "\n",
+    behind: "2\n",
+    overlap: "",
+    merge: "",
+    ...overrides,
+});
+
+Deno.test("a copy's base is stated, behind or not, and only a real conflict refuses", () => {
+    assertEquals(baseFacts(0, files({ behind: "0\n" })).facts?.behind_by, 0);
+    assertEquals(baseFacts(0, files()), {
+        facts: {
+            base_commit: "a".repeat(40),
+            default_commit: "c".repeat(40),
+            behind_by: 2,
+            overlapping_paths: [],
+            overlapping_more: 0,
+        },
+        error_code: "",
+    });
+    assertEquals(
+        baseFacts(0, files({ overlap: "app/a.php\0docs/b.md\0" })).facts
+            ?.overlapping_paths,
+        ["app/a.php", "docs/b.md"],
+    );
+    assertEquals(
+        baseFacts(
+            3,
+            files({ merge: "d".repeat(40) + "\0app/a.php\0app/a.php\0x\ny\0" }),
+        ),
+        {
+            facts: null,
+            error_code: 'tasks.publish_conflict: "app/a.php", "x\\ny"',
+        },
+    );
+    // A read that failed, or a conflict code without its reply, is an error, never a pass or a conflict.
+    assertEquals(baseFacts(2, files()).error_code, "tasks.publish_failed");
+    assertEquals(
+        baseFacts(3, files({ merge: "d".repeat(40) + "\0" })).error_code,
+        "tasks.publish_failed",
+    );
+    assertEquals(
+        baseFacts(0, files({ head: "" })).error_code,
+        "tasks.publish_failed",
+    );
+});
+
+Deno.test("the base path lists stop at their bound and count the rest", () => {
+    const many = Array.from(
+        { length: BASE_PATHS + 5 },
+        (_, index) => `f${index}`,
+    );
+    const stated =
+        baseFacts(0, files({ overlap: many.join("\0") + "\0" })).facts;
+    assertEquals([stated?.overlapping_paths.length, stated?.overlapping_more], [
+        BASE_PATHS,
+        5,
+    ]);
+    const refused = baseFacts(
+        3,
+        files({ merge: ["d".repeat(40), ...many].join("\0") + "\0" }),
+    ).error_code;
+    assertEquals(refused.endsWith('"f99" and 5 more'), true);
+});
+
+Deno.test("the body ends with one Base section, also on a re-publish", () => {
+    const facts = baseFacts(0, files({ overlap: "app/a.php\0" })).facts;
+    const once = withBase("Adds the export.", facts);
+    assertEquals(
+        once,
+        [
+            "Adds the export.",
+            "",
+            BASE_MARK,
+            "## Base",
+            "",
+            "- Checked base: `" + "a".repeat(40) + "`",
+            "- Default branch head: `" + "c".repeat(40) + "`",
+            "- Behind by: 2 commits",
+            "- Overlapping paths:",
+            "  - `app/a.php`",
+            "",
+        ].join("\n"),
+    );
+    assertEquals(withBase(once, facts), once);
+    assertEquals(
+        withBase(
+            "Adds the export.",
+            baseFacts(0, files({ behind: "1\n" })).facts,
+        ).includes("- Behind by: 1 commit\n- Overlapping paths: none"),
+        true,
+    );
+    // A task VM publish, or a run before the base step, leaves the caller's body as it is.
+    assertEquals(withBase("Adds the export.", null), "Adds the export.");
+});
+
+Deno.test("the planned pull request carries the Base section on creation and update", () => {
+    const facts = baseFacts(0, files()).facts;
+    const statement = JSON.stringify(facts);
+    for (const rows of [[], [open()]]) {
+        const plan = pullPlan({
+            input: publishInput(),
+            steps: { read_pull: out(0, JSON.stringify(rows)) },
+            base: statement,
+        });
+        assertEquals(
+            JSON.parse(plan.body).body,
+            withBase("Adds the export. $(touch inert)", facts),
+        );
+    }
+    const plain = pullPlan({
+        input: publishInput(),
+        steps: { read_pull: out(0, "[]") },
+        base: "",
+    });
+    assertEquals(
+        JSON.parse(plain.body).body,
+        "Adds the export. $(touch inert)",
+    );
 });

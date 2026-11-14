@@ -413,10 +413,11 @@ A copy's publish states the base it publishes against. After the token is minted
 | `default_commit` | The default branch head at publish time |
 | `behind_by` | The commits of the default branch that the checked commit lacks |
 | `overlapping_paths` | The paths that both the checked commit and the default branch changed since the base |
+| `overlapping_more` | How many overlapping paths lie beyond the first 100 |
 
-`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
+`git merge-tree --write-tree` then merges the two inside the scratch repository; no workspace is touched. Only a real conflict refuses: `tasks.publish_conflict` names the conflicting paths in `conflicting_paths`, at most 100, with `conflicting_more` counting the rest, and nothing is pushed. Bring main into the copy with [`task:sync`](#bring-main-into-a-copy), merge or rebase, check again and publish. Being behind, with or without overlapping paths, never refuses.
 
-The four fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text: the base commit, the default head, how far behind, and the overlapping paths, or none. A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
+These fields join the result. With `--title` and `--body`, the pull request body gets a fixed `## Base` section after the caller's text: the base commit, the default head, how far behind, and the overlapping paths, or none. An Orbit marker opens the section, so a body that carries an earlier one gets it replaced and a re-publish states it once. A task VM publish states no base. A run that started on the workflow before this step has none of the fields and no `## Base` section.
 
 The result stays `{ branch, commit, pull_request_number, pull_request_url }`, with null PR fields for a push alone, and adds the four base fields for a copy. Cancellation prevents a mutation that has not started. A started Git push or GitHub mutation finishes its bounded request before cancellation is reported; cancellation cannot undo an existing branch or PR. Swamp owns cancellation and locking. No Gateway push job, mirror transfer, lease or polling step runs.
 

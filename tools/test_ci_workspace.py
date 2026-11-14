@@ -36,8 +36,8 @@ class WorkspaceFixturesTest(unittest.TestCase):
                 self.assertEqual(entry['cost'], sum(entry['case_costs'].values()))
                 self.assertEqual(units.units_for(entry, budget), [(file, entry['cost'])])
                 self.assertLessEqual(entry['cost'] + budget['slice_startup_seconds'], 90)
-        self.assertEqual(len(seen), 24)
-        self.assertEqual(len(set(seen)), 24)
+        self.assertEqual(len(seen), 30)
+        self.assertEqual(len(set(seen)), 30)
         publish = fixtures['swamp/tests/task_copy_publish_test.py']
         current = units.collect(publish['file'])
         self.assertEqual(publish['source_sha256'], current['source_sha256'])

@@ -62,6 +62,7 @@ tasks.maintenance
 tasks.package
 tasks.pr_merge
 tasks.pr_ready
+tasks.publish
 tasks.script
 tasks.sync
 tasks.turn

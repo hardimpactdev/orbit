@@ -3,7 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rule 16 (no tip read: a push without force refuses a divergent tip and pushes nothing for an identical one); rule 22 (no shipped scripts: task VM work is `@swamp/ssh exec` argv, 209 work is inline `git` and `gh api`; one workspace check, since import checks the bundled commit and tree).
   %% Task copy (2026-11-14): a group whose workspace is a task copy exports through its container's workspace phase; the push stays on the worker. The .env Orbit wrote never leaves a copy: the range from the copy's start is checked before the mint. docs/reference/tasks.md#task-copy.
   %% Base (2026-11-14): a copy's run fetches the default branch into its scratch repository after the mint and before the push, states the checked base, how far it is behind and the overlapping paths, and refuses only a real merge conflict. It reads only intent keys the publish already has. docs/reference/tasks.md#the-base-of-a-copy-publish.
-  %% status: draft
+  %% status: migrated
   %% command: task:publish
   %% kind: tasks.publish
   autonumber
@@ -129,8 +129,9 @@ sequenceDiagram
     %%> - it writes its statement and exit code to the private scratch; Swamp keeps no stderr of a failed command step
     Note over SW: Check the base
     %%> How:
-    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`
-    %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming the conflicting paths, before the push; any other error fails with `tasks.publish_failed`
+    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`, at most 100 paths, with `overlapping_more` counting the rest
+    %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming at most 100 conflicting paths and the count beyond, before the push; any other error fails with `tasks.publish_failed`
+    %%> - a copy pushes only after this step succeeded; a skip of it is never a pass
     %%> - `behind_by` and overlapping paths never refuse on their own
   end
   SW->>GH: Push the branch
@@ -148,6 +149,7 @@ sequenceDiagram
     %%> - typed data selects an open PR or creation and writes unchanged caller prose into a JSON input file
     %%> - with `--draft` the creation carries `draft: true`; an update of an open PR sends only title and body, so a PR keeps its state
     %%> - for a task copy, a fixed `## Base` section follows the caller's body: the base commit, the default head, how far behind, and the overlapping paths or none
+    %%> - an Orbit marker opens the section, so a caller body that carries an earlier one gets it replaced: a re-publish states it once
     SW->>GH: Write the PR
     %%> How:
     %%> - one bounded native command on the worker; no shipped script
@@ -177,7 +179,7 @@ sequenceDiagram
     GH-->>SW: Branch pushed · head sha
     %%> Returns:
     %%> - the branch, commit, and the PR number and URL, or null PR fields for a push alone
-    %%> - for a task copy also `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`; a run that started on the workflow before the base step has none of them and no `## Base` section
+    %%> - for a task copy also `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`; a run that started on the workflow before the base step has none of them and no `## Base` section
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
@@ -199,7 +201,7 @@ sequenceDiagram
     %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
     %%> - a commit of a task copy holds the `.env` content or one of its values under any name: `tasks.publish_secret_content`; remove it from the branch history and check again
     %%> - the content check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
-    %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, naming the paths; nothing is pushed; merge or rebase in the copy, check again and publish
+    %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, with `conflicting_paths` and `conflicting_more`; nothing is pushed; merge or rebase in the copy, check again and publish
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
     %%> - which step failed and its error code, such as `tasks.push_failed`
