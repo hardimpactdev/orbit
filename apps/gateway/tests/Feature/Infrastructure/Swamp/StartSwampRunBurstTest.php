@@ -14,6 +14,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\Support\SwampNodeFixture;
@@ -37,6 +38,11 @@ final class BurstLimitedServe implements WebSocketClient
 
     /** Workflow starts whose `started` event must never arrive (the confirmation is lost after serve accepted). */
     public bool $loseConfirmation = false;
+
+    /** @var list<array<string,mixed>>|null Serve's reply to a start it rejects, sent once with the start's id. */
+    public ?array $rejection = null;
+
+    private bool $rejected = false;
 
     private int $inWindow = 0;
 
@@ -78,6 +84,12 @@ final class BurstLimitedServe implements WebSocketClient
             return [['type' => 'vault.put', 'id' => $frame['id'], 'payload' => ['data' => [
                 'vaultName' => $frame['payload']['vaultName'], 'secretKey' => $frame['payload']['key'], 'vaultType' => 'local_encryption',
             ]]]];
+        }
+        if ($this->rejection !== null) {
+            $reply = $this->rejected ? [] : array_map(static fn (array $message): array => ['id' => $frame['id']] + $message, $this->rejection);
+            $this->rejected = true;
+
+            return $reply;
         }
         if ($this->loseConfirmation) {
             $this->open = false;
@@ -242,6 +254,52 @@ it('never queues a start again once serve may have accepted it', function (): vo
         ->and($serve->starts($operation->id))->toHaveCount(1)
         ->and(Queue::pushedJobs()[StartAdmittedSwampRun::class])->toHaveCount(1);
 });
+
+// Serve's replies as recorded on 14 November 2026 (task 5117) to the Gateway's workflow.run frame; ids are the start's own.
+dataset('serve start rejections', [
+    // The live inner serve on 9418, to operation-task-sync with a copy intent, as Operation 22250's start met it.
+    'input validation' => [[
+        ['type' => 'event', 'event' => ['kind' => 'validating_inputs', 'seq' => 1]],
+        ['type' => 'event', 'event' => ['kind' => 'error', 'error' => ['code' => 'input_validation_failed',
+            'message' => "Input validation failed:\n  intent.checkout_path is required",
+            'details' => [['path' => 'intent.checkout_path', 'message' => 'intent.checkout_path is required']]], 'seq' => 2]],
+        ['type' => 'done'],
+    ], 'input_validation_failed'],
+    // A scratch serve of the same build, to a workflow whose step input reads a missing inputs.intent.x.
+    'input resolution' => [[
+        ['type' => 'event', 'event' => ['kind' => 'validating_inputs', 'seq' => 1]],
+        ['type' => 'event', 'event' => ['kind' => 'evaluating_workflow', 'seq' => 2]],
+        ['type' => 'event', 'event' => ['kind' => 'error', 'error' => ['code' => 'workflow_execution_failed',
+            'message' => "Workflow execution failed: Invalid expression: No such key: x\n\n>    1 | inputs.intent.x\n                       ^"], 'seq' => 3]],
+        ['type' => 'done'],
+    ], 'workflow_execution_failed'],
+]);
+
+it('fails a start that serve rejects at run start in seconds and frees its target', function (array $reply, string $code): void {
+    [$operation] = burstCreates(1);
+    $serve = new BurstLimitedServe(limit: 100);
+    $serve->rejection = $reply;
+    app()->instance(WebSocketClient::class, $serve);
+    // Each clock read stands for a 0.2 s receive wait, so a start left to wait out its confirmation reads it past 120 s.
+    $now = 0.0;
+    app()->instance(StartSwampRun::class, new StartSwampRun($serve, static function () use (&$now): float {
+        return $now += 0.2;
+    }));
+    Log::spy();
+    $ran = [];
+
+    runDueStarts($ran);
+
+    expect($now)->toBeLessThan(5.0)
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('swamp.start_refused')
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($serve->starts($operation->id))->toHaveCount(1)
+        ->and(Queue::pushedJobs()[StartAdmittedSwampRun::class])->toHaveCount(1);
+    Log::shouldHaveReceived('warning')->withArgs(static fn (string $message, array $context = []): bool => $message === 'Swamp direct start refused'
+        && $context['remote_type'] === 'event:error' && $context['remote_code'] === $code && ! str_contains($context['remote_message'], "\n"))->once();
+})->with('serve start rejections');
 
 it('does not fail a start that a duplicate job began while its deferral could not be queued', function (): void {
     [$operation] = burstCreates(1);

@@ -304,8 +304,16 @@ final readonly class StartSwampRun
                         && in_array($event['kind'] ?? null, ['started', 'failed', 'cancelled'], true)) {
                         $confirmed ??= ['run_id' => $event['runId'], 'failed' => $event['kind'] !== 'started'];
                     }
-                    if (($message['type'] ?? null) === 'error' && $confirmed === null) {
-                        $error = is_array($message['error'] ?? null) ? $message['error'] : $message;
+                    // Serve rejects a start whose inputs fail validation or resolution with a root error event that names no run,
+                    // then `done`; a protocol failure comes as a `type: error` message.
+                    $refusal = match (true) {
+                        ($message['type'] ?? null) === 'error' => ['error', is_array($message['error'] ?? null) ? $message['error'] : $message],
+                        ($message['type'] ?? null) === 'event' && is_array($event) && ($event['kind'] ?? null) === 'error'
+                            && ! isset($event['runId']) && ! isset($event['parentRunId']) => ['event:error', is_array($event['error'] ?? null) ? $event['error'] : $event],
+                        default => null,
+                    };
+                    if ($refusal !== null && $confirmed === null) {
+                        [$remoteType, $error] = $refusal;
                         $redact = static function (mixed $value, int $limit) use ($endpoint): string {
                             if (! is_string($value) || strlen($value) > 32768 || preg_match('//u', $value) !== 1) {
                                 return '[withheld]';
@@ -316,7 +324,7 @@ final readonly class StartSwampRun
                             return Str::limit(preg_replace('/[\x00-\x1f\x7f]/u', ' ', $safe) ?? '[withheld]', $limit);
                         };
                         Log::warning('Swamp direct start refused', [
-                            'workflow' => $payload['workflowIdOrName'], 'remote_type' => 'error',
+                            'workflow' => $payload['workflowIdOrName'], 'remote_type' => $remoteType,
                             'remote_code' => $redact($error['code'] ?? null, 100),
                             'remote_message' => $redact($error['message'] ?? null, 2000),
                         ]);
