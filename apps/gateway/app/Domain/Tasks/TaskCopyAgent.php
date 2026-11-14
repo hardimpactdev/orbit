@@ -8,6 +8,7 @@ use App\Domain\Instances\InstanceContainer;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\AgentThread;
 use App\Models\Task;
+use App\Rules\NotBlank;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\In;
 
@@ -44,15 +45,15 @@ final readonly class TaskCopyAgent
         return $columns;
     }
 
-    /** @return array<string, list<string|In>> */
+    /** @return array<string, list<string|In|NotBlank>> */
     public static function rules(string $prefix = ''): array
     {
         $rules = [];
         foreach (TaskThreadRole::cases() as $role) {
             $key = $prefix.$role->value.'_';
-            $rules[$key.'provider'] = ['sometimes', 'nullable', 'string', Rule::in(array_keys(InstanceContainer::CopyProviders))];
-            $rules[$key.'model'] = ['sometimes', 'nullable', 'string', 'max:128', 'regex:'.self::ModelPattern];
-            $rules[$key.'effort'] = ['sometimes', 'nullable', 'string', Rule::in(array_values(array_unique(array_merge(...array_values(InstanceContainer::CopyProviders)))))];
+            $rules[$key.'provider'] = ['sometimes', new NotBlank, 'nullable', 'string', Rule::in(array_keys(InstanceContainer::CopyProviders))];
+            $rules[$key.'model'] = ['sometimes', new NotBlank, 'nullable', 'string', 'max:128', 'regex:'.self::ModelPattern];
+            $rules[$key.'effort'] = ['sometimes', new NotBlank, 'nullable', 'string', Rule::in(array_values(array_unique(array_merge(...array_values(InstanceContainer::CopyProviders)))))];
         }
 
         return $rules;
@@ -100,22 +101,6 @@ final readonly class TaskCopyAgent
         }
 
         return $columns;
-    }
-
-    /**
-     * The group's stored values of the role, keyed by value; null where it names none.
-     *
-     * @return array{provider: string|null, model: string|null, effort: string|null}
-     */
-    public static function stored(Task $group, TaskThreadRole $role): array
-    {
-        $stored = [];
-        foreach (self::Values as $value) {
-            $stored[$value] = $group->getAttribute(self::groupColumn($role, $value));
-        }
-
-        /** @var array{provider: string|null, model: string|null, effort: string|null} $stored */
-        return $stored;
     }
 
     /**

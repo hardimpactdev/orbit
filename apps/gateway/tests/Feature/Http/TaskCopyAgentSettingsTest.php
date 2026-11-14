@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Nodes\RoleName;
 use App\Domain\Tasks\TaskAgentDefaults;
-use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskThreadRole;
 use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Project;
@@ -60,7 +58,8 @@ describe('the copy turn agent of a task group', function (): void {
     it('stores no agent value for a group that names none: the Gateway\'s Claude defaults resolve', function (): void {
         $response = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief'])->assertCreated();
 
-        expect(TaskCopyAgent::stored(Task::topLevel()->findOrFail($response->json('data.id')), TaskThreadRole::Implementer))->toBe(['provider' => null, 'model' => null, 'effort' => null])
+        expect(Task::topLevel()->findOrFail($response->json('data.id'))->only(['implementer_agent_provider', 'implementer_agent_model', 'implementer_agent_effort']))
+            ->toBe(['implementer_agent_provider' => null, 'implementer_agent_model' => null, 'implementer_agent_effort' => null])
             ->and($response->json('data.implementer_model'))->toBeNull()
             ->and($response->json('data.resolved_agents.implementer.model'))->toBe(['value' => 'claude-opus-5-5', 'source' => 'gateway'])
             ->and($response->json('data.resolved_agents.implementer.effort'))->toBe(['value' => 'medium', 'source' => 'gateway'])
@@ -107,6 +106,10 @@ describe('the copy turn agent of a task group', function (): void {
         'a provider the copy has no instance of' => [['implementer_provider' => 'codex'], 'implementer_provider'],
         'an effort Claude Code has no instance for' => [['reviewer_effort' => 'minimal'], 'reviewer_effort'],
         'a model with a provider in it' => [['reviewer_model' => 'claudeAgent/claude-opus-5-5'], 'reviewer_model'],
+        'an empty model' => [['reviewer_model' => ''], 'reviewer_model'],
+        'a blank model' => [['implementer_model' => ' '], 'implementer_model'],
+        'an empty provider' => [['reviewer_provider' => ''], 'reviewer_provider'],
+        'a blank effort' => [['implementer_effort' => '  '], 'implementer_effort'],
     ]);
 
     it('changes and clears a role\'s values with task:update until the role\'s first thread, then refuses them with tasks.agent_settings_locked', function (): void {

@@ -15,6 +15,7 @@ use App\Models\Task;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
+use App\Rules\NotBlank;
 use App\Rules\TaskTopologyList;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -28,7 +29,7 @@ final class UpdateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
-    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf>> */
+    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf|NotBlank>> */
     public function rules(): array
     {
         if ($this->route('task') instanceof Task && $this->route('task')->parent_id !== null) {
@@ -38,7 +39,7 @@ final class UpdateTaskGroupRequest extends FormRequest
         return $this->parentRules();
     }
 
-    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf>> */
+    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf|NotBlank>> */
     public function parentRules(): array
     {
         return [
