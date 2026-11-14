@@ -1800,7 +1800,8 @@ jobs:
     # A nested-fleet default checks its inner fleet once, before the run changes anything (docs/cli/instance/container/fleet-refresh.mmd):
     # it compares the fleet with the fleet rules, starts a nested container that is stopped and brings up the tunnel, with no Doctor wait.
     # A fleet that differs where Orbit does not write is refused with instance.container_fleet_drift; nothing changed, so no seed is
-    # restored. Like a start, it starts what is stopped, sets the Club key link and brings up the tunnel; it writes no key.
+    # restored. Like a start, it starts what is stopped, sets the Club key link and brings up the tunnel; it writes no key. First it reads
+    # the room a refresh needs and refuses instance.container_fleet_no_room when the inner Doctor's floor could not hold.
     labels:
       role: swamp
     writes: true
@@ -1815,7 +1816,7 @@ jobs:
       behaviorName: ${{ "instance-deploy-container-fleet-check-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_start "$ORBIT_ANSIBLE/instance-container.yml"
+        run: timeout 400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_start -e fleet_room_check=true "$ORBIT_ANSIBLE/instance-container.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}

@@ -8,6 +8,10 @@
 # container holds, its peer the nested Gateway's hub key. The tunnel does not outlive a stop of the container; the next start makes it.
 # Without the Club key the nested Gateway's Swamp stays down and the fleet still starts: the `club-key` device is not required.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
+# A deployment's one fleet check (only it sets `fleet_room_check`) first reads whether a refresh fits on the container's disk.
+- name: Check the room for a refresh
+  when: fleet_room_check | default(false) | bool
+  ansible.builtin.include_tasks: instance-fleet-room.yml
 # A deployment's one fleet check is this start, and the container may have just started: the inner Incus starts by socket then, and a
 # read before it is ready is not a drift.
 - name: Wait for the inner Incus
