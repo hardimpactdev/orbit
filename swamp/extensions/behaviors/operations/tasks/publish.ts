@@ -127,6 +127,67 @@ const PullRow = z.object({
     }).passthrough(),
 }).passthrough();
 
+/** The most paths a base statement or a conflict names; the count beyond it is stated. */
+export const BASE_PATHS = 100;
+export const BaseFacts = z.object({
+    base_commit: Sha,
+    default_commit: Sha,
+    behind_by: z.number().int().min(0),
+    overlapping_paths: z.array(z.string().min(1)).max(BASE_PATHS),
+    overlapping_more: z.number().int().min(0),
+}).strict();
+export type BaseFacts = z.infer<typeof BaseFacts>;
+
+/** NUL-separated Git names, unique, in Git's order. */
+const names = (
+    text: string,
+) => [...new Set(text.split("\0").filter((name) => name !== ""))];
+
+/**
+ * The files "Read the base" wrote: the default head, the merge base, how far behind, the overlapping paths and the merge-tree
+ * reply. Exit 0 states the base; exit 3 is a real conflict, refused with its paths; anything else is an error of the read.
+ */
+export function baseFacts(
+    exitCode: number,
+    files: Record<"head" | "base" | "behind" | "overlap" | "merge", string>,
+) {
+    const head = files.head.trim(),
+        base = files.base.trim(),
+        behind = files.behind.trim();
+    const read = Sha.safeParse(head).success && Sha.safeParse(base).success &&
+        /^[0-9]+$/.test(behind);
+    if (exitCode === 3 && read) {
+        // merge-tree --name-only -z: the tree, then each conflicted path.
+        const conflicts = names(files.merge).slice(1);
+        if (conflicts.length > 0) {
+            const shown = conflicts.slice(0, BASE_PATHS).map((path) =>
+                JSON.stringify(path)
+            ).join(", ");
+            const more = conflicts.length - BASE_PATHS;
+            return {
+                facts: null,
+                error_code: `tasks.publish_conflict: ${shown}${
+                    more > 0 ? ` and ${more} more` : ""
+                }`,
+            };
+        }
+    }
+    if (exitCode !== 0 || !read) {
+        return { facts: null, error_code: "tasks.publish_failed" };
+    }
+    const overlap = names(files.overlap);
+    return {
+        facts: BaseFacts.parse({
+            base_commit: base,
+            default_commit: head,
+            behind_by: Number(behind),
+            overlapping_paths: overlap.slice(0, BASE_PATHS),
+            overlapping_more: Math.max(overlap.length - BASE_PATHS, 0),
+        }),
+        error_code: "",
+    };
+}
+
 /** One open PR lookup decides one update or one creation, with caller prose unchanged. */
 export function pullPlan(raw: unknown) {
     const { input, steps } = z.object({

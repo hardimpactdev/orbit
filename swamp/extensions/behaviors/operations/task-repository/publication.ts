@@ -1,5 +1,6 @@
 import { z } from "npm:zod@4.4.3";
 import {
+    baseFacts,
     imported,
     PublishInput,
     pullPlan,
@@ -46,7 +47,7 @@ function requireSuccess<T extends { error_code: string }>(
 /** Typed comparisons and private CLI reply shaping only; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.14.1",
+    version: "2026.11.14.3",
     resources: {
         public: {
             description: "Public publication observations",
@@ -109,7 +110,9 @@ export const behavior = {
         pull: {
             description:
                 "Plan one PR write and materialize its unchanged JSON input",
-            arguments: PrivateReply.extend({ input: PublishInput }),
+            arguments: PrivateReply.extend({
+                input: PublishInput,
+            }),
             execute: async (
                 args: z.infer<typeof PrivateReply> & {
                     input: z.infer<typeof PublishInput>;
@@ -169,6 +172,32 @@ export const behavior = {
                         ? line
                         : "tasks.publish_secret_unchecked",
                 );
+            },
+        },
+        base: {
+            description:
+                "Read the base statement of a task copy's publish, or refuse a real merge conflict with its paths",
+            arguments: PrivateReply,
+            execute: async (
+                args: z.infer<typeof PrivateReply>,
+                ctx: Context,
+            ) => {
+                const file = async (name: string) => {
+                    try {
+                        return await read(args.directory, "base/" + name);
+                    } catch {
+                        return "";
+                    }
+                };
+                const { facts, error_code } = baseFacts(args.exit_code, {
+                    head: await file("head"),
+                    base: await file("base"),
+                    behind: await file("behind"),
+                    overlap: await file("overlap"),
+                    merge: await file("merge"),
+                });
+                if (facts === null) throw new Error(error_code);
+                return save(ctx, { stdout: JSON.stringify(facts) });
             },
         },
         written: {
