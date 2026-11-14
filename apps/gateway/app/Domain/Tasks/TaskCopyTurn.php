@@ -17,7 +17,6 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Support\ValidatedData;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 
 /**
@@ -112,15 +111,14 @@ final readonly class TaskCopyTurn
      * result's `ended` says both. Only `task:cancel` ends it, with the copy. Called by the turn and by the check, the publish and the
      * proof of a copy.
      *
-     * T3 runs the turns of one thread in order, so only the latest turn of each thread counts. A turn that ended waiting for an answer
+     * T3 runs the turns of one thread in order, so only the latest turn of each thread counts: keyed by thread, the later turn replaces the earlier. A turn that ended waiting for an answer
      * writes nothing until it gets one: it holds every other turn and check, but not the turn that continues its own thread.
      */
     public static function refuseUnended(Task $group, ?int $continuing = null): void
     {
         $unended = Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
             ->where('kind', OperationKinds::TasksCopyTurn)->whereIn('status', OperationStatus::terminalValues())->orderBy('id')->get()
-            ->groupBy(static fn (Operation $turn): int => ValidatedData::integer($turn->input['thread_id']))
-            ->map(static fn (Collection $turns): Operation => $turns->last())
+            ->keyBy(static fn (Operation $turn): int => ValidatedData::integer($turn->input['thread_id']))
             ->first(static fn (Operation $turn, int $thread): bool => ($turn->state['swamp_run_id'] ?? null) !== null && ($turn->result['ended'] ?? null) !== true
                 && ! (($turn->result['state'] ?? null) === AgentThreadState::AskingForInput->value && $thread === $continuing));
         if ($unended instanceof Operation) {
