@@ -61,7 +61,7 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `taskable_type`, `taskable_id` | task | The task workspace Instance. Null until a provision operation creates it |
 | `implementer_agent_provider`, `implementer_agent_model`, `implementer_agent_effort` | task | The [copy turn agent](#copy-turn-agents) the group names for its implementer. Null takes the Project's default, then the Gateway's |
 | `reviewer_agent_provider`, `reviewer_agent_model`, `reviewer_agent_effort` | task | The same for the reviewer |
-| `implementer_model`, `reviewer_model` | task | The task VM path's models. A new task stores each role's resolved copy model here, so an earlier Gateway release can still read the row. No read shows them, and a copy turn never reads them. They go with the task VM path |
+| `implementer_model`, `reviewer_model` | task | The task VM path's models. A new task stores each role's resolved copy model here, so an earlier Gateway release can read the row. No read shows them |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#ready-and-merge-a-task-pull-request) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
 | `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
@@ -1071,7 +1071,9 @@ A new thread's values are checked against what the copy's T3 offers, in two plac
 | Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
 | Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
 
-Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy. Without the cache file, T3 uses the catalog it ships, which no file holds; the check is then skipped, and a model Claude Code does not know fails in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
+Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
+
+Without the cache file, T3 uses the catalog it ships, which no file holds; the check is then skipped, and a model Claude Code does not know fails in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
 
 **Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the task's VM. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
 
@@ -1490,7 +1492,7 @@ These Gateway environment keys configure the extension.
 | Environment key | Meaning |
 | --- | --- |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
-| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new task VM threads. Defaults: `medium` and `high`. A task copy does not read them. See [Drivers](#drivers) for when changes apply |
+| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new task VM threads, default `medium` and `high`; a task copy does not read them. See [Drivers](#drivers) for when changes apply |
 | `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT`, and the same three for `REVIEWER` | The Gateway's [copy turn agent](#copy-turn-agents) of each role, the last fallback after the task and the Project. Defaults: `claude`, `claude-opus-5-5`, and `medium` for the implementer or `high` for the reviewer |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |

@@ -1,7 +1,7 @@
 ---
 title: "orbit project:show"
 sidebarTitle: "project:show"
-description: "Show one Project with its source access, source defaults, task check, and task workspace routing. Human detail output labels the boolean `Task workspace routed`; JSON uses `task_workspace_routed`. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `project.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`."
+description: "Show one Project with its source access, source defaults, task check, and task workspace routing. Human detail output labels the boolean `Task workspace routed`; JSON uses `task_workspace_routed`. Null `default_branch` or root values mean the source defaults are incomplete, and new Instance creation fails with `project.source_defaults_incomplete` until they exist. A null task check means tasks run no check command. The Implementer agent and Reviewer agent rows show the Project's default [copy turn agent](/reference/tasks#copy-turn-agents) as `claude / claude-opus-5-5 / medium`, with `-` for an unset value, or `Gateway default` when the role has none; JSON returns `task_implementer_provider`, `task_implementer_model`, `task_implementer_effort` and the same three for the reviewer, null where unset. Human output also lists the Project's Instances with ID, name, environment, Node, domain, and status. In a terminal, selecting an Instance opens `instance:show`."
 ---
 
 ```bash
