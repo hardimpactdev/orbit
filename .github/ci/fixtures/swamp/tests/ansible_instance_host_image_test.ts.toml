@@ -68,6 +68,7 @@ inputs = [
   "swamp/tests/_support/fixture_supervisor.py",
   "swamp/tests/_support/instance_host.ts",
   "swamp/tests/_support/host_image_boundary.ts",
+  "swamp/tests/_support/regenerate_host_image_boundaries.ts",
   "swamp/tests/fixtures/host-image-boundaries.json",
   "swamp/tests/fixtures/instance-bridge-curl.ts",
   "swamp/tests/fixtures/task-vm-host-incus.ts",

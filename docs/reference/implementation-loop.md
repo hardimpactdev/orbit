@@ -59,7 +59,7 @@ Migration Git fixtures use real temporary repositories to compare branches, comp
 
 Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state.
 
-When a host task changes persistent state, regenerate the affected saved boundaries from the shipped stages, including replacement and failure states. Keep the producer comparisons and zero-change repeat assertions; do not repair expected state by hand.
+When a host task changes persistent state, run `deno run -A swamp/tests/_support/regenerate_host_image_boundaries.ts --write` from the repository root with the pinned Ansible tools on `PATH`. The helper captures all twelve boundaries from the shipped stages, including replacement and failure states. Use `--check` to compare fresh captures with the saved file without writing it. Keep the producer comparisons and zero-change repeat assertions; do not repair expected state by hand.
 
 Default-remote replacement and failure cases rerun full preparation, including stock reconciliation, the clone probe and local-daemon identity checks. The five repeat-stage cases cover the complete host role and each require zero changes.
 
@@ -217,7 +217,7 @@ Each fixture unit has its own child subreaper. It reaps adopted children while t
 
 Direct input matches take priority when work exceeds that limit, then the metadata `order` values decide admission. A file normally runs with all its slices or is deferred whole.
 
-A fixture can declare `mandatory_cases`, mapping an input pattern from its `inputs` to exact retained case names. A matching change reserves the units containing those cases before other work; changing the fixture, its registry entry or the shared planner, registry loader or slice preload reserves them too. If the required units cannot fit, the plan emits a capacity error and Required fails. Only the remaining units may be deferred as a group. The plan names required cases, deferred units and unmapped Swamp paths in its summary.
+A fixture can declare `mandatory_cases`, mapping an input pattern from its `inputs` to exact retained case names. A matching change reserves the units containing those cases before other work; changing the fixture, its registry entry, shared budgets or admission order, the planner, registry loader or slice preload reserves them too. If the required units cannot fit, the plan emits a capacity error and Required fails. Only the remaining units may be deferred as a group. The plan names required cases, deferred units and unmapped Swamp paths in its summary.
 
 A file that cannot fit even an otherwise empty eight-shard plan, or contains a unit above the lane budget, makes Required checks fail; admitted files still run. Unmapped paths select the table’s default checks.
 
