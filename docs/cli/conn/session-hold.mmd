@@ -81,7 +81,7 @@ sequenceDiagram
     Note over GW: Keep the session<br/>encrypted · keys deleted
     %%> What it does:
     %%> - reads the session key once, stores it encrypted on pairing 7, deletes the run's vault keys
-    %%> - a revoke that named pairing 7 while it ran wins: the session is withdrawn and revoked by id
+    %%> - a revoke that named pairing 7 while it ran wins, whether it ended first or not: pairing 7 is withdrawn, never served, and revoked again by id
     %%> Result:
     %%> - task #5172 succeeds; its result holds only the pairing, link id and expiry
   else T3 refuses, answers badly or not at all

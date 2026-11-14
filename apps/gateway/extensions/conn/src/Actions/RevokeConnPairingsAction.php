@@ -12,8 +12,10 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Models\Node;
 use App\Models\Operation;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
 
@@ -31,7 +33,7 @@ final readonly class RevokeConnPairingsAction
             if (! $environment->admin_session_expires_at->isFuture()) {
                 throw new ResourceOperationException('conn.session_expired', 'The Gateway admin session has expired.', 409);
             }
-            $all = ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)->orderBy('id')->get();
+            $all = ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)->orderBy('id')->lockForUpdate()->get();
             if ($pairingId !== null && ! $all->contains('id', $pairingId)) {
                 abort(404);
             }
@@ -52,10 +54,21 @@ final readonly class RevokeConnPairingsAction
                     }
                 }
             }
+            // A held pairing named by id stops serving now and owes its revoke, so a hold that still runs withdraws what it makes. An
+            // unmatched answer proves nothing of a pairing whose hold ran at admission (issue 3540, [Held sessions](/reference/conn#held-sessions)).
+            $holding = [];
+            foreach ($pairings as $pairing) {
+                if ($pairing->held && $pairing->revoked_at === null) {
+                    $pairing->forceFill(['session' => null, 'withdrawn_at' => $pairing->withdrawn_at ?? Carbon::now()])->save();
+                    if (ConnHeldSessions::holding($pairing->id)) {
+                        $holding[] = $pairing->id;
+                    }
+                }
+            }
             $reference = ['vault' => 'orbit-control-inputs', 'key' => 'conn-pairing-revoke-'.Str::uuid()];
             $operation = $this->operations->execute('conn.pairing_revoke', 'conn_pairing_node', $node->id, $gateway,
                 ['conn_environment_id' => $environment->id, 'pairing_ids' => $pairings->pluck('id')->all(),
-                    'pairing_links' => $pairings->pluck('pairing_link_id')->all(),
+                    'pairing_links' => $pairings->pluck('pairing_link_id')->all(), 'holding_pairing_ids' => $holding,
                     'subject_node_id' => $node->id, 'caller_node_id' => $caller->id,
                     'intent' => ['url' => $environment->url, 'labels' => [],
                         // A withdrawn held pairing whose run failed has no link expiry; its window is unused, its label decides.

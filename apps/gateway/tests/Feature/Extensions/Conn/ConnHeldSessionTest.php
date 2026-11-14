@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
 use Orbit\Extensions\Conn\Actions\RevokeConnPairingsAction;
+use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Domain\ConnHeldSessionSweep;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnNodeAccessRemoval;
@@ -367,23 +368,61 @@ describe('revoke and removal', function (): void {
         readHeld($this->phone, $this->environment)->assertStatus(202);
     });
 
-    it('withdraws a session a revoke named before its link existed, and revokes it again by its id (issue 3540)', function (): void {
+    it('withdraws a session whose revoke by id ended before its first hold, and revokes it again by its id (issue 3540)', function (): void {
         readHeld($this->phone, $this->environment)->assertStatus(202);
         $hold = holdOperation($this->phone, $this->environment);
         test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
             ->postJson('/api/v1/conn/environments/env-fix-login/pairings/revoke', ['pairing_id' => $hold->target_id], ['Idempotency-Key' => 'revoke-new'])->assertAccepted();
         $revoke = revokes()[0];
-        expect($revoke->input['pairing_ids'])->toBe([$hold->target_id])->and($revoke->input['intent']['pairings'])->toBe([]);
+        expect($revoke->input['pairing_ids'])->toBe([$hold->target_id])
+            ->and($revoke->input['holding_pairing_ids'])->toBe([$hold->target_id])
+            ->and($revoke->input['intent']['pairings'][0])->toMatchArray(['id' => $hold->target_id, 'held' => true]);
 
-        // The hold ends after the revoke read the server, and the revoke, which had nothing to match yet, ends after the hold.
-        endHold($hold);
-        readHeld($this->phone, $this->environment)->assertOk();
+        // The revoke read the server before the session existed and ends first; its unmatched answer proves nothing yet.
         endRevoke($revoke, 'failed', 'conn.revocation_unmatched');
+        expect(ConnPairing::query()->findOrFail($hold->target_id))->revoked_at->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes())->toHaveCount(1);
 
+        endHold($hold);
         $pairing = ConnPairing::query()->findOrFail($hold->target_id);
         expect($pairing->session)->toBeNull()->and($pairing->withdrawn_at)->not->toBeNull();
+        $again = collect(revokes())->last();
+        expect(revokes())->toHaveCount(2)->and($again->input['pairing_ids'])->toBe([$hold->target_id])->and($again->input['holding_pairing_ids'])->toBe([]);
         readHeld($this->phone, $this->environment)->assertStatus(202);
-        expect(collect(revokes())->last()->input['intent']['pairings'][0])->toMatchArray(['id' => $hold->target_id, 'held' => true]);
+        expect(holdOperation($this->phone, $this->environment)->target_id)->not->toBe($hold->target_id);
+
+        // That revoke ran after the hold: its unmatched answer now settles the pairing.
+        endRevoke($again, 'failed', 'conn.revocation_unmatched');
+        expect(ConnPairing::query()->findOrFail($hold->target_id))->withdrawn_at->toBeNull()->revoked_at->not->toBeNull();
+    });
+
+    it('withdraws a session whose first hold ended before its revoke by id, and revokes it again once that revoke ends', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $hold = holdOperation($this->phone, $this->environment);
+        test()->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])
+            ->postJson('/api/v1/conn/environments/env-fix-login/pairings/revoke', ['pairing_id' => $hold->target_id], ['Idempotency-Key' => 'revoke-new'])->assertAccepted();
+        $revoke = revokes()[0];
+
+        // The hold ends while the revoke runs: the handle never serves the session, and its own revoke waits for the server.
+        endHold($hold);
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        expect(ConnPairing::query()->findOrFail($hold->target_id))->session->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes())->toHaveCount(1);
+
+        endRevoke($revoke, 'failed', 'conn.revocation_unmatched');
+        expect(ConnPairing::query()->findOrFail($hold->target_id))->revoked_at->toBeNull()->withdrawn_at->not->toBeNull()
+            ->and(revokes())->toHaveCount(2)->and(revokes()[1]->input['pairing_ids'])->toBe([$hold->target_id]);
+    });
+
+    it('settles a pairing a revoke withdrew during its hold when T3 refused the hold', function (): void {
+        readHeld($this->phone, $this->environment)->assertStatus(202);
+        $hold = holdOperation($this->phone, $this->environment);
+        app(RevokeConnPairingsAction::class)->execute($this->phone, $this->environment, $this->phone, $hold->target_id);
+        endRevoke(revokes()[0], 'failed', 'conn.revocation_unmatched');
+
+        endHold($hold, 'failed', 'conn.redeem_refused');
+        expect(ConnPairing::query()->findOrFail($hold->target_id))->withdrawn_at->toBeNull()->revoked_at->not->toBeNull()
+            ->and(app(ConnHeldSessions::class)->revokeNext($this->environment->id))->toBeNull();
     });
 
     it('withdraws the session of a hold whose pairing was revoked while it ran', function (): void {

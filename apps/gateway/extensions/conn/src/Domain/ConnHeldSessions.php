@@ -125,11 +125,18 @@ final readonly class ConnHeldSessions
         }
     }
 
+    /** Whether the hold that makes this pairing's session still runs. */
+    public static function holding(int $pairing): bool
+    {
+        return Operation::query()->where('kind', self::Kind)->where('target_type', 'conn_pairing')->where('target_id', $pairing)
+            ->whereNotIn('status', OperationStatus::terminalValues())->exists();
+    }
+
     /**
      * A revoke's end settles the held pairings it named. One it covered no longer owes a revoke; an unmatched revoke of that one alone
-     * proves nothing of it is left on the server. One it named before its link existed got its session after the revoke read the server,
-     * so that session is withdrawn and revoked again by its id (issue 3540). Then the next owed revoke on the server starts: one revoke
-     * holds a server at a time.
+     * proves nothing of it is left on the server, unless its hold ran at the revoke's admission: then the session may come after the
+     * revoke read the server, so the pairing stays withdrawn and the hold's end revokes it again (issue 3540). Then the next owed revoke
+     * on the server starts: one revoke holds a server at a time.
      */
     public function revoked(Operation $operation, OperationOutcome $outcome): void
     {
@@ -137,30 +144,29 @@ final readonly class ConnHeldSessions
         $covered = array_map(static fn (mixed $entry): int => ValidatedData::integer(ValidatedData::object($entry)['id']), is_array($entries) ? array_values($entries) : []);
         $named = ValidatedData::integerList($operation->input['pairing_ids'] ?? []);
         $unmatched = $outcome->status !== OperationStatus::Succeeded && $outcome->errorCode === 'conn.revocation_unmatched';
+        $holding = ValidatedData::integerList($operation->input['holding_pairing_ids'] ?? []);
         if ($outcome->status !== OperationStatus::Succeeded && ! $unmatched) {
             return;
         }
-        DB::transaction(function () use ($operation, $covered, $named, $unmatched): void {
+        DB::transaction(function () use ($operation, $covered, $named, $unmatched, $holding): void {
             $held = ConnPairing::query()->whereIn('id', $named)->where('conn_environment_id', $operation->input['conn_environment_id'])
                 ->where('held', true)->lockForUpdate()->get();
             foreach ($held as $pairing) {
-                if (in_array($pairing->id, $covered, true)) {
-                    if (! $unmatched || $covered === [$pairing->id]) {
-                        $pairing->forceFill(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
-                    }
-                } elseif ($pairing->pairing_link_id !== null) {
-                    $this->withdraw($pairing);
+                if (in_array($pairing->id, $covered, true) && (! $unmatched || ($covered === [$pairing->id] && ! in_array($pairing->id, $holding, true)))) {
+                    $pairing->forceFill(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
                 }
             }
             DB::afterCommit(fn () => $this->revokeNext(ValidatedData::integer($operation->input['conn_environment_id'])));
         });
     }
 
-    /** Admits the revoke of the server's next owed held session, if any. */
+    /** Admits the revoke of the server's next owed held session, if any. One whose hold still runs waits: the hold's end revokes it. */
     public function revokeNext(int $environment): ?Operation
     {
         $owed = ConnPairing::query()->where('conn_environment_id', $environment)->where('held', true)->whereNotNull('withdrawn_at')
-            ->where(static fn ($query) => $query->whereNull('session_expires_at')->orWhere('session_expires_at', '>', Carbon::now()))->orderBy('id')->first();
+            ->where(static fn ($query) => $query->whereNull('session_expires_at')->orWhere('session_expires_at', '>', Carbon::now()))
+            ->whereNotIn('id', Operation::query()->where('kind', self::Kind)->where('target_type', 'conn_pairing')
+                ->whereNotIn('status', OperationStatus::terminalValues())->select('target_id'))->orderBy('id')->first();
 
         return $owed instanceof ConnPairing ? $this->revoke($owed) : null;
     }

@@ -648,7 +648,7 @@ The old session serves until the new one is recorded. Then the Gateway withdraws
 
 Revoke stays per pairing: `POST /environments/{environment_id}/pairings/revoke` with `pairing_id` ends one held session. Without `pairing_id` it keeps its meaning for installed clients: the Node's own open pairings, never a held one. The Node keeps its node access, so its next read makes a new held session. To stop a Node for good, remove its node access.
 
-An unmatched revoke of one held pairing by its id proves that T3 holds no session with its label. The Gateway then settles the pairing, and the next read makes a new one. A client whose server answers 401 reads the handle again. If the handle answers the same `pairing_id` again, the client revokes that pairing by its id, then reads again.
+A revoke by `pairing_id` withdraws a held pairing at its admission: the handle stops serving it at once. An unmatched revoke of that one pairing proves that T3 holds no session with its label only when no hold of the pairing ran at the revoke's admission. Then the Gateway settles the pairing, and the next read makes a new one. If its hold ran, the session may come after the revoke read the server, so the pairing stays withdrawn and the hold's end revokes it again. A client whose server answers 401 reads the handle again. If the handle answers the same `pairing_id` again, the client revokes that pairing by its id, then reads again.
 
 A held session ends in two steps. The Gateway withdraws it: it stops serving it and clears it at once. Then it owes the revoke on the server: it admits a revoke by `pairing_id`. One revoke holds a server at a time, so when a revoke ends, the next owed revoke on that server starts. While the server cannot take one (asleep, busy, its admin session ended) the hourly tick admits it again. A session past its end owes nothing, and the tick settles it.
 
@@ -688,12 +688,12 @@ A failed delete is logged as `conn.held_vault_cleanup_failed`.
 
 **The revoke race of [issue 3540](https://github.com/hardimpactdev/orbit/issues/3540).**
 
-A revoke during a renewal or a first hold names the new held pairing before its link exists, so it cannot revoke that session yet. The Gateway closes the gap from both ends:
+A revoke by `pairing_id` during the hold that makes that pairing's session reads the server before the session exists. It can end first, unmatched, or after the hold. The Gateway closes the gap from both ends:
 
-- When the revoke ends, matched or not, each held pairing it named before its link existed is withdrawn and revoked again by its id.
-- When a hold ends after a revoke of its pairing, the hold withdraws its session instead of serving it.
+- The revoke withdraws the held pairing at its admission and records that its hold still runs. Its unmatched answer then settles nothing, and no owed revoke of that pairing starts while its hold runs.
+- When the hold ends, it finds the pairing withdrawn: it never serves the session and admits its revoke by id. If the first revoke still holds the server, that revoke's end starts it.
 
-So no session outlives a revoke that named it.
+So no session outlives a revoke that named it, in either order. A renewal makes a new pairing, so a revoke of the old pairing ends only the old session; the renewal's own session is a new `pairing_id`.
 
 Two pairings of one device within five minutes are not ambiguous when one is held. The Gateway redeemed the held link itself, and T3 keeps the grant label on that `one-time-token` session. So a held session is matched by its exact label alone, and the MCP rule of source address and issue window does not apply to it. A revoke of a device pairing that overlaps another device pairing still refuses with `conn.revocation_ambiguous`.
 

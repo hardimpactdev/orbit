@@ -90,8 +90,8 @@ final readonly class ConnSessionHoldProjection implements DirectOperationProject
                     $this->held->withdraw($previous);
                 }
             } elseif ($status !== 'succeeded' && in_array($result['error_code'] ?? null, self::AnsweredFailures, true)) {
-                // T3 answered, so no session exists: the pairing is settled and owes nothing.
-                $pairing->forceFill(['revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
+                // T3 answered, so no session exists: the pairing is settled and owes nothing, also when a revoke withdrew it meanwhile.
+                $pairing->forceFill(['session' => null, 'withdrawn_at' => null, 'revoked_at' => $pairing->revoked_at ?? Carbon::now()])->save();
             } elseif ($status !== 'succeeded' && $pairing->revoked_at === null) {
                 $pairing->forceFill(['issue_started_at' => $pairing->issue_started_at ?? $started])->save();
                 $this->held->withdraw($pairing);
