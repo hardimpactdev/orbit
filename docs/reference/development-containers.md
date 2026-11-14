@@ -1942,12 +1942,17 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | No refresh during a copy | A clone copy reads the seed that a refresh replaces. While a clone's create is open, the admission refuses with `instance.clone_in_flight` |
 | One run at a time | An open deployment of the default holds its Instance lock. A second admission refuses with `operation.target_busy` |
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
+| Room before a change | The check reads the room on the nested Nodes' disk first. When a refresh could not end above the inner Doctor's floor, it refuses with `instance.container_fleet_no_room` and the numbers. Nothing changed |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
 | A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`. `error.detail` names the failed task and its message |
 | Migrate before Doctor | The check checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | The refresh starts again what it stopped for `base`, before the seed. After a restore, the run starts the restored fleet |
 
-A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is the Doctor body. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
+A Swamp step that exits nonzero keeps no output. So a failed fleet phase or seed step writes why into the run's result file, and the Gateway shows it as `error.detail`. For the readiness wait, that is every issue of the last Doctor body: its code, Node, summary and observed value, each at most 240 characters, and at most 12 issues. Any other body gives its first 300 characters. For a seed, it is the [cause](#a-retake-keeps-the-seed), such as no free ID range.
+
+The nested Nodes' `/` lies in the inner pool: a directory pool on the outer container's disk, or the [inner volume](#the-inner-volume). So the room the inner Doctor reads for `node.disk_low` is the outer container's `df /`, or `df` of the inner volume's mount. It wants at least 2 GiB and 10% of the size free.
+
+A refresh writes up to 2 GiB more before its readiness wait: on Instance 2454 a seed after a refresh that retook `base` held 1.66 GiB of its own blocks, and each refresh added 0.1 to 0.3 GiB of data. The check refuses when the free space minus 2 GiB is under the floor, before anything changes. On a quota that counts snapshots, the seeds that copies still pin count too.
 
 The release step that admits the refresh ends before the refresh does. So a failed refresh that a release admitted also writes the Activity row `instance.refresh_failed`: status failed, command `instances:refresh-nested-fleets`, with the Operation, its code and its detail. `activity:list` and the problem collector show it.
 
@@ -2315,6 +2320,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_in_flight` | 409 | The refresh of a nested-fleet default while the create of a clone of it is open. The next release tries again |
 | `instance.fleet_key_on_disk` | 502 | The seed of a nested-fleet default found the Club key as a file on the container's disk. The run's first seed refuses before it changes anything |
 | `instance.fleet_seed_missing` | 502 | A failed refresh found no seed to restore, or the [inner volume](#the-inner-volume) lacks the seed's half. Nothing is restored, and the default stays as the run left it |
+| `instance.container_fleet_no_room` | 502 | A refresh would end under the inner Doctor's disk floor (see [Refresh after a release](#refresh-after-a-release)). The detail names the numbers. Nothing changed |
 | `instance.container_fleet_drift` | 502 | The inner fleet of a nested-fleet default differs from its rules where Orbit does not write, such as `raw.idmap`. The Operation's result `fleet_drift` names each difference. Nothing changed |
 | `instance.default_seed_moved` | 409 | A deployment of the default replaced the seed that a clone's create admitted, before the copy. The step's report names it; run the same command again |
 | `instance.default_seed_missing` | 409 | The default has no seed snapshot at all. Deploy the default; its seed step takes one |

@@ -68,7 +68,7 @@ Deno.test("a nested-fleet default checks its running fleet once, keeps its curre
     assert(names.indexOf("Install the Processes") < names.indexOf("Refresh the inner fleet"));
     // The run first keeps the default as it is, fleet included, so a restore never goes back past the fleet.
     assertEquals(step("Check the inner fleet").dependsOn, [{ step: "Start the container", condition: { type: "succeeded" } }]);
-    assert(step("Check the inner fleet").task.inputs.run!.includes("--tags fleet_start "));
+    assert(step("Check the inner fleet").task.inputs.run!.includes("--tags fleet_start -e fleet_room_check=true "));
     assertEquals(step("Keep the current seed").dependsOn, [
         { step: "Start the container", condition: { type: "succeeded" } },
         { step: "Check the inner fleet", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } },

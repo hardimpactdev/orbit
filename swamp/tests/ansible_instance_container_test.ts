@@ -2488,6 +2488,12 @@ Deno.test({
         "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_drift, quiet: true }", ""].join("\n"));
       assert(!f.run("fleet_check").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] });
+      // The deployment's check refuses a refresh without room with its own code, and the numbers in the detail.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-start.yml`, [
+        "- ansible.builtin.set_fact: { fleet_room_failure: { detail: 'The disk of the nested Nodes has 2.75 GiB free of 25.00 GiB.' } }",
+        "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_no_room, quiet: true }", ""].join("\n"));
+      assert(!f.run("fleet_start").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_no_room", detail: "The disk of the nested Nodes has 2.75 GiB free of 25.00 GiB." });
       // A failed fleet phase names its tag, and says why: the failed task and its message (a swamp step that exits nonzero keeps no output).
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
         `- name: Check the base converge\n  ansible.builtin.assert: { that: false, fail_msg: "The base converge of the nested Node app-dev ended failed", quiet: true }\n`);
