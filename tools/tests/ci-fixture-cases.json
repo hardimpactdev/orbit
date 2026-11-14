@@ -130,7 +130,7 @@
     ]
   },
   "swamp/tests/ansible_instance_fleet_test.ts": {
-    "source_sha256": "90b5ecdb9be8cf7041b51753bc2807f572a7f71e85f66ae988debf828bf608af",
+    "source_sha256": "cc6324f8c9a21a5ba8782e590947133043413a95c71c0b2fe960082d9cf28c82",
     "cases": [
       "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
       "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -156,6 +156,8 @@
       "a changed input alone runs its own part, once: a swamp file the base converge reads converges",
       "a changed input alone runs its own part, once: the agent contract migrates and restarts",
       "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base",
+      "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three",
+      "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read",
       "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too",
       "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three",
       "a deleted record runs every part and never fails the refresh",

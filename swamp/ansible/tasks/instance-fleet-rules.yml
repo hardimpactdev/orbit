@@ -3,7 +3,7 @@
 # in the refresh before it takes `base`, the fleet is stopped and `fleet_rules_apply` is true. The check of a deployment, the start
 # and the reset only compare and never change a key.
 # Before any change, a fleet whose difference Orbit does not write is refused with `instance.container_fleet_drift`, and the result
-# names each difference (`fleet_drift`): a build rule with another value, or a nested container that cannot be read; without
+# names each difference (`fleet_drift`): a build rule with another value, or a nested container or the inner bridge that cannot be read; without
 # `fleet_rules_apply`, also a build rule that is absent. Without `fleet_rules_apply` an owned rule that differs passes: the refresh
 # writes it with the fleet stopped. With it, only owned rules and absent build rules are written, and then every rule must hold.
 # Input: instance-fleet.yml. Each change is one inner `incus` call; a rerun changes nothing.
@@ -54,6 +54,13 @@
       ansible.builtin.command:
         argv: "{{ ['timeout', '60'] + fleet_incus + ['config', 'set', item.container, item.name ~ '=' ~ item.want] }}"
       loop: "{{ fleet_drift | selectattr('kind', 'eq', 'config') | selectattr('class', 'in', ['owned', 'build']) | list }}"
+      loop_control: { label: "{{ item.container }} {{ item.name }}" }
+      changed_when: true
+    # Incus restarts the bridge's dnsmasq; the fleet is stopped, so no nested container loses DNS or DHCP.
+    - name: Set the inner bridge keys
+      ansible.builtin.command:
+        argv: "{{ ['timeout', '60'] + fleet_incus + ['network', 'set', fleet_network, item.name ~ '=' ~ item.want] }}"
+      loop: "{{ fleet_drift | selectattr('kind', 'eq', 'network') | selectattr('class', 'eq', 'owned') | list }}"
       loop_control: { label: "{{ item.container }} {{ item.name }}" }
       changed_when: true
     - { name: Write the fleet files, ansible.builtin.import_tasks: instance-fleet-files.yml }

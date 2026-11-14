@@ -195,8 +195,8 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2794
-slices = 36
+cost = 2931
+slices = 38
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -237,6 +237,8 @@ inputs = [
   "a changed input alone runs its own part, once: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 108
   "a changed input alone runs its own part, once: a swamp file the base converge reads converges" = 138
   "a changed input alone runs its own part, once: the fleet intent converges, and its files retake base" = 126
+  "an inner bridge without no-resolv passes a start unwritten; the refresh sets it with the fleet stopped and retakes base of all three" = 130 # ESTIMATE: local 43s x 3, plus 1s
+  "a start refuses with instance.container_fleet_drift when the inner bridge cannot be read" = 7 # ESTIMATE: local 2s x 3, plus 1s
   "a converge that changes a task on one Node retakes base of that Node and the nested Gateway; a missing base retakes it too" = 141 # local 70s on Beast, x2, plus 1s
   "a failed run that changed a Node leaves no record, so the next refresh runs every part and retakes all three" = 140
   "a deleted record runs every part and never fails the refresh" = 117
