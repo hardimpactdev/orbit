@@ -5,6 +5,8 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Data\Tasks\TaskTurnData;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -12,16 +14,20 @@ use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\AgentThreadState;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCopyLifecycle;
+use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskRuntime;
 use App\Domain\Tasks\TaskStatus;
+use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -31,6 +37,7 @@ use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\Tasks\DestroyTaskCopy;
 use App\Jobs\TaskVms\AdmitTaskVm;
+use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -42,6 +49,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Storage;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -463,5 +471,160 @@ describe('a cancel of a group that owns a copy', function (): void {
         destroySucceeded(app(StartInstanceDestroyAction::class)->execute($clone, true));
 
         expect(Instance::query()->find($clone->id))->toBeNull()->and($group->refresh()->status)->toBe(TaskGroupStatus::Running);
+    });
+});
+
+/** One turn of the group's current subtask, as `task:turn` sends it. */
+function copyTurn(Task $group, array $change = []): Operation
+{
+    // A finished create leaves the copy's container running.
+    Instance::query()->find($group->refresh()->taskable_id)?->runtime?->update(['power_state' => InstanceRuntimePowerState::Running]);
+    $subtask = $group->tasks()->firstOrFail();
+
+    return app(TaskTurnIntent::class)->start($group->refresh(), TaskTurnData::from([
+        'subtask' => $subtask->id, 'role' => 'implementer', 'prompt' => 'Run Doctor and commit a note.', 'thread' => 'new', ...$change,
+    ]), 'test', null);
+}
+
+/** The copy turn's run ended with this shaped turn, as `@nckrtl/task-copy-turn` writes it. */
+function copyTurnEnded(Operation $turn, string $status, array $shaped): Operation
+{
+    $turn = runningOperation($turn);
+
+    return app(TaskCopyTurnProjection::class)->apply($turn, ['status' => $status, 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['turn' => $shaped]]);
+}
+
+describe('a turn of a group that owns a copy', function (): void {
+    it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+
+        $turn = copyTurn($group);
+
+        $thread = AgentThread::query()->where('task_group_id', $group->id)->sole();
+        expect($turn->kind)->toBe('tasks.copy_turn')
+            ->and($turn->node_id)->toBe($copy->node_id)
+            ->and($turn->input['runtime'])->toBe(['project' => InstancePlacement::NestedProject, 'name' => $copy->runtime->container_name])
+            ->and($turn->input['branch'])->toBe('task-'.$group->id)
+            ->and(Arr::except($turn->input['turn'], 'prompt'))->toBe(['t3' => '/opt/orbit-agent/current/agent/bin/t3', 'provider' => 'claudeAgent',
+                'model' => 'claude-opus-5-5', 'seconds' => 3600, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
+            ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nPrompt of this turn:\nRun Doctor and commit a note.")
+            ->and($thread->only(['driver', 'role', 'model', 'effort', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
+                'effort' => null, 'node_id' => $copy->node_id])
+            ->and($group->tasks()->firstOrFail()->implementer_agent_thread_id)->toBe($thread->id)
+            ->and(TaskVm::query()->count())->toBe(0)
+            // T3 issues its own session inside the copy: no vault key, no token.
+            ->and(app(DirectOperation::class)->definition('tasks.copy_turn'))->not->toHaveKey('execution_copies')
+            ->and(json_encode($turn->input, JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
+    });
+
+    it('reads its model from the one setting and refuses a setting it cannot read', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        config(['orbit.tasks.copy_turn_model' => 'claudeAgent']);
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.copy_turn_model_invalid 503')
+            ->and(AgentThread::query()->count())->toBe(0);
+        config(['orbit.tasks.copy_turn_model' => 'claudeAgent/claude-sonnet-5-5']);
+
+        expect(copyTurn($group)->input['turn']['model'])->toBe('claude-sonnet-5-5');
+    });
+
+    it('replays the same turn for a retry with the request\'s key', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $idempotency = app(OperationIdempotency::class);
+        $start = fn (): Operation => $idempotency->under('tasks.turn', 'turn-key', 'fingerprint', fn (): Operation => copyTurn(Task::topLevel()->findOrFail($group->id)));
+
+        $first = $start();
+
+        expect($start()->id)->toBe($first->id)->and($first->idempotency_key)->toBe('turn-key')
+            ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1);
+    });
+
+    it('is refused by name and records nothing before the copy is active, or for what a copy turn does not do yet', function (Closure $arrange, array $change, string $refusal): void {
+        $group = copyGroup(copySource()->project);
+        $arrange($group, startCopy($group));
+        $before = Operation::query()->count();
+
+        expect(copyRefusal(fn () => copyTurn($group, $change)))->toBe($refusal)
+            ->and(Operation::query()->count())->toBe($before)
+            ->and(AgentThread::query()->count())->toBe(0);
+    })->with([
+        'a copy still being created' => [fn (Task $group, Operation $create) => runningOperation($create), [], 'tasks.copy_not_ready 409'],
+        'a copy not fully set up' => [function (Task $group, Operation $create): void {
+            finishedCopy($group, $create)->update(['status' => InstanceState::Reserved]);
+        }, [], 'tasks.copy_not_ready 409'],
+        'a reviewer turn' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.copy_turn_unsupported 422'],
+        'a continued thread' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['thread' => '12'], 'tasks.copy_turn_unsupported 422'],
+        'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'gpt-5.6-luna'], 'tasks.copy_turn_unsupported 422'],
+    ]);
+
+    it('refuses a nested-fleet group without a copy instead of reaching for a task VM', function (): void {
+        $group = copyGroup(copySource()->project);
+        $group->update(['status' => TaskGroupStatus::Running]);
+
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.no_workspace 409')
+            ->and(TaskVm::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
+        Queue::assertNotPushed(AdmitTaskVm::class);
+    });
+
+    it('records a completed turn on its thread, with T3\'s thread id and a transcript that outlives the copy', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        $copy = finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+        $transcript = [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => ''],
+            ['id' => 'run:1:1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Committed d867aba2.', 'at' => '']];
+
+        $ended = copyTurnEnded($turn, 'succeeded', ['state' => 'done', 'error' => null, 't3_thread_id' => 'mcp:66105c2c', 'run_id' => 'run:1', 'transcript' => $transcript]);
+
+        $thread = AgentThread::query()->where('task_group_id', $group->id)->sole();
+        expect($ended->status)->toBe(OperationStatus::Succeeded)
+            ->and($ended->result)->toMatchArray(['state' => 'done', 't3_thread_id' => 'mcp:66105c2c'])->and($ended->result)->not->toHaveKey('transcript')
+            ->and($thread->state)->toBe(AgentThreadState::Done)->and($thread->external_id)->toBe('mcp:66105c2c')->and($thread->tokens)->toBeNull();
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+        destroySucceeded(Operation::query()->findOrFail($cancel->result['destroy_operation_id']));
+
+        $read = app(ReadAgentThreadAction::class)->execute($group->refresh(), $thread->refresh(), null);
+        expect(Instance::query()->find($copy->id))->toBeNull()
+            ->and($read['archived'])->toBeTrue()
+            ->and(array_column($read['data']['entries'] ?? $read['entries'] ?? [], 'text'))->toBe(['Run Doctor.', 'Committed d867aba2.']);
+    });
+
+    it('records a turn that ran past its bound as failed with tasks.turn_timeout, and records nothing for a cancelled turn', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $timedOut = copyTurnEnded(copyTurn($group), 'failed', ['state' => 'failed', 'error' => 'The turn ran longer than its bound.',
+            'error_code' => 'tasks.turn_timeout', 't3_thread_id' => 'mcp:1', 'run_id' => null, 'transcript' => []]);
+
+        expect($timedOut->error_code)->toBe('tasks.turn_timeout')
+            ->and(AgentThread::query()->findOrFail($timedOut->input['thread_id'])->only(['state', 'error']))
+            ->toBe(['state' => AgentThreadState::Failed, 'error' => 'The turn ran longer than its bound.']);
+
+        $cancelled = copyTurnEnded(copyTurn($group), 'cancelled', []);
+
+        expect(AgentThread::query()->findOrFail($cancelled->input['thread_id'])->state)->toBeNull();
+    });
+
+    it('is stopped by the group\'s cancel before the copy\'s destroy is admitted', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+
+        $cancel = app(TaskCancelIntent::class)->start($group->refresh(), 'test', null);
+
+        expect($turn->refresh()->status)->toBe(OperationStatus::Cancelled)
+            ->and(Operation::query()->findOrFail($cancel->result['destroy_operation_id'])->kind)->toBe('instance.destroy');
+    });
+
+    it('serves a T3 thread only from its archive', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'driver' => 't3', 'runtime_key' => 'host', 'external_id' => 'retired', 'role' => 'implementer']);
+
+        expect(copyRefusal(fn () => app(ReadAgentThreadAction::class)->execute($group, $thread, null)))->toBe('tasks.agent_transcript_unavailable 409');
     });
 });

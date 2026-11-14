@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Data\Tasks\TaskTurnData;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\TaskVms\TaskVmState;
@@ -28,6 +29,10 @@ final readonly class TaskTurnIntent
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
     {
+        // A task of a nested-fleet Project runs in a copy of its default Instance (docs/cli/task/turn.mmd); every other keeps its task VM.
+        if (InstancePlacement::taskRuntime($group->project()->firstOrFail()) === TaskRuntime::Copy) {
+            return app(TaskCopyTurn::class)->start($group, $data, $caller, $request);
+        }
         TaskVmAwake::require($group);
 
         return $this->operations->start($group, 'tasks.turn', $data->toArray(), static function (Task $group): void {},
