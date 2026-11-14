@@ -72,7 +72,8 @@
 # Frozen, the sleep's state: resume it, close swap again, and wait a short time for the web unit; a silent one gets a stop and the
 # boot below, as a visitor would rather wait for a boot than for ever. Stopped (after a host reboot or a sleep that fell back to a
 # stop): the boot below. Running: no start and no resume. A Frozen container without its marker is a defect that the result names.
-# A deployment's start resumes a Frozen container too, then converges as usual.
+# A deployment's start resumes a Frozen container too, then converges as usual. A nested-fleet container (`orbit-instances-nested`)
+# is never stopped or booted by a wake: only a deployment or a start gives back its Club key and its tunnel `wg-nested`.
 - name: Read the asleep marker
   tags: [start]
   when: phase == 'start' and intent.marker is defined
@@ -84,8 +85,12 @@
   when: phase == 'start'
   ansible.builtin.set_fact:
     start_found: "{{ (container_read.stdout | from_json).status if container_read.rc == 0 else 'Missing' }}"
-    # Incus writes `memory.swap.max = 0` from `limits.memory`; a sleep opens it for this cgroup only.
-    container_cgroup: "{{ cgroup_root | default('/sys/fs/cgroup') }}/lxc.payload.{{ container.project }}_{{ container.name }}"
+    start_nested: "{{ container.project == 'orbit-instances-nested' }}"
+
+- name: Refuse the wake of a stopped nested-fleet container
+  tags: [start]
+  when: phase == 'start' and intent.marker is defined and start_nested | bool and start_found == 'Stopped'
+  ansible.builtin.fail: { msg: instance.nested_fleet_stopped }
 
 - name: Resume the frozen container
   tags: [start]
@@ -97,8 +102,8 @@
       changed_when: true
     # Pages in swap stay there and come back on use; a running container swaps no more, as before the sleep.
     - name: Keep the container's memory out of swap
-      ansible.builtin.command: { argv: [tee, "{{ container_cgroup }}/memory.swap.max"], stdin: "0", stdin_add_newline: false }
-      changed_when: true
+      ansible.builtin.include_tasks: { file: instance-container-swap.yml, apply: {tags: [start]} }
+      vars: { swap: close }
     - name: Start the web probe clock
       ansible.builtin.set_fact: { resume_probe_started: "{{ now().timestamp() }}" }
     - name: Wait for the resumed web unit
@@ -119,6 +124,9 @@
         start_resume_timing:
           resume_seconds: "{{ (container_resume.delta.split(':')[1] | int) * 60 + (container_resume.delta.split(':')[2] | float) }}"
           web_probe_seconds: "{{ ((now().timestamp() | float) - (resume_probe_started | float)) | round(3) }}"
+    - name: Refuse the wake of a nested-fleet container whose web unit is silent
+      when: not start_resumed and start_nested | bool
+      ansible.builtin.fail: { msg: instance.web_unready }
     - name: Stop the resumed container whose web unit is silent
       when: not start_resumed
       ansible.builtin.command: { argv: "{{ incus_project + ['stop', '--force', container.name] }}" }
@@ -1204,6 +1212,13 @@
   vars:
     power: awake
     marker: "{{ intent.marker }}"
+
+# A deployment's or a start's `start` (its intent names `asleep_marker`) brings a sleeping container back as well: once the part
+# passed, Caddy sends the next request to the app again. Its own later phases do their own waits; a running Instance has no marker.
+- name: Remove the asleep marker after the start
+  tags: [start]
+  when: phase == 'start' and intent.asleep_marker is defined
+  ansible.builtin.file: { path: "{{ intent.asleep_marker }}", state: absent }
 
 # Only migration holds cutover for a stable Process. Create, deploy, start and direct process.* keep their own checks.
 - name: Check each moved running Process before cutover
