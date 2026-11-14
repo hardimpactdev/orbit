@@ -56,9 +56,11 @@ class TaskCheckFailureTest(unittest.TestCase):
             self.commit('change set')
         result = subprocess.run(['python3', str(self.repo / 'bin/task-check'), '--base', self.start, '--only', part],
                                 cwd=self.repo, capture_output=True, text=True, timeout=280)
-        lines = result.stdout[result.stdout.rindex('Task check summary'):].splitlines()
-        # Each part's line is its status, padded to twelve characters, then its name and seconds.
-        summary = {line[15:].split(' (')[0]: line[2:14].strip() for line in lines[1:] if line.startswith('  ')}
+        lines = result.stdout[result.stdout.rindex('Task check summary'):].splitlines()[1:]
+        # Each part's line is its status, padded to twelve characters, then its name and seconds. The last lines of the
+        # failed parts follow the part lines.
+        rows = lines[:next((index for index, line in enumerate(lines) if not line.startswith('  ')), len(lines))]
+        summary = {line[15:].split(' (')[0]: line[2:14].strip() for line in rows}
         return result.returncode, summary, result.stdout
 
     def assertCaught(self, part, outcome, *evidence):

@@ -59,7 +59,9 @@ A top-level task holds the task workspace, the branch, the reviewed pull request
 | `implementer_agent_thread_id` | subtask | The subtask's implementer thread |
 | `reviewer_agent_thread_id` | task | The current reviewer thread. A shared reviewer thread is stored here, and [Review a subtask](#review-a-subtask) points it at the fresh reviewer |
 | `taskable_type`, `taskable_id` | task | The task workspace Instance. Null until a provision operation creates it |
-| `implementer_model`, `reviewer_model` | task | The models used for the task's threads |
+| `implementer_agent_provider`, `implementer_agent_model`, `implementer_agent_effort` | task | The [copy turn agent](#copy-turn-agents) the group names for its implementer. Null takes the Project's default, then the Gateway's |
+| `reviewer_agent_provider`, `reviewer_agent_model`, `reviewer_agent_effort` | task | The same for the reviewer |
+| `implementer_model`, `reviewer_model` | task | The task VM path's models. A new task stores each role's resolved copy model here, so an earlier Gateway release can read the row. No read shows them |
 | `pr_url` | task | The reviewed pull request Orbit opened on the last subtask, or the [incoming pull request](#ready-and-merge-a-task-pull-request) Orbit reviews |
 | `pr_branch` | task | The incoming pull request's head branch, which Orbit fetches and pushes. Null for a task whose branch is `task-{id}` |
 | `merge_status`, `merge_reason`, `merged_sha` | task | The [merge step](#merge-step) result: `waiting`, `refused`, or `merged`, its reason, and the merge commit |
@@ -222,7 +224,7 @@ One official `@swamp/ssh copy` downloads the files into a private worker directo
 
 One module holds the rule: `swamp/extensions/behaviors/_lib/public_output.ts`. It reads at most the last 1 MiB of a file and replaces invalid UTF-8 before matching. It replaces known values of eight characters or more in one pass. Then it replaces credential-shaped text: PEM blocks, URL user info, `Authorization` headers, `Bearer` tokens, GitHub tokens, 64-character hex credentials and the values of secret-named assignments.
 
-It redacts the kept tail again. It drops a first line that may start mid-value and any line that still holds an 8-byte piece of a known value. It keeps only whole lines. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
+It splits the redacted capture into lines and keeps the newest whole lines that fit the bound. It drops a first line that may start mid-value when older bytes were discarded, and any line that still holds an 8-byte piece of a known value. A line longer than the room left is replaced by `[a line of N bytes omitted]`, and older lines still fill the bound, so one long line never hides the lines before it. Task commands receive no credentials, except that setup commands can read the token files of the private dependencies, so they pass no known values today.
 
 Repository files follow the same rule. Provision downloads `composer.json` instead of reading it through an exec. The profile step keeps only its facts, the PHP version and whether the source is Laravel, and deletes the file.
 
@@ -961,6 +963,8 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 
 A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
 
+A handoff check in a copy makes no commit for a clean head that an earlier check recorded, so checking a published head again leaves nothing that blocks the cancel.
+
 The copy [starts clean](/reference/development-containers#a-task-copy-starts-clean): its tree is its start commit, the seed's commit, plus what Git ignores, so the default's modified and untracked files never reach a check or a pull request. The start's result names what the clean took as `workspace_cleaned`.
 
 [`task:turn`](/cli/task/turn#a-task-that-runs-in-a-copy) runs an implementer or reviewer turn in it as `tasks.copy_turn`, with T3's own CLI as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. Each role keeps one ongoing T3 thread, and a turn without `--thread` continues it: the implementer's thread of the current subtask, recorded on the subtask, or the reviewer's thread, recorded on the group. The first turn of a role, or `--thread=new`, starts the thread with the role's copy model and effort.
@@ -1045,16 +1049,39 @@ A driver translates Orbit's thread operations for one agent runtime. A turn in a
 
 A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads do not use the driver registry: a copy turn starts or continues them with T3's own CLI. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
 
-| Role | Default model | Effort |
-| --- | --- | --- |
-| Implementer | `gpt-5.6-luna`, or `ORBIT_TASKS_IMPLEMENTER_MODEL` | `medium`, or `ORBIT_TASKS_IMPLEMENTER_EFFORT` |
-| Reviewer | `gpt-5.6-luna`, or `ORBIT_TASKS_REVIEWER_MODEL` | `high`, or `ORBIT_TASKS_REVIEWER_EFFORT` |
+A task VM thread takes its effort from `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, default `medium` and `high`, and its model from the task's `implementer_model` or `reviewer_model`. The Gateway reads the effort when it creates a thread, so a change applies to the next thread of every open task; an existing thread keeps its stored `effort`. A thread in a [task copy](#task-copy) takes its [copy turn agent](#copy-turn-agents) instead.
 
-Set `ORBIT_TASKS_IMPLEMENTER_EFFORT` and `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env` to choose each role's reasoning effort, on a task VM and in a task copy alike. Unset or empty keeps `medium` for the implementer and `high` for the reviewer. For example, `ORBIT_TASKS_IMPLEMENTER_EFFORT=high` sets new implementer threads to `high`.
+### Copy turn agents
 
-The Gateway reads effort when it creates a thread, not when it creates the group. A change applies to the next thread of every open group. An existing thread keeps its stored `effort`. The Gateway passes the value to the driver unchanged; the agent runtime validates it.
+Each role of a copy turn, implementer and reviewer, runs with a provider, a model and an effort. A new copy thread resolves each of the three values on its own:
 
-The model settings name Pi models and apply to task VM threads. A thread in a [task copy](#task-copy) takes its model from `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL` and its effort from the role's effort setting, which must be `low`, `medium`, `high`, `xhigh` or `max`. Stock T3's CLI takes no effort, so the copy's T3 settings hold one Claude provider instance per effort level, `claudeLow` to `claudeMax`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+1. the task's value, set with [`task:create`](/cli/task/create) or [`task:update`](/cli/task/update);
+2. else the Project's default, set with [`project:update`](/cli/project/update) and shown by [`project:show`](/cli/project/show);
+3. else the Gateway's setting.
+
+| Gateway setting | Shipped default |
+| --- | --- |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_REVIEWER_PROVIDER` | `claude` |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_REVIEWER_MODEL` | `claude-opus-5-5` |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT` | `medium` |
+| `ORBIT_TASKS_COPY_REVIEWER_EFFORT` | `high` |
+
+The thread stores the resolved model and effort and the T3 provider instance it started on; [`task:agent:show`](/cli/task/agent-show) shows the model and effort. A turn that continues the thread keeps them, whatever the task, the Project or the Gateway say later. [`task:show`](/cli/task/show) prints each role's resolved values and where each comes from: `group`, `project` or `gateway`.
+
+A role's own values on the task change with `task:update` until the role has a thread; after that, `task:update` refuses them with `tasks.agent_settings_locked` (409). The lock covers only the task's own values. The Project's default and the Gateway's settings can still change, and a later new thread of the role, such as the implementer of the next subtask or a turn with `--thread=new`, resolves again and takes them.
+
+Stock T3 0.1.7 takes no effort on its command line. The copy's T3 settings therefore hold one provider instance per provider and effort, such as `claudeMedium`, each with `CLAUDE_CODE_EFFORT_LEVEL` in its environment, and a new thread starts on the instance of its provider and effort. Claude Code takes that variable over the `--effort` T3 passes: verified with Claude Code 2.1.311 and T3 0.1.7. See [Swamp drives T3](/reference/development-containers#swamp-drives-t3).
+
+A new thread's values are checked against what the copy's T3 offers, in two places:
+
+| Value | Where | Against | Refusal |
+| --- | --- | --- | --- |
+| Provider and effort | At the turn's admission, before anything runs | The provider instances Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max` | `tasks.copy_turn_unoffered` (422) with the offer in `details.offered`; nothing is recorded |
+| Model | First in the turn, before any checkout or start | The slugs and aliases that T3's cached `model-manifest.json` lists for the instance's driver | The turn fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched |
+
+Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
+
+Without the cache file, T3 uses the catalog it ships, which no file holds; the check is then skipped, and a model Claude Code does not know fails in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
 
 **Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the task's VM. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
 
@@ -1165,7 +1192,49 @@ Orbit runs every task check with `ORBIT_CHECK_PROCESSES=1`, whatever the copy's 
 
 Another Project that develops Orbit sets the same setting on its own id. Its copy must hold what the parts run: the vendor folders of the Composer projects, Deno for the Swamp parts and Node for the flow charts. A seeded copy holds them; the command installs nothing. Project 46 keeps `composer check` as its task check, as [its task policy](/reference/instance-setup#configure-orbits-task-policy) states.
 
-The check runs at the repository root, as every task check does. The start commit is the merge base with `origin/main`, else with `main`. A copy's branch starts at the seed commit, which is `origin/main` in the copy, so the merge base is the start commit. [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check, and the last lines of its output name each part's result.
+The check runs at the repository root, as every task check does.
+
+#### Start commit
+
+The start commit is HEAD's merge base with `origin/main` when that ref exists, else with `main`. The first line of the output names the start commit and the ref that gave it. `bin/review-check` uses the same rule.
+
+A copy's branch starts at the seed commit, which is `origin/main` in the copy, so a branch at its start is checked against the seed. A copy never fetches, so its `origin/main` is the driver's to move. A driver that brings a newer main into the branch makes a bundle of the real `main` in a clone of the real repository, copies it into the copy's `/tmp`, and moves the copy's `origin/main` to it. Then the driver merges or rebases:
+
+```bash
+# In a clone of the real repository, at the newest main:
+git bundle create main.bundle main
+# Copy it into the copy, for example from its Node:
+incus file push main.bundle <container>/tmp/main.bundle
+# In the copy's /srv/workspace:
+git fetch /tmp/main.bundle +main:refs/remotes/origin/main
+git merge origin/main        # or: git rebase origin/main
+```
+
+The branch then holds that main, so the start commit is that main, and main's own commits are not counted as the task's changes. If `origin/main` stays at the seed, the merged commits count as changed paths. Moving only `main` changes nothing, because `origin/main` comes first.
+
+#### Docs-impact waivers in a copy
+
+The `docs-impact` part reads waivers from the branch's proposed PR body in the copy, `.git/orbit/proposed-pr-bodies/task-<id>.md` under `/srv/workspace`. Nothing else puts that file there: the implementer writes it before the handoff check, with one line for each impacted page that needs no change:
+
+```text
+Docs-unaffected: docs/reference/tasks.md: <the specific reason>
+```
+
+When a page is neither changed nor waived, the part's output names the file and says whether it is absent or holds no valid line for the page. The reviewer confirms the reason.
+
+#### Parts
+
+[The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check.
+
+#### Stored result
+
+Orbit stores the last 16 KiB of the check's output, redacted by [the one rule](#keep-command-output-out-of-run-history), as the check's `output`. `task:check`, `task:show` and the API's check `output` return it. `bin/task-check` ends its output with a summary of at most 12 KiB, so the stored output always holds the whole summary:
+
+- `Task check summary`, then one line per part with its outcome, its seconds and its detail.
+- For each failed part, `Last lines of <part>:` and the newest lines of its output. The failed parts share the bytes that the other summary lines leave.
+- The parts CI alone runs, then `Task check PASSED` or `FAILED`, the start commit and the seconds.
+
+Each line of the summary and of a part's output is at most 300 bytes. A longer line keeps its start and ends with `… (N bytes)`, such as a list of budget-skipped fixture units. The output before the summary, each part as it ends, fills the rest of the 16 KiB.
 
 ## Review a subtask
 
@@ -1474,7 +1543,9 @@ The response also holds:
 
 - `weekly`: `tokens_per_merged_pr`, `tasks`, and `merged` for each of the last 12 weeks, whatever the period.
 - `daily`: merged and not merged tasks for each day of the period.
-- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each implementer model, each Project, and each [Gateway release](/reference/gateway-recovery). A task belongs to the last verified release that began before the task's `started_at`.
+- `breakdowns`: `tasks`, `merged`, `tokens_per_merged_pr`, `lead_time_ms`, and `yield` for each model, each Project, and each [Gateway release](/reference/gateway-recovery).
+- A task's model is the model of its first implementer thread. A task without one counts as `Unknown`.
+- A task's release is the last verified release that began before its `started_at`.
 
 ### On the board
 
@@ -1570,8 +1641,8 @@ These Gateway environment keys configure the extension.
 | Environment key | Meaning |
 | --- | --- |
 | `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
-| `ORBIT_TASKS_IMPLEMENTER_MODEL`, `ORBIT_TASKS_REVIEWER_MODEL` | The models of new tasks. Both default to `gpt-5.6-luna`. A Claude model is refused |
-| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new implementer and reviewer threads, on a task VM and in a task copy. Defaults: `medium` and `high`. See [Drivers](#drivers) for when changes apply |
+| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new task VM threads, default `medium` and `high`; a task copy does not read them. See [Drivers](#drivers) for when changes apply |
+| `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT`, and the same three for `REVIEWER` | The Gateway's [copy turn agent](#copy-turn-agents) of each role, the last fallback after the task and the Project. Defaults: `claude`, `claude-opus-5-5`, and `medium` for the implementer or `high` for the reviewer |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_PR_MODE` | The [mode](#task-group-modes) of a group whose group and Project set none: `review_before_pr` (default) or `pr_when_done`. Any other value is `tasks.pr_mode_setting_invalid` |
@@ -1624,6 +1695,8 @@ These reasons explain the design. Check them before you propose a change.
 ### External checks are their own operation and own their commit
 
 A turn and its check are separate operations. The group's Operation lock makes the check wait for the turn to end. Detached check supervision gives every requested check one execution and output rule. A failed check is evidence for the orchestrator, so it is a result rather than an operation failure. A passed handoff commits the checked tree so later review and publication can name one recorded commit.
+
+The one exception is a task copy whose clean `HEAD` an earlier check already recorded: that commit is the recorded commit, and the check makes no empty one ([check phases](/reference/task-instance-workspace#check-phases)).
 
 The [hosted-CI prerequisite](#check-an-external-group) needs a fresh sanitized commit per operation because sanitizing a proposed message cannot remove skip directives inherited from an old commit. Recovery must retain that same commit, or a lost reply would create extra commits and pushes. Pinning the CI plan prevents a Project edit from changing what passed. Reviewer and publish admission share one predicate because a local pass cannot prove hosted CI completed; the owning successful operation supplies that evidence without a duplicate check-status schema.
 
@@ -1755,7 +1828,7 @@ Anthropic permits Claude subscription credentials only in its own applications, 
 
 Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
 
-Both roles default to `gpt-5.6-luna` at `high` effort. Keeping `claude-opus-5` as the reviewer default would make each new review fail on Pi. Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
+Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
 
 Finishing an open T3 task turn would preserve the second runtime, so a managed task that records a driver other than `pi` never starts or resumes an agent turn. The operator cancels or replaces it. Deleting its thread row, metrics, or `t3_*` columns would erase the record of work that already ran, so that history stays. A transcript request returns HTTP 409 `tasks.agent_transcript_unavailable` rather than contacting T3. Pi session files stay on the Node; Orbit keeps their thread rows and metrics too.
 

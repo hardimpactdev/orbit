@@ -1,9 +1,10 @@
 order = 30
-source_sha256 = "9e004acb291e98f4acdec3378e7efb11463a5f8ad201b6f8c9967f7380f9bcd9"
+source_sha256 = "13ba71b7e484660e001be6beaab221ac0d69f2113c01e9e11b747921abce2bbf"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
+  "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words",
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
   "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
@@ -61,8 +62,8 @@ cases = [
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2238
-slices = 58
+cost = 2250
+slices = 59
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -84,6 +85,7 @@ inputs = [
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: prior local x 3, plus 1s
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
+  "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
   "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 50
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79

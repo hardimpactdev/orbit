@@ -6,6 +6,7 @@ namespace App\Http\Requests\Tasks;
 
 use App\Data\Tasks\UpdateTaskData;
 use App\Data\Tasks\UpdateTaskGroupData;
+use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskTopology;
@@ -14,6 +15,7 @@ use App\Models\Task;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
+use App\Rules\NotBlank;
 use App\Rules\TaskTopologyList;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
@@ -27,7 +29,7 @@ final class UpdateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
-    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf>> */
+    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf|NotBlank>> */
     public function rules(): array
     {
         if ($this->route('task') instanceof Task && $this->route('task')->parent_id !== null) {
@@ -37,7 +39,7 @@ final class UpdateTaskGroupRequest extends FormRequest
         return $this->parentRules();
     }
 
-    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf>> */
+    /** @return array<string, list<string|Enum|CommandPaths|DistinctDeliverableIds|FailsOnBase|TaskTopologyList|In|ProhibitedIf|NotBlank>> */
     public function parentRules(): array
     {
         return [
@@ -45,6 +47,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             'title' => ['sometimes', 'string', 'max:160'],
             'brief' => ['sometimes', 'string', 'max:8000'],
             'status' => ['sometimes', 'string', Rule::enum(TaskGroupStatus::class)],
+            ...TaskCopyAgent::rules(),
         ];
     }
 
@@ -54,7 +57,7 @@ final class UpdateTaskGroupRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect($this->getContent(), $this->route('task') instanceof Task && $this->route('task')->parent_id !== null
                 ? ['title', 'brief', 'position', 'deliverables', 'topology', 'status']
-                : ['title', 'brief', 'status', 'preview']);
+                : ['title', 'brief', 'status', 'preview', ...TaskCopyAgent::fields()]);
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
         }
@@ -69,6 +72,7 @@ final class UpdateTaskGroupRequest extends FormRequest
             brief: is_string($this->validated('brief')) ? $this->validated('brief') : null,
             status: is_string($status) ? TaskGroupStatus::from($status) : null,
             preview: is_bool($this->validated('preview')) ? $this->validated('preview') : null,
+            agents: TaskCopyAgent::provided($this->validated()),
         );
     }
 

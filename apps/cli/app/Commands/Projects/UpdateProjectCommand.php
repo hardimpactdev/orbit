@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Commands\Projects;
 
+use App\Commands\Concerns\ReadsTaskAgentOptions;
 use App\Commands\GatewayCommand;
 use App\Commands\Projects\Concerns\ParsesTaskWorkspaceRouted;
 use App\Repositories\GatewayConfigRepository;
@@ -14,6 +15,7 @@ use Orbit\Sdk\Responses\Projects\ProjectResponse;
 final class UpdateProjectCommand extends GatewayCommand
 {
     use ParsesTaskWorkspaceRouted;
+    use ReadsTaskAgentOptions;
 
     #[\Override]
     protected $signature = 'project:update
@@ -30,6 +32,14 @@ final class UpdateProjectCommand extends GatewayCommand
         {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
         {--merge-check= : The check that must pass on a head before Orbit merges it, such as "Required checks"}
         {--clear-merge-check : Remove the merge check}
+        {--task-implementer-provider= : Default implementer provider of task copies, such as claude}
+        {--task-implementer-model= : Default implementer model of task copies, such as claude-opus-5-5}
+        {--task-implementer-effort= : Default implementer effort: low, medium, high, xhigh, or max}
+        {--task-reviewer-provider= : Default reviewer provider of task copies}
+        {--task-reviewer-model= : Default reviewer model of task copies}
+        {--task-reviewer-effort= : Default reviewer effort}
+        {--clear-task-implementer-agent : Clear the implementer defaults, so the Gateway defaults apply}
+        {--clear-task-reviewer-agent : Clear the reviewer defaults}
         {--json : Return machine-readable JSON}';
 
     #[\Override]
@@ -103,6 +113,12 @@ final class UpdateProjectCommand extends GatewayCommand
             return $this->renderGatewayFailure('project.merge_check_invalid', 'Merge check name is invalid.');
         }
 
+        $taskAgents = $this->taskAgentsOption('task-', 'project', clearable: true);
+
+        if ($taskAgents === false) {
+            return self::FAILURE;
+        }
+
         if (! $taskWorkspaceRouted['valid']) {
             return $this->renderGatewayFailure(
                 'project.task_workspace_routed_invalid',
@@ -111,7 +127,7 @@ final class UpdateProjectCommand extends GatewayCommand
         }
 
         if ($name === null && $type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null
-            && $mergeCheck === null && ! $clearMergeCheck) {
+            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -140,6 +156,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 taskWorkspaceRouted: $taskWorkspaceRouted['value'],
                 mergeCheck: $clearMergeCheck ? null : $mergeCheck,
                 mergeCheckProvided: $clearMergeCheck || $mergeCheck !== null,
+                taskAgents: $taskAgents,
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

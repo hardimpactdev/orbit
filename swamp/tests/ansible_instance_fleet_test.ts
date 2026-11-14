@@ -9,7 +9,7 @@ import { createHash } from "node:crypto";
 const hasAnsible = new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] }).outputSync().success;
 const root = new URL("../ansible/", import.meta.url);
 const shapes = JSON.parse(Deno.readTextFileSync(new URL("fixtures/instance-fleet-containers.json", import.meta.url)));
-const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "converge-node", "reset", "resume", ""];
+const phases = ["check", "rules", "rules-read", "files", "start", "proxy", "reach", "ready", "refresh", "mounts", "room", "converge-node", "reset", "resume", ""];
 const guests = { gateway: "nested-gateway", "app-dev": "nested-app-dev", "app-prod": "nested-app-prod" };
 const names = Object.values(guests);
 const outer = ["--project", "orbit-instances-nested", "exec", "instance-9", "--"];
@@ -353,6 +353,40 @@ Deno.test({
       const offline = f.run("resume");
       assert(!offline.ok);
       assertStringIncludes(offline.output, "Readiness check 'agents' failed: the agent of app-prod is not online");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture(ruled());
+    try {
+      // Refresh 21617: 2.75 GiB free; the inner Doctor wants 10% of 25 GiB, and a refresh writes up to 2 GiB more.
+      f.change((state) => state.room = [26843545600, 2952790016]);
+      const refused = f.run("start", ["-e", "fleet_room_check=true", "-v"]);
+      assert(!refused.ok);
+      assertStringIncludes(refused.output, '"msg": "instance.container_fleet_no_room"');
+      // The detail the result file carries names the numbers.
+      assertStringIncludes(refused.output, "The disk of the nested Nodes has 2.75 GiB free of 25.00 GiB. A refresh writes up to 2.00 GiB more, and the inner " +
+        "Doctor wants at least 2.50 GiB free (2 GiB and 10%): free 1.75 GiB in the default before its next refresh.");
+      // Nothing else ran: no wait, no read of the fleet, no start.
+      assertEquals(f.calls(), ["df -B1 --output=size,avail /"]);
+      assertEquals(f.state().containers["nested-gateway"].status, "Stopped");
+      // 4.5 GiB of 25 GiB fits: 2.5 GiB floor plus 2 GiB.
+      f.change((state) => state.room = [26843545600, 4831838208]);
+      const started = f.run("start", ["-e", "fleet_room_check=true"]);
+      assert(started.ok, started.output);
+      assertEquals(f.calls(), ["df -B1 --output=size,avail /", ...startReads, ...startCalls, ...reachCalls]);
+      // A default with an inner volume keeps its nested Nodes on that volume: the room is read there.
+      f.intent((intent) => intent.container.inner_volume = { inner_pool: { name: "inner", source: "/srv/inner-pool" } });
+      f.change((state) => state.room = [32212254720, 1073741824]);
+      const volume = f.run("start", ["-e", "fleet_room_check=true"]);
+      assert(!volume.ok);
+      assertEquals(f.calls(), ["df -B1 --output=size,avail /srv/inner-pool"]);
     } finally {
       f.cleanup();
     }
@@ -767,6 +801,18 @@ Deno.test({
       assert(!error.ok);
       assertStringIncludes(error.output, `Readiness check 'doctor' failed after 2 s: HTTP 500: ${body.slice(0, 120)}`);
       assert(!error.output.includes(body.slice(0, 301)), "the detail holds at most 300 characters of the body");
+      // A Doctor body names every issue: code, Node, summary and what it observed, each bounded, so a long first one hides none.
+      const issue = (code: string, node: string, summary: string, observed: string) =>
+        ({ code, kind: "drift", resource_type: "node", resource_id: 3, resource_name: node, summary, expected: "x", observed });
+      const doctor = { data: { healthy: false, nodes: [{ node_id: 3, node_name: "app-dev", healthy: false, families: [{ family: "node", status: "drift",
+        issues: [issue("node.disk_low", "app-dev", "The root filesystem has low free space. " + "y".repeat(400), "1 KiB free of 2 KiB"),
+          issue("node.agent_view_stale", "app-dev", "The agent view is stale.", "old")] }] }] } };
+      f.change((state) => state.doctorResponse = { status: 200, body: JSON.stringify(doctor) });
+      const issues = f.run("resume", late);
+      assert(!issues.ok);
+      assertStringIncludes(issues.output, "failed after 2 s: HTTP 200: node.disk_low on app-dev: The root filesystem has low free space. yyy");
+      assertStringIncludes(issues.output, "; node.agent_view_stale on app-dev: The agent view is stale. (old)");
+      assert(!issues.output.includes("y".repeat(220)), "each issue is bounded");
       f.change((state) => {
         delete state.doctorResponse;
         state.curlError = "curl: (28) Operation timed out after 80001 milliseconds with 0 bytes received";

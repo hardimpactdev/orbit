@@ -37,6 +37,7 @@ final class CreateTaskRequest extends GatewayRequest implements HasBody
         private readonly ?int $parentId = null,
         private readonly ?array $deliverables = null,
         private readonly ?array $topology = null,
+        private readonly ?TaskAgentsInput $agents = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -77,7 +78,7 @@ final class CreateTaskRequest extends GatewayRequest implements HasBody
                 'subtasks' => $this->subtasks === null ? null : array_map(static fn (SubtaskInput $task): array => $task->toArray(), $this->subtasks),
             ],
             static fn (mixed $value): bool => $value !== null,
-        );
+        ) + ($this->agents?->toArray() ?? []);
 
         return json_encode($body, JSON_THROW_ON_ERROR);
     }

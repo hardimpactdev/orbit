@@ -89,7 +89,7 @@ The file is input data, never executed. Copy its acknowledgement lines into the 
 
 A Gateway task handoff opens a fresh SSH session on the task checkout; it does not inherit your exported variables. Before handoff, save the proposed PR body **on that checkout's machine** at `<git-common-dir>/orbit/proposed-pr-bodies/<branch>.md`. Obtain the directory with `git rev-parse --path-format=absolute --git-common-dir` and the branch with `git branch --show-current`. Create parent directories for branch names containing `/`.
 
-`bin/review-check` reads only that branch's file and records its path in the check report. A detached checkout has no branch file. An explicit local `ORBIT_DOCS_PR_BODY_FILE` takes precedence.
+`bin/review-check` and `bin/task-check` pass only that branch's file to the gate as its waiver file, and `bin/review-check` records the command in the check report. When an impacted page is missing, the gate names that file and says whether it is absent or holds no valid line for the page. In a task copy, the implementer writes `/srv/workspace/.git/orbit/proposed-pr-bodies/task-<id>.md` before the handoff check, as [the scoped task check](/reference/tasks#docs-impact-waivers-in-a-copy) states. A detached checkout has no branch file. An explicit local `ORBIT_DOCS_PR_BODY_FILE` takes precedence.
 
 The reviewer confirms these proposed lines at handoff. Copy them to the PR body before READY: CI reads only the live PR body, never the checkout's proposed-body file.
 
