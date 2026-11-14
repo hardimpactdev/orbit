@@ -955,6 +955,14 @@ A clone is fully set up only when its `status` is `active`. Only a succeeded com
 
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It copies no development deploy commands to the execution vault and runs no deploy step. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
 
+A branch that the seed already holds needs no network. A new branch at the seed's commit fetches nothing and fills no Node mirror. The guest checks it out from the seed's own repository, with no bundle.
+
+An [explicit branch choice](/reference/conn#threads-in-an-orbit-project) runs no `ls-remote` in the clone, because its admission read GitHub. Only an existing branch, or a new branch from another commit, is fetched. A create by name only still reads GitHub once, to learn whether the origin has the branch.
+
+Someone may make the branch on GitHub between the admission and the copy. The copy still starts at the admitted commit. When the GitHub branch has commits the copy lacks, a later push of the branch is refused as `tasks.not_fast_forward`. When it has none, the push fast-forwards it, and no commit is lost. A clone's Node mirror exists only after a fetch: its own create's, or a later deployment's.
+
+The container, checkout, T3 and sessions phases print the seconds of their parts. The container phase names its ACL, copy, unit cleanup, boot files, firewall, network check, start, private names, Node services, mail and branch. The workspace phase names its bundle and its guest checkout. The T3 phase names its agent part and T3's first answer. The sessions phase names its guest check. The create's result carries them as `timings`: names and seconds only.
+
 Clone readiness checks PHP only when the Project has a PHP runtime. A Project without PHP can register T3 and its sessions. The Operation keeps its stable error code and shows the failed phase, command and exit code in `error.detail`; command output stays private.
 
 Its `.env` is a copy of the default's, except the keys it must own: see [the environment of a clone](#the-environment-of-a-clone). When the Instance's branch changes a lockfile later, the agent or the user installs the change in the workspace with the runtime folder's `composer` or `bun`. A sleeping default Instance is cloned from its snapshot without a start. A seed snapshot stays while a clone depends on it; Orbit deletes older seed snapshots that no clone uses.
