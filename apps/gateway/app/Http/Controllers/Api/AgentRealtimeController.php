@@ -15,11 +15,14 @@ use App\Domain\Logs\LogStream;
 use App\Domain\Logs\LogStreamStore;
 use App\Domain\NodeFacts\NodeFactKind;
 use App\Domain\Nodes\ManagedNodeEligibility;
+use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\ResourceOperationException;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\AgentRealtimeAuthRequest;
+use App\Http\Responses\ApiErrorResponse;
 use App\Infrastructure\AgentView\AgentReportedVersions;
 use App\Models\Node;
+use App\Models\NodeRole;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
@@ -38,6 +41,13 @@ final class AgentRealtimeController extends Controller
         $this->ensureEligible($node, $eligibility);
         $connection = $realtime->resolve();
         $id = $node->id;
+
+        // A websocket role with no serving Reverb, as after a cold start while no serving report is younger than 60 seconds:
+        // an error puts the agent on its 1 to 30 s back-off, where null values make it wait 60 s. The response is returned,
+        // not thrown, so the agents' retries during a Reverb outage are not reported as Gateway errors.
+        if ($connection === null && NodeRole::query()->where('role', RoleName::WebSocket->value)->exists()) {
+            return ApiErrorResponse::make($request, 'realtime.not_serving', 'The websocket role has no serving Reverb yet.', [], 503);
+        }
 
         return response()->json([
             'data' => [

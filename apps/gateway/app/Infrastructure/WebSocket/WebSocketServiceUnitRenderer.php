@@ -9,6 +9,10 @@ namespace App\Infrastructure\WebSocket;
  * so the unit waits until the Gateway answers on the address the registry URL names (`gateway.orbit`). When the machines of a fleet boot
  * together, Reverb then accepts at about 5 s after the boot and not at its next reconcile, about 33 s later. The wait is stock `curl` retries,
  * at most about 90 s, and its `-` prefix makes it non-fatal: a Gateway that never answers does not hold the unit.
+ *
+ * The unit starts after the units that route `.orbit` names to the private DNS: `wg-quick@orbit` (its `PostUp` on a peer Node) and
+ * `orbit-gateway-dns` (on the Gateway host). curl keeps a failed lookup for 30 s, so one lookup before that routing exists would fail
+ * every retry for 30 s. An `After=` on a unit a Node lacks is ignored.
  */
 final readonly class WebSocketServiceUnitRenderer
 {
@@ -23,7 +27,7 @@ final readonly class WebSocketServiceUnitRenderer
             # Managed by Orbit. Do not edit; the websocket role converge overwrites this file.
             [Unit]
             Description=Orbit websocket role: Reverb realtime server
-            After=network-online.target
+            After=network-online.target wg-quick@orbit.service orbit-gateway-dns.service
             Wants=network-online.target
 
             [Service]

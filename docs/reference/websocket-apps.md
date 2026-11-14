@@ -194,7 +194,9 @@ Changes to PHP code still require a process restart. Announce a reconnect window
 
 The agent's `websocket.converge-runtime` builds, checks, and activates a release, and `websocket.remove-runtime` removes it. After a successful server activation, the agent keeps the active release and its immediate predecessor and deletes older staged releases. Activation waits up to 30 seconds for the local listener on the configured port. The server opens it only after loading a fresh registry snapshot. A timeout fails with `websocket.runtime_convergence_failed`, skips publication, and keeps the staged releases for recovery. A failed preparation or restart does not prune releases.
 
-The unit `orbit-websocket.service` starts after `network-online.target` and waits for the Gateway API before Reverb starts. Its `ExecStartPre` is a stock `curl` that retries `https://gateway.orbit/up` up to 30 times, one second apart. The unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. A converge writes the unit; a running Reverb takes it at its next restart.
+The unit `orbit-websocket.service` starts after `network-online.target`, `wg-quick@orbit.service` and `orbit-gateway-dns.service`, and waits for the Gateway API before Reverb starts. The two units route `.orbit` names to the private DNS: wg-quick's `PostUp` on a peer Node, `orbit-gateway-dns` on the Gateway host. Without that order the first lookup of `gateway.orbit` can fail, and curl keeps a failed lookup for 30 seconds, so every retry in that time fails too.
+
+Its `ExecStartPre` is a stock `curl` that retries `https://gateway.orbit/up` up to 30 times, one second apart. The unit starts either way. Reverb loads its registry at start, so when the machines of a fleet boot together, Reverb accepts connections about 5 seconds after the boot and not at its next reconcile, about 35 seconds later. Nothing changes on a Node until a converge writes the unit, and a running Reverb keeps running until its next restart.
 
 ## Deploy and recover
 
