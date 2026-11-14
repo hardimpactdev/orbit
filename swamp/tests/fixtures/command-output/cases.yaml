@@ -2187,6 +2187,10 @@ cases:
     install-root: 6ccb28b9f44de8cdf8af525fb074eeb5a7ca9a9f4c1b82e2245dc0e53ee17baa
     install-web: ''
 non_command_output:
+- file: tasks/instance-container-swap.yml
+  task: Keep the container's memory out of swap
+  field: ansible.builtin.command.argv
+  reason: Drops lines of the sleep's own swap record (a root-only file) that are absolute or climb out of the container's cgroup; it parses no command output.
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
   field: ansible.builtin.command.argv
