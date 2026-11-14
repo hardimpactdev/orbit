@@ -30,9 +30,24 @@ jobs:
 - name: process
   labels: {role: swamp}
   steps:
+  - name: Act in the container
+    # A Process of an Instance container is an `orbit` unit in it (docs/cli/process/destroy.mdx#a-process-in-an-instance-container): the
+    # container workflow removes only this unit and its folder through `incus exec` on the Node, and the Node steps below are skipped.
+    labels: {role: swamp}
+    guard: ${{ !has(inputs.intent.container) }}
+    writes: true
+    task:
+      type: workflow
+      workflowIdOrName: operation-process-container
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: ${{ inputs.node_id }}
+        kind: ${{ inputs.kind }}
+        intent: '${{ {"control": {"process_id": inputs.intent.control.process_id, "name": inputs.intent.control.name}, "container": has(inputs.intent.container) ? inputs.intent.container : {}, "ssh_execution": inputs.intent.ssh_execution} }}'
+        execution_secrets: {}
   - name: Disable and stop the unit
     labels: {role: swamp}
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
       type: behavior
@@ -45,7 +60,7 @@ jobs:
   - name: Stop the unit
     labels: {role: swamp}
     dependsOn: [{step: Disable and stop the unit, condition: {type: succeeded}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || !data.latest("process-service-" + string(inputs.node_id)
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd" || !data.latest("process-service-" + string(inputs.node_id)
       + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.current.loaded) }}
     writes: true
     task:
@@ -61,7 +76,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Disable and stop the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Stop the unit, condition: {type: or, conditions: [
             {type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
       type: behavior
@@ -74,7 +89,7 @@ jobs:
   - name: Remove the environment
     labels: {role: swamp}
     dependsOn: [{step: Remove the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
     writes: true
     task:
       type: behavior
@@ -88,7 +103,7 @@ jobs:
   - name: Remove the dev environment
     labels: {role: swamp}
     dependsOn: [{step: Remove the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.vite == null) }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.vite == null) }}
     writes: true
     task:
       type: behavior
@@ -102,7 +117,7 @@ jobs:
   - name: Reload systemd
     labels: {role: swamp}
     dependsOn: [{step: Remove the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "systemd") }}
     writes: true
     task:
       type: behavior
@@ -116,7 +131,7 @@ jobs:
   - name: Read removed unit state
     labels: {role: swamp}
     dependsOn: [{step: Reload systemd, condition: {type: succeeded}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -134,7 +149,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Reload systemd, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove the environment, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Remove the dev environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -147,7 +162,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Reload systemd, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Remove the environment, condition: {type: or, conditions: [{type: succeeded},
             {type: skipped}]}}, {step: Remove the dev environment, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
@@ -160,7 +175,7 @@ jobs:
     labels: {role: swamp}
     dependsOn: [{step: Read removed unit state, condition: {type: succeeded}}, {step: Check unit removal, condition: {type: succeeded}}, {step: Check boot removal, condition: {type: succeeded}}]
     guard: >-
-      ${{ inputs.intent.control.runtime != "systemd" || steps.exists(key, steps[key].status in ["failed", "cancelled"]) ||
+      ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "systemd" || steps.exists(key, steps[key].status in ["failed", "cancelled"]) ||
         !(data.latest("process-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
           data.latest("process-boot-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
           ["LoadState=not-found", "ActiveState=failed", "SubState=failed", "UnitFileState=", "MainPID=0", "ControlPID=0", "ControlGroup=", "Job="].all(property,
@@ -178,7 +193,7 @@ jobs:
   - name: Check the unit
     labels: {role: swamp}
     dependsOn: [{step: Clear failed unit cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "systemd" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "systemd" }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -194,7 +209,7 @@ jobs:
         timeoutSec: 25
   - name: Remove the container
     labels: {role: swamp}
-    guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
+    guard: ${{ has(inputs.intent.container) || steps.exists(key, steps[key].status in ["failed", "cancelled"]) || (inputs.intent.control.runtime != "docker") }}
     writes: true
     task:
       type: behavior
@@ -208,7 +223,7 @@ jobs:
   - name: Check container removal
     labels: {role: swamp}
     dependsOn: [{step: Remove the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
-    guard: ${{ inputs.intent.control.runtime != "docker" }}
+    guard: ${{ has(inputs.intent.container) || inputs.intent.control.runtime != "docker" }}
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/docker_container'
@@ -221,18 +236,18 @@ jobs:
   - name: Verify it is gone
     labels: {role: swamp}
     dependsOn: [{step: Check unit removal, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Check container removal, condition: {type: or, conditions: [
-            {type: succeeded}, {type: skipped}]}}, {step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+            {type: succeeded}, {type: skipped}]}}, {step: Check the unit, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Act in the container, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     task:
       type: assert
       expr: >-
-        inputs.intent.control.runtime == "systemd" ?
+        has(inputs.intent.container) || (inputs.intent.control.runtime == "systemd" ?
           (data.latest("process-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
            data.latest("process-boot-unit-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant" &&
            ["LoadState=not-found", "UnitFileState=", "MainPID=0", "ControlPID=0", "ControlGroup=", "Job="].all(property,
              property in steps["Check the unit"].outputs.stdout.split("\n")) &&
            ["ActiveState=inactive", "ActiveState=unknown"].exists(property, property in steps["Check the unit"].outputs.stdout.split("\n")) &&
            ["SubState=dead", "SubState=unknown"].exists(property, property in steps["Check the unit"].outputs.stdout.split("\n"))) :
-          data.latest("process-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant"
+          data.latest("process-container-" + string(inputs.node_id) + "-" + string(inputs.intent.control.process_id), inputs.intent.ssh_execution.target.host).attributes.status == "compliant")
       message: The Process must have its admitted runtime and boot state.
       severity: high
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}

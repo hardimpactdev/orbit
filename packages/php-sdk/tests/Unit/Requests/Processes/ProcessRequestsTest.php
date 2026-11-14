@@ -527,3 +527,8 @@ it('keeps accepted mutations as Operations instead of synchronous Process data',
     'restart' => [new RestartProcessRequest(12)],
     'destroy' => [new DestroyProcessRequest(12)],
 ]);
+
+it('sends the Instance of a container Process as the destroy query, and nothing without one', function (): void {
+    expect((fn () => $this->defaultQuery())->call(new DestroyProcessRequest(236, null, 572)))->toBe(['instance' => 572])
+        ->and((fn () => $this->defaultQuery())->call(new DestroyProcessRequest(236)))->toBe([]);
+});

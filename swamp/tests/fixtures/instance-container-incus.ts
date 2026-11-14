@@ -305,6 +305,11 @@ if (family === "list") {
       }
       console.log(`ActiveState=${missing || (state.inactive ?? []).includes(unit) ? "inactive" : "active"}`);
       console.log(queued > 0 ? "Job=123" : "Job=");
+      // A removed unit, as systemd shows it after a daemon-reload: not found, no unit file state.
+      if (command.includes("--property=LoadState")) {
+        console.log(missing ? "LoadState=not-found" : "LoadState=loaded");
+        console.log(missing ? "UnitFileState=" : "UnitFileState=enabled");
+      }
       Deno.exit(0);
     }
     if (command[1] === "is-active") {

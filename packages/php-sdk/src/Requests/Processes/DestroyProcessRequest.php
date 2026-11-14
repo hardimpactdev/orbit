@@ -17,7 +17,14 @@ final class DestroyProcessRequest extends GatewayRequest
     public function __construct(
         private readonly int $processId,
         private readonly ?string $idempotencyKey = null,
+        private readonly ?int $instanceId = null,
     ) {}
+
+    /** The Instance of a container Process, which its destroy requires. @return array<string, int> */
+    protected function defaultQuery(): array
+    {
+        return $this->instanceId === null ? [] : ['instance' => $this->instanceId];
+    }
 
     /** @return array<string, string> */
     protected function defaultHeaders(): array

@@ -154,6 +154,7 @@ function fixture() {
     folder,
     source,
     container,
+    control,
     intent,
     write,
     run(phase: string, extra: Record<string, string> = {}, options: string[] = []) {
@@ -816,12 +817,12 @@ Deno.test({
 });
 
 Deno.test({
-  name: "a Process's start, stop and restart change its unit in the container",
+  name: "a Process's start, stop, restart and destroy change only its own unit in the container",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
     try {
-      f.container.processes = [worker];
+      f.container.processes = [worker, paused];
       f.write();
       for (const phase of ["container", "workspace", "processes"]) {
         assert(f.run(phase, { ORBIT_PROCESS_ENVIRONMENTS: environments }).ok);
@@ -846,6 +847,38 @@ Deno.test({
       assert(calls().join("\n").includes(`enable -- ${worker.name}\nrestart --no-block -- ${worker.name}`));
 
       assert(calls().slice(checksBeforeRestart).includes(`show --property=ActiveState --property=Job -- ${worker.name}`));
+
+      // Destroy removes only the admitted Process's unit and folder; the other Process keeps both.
+      const rootfs = `${f.folder}/containers/${f.container.name}`;
+      const exists = (path: string) => {
+        try {
+          Deno.statSync(`${rootfs}${path}`);
+          return true;
+        } catch {
+          return false;
+        }
+      };
+      Deno.mkdirSync(`${rootfs}/etc/orbit/processes/42`, { recursive: true });
+      // A unit name of another Process than the admitted id is refused before anything changes.
+      Object.assign(f.control, { process_id: 41, name: paused.name });
+      f.write();
+      assert(!f.run("process", { ORBIT_PROCESS_ACTION: "destroy" }).ok);
+      assertEquals(f.result(), { error_code: "process.target_unsupported" });
+      assert(exists(`/etc/systemd/system/${paused.name}`));
+      Object.assign(f.control, { process_id: 42, name: paused.name });
+      f.write();
+      const beforeDestroy = calls().length;
+      const destroy = f.run("process", { ORBIT_PROCESS_ACTION: "destroy" });
+      assert(destroy.ok, destroy.output);
+      assertEquals(f.result(), { state: "removed", output: "" });
+      assertEquals([exists(`/etc/systemd/system/${paused.name}`), exists("/etc/orbit/processes/42")], [false, false]);
+      assertEquals([exists(`/etc/systemd/system/${worker.name}`), exists("/etc/orbit/processes/41")], [true, true]);
+      const destroyCalls = calls().slice(beforeDestroy);
+      assert(destroyCalls.includes(`disable --now -- ${paused.name}`), destroyCalls.join("\n"));
+      assert(destroyCalls.includes("daemon-reload"));
+      assertEquals(destroyCalls.filter((call: string) => call.includes(worker.name)), []);
+      Object.assign(f.control, { process_id: 41, name: worker.name });
+      f.write();
 
       // A unit that does not come up fails the start with the shared code.
       const failing = f.state();

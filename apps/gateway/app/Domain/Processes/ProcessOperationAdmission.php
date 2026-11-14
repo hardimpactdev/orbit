@@ -25,9 +25,10 @@ final readonly class ProcessOperationAdmission
 
     public function __construct(private StartOperationAction $operations, private ProcessTargetResolver $targets, private SystemdProcessRenderer $systemd, private DockerProcessRenderer $docker) {}
 
-    public function execute(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?string $requestId = null): Operation
+    /** `$namedInstanceId` is the Instance the caller named for a destroy; a container Process is removed only with its own. */
+    public function execute(Process $process, string $verb, bool $created = false, bool $preserveRecord = false, ?Node $caller = null, ?string $requestId = null, ?int $namedInstanceId = null): Operation
     {
-        return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId): Operation {
+        return DB::transaction(function () use ($process, $verb, $created, $preserveRecord, $caller, $requestId, $namedInstanceId): Operation {
             if (in_array($verb, ['start', 'stop', 'restart'], true) && $process->status === LifecycleStatus::Removing
                 && $this->targets->forInspection($process)->container !== null) {
                 // Its definition is gone; the default's next deployment removes it (docs/reference/development-containers.md#processes).
@@ -36,7 +37,7 @@ final readonly class ProcessOperationAdmission
             $input = $this->inputFor($process, $verb, $created, $preserveRecord, $caller);
             if (isset($input['container']) && in_array($verb, ['create', 'update', 'destroy'], true)) {
                 // A container Instance takes its Processes from the Project's development definitions, which a deployment installs.
-                throw new ResourceOperationException('operation.kind_unavailable', 'Change the Processes of a container Instance through the Project\'s development definitions and a deployment.', 503);
+                app(ContainerProcessChange::class)->assertAdmissible($process, $verb, $namedInstanceId);
             }
             if (in_array($verb, ['create', 'update'], true) && $process->runtime === ProcessRuntime::Systemd) {
                 $input['activation_pending'] = $process->systemd_activation_pending || $process->systemd_activation_hash !== $input['content_hash'];

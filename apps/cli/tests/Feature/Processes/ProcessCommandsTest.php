@@ -1855,3 +1855,24 @@ it('preserves omission in an interactive definition update without optional fiel
     expect($output->fetch())->not->toContain('Command argument', 'Docker image');
     $mock->assertNotSent(ShowProcessDefinitionRequest::class);
 });
+
+it('names the Instance of a container Process in the destroy request, and refuses an invalid one before any request', function (): void {
+    $operation = ['id' => 92, 'kind' => 'process.destroy', 'target_type' => 'process', 'target_id' => 236, 'node_id' => 9,
+        'status' => 'succeeded', 'sequence' => 3, 'input' => [], 'result' => ['ready' => true]];
+    $envelope = ['data' => $operation, 'meta' => ['request_id' => process_cli_request_id()]];
+    $mock = MockClient::global([
+        DestroyProcessRequest::class => MockResponse::make($envelope, 202),
+        ShowOperationRequest::class => MockResponse::make($envelope),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+    ]);
+
+    [$exit] = process_cli_display('process:destroy', ['process' => '236', '--instance' => '572', '--yes' => true, '--json' => true]);
+
+    expect($exit)->toBe(0);
+    $mock->assertSent(fn ($request, $response): bool => $request instanceof DestroyProcessRequest
+        && $response->getPendingRequest()->query()->all() === ['instance' => 572]);
+
+    $sent = count($mock->getRecordedResponses());
+    [$invalid] = process_cli_display('process:destroy', ['process' => '236', '--instance' => 'abc', '--yes' => true, '--json' => true]);
+    expect($invalid)->toBe(1)->and(count($mock->getRecordedResponses()))->toBe($sent);
+});

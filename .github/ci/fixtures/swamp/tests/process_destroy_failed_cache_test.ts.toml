@@ -1,5 +1,5 @@
 order = 1210
-source_sha256 = "9a0cf06fe8f944570eebc9f15931979d3a6e896fc9b8bdb7cb9c465e7ad44c45"
+source_sha256 = "5d1aceff645915f32358ac74c159c017fcd7308479d55e58ad9ef152c8c19c87"
 cases = [
   "destroy clears an absent failed unit cache and accepts only the fresh stopped read",
   "destroy refuses cache cleanup and completion with remaining LoadState=loaded",
@@ -17,6 +17,7 @@ cases = [
   "destroy refuses present unit files and boot links before and after reset",
   "destroy resets only the admitted unit and rereads after the reset settles",
   "Docker removal keeps its native absence check and never resets systemd",
+  "a container Process goes through the container child only, and a Node Process never reaches it",
 ]
 file = "swamp/tests/process_destroy_failed_cache_test.ts"
 cost = 30

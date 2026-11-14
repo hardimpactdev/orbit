@@ -22,6 +22,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
     protected $signature = 'process:destroy
         {process : Process ID or definition name}
         {--project= : Numeric Project ID}
+        {--instance= : Numeric Instance ID of a Process in an Instance container}
         {--yes : Skip the destructive confirmation prompt}
         {--idempotency-key= : Reuse a key to retry this Operation start}
         {--json : Return machine-readable JSON}';
@@ -43,7 +44,7 @@ final class DestroyProcessCommand extends ProcessActionCommand
         if ($projectId === null) {
             $processId = $this->positiveId('process', 'Process', 'process.id_invalid');
 
-            if ($processId === null) {
+            if ($processId === null || $this->instanceIdOption() === false) {
                 return self::FAILURE;
             }
 
@@ -94,7 +95,26 @@ final class DestroyProcessCommand extends ProcessActionCommand
 
     protected function request(int $processId): GatewayRequest
     {
-        return new DestroyProcessRequest($processId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null);
+        $instanceId = $this->instanceIdOption();
+
+        return new DestroyProcessRequest($processId, is_string($this->option('idempotency-key')) ? $this->option('idempotency-key') : null,
+            is_int($instanceId) ? $instanceId : null);
+    }
+
+    /** The Instance a container Process belongs to; the Gateway refuses such a Process without it or with another. */
+    private function instanceIdOption(): int|false|null
+    {
+        if (! $this->providedOption('instance')) {
+            return null;
+        }
+        $id = filter_var($this->option('instance'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if (! is_int($id)) {
+            $this->renderGatewayFailure('instance.id_invalid', 'Instance ID must be a positive integer.');
+
+            return false;
+        }
+
+        return $id;
     }
 
     protected function pastTense(): string

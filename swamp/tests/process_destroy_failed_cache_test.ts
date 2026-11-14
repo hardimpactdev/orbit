@@ -133,3 +133,26 @@ Deno.test("Docker removal keeps its native absence check and never resets system
     assert(accepts(gone, "compliant", "compliant", "docker"));
     assert(!accepts(gone, "compliant", "compliant", "docker", "drifted"));
 });
+
+Deno.test("a container Process goes through the container child only, and a Node Process never reaches it", () => {
+    const container = { instance_id: 572, project: "orbit-instances", name: "instance-572" };
+    const skipped = (name: string, intent: Record<string, unknown>) => {
+        const guard = step(name)!.guard!;
+        return environment().evaluate(guard.trim().slice(3, -2).trim().replaceAll("data.latest(", "latest("),
+            { inputs: { ...inputs, intent }, steps: {} }) === true;
+    };
+    const inContainer = { ...inputs.intent, container };
+    for (const candidate of steps) {
+        if (candidate.guard === undefined || candidate.name === "Verify it is gone") continue;
+        assertEquals(skipped(candidate.name, inContainer), candidate.name !== "Act in the container", candidate.name);
+    }
+    assert(skipped("Act in the container", inputs.intent), "a Node Process skips the container child");
+    assert(!skipped("Remove the unit", inputs.intent), "a Node Process keeps its Node steps");
+    const child = step("Act in the container")! as unknown as { task: { workflowIdOrName: string; inputs: { intent: string } } };
+    assertEquals(child.task.workflowIdOrName, "operation-process-container");
+    assertEquals(environment().evaluate(child.task.inputs.intent.slice(3, -2).trim(), { inputs: { ...inputs, intent: inContainer } }),
+        { control: { process_id: 41, name: "orbit-process-41-worker.service" }, container, ssh_execution: inputs.intent.ssh_execution });
+    // The end check reads no Node data for a container Process: the child's own check decided.
+    assertEquals(environment("drifted", "drifted", "drifted").evaluate(step("Verify it is gone")!.task.expr!.replaceAll("data.latest(", "latest("),
+        { inputs: { ...inputs, intent: inContainer }, steps: {} }), true);
+});

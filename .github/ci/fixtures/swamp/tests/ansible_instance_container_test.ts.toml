@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "dd7d8d00ed0ee7375bf93b69beac514bb07fe4a4df5215088a641e0555b6ec2c"
+source_sha256 = "f12a6aff8750e45f68c3e25f2ba3f5f22ee24ce693639a683b9a5840393939e0"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -13,7 +13,7 @@ cases = [
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file",
   "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one",
   "a new Process that does not start fails the deployment's processes phase, which names its unit",
-  "a Process's start, stop and restart change its unit in the container",
+  "a Process's start, stop, restart and destroy change only its own unit in the container",
   "a deployment's start and restore-start (no marker in the intent) do no web wait and no marker work",
   "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers",
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves",
@@ -77,7 +77,7 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 3968
+cost = 3989
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
@@ -137,7 +137,7 @@ inputs = [
   "a deployment's start waits only for enabled Process units; the processes phase enables, starts and waits for a new or resumed one" = 73 # ESTIMATE: local 24s x 3, plus 1s
   "a new Process that does not start fails the deployment's processes phase, which names its unit" = 97 # ESTIMATE: local 32s x 3, plus 1s
   "a deployment's new seed restarts the running Processes on the new commit; a changed value replaces its environment file" = 126 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 78.4-131.6s
-  "a Process's start, stop and restart change its unit in the container" = 99 # p90 of 20 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 64.5-98.4s
+  "a Process's start, stop, restart and destroy change only its own unit in the container" = 120 # ESTIMATE: p90 99 of 20 hosted runs (2026-11-13) for start, stop and restart, plus two destroy runs (about 8 s each locally) and one more Process unit
   "a deployment's start and restore-start (no marker in the intent) do no web wait and no marker work" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
   "a wake's start removes the marker once the app answers, waits a short time through 5xx, and keeps it when the web unit never answers" = 83 # ESTIMATE: local 39s x 2.1, rounded up, plus 1s
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves" = 50 # ESTIMATE: local 23s x 2.1, rounded up, plus 1s

@@ -2030,6 +2030,10 @@ non_command_output:
   task: Refuse another unit or action
   field: ansible.builtin.assert.that[0]
   reason: Validates the admitted Process unit name.
+- file: tasks/instance-container-process.yml
+  task: Refuse another unit or action
+  field: ansible.builtin.assert.that[2]
+  reason: Validates that the admitted unit name carries the admitted Process id.
 - file: tasks/node-converge-hub-prune.yml
   task: Prune only the peers of Nodes that are gone or being removed
   field: when
