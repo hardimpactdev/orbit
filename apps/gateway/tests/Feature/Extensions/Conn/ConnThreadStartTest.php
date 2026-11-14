@@ -11,6 +11,7 @@ use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -1574,4 +1575,93 @@ it('refuses a clone of a nested-fleet Project before it records an Instance or a
         ->assertJsonPath('error.message', 'The Node has not switched on nested-fleet hosting.');
     expect(Instance::query()->count())->toBe($instances)->and(InstanceRuntime::query()->count())->toBe($runtimes)
         ->and(Operation::query()->count())->toBe($operations);
+});
+
+/**
+ * A clone that the caller created through Conn, its create projected as succeeded, which admits the first completion.
+ *
+ * @return array{0: Operation, 1: Operation}
+ */
+function threadCreatedClone(Node $caller): array
+{
+    $default = threadDefault(test()->beast, 'tool');
+    $create = Operation::query()->findOrFail(threadCall($caller, 'POST', "projects/{$default->project_id}/instances", ['name' => 'fix-login'])
+        ->assertAccepted()->json('data.id'));
+    $create->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'success-run']]);
+    swampVaultStandIn();
+    workspaceReader();
+    app(DevelopmentInstanceCreateProjection::class)->apply($create, ['status' => 'succeeded', 'run_id' => 'success-run',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['ready' => true,
+            'instance_id' => $create->target_id, 'commit' => str_repeat('a', 40), 't3' => [
+                'environment_id' => 'env-read', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
+                'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
+                'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]]]);
+
+    return [$create->refresh(), Operation::query()->findOrFail($create->refresh()->result['completion_operation_id'])];
+}
+
+/** The completion's run reports its end with a native receipt. */
+function threadCompletionEnds(Operation $completion, string $status, array $result = []): void
+{
+    $completion->update(['status' => OperationStatus::Running, 'state' => [...($completion->state ?? []), 'swamp_run_id' => 'complete-run']]);
+    app(InstanceCompleteProjection::class)->apply($completion->refresh(), ['status' => $status, 'run_id' => 'complete-run',
+        'error_code' => $result['error_code'] ?? null, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['instance_id' => $completion->target_id, ...$result]]);
+}
+
+describe('the Conn read of a clone\'s completion', function (): void {
+    it('names the completion in the create read and serves it to the Node that created the clone', function (): void {
+        [$create, $completion] = threadCreatedClone($this->phone);
+
+        threadCall($this->phone, 'GET', "operations/{$create->id}")->assertOk()->assertJsonPath('data.result.completion_operation_id', $completion->id);
+        threadCall($this->phone, 'GET', "operations/{$completion->id}")->assertOk()
+            ->assertJsonPath('data.kind', 'instance.complete')->assertJsonPath('data.target_id', $create->target_id)
+            ->assertJsonPath('data.status', $completion->status->value)->assertJsonPath('data.cancel_requested', false)
+            ->assertJsonStructure(['data' => ['steps', 'poll_after_seconds', 'error_code', 'failed_step', 'result']]);
+    });
+
+    it('serves the completion\'s end: succeeded, failed with its recovery, and cancelled', function (string $status, array $result, ?string $command): void {
+        [, $completion] = threadCreatedClone($this->phone);
+        threadCompletionEnds($completion, $status, $result);
+
+        $read = threadCall($this->phone, 'GET', "operations/{$completion->id}")->assertOk()->assertJsonPath('data.status', $status);
+        expect($read->json('data.result.recovery.retry.command'))->toBe($command);
+        if ($status === 'failed') {
+            $read->assertJsonPath('data.error_code', 'instance.container_process_inactive')->assertJsonPath('data.result.failed_step', 'check');
+        }
+    })->with([
+        'succeeded' => ['succeeded', ['ready' => true], null],
+        'failed' => ['failed', ['ready' => false, 'failed_step' => 'check', 'error_code' => 'instance.container_process_inactive'], 'instance:complete'],
+        'cancelled' => ['cancelled', ['ready' => false], 'instance:complete'],
+    ]);
+
+    it('answers 404 to another Node, as for a foreign create, and serves a Retry to both its Node and the clone\'s creator', function (): void {
+        [$create, $completion] = threadCreatedClone($this->phone);
+        $tablet = threadNode('tablet', '10.44.0.78');
+        $tablet->accessibleNodes()->attach($this->beast->id);
+        $stranger = threadNode('stranger', '10.44.0.79');
+        $stranger->accessibleNodes()->attach($this->mini->id);
+
+        threadCall($tablet, 'GET', "operations/{$create->id}")->assertNotFound();
+        threadCall($tablet, 'GET', "operations/{$completion->id}")->assertNotFound();
+        threadCall($stranger, 'GET', "operations/{$completion->id}")->assertNotFound();
+
+        threadCompletionEnds($completion, 'failed', ['ready' => false, 'failed_step' => 'check', 'error_code' => 'instance.complete_check_failed']);
+        $retry = Operation::query()->findOrFail(threadCall($tablet, 'POST', "instances/{$create->target_id}/complete", [], ['Idempotency-Key' => 'retry-1'])
+            ->assertAccepted()->json('data.id'));
+        threadCall($tablet, 'GET', "operations/{$retry->id}")->assertOk()->assertJsonPath('data.kind', 'instance.complete');
+        threadCall($this->phone, 'GET', "operations/{$retry->id}")->assertOk();
+        threadCall($stranger, 'GET', "operations/{$retry->id}")->assertNotFound();
+    });
+
+    it('keeps the Conn cancel closed for a completion: 404, and the completion runs on', function (): void {
+        [, $completion] = threadCreatedClone($this->phone);
+
+        // The body Conn sends: an empty JSON object.
+        $this->withServerVariables(['REMOTE_ADDR' => $this->phone->wireguard_ip])->call('POST', "/api/v1/conn/operations/{$completion->id}/cancel",
+            [], [], [], ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'], '{}')->assertNotFound();
+
+        expect($completion->refresh()->cancel_requested_at)->toBeNull()
+            ->and($completion->status->terminal())->toBeFalse();
+    });
 });
