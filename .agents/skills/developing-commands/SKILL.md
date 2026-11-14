@@ -129,4 +129,4 @@ A required docs-impact check must read per-page reasons from the PR body as data
 
 When splitting a shared test registry, preserve admission order as well as record values. Replay selected and deferred units and ordered case slices against the old planner, and compare metadata through the PR merge base. Keep historical format readers data-only; load only the new format for the current checkout.
 
-Register a new Python fixture in its own per-fixture TOML with `slices = false`; it needs no shared shape-gate listing. Whole-file costs must include every case. A shared Python harness must contain no test methods, so importing it cannot register duplicate proof cases.
+For Python fixture registration, whole-file costs and shared test harnesses, follow [fixture policy](../../../docs/reference/implementation-loop.md#ci-budget).
