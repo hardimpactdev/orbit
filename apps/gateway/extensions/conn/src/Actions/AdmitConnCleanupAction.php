@@ -15,6 +15,7 @@ use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Orbit\Extensions\Conn\Domain\ConnHeldSessions;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 final readonly class AdmitConnCleanupAction
@@ -32,7 +33,7 @@ final readonly class AdmitConnCleanupAction
                 return null;
             }
             // A pairing admitted before the new session was recorded carries the old one; revoking it now would fail that pairing.
-            if (Operation::query()->where('kind', 'conn.pairing_create')->where('input->conn_environment_id', $environment->id)
+            if (Operation::query()->whereIn('kind', ['conn.pairing_create', ConnHeldSessions::Kind])->where('input->conn_environment_id', $environment->id)
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('conn.pairing_in_progress', 'A pairing on this server still runs with the earlier session. Clean up after it ends.', 409);
             }

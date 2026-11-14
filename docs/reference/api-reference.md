@@ -49,6 +49,8 @@ The generated `conn-pairing-revoke` tool includes optional `pairing_id`. Its des
 
 The generated `conn-pairing-create` tool includes optional `renew`, and its schema answers 202, 409 and 422. [Conn renewal](/reference/conn#renewal) defines when a renewal is refused.
 
+The generated `conn-environment-session` tool takes only `environment` and answers 200 with `ConnHeldSessionData`, the calling Node's held session, or 202 with `conn.session_hold`. Its description in `bin/docs-openapi` names its 409 refusals; [Held sessions](/reference/conn#held-sessions) owns them. The generated `conn-pairing-list` tool includes optional `include_held`, declared in `bin/docs-openapi` beside `auto_deploy` of `instance-list`.
+
 `GET /api/v1/conn/threads` (`conn-thread-list`) and `POST /api/v1/conn/environments/{environment}/threads` (`conn-thread-record`) come from `ConnThreadData`; the script writes the list's `meta.environments` schema and the record's 201, 200 and 409 answers by hand. [Thread index](/reference/conn#thread-index) owns them.
 
 The generated `conn-environment-renew` tool has no body and answers 202 with `conn.environment_renew`. Its description in `bin/docs-openapi` names `conn.environment_not_instance` and `operation.target_busy`; [Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server) owns them. `conn-environment-list` also returns `renewal_error_code` and `renewal_checked_at`.
@@ -173,7 +175,9 @@ The Project development deploy step operations publish typed step responses from
 
 The script publishes HTTP 202 and the running release record for `gateway:release:deploy` and `gateway:release:rollback`. The [Swamp release run](/reference/gateway-recovery#release-as-a-swamp-run) executes after admission. It publishes HTTP 202 and the queued [operation](/reference/operations) for each controller action that answers `202` with an operation, including `instance:deploy` and `instance:rollback`, and the operation with its steps for `operation:show`. It also maps the automatic release controller to its state schema.
 
-A controller method that starts an operation declares its kind, such as `#[StartsOperation(OperationKinds::InstanceDeploy)]`. This marker enables the shared idempotency check and the generated `Idempotency-Key` header. Only the marker adds that header; the generator names no route that needs one. Generation fails if a method answers `202` with `OperationData` without the marker. The operation store refuses a keyed start whose kind differs from its marker. The generated document names no operation kinds; each CLI page places its flow chart itself.
+A controller method that starts an operation declares its kind, such as `#[StartsOperation(OperationKinds::InstanceDeploy)]`. This marker enables the shared idempotency check and the generated `Idempotency-Key` header.
+
+A read that may start an operation and dedupes its starts itself declares `keyed: false`. It ignores the header, and the generated document names none, so a repeated read answers the current state instead of a replay. Only the marker adds that header; the generator names no route that needs one. Generation fails if a method answers `202` with `OperationData` without the marker. The operation store refuses a keyed start whose kind differs from its marker. The generated document names no operation kinds; each CLI page places its flow chart itself.
 
 `database:create` publishes three request variants: register an existing connection, create a MySQL database on a server, or create a Valkey ACL user on a server. Registration keeps `database` as a string. Valkey user creation takes an integer index and requires the `patterns` and `allow` lists. Server creation limits `driver` to `mysql` or `redis`. These variants also feed the MCP manifest and web API types.
 

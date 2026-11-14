@@ -38,6 +38,8 @@ function collection_access_policies(): array
             'conn:pairing:list' => ServingNode::Collection,
             // extensions/conn/src/Http/Controllers/ConnPairingsController.php:86 checks both caller and environment ownership.
             'conn:pairing:show' => ServingNode::Collection,
+            // extensions/conn/src/Http/Controllers/ConnSessionsController.php:35 checks server access; Domain/ConnHeldSessions.php:41 reads only the caller's own held session.
+            'conn:environment:session' => ServingNode::Collection,
             // app/Actions/Firewall/ListFirewallRulesAction.php:39 uses accessibleNodeIds supplied by FirewallRulesController.php:44.
             'firewall:list' => ServingNode::Collection,
             // app/Actions/Instances/ResolveDirectoryInstanceAction.php:26 checks access and limits Instances to the caller's Node at :29.
