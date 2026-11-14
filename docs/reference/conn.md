@@ -661,11 +661,16 @@ A held session ends in two steps. The Gateway withdraws it: it stops serving it 
 
 - Removing a Node's node access withdraws its held sessions on the servers that the Node now cannot reach. Core calls Conn through the `NodeAccessRemovalHook` plug-in point of `node:access:remove`.
 - The hourly tick also withdraws a held session whose Node lost access another way.
-- Deleting a Node ([`node:remove`](/cli/node/remove)) withdraws its unsettled held sessions just before the Node row goes. Core calls Conn through the `NodeRemovalHook` plug-in point.
+
+Deleting a Node ([`node:remove`](/cli/node/remove)) withdraws its unsettled held sessions just before the Node row goes. Core calls Conn through the `NodeRemovalHook` plug-in point.
+
 - Each of those pairings passes to the Gateway Node, which made it. So the row survives the delete.
 - The owed revoke by `pairing_id` then runs as above.
 - The first revoke on each server starts at once. One whose hold still runs revokes at that hold's end.
-- Destroying the Instance deletes its held pairings with its other pairings. T3 goes with the container, so nothing is left to revoke.
+- With no active Gateway Node, nothing can revoke them, so the pairings go with the Node.
+- The Gateway then logs `conn.held_handover_skipped`. Each of those sessions stays valid on T3 until it ends, at most 30 days.
+
+Destroying the Instance deletes its held pairings with its other pairings. T3 goes with the container, so nothing is left to revoke.
 
 `GET /environments/{environment_id}/pairings` keeps its default answer: device pairings only. `include_held=1` or `include_held=true` adds the held pairings, and then each row has `held`. The optional `include_held` accepts only `1`, `true`, `0` or `false`, else `validation.failed` (422). A device's `renew: true` pairing looks only at the device's own pairings, so a revoked held pairing never refuses it.
 

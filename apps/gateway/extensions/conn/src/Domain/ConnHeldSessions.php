@@ -96,7 +96,8 @@ final readonly class ConnHeldSessions
     /**
      * Before its Node row goes, withdraws each held session of the Node that is not settled and hands it to the Gateway Node, so the
      * row survives the delete and its revoke by pairing id still runs. A hold that still runs revokes at its end. The caller holds the
-     * transaction; each server's next owed revoke is admitted after its commit, and the hourly sweep or a wake admits the rest.
+     * transaction; each server's next owed revoke is admitted after its commit, and the hourly sweep or a wake admits the rest. With no
+     * active Gateway Node nothing can revoke, so the rows go with the Node and the sessions stay valid on T3 until they end.
      */
     public function handOver(Node $node): void
     {
@@ -106,7 +107,7 @@ final readonly class ConnHeldSessions
         if ($pairings->isEmpty()) {
             return;
         }
-        if ($gateway === null || $gateway === $node->id) {
+        if ($gateway === null) {
             Log::warning('conn.held_handover_skipped', ['node_id' => $node->id, 'pairings' => $pairings->count()]);
 
             return;

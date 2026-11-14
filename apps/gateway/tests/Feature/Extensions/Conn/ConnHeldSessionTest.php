@@ -22,6 +22,7 @@ use App\Models\Operation;
 use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Actions\AdmitConnSessionHoldAction;
@@ -625,6 +626,21 @@ describe('revoke and removal', function (): void {
 
         endRevoke(revokes()[0]);
         expect($live->fresh())->withdrawn_at->toBeNull()->revoked_at->not->toBeNull();
+    });
+
+    it('logs and keeps no row of a deleted Node when no active Gateway Node can revoke its held sessions', function (): void {
+        $laptop = heldNode('laptop', '10.44.0.78');
+        NodeAccess::query()->create(['consumer_node_id' => $laptop->id, 'serving_node_id' => $this->host->id]);
+        endHold(app(AdmitConnSessionHoldAction::class)->hold($laptop, $this->environment));
+        SwampNodeFixture::ensure()->roles()->where('role', RoleName::Gateway)->delete();
+        Log::spy();
+
+        app(NodeRemovalRecords::class)->remove(['node_id' => $laptop->id, 'name' => 'laptop', 'task_vm_id' => null, 'route_ids' => []], [], ['routes' => []]);
+
+        expect(Node::query()->find($laptop->id))->toBeNull()
+            ->and(ConnPairing::query()->where('held', true)->exists())->toBeFalse()
+            ->and(revokes())->toBe([]);
+        Log::shouldHaveReceived('warning')->once()->with('conn.held_handover_skipped', ['node_id' => $laptop->id, 'pairings' => 1]);
     });
 
     it('contributes the Node removal hook', function (): void {
