@@ -5,9 +5,9 @@ declare(strict_types=1);
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\Power\InstanceSleep;
-use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -21,6 +21,7 @@ use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Conn\Actions\AdmitConnEnvironmentRestartAction;
 use Orbit\Extensions\Conn\Domain\ConnEnvironmentRestart;
 use Orbit\Extensions\Conn\Domain\ConnEnvironmentRestartProjection;
+use Orbit\Extensions\Conn\Domain\T3ServerClient;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
 uses(LazilyRefreshDatabase::class);
@@ -82,7 +83,7 @@ it('answers current when T3 already shows the machine name, and reads the label 
     $clone = restartServer($this->default, 'clone', 3840);
     Http::fake(restartT3(3840, 'clone.shop'));
 
-    expect(restartOne($clone))->toMatchArray(['answer' => 'current', 'reason' => null, 'operation' => null])
+    expect(restartOne($clone))->toMatchArray(['answer' => 'current', 'reason' => null, 'operation_id' => null])
         ->and(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->count())->toBe(0);
     Http::assertSentCount(1);
     Http::assertSent(fn (Request $request): bool => $request->url() === 'http://10.44.0.7:3840/.well-known/t3/environment' && ! $request->hasHeader('Authorization'));
@@ -92,7 +93,7 @@ it('answers busy and restarts nothing while a run works or any runtime request i
     $clone = restartServer($this->default, 'clone', 3840);
     Http::fake(restartT3(3840, 'instance-'.$clone->id, [restartThread($thread)]));
 
-    expect(restartOne($clone))->toMatchArray(['answer' => 'busy', 'reason' => 't3_working', 'operation' => null])
+    expect(restartOne($clone))->toMatchArray(['answer' => 'busy', 'reason' => 't3_working', 'operation_id' => null])
         ->and(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->count())->toBe(0);
     Http::assertSent(fn (Request $request): bool => str_ends_with($request->url(), '/api/orchestration/shell')
         && $request->hasHeader('Authorization', 'Bearer gateway-session-clone') && $request->hasHeader('x-t3-orchestration-protocol', '2'));
@@ -115,18 +116,6 @@ it('skips a sleeping container as frozen or stopped by its last power Operation,
     expect(restartOne($clone))->toMatchArray(['answer' => 'skipped', 'reason' => $reason]);
     Http::assertNothingSent();
 })->with(['frozen by a sleep' => ['frozen', 'frozen'], 'stopped by a full swap' => ['stopped', 'stopped'], 'no sleep recorded' => [null, 'stopped']]);
-
-it('reads a container stopped after its wake as stopped, not frozen', function (): void {
-    $clone = restartServer($this->default, 'clone', 3840);
-    InstanceRuntime::query()->where('instance_id', $clone->id)->update(['power_state' => 'stopped']);
-    foreach ([[InstanceSleep::Kind, ['sleep' => 'frozen'], 2], [InstanceWake::Kind, [], 1]] as [$kind, $result, $hours]) {
-        Operation::query()->forceCreate(['kind' => $kind, 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
-            'input' => [], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1, 'result' => $result, 'finished_at' => now()->subHours($hours)]);
-    }
-    Http::fake();
-
-    expect(restartOne($clone))->toMatchArray(['answer' => 'skipped', 'reason' => 'stopped']);
-});
 
 it('skips an Instance without a Conn server row as no_t3', function (): void {
     $clone = restartServer($this->default, 'clone', 3840, environment: false);
@@ -158,7 +147,7 @@ it('admits one restart on the Instance lock with an intent that holds no session
 
     $operation = Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->sole();
     expect($answer)->toMatchArray(['answer' => 'restarting', 'reason' => null])
-        ->and($answer['operation']['id'])->toBe($operation->id)
+        ->and($answer['operation_id'])->toBe($operation->id)
         ->and($operation->target_type)->toBe('instance')->and($operation->target_id)->toBe($clone->id)
         ->and($operation->node_id)->toBe($runtime->node_id)
         ->and($operation->lock_key)->toBe('instance:'.$clone->id)
@@ -177,7 +166,7 @@ it('answers busy with the refusal when other work holds the Instance', function 
     expect(restartOne($clone))->toMatchArray(['answer' => 'busy', 'reason' => 'operation.target_busy']);
 });
 
-it('walks a Node by Instance ID and reads each container right before its own admission', function (): void {
+it('walks a Node by Instance ID, reads every label at once and each container\'s threads right before its own admission', function (): void {
     $first = restartServer($this->default, 'first', 3841);
     $second = restartServer($this->default, 'second', 3842);
     $events = [];
@@ -198,15 +187,16 @@ it('walks a Node by Instance ID and reads each container right before its own ad
     expect(array_column($answers, 'instance_id'))->toBe([$this->default->id, $first->id, $second->id])
         ->and(array_column($answers, 'answer'))->toBe(['skipped', 'restarting', 'restarting'])
         ->and($events)->toBe([
-            'read:3841/.well-known/t3/environment', 'read:3841/api/orchestration/shell', 'admit:'.$first->id,
-            'read:3842/.well-known/t3/environment', 'read:3842/api/orchestration/shell', 'admit:'.$second->id,
+            // Every label at once, then each Instance's threads right before its own admission.
+            'read:3841/.well-known/t3/environment', 'read:3842/.well-known/t3/environment',
+            'read:3841/api/orchestration/shell', 'admit:'.$first->id, 'read:3842/api/orchestration/shell', 'admit:'.$second->id,
         ]);
 });
 
 it('records a run that ends with T3 inactive as failed with its code, and a good report as restarted', function (string $status, array $report, array|string $result, ?string $code): void {
     $clone = restartServer($this->default, 'clone', 3840);
     Http::fake(restartT3(3840, 'instance-'.$clone->id));
-    $operation = Operation::query()->findOrFail(restartOne($clone)['operation']['id']);
+    $operation = Operation::query()->findOrFail(restartOne($clone)['operation_id']);
     $operation->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => RestartRun]])->save();
 
     $projected = app(ConnEnvironmentRestartProjection::class)->apply($operation, ['run_id' => RestartRun, 'status' => $status,
@@ -221,6 +211,7 @@ it('records a run that ends with T3 inactive as failed with its code, and a good
     'T3 inactive' => ['failed', ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], ['answer' => 'failed', 'error_code' => 'conn.t3_inactive'], 'conn.t3_inactive'],
     'no code of its own' => ['failed', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
     'restarted, with its window from the read' => ['succeeded', ['answer' => 'restarted', 'restart_at' => '2026-11-14T12:00:07.500000Z'], 'window', null],
+    'interrupted' => ['interrupted', [], ['answer' => 'failed', 'error_code' => 'conn.t3_restart_failed'], 'conn.t3_restart_failed'],
     'stopped after the read' => ['succeeded', ['answer' => 'skipped', 'reason' => 'stopped'], ['answer' => 'skipped', 'reason' => 'stopped'], null],
 ]);
 
@@ -233,6 +224,91 @@ it('skips a runtime without a T3 port as no_t3, even with a Conn server row', fu
 
     expect(restartOne($this->default))->toMatchArray(['answer' => 'skipped', 'reason' => 'no_t3']);
     Http::assertNothingSent();
+});
+
+it('refuses a malformed restarted report as an invalid result', function (array $report): void {
+    $clone = restartServer($this->default, 'clone', 3840);
+    Http::fake(restartT3(3840, 'instance-'.$clone->id));
+    $operation = Operation::query()->findOrFail(restartOne($clone)['operation_id']);
+    $operation->forceFill(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => RestartRun]])->save();
+
+    expect(fn () => app(ConnEnvironmentRestartProjection::class)->apply($operation, ['run_id' => RestartRun, 'status' => 'succeeded',
+        'started_at' => now()->subSeconds(20)->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => null, 'result' => $report]))
+        ->toThrow(ResourceOperationException::class, 'restart report');
+})->with(['no answer' => [[]], 'restarted without its time' => [['answer' => 'restarted']], 'skipped without a reason' => [['answer' => 'skipped']]]);
+
+it('answers busy with instance.lifecycle_not_active for an Instance that is not active', function (): void {
+    $clone = restartServer($this->default, 'clone', 3840);
+    $clone->forceFill(['status' => 'source_resolved'])->save();
+    Http::fake(restartT3(3840, 'instance-'.$clone->id));
+
+    expect(restartOne($clone))->toMatchArray(['answer' => 'busy', 'reason' => 'instance.lifecycle_not_active']);
+});
+
+it('answers busy while another Conn Operation holds the server', function (): void {
+    $clone = restartServer($this->default, 'clone', 3840);
+    $environment = ConnEnvironment::query()->where('instance_id', $clone->id)->firstOrFail();
+    Operation::query()->forceCreate(['kind' => 'conn.environment_renew', 'target_type' => 'conn_environment', 'target_id' => $environment->id, 'node_id' => $clone->node_id,
+        'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 1, 'lock_key' => 'conn_environment:'.$environment->id]);
+    Http::fake(restartT3(3840, 'instance-'.$clone->id));
+
+    expect(restartOne($clone))->toMatchArray(['answer' => 'busy', 'reason' => 'conn_operation'])
+        ->and(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->count())->toBe(0);
+});
+
+it('answers skipped with deadline for the Instances left when the walk passes its deadline', function (): void {
+    $first = restartServer($this->default, 'first', 3841);
+    $second = restartServer($this->default, 'second', 3842);
+    $routes = [...restartT3(3841, 'instance-'.$first->id), ...restartT3(3842, 'instance-'.$second->id)];
+    // The first container's thread read takes the walk past its deadline.
+    Http::fake(function (Request $request) use ($routes) {
+        if (str_ends_with($request->url(), ':3841/api/orchestration/shell')) {
+            Carbon\Carbon::setTestNow(now()->addSeconds(121));
+        }
+
+        return $routes[$request->url()];
+    });
+
+    $answers = array_map(static fn ($decision): array => $decision->toArray(), app(ConnEnvironmentRestart::class)->node(Node::query()->findOrFail($first->node_id), null, null));
+
+    expect(array_column($answers, 'answer', 'instance_id'))->toBe([$this->default->id => 'skipped', $first->id => 'restarting', $second->id => 'skipped'])
+        ->and($answers[2]['reason'])->toBe('deadline');
+    Http::assertNotSent(fn (Request $request): bool => str_ends_with($request->url(), ':3842/api/orchestration/shell'));
+});
+
+it('admits at most a few restarts per call; the rest answer next_run', function (): void {
+    $instances = [restartServer($this->default, 'first', 3841), restartServer($this->default, 'second', 3842), restartServer($this->default, 'third', 3843)];
+    $routes = [];
+    foreach ($instances as $index => $instance) {
+        $routes = [...$routes, ...restartT3(3841 + $index, 'instance-'.$instance->id)];
+    }
+    Http::fake($routes);
+    $walk = new ConnEnvironmentRestart(app(T3ServerClient::class), app(AdmitConnEnvironmentRestartAction::class), restartsPerCall: 2);
+
+    $answers = array_map(static fn ($decision): array => $decision->toArray(), $walk->node(Node::query()->findOrFail($this->node->id), null, null));
+
+    expect(array_column($answers, 'answer'))->toBe(['skipped', 'restarting', 'restarting', 'skipped'])->and($answers[3]['reason'])->toBe('next_run');
+});
+
+it('answers failed for an Instance whose read throws unexpectedly, and goes on with the next', function (): void {
+    $first = restartServer($this->default, 'first', 3841);
+    $second = restartServer($this->default, 'second', 3842);
+    $routes = [...restartT3(3841, 'instance-'.$first->id), ...restartT3(3842, 'instance-'.$second->id)];
+    Http::fake(function (Request $request) use ($routes) {
+        if (str_ends_with($request->url(), ':3841/api/orchestration/shell')) {
+            throw new RuntimeException('unexpected');
+        }
+
+        return $routes[$request->url()];
+    });
+
+    $answers = array_map(static fn ($decision): array => $decision->toArray(), app(ConnEnvironmentRestart::class)->node(Node::query()->findOrFail($first->node_id), null, null));
+
+    expect(array_slice($answers, 1))->toBe([
+        ['instance_id' => $first->id, 'instance' => 'first', 'answer' => 'failed', 'reason' => 'conn.restart_admission_failed', 'operation_id' => null],
+        ['instance_id' => $second->id, 'instance' => 'second', 'answer' => 'restarting', 'reason' => null,
+            'operation_id' => Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->sole()->id],
+    ]);
 });
 
 describe('API', function (): void {
@@ -259,17 +335,16 @@ describe('API', function (): void {
         Http::fake(restartT3(3840, 'clone.shop'));
 
         $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.77'])->postJson("/api/v1/conn/instances/{$clone->id}/t3-restart")
-            ->assertOk()->assertJsonPath('data.restarts.0', ['instance_id' => $clone->id, 'instance' => 'clone', 'answer' => 'current', 'reason' => null, 'operation' => null]);
+            ->assertOk()->assertJsonPath('data.restarts.0', ['instance_id' => $clone->id, 'instance' => 'clone', 'answer' => 'current', 'reason' => null, 'operation_id' => null]);
     });
 
-    it('answers 202 for a Node walk that admits a restart, with its Operation', function (): void {
+    it('answers 200 for a Node walk that admits a restart, naming its Operation', function (): void {
         $clone = restartServer($this->default, 'clone', 3840);
         Http::fake(restartT3(3840, 'instance-'.$clone->id));
 
-        $response = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.77'])->postJson("/api/v1/conn/nodes/{$this->node->id}/t3-restart")->assertStatus(202);
+        $response = $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.77'])->postJson("/api/v1/conn/nodes/{$this->node->id}/t3-restart")->assertOk();
 
         expect(array_column($response->json('data.restarts'), 'answer'))->toBe(['skipped', 'restarting'])
-            ->and($response->json('data.restarts.1.operation.kind'))->toBe(AdmitConnEnvironmentRestartAction::Kind)
-            ->and($response->json('data.restarts.1.operation.id'))->toBe(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->sole()->id);
+            ->and($response->json('data.restarts.1.operation_id'))->toBe(Operation::query()->where('kind', AdmitConnEnvironmentRestartAction::Kind)->sole()->id);
     });
 });

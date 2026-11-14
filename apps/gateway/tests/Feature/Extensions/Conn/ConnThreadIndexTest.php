@@ -422,6 +422,11 @@ describe('sleep and destroy', function (): void {
         {
             public ?float $timeout = null;
 
+            public function describes(array $baseUrls, float $timeoutSeconds): array
+            {
+                return array_map(fn (string $url): T3EnvironmentDescriptor => $this->describe($url), $baseUrls);
+            }
+
             public function describe(string $baseUrl): T3EnvironmentDescriptor
             {
                 throw new LogicException('unused');

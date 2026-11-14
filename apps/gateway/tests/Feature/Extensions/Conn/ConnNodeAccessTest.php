@@ -252,6 +252,11 @@ describe('registration', function (): void {
     beforeEach(function (): void {
         app()->instance(T3ServerClient::class, new class implements T3ServerClient
         {
+            public function describes(array $baseUrls, float $timeoutSeconds): array
+            {
+                return array_map(fn (string $url): T3EnvironmentDescriptor => $this->describe($url), $baseUrls);
+            }
+
             public function describe(string $baseUrl): T3EnvironmentDescriptor
             {
                 throw T3ServerException::unreachable($baseUrl);
@@ -317,6 +322,11 @@ describe('registration', function (): void {
         app()->instance(T3ServerClient::class, new class($beast) implements T3ServerClient
         {
             public function __construct(private readonly Node $beast) {}
+
+            public function describes(array $baseUrls, float $timeoutSeconds): array
+            {
+                return array_map(fn (string $url): T3EnvironmentDescriptor => $this->describe($url), $baseUrls);
+            }
 
             public function describe(string $baseUrl): T3EnvironmentDescriptor
             {

@@ -16,6 +16,15 @@ interface T3ServerClient
     /** GET /.well-known/t3/environment */
     public function describe(string $baseUrl): T3EnvironmentDescriptor;
 
+    /**
+     * The descriptors of many servers at once. One server that does not answer within `$timeoutSeconds` holds back no other: its key
+     * maps to the T3ServerException of its failure.
+     *
+     * @param  array<array-key, string>  $baseUrls
+     * @return array<array-key, T3EnvironmentDescriptor|T3ServerException>
+     */
+    public function describes(array $baseUrls, float $timeoutSeconds): array;
+
     /** GET /api/auth/session: the scopes and expiry of `$adminSession`. A session T3 does not accept is rejected. */
     public function session(string $baseUrl, #[SensitiveParameter] string $adminSession): T3AdminSession;
 
