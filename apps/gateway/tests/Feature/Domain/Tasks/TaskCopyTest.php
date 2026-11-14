@@ -473,7 +473,7 @@ describe('a task start on the copy path', function (): void {
             ->and(Operation::query()->where('kind', 'instance.wake')->count())->toBe(0);
     })->with(['frozen', 'stopped']);
 
-    it('refuses a stopped default whose asleep marker no sleep left, and a default stopped by hand after its sleep', function (string $case): void {
+    it('refuses a stopped default whose asleep marker no sleep left, and a container that does not run without its marker', function (string $case): void {
         $default = copySource();
         $default->runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
         if ($case === 'a failed sleep') {
@@ -481,8 +481,9 @@ describe('a task start on the copy path', function (): void {
                 'status' => 'failed', 'error_code' => 'instance.container_freeze_failed', 'input' => [], 'state' => [], 'finished_at' => now()]);
         }
         $group = copyGroup($default->project);
-        $this->ssh->answer = ['state' => 'unknown', 'reason' => $case === 'stopped by hand after its sleep' ? 'stopped' : 'asleep'];
-        if ($case === 'stopped by hand after its sleep') {
+        // The reader answers `asleep` only for a container that does not run behind its marker, and `stopped` without the marker.
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => $case === 'no marker after a sleep' ? 'stopped' : 'asleep'];
+        if ($case === 'no marker after a sleep') {
             Operation::query()->create(['kind' => InstanceSleep::Kind, 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
                 'status' => 'succeeded', 'input' => [], 'state' => [], 'result' => ['sleep' => 'frozen'], 'finished_at' => now()]);
         }
@@ -490,7 +491,7 @@ describe('a task start on the copy path', function (): void {
 
         expect(copyRefusal(fn () => startCopy($group)))->toBe('tasks.copy_source_unavailable 409')
             ->and(copyRows())->toBe($before);
-    })->with(['no sleep', 'a failed sleep', 'stopped by hand after its sleep']);
+    })->with(['no sleep', 'a failed sleep', 'no marker after a sleep']);
 
     it('admits a running default whose Git read ran out of time or found no repository', function (array $answer): void {
         $group = copyGroup(copySource()->project);

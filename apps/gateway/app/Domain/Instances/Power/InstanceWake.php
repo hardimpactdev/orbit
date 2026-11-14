@@ -91,7 +91,7 @@ final readonly class InstanceWake extends InstancePower
      * wake serves the app as it is: the marker goes once the app answers. A resumed container gets `resume_seconds` for its first
      * answer; a silent one is stopped and booted, which a visitor prefers to a wait without end.
      */
-    protected function intent(): array
+    protected function intent(Instance $instance): array
     {
         return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10]];
     }

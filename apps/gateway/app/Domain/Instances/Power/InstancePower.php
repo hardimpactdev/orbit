@@ -52,8 +52,8 @@ abstract readonly class InstancePower implements DirectOperationProjection
     /** Work after a terminal Operation's transaction committed. */
     protected function ended(Operation $operation): void {}
 
-    /** @return array<string, array<string, int|string>> The kind's own intent beside the container and the marker. */
-    protected function intent(): array
+    /** @return array<string, mixed> The kind's own intent beside the container and the marker. */
+    protected function intent(Instance $instance): array
     {
         return [];
     }
@@ -88,7 +88,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
             }
 
             return $this->admit($instance, $runtime,
-                ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance), ...$this->intent()],
+                ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'marker' => self::markerPath($instance), ...$this->intent($instance)],
                 $caller, $requestId);
         });
     }

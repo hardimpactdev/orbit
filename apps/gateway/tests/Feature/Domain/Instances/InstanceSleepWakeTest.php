@@ -104,6 +104,23 @@ it('admits a sleep with the container intent and the asleep marker under the Ins
         ->and(OperationRunBudgets::seconds($operation->forceFill(['state' => ['swamp_run_id' => 'r']])))->toBe(150);
 });
 
+it('tells the sleep whether a published Route has a Caddy site to check, so an Instance without one sleeps with nothing to check', function (string $case, bool $site): void {
+    $clone = sleepingClone();
+    if ($case !== 'no Route') {
+        $route = Route::query()->create(['kind' => 'app', 'project_id' => $clone->project_id, 'node_id' => $clone->node_id, 'provenance' => 'explicit',
+            'publication' => 'private', 'domain' => 'clone.tool.test', 'status' => 'pending']);
+        $route->targets()->create(['instance_id' => $clone->id, 'position' => 0]);
+        if ($case === 'a published Route') {
+            $route->update(['status' => 'active', 'sites_published' => true]);
+        }
+    }
+
+    $operation = app(InstanceSleep::class)->start($clone, null, null);
+
+    expect($operation->input['route'])->toBe($site)
+        ->and($operation->input['marker'])->toBe('/data/caddy/orbit/hibernation/app-instance-'.$clone->id.'.asleep');
+})->with([['no Route', false], ['a Route not yet published', false], ['a published Route', true]]);
+
 it('lets the extensions read the threads one last time before the sleep is admitted', function (): void {
     $clone = sleepingClone();
     $contribution = Mockery::mock(InstanceThreadContribution::class);

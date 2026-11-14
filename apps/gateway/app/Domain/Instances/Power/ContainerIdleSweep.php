@@ -146,9 +146,8 @@ final readonly class ContainerIdleSweep
     private function standing(Instance $instance, InstanceRuntime $runtime, ContainerSleepScope $scope): ?string
     {
         return match (true) {
-            $scope === ContainerSleepScope::Off => 'off',
-            $instance->placementEnvironment() !== 'development' => 'not_development',
             ($excluded = $scope->excludes($runtime)) !== null => $excluded,
+            $instance->placementEnvironment() !== 'development' => 'not_development',
             in_array($instance->id, $this->neverSleep, true) => 'never_sleep',
             $runtime->power_state !== InstanceRuntimePowerState::Running => 'asleep',
             $instance->status !== InstanceState::Active || $this->hasOpenOperation($instance) => 'busy',

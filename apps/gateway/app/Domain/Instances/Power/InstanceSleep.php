@@ -74,9 +74,13 @@ final readonly class InstanceSleep extends InstancePower
         return $sleep?->status === OperationStatus::Succeeded ? $sleep : null;
     }
 
-    /** The anonymous memory that may stay in RAM after the reclaim; more means swap is full, and the sleep stops the container. */
-    protected function intent(): array
+    /**
+     * The anonymous memory that may stay in RAM after the reclaim; more means swap is full, and the sleep stops the container. `route`
+     * says whether a published Route has a Caddy site for the Instance: only such a site must check the asleep marker before the freeze,
+     * and an Instance without one, such as a default without a Route, sleeps with nothing to check.
+     */
+    protected function intent(Instance $instance): array
     {
-        return ['freeze' => ['resident_anon_mib' => 32]];
+        return ['freeze' => ['resident_anon_mib' => 32], 'route' => $instance->routes()->where('sites_published', true)->exists()];
     }
 }
