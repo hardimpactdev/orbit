@@ -2618,6 +2618,56 @@ Deno.test({
   },
 });
 
+/** The order of the seed's calls: each container snapshot, flush and volume snapshot, as `c`, `f` and `v`. */
+const seedOrder = (f: ReturnType<typeof fixture>) => incusCalls(f).map((call) => call.join(" ")).flatMap((call) =>
+  /(^| )snapshot create instance-7 /.test(call) && !call.includes("storage") ? ["c"]
+  : call.includes(" -- sync -f /srv/inner-pool") ? ["f"]
+  : call.includes("storage volume snapshot create orbit-instances inner-7 ") ? ["v"] : []);
+
+Deno.test({
+  name: "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      const head = git(f.source, "rev-parse", "HEAD");
+      // The first seed, then a same-commit retake under `next-`: each flushes between its container half and its volume half
+      // (live proof 2026-11-14: a volume snapshot without the flush lacked an inner pool made 23 s before).
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(seedOrder(f), ["c", "f", "v", "c", "f", "v"]);
+      assertEquals(f.state().syncs, [["-f", "/srv/inner-pool"], ["-f", "/srv/inner-pool"]]);
+      // A flush that fails takes no volume half, deletes the new container half and keeps the old pair whole.
+      const state = f.state();
+      state.sync_fails = true;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const failed = f.run("seed");
+      assert(!failed.ok);
+      assertEquals(f.result().error_code, "instance.seed_volume_flush_failed");
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      assert(failed.output.includes("TASK [Start the Processes again]"), failed.output);
+    } finally { f.cleanup(); }
+    // A normal default and a nested default without a volume (Instance 2454's shape) evaluate the task's guard and skip it.
+    for (const shape of ["nested", "normal"]) {
+      const g = fixture();
+      try {
+        if (shape === "nested") nestedCreate(g);
+        for (const phase of ["container", "workspace", "processes", "seed"]) assert(g.run(phase).ok, `${shape} ${phase}`);
+        g.intent.deployment = { variant: "container" };
+        g.write();
+        const seeded = g.run("seed");
+        assert(seeded.ok, seeded.output);
+        const own = (seeded.output.split("TASK [Flush the inner volume]")[1] ?? "").split("\nTASK [")[0];
+        assert(/skipping: \[node\]/.test(own) && !/(ok|changed): \[node\]/.test(own), shape);
+        assertEquals(g.state().syncs, undefined, shape);
+      } finally { g.cleanup(); }
+    }
+  },
+});
+
 Deno.test({
   name: "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
   ignore: !hasAnsible,
