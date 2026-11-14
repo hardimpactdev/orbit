@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Infrastructure\Swamp;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\FailUnreadableResultAction;
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationChildProjection;
@@ -184,8 +185,13 @@ final readonly class SwampCommandStep
         if (ExpireOperationAction::awaitsSettlement($operation)) {
             return app(ExpireOperationAction::class)->settle($operation, $runId, $run['status']);
         }
-        $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
-            ? [] : $this->terminalOutput($run, $selector);
+        try {
+            $result = $run['status'] === 'cancelled' && $direct->projection($operation) instanceof DirectOperationChildProjection
+                ? [] : $this->terminalOutput($run, $selector);
+        } catch (SwampEndCheckUnmet $unmet) {
+            // The run has ended, so no later read can give its result: the Operation fails now and frees its target.
+            return app(FailUnreadableResultAction::class)->execute($operation, $runId, $run, $unmet->step, $unmet->stepStatus);
+        }
         $status = $run['status'];
         if (in_array($status, ['failed', 'interrupted'], true) && ($result === [] || ($result['outcome'] ?? null) === 'succeeded')) {
             $result = ['error_code' => 'operation.native_failed'];
@@ -585,7 +591,7 @@ final readonly class SwampCommandStep
         // A kind without a result-reporting step reads Swamp's own run data; its named end check must have succeeded.
         if (($selector['native'] ?? false) === true) {
             if ($run['status'] === 'succeeded' && $selected !== 'succeeded') {
-                throw $this->unavailable();
+                throw new SwampEndCheckUnmet($selector['step'], is_string($selected) ? $selected : null);
             }
             $result = app(NativeRunResult::class)->fromRun($run);
         } elseif (is_string($stdout) && trim($stdout) !== '') {
@@ -598,7 +604,8 @@ final readonly class SwampCommandStep
                 throw $this->unavailable();
             }
         } elseif ($run['status'] === 'succeeded') {
-            throw $this->unavailable();
+            // A selected step that did not succeed wrote no result; one that succeeded may still be read from its artifact.
+            throw $selected === 'succeeded' ? $this->unavailable() : new SwampEndCheckUnmet($selector['step'], is_string($selected) ? $selected : null);
         } elseif ($selected === 'succeeded' && (isset($selector['data']) || $requireOutput)) {
             // A reporting step that succeeded wrote its output, also in a failed run. A read that misses it is read again.
             throw new SwampTerminalReadUnavailable;

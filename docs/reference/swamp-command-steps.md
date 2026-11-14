@@ -93,7 +93,7 @@ When one action runs as one of several guarded steps, such as one per placement,
 
 The summary holds the facts of Swamp's `@swamp/workflow-summary` report. It comes from the same history, so there is no second read.
 
-A successful run must show the named step succeeded; otherwise the result is unavailable. `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it.
+A successful run must show the named step succeeded. When it shows the step skipped, failed or absent, the reconciler fails the Operation with `operation.result_unreadable` and frees its target at once ([How an operation runs](/reference/operations#how-an-operation-runs)). A child run or a scheduled read in that state stays unavailable. `native` passes each step's outputs, so a projector can record values such as a verifier from the step that produced it.
 
 A projector reads one step's status with `NativeRunResult::stepStatus($result, '<step name>')`, which gives null for an absent step. A failed run projects `error_code` `operation.native_failed` with this result, and the shared failure detail names the failed step. `captures` work with `native` too. A declaration without `native` reads the selected action's public JSON. New ports select the action that produces their values or declare `native` for the end check; neither adds a report step.
 
@@ -141,6 +141,8 @@ Operation reads do not request terminal history or expire Operations. The event 
 - A recorded cancel that Swamp has not confirmed is forwarded for up to an hour. Cancels go after the reads and stop 150 seconds into the pass.
 - A cancel waits for the end of the run's database fill step. That end asks for a pass at once, and the pass checks the rule again before it sends ([Cancel an operation](/reference/operations#cancel-an-operation)).
 - A timed-out Operation whose run nothing proves ended frees its target after an hour.
+
+A run that succeeded while its end check did not succeed fails with `operation.result_unreadable` in the same pass, and the Operation frees its target. A timed-out Operation whose run did so within its budget ends the same way. It is not reopened each pass.
 
 An open Operation whose kind has no registry entry is outside these reads. The same pass settles it.
 

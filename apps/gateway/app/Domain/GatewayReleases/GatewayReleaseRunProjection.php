@@ -98,10 +98,11 @@ final readonly class GatewayReleaseRunProjection implements DirectOperationProje
         return $projected;
     }
 
-    /** The run may still be working on the Gateway Node, so its release pauses with the old or new code live. */
+    /** The run may still be working on the Gateway Node, or ended with no readable result, so its release pauses with the old or new code live. */
     public function timedOut(Operation $operation): void
     {
-        $this->finish($operation, ['status' => 'timed_out', 'error_code' => 'operation.timed_out'], null);
+        $timedOut = $operation->error_code === 'operation.timed_out';
+        $this->finish($operation, ['status' => $timedOut ? 'timed_out' : 'failed', 'error_code' => $operation->error_code], null);
     }
 
     /** @param array<string, mixed> $data */
