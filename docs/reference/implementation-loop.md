@@ -57,6 +57,8 @@ The migration environment fixtures cover dependency-file isolation and explicit 
 
 Migration Git fixtures use real temporary repositories to compare branches, complete stash history, staging, status and tracked contents. They check that the source stays unchanged, objects are independent, partial imports can repeat and retirement refuses later changes. The large fixture that runs the migration phases remains in Main full set. The smaller Git checks run in selected PR shards.
 
+Image fixture cases run one host preparation, image build, replacement or retry from a saved boundary. Producer cases run the shipped tasks and compare the full saved state before other cases consume it. The boundaries preserve the Incus state, persistent fixture files and facts used by the next stage. The saved files include the stock-image archives: the next stock check reads both the archive and the Incus API state. Replacement and failure cases rerun the shipped local-daemon identity check. The five repeat-stage cases cover the complete host role and each require zero changes.
+
 The nested fleet step fixture runs the rules, start, refresh and reset of an Instance container's fleet against an Incus stand-in. The stand-in holds the device and configuration shape exported from the three nested containers of a task base.
 
 A separate remote Node service access fixture covers exact TCP admission, proxy bypass for execution sessions and systemd Processes, shared paths and detach. It uses fake commands and connections; the release fixture proves live reachability and isolation.
