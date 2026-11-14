@@ -133,4 +133,6 @@ For Python fixture registration, whole-file costs and shared test harnesses, fol
 
 Saved fixture boundaries need pre-merge producer checks when their source tasks change. Declare required cases through [fixture admission](../../../docs/reference/implementation-loop.md#ci-budget); test that pressure cannot defer them and that insufficient capacity fails Required.
 
-A deferred fixture is covered only after its real assertions run. For native auth and user-systemd prerequisites, follow [Main full set](../../../docs/reference/main-full-set.md); check named case receipts, since an ignored case or setup refusal does not test the product.
+A deferred fixture is covered only after its real assertions run. A sweep’s commit range is attribution, not proof of every intermediate tree; inspect the exact-push deferred report when a newer push replaces a waiting sweep. For native auth and user-systemd prerequisites, follow [Main full set](../../../docs/reference/main-full-set.md); check named case receipts, since an ignored case or setup refusal does not test the product.
+
+When a production input bundle gains a helper, update fixture copies and their registry inputs together. Exercise transport stand-ins with real pipelined input: an early exit can replace the intended remote diagnostic with a local broken pipe.

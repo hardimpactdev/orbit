@@ -125,7 +125,9 @@ For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,90
 
 `tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. A maintainer must update the fixed row once the history holds author turns.
 
-`tasks.copy_turn` has a fixed 4,200 seconds. Its Ansible phase ends after 4,050 seconds: the turn's own bound of 3,600 seconds, the 30-second kill grace, three T3 reads of up to a minute each, a reviewer's checkout and restore of up to 160 seconds, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
+`tasks.copy_turn` has a fixed 4,560 seconds. Its Ansible phase ends after 4,400 seconds.
+
+That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds six T3 or helper calls of up to a minute each: the settle's list, the list of a continued turn, the question's read and stop, and the list and show after the turn. It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a VM place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 
@@ -364,6 +366,8 @@ When the Gateway cannot confirm the start, it answers `swamp.start_uncertain` an
 
 Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{task}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{task}/turn` (`tasks.turn`, or `tasks.copy_turn` for a group that runs in a task copy, which takes the request's key). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
+One read that may start an operation takes no key: `GET /api/v1/conn/environments/{environment}/session` (`conn.session_hold`, MCP `conn-environment-session`). It ignores the header, because a read must answer the current state, not replay an earlier `202`. Its open Operation dedupes concurrent first reads ([Held sessions](/reference/conn#attach)).
+
 Automatic deploy starts bind caller and command as well as target and input. The [automatic deploy start](/reference/deployments#pinned-commits-and-automatic-callers) requires a key and Gateway Node access. Manual deploys and other kinds retain their key scope across callers.
 
 After checking the caller's access, the Gateway checks the key before further input or domain validation and before creating a target. The same key, target, and input return `202` with the existing operation, even when it has finished or failed to dispatch. A different target or input returns `409 operation.idempotency_conflict` and starts nothing. JSON object member order and whitespace do not change the input; array order and value types do. A malformed key returns `422 validation.failed` in the normal validation envelope, with `Idempotency-Key` in `error.details`.
@@ -488,7 +492,11 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### One Route write per Node
 
-A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). A clone's `instance.create` captures no Route publication, so it holds no Node; its `instance.complete` holds them. The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)).
+
+A clone's `instance.create` takes its Nodes only when they are all free at admission, and never waits: with one held, it drops its publication and its `instance.complete` publishes and holds them. A clone's create that took them gives them back when its `clone-route` step ends: the run's progress event of that step turns the Route `active` and frees the Nodes in one transaction. An `instance.complete` of a Route that its create published captures no publication and holds no Node.
+
+The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
 `instance.destroy` gives its Nodes back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
 

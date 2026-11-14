@@ -141,6 +141,7 @@ function fixture(instance: "default" | "feature" = "default", dirty = false, lin
     });
     Deno.writeTextFileSync(`${folder}/tasks/${name}`, stringify(tasks));
   }
+  Deno.copyFileSync(new URL("instance_node_services.py", root), `${folder}/instance_node_services.py`);
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
   Deno.copyFileSync(new URL("tasks/instance-node-runtime.yml", root), `${folder}/tasks/instance-node-runtime.yml`);
   Deno.mkdirSync(`${folder}/templates`);

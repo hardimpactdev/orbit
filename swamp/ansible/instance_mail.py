@@ -82,6 +82,30 @@ def ready(rows, port):
     return owns_listener(rows, port) and row.get("UnitFileState") == "enabled"
 
 
+def socket_actions(rows, linked, started):
+    """What each socket still needs. Its link in sockets.target.wants is its enablement on disk, which a copy shows before its
+    systemd answers. A missing link is a change: `enable --now`. A linked socket that does not listen is started, which is no
+    change. Only a copy that this run has just started may leave its linked sockets to its own boot while its systemd does not
+    answer yet (docs/reference/development-containers.md#development-mail); anywhere else a silent systemd fails the install."""
+    actions = {}
+    for port in PORTS:
+        name = "orbit-mail-" + str(port) + ".socket"
+        if not linked[name]:
+            actions[name] = "enable"
+        elif (rows or not started) and not ready(rows, port):
+            actions[name] = "start"
+    return actions
+
+
+def linked(root, name):
+    """Whether the socket's enablement link names its unit, as systemd reads an absolute or a relative link."""
+    wants = "/etc/systemd/system/sockets.target.wants"
+    link = root / (wants + "/" + name).lstrip("/")
+    if not link.is_symlink():
+        return False
+    return os.path.normpath(os.path.join(wants, os.readlink(link))) == "/etc/systemd/system/" + name
+
+
 def guest(action, plan, root=Path("/"), run=command):
     def path(name):
         return root / name.lstrip("/")
@@ -117,7 +141,9 @@ def guest(action, plan, root=Path("/"), run=command):
                     rows, port
                 ):
                     return {"status": "skipped", "reason": "mail_port_in_use"}
-        return {"changed_units": changed, "sockets": rows}
+        links = {name: linked(root, name) for name in ("orbit-mail-" + str(port) + ".socket" for port in PORTS)}
+        return {"changed_units": changed, "sockets": rows, "linked": links,
+                "socket_actions": socket_actions(rows, links, plan.get("started", False))}
     if action != "install":
         raise RuntimeError("instance.mail_update_failed")
     # The Node saved every pending name BEFORE this first write, including partial earlier attempts.
@@ -131,17 +157,18 @@ def guest(action, plan, root=Path("/"), run=command):
         services = [name for name in pending if name.endswith(".service")]
         if services:
             run(["systemctl", "try-restart", "--"] + services)
-    drift = [
-        "orbit-mail-" + str(port) + ".socket"
-        for port in PORTS
-        if not ready(plan["sockets"], port)
-    ]
-    if drift:
-        run(["systemctl", "enable", "--now", "--"] + drift)
+    enable = [name for name in sorted(plan["linked"]) if not plan["linked"][name]]
+    if enable:
+        run(["systemctl", "enable", "--now", "--"] + enable)
+    # Read again after the reload: a booting copy may not have reached sockets.target yet. Starting a linked socket is no change.
     installed = sockets(run)
+    start = ["orbit-mail-" + str(port) + ".socket" for port in PORTS if not ready(installed, port)]
+    if start:
+        run(["systemctl", "start", "--"] + start)
+        installed = sockets(run)
     if not all(ready(installed, port) for port in PORTS):
         raise RuntimeError("process.target_inactive")
-    return {"changed": bool(pending or drift)}
+    return {"changed": bool(pending or enable)}
 
 
 def effective_rules(acl):
@@ -155,7 +182,7 @@ def effective_rules(acl):
     )
 
 
-def apply(container, bundle, run=command, state=Path("/var/lib/orbit/instance-mail")):
+def apply(container, bundle, run=command, state=Path("/var/lib/orbit/instance-mail"), started=False):
     if container.get("mail") is None:
         return None
     name = container["name"]
@@ -183,7 +210,7 @@ def apply(container, bundle, run=command, state=Path("/var/lib/orbit/instance-ma
         bundle["mail"],
     ]
     probe = json.loads(
-        run(exec_argv + ["inspect"], json.dumps(container), public_guest=True)
+        run(exec_argv + ["inspect"], json.dumps(container | {"started": started}), public_guest=True)
     )
     if probe.get("status") == "skipped":
         return probe
@@ -256,7 +283,7 @@ def apply(container, bundle, run=command, state=Path("/var/lib/orbit/instance-ma
         atomic(pending, json.dumps(activation), 0o600)
     # No guest write before both network gates succeed. An unfinished attempt retains activation.json.
     result = {"changed": False}
-    if activation or not all(ready(probe["sockets"], port) for port in PORTS):
+    if activation or probe["socket_actions"]:
         result = json.loads(
             run(
                 exec_argv + ["install"],
@@ -277,7 +304,8 @@ def main():
         if sys.argv[1] in ("inspect", "install"):
             result = guest(sys.argv[1], json.load(sys.stdin))
         else:
-            result = apply(json.loads(sys.argv[1]), json.loads(sys.argv[2]))
+            # `started`: the clone's container phase has just started this copy (instance_clone.py).
+            result = apply(json.loads(sys.argv[1]), json.loads(sys.argv[2]), started=sys.argv[3:] == ["started"])
         print(json.dumps(result))
     except Exception as error:  # noqa: BLE001 - output-free public diagnostic boundary.
         code = str(error)

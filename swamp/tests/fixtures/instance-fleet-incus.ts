@@ -85,6 +85,11 @@ if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c") {
   done(JSON.stringify({ tools: "built", reason: "missing", ...names }));
 }
 
+// `df` of the container's `/`, in bytes: `room` is [size, free]; by default 40 GiB with 20 GiB free.
+if (command[0] === "df") {
+  const [size, free] = state.room ?? [42949672960, 21474836480];
+  done(`1B-blocks       Avail\n${size} ${free}`);
+}
 if (command[0] === "test" && command[1] === "-s") {
   save();
   Deno.exit(state.outer.files[command[2]] ? 0 : 1);
@@ -113,13 +118,13 @@ if (command[0] === "sh" && command[1] === "-c" && command[2].includes('cat > "$1
   state.outer.modes[path] = [...command[2].matchAll(/(?:chown|chmod) (\S+) /g)].map((match) => match[1]).join(" ");
   done();
 }
-// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail. A path under
-// `swamp/` that `digests` does not name has the ID `c3`.
+// The Git object IDs of the workspace's checkout: `digests` maps each path to its ID; `digestsFail` makes the read fail. `swamp`, or a
+// path under `swamp/`, that `digests` does not name has the ID `c3`.
 if (command[0] === "git" && command.includes("rev-parse")) {
   if (state.digestsFail) fail("fatal: not a git repository");
   const digests: Record<string, string> = { "apps/agent/contract": "d4", ...(state.digests ?? { "apps/gateway": "a1" }) };
   done(command.slice(command.indexOf("rev-parse") + 1).map((object) => object.slice("HEAD:".length))
-    .map((path) => digests[path] ?? (path.startsWith("swamp/") ? "c3" : "")).join("\n"));
+    .map((path) => digests[path] ?? (path === "swamp" || path.startsWith("swamp/") ? "c3" : "")).join("\n"));
 }
 
 if (command[0] === "incus") {

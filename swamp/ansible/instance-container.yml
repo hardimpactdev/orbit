@@ -6,8 +6,8 @@
 #   create of a clone: `clone`, `workspace`, `agent`, `processes`, `t3`, `register`, and `stop` after a failure. A clone of a
 #     nested-fleet default (its intent has `fleet`) runs `fleet_check` and `fleet_resume` after its start.
 #   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its intent has `fleet`) adds
-#     `seed` right after `start`, `fleet_start` and `fleet_refresh` before the last `seed`, and after a failure `fleet_restore`,
-#     then `start` again.
+#     `fleet_start` (its one fleet check) and `seed` right after `start`, `fleet_refresh` before the last `seed`, and after a failure
+#     `fleet_restore`, then `start` and `fleet_resume`.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
@@ -92,9 +92,9 @@
         # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A swamp step that exits
         # nonzero keeps no output, so a failed fleet phase also writes why into the result: `detail`, the failed task and its
         # message (a command's stderr tail with it). The fleet's messages are written to be safe to show; the Gateway redacts them
-        # again. A fleet start after the refresh (`fleet_resume` without failed.json) keeps the commit the seed took and says that
-        # the new seed stays; after a restore it keeps the first failure's result and adds `restore_failure`. A clone's `fleet_resume`
-        # (a create intent, no `deployment`) took no seed, so its failure says only why the fleet it copied did not start.
+        # again. A deployment starts its fleet with `fleet_resume` only after a restore: it keeps the first failure's result and adds
+        # `restore_failure`. A clone's `fleet_resume` (a create intent, no `deployment`) took no seed, so its failure says only why the
+        # fleet it copied did not start.
         - name: Write the failure
           tags: [always]
           ansible.builtin.copy:
@@ -105,7 +105,7 @@
                   else ({'error_code': failure_code}
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
-                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(seed_failure | default({})) | combine(club_key_carried)
+                  | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
                   | combine(wake_result | default({})) | combine(fleet_refresh_carried))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
@@ -140,9 +140,6 @@
                  if failure_inactive_units | length > 0 else {} }}
             failure_fleet_detail: >-
               {{ {} if failure_phase not in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume'] or failure_code == failure_message
-                 else {'detail': 'The new seed and base stay; the inner fleet on the new commit did not start: ' ~ failure_reason,
-                       'commit': (lookup('ansible.builtin.file', club_key_result_file) | from_json).commit | default(none)}
-                 if failure_phase == 'fleet_resume' and intent.deployment is defined and club_key_result_file is file
                  else {'detail': failure_reason} }}
         - name: Fail the phase
           tags: [always]

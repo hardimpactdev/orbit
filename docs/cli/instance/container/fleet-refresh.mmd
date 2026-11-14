@@ -33,13 +33,22 @@ sequenceDiagram
   SW->>N: Start the container<br/>Ansible · tags start
   %%> What it does:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
-  SW->>F: Check the inner fleet<br/>Ansible · tags fleet_check
+  SW->>F: Check the inner fleet<br/>Ansible · tags fleet_start
   %%> What it does:
-  %%> - waits for the inner Incus, then compares the three nested containers with the fleet rules; it changes nothing
+  %%> - first reads the room on the nested Nodes' disk (`df` in the container of `/`, or of the inner volume's mount when the default has one: where the nested Nodes' `/` lies): the inner Doctor wants at least 2 GiB and 10% of it free (`node.disk_low`), and a refresh writes up to 2 GiB more (checkout, installs, the nested Gateway's records, and a `base` retake); it refuses `instance.container_fleet_no_room` when the free space minus 2 GiB is under that floor, and the detail names the size, the free space, the floor and the need
+  %%> - the one fleet check of the run: waits for the inner Incus, compares the three nested containers with the fleet rules, starts a nested container that is stopped, links the Club key and brings up `wg-nested` with `ip` and `wg`
+  %%> - checks only what a start can promise: the three containers run and the tunnel reaches the hub; no Doctor wait
+  %%> - changes no device or configuration key: on a running fleet it only reads
+  %%> - reads no fleet file: every file rule is owned and never refuses; the refresh reads the files when they matter
   %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`), or a nested container or the inner bridge cannot be read; the Operation's result `fleet_drift` names each difference
   %%> - an owned rule that differs passes: the refresh writes it
   %%> Why:
-  %%> - nothing changed yet, so a refusal restores no seed
+  %%> - the fleet keeps running between releases, so the run checks it once, before it changes anything; a refusal or a failed start restores no seed
+  %%> - a refresh that cannot end above the inner Doctor's floor would fail only at its last readiness wait, after minutes of work and a restore: refresh 21617 did that on `node.disk_low`
+  %%> - nothing in the run stops the fleet before the refresh, so no second start follows the checkout
+  %%> - it takes the hub's key only when it is a WireGuard key: just after a boot, `wg` prints `(none)` with exit 0 until `wg-quick` has set the key
+  %%> On failure:
+  %%> - no key within 60 s: the step says the nested Gateway's WireGuard key was not ready, and sets no peer
   SW->>N: Keep the current seed<br/>Ansible · tags seed
   %%> What it does:
   %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
@@ -55,46 +64,44 @@ sequenceDiagram
   %%> - checks out the release commit in `/srv/workspace`; the nested Gateway and app-dev see it through their `checkout` device
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
   SW->>C: Install the Processes<br/>Ansible · tags processes
-  SW->>F: Start the inner fleet<br/>Ansible · tags fleet_start
-  %%> What it does:
-  %%> - compares the fleet with its rules as the check does, starts the nested containers that are stopped, links the Club key, brings up `wg-nested` with `ip` and `wg`
-  %%> - checks only what a start can promise: the three containers run and the tunnel reaches the hub; no Doctor wait
-  %%> - changes no device or configuration key: on a running fleet it only reads
-  %%> Why:
-  %%> - the checkout just moved under the running nested Gateway; until the refresh migrates and restarts it, its Doctor cannot be healthy
-  %%> - it takes the hub's key only when it is a WireGuard key: just after a boot, `wg` prints `(none)` with exit 0 until `wg-quick` has set the key
-  %%> On failure:
-  %%> - no key within 60 s: the step says the nested Gateway's WireGuard key was not ready, and sets no peer
   SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
   %%> What it does:
   %%> - reads the refresh record in the container (`/var/lib/orbit/fleet-refresh.json`) and the digest `code` of the checkout: `apps/gateway`, which holds the migrations and the Composer lock of packages that ship migrations, and `apps/agent/contract`, which it reads
   %%> - after the migrate, makes the digest `converge` from what a base converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the nested Gateway's digest of each Node's base intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
   %%> - a part runs when its digest differs from the record; a missing record, or one it cannot read, makes every part run, and an unreadable record adds a warning
   %%> - the converge also runs when a digest cannot be read, or when the last converge that ran (`converged` in the record) is more than 7 days old
-  %%> - every run: waits until the state mounts of the nested Gateway (with its Swamp state when the Club key is there) and app-dev are active (60 s), places the agent delivery (into the checkout) and reloads the grants (on the nested Gateway's own disk)
-  %%> - with the Club key, every run: reads the nested Gateway's Swamp tokens (`swamp access token list`, names and dates only); they are due when one of the six (serve driver, Gateway run and read, the access of workers a, b and c) is missing or older than 20 days (`fleet_token_max_age`)
+  %%> - also from the record: `grants` (with the Club key only), the digest of `apps/gateway` and `swamp`, from which the nested Gateway renders its Swamp grants; `tokens`, the creation time of the oldest of the nested Gateway's six Swamp tokens
+  %%> - every run, once: waits until the state mounts of the nested Gateway (with its Swamp state when the Club key is there) and app-dev are active (60 s)
+  %%> - `code` changed: places the agent delivery (into the checkout)
+  %%> - `grants` changed, with the Club key: reloads the grants (on the nested Gateway's own disk)
+  %%> - with the Club key, when `tokens` is missing or older than 20 days (`fleet_token_max_age`): reads the nested Gateway's Swamp tokens (`swamp access token list`, names and dates only); they are due when one of the six (serve driver, Gateway run and read, the access of workers a, b and c) is missing or older than 20 days
   %%> - the tokens are due: the `remint` play stops the workers and serve, makes the worker set whole (folder and tokens of a missing worker), renews all six, and enables and starts serve and the three workers; the step ends only when serve and the three workers are active, so nothing else of the refresh runs on them meanwhile; a remint marks the nested Gateway for `base` and restarts its services, which read the new tokens
   %%> - `code` changed: migrates the nested Gateway and restarts its services
-  %%> - every run: reads the fleet rules on the running fleet and writes the fleet files that differ
+  %%> - every run: reads the fleet rules on the running fleet, its devices and keys and the inner bridge; reads the fleet files only when `rules` (the files' content) differs from the record or the converge is due, and writes those that differ
+  %%> - every run: checks the services of the nested Gateway, and Swamp serve and its workers with the Club key, in one read
   %%> - the converge is due: waits until the three agents are online (300 s), converges the base of the three nested Nodes one by one, and reads how many tasks each changed; a failed converge fails the refresh
-  %%> - every run: waits for readiness once (Doctor healthy, three agents, the operator), so the seed holds a ready fleet
+  %%> - every run: waits for readiness once (Doctor healthy, three agents, the operator), so the seed holds a ready fleet: before the tools when the fleet keeps running, after the start that follows a retaken `base` otherwise
   %%> - retakes `base` only for the containers whose disk changed: a step that writes a nested disk and reported a change (the migrate that applied one, the grants reload that changed a file), that container; a converge that changed a Node, that Node and the nested Gateway; a missing `base`, that container; a missing or unreadable record or a rule or file that differed, all three
   %%> - each of them stops first; the others keep running; with all three stopped it writes the owned rules (and a build rule only where it is absent), and it checks every rule; with some stopped the rules only compare, and a difference fails the refresh
+  %%> - a run that retakes `base` but did not read the fleet files reads them first, on the running fleet; a file that differs makes `base` due for all three
+  %%> - then starts the containers it stopped and waits for readiness, its one readiness wait in that case, so the seed holds a running, ready fleet
   %%> - otherwise the fleet keeps running and `base` stays
   %%> - every run, after `base`: keeps the pinned shape tools in the Instance container at `/opt/orbit-shape-gate`, named by the checkout's own `bin/swamp-shape-gate` from its three pin files; when the venv and the collections of these pins are complete it only reads them; otherwise it installs `python3-venv` when it is missing, builds them and removes the tools of other pins
   %%> - removes the record before its first write to a nested disk and writes it again last, so a run that stops in the middle leaves none, and the next run does every part and retakes `base` of all three
   %%> - the result names each part, ran or skipped, why the converge ran or was skipped, the tasks the converges changed, what it did with the tokens and why (`tokens`, `tokens_reason`), what it did with the shape tools and why (`tools`, `tools_reason`), `base` retaken or kept and for which containers, and the seconds of each part
-  %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and body, or curl's error
+  %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and every issue of the last body (code, Node and summary, each bounded), or curl's error
   %%> Why:
   %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes, and three base converges that change nothing about 87 s
   %%> - a file list cannot follow the Gateway code that builds a base intent, so the nested Gateway hashes the intent itself; the `swamp` list has a cover test
   %%> - the nested Gateway's Swamp tokens live 30 days, and a fleet lives longer: the refresh keeps them young, so no copy stops with expired tokens; an older fleet with only workers a and b gets worker c first, because the remint renews all three
   %%> - the converges run one by one: every step of the converge workflow has a fixed behavior name, so a second run at once waits for the first one's Swamp lock and fails after 60 s
   %%> - a reset restores `base` of all three in seconds; taking `base` costs about 32 s per container, so only what changed is retaken
+  %%> - the grants, the agent delivery, the token read and the file reads cost about 8 s of every run, and a docs-only release changes none of their inputs
   %%> - the set stays consistent: the nested Gateway's database holds the schema and records each converge, so its `base` is retaken with any other
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state, so `base` is taken with the fleet stopped
   %%> - the proof runner in a copy needs the pinned Ansible controller, and the default is never rebuilt from a new image: the seed after this step gives every copy the tools of its own commit, so no copy builds them or needs `python3-venv`
   %%> On failure:
+  %%> - the start after `base` fails: the refresh fails, and the run restores the old seed; the new `base` snapshots are inside the container's disk, so the restore takes them back too; the default then runs on the old seed's commit and fleet; existing copies are clones of older seeds and stay as they are; new copies clone the restored seed until the next release
   %%> - a failed tools install does not fail the refresh: the result says `tools: failed` with the step in `tools_reason`, the log shows the end of its error output, and the seed is taken without ready tools (the venv's `.complete` is written last); a proof in such a copy builds the tools in its own cache, and when that fails its fleet preparation fails with the line that names the missing pinned folder
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> What it does:
@@ -102,16 +109,11 @@ sequenceDiagram
   %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
   %%> - at the same commit the new snapshot is `next-COMMIT` until it exists; then the old `seed-COMMIT` goes and the new one takes its name: never `--reuse`, which deletes first
   %%> - a default with an inner volume also snapshots the volume under the same name with the Processes stopped; the pair is the seed, and the older pair goes only after both new halves exist
-  %%> - a failed half deletes only the new halves and fails `instance.container_seed_failed` or `instance.seed_volume_snapshot_failed` with the cause in the detail; the old seed stays
-  %%> - the inner fleet runs during the snapshot when the refresh kept `base`: on the directory pool the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut; on an inner volume the two halves are taken one after the other, a fraction of a second apart
+  %%> - right before the volume's half: `sync -f /srv/inner-pool` as root in the container, so the block snapshot holds what btrfs has not committed yet (it commits every 30 s); no freeze: the halves are separate snapshots, so a freeze adds nothing over the flush
+  %%> - a failed half or flush deletes only the new halves and fails `instance.container_seed_failed`, `instance.seed_volume_flush_failed` or `instance.seed_volume_snapshot_failed` with the cause in the detail; the old seed stays
+  %%> - the inner fleet runs during the snapshot, also after a retaken `base`: on the directory pool the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut; on an inner volume the two halves are taken one after the other, apart by the flush: seconds at most under load
   %%> - the seed holds the refresh record of the fleet it holds
   SW->>C: Check the container<br/>Ansible · tags check
-  SW->>F: Start the refreshed fleet<br/>Ansible · tags fleet_resume
-  %%> What it does:
-  %%> - starts the nested containers the refresh stopped for `base`, and waits for readiness; a fleet that kept running only gets the readiness wait
-  %%> - fails with `instance.container_fleet_resume_failed`; the new seed and `base` stay, nothing is restored, and the detail says so
-  %%> Why:
-  %%> - the default runs on the new commit, fleet included
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit

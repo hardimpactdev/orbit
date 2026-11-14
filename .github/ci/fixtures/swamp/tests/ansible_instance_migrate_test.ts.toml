@@ -1,5 +1,5 @@
 order = 10
-source_sha256 = "034f0ae5d7887c9aac19efb9d8c7c18ace3c12109da3bbf72d5f2dbcc708abc1"
+source_sha256 = "077d1368f6c263d11d8a332e321bad2c83bc5f6851560c6d3ecded833bd596cd"
 cases = [
   "file copy rewrites tracked, untracked and ignored absolute checkout links, keeps relative links and dependency contents, and never changes source links",
   "outside checkout symlinks refuse before downtime, name every path and target, and preserve the source and earlier resources",
@@ -137,6 +137,11 @@ after_merge_cases = ["a failed move removes its container, its ACL, its firewall
 # Unmeasured cases use the observed maximum (120s); these are estimates, not completed measurements.
 slices = 122
 inputs = [
+  "swamp/ansible/library/orbit_migrate_env.py",
+  "swamp/ansible/templates/instance-migrate-schedule.j2",
+  "swamp/extensions/behaviors/operations/processes-schedules/unit-templates.json",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/tasks/instance-private-names.yml",
   "swamp/ansible/instance_node_runtime.py",
   "swamp/ansible/tasks/instance-node-runtime.yml",
   "bin/swamp-shape-gate",

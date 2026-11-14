@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "ba2c41d2900abdc682c7c01ed2f5d57cc363f6d4a7f268fb6e0fe6690dd402e1"
+source_sha256 = "1f7e6671bb795ad526471ca9f565ff5aca47d35b05ed9217bc38bc90a016ea04"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -69,6 +69,7 @@ cases = [
   "test_refuses_a_changed_missing_or_added_key_and_names_it",
   "test_refuses_a_delegated_root_an_unread_volume_and_a_volume_the_intent_does_not_name",
   "test_runs_agent_then_t3_and_passes_the_key_only_to_the_agent",
+  "test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them",
   "test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code",
   "test_a_failed_t3_part_names_t3_and_keeps_the_t3_code",
   "test_a_timeout_names_the_part_that_was_running",
@@ -88,7 +89,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 143
+cost = 144
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -193,3 +194,4 @@ inputs = [
 "test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase" = 1 # added 2026-11-14 (create-baked); local under 1 s
 "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them" = 1 # added 2026-11-14 (create-baked); local under 1 s

@@ -100,9 +100,9 @@ sequenceDiagram
     %%> - starts a stopped default container; see docs/cli/instance/container/deploy-default.mmd
     %%> - waits only for FrankenPHP and the enabled Process units, which the container's boot starts
     opt nested-fleet default
-      SW->>N: Check the inner fleet<br/>Ansible · tags fleet_check
+      SW->>N: Check the inner fleet<br/>Ansible · tags fleet_start
       %%> What it does:
-      %%> - compares the inner fleet with its rules and changes nothing; refuses `instance.container_fleet_drift` before the seed, so nothing is restored
+      %%> - the run's one fleet check: compares the inner fleet with its rules, starts what is stopped and brings up the tunnel, and changes no key; refuses `instance.container_fleet_drift` before the seed, so nothing is restored
       SW->>N: Keep the current seed<br/>Ansible · tags seed
       %%> What it does:
       %%> - retakes the seed of the default as it is, fleet included, so a failed refresh never restores a seed from before the fleet
@@ -124,19 +124,15 @@ sequenceDiagram
     %%> - enables and starts each running unit and waits for it; on failure the detail names the unit that is not active
     %%> - the seed snapshot then restarts every running Process on the new commit
     opt nested-fleet default
-      SW->>N: Start the inner fleet<br/>Ansible · tags fleet_start
       SW->>N: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
       %%> What it does:
-      %%> - only an intent with `fleet` runs them: docs/cli/instance/container/fleet-refresh.mmd
+      %%> - only an intent with `fleet` runs it: docs/cli/instance/container/fleet-refresh.mmd
     end
     SW->>N: Take the seed snapshot<br/>Ansible · tags seed
     %%> What it does:
     %%> - stops the units, snapshots `seed-<commit>`, starts them again and deletes older seeds
     %%> - a nested-fleet default retakes it at the same commit, and refuses a Club key file on its disk
     SW->>N: Check the container<br/>Ansible · tags check
-    opt nested-fleet default
-      SW->>N: Start the refreshed fleet<br/>Ansible · tags fleet_resume
-    end
     opt nested-fleet default failed after checkout
       SW->>N: Restore the old seed<br/>Ansible · fleet_restore
       SW->>N: Start on the old seed<br/>Ansible · tags start

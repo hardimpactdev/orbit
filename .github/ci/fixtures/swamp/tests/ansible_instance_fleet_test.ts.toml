@@ -1,12 +1,13 @@
 order = 30
-source_sha256 = "2cd203ee1e1b395486193c5e7b591d34b2a5cde2f48ecee092d93437c1b242cd"
+source_sha256 = "13ba71b7e484660e001be6beaab221ac0d69f2113c01e9e11b747921abce2bbf"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check",
+  "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts",
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words",
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written",
-  "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules",
+  "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once",
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers",
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units",
   "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused",
@@ -21,6 +22,7 @@ cases = [
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore",
   "the saved refreshed fleet boundary matches a real first refresh and start",
   "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
+  "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file",
   "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway",
   "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway",
   "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base",
@@ -51,13 +53,17 @@ cases = [
   "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line",
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
+  "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three",
+  "a start after base that fails fails the refresh and writes no record",
+  "every refresh reads the services once and names only the one that is down, among active ones",
+  "a refresh without the Club key records no grants digest, so the grants reload once the key is there",
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing",
   "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it",
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2131
-slices = 53
+cost = 2250
+slices = 59
 inputs = [
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
@@ -79,8 +85,9 @@ inputs = [
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: prior local x 3, plus 1s
   "a start waits while the nested Gateway's hub key reads (none) with exit 0 and sets the peer with the real key; a key that never comes fails in plain words" = 35
+  "the deployment's check refuses a refresh that cannot end above the inner Doctor's floor before any start; with room it reads df once and starts" = 12 # ESTIMATE: local 5s x 2.1, rounded up, plus 1s
   "a fleet that lacks a build rule is refused with instance.container_fleet_drift before any start; a missing owned rule passes and is not written" = 18
-  "a refresh applies the checkout, converges the three Node bases, waits for readiness, stops the fleet, then takes base with the rules" = 50
+  "a refresh applies the checkout, converges the three Node bases, stops the fleet, takes base with the rules, then starts it and waits for readiness once" = 50
   "a refresh waits while a state mount is still activating after the start; mounts that never come up fail with the bound and the containers" = 79
   "a refresh stops at a failed Node converge, takes no base and writes no record; without the Club key it skips the grants and the Swamp units" = 35
   "a reset restores base on all three containers, keeps the rules of base, and starts the fleet; a base without the rules is refused" = 44
@@ -95,6 +102,7 @@ inputs = [
   "a resume starts a stopped fleet and waits for readiness: the start after a passed refresh and after a restore" = 20
   "the saved refreshed fleet boundary matches a real first refresh and start" = 78
   "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 25
+  "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file" = 16 # ESTIMATE: local 7s x 2.1, rounded up, plus 1s
   "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 38
   "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 39
   "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 28
@@ -123,6 +131,10 @@ inputs = [
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 49
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
+  "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three" = 35 # ESTIMATE: local 16s x 2.1, rounded up, plus 1s
+  "a start after base that fails fails the refresh and writes no record" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
+  "every refresh reads the services once and names only the one that is down, among active ones" = 6 # ESTIMATE: local 2s x 2.1, rounded up, plus 1s
+  "a refresh without the Club key records no grants digest, so the grants reload once the key is there" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
   "on a partly stopped fleet the rules only compare: a rule that differs on a running container fails the refresh and writes nothing" = 28
   "only the start of a stopped clone writes the proxy bypass, and restarts T3 once when the write changed it" = 37 # ESTIMATE: local 12s x 3, plus 1s
   "a start of a copy that was already running writes the proxy bypass but keeps its T3; a failed write keeps its code" = 25 # ESTIMATE: local 8s x 3, plus 1s

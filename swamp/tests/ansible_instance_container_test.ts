@@ -350,6 +350,8 @@ Deno.test({
       assert(at("create", `next-${head}`) < at("delete", `seed-${head}`), "the old seed goes only after the new one exists");
       assert(at("delete", `seed-${head}`) < at("rename", `next-${head}`));
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${head}`]);
+      // A default without an inner volume flushes nothing before its seed.
+      assertEquals(f.state().syncs, undefined);
     } finally {
       f.cleanup();
     }
@@ -2486,6 +2488,12 @@ Deno.test({
         "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_drift, quiet: true }", ""].join("\n"));
       assert(!f.run("fleet_check").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_drift", fleet_drift: ["nested-gateway config raw.idmap"] });
+      // The deployment's check refuses a refresh without room with its own code, and the numbers in the detail.
+      Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-start.yml`, [
+        "- ansible.builtin.set_fact: { fleet_room_failure: { detail: 'The disk of the nested Nodes has 2.75 GiB free of 25.00 GiB.' } }",
+        "- ansible.builtin.assert: { that: false, fail_msg: instance.container_fleet_no_room, quiet: true }", ""].join("\n"));
+      assert(!f.run("fleet_start").ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_no_room", detail: "The disk of the nested Nodes has 2.75 GiB free of 25.00 GiB." });
       // A failed fleet phase names its tag, and says why: the failed task and its message (a swamp step that exits nonzero keeps no output).
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-refresh.yml`,
         `- name: Check the base converge\n  ansible.builtin.assert: { that: false, fail_msg: "The base converge of the nested Node app-dev ended failed", quiet: true }\n`);
@@ -2504,14 +2512,10 @@ Deno.test({
       assert(!f.run("fleet_refresh").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
         detail: "Migrate the nested Gateway: non-zero return code: SQLSTATE no such table" });
-      // The start after a passed refresh: its failure keeps the seed's commit, has its own code, and says the new seed stays.
-      Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify({ commit }));
+      // A deployment starts its fleet with `fleet_resume` only after a restore: it keeps the first failure and adds why the restored
+      // fleet did not start.
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-resume.yml`,
         `- name: Check the agents\n  ansible.builtin.assert: { that: false, fail_msg: "Readiness check 'agents' failed: the agent of app-prod is not online", quiet: true }\n`);
-      assert(!f.run("fleet_resume").ok);
-      assertEquals(f.result(), { error_code: "instance.container_fleet_resume_failed", commit,
-        detail: "The new seed and base stay; the inner fleet on the new commit did not start: Check the agents: Readiness check 'agents' failed: the agent of app-prod is not online" });
-      // After a restore it keeps the first failure and adds why the restored fleet did not start.
       const first = { error_code: "instance.container_fleet_refresh_failed", detail: "Check the base converge: ended failed" };
       Deno.writeTextFileSync(`${f.folder}/run/failed.json`, JSON.stringify(first));
       Deno.writeTextFileSync(`${f.folder}/run/result.json`, JSON.stringify(first));
@@ -2566,6 +2570,8 @@ Deno.test({
       const normal = stops();
       assert(f.run("seed").ok);
       assertEquals(stops(), normal);
+      // A nested-fleet default without an inner volume (Instance 2454's shape) flushes nothing before any of its seeds.
+      assertEquals(f.state().syncs, undefined);
     } finally {
       f.cleanup();
     }
@@ -2615,6 +2621,59 @@ Deno.test({
       }
       assertEquals(seedPair(f), {container: [`seed-${second}`], volume: [`seed-${second}`]});
     } finally { f.cleanup(); }
+  },
+});
+
+/** The order of the seed's calls: each container snapshot, flush and volume snapshot, as `c`, `f` and `v`. */
+const seedOrder = (f: ReturnType<typeof fixture>) => incusCalls(f).map((call) => call.join(" ")).flatMap((call) =>
+  /(^| )snapshot create instance-7 /.test(call) && !call.includes("storage") ? ["c"]
+  : call.includes(" -- sync -f /srv/inner-pool") ? ["f"]
+  : call.includes("storage volume snapshot create orbit-instances inner-7 ") ? ["v"] : []);
+
+Deno.test({
+  name: "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+      const head = git(f.source, "rev-parse", "HEAD");
+      // The first seed, then a same-commit retake under `next-`: each flushes between its container half and its volume half
+      // (live proof 2026-11-14: a volume snapshot without the flush lacked an inner pool made 23 s before).
+      f.intent.deployment = { variant: "container" };
+      f.write();
+      for (const phase of ["start", "seed"]) assert(f.run(phase).ok, phase);
+      assertEquals(seedOrder(f), ["c", "f", "v", "c", "f", "v"]);
+      assertEquals(f.state().syncs, [["-f", "/srv/inner-pool"], ["-f", "/srv/inner-pool"]]);
+      // A flush that fails takes no volume half, deletes the new container half and keeps the old pair whole.
+      const state = f.state();
+      state.sync_fails = true;
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+      const failed = f.run("seed");
+      assert(!failed.ok);
+      assertEquals(f.result(), { error_code: "instance.seed_volume_flush_failed",
+        detail: "Flush the inner volume: sync: error syncing '/srv/inner-pool': Input/output error. The old seed stays." });
+      // The failed take made its container half and flushed, and took no volume half.
+      assertEquals(seedOrder(f), ["c", "f", "v", "c", "f", "v", "c", "f"]);
+      assertEquals(seedPair(f), {container: [`seed-${head}`], volume: [`seed-${head}`]});
+      assert(failed.output.includes("TASK [Start the Processes again]"), failed.output);
+    } finally { f.cleanup(); }
+    // A normal default and a nested default without a volume (Instance 2454's shape) evaluate the task's guard and skip it.
+    for (const shape of ["nested", "normal"]) {
+      const g = fixture();
+      try {
+        if (shape === "nested") nestedCreate(g);
+        for (const phase of ["container", "workspace", "processes", "seed"]) assert(g.run(phase).ok, `${shape} ${phase}`);
+        g.intent.deployment = { variant: "container" };
+        g.write();
+        const seeded = g.run("seed");
+        assert(seeded.ok, seeded.output);
+        const own = (seeded.output.split("TASK [Flush the inner volume]")[1] ?? "").split("\nTASK [")[0];
+        assert(/skipping: \[node\]/.test(own) && !/(ok|changed): \[node\]/.test(own), shape);
+        assertEquals(g.state().syncs, undefined, shape);
+      } finally { g.cleanup(); }
+    }
   },
 });
 

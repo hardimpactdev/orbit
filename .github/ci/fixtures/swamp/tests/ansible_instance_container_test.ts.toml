@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "5c7dae39f0fed6e8f11a3dfcd201ab97050143a97069ae1e2c60e9e7dd255976"
+source_sha256 = "21a1b4b0f7716e1d269d4b35a22324512da41967cc0130db68af338a7443b190"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -80,6 +80,7 @@ cases = [
   "a normal container's create and deploy start run no Club key task and no Club key command",
   "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk",
   "a default with an inner volume seeds the container and the volume under one name, retakes both, and keeps only the current pair",
+  "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
   "a failed volume snapshot deletes the container half of the seed, keeps the older pair and fails the seed by name",
   "a same-commit retake of a pair takes both new halves under next- first, and a failure of either half keeps the old pair whole",
   "a whole next- pair that an earlier run left takes the seed's name; a next- half without its other half is dropped",
@@ -91,6 +92,8 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 3989
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The inner volume's flush before its half of the seed (89s locally, 33s to fail without the flush): like the seed pair cases.
+  "the inner volume is flushed right before its half of every seed, a failed flush fails the seed by name, and no other default flushes",
   # The seed-retake cases of slice-seed-safe, 30 to 60s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard
   # PR limit. The PR keeps the same-commit retake order (next- first, then delete and rename, never --reuse) in "a deployment at the
   # seed's commit retakes the seed"; these four ran in full locally before the PR.

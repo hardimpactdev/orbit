@@ -1232,11 +1232,11 @@
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 # The inner fleet of a nested-fleet default (docs/reference/development-containers.md#refresh-after-a-release). Only such an intent has
-# `fleet`, and only its deployment runs these tags: `fleet_check` compares the fleet with its rules before the run changes anything,
-# `fleet_start` starts the fleet without a Doctor wait, `fleet_refresh` migrates and restarts the nested Gateway, converges the nested
-# Nodes and waits for readiness, each only when its inputs changed, and retakes their `base` with the fleet stopped only when the
-# fleet's disks changed (tasks/instance-fleet-refresh.yml), and `fleet_resume` starts a refreshed or restored fleet
-# and waits for readiness (tasks/instance-fleet-*.yml).
+# `fleet`: `fleet_start` is a deployment's one fleet check before the run changes anything (rules, start what is stopped, tunnel; no
+# Doctor wait), `fleet_refresh` migrates and restarts the nested Gateway and converges the nested Nodes, each only when its inputs
+# changed, retakes their `base` only when the fleet's disks changed and waits for readiness (tasks/instance-fleet-refresh.yml),
+# `fleet_resume` starts a restored fleet and waits for readiness, and a clone's `fleet_check` compares the fleet it copied
+# (tasks/instance-fleet-*.yml).
 - name: Run the phase of the nested fleet
   tags: [fleet_check, fleet_start, fleet_refresh, fleet_resume]
   when: phase in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume']
@@ -1463,6 +1463,14 @@
             - name: Snapshot the container
               ansible.builtin.command: { argv: "{{ incus_project + ['snapshot', 'create', container.name, seed_take] }}" }
               changed_when: true
+            # A snapshot of the volume is a snapshot of its block device: it holds only what btrfs has committed, and btrfs commits
+            # every 30 s. An inner pool made a moment ago was missing from a copy (live proof 2026-11-14). The flush commits the file
+            # system right before its half of the seed. No fsfreeze: the two halves are separate snapshots anyway, so a freeze adds
+            # nothing over the flush and btrfs's own crash consistency, and it would stall the inner fleet's writes.
+            - name: Flush the inner volume
+              when: container.inner_volume is defined
+              ansible.builtin.command: { argv: "{{ as_root + ['sync', '-f', container.inner_volume.path] }}" }
+              changed_when: false
             - name: Snapshot the inner volume
               when: container.inner_volume is defined
               ansible.builtin.command:
@@ -1474,6 +1482,7 @@
             - name: Name why the seed failed
               ansible.builtin.set_fact:
                 seed_failed_volume: "{{ ansible_failed_task.name | default('') == 'Snapshot the inner volume' }}"
+                seed_failed_flush: "{{ ansible_failed_task.name | default('') == 'Flush the inner volume' }}"
                 seed_failure:
                   detail: >-
                     {{ ("No free ID range for the new seed: every isolated range of root's subordinate IDs is held by a container"
@@ -1496,7 +1505,9 @@
               failed_when: false
             - name: Fail the seed
               ansible.builtin.fail:
-                msg: "{{ 'instance.seed_volume_snapshot_failed' if seed_failed_volume | bool else 'instance.container_seed_failed' }}"
+                msg: >-
+                  {{ 'instance.seed_volume_flush_failed' if seed_failed_flush | bool
+                     else ('instance.seed_volume_snapshot_failed' if seed_failed_volume | bool else 'instance.container_seed_failed') }}
         # The new seed is whole: the old one goes, and the new one takes its name.
         - name: Delete the old container half of this name
           when: seed_take == seed_next and seed_name in seed_names

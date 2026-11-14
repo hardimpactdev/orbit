@@ -428,8 +428,9 @@ class CloneTest(unittest.TestCase):
         self.assertFalse(any('.target.wants/' in path for path in files))
         self.assertLess(calls.index(links), calls.index(files))
         deleted = links + files
-        self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket', deleted)
-        self.assertIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket', deleted)
+        # The seed's mail sockets stay enabled: their units are the Node's, the same for every copy.
+        self.assertNotIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-1025.socket', deleted)
+        self.assertNotIn('instance-7/etc/systemd/system/sockets.target.wants/orbit-mail-2525.socket', deleted)
         self.assertNotIn('instance-7/etc/systemd/system/sockets.target.wants/project.socket', deleted)
         for path in ["systemd/system/timers.target.wants/orbit-schedule-default.timer",
                      "systemd/system/orbit-schedule-default.timer", "systemd/system/orbit-schedule-default.service",
@@ -712,6 +713,13 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(error, "")
         self.assertEqual(self.hosts_pushes(calls), [])
         self.assertEqual(self.hosts, held)
+        # The phase did not start this copy: its mail part may not read a silent systemd as a boot (instance_mail.py).
+        calls, _, error = self.clone(mail={"port": 1025}, existing=running)
+        self.assertEqual(error, "")
+        mail_call = next(call for call in calls if call[:2] == ["python3", "-c"] and '"status":"unchanged"' in call[2]
+                         and call[-1] not in RENDERS)
+        self.assertNotEqual(mail_call[-1], "started")
+        self.assertNotIn(["incus", "--project", "orbit-instances", "start", "instance-7"], calls)
 
     def test_a_failed_hosts_read_after_the_start_fails_the_create_by_its_own_name(self):
         calls, _, error = self.clone_with({}, overrides={"private_names": self.NAMES, "fixture_hosts_read_error": True})
@@ -862,9 +870,10 @@ class CloneTest(unittest.TestCase):
                 self.assertEqual(error, "")
                 deletes = [c[5:] for c in calls if c[3:5] == ["file", "delete"]]
                 removed = [path for paths in deletes for path in paths if not path.startswith("-")]
-                for path in ("sockets.target.wants/orbit-node-service-3308.socket", "multi-user.target.wants/orbit-frankenphp.service",
-                             "sockets.target.wants/orbit-mail-1025.socket"):
+                for path in ("sockets.target.wants/orbit-node-service-3308.socket", "multi-user.target.wants/orbit-frankenphp.service"):
                     self.assertIn("instance-7/" + system + path, removed)
+                # The seed's mail socket stays enabled; the mail apply finds it in place.
+                self.assertNotIn("instance-7/" + system + "sockets.target.wants/orbit-mail-1025.socket", removed)
                 if case == "first":
                     self.assertIn("instance-7/" + system + "orbit-node-service-3308.socket", removed)
                     self.assertIn("instance-7/" + system + "orbit-node-service-3308.service", removed)
@@ -906,6 +915,8 @@ class CloneTest(unittest.TestCase):
                                      and call[-1] not in RENDERS)
                     start = calls.index(["incus", "--project", "orbit-instances", "start", "instance-7"])
                     self.assertLess(start, mail_call)
+                    # The phase started this copy, so the mail part may leave linked sockets to the copy's boot (instance_mail.py).
+                    self.assertEqual(calls[mail_call][-1], "started")
             self.assertEqual(fixture.git("-C", str(fixture.mirror), "rev-parse", "refs/heads/mail-branch").stdout.strip(), fixture.tip)
         finally:
             fixture.doCleanups()
@@ -1364,8 +1375,9 @@ class T3PhaseTest(unittest.TestCase):
     """The `t3` phase runs the agent's guest phase with the model key on stdin, then T3's first start without it, in one call."""
 
     KEY = "fake-model-key-5c1e"
+    SESSIONS = {"gateway": {"token": "fake-gateway-session-1a"}, "swamp": {"token": "fake-swamp-session-2b"}}
 
-    def phase(self, phase="t3", fail=None, timeout=None):
+    def phase(self, phase="t3", fail=None, timeout=None, cached=None):
         account = pwd.getpwuid(os.getuid())
         calls = []
 
@@ -1378,6 +1390,14 @@ class T3PhaseTest(unittest.TestCase):
                 raise KeyboardInterrupt
             if member is not None and member == fail:
                 return subprocess.CompletedProcess(argv, 1, "PRIVATE-STDOUT", "instance.container_" + member + "_failed: command php exited 17")
+            if member == "sessions":
+                # The guest checks the sessions it got on stdin and answers the whole registration reply.
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "private_reply": {"environment": "{}", **{
+                    name: {"token": json.loads(kwargs.get("input"))[name]["token"], "status": 200, "body": "{}"} for name in self.SESSIONS}}}), "")
+            if member == "t3":
+                # The guest's T3 part issues both sessions while T3 starts; their tokens come back only as its private reply.
+                return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00",
+                                                                        "private_reply": self.SESSIONS}), "")
             if member is not None:
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
@@ -1389,6 +1409,8 @@ class T3PhaseTest(unittest.TestCase):
             patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", NETWORK_CHECK.read_text(), account.pw_name, folder, phase])
         ), patch("sys.stdin", io.StringIO(self.KEY)), patch("subprocess.run", command), patch("os.chown"), \
                 contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+            if cached is not None:
+                (Path(folder) / "t3.json").write_text(json.dumps(cached))
             try:
                 runpy.run_path(str(SCRIPT), run_name="__main__")
             except SystemExit as result:
@@ -1428,10 +1450,25 @@ console.log(created.stdout);
         code, guest, output, error = self.phase()
         self.assertEqual(code, 0)
         self.assertEqual(guest, [("agent", self.KEY), ("t3", "")])
-        # The step prints T3's receipt alone, which the create result reads as the time T3 answered; sessions finds no t3.json.
+        # The step prints T3's receipt alone, which the create result reads as the time T3 answered. The sessions it issued stay in
+        # the run's private t3.json, which the sessions step reads; no token reaches the output.
         self.assertEqual(json.loads(output)["phase"], "t3")
+        self.assertNotIn("private_reply", json.loads(output))
         self.assertEqual(error, "")
-        self.assertIsNone(self.left)
+        self.assertEqual(json.loads(self.left), self.SESSIONS)
+        for session in self.SESSIONS.values():
+            self.assertNotIn(session["token"], output + error)
+
+    def test_the_sessions_step_checks_the_t3_steps_sessions_and_its_reply_replaces_them(self):
+        code, guest, output, error = self.phase("sessions", cached=self.SESSIONS)
+        self.assertEqual((code, error), (0, ""))
+        # The guest gets the T3 step's sessions on stdin, and the registration reads the checked reply in their place.
+        self.assertEqual(json.loads(guest[0][1]), self.SESSIONS)
+        registered = json.loads(self.left)
+        self.assertEqual(set(registered), {"environment", "gateway", "swamp"})
+        self.assertEqual(registered["gateway"]["status"], 200)
+        for session in self.SESSIONS.values():
+            self.assertNotIn(session["token"], output + error)
 
     def test_a_failed_agent_part_names_the_agent_and_keeps_the_agent_code(self):
         code, guest, output, error = self.phase(fail="agent")

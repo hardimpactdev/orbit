@@ -927,6 +927,60 @@ contexts:
     fleet_recorded:
       code: 4f1c2a6b
       converged: 12ab
+  # The record's creation time of the oldest token (`YYYYMMDDHHMMSS`, UTC), far from today so the 20-day bound decides the same way always.
+  fleet-tokens-recorded-young:
+    fleet_recorded:
+      tokens: '29991231235959'
+  fleet-tokens-recorded-old:
+    fleet_recorded:
+      tokens: '20200101000000'
+  fleet-tokens-recorded-malformed:
+    fleet_recorded:
+      tokens: 12ab
+  # A list read because the record could not vouch: the oldest of six young tokens goes to the record.
+  fleet-tokens-mark-read:
+    fleet_club: {rc: 0}
+    fleet_due: {tokens: true}
+    fleet_recorded: {}
+    fleet_token_names: [serve-driver, orbit-gateway-run]
+    fleet_tokens_read:
+      rc: 0
+      stdout: '[{"name": "serve-driver", "createdAt": "2999-11-07T22:58:48.977Z"}, {"name": "orbit-gateway-run", "createdAt": "2999-11-01T10:00:00.000Z"}]'
+  fleet-tokens-mark-recorded:
+    fleet_club: {rc: 0}
+    fleet_due: {tokens: false}
+    fleet_recorded: {tokens: '29991231235959'}
+    fleet_token_names: [serve-driver]
+    fleet_tokens_read: {skipped: true}
+  fleet-tokens-mark-no-key:
+    fleet_club: {rc: 1}
+    fleet_due: {tokens: false}
+    fleet_recorded: {}
+    fleet_token_names: [serve-driver]
+    fleet_tokens_read: {skipped: true}
+  fleet-record-write:
+    fleet_now: {code: a1, grants: b2}
+    fleet_due: {converge: false}
+    fleet_recorded: {converged: '1794610740'}
+    fleet_tokens_mark: '29991101100000'
+  fleet-record-write-no-tokens:
+    fleet_now: {code: a1}
+    fleet_due: {converge: false}
+    fleet_recorded: {converged: '1794610740'}
+    fleet_tokens_mark: null
+  # The inner Doctor's body at the end of refresh 21617 (one issue, its numbers made up), and a body that is no Doctor body.
+  fleet-doctor-disk-low:
+    fleet_ready_doctor:
+      rc: 0
+      stdout_lines:
+      - '{"data":{"healthy":false,"nodes":[{"node_id":3,"node_name":"app-dev","healthy":false,"families":[{"family":"node","status":"drift","checked":4,"issues":[{"code":"node.disk_low","kind":"drift","resource_type":"node","resource_id":3,"resource_name":"app-dev","summary":"The root filesystem has low free space.","expected":"at least 2 GiB and 10% free","observed":"2883584 KiB free of 26214400 KiB"}]}]}]}}'
+      - HTTP 200
+  fleet-doctor-gateway-error:
+    fleet_ready_doctor:
+      rc: 0
+      stdout_lines:
+      - '<html>Bad Gateway</html>'
+      - HTTP 502
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -2002,6 +2056,57 @@ cases:
   field: vars.fleet_tools_out
   context: fleet-tools-cut
   expected: {}
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due parts
+  field: vars.fleet_tokens_recorded
+  context: fleet-tokens-recorded-young
+  expected: true
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due parts
+  field: vars.fleet_tokens_recorded
+  context: fleet-tokens-recorded-old
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Name the due parts
+  field: vars.fleet_tokens_recorded
+  context: fleet-tokens-recorded-malformed
+  expected: false
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: ansible.builtin.set_fact.fleet_tokens_mark
+  context: fleet-tokens-mark-read
+  expected: '29991101100000'
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: ansible.builtin.set_fact.fleet_tokens_mark
+  context: fleet-tokens-mark-recorded
+  expected: '29991231235959'
+- file: tasks/instance-fleet-refresh.yml
+  task: Work out whether the tokens are due
+  field: ansible.builtin.set_fact.fleet_tokens_mark
+  context: fleet-tokens-mark-no-key
+  expected: null
+- file: tasks/instance-fleet-refresh.yml
+  task: Write the refresh record
+  field: ansible.builtin.command.stdin
+  context: fleet-record-write
+  expected: '{"code": "a1", "converged": "1794610740", "grants": "b2", "tokens": "29991101100000"}'
+- file: tasks/instance-fleet-refresh.yml
+  task: Write the refresh record
+  field: ansible.builtin.command.stdin
+  context: fleet-record-write-no-tokens
+  expected: '{"code": "a1", "converged": "1794610740"}'
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_issues
+  context: fleet-doctor-disk-low
+  expected:
+  - 'node.disk_low on app-dev: The root filesystem has low free space. (2883584 KiB free of 26214400 KiB)'
+- file: tasks/instance-fleet-ready.yml
+  task: Check Doctor
+  field: vars.fleet_doctor_issues
+  context: fleet-doctor-gateway-error
+  expected: []
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
@@ -2041,20 +2146,32 @@ non_command_output:
   reason: Validates the admitted path of T3's command, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
-  field: ansible.builtin.assert.that[4]
-  reason: Validates the admitted T3 provider instance, not command output.
+  field: ansible.builtin.assert.that[3]
+  reason: Validates the admitted path of the runtime's Node.js, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[5]
-  reason: Validates the admitted model, not command output.
+  reason: Validates the admitted T3 provider instance, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[6]
-  reason: Validates the admitted reviewer candidate commit, not command output.
+  reason: Validates the admitted model, not command output.
 - file: task-copy-turn.yml
   task: Validate the admitted turn
   field: ansible.builtin.assert.that[7]
+  reason: Validates the admitted reviewer candidate commit, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[8]
   reason: Validates the admitted thread title, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[13]
+  reason: Validates the admitted titles of the earlier turns to settle, not command output.
+- file: task-copy-turn.yml
+  task: Validate the admitted turn
+  field: ansible.builtin.assert.that[14]
+  reason: Validates the admitted task branches of the earlier reviewer turns to settle, not command output.
 - file: task-instance-workspace.yml
   task: Record the public workspace refusal
   field: ansible.builtin.copy.content

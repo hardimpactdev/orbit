@@ -1,6 +1,7 @@
 sequenceDiagram
-  %% Target design (docs/reference/development-containers.md#complete-a-clone and #a-clone-create-is-two-operations): the second Operation of a clone create. It starts the Processes, fills the database, starts a nested fleet, publishes the Route and checks the clone; only its success makes the clone `active`.
-  %% status: reviewed
+  %% Target design (docs/reference/development-containers.md#complete-a-clone and #a-clone-create-is-two-operations): the second Operation of a clone create. It starts the Processes, fills the database, starts a nested fleet, publishes the Route when its create did not, and checks the clone; only its success makes the clone `active`.
+  %% Decided by the owner (2026-11-14): the create publishes the address when its Route Nodes are free at admission (container/create.mmd). The completion publishes only a Route that is not published: Nodes held at the create's admission, a publication that failed in the create, or a retry after a failed publication.
+  %% status: draft
   %% command: instance:complete
   %% kind: instance.complete
   autonumber
@@ -25,8 +26,9 @@ sequenceDiagram
   %%> - its T3 server is registered
   %%> - no other Operation holds the Instance
   %%> Captures:
-  %%> - the create's admitted database plan and Processes; the Route publication from the current site catalog
-  %%> - holds the publication Nodes, as Route create does
+  %%> - the create's admitted database plan and Processes
+  %%> - a Route whose sites are not published: its publication from the current site catalog, and its serving Nodes held from admission to the end, as Route create does
+  %%> - a Route the create published: no publication and no Node hold
   alt a check fails
     %% path: refused
     GW--xCL: Refused<br/>instance.complete_unavailable
@@ -66,10 +68,11 @@ sequenceDiagram
     %%> - the checkout mark, the agent's Git identity, PHP and every running unit
     %%> On failure:
     %%> - a dead unit: `instance.container_process_inactive` with its `process_failure` receipt
-    opt a Project that serves web pages
+    opt a Route its create did not publish
       SW->>N: Publish the Route<br/>operation-route-create
       %%> When:
       %%> - in its own job, beside the container steps from the run's start
+      %%> - only when the admission captured the Route: Nodes held at the create's admission, `route_publication: failed`, or a retry after a failed publication
       %%> What it does:
       %%> - the Route create children unchanged: CSR, sign, site, TLS probe
       %%> On failure:
@@ -85,7 +88,8 @@ sequenceDiagram
       %% path: failed
       SW->>N: Withdraw the Route<br/>route-withdraw
       %%> When:
-      %%> - only when a Route step ran; no half Route stays
+      %%> - only when this run's Route step ran; no half Route stays
+      %%> - an address the create published stays up, answering 502, until a retry or `instance:destroy`, which withdraws it; a retry that succeeds keeps it as it is
       SW--xGW: Run failed or cancelled<br/>failed step, error_code
       %%> Result:
       %%> - the Instance stays `source_resolved` with `failed_step` and `error_code`; the container keeps running and T3 keeps its thread

@@ -1,0 +1,33 @@
+---
+# The room a refresh needs on the disk of the nested Nodes (docs/cli/instance/container/fleet-refresh.mmd), read before the deployment
+# changes anything. The nested Nodes' `/` lies in the inner pool: a directory pool on the Instance container's own disk, or the inner
+# volume (`intent.container.inner_volume`, a btrfs pool mounted at its `inner_pool.source`). `df` of that path in the container is what
+# the inner Doctor reads for `node.disk_low`: at least 2 GiB and 10% of the size free (FactDoctor::MinimumFreeKib). A refresh writes
+# up to `fleet_room_refresh_bytes` more before its readiness wait. When the free space minus that is under the floor, the refresh could
+# only fail at its last Doctor wait, after minutes of work and a restore: it refuses `instance.container_fleet_no_room` now, and the
+# detail names the numbers. Input: instance-fleet.yml.
+- name: Read the room on the nested Nodes' disk
+  vars:
+    fleet_room_path: "{{ intent.container.inner_volume.inner_pool.source if intent.container.inner_volume is defined else '/' }}"
+  ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_outer + ['df', '-B1', '--output=size,avail', fleet_room_path] }}" }
+  register: fleet_room_read
+  changed_when: false
+- name: Work out whether a refresh fits
+  vars:
+    fleet_room_numbers: "{{ (fleet_room_read.stdout_lines | last).split() | map('int') | list }}"
+    fleet_room_floor: "{{ [fleet_room_floor_bytes | int, (fleet_room_numbers[0] / 10) | round(0, 'ceil') | int] | max }}"
+    fleet_room_gib: "{{ 1024 * 1024 * 1024 }}"
+  ansible.builtin.set_fact:
+    fleet_room_failure: >-
+      {{ {} if fleet_room_numbers[1] - (fleet_room_refresh_bytes | int) >= fleet_room_floor | int else
+         {'detail': 'The disk of the nested Nodes has ' ~ '%.2f' | format(fleet_room_numbers[1] / (fleet_room_gib | int)) ~ ' GiB free of '
+           ~ '%.2f' | format(fleet_room_numbers[0] / (fleet_room_gib | int)) ~ ' GiB. A refresh writes up to '
+           ~ '%.2f' | format((fleet_room_refresh_bytes | int) / (fleet_room_gib | int)) ~ ' GiB more, and the inner Doctor wants at least '
+           ~ '%.2f' | format((fleet_room_floor | int) / (fleet_room_gib | int)) ~ ' GiB free (2 GiB and 10%): free '
+           ~ '%.2f' | format((fleet_room_floor | int + fleet_room_refresh_bytes | int - fleet_room_numbers[1]) / (fleet_room_gib | int))
+           ~ ' GiB in the default before its next refresh.'} }}
+- name: Refuse a refresh that cannot end above the inner Doctor's floor
+  ansible.builtin.assert:
+    that: fleet_room_failure | length == 0
+    fail_msg: instance.container_fleet_no_room
+    quiet: true

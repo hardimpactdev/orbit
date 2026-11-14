@@ -338,6 +338,15 @@ if (family === "list") {
   if (command[0] === "runuser") command = command.slice(command.indexOf("--") + 1);
   const commandTimeout = command[0] === "timeout" ? Number(command[1]) : null;
   if (command[0] === "timeout") command = command.slice(2);
+  // A flush of one file system, such as the inner volume before its snapshot: recorded, never run. `sync_fails` holds a flush that
+  // the container refuses.
+  if (command[0] === "sync") {
+    if (state.sync_fails) fail("sync: error syncing '" + command.at(-1) + "': Input/output error");
+    state.syncs ??= [];
+    state.syncs.push(command.slice(1));
+    save();
+    Deno.exit(0);
+  }
   if (command[0] === "systemctl") {
     state.systemctl ??= [];
     state.systemctl.push(command.slice(1));
