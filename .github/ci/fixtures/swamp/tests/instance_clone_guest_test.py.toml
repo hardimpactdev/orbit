@@ -1,5 +1,5 @@
 order = 820
-source_sha256 = "8389e896821b061fdc2693fef2894aedacb4345d53c742e4c2d8ab337b17ca21"
+source_sha256 = "f657f2d3c5ebad78d341ad3cd16d847a5e76f198a4bea0a3ffeb562bd6066c71"
 cases = [
   "test_a_clone_keeps_its_defaults_hand_set_keys_and_owns_its_connections",
   "test_a_dropped_key_of_the_default_goes_even_when_the_clone_does_not_own_it",
@@ -20,6 +20,22 @@ cases = [
   "test_an_application_folder_names_its_own_env_and_a_missing_exclude_file_is_made",
   "test_a_first_run_on_a_seed_branch_of_the_same_name_still_checks_out_the_fetched_commit",
   "test_a_retry_never_moves_the_branch_this_instance_checked_out",
+  "test_a_new_branch_at_the_seeds_commit_is_checked_out_from_the_seeds_own_repository",
+  "test_a_task_copy_of_a_new_branch_at_the_seeds_commit_is_still_cleaned_to_it",
+  "test_a_task_copy_starts_on_its_start_commit_alone_and_keeps_what_git_ignores",
+  "test_an_untracked_gitignore_of_the_default_hides_nothing_from_the_clean",
+  "test_the_clean_reads_the_start_commits_gitignore_when_the_default_edited_it",
+  "test_a_flag_in_the_defaults_index_hides_no_edit_from_the_clean",
+  "test_the_clean_reads_no_global_git_configuration_as_the_task_check",
+  "test_a_file_name_that_is_not_utf8_is_cleaned_and_named_escaped",
+  "test_a_deep_chain_of_untracked_gitignore_files_is_cleaned_whole",
+  "test_every_git_call_of_the_clean_trusts_the_checkout_that_another_user_owns",
+  "test_the_clean_reads_the_agents_ignore_file_as_the_task_check_does",
+  "test_a_staged_rename_names_both_paths",
+  "test_a_task_copy_of_a_clean_seed_reports_nothing_removed",
+  "test_the_cleaning_names_the_first_files_and_counts_them_all",
+  "test_a_retry_of_a_task_copy_never_cleans_the_users_work_again",
+  "test_a_clone_that_is_no_task_copy_keeps_the_defaults_tree",
   "test_sessions_refuse_a_workspace_without_this_instances_mark",
   "test_checkout_then_services_equal_the_one_workspace_phase",
   "test_checkout_starts_no_unit_and_writes_nothing_outside_the_workspace",

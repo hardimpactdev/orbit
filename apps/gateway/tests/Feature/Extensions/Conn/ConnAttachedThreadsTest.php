@@ -10,6 +10,7 @@ use App\Models\Project;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Testing\TestResponse;
 use Orbit\Extensions\Conn\Domain\ConnInstanceLifecycle;
 use Orbit\Extensions\Conn\Domain\ConnProfileSections;
@@ -225,6 +226,61 @@ it('drops a removed Instance\'s threads when a profile holds a malformed element
     expect($this->profile->fresh()?->settings['attachedThreads']['threads'])->toBe([]);
 });
 
+/** A second profile on env-beast whose update a trigger aborts: its document is valid, but its write fails. */
+function attached_unwritable_profile(): ConnProfile
+{
+    $profile = ConnProfile::query()->create(['name' => 'unwritable', 'settings' => ['workspaces' => [], 'attachedThreads' => attached_value([['env-beast', 'thread-9']])]]);
+    DB::statement("CREATE TRIGGER conn_profile_unwritable BEFORE UPDATE ON conn_profiles WHEN OLD.id = {$profile->id} BEGIN SELECT RAISE(ABORT, 'planted'); END");
+
+    return $profile;
+}
+
+it('skips and logs a profile whose write fails and still drops the others', function (): void {
+    attached_patch($this->desktop, 0, [['env-beast', 'thread-1']])->assertOk();
+    $unwritable = attached_unwritable_profile();
+    Log::spy();
+
+    DB::transaction(fn () => app(ConnInstanceLifecycle::class)->projectDestroy($this->onBeast));
+
+    expect(attached_read($this->phone)['threads'])->toBe([])
+        ->and($unwritable->fresh()?->settings['attachedThreads']['threads'])->toBe([['environmentId' => 'env-beast', 'threadId' => 'thread-9']]);
+    Log::shouldHaveReceived('error')->once()->with('conn.attached_threads_drop_failed', Mockery::on(
+        static fn (array $context): bool => $context['profile_id'] === $unwritable->id && $context['environment_ids'] === ['env-beast'],
+    ));
+});
+
+it('runs the destroy\'s later after-commit work when the log channel fails too', function (): void {
+    attached_patch($this->desktop, 0, [['env-beast', 'thread-1']])->assertOk();
+    attached_unwritable_profile();
+    Log::shouldReceive('error')->andReturnUsing(static function (): never {
+        throw new RuntimeException('log channel down');
+    });
+    $later = false;
+
+    DB::transaction(function () use (&$later): void {
+        app(ConnInstanceLifecycle::class)->projectDestroy($this->onBeast);
+        DB::afterCommit(function () use (&$later): void {
+            $later = true;
+        });
+    });
+
+    expect($later)->toBeTrue()->and($this->profile->fresh()?->settings['attachedThreads']['threads'])->toBe([]);
+});
+
+it('reports a document that is not JSON only when it names a dropped environment', function (): void {
+    $naming = ConnProfile::query()->create(['name' => 'naming', 'settings' => ['workspaces' => []]]);
+    $other = ConnProfile::query()->create(['name' => 'other', 'settings' => ['workspaces' => []]]);
+    DB::table('conn_profiles')->where('id', $naming->id)->update(['settings' => '{"attachedThreads": {"threads": [{"environmentId": "env-beast"']);
+    DB::table('conn_profiles')->where('id', $other->id)->update(['settings' => '{"attachedThreads": {"threads": [{"environmentId": "env-mini"']);
+    Log::spy();
+
+    DB::transaction(fn () => app(ConnInstanceLifecycle::class)->projectDestroy($this->onBeast));
+
+    Log::shouldHaveReceived('error')->once()->with('conn.attached_threads_drop_failed', Mockery::on(
+        static fn (array $context): bool => $context['profile_id'] === $naming->id,
+    ));
+});
+
 it('drops a removed Instance\'s threads from a document that is already over a limit', function (array $settings): void {
     $this->profile->forceFill(['settings' => [...$settings, 'attachedThreads' => attached_value([['env-beast', 'thread-1'], ['env-mini', 'thread-2']])]])->save();
 
@@ -291,6 +347,16 @@ it('keeps the attached set through a workspaces replace and out of a profile tha
         ->assertJsonPath('data.sections.attachedThreads.version', 1);
     attached_call($this->phone, 'PUT', 'profiles/'.$this->profile->id.'/settings', ['version' => 3, 'settings' => ['attachedThreads' => attached_value([])]])
         ->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+});
+
+it('refuses a replace that echoes the whole document with the attached set, and writes nothing', function (): void {
+    attached_patch($this->desktop, 0, [['env-beast', 'thread-1']])->assertOk();
+    $read = attached_call($this->phone, 'GET', 'profiles/'.$this->profile->id.'/settings')->assertOk()->json('data');
+
+    attached_call($this->phone, 'PUT', 'profiles/'.$this->profile->id.'/settings', ['version' => $read['version'], 'settings' => $read['settings']])
+        ->assertStatus(422)->assertJsonPath('error.code', 'validation.failed');
+
+    expect(attached_call($this->phone, 'GET', 'profiles/'.$this->profile->id.'/settings')->json('data'))->toBe($read);
 });
 
 it('keeps an empty set as a list in an object and removes the section with null', function (): void {

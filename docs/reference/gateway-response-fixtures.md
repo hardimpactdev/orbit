@@ -131,7 +131,7 @@ ORBIT_GATEWAY_FIXTURES=projects/project-list/default apps/cli/orbit project:list
 
 ## Find the commands a change reaches
 
-`bin/cli-contract` runs only the CLI tests that replay the named fixtures. With `--changed`, it takes the fixtures that differ from `origin/main`. With `--preview`, it renders every contract case into a temporary directory and lists the commands whose output differs from `tests/Expected`, with a diff per file. That list is the map of the commands a rendering change reaches. With `--coverage`, it lists the product commands that have no expected output yet.
+`bin/cli-contract` runs only the CLI tests that replay the named fixtures. With `--changed`, it takes the fixtures that differ from `origin/main`. With `--preview`, it renders every contract case into a temporary directory and lists the commands whose output differs from `tests/Expected`, with a diff per file. That list is the map of the commands a rendering change reaches. With `--coverage`, it lists the product commands that have no expected output yet. A CLI test replays a fixture when it names it. The [scoped task check](/reference/implementation-loop#the-scoped-task-check) reads the same rule from this script to choose the CLI tests of changed fixtures.
 
 ```bash
 bin/cli-contract nodes/node-add/created

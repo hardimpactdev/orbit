@@ -35,6 +35,11 @@ def changed_fixtures(base):
     return sorted(set(names))
 
 
+def replay_tests(name):
+    """The CLI test files that replay one fixture: a test names each fixture it replays."""
+    return sorted(path for path in TESTS.rglob('*.php') if f"'{name}'" in path.read_text(encoding='utf-8'))
+
+
 def preview():
     """Render every contract case into a temporary directory and report what differs from tests/Expected."""
     import difflib
@@ -105,7 +110,7 @@ def main():
     files = {}
     retired = 0
     for name in names:
-        users = sorted(path for path in TESTS.rglob('*.php') if f"'{name}'" in path.read_text(encoding='utf-8'))
+        users = replay_tests(name)
         if not (FIXTURES / f'{name}.json').is_file():
             if arguments[:1] == ['--changed'] and not users:
                 print(f'{name}: fixture and CLI replay tests retired together.')

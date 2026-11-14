@@ -27,6 +27,14 @@ HOSTS_TEMPLATE = ("127.0.1.1\t{name}\n127.0.0.1\tlocalhost\n::1\t\tlocalhost ip6
                   "ff02::1\t\tip6-allnodes\nff02::2\t\tip6-allrouters\n")
 
 
+def fetched_mirror(test):
+    """A Node mirror that a fetch filled: it exists, and the faked `git rev-parse` answers its branch's commit."""
+    folder = tempfile.TemporaryDirectory()
+    test.addCleanup(folder.cleanup)
+    Path(folder.name, "HEAD").write_text("ref: refs/heads/proof\n")
+    return folder.name
+
+
 class BranchSelectionTest(unittest.TestCase):
     """Real, unprivileged Git: source tips differ from the cloned default seed."""
 
@@ -47,14 +55,14 @@ class BranchSelectionTest(unittest.TestCase):
         (self.remote / "source").write_text("base tip")
         self.git("-C", str(self.remote), "commit", "--quiet", "-am", "base tip")
         self.tip = self.git("-C", str(self.remote), "rev-parse", "HEAD").stdout.strip()
-        self.git("init", "--quiet", "--bare", str(self.mirror))
+
     def git(self, *args, check=True):
         return subprocess.run(["git", *args], check=check, capture_output=True, text=True,
                               env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", GIT_TERMINAL_PROMPT="0"), timeout=5)
 
     def prepare(self, mode="new", target="fix-login", base="release", sha=None, legacy=False):
         overrides = {"repository": str(self.remote), "mirror": str(self.mirror), "protocols": ["file"], "branch": target,
-                     "clone": {"source": "instance-1", "snapshot": "seed", "t3": {"device": "t3"},
+                     "clone": {"source": "instance-1", "snapshot": "seed-abc", "t3": {"device": "t3"},
                                "seed_commit": self.seed, "source_mirror": str(self.remote / ".git")}}
         if not legacy:
             overrides["branch_selection"] = {"mode": mode, "target": target, "base": base, "source_sha": sha or self.tip}
@@ -63,17 +71,34 @@ class BranchSelectionTest(unittest.TestCase):
             raise RuntimeError(error.strip())
 
     def checkout(self, branch):
-        # The same mirror bundle and checkout used by clone-workspace's guest.
-        bundle = self.root / "workspace.bundle"
+        """The workspace phase's rule: a branch in the Node's mirror comes in as a bundle; a branch the mirror lacks starts at the seed's
+        commit, which the seed's own repository (a checkout at the seed's commit) holds."""
         workspace = self.root / "workspace"
-        self.git("-C", str(self.mirror), "bundle", "create", str(bundle), "refs/heads/" + branch)
-        self.git("init", "--quiet", str(workspace))
-        self.git("-C", str(workspace), "fetch", "--quiet", str(bundle), "refs/heads/" + branch)
-        self.git("-C", str(workspace), "checkout", "--quiet", "-B", branch, "FETCH_HEAD")
+        self.git("clone", "--quiet", "--no-checkout", str(self.remote), str(workspace))
+        self.git("-C", str(workspace), "checkout", "--quiet", "--detach", self.seed)
+        held = self.git("-C", str(self.mirror), "rev-parse", "--verify", "--quiet", "refs/heads/" + branch, check=False) \
+            if (self.mirror / "HEAD").exists() else None
+        if held is not None and held.returncode == 0:
+            bundle = self.root / "workspace.bundle"
+            self.git("-C", str(self.mirror), "bundle", "create", str(bundle), "refs/heads/" + branch)
+            self.git("-C", str(workspace), "fetch", "--quiet", str(bundle), "+refs/heads/" + branch + ":refs/remotes/origin/" + branch)
+            self.git("-C", str(workspace), "checkout", "--quiet", "-B", branch, "refs/remotes/origin/" + branch)
+        else:
+            self.git("-C", str(workspace), "checkout", "--quiet", "-B", branch, self.seed)
         return self.git("-C", str(workspace), "rev-parse", "HEAD").stdout.strip(), self.git("-C", str(workspace), "branch", "--show-current").stdout.strip()
 
     def test_legacy_new_branch_still_uses_seed_without_selection(self):
         self.prepare(legacy=True)
+        # A branch the origin lacks fetches nothing and makes no Node mirror: the seed holds its commit.
+        self.assertFalse(self.mirror.exists())
+        self.assertEqual(self.checkout("fix-login"), (self.seed, "fix-login"))
+
+    def test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror(self):
+        # The admission read GitHub; an unreachable origin proves that the clone does not.
+        self.remote.rename(self.root / "gone")
+        self.prepare(base="main", sha=self.seed)
+        self.assertFalse(self.mirror.exists())
+        self.remote = self.root / "gone"
         self.assertEqual(self.checkout("fix-login"), (self.seed, "fix-login"))
 
     def test_legacy_existing_remote_branch_still_uses_its_tip(self):
@@ -109,10 +134,29 @@ class BranchSelectionTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "instance.clone_branch_not_found"):
             self.prepare()
 
-    def test_target_created_after_admission_is_not_silently_reused(self):
-        self.git("-C", str(self.remote), "branch", "fix-login")
-        with self.assertRaisesRegex(RuntimeError, "instance.clone_branch_exists"):
-            self.prepare()
+    def test_a_target_made_on_github_after_admission_starts_at_the_admitted_commit_and_its_push_is_refused(self):
+        # The admission found no `fix-login`; someone pushes one before the copy. The clone runs no `ls-remote` again, so it starts
+        # at the admitted commit, and a later push of its branch is refused as non-fast-forward (`tasks.not_fast_forward`).
+        self.git("-C", str(self.remote), "switch", "--quiet", "-c", "fix-login", "main")
+        (self.remote / "other").write_text("someone else")
+        self.git("-C", str(self.remote), "add", "other")
+        self.git("-C", str(self.remote), "commit", "--quiet", "-m", "someone else")
+        self.git("-C", str(self.remote), "switch", "--quiet", "main")
+        self.prepare()
+        self.assertEqual(self.checkout("fix-login"), (self.tip, "fix-login"))
+        pushed = self.git("-C", str(self.root / "workspace"), "push", "--porcelain", str(self.remote), "fix-login:fix-login", check=False)
+        self.assertNotEqual(pushed.returncode, 0)
+        self.assertRegex(pushed.stdout + pushed.stderr, r"non-fast-forward|fetch first")
+
+    def test_a_target_made_on_github_at_an_older_commit_is_fast_forwarded_and_loses_no_commit(self):
+        # The branch made after admission holds no commit the copy lacks: the push fast-forwards it.
+        self.git("-C", str(self.remote), "branch", "fix-login", self.seed)
+        self.prepare()
+        self.assertEqual(self.checkout("fix-login"), (self.tip, "fix-login"))
+        pushed = self.git("-C", str(self.root / "workspace"), "push", "--porcelain", str(self.remote), "fix-login:fix-login", check=False)
+        self.assertEqual(pushed.returncode, 0, pushed.stderr)
+        self.assertEqual(self.git("-C", str(self.remote), "rev-parse", "fix-login").stdout.strip(), self.tip)
+        self.assertEqual(self.git("-C", str(self.remote), "merge-base", "--is-ancestor", self.seed, "fix-login", check=False).returncode, 0)
 
     def test_unreadable_remote_fails_without_creating_a_branch(self):
         self.remote.rename(self.root / "gone")
@@ -174,7 +218,7 @@ class CloneTest(unittest.TestCase):
                 "repository": "https://github.com/test/repo.git",
                 "clone": {
                     "source": "instance-1",
-                    "snapshot": "seed",
+                    "snapshot": "seed-abc",
                     "t3": {"device": "t3"},
                 },
             }
@@ -263,14 +307,21 @@ class CloneTest(unittest.TestCase):
                 if argv[:2] == ["incus", "query"] and "/volumes/custom/" in argv[2]:
                     # The default's inner volume and its seed snapshots, and the copy's own volume, absent unless a failed copy left it.
                     if "snapshots?" in argv[2]:
-                        return subprocess.CompletedProcess(argv, 0, json.dumps([{"name": name} for name in container.get("fixture_volume_seeds", ["seed"])]), "")
+                        return subprocess.CompletedProcess(argv, 0, json.dumps([{"name": name} for name in container.get("fixture_volume_seeds", ["seed-abc"])]), "")
                     return subprocess.CompletedProcess(argv, 0 if container.get("fixture_volume_left") else 1, "{}" if container.get("fixture_volume_left") else "",
                                                        "" if container.get("fixture_volume_left") else "Error: Storage pool volume not found")
                 if argv[3:4] == ["copy"] and container.get("fixture_copy_fails"):
                     return subprocess.CompletedProcess(argv, 1, "", "Error: Failed creating instance from snapshot")
+                if argv[:2] == ["incus", "query"] and "/1.0/network-acls/" in argv[2]:
+                    # The copy's own ACL by its name, as Incus answers it: the held ACL, a missing one, or another failure.
+                    acl = container.get("fixture_acl")
+                    if acl == "error":
+                        # Another 404 of Incus, such as a missing project, is no missing ACL.
+                        return subprocess.CompletedProcess(argv, 1, "", "Error: Project not found")
+                    return subprocess.CompletedProcess(argv, 0 if acl else 1, json.dumps(acl) if acl else "", "" if acl else "Error: Network ACL not found")
                 if argv[:2] == ["incus", "query"]:
                     if "snapshots?" in argv[2]:
-                        output = json.dumps([{"name": "seed"}])
+                        output = json.dumps(container.get("fixture_snapshots", [{"name": "seed-abc"}]))
                     elif "sockets.target.wants" in argv[2]:
                         output = json.dumps(["orbit-mail-1025.socket", "orbit-mail-2525.socket", "orbit-node-service-3308.socket", "project.socket"])
                     elif "timers.target.wants" in argv[2]:
@@ -281,7 +332,7 @@ class CloneTest(unittest.TestCase):
                         output = json.dumps(["orbit-schedule-default.timer", "orbit-schedule-default.service"])
                     elif argv[2].endswith("/etc/orbit/schedules"):
                         output = json.dumps(["default.sh", "default.complete"])
-                    elif "network-acls?" in argv[2] or "files?" in argv[2]:
+                    elif "files?" in argv[2]:
                         output = "[]"
                     else:
                         output, status = (json.dumps(read), 0) if read else ("", 1)
@@ -335,6 +386,21 @@ class CloneTest(unittest.TestCase):
             self.hosts = files.get("/etc/hosts")
             return calls, read, error.getvalue()
 
+    def test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy(self):
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "other"}]})
+        self.assertIn("instance.default_seed_missing", error)
+        self.assertFalse(any("copy" in call for call in calls))
+        # A retake between its delete and its rename: the seed moved, and the same command takes the new one.
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "next-abc"}]})
+        self.assertIn("instance.default_seed_moved", error)
+        self.assertFalse(any("copy" in call for call in calls))
+
+    def test_a_replaced_seed_still_refuses_as_moved(self):
+        calls, _, error = self.clone(overrides={"fixture_snapshots": [{"name": "seed-def"}]})
+        self.assertIn("instance.default_seed_moved", error)
+        self.assertNotIn("instance.default_seed_missing", error)
+        self.assertFalse(any("copy" in call for call in calls))
+
     def test_schedule_cleanup_listing_error_refuses_before_clone_boot(self):
         calls, _, error = self.clone(overrides={"fixture_schedule_listing_error": True})
         self.assertNotEqual(error, "")
@@ -374,6 +440,34 @@ class CloneTest(unittest.TestCase):
         check = next(i for i, call in enumerate(calls) if call[:2] == ["python3", "-c"])
         self.assertLess(check, calls.index(start))
 
+    def test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl(self):
+        acl = ["incus", "query", "/1.0/network-acls/instance-7?project=default"]
+        create = ["incus", "network", "acl", "create", "instance-7", "--project", "default"]
+        calls, _, error = self.clone()
+        self.assertEqual(error, "")
+        self.assertIn(acl, calls)
+        self.assertFalse(any(call[:2] == ["incus", "query"] and "/1.0/network-acls?" in call[2] for call in calls))
+        # A missing ACL is created and set before the copy.
+        self.assertLess(calls.index(create), next(i for i, call in enumerate(calls) if call[3:4] == ["copy"]))
+        # An ACL that holds the rules already changes nothing.
+        rules = {"description": "Orbit Instance 7", "egress": [], "ingress": []}
+        calls, _, error = self.clone(overrides={"acl_rules": rules, "fixture_acl": {"name": "instance-7", **rules}})
+        self.assertEqual(error, "")
+        self.assertFalse(any(call[:3] == ["incus", "network", "acl"] for call in calls))
+        # Any other failure of the read refuses before the copy; it never creates an ACL over one it could not read.
+        calls, _, error = self.clone(overrides={"fixture_acl": "error"})
+        self.assertEqual(error, "instance.container_container_failed: command incus exited 1\n")
+        self.assertFalse(any(call[3:4] == ["copy"] or call[:3] == ["incus", "network", "acl"] for call in calls))
+
+    def test_the_container_phase_prints_the_seconds_of_each_part(self):
+        transcript = []
+        _, _, error = self.clone(transcript=transcript)
+        self.assertEqual(error, "")
+        printed = json.loads(transcript[0].strip().splitlines()[-1])
+        self.assertEqual(set(printed["timings"]), {"acl", "copy", "units", "boot_files", "firewall", "network_check", "start", "private_names",
+                                                   "node_services", "mail", "branch"})
+        self.assertTrue(all(isinstance(value, (int, float)) and value >= 0 for value in printed["timings"].values()))
+
     BOOT_FILES = [
         {"path": "/etc/systemd/system.conf.d/99-orbit-node-services.conf", "uid": 0, "gid": 0, "mode": "0644",
          "content": "# Managed by Orbit: attached Node service.\n[Manager]\nDefaultEnvironment=NO_PROXY=a no_proxy=a\n"},
@@ -383,7 +477,7 @@ class CloneTest(unittest.TestCase):
 
     def clone_with(self, clone, **kwargs):
         overrides = kwargs.pop("overrides", {})
-        return self.clone(overrides={**overrides, "clone": {"source": "instance-1", "snapshot": "seed", "t3": {"device": "t3"}, **clone}},
+        return self.clone(overrides={**overrides, "clone": {"source": "instance-1", "snapshot": "seed-abc", "t3": {"device": "t3"}, **clone}},
                           **kwargs)
 
     @staticmethod
@@ -1022,14 +1116,14 @@ class CloneTest(unittest.TestCase):
         inner = {"name": "inner-7", "pool": "orbit-instances", "size": "30GiB", "config": INNER_CONFIG, "device": "inner-pool",
                  "path": "/srv/inner-pool", "inner_pool": {"name": "inner", "source": "/srv/inner-pool/pool"}}
         overrides = {"project": "orbit-instances-nested", "allowed_devices": allowed, "config": config, "inner_volume": inner,
-                     "clone": {"source": "instance-1", "snapshot": "seed", "inner_volume": "inner-1", "t3": {"device": "t3"}}, **fixture}
+                     "clone": {"source": "instance-1", "snapshot": "seed-abc", "inner_volume": "inner-1", "t3": {"device": "t3"}}, **fixture}
         return self.clone(effective, overrides=overrides, volumes={"custom/inner-7": {**INNER_CONFIG, "size": "30GiB", "volatile.uuid": "v"}})
 
     def test_a_copy_with_an_inner_volume_copies_the_volume_seed_then_the_container_on_its_own_volume_before_the_start(self):
         calls, _, error = self.inner_clone()
         self.assertEqual(error, "")
         project = ["incus", "--project", "orbit-instances-nested"]
-        volume_copy = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed", "orbit-instances/inner-7"])
+        volume_copy = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
         container_copy = next(index for index, call in enumerate(calls) if call[3:4] == ["copy"])
         start = calls.index(project + ["start", "instance-7"])
         self.assertLess(volume_copy, container_copy)
@@ -1049,7 +1143,7 @@ class CloneTest(unittest.TestCase):
         calls, _, error = self.inner_clone(fixture_copy_fails=True)
         self.assertNotEqual(error, "")
         project = ["incus", "--project", "orbit-instances-nested"]
-        copied = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed", "orbit-instances/inner-7"])
+        copied = calls.index(project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
         self.assertIn(project + ["storage", "volume", "delete", "orbit-instances", "inner-7"], calls[copied:])
         self.assertFalse(any(call[3:4] == ["start"] for call in calls))
 
@@ -1058,7 +1152,7 @@ class CloneTest(unittest.TestCase):
         self.assertEqual(error, "")
         project = ["incus", "--project", "orbit-instances-nested"]
         delete = calls.index(project + ["storage", "volume", "delete", "orbit-instances", "inner-7"])
-        self.assertEqual(calls[delete + 1], project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed", "orbit-instances/inner-7"])
+        self.assertEqual(calls[delete + 1], project + ["storage", "volume", "copy", "orbit-instances/inner-1/seed-abc", "orbit-instances/inner-7"])
 
     def test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before(self):
         # A normal Instance's copy, and a nested-fleet copy of a default without an inner volume (Instance 2454's shape).
@@ -1122,10 +1216,13 @@ class CloneTest(unittest.TestCase):
             container = {
                 "name": "instance-proof",
                 "project": "orbit-instances",
-                "mirror": "/private/mirror",
+                "mirror": folder + "/mirror",
                 "branch": "proof",
                 "php": None,
             }
+            # The Node's mirror holds the branch: the phases read the start commit there.
+            Path(folder, "mirror").mkdir()
+            Path(folder, "mirror", "HEAD").write_text("ref: refs/heads/proof\n")
 
             def command(argv, **_kwargs):
                 if argv[0] != fail:
@@ -1274,7 +1371,8 @@ class T3PhaseTest(unittest.TestCase):
 
         def command(argv, **kwargs):
             calls.append((argv, kwargs.get("input")))
-            member = argv[argv.index("-c") + 2] if "-c" in argv else None
+            # A guest call is `incus exec … -- python3 -c <guest> <member>`; the Node's own Git calls carry `-c` options too.
+            member = argv[argv.index("python3") + 3] if "python3" in argv else None
             if member is not None and member == timeout:
                 # The outer `timeout 240` ends the step here: nothing after this line of the script runs.
                 raise KeyboardInterrupt
@@ -1284,7 +1382,7 @@ class T3PhaseTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
-        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": "/private/mirror", "branch": "proof", "php": None}
+        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": fetched_mirror(self), "branch": "proof", "php": None}
         output, error = io.StringIO(), io.StringIO()
         code = 0
         with tempfile.TemporaryDirectory() as folder, (
@@ -1302,7 +1400,7 @@ class T3PhaseTest(unittest.TestCase):
         for argv, _ in calls:
             self.assertNotIn(self.KEY, json.dumps(argv))
         self.assertNotIn(self.KEY, output.getvalue() + error.getvalue() + (self.left or ""))
-        guest = [(argv[argv.index("-c") + 2], content) for argv, content in calls if "-c" in argv]
+        guest = [(argv[argv.index("python3") + 3], content) for argv, content in calls if "python3" in argv]
         return code, guest, output.getvalue(), error.getvalue()
 
     def receipt(self):
@@ -1370,12 +1468,15 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
              "merge": {"own": ["DB_DATABASE"], "drop": [], "guard": []}}
     EVIDENCE = {"error_code": "instance.container_process_inactive", "process_failure": {"unit": "orbit-process-1.service"}}
 
-    def phase(self, phase, fail=False):
+    def phase(self, phase, fail=False, mirror=True, rev_parse=0):
         account = pwd.getpwuid(os.getuid())
         calls = []
 
         def command(argv, **kwargs):
             calls.append((argv, kwargs.get("input")))
+            if "rev-parse" in argv and rev_parse:
+                # The Node's mirror lacks the branch (1), or Git fails on it (any other code).
+                return subprocess.CompletedProcess(argv, rev_parse, "", "PRIVATE-STDERR")
             member = argv[argv.index("python3") + 3] if "python3" in argv else None
             if member is not None and fail:
                 return subprocess.CompletedProcess(argv, 1, json.dumps(self.EVIDENCE), "instance.container_process_inactive\n")
@@ -1385,7 +1486,10 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "changes": []}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
-        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": "/private/mirror", "branch": "proof", "php": None}
+        # A fetched branch is in the Node's mirror; a new branch at the seed's commit has no mirror.
+        container = {"name": "instance-proof", "project": "orbit-instances", "branch": "proof", "php": None,
+                     "mirror": fetched_mirror(self) if mirror else "/nowhere/mirror", "clone": {"seed_commit": "c" * 40}}
+        self.calls = calls
         output, error = io.StringIO(), io.StringIO()
         code = 0
         with tempfile.TemporaryDirectory() as folder, (
@@ -1412,6 +1516,32 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         self.assertTrue(pushed[0].startswith("instance-proof/tmp/orbit-workspace-"))
         self.assertTrue(output.startswith("orbit-commit=first\n"))
         self.assertNotIn("private", output)
+
+    def test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle(self):
+        code, _, pushed, output, _ = self.phase("checkout", mirror=False)
+        self.assertEqual(code, 0)
+        self.assertEqual(pushed, [])
+        self.assertFalse(any("bundle" in argv for argv, _ in self.calls))
+        intent = json.loads(next(argv for argv, _ in self.calls if "python3" in argv)[-1])
+        self.assertEqual(intent["expected_commit"], "c" * 40)
+        self.assertNotIn("bundle", intent)
+        printed = json.loads(output.splitlines()[1])
+        self.assertEqual(set(printed["timings"]), {"guest"})
+
+    def test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase(self):
+        for phase in ("checkout", "sessions"):
+            with self.subTest(phase=phase):
+                code, _, pushed, _, _ = self.phase(phase, rev_parse=1)
+                self.assertEqual((code, pushed), (0, []))
+                intent = json.loads(next(argv for argv, _ in self.calls if "python3" in argv)[-1])
+                self.assertEqual(intent["expected_commit"], "c" * 40)
+                # Any other Git failure never falls back to the seed: the phase fails by its own name, without Git's output.
+                code, guest, _, _, error = self.phase(phase, rev_parse=128)
+                self.assertEqual((code, guest, error), (1, [], "instance.container_" + phase + "_failed: command git exited 128\n"))
+
+    def test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout(self):
+        _, _, _, output, _ = self.phase("checkout")
+        self.assertEqual(set(json.loads(output.splitlines()[1])["timings"]), {"bundle", "guest"})
 
     def test_services_install_the_node_helper_and_pass_only_the_process_files(self):
         code, guest, pushed, output, _ = self.phase("services")

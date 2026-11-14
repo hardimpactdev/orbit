@@ -1,18 +1,24 @@
 order = 830
-source_sha256 = "297348b01a67c364d7a574bd5229d199fb3650876cf5c17a0d20faa7214c9619"
+source_sha256 = "ba2c41d2900abdc682c7c01ed2f5d57cc363f6d4a7f268fb6e0fe6690dd402e1"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
+  "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
   "test_legacy_existing_remote_branch_still_uses_its_tip",
   "test_new_branch_uses_fetched_base_tip_not_seed",
   "test_existing_branch_uses_its_remote_tip",
   "test_resume_keeps_admitted_commit_when_remote_advances",
   "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref",
   "test_deleted_base_is_not_a_new_branch_at_seed",
-  "test_target_created_after_admission_is_not_silently_reused",
+  "test_a_target_made_on_github_after_admission_starts_at_the_admitted_commit_and_its_push_is_refused",
+  "test_a_target_made_on_github_at_an_older_commit_is_fast_forwarded_and_loses_no_commit",
   "test_unreadable_remote_fails_without_creating_a_branch",
   "test_unreachable_frozen_commit_fails_without_using_current_tip",
+  "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy",
+  "test_a_replaced_seed_still_refuses_as_moved",
   "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
+  "test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl",
+  "test_the_container_phase_prints_the_seconds_of_each_part",
   "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
   "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start",
   "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start",
@@ -68,6 +74,9 @@ cases = [
   "test_a_timeout_names_the_part_that_was_running",
   "test_the_agent_phase_alone_is_no_longer_a_step",
   "test_checkout_pushes_the_bundle_and_passes_only_the_env_half",
+  "test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle",
+  "test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase",
+  "test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout",
   "test_services_install_the_node_helper_and_pass_only_the_process_files",
   "test_workspace_still_passes_the_whole_value_in_one_guest_call",
   "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt",
@@ -79,7 +88,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 135
+cost = 143
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -109,7 +118,6 @@ inputs = [
   "test_resume_keeps_admitted_commit_when_remote_advances" = 2
   "test_deleted_existing_branch_never_falls_back_to_seed_or_local_ref" = 2
   "test_deleted_base_is_not_a_new_branch_at_seed" = 2
-  "test_target_created_after_admission_is_not_silently_reused" = 2
   "test_unreadable_remote_fails_without_creating_a_branch" = 2
   "test_unreachable_frozen_commit_fails_without_using_current_tip" = 2
   "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start" = 2
@@ -175,3 +183,13 @@ inputs = [
   "test_a_failed_container_copy_deletes_the_volume_it_copied_and_never_starts" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
   "test_a_volume_left_by_a_failed_copy_without_its_container_is_copied_again_from_the_seed" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
   "test_a_copy_without_an_inner_volume_makes_no_volume_call_and_copies_the_container_as_before" = 2 # estimate: local run on Beast under 1 s, not a CI measurement
+  "test_a_default_without_any_seed_refuses_by_its_own_code_before_the_copy" = 1
+  "test_a_replaced_seed_still_refuses_as_moved" = 1
+"test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_a_target_made_on_github_after_admission_starts_at_the_admitted_commit_and_its_push_is_refused" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_a_target_made_on_github_at_an_older_commit_is_fast_forwarded_and_loses_no_commit" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_the_copys_own_acl_is_read_by_its_name_and_never_from_the_list_of_every_acl" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_the_container_phase_prints_the_seconds_of_each_part" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_a_branch_the_mirror_lacks_starts_at_the_seeds_commit_without_a_bundle" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_a_mirror_without_the_branch_starts_at_the_seed_and_a_git_failure_fails_the_phase" = 1 # added 2026-11-14 (create-baked); local under 1 s
+"test_a_fetched_branch_prints_the_seconds_of_its_bundle_and_its_checkout" = 1 # added 2026-11-14 (create-baked); local under 1 s
