@@ -1,0 +1,21 @@
+order = 1440
+source_sha256 = "9d8923afb613f5ee7c101a45bf483ffeca652dee42a045d6e3b0fae187294208"
+cases = [
+  "each production Swamp Node schedule keeps its workflow's built-in cron",
+  "the release load sets and confirms each production Swamp Node schedule on serve after the reload",
+  "a schedule that serve does not confirm fails the release load",
+  "a checkout without the schedules file sets no schedule and passes, as a rollback to an older commit needs",
+  "an empty schedules file sets no schedule and passes",
+  "a schedules file that jq cannot read fails the release load",
+  "a swamp that reads its standard input still sets every schedule",
+]
+file = "swamp/tests/swamp_node_schedules_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/bin/gate-test-support.ts",
+  "swamp/config/swamp-node-schedules.json",
+  "swamp/workflows/workflow-operation-gateway-swamp-load.yaml",
+  "swamp/workflows/workflow-swamp-credential-monitor.yaml",
+  "swamp/workflows/workflow-swamp-datastore-watch.yaml",
+]
