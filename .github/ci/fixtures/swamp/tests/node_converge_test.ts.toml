@@ -21,7 +21,7 @@ cases = [
   "an invalid installed Tool version cannot become terminal success (null)",
   "an invalid installed Tool version cannot become terminal success (\"\")",
   "an invalid installed Tool version cannot become terminal success (\"2.3.4 private-text\")",
-  "an invalid installed Tool version cannot become terminal success (\"2.3.4\nprivate-text\")",
+  "an invalid installed Tool version cannot become terminal success (\"2.3.4\\nprivate-text\")",
   "cleanup failure is explicit and preserves the completed check as the first failure",
   "cleanup failure is explicit and preserves roles",
   "failure before input preparation still publishes a failed terminal and accepts an absent private folder",

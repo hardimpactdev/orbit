@@ -503,7 +503,7 @@ In a running container, the converge runs `instance-browser-trust.sh` as `agent`
 
 A stopped or frozen container gets no store at that converge, because it can wake at any moment while the step runs. It gets the store at the next converge that finds it running.
 
-A clone's copy has not started yet, so nothing can change its paths. The clone script reads each path's type from the `X-Incus-Type` header of the local Incus API. The home and both folders must be directories, and `pkcs11.txt` a file or missing. A link anywhere is refused. A refusal fails the create with `instance.clone_browser_trust_refused`.
+A clone's copy has not started yet, so nothing can change its paths. The clone script reads each path's type from the `X-Incus-Type` header of the local Incus API. Each path that exists must be of its type: the home and both folders directories, `pkcs11.txt` a file. A missing folder is created. A copy without a home gets no store. A link anywhere is refused. A refusal fails the create with `instance.clone_browser_trust_refused`.
 
 The module needs the container's `libp11-kit0` at exactly the part's version, `0.26.2-2`. The recipe holds that version once. The image definition carries it too, so a new pin builds and checks a new image.
 
