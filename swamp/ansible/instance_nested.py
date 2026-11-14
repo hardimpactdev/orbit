@@ -15,10 +15,12 @@ compared first, so a disk can only name the volume that the intent names.
 
 The root disk's `size` is the one value that may be larger than the intent's: Orbit writes it only as `<n>GiB`, the start grows a
 smaller one, and a quota that is larger stays safe when the setting goes down or an older release runs
-(docs/reference/development-containers.md#the-root-disk).
+(docs/reference/development-containers.md#the-root-disk). An allowed root without a size, the profile root that a Node's clone probe
+checks, admits only a root without a size.
 """
 
 import json
+import re
 import subprocess
 import sys
 
@@ -44,14 +46,22 @@ def without_filters(device):
 
 def gib(size):
     """The whole GiB of a size that Orbit writes, `<n>GiB`, or None for any other form."""
-    return int(size[:-3]) if size.endswith("GiB") and size[:-3].isdigit() and not size.startswith("0") else None
+    return int(size[:-3]) if re.fullmatch(r"[1-9][0-9]*GiB", size, re.ASCII) else None
+
+
+def without_size(disk):
+    return {key: value for key, value in without_filters(disk).items() if key != "size"}
 
 
 def root_fits(device, allowed):
-    """The root disk is the allowed one, with a size of at least the allowed size."""
-    own, want = gib(device.get("size", "")), gib(allowed.get("size", ""))
-    rest = {key: value for key, value in without_filters(device).items() if key != "size"}
-    return own is not None and want is not None and own >= want and rest == {k: v for k, v in allowed.items() if k != "size"}
+    """The root disk is the allowed one. Without an allowed size it has none either: the shared profile's root, which the Node's
+    clone probe inherits, names no size. With one, its own size is a `<n>GiB` of at least that size."""
+    if without_size(device) != without_size(allowed):
+        return False
+    if "size" not in allowed:
+        return "size" not in device
+    own, want = gib(device.get("size", "")), gib(allowed["size"])
+    return own is not None and want is not None and own >= want
 
 
 def nested_unsafe_device(container, allowed, allowed_config):
