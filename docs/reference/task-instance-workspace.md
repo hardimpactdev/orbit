@@ -47,7 +47,7 @@ Transfer or guest-cleanup failure removes Node scratch before returning failure.
 
 Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
 
-A baseline in a container workspace runs no setup steps: its intent holds an empty `setup` list. The container is a copy of the Project default, whose seed already ran them, as for every [clone](/reference/development-containers#lifecycle). The baseline runs the Project check alone; a Project without one passes on the snapshot. A task VM baseline keeps every setup step.
+A baseline in a container workspace runs no setup steps: its intent holds an empty `setup` list. The container is a copy of the Project default, whose seed already ran them, as for every [clone](/reference/development-containers#lifecycle). The baseline runs the Project check alone; a Project without one passes on the snapshot. A task copy [starts clean](/reference/development-containers#a-task-copy-starts-clean), so its baseline snapshot is the start commit plus ignored files. A task VM baseline keeps every setup step.
 
 The intent is the task VM check intent with two differences: `checkout_path` is `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow runs `Check in the Instance` and skips the task VM steps.
 
