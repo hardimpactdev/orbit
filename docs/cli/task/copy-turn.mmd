@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role, continued by default, effort per role through T3 provider instances): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue.
+  %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role, continued by default, effort per role through T3 provider instances): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue. 2026-11-14: a question ends the turn: Orbit stores it, then stops the run through the stock T3 server's own RPC, and the answer comes as the next turn.
   %% status: draft
   %% command: task:turn
   %% kind: tasks.copy_turn
@@ -21,6 +21,8 @@ sequenceDiagram
   %%> What it does:
   %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`; every other group takes the task VM turn (`turn.mmd`). A nested-fleet group without a copy refuses here with `tasks.no_workspace`
   %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit
+  %%> - an implementer's prompt says how to ask: with the question tool; a question ends the turn, and the answer comes as the next turn
+  %%> - a turn that continues a thread whose last turn asked quotes that question, each with its options, before the caller's prompt: the prompt is the answer
   %%> - without `--thread`, the turn continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread, when it is a `t3` thread of this copy. A role with no such thread starts one. `--thread=new` starts a new one; `--thread=ID` must name the thread the turn would continue
   %%> - a new thread records the driver `t3`, the copy's Node, the role's copy model (`ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL`, each `claude-opus-5-5` by default) and the role's effort (`ORBIT_TASKS_IMPLEMENTER_EFFORT`, default `medium`, or `ORBIT_TASKS_REVIEWER_EFFORT`, default `high`). The T3 provider instance of that effort carries it, as `claudeMedium` or `claudeHigh`
   %%> - a continued thread keeps its model and effort: T3 keeps the thread's provider instance
@@ -33,7 +35,7 @@ sequenceDiagram
   %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`
   %%> - the role's copy model is a model name, and the role's effort is `low`, `medium`, `high`, `xhigh` or `max`; otherwise `tasks.copy_turn_model_invalid` or `tasks.copy_turn_effort_invalid`
   %%> - no other Operation of the group runs; otherwise `operation.target_busy`
-  %%> - no earlier turn of the group may still run in the copy: the latest turn of each thread whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`. One case passes: a turn that ended `waiting` for an answer does not hold a turn that continues its own thread, so the answer can be sent (that `t3 thread send` answers a waiting run is an assumption read from T3 0.1.7's CLI). A reviewer turn whose checkout is not restored holds the same way: its result is not over
+  %%> - no earlier turn of the group may still run in the copy. A turn is settled when T3 shows its thread with no active run and a reviewer's checkout is restored, clean on its branch at its tip. The latest turn of each thread whose result is not settled answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`, unless T3 in the copy now shows it settled; a check of the copy refuses the same way. A turn that asked and whose run Orbit stopped is settled, so it holds nothing
   GW->>SW: Start one run<br/>operation-task-copy-turn
   GW-->>CLI: 202 Accepted<br/>Operation recorded
   %%> Result:
@@ -50,7 +52,9 @@ sequenceDiagram
   %%> - a new thread: `t3 thread start --provider --model --title --wait --json /srv/workspace -`; a continued one: `t3 thread send --wait --json THREAD -`. The prompt goes on stdin, bounded by `timeout` at 3,600 s
   %%> - `t3 thread list` finds the thread by its title, also when the bound cut the wait; `t3 thread show --json` reads it back. Each read is bounded at 60 s
   %%> - after a reviewer turn, also a failed or cut one, the phase discards what the reviewer changed and checks the branch out again, then reads that the checkout is clean, on its branch, and that the branch is at the tip read before the detach
-  %%> - writes each evidence file as soon as its command ends: the thread found to continue, the reviewer's checkout, the detach mark, the launch mark, the start's end, the read, the restore; a cut phase still tells whether a turn was launched
+  %%> - a run that waits for an answer (`--wait` exits 2): first `t3_copy_rpc.mjs read` stores the thread's pending requests, each question with its id, header, text and options exactly as the agent asked them. Only after that evidence is written, `t3_copy_rpc.mjs interrupt` stops that run with T3's `run.interrupt` and waits up to 30 s for it to end. Each is bounded at 60 s; a run that someone answered meanwhile is not stopped
+  %%> - the helper runs on the copy's Node.js runtime, from stdin. It speaks the stock T3 server's own WebSocket RPC (`orchestration.getThreadProjection`, `orchestration.dispatchCommand`) with a session from `t3 auth session issue`: read-only for the read, one minute, held only in the helper's memory, revoked before it exits. T3 stays stock
+  %%> - writes each evidence file as soon as its command ends: the thread found to continue, the reviewer's checkout, the detach mark, the launch mark, the start's end, the question, the interrupt, the read, the restore; a cut phase still tells whether a turn was launched
   %%> - T3's CLI issues its own full-access session inside the copy and revokes it when it exits; the replies stay in the run folder, never in a log
   Note over N: T3 runs the turn<br/>provider instance · effort
   %%> What it does:
@@ -59,26 +63,30 @@ sequenceDiagram
   Note over SW: result
   %%> What it does:
   %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`, a thread to continue that T3 does not hold fails with `tasks.copy_thread_missing`
+  %%> - a turn that asks keeps its question in the result. Its run stopped, it is `asking_for_input` and over. A question Orbit could not read fails with `tasks.copy_question_unread`, and a run Orbit could not stop with `tasks.copy_question_unstopped`; neither is over
+  %%> - names the thread's provider instance and model as T3 shows them
   %%> - a reviewer turn with the detach mark and no restore that reads clean on its branch at its tip fails with `tasks.copy_review_unrestored`, whatever its run did, also when it failed or nothing was launched; the error keeps the run's own error
   %%> - keeps the message text of the thread, all its turns, redacted and bounded to 256 KiB with the newest kept; T3's CLI gives no tool items and no token use
-  %%> - records whether the turn is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state. An unrestored reviewer turn is never over, so it holds its group until `task:cancel`
+  %%> - records whether the turn is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state, which a stopped run is not. An unrestored reviewer turn is never over
   Note over SW: cleanup
   %%> What it does:
   %%> - removes the private run folder
   Note over SW: outcome
   %%> What it does:
-  %%> - native assert: the turn is done
-  alt the turn is done
+  %%> - native assert: the turn is done, or it asked and its run stopped
+  alt the turn is done or asked
     SW-->>GW: Native terminal result<br/>capture result
-    Note over GW: Record the thread<br/>state · T3 thread · transcript
+    Note over GW: Record the thread<br/>state · question · transcript
     %%> Result:
     %%> - the thread's state and error, T3's thread id as its external id, and the transcript in the Gateway's archive: `task:agent:show` reads it after the copy is gone
+    %%> - a turn that asked keeps its question on the thread: `task:agent:list` shows it until the thread's next turn. The answer is the next `task:turn` of the role, or a message to the thread from a T3 client
+    %%> - the result names the provider instance, the model and the effort: the effort is the one the provider instance carries
     %%> - token metrics stay null
   else the turn failed or ran past its bound
     SW--xGW: Native failed result<br/>error code
     %%> Result:
     %%> - the thread is `failed` with T3's status as its error, and the transcript T3 had
-    %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy: the stock CLI cannot stop a run. The group then refuses more turns and checks with `tasks.copy_turn_unended`; `task:cancel` destroys the copy, and the run ends with it
+    %%> - a turn cut by its bound, a cancelled turn or a lost phase may still run in the copy. Orbit stops only a run that asks. The group refuses more turns and checks with `tasks.copy_turn_unended` until T3 in the copy shows the run over and the checkout restored; the work stays in the copy. `task:cancel` still ends it with the copy
   end
   loop until terminal
     CLI->>GW: operation:show<br/>Operation number
