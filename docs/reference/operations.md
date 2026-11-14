@@ -170,7 +170,7 @@ A completed move or uncertain rollback stays pending until the deadline. Missing
 
 The shared reader projects a native kind from its declared end-check step. A kind whose action runs as one of several guarded steps names the others as `alternatives`, and the step that ran is the end check; see [Swamp command steps](/reference/swamp-command-steps#read-swamps-run-data-instead-of-a-result-step).
 
-A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because the normal terminal projection runs for a timed-out Operation only when its run beat the expiry. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
+A projection that implements `DirectOperationTimeout` records its documented failure state in the expiry transaction, because the normal terminal projection runs for a timed-out Operation only when its run beat the expiry. It does the same, with the Operation's own error code, when the Operation fails with `operation.result_unreadable`. Node removal, `tasks.cancel` and `tasks.maintenance_finish` use it to mark the departing Node `failed`; the native run may still finish, and a later admission recovers the records.
 
 `task_vm.slot_release`, `tasks.cancel` and `tasks.maintenance_finish` hold the generic Operation target key (`task_vm:<id>` or `task_group:<id>`). Expiry keeps that key: a new admission returns `operation.target_busy` until the shared reader verifies the exact bound native terminal and releases it. Settlement leaves the timed-out Operation closed. Native `interrupted` release and Task cleanup results project as `failed`; recovery starts a new Operation. The task VM sweep logs each admission refusal with its details and continues with other rows.
 
@@ -443,7 +443,7 @@ Admission records the intent, the idempotency key and the target hold in one tra
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 
-A run can succeed while the end check that the kind reads its result from did not succeed, for example because a guard skipped it. The run has ended, so no later read can change that. The first reconciler pass that reads the run then fails the operation with `operation.result_unreadable`, frees its target and names the end check as its failed step. It does not wait for the budget.
+A run can succeed while the end check that the kind reads its result from was skipped or failed, for example because a guard skipped it. The run has ended, so no later read can change that. The first reconciler pass that reads the run then fails the operation with `operation.result_unreadable`, frees its target and names the end check as its failed step. It does not wait for the budget. An end check that is absent or still running reads again in the next pass, because Swamp may not have written it yet. `instance.migrate` keeps its own missing-output recovery instead.
 
 An operation that had already timed out with such a run, within its budget, gets the same end. Whether the work took effect is not known: the kind's records leave their in-progress state as they do at a timeout.
 

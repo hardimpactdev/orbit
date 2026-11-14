@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Actions\Operations\FailUnreadableResultAction;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampConnection;
@@ -14,6 +16,7 @@ use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
+use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -48,9 +51,9 @@ function unreadablePublish(int $startedMinutesAgo): Operation
  * @return WebSocketClient&object{frames: list<array<string,mixed>>}
  */
 function unreadableSocket(Operation $operation, string $runStatus, ?string $endCheck, int $completedMinutesAgo,
-    string $workflow = 'operation-task-publish', string $job = 'cleanup', string $step = 'Confirm publication'): WebSocketClient
+    string $workflow = 'operation-task-publish', string $job = 'cleanup', string $step = 'Confirm publication', array $more = []): WebSocketClient
 {
-    $steps = [['name' => 'Revoke the token', 'status' => 'succeeded'], ['name' => 'Remove remote scratch', 'status' => 'skipped']];
+    $steps = [['name' => 'Revoke the token', 'status' => 'succeeded'], ['name' => 'Remove remote scratch', 'status' => 'skipped'], ...$more];
     if ($endCheck !== null) {
         $steps[] = ['name' => $step, 'status' => $endCheck];
     }
@@ -139,14 +142,52 @@ it('fails at once, frees its target and names the end check when the run succeed
         ->assertJsonPath('data.error.detail', 'The run succeeded, but its end check "Confirm publication" is skipped, so its result cannot be read.');
 });
 
-it('names an end check that the history does not hold', function (): void {
+it('reads again while the history does not show the end check as skipped or failed', function (?string $endCheck): void {
     $operation = unreadablePublish(startedMinutesAgo: 2);
-    unreadableSocket($operation, 'succeeded', null, completedMinutesAgo: 1);
+    unreadableSocket($operation, 'succeeded', $endCheck, completedMinutesAgo: 1);
+
+    unreadablePass();
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->lock_key)->not->toBeNull();
+})->with(['absent' => [null], 'still running' => ['running']]);
+
+it('fails a run whose end check failed although the run succeeded', function (): void {
+    $operation = unreadablePublish(startedMinutesAgo: 2);
+    unreadableSocket($operation, 'succeeded', 'failed', completedMinutesAgo: 1);
 
     unreadablePass();
 
     expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
-        ->and($operation->state['native_failure']['detail'])->toContain('"Confirm publication" is absent');
+        ->and($operation->state['native_failure']['detail'])->toContain('"Confirm publication" is failed');
+});
+
+it('fails a kind that reads its result as JSON when its result step was skipped, and reads again when it succeeded without output', function (): void {
+    $operation = unreadablePublish(startedMinutesAgo: 2);
+    $operation->update(['kind' => 'firewall.allow']);
+    unreadableSocket($operation, 'succeeded', 'succeeded', completedMinutesAgo: 1, workflow: 'operation-firewall-direct', job: 'firewall', step: 'Check the rules');
+
+    unreadablePass();
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running);
+
+    unreadableSocket($operation, 'succeeded', 'skipped', completedMinutesAgo: 1, workflow: 'operation-firewall-direct', job: 'firewall', step: 'Check the rules');
+    unreadablePass();
+
+    expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
+        ->and($operation->failed_step)->toBe('Check the rules')
+        ->and($operation->lock_key)->toBeNull();
+});
+
+it('names the alternative end check that ran', function (): void {
+    $operation = unreadablePublish(startedMinutesAgo: 2);
+    $operation->update(['kind' => 'node.update', 'input' => []]);
+    unreadableSocket($operation, 'succeeded', 'skipped', completedMinutesAgo: 1, workflow: 'operation-node-update', job: 'settings', step: 'Check owner and mode',
+        more: [['name' => 'Withdraw task host input', 'status' => 'failed']]);
+
+    unreadablePass();
+
+    expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
+        ->and($operation->failed_step)->toBe('Withdraw task host input');
 });
 
 it('settles a cancel of a run that has already ended in the next pass, and sends Swamp no cancel', function (): void {
@@ -238,4 +279,17 @@ it('moves the records of a family that leaves its in-progress state at a timeout
         ->and($operation->lock_key)->toBeNull()
         ->and($node->refresh()->error_code)->toBe('operation.result_unreadable')
         ->and($node->failed_step)->toBe('remove:operation');
+});
+
+it('fails the task VM of a cancel whose run ended without a readable result, with the new code', function (): void {
+    $operation = unreadablePublish(startedMinutesAgo: 2);
+    $vm = TaskVm::query()->create(['host_node_id' => $operation->node_id, 'group_id' => $operation->target_id, 'name' => 'beast-tvm-1',
+        'state' => TaskVmState::Releasing, 'wireguard_ip' => '10.44.0.152', 'provider' => 'incus', 'capacity_pool' => 'task']);
+    $operation->update(['kind' => 'tasks.cancel', 'input' => ['group_id' => $operation->target_id, 'task_vm_id' => $vm->id]]);
+
+    app(FailUnreadableResultAction::class)->execute($operation, UNREADABLE_RUN, ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()],
+        'Check the end', 'skipped');
+
+    expect($vm->refresh()->state)->toBe(TaskVmState::Failed)
+        ->and($vm->error_code)->toBe('operation.result_unreadable');
 });

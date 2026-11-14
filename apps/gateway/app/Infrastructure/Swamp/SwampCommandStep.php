@@ -558,6 +558,7 @@ final readonly class SwampCommandStep
     {
         $stdout = null;
         $selected = null;
+        $selectedName = $selector['step'];
         $jobs = $run['jobs'] ?? [];
         if (! is_array($jobs)) {
             throw $this->unavailable();
@@ -584,6 +585,7 @@ final readonly class SwampCommandStep
                 } elseif (in_array($step['name'] ?? null, $selector['alternatives'] ?? [], true) && ($step['status'] ?? 'skipped') !== 'skipped') {
                     // The alternative that ran is the end check.
                     $selected = $step['status'];
+                    $selectedName = ValidatedData::string($step['name']);
                 }
             }
         }
@@ -591,7 +593,7 @@ final readonly class SwampCommandStep
         // A kind without a result-reporting step reads Swamp's own run data; its named end check must have succeeded.
         if (($selector['native'] ?? false) === true) {
             if ($run['status'] === 'succeeded' && $selected !== 'succeeded') {
-                throw new SwampEndCheckUnmet($selector['step'], is_string($selected) ? $selected : null);
+                throw in_array($selected, SwampEndCheckUnmet::Final, true) ? new SwampEndCheckUnmet($selectedName, $selected) : $this->unavailable();
             }
             $result = app(NativeRunResult::class)->fromRun($run);
         } elseif (is_string($stdout) && trim($stdout) !== '') {
@@ -604,8 +606,8 @@ final readonly class SwampCommandStep
                 throw $this->unavailable();
             }
         } elseif ($run['status'] === 'succeeded') {
-            // A selected step that did not succeed wrote no result; one that succeeded may still be read from its artifact.
-            throw $selected === 'succeeded' ? $this->unavailable() : new SwampEndCheckUnmet($selector['step'], is_string($selected) ? $selected : null);
+            // A selected step that was skipped or failed wrote no result; one that succeeded may still be read from its artifact.
+            throw in_array($selected, SwampEndCheckUnmet::Final, true) ? new SwampEndCheckUnmet($selectedName, $selected) : $this->unavailable();
         } elseif ($selected === 'succeeded' && (isset($selector['data']) || $requireOutput)) {
             // A reporting step that succeeded wrote its output, also in a failed run. A read that misses it is read again.
             throw new SwampTerminalReadUnavailable;

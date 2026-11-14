@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Actions\Operations\CancelOperationAction;
+use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
@@ -398,6 +399,17 @@ describe('the end of the copy\'s create', function (): void {
 
         expect($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)->and($group->taskable_id)->toBe($operation->target_id);
         Queue::assertNotPushed(DestroyTaskCopy::class);
+    });
+
+    it('fails the group and queues the destroy when the create\'s run ended without a readable result', function (): void {
+        $group = copyGroup(copySource()->project);
+        $operation = runningOperation(startCopy($group));
+
+        app(FailUnreadableResultAction::class)->execute($operation, 'run-1', ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()], 'finish', 'skipped');
+
+        expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
+        Queue::assertPushed(DestroyTaskCopy::class, static fn (DestroyTaskCopy $job): bool => $job->instanceId === $operation->target_id);
     });
 
     it('destroys a failed group\'s copy with force, and leaves the copy of a group that still runs', function (): void {

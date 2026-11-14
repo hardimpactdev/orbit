@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Instances\InstantiateProjectRuntimeDefinitionsAction;
 use App\Actions\Instances\StartInstanceDeployAction;
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
+use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Instances\ContainerProcesses;
@@ -12,6 +13,7 @@ use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
 use App\Domain\Instances\Deployment\ContainerDeployOutcome;
 use App\Domain\Instances\Deployment\DevelopmentDeployInput;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
+use App\Domain\Instances\Deployment\InstanceDeploymentRecorder;
 use App\Domain\Instances\Deployment\InstanceDeployProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstancePlacement;
@@ -231,6 +233,27 @@ it('records the seed commit and a running container after a deployment passes, a
         ->and($instance->refresh()->seed_commit)->toBeNull()
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
 });
+
+it('fails the deployment record with the Operation\'s code when the run ended without a readable result', function (string $kind): void {
+    $instance = deployDefault(container: true);
+    $commit = str_repeat('d', 40);
+    test()->mock(ProjectSourceReader::class)->shouldReceive('read')->once()->andReturn(deploySourceRead($commit));
+    $deploy = app(StartInstanceDeployAction::class)->execute($instance, 'manual', null);
+    $run = '7a1e2b3c-4d5e-4f60-8a71-92b3c4d5e6f7';
+    // A deploy or rollback that records its running history row at admission, as a production one does.
+    $row = app(InstanceDeploymentRecorder::class)->start($instance, 'manual', $kind === 'instance.deploy' ? 'deploy' : 'rollback');
+    $operation = $kind === 'instance.deploy' ? $deploy : Operation::query()->create(['kind' => 'instance.rollback', 'target_type' => 'instance',
+        'target_id' => $instance->id, 'node_id' => $instance->node_id, 'input' => ['release' => 'r1', 'commit' => $commit], 'status' => OperationStatus::Running]);
+    $operation->update(['status' => OperationStatus::Running, 'state' => [...($operation->state ?? []), 'deployment_id' => $row->id, 'swamp_run_id' => $run]]);
+
+    app(FailUnreadableResultAction::class)->execute($operation, $run, ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()],
+        'Check the checkout', 'skipped');
+
+    $deployment = $row->refresh();
+    expect($operation->refresh()->error_code)->toBe('operation.result_unreadable')
+        ->and($deployment->status)->toBe('failed')
+        ->and($deployment->error_code)->toBe('operation.result_unreadable');
+})->with(['instance.deploy', 'instance.rollback']);
 
 /** A container default with the development Processes worker and mailer, both installed and running. */
 function deployDefaultWithProcesses(): Instance
