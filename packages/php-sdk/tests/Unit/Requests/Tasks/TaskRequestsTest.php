@@ -225,11 +225,11 @@ describe('task responses from recorded Gateway fixtures', function (): void {
     });
 
     it('reads the next cursor of a page, and none on the last page', function (): void {
-        $page = task_fixture_send('task-list/default', new ListTasksRequest(limit: 2));
-        $last = task_fixture_send('task-list/empty', new ListTasksRequest(cursor: '1'));
+        $page = task_fixture_send('task-list/next-page', new ListTasksRequest(limit: 1));
+        $last = task_fixture_send('task-list/default', new ListTasksRequest);
 
         expect($page)->toBeInstanceOf(TaskGroupsResponse::class)
-            ->and($page->nextCursor)->toBe('1')->and($page->toArray()['next_cursor'])->toBe('1')
+            ->and($page->nextCursor)->toBe('4')->and($page->toArray()['next_cursor'])->toBe('4')
             ->and($last)->toBeInstanceOf(TaskGroupsResponse::class)
             ->and($last->nextCursor)->toBeNull()->and($last->toArray())->toHaveKey('next_cursor', null);
     });

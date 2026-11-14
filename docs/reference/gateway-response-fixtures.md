@@ -94,7 +94,7 @@ The `tasks/task-status/capacity` fixture records one task VM host with two task 
 
 The `tasks/task-question-close` fixtures record a question closed as `superseded` and the `tasks.question_closed` refusal of a second close with another status. The SDK and the CLI replay both.
 
-The `tasks/task-list` fixtures record list rows: subtasks carry no `completion_summary` or `fixup_problem`, `default` names a `meta.next_cursor`, and `empty` ends with a null one. The SDK and CLI replay both. See [List tasks](/reference/tasks#list-tasks).
+The `tasks/task-list` fixtures record list rows: subtasks carry no `completion_summary` or `fixup_problem`, `default` and `empty` are last pages with a null `meta.next_cursor`, and `next-page` is a full page at `limit=1` whose `next_cursor` is the id of its only row. The SDK and CLI replay both. See [List tasks](/reference/tasks#list-tasks).
 
 The `tasks/task-agent-show` fixtures record four Gateway snapshots. `default` is a running thread with a saved transcript. `after-sequence` returns a complete snapshot even when a cursor was supplied. `pending` has no recorded transcript. `archived` is a saved transcript from an ended thread. Every cursor is null. `archived` means a stored transcript exists; later turns can replace it. The SDK and CLI replay all four. See [Read a thread](/reference/tasks#read-a-thread).
 

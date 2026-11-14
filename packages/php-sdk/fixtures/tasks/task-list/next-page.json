@@ -1,0 +1,111 @@
+{
+    "schema": 1,
+    "request": "Orbit\\Sdk\\Requests\\Tasks\\ListTasksRequest",
+    "route": "GET /api/v1/tasks",
+    "status": 200,
+    "body": {
+        "data": [
+            {
+                "id": 4,
+                "project_id": 1,
+                "project": "orbit",
+                "project_code": "ORB",
+                "taskable_type": null,
+                "taskable_id": null,
+                "title": "Absorb Commander",
+                "brief": "Run task groups on the Gateway.",
+                "status": "completed",
+                "reviewer_agent_thread_id": null,
+                "pr_url": "https://github.com/hardimpactdev/orbit/pull/450",
+                "watched_pr_url": null,
+                "watched_pr_number": null,
+                "watched_pr_state": null,
+                "assistance_requested": false,
+                "assistance_kind": null,
+                "assistance_question": null,
+                "assistance_reason": null,
+                "implementer_provider": null,
+                "implementer_model": null,
+                "implementer_effort": null,
+                "reviewer_provider": null,
+                "reviewer_model": null,
+                "reviewer_effort": null,
+                "resolved_agents": {
+                    "implementer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "medium",
+                            "source": "gateway"
+                        }
+                    },
+                    "reviewer": {
+                        "provider": {
+                            "value": "claude",
+                            "source": "gateway"
+                        },
+                        "model": {
+                            "value": "claude-opus-5-5",
+                            "source": "gateway"
+                        },
+                        "effort": {
+                            "value": "high",
+                            "source": "gateway"
+                        }
+                    }
+                },
+                "tokens": 182400,
+                "line_diff": 1240,
+                "lines_added": 1010,
+                "lines_deleted": 230,
+                "duration_ms": 5400000,
+                "questions": 0,
+                "escalations": 0,
+                "capacity_wait_reason": null,
+                "vm_power": null,
+                "preview": false,
+                "current_recipe": false,
+                "review": "manual",
+                "review_and_merge": null,
+                "orchestration": "external",
+                "parent_id": null,
+                "subtasks": [
+                    {
+                        "id": 5,
+                        "position": 1,
+                        "title": "Persist groups",
+                        "brief": "Store groups.",
+                        "deliverables": [],
+                        "topology": [],
+                        "status": "completed",
+                        "implementer_agent_thread_id": null,
+                        "tokens": null,
+                        "line_diff": null,
+                        "lines_added": null,
+                        "lines_deleted": null,
+                        "duration_ms": null,
+                        "questions": 0,
+                        "escalations": 0,
+                        "type": "implementation",
+                        "check": null,
+                        "assistance_requested": false,
+                        "assistance_kind": null,
+                        "assistance_question": null,
+                        "assistance_reason": null,
+                        "parent_id": 4
+                    }
+                ]
+            }
+        ],
+        "meta": {
+            "request_id": "0198e15c-bf97-7c23-8f1f-61b8fe67a844",
+            "next_cursor": "4"
+        }
+    }
+}

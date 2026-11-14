@@ -242,14 +242,14 @@ describe('requests', function (): void {
     });
 
     it('pages the list with --limit and --cursor and names the next cursor', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/task-list/default'));
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-list/next-page'));
 
-        expect(Artisan::call('task:list', ['--limit' => '2', '--cursor' => '50', '--no-interaction' => true]))->toBe(0)
-            ->and(Artisan::output())->toContain('More task groups: --cursor=1');
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest && $request->query()->all() === ['limit' => 2, 'cursor' => '50']);
+        expect(Artisan::call('task:list', ['--limit' => '1', '--cursor' => '50', '--no-interaction' => true]))->toBe(0)
+            ->and(Artisan::output())->toContain('More task groups: --cursor=4');
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof ListTasksRequest && $request->query()->all() === ['limit' => 1, 'cursor' => '50']);
 
-        expect(Artisan::call('task:list', ['--json' => true, '--no-interaction' => true]))->toBe(0)
-            ->and(json_decode(Artisan::output(), true))->toMatchArray(['next_cursor' => '1']);
+        expect(Artisan::call('task:list', ['--limit' => '1', '--json' => true, '--no-interaction' => true]))->toBe(0)
+            ->and(json_decode(Artisan::output(), true))->toMatchArray(['next_cursor' => '4']);
     });
 
     it('accepts the VM review wait as a list filter', function (): void {
