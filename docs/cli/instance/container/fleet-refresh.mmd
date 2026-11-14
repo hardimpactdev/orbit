@@ -98,7 +98,7 @@ sequenceDiagram
   %%> - every run: checks the services of the nested Gateway, and Swamp serve and its workers with the Club key, in one read
   %%> - the converge is due: waits until the three agents are online (300 s), converges the base of the three nested Nodes one by one, and reads how many tasks each changed; a failed converge fails the refresh
   %%> - every run: waits for readiness once (Doctor healthy, three agents, the operator), so the seed holds a ready fleet: before the tools when the fleet keeps running, after the start that follows a retaken `base` otherwise
-  %%> - retakes `base` only for the containers whose disk changed: a step that writes a nested disk and reported a change (the migrate that applied one, the grants reload that changed a file), that container; a converge that changed a Node, that Node and the nested Gateway; a missing `base`, that container; a missing or unreadable record or a rule or file that differed, all three
+  %%> - retakes `base` only for the containers whose disk changed: a step that writes a nested disk and reported a change (the grants reload that changed a file, a remint), that container; a converge that changed a Node, that Node and the nested Gateway; a missing `base`, that container; a missing or unreadable record or a rule or file that differed, all three
   %%> - each of them stops first; the others keep running; with all three stopped it writes the owned rules (and a build rule only where it is absent), and it checks every rule; with some stopped the rules only compare, and a difference fails the refresh
   %%> - a run that retakes `base` but did not read the fleet files reads them first, on the running fleet; a file that differs makes `base` due for all three
   %%> - then starts the containers it stopped and waits for readiness, its one readiness wait in that case, so the seed holds a running, ready fleet
@@ -113,6 +113,7 @@ sequenceDiagram
   %%> - the nested Gateway's Swamp tokens live 30 days, and a fleet lives longer: the refresh keeps them young, so no copy stops with expired tokens; an older fleet with only workers a and b gets worker c first, because the remint renews all three
   %%> - the converges run one by one: every step of the converge workflow has a fixed behavior name, so a second run at once waits for the first one's Swamp lock and fails after 60 s
   %%> - a reset restores `base` of all three in seconds; taking `base` costs about 32 s per container, so only what changed is retaken
+  %%> - a migration does not retake `base`: a reset restores `base` and then migrates the nested Gateway forward to its checkout, and restarts it when one applied; a retake for each migrating release cost 95 to 100 s (21810, 21978)
   %%> - the grants, the agent delivery, the token read and the file reads cost about 8 s of every run, and a docs-only release changes none of their inputs
   %%> - the set stays consistent: the nested Gateway's database holds the schema and records each converge, so its `base` is retaken with any other
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state, so `base` is taken with the fleet stopped

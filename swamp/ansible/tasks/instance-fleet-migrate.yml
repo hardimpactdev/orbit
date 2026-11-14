@@ -1,0 +1,22 @@
+---
+# Bring the nested Gateway's schema to its checkout, and restart its services when they must read new code or new tokens
+# (docs/reference/development-containers.md#what-a-refresh-skips). The refresh runs it when the code moved (`fleet_migrate_due`) and
+# restarts when the code moved or the tokens were reminted (`fleet_restart_due`). The reset runs it after every restore of `base`: `base`
+# keeps the schema of the refresh that last took it, not of each migration, so a reset migrates forward to the checkout's schema and
+# restarts only when a migration applied. Laravel's migrations are forward-only, and the code is the checkout's. Only a migrate that
+# applied one changed the nested Gateway's disk; any other output counts as applied. Input: instance-fleet.yml.
+- name: Migrate the nested Gateway
+  when: fleet_migrate_due | bool
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--cwd', intent.fleet.checkout.path ~ '/apps/gateway', '--']
+         + fleet_as_app_user + ['php', 'artisan', 'migrate', '--force'] }}
+  register: fleet_migrate
+  changed_when: "'Nothing to migrate' not in fleet_migrate.stdout"
+# Horizon keeps the code and the run and read tokens of `.env` for its life.
+- name: Restart the services
+  when: fleet_restart_due | bool or fleet_migrate is changed
+  ansible.builtin.command:
+    argv: "{{ ['timeout', '120'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'systemctl', 'restart'] + fleet_gateway_services }}"
+  register: fleet_restart
+  changed_when: true

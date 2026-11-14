@@ -311,13 +311,15 @@ if (command[0] === "incus") {
     }
     if (rest[0] === "php" && rest.includes("migrate")) {
       state.migrated = true;
-      const applied = state.pendingMigration || state.schemaBehind;
+      // `checkoutSchema`: the schema mark the checkout's migrations reach; a disk mark below it has migrations due.
+      const mark = Number(container(name).files?.["/home/orbit/.orbit/schema"] ?? "0");
+      const applied = state.pendingMigration || state.schemaBehind || (name === "nested-gateway" && (state.checkoutSchema ?? 0) > mark);
       delete state.pendingMigration;
       // The nested Gateway's database lives on its own disk: an applied migration moves its schema mark there.
       if (applied && name === "nested-gateway") {
         const gateway = container(name);
         gateway.files ??= {};
-        gateway.files["/home/orbit/.orbit/schema"] = String(Number(gateway.files["/home/orbit/.orbit/schema"] ?? "0") + 1);
+        gateway.files["/home/orbit/.orbit/schema"] = String(Math.max(Number(gateway.files["/home/orbit/.orbit/schema"] ?? "0") + 1, state.checkoutSchema ?? 0));
       }
       done(applied ? "INFO  Running migrations.\n  2026_11_13_000000_add_a_column ........ 12.40ms DONE" : "INFO  Nothing to migrate.");
     }

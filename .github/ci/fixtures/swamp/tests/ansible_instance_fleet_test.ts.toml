@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "13ba71b7e484660e001be6beaab221ac0d69f2113c01e9e11b747921abce2bbf"
+source_sha256 = "df99ff5f9464489e257e01541ddf259b9bd5257ce8cab1b0168ed008b76ebb19"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -23,8 +23,8 @@ cases = [
   "the saved refreshed fleet boundary matches a real first refresh and start",
   "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness",
   "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file",
-  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway",
-  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway",
+  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates",
+  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates",
   "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base",
   "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base",
   "a changed input runs only its due parts: a swamp file the base converge reads converges",
@@ -51,7 +51,7 @@ cases = [
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints",
   "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them",
   "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line",
-  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema",
+  "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema",
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants",
   "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three",
   "a start after base that fails fails the refresh and writes no record",
@@ -103,8 +103,8 @@ inputs = [
   "the saved refreshed fleet boundary matches a real first refresh and start" = 78
   "a refresh whose inputs did not change converges nothing, keeps the fleet running and base as it is, and still waits for readiness" = 25
   "a docs-only release reads no token list, reloads no grants, places no delivery and reads no fleet file" = 16 # ESTIMATE: local 7s x 2.1, rounded up, plus 1s
-  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 38
-  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and retakes base of the nested Gateway" = 39
+  "a changed input runs only its due parts: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates" = 38
+  "the next refresh repeats no part: the code with a pending migration migrates and restarts, converges nothing and keeps base, which a reset migrates" = 39
   "a changed input runs only its due parts: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 28
   "the next refresh repeats no part: the code without a pending migration migrates and restarts, converges nothing and keeps base" = 38
   "a changed input runs only its due parts: a swamp file the base converge reads converges" = 31
@@ -129,7 +129,7 @@ inputs = [
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken" = 27 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a fleet without worker c remints at once and names it incomplete" = 22 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints" = 6 # ESTIMATE: local seconds x 2.1, rounded up, plus 1s
-  "a refresh whose migrate applied one retakes base of the nested Gateway alone, and a reset after it comes up on the new schema" = 49
+  "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema" = 49
   "a grants reload that changed a file retakes base of the nested Gateway alone, whose disk holds the grants" = 27
   "a base retake whose run read no fleet file reads them first, and a file that differs retakes base of all three" = 35 # ESTIMATE: local 16s x 2.1, rounded up, plus 1s
   "a start after base that fails fails the refresh and writes no record" = 25 # ESTIMATE: local 11s x 2.1, rounded up, plus 1s
