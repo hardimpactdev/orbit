@@ -1903,7 +1903,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 86
+cost = 96
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -1965,6 +1965,11 @@ inputs = [
   "test_services_install_the_node_helper_and_pass_only_the_process_files" = 2
   "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 2
   "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 2
+  "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start" = 2
+  "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start" = 2
+  "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file" = 2
+  "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy" = 2
+  "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name" = 2
 
 [[fixture]]
 file = "swamp/tests/instance_migrate_native_faults_test.ts"

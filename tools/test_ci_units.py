@@ -328,6 +328,19 @@ class TableTest(unittest.TestCase):
             result = units.plan([f['file']], budget, fixtures, defaults)
             self.assertIn(f['file'], {u.split('#')[0] for u in names(result) + result['deferred']})
 
+    def test_required_planner_rejects_live_python_cost_drift_even_when_unselected(self):
+        file = 'swamp/tests/instance_clone_test.py'
+        collect = units.collect
+        current = collect(file)
+        for cases in ([*current['cases'], 'test_added_without_cost'], current['cases'][1:]):
+            with self.subTest(cases=len(cases)):
+                def changed_population(path):
+                    return {**current, 'cases': cases} if path == file else collect(path)
+                with patch.object(units, 'collect', side_effect=changed_population):
+                    with self.assertRaisesRegex(ValueError, file + ': case_costs must name every retained case'):
+                        budget, fixtures, defaults = units.configuration()
+                        units.plan(['docs/mission.md'], budget, fixtures, defaults)
+
     def test_new_gate_files_get_default_cost_and_invalid_long_python_is_refused(self):
         with tempfile.TemporaryDirectory() as scratch:
             path = Path(scratch) / 'checks.toml'

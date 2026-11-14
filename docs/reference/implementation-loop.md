@@ -215,6 +215,8 @@ Each unit has a 180-second ceiling; a unit that exceeds it fails with its name, 
 
 The case inventory in `tools/tests/ci-fixture-cases.json` records measured registrations. Inventory edits select only the fixtures whose entries differ between the merge base and PR head, including added or removed entries for fixtures that still exist. Edits that only change JSON formatting select no fixture bodies.
 
+Required planning also collects the live names of every Python fixture with `case_costs`, without running test bodies. It checks the complete name set and cost total through the same validator as Main full set, even when the PR does not select that file. Stored inventory names alone cannot satisfy this check.
+
 A PR that adds or renames a Deno case updates its entry's `cases` and `source_sha256` and the fixture's `cost` and `case_costs` together. `bin/ci-units collect --file <test>` prints the entry. A stale entry fails the fixture before any case runs: `Stale fixture case population`. A renamed case also renames its `case_costs` key: a cost for a name that the entry does not register fails `bin/ci-units plan` with `invalid case_costs`. A new case in a fixture without `case_costs` needs only the entry.
 
 A playbook expression that parses command output has a recorded output case in `swamp/tests/fixtures/command-output/cases.yaml`. Renaming its task or adding such a parser without a case fails `swamp/tests/ansible_command_output_test.py`.

@@ -1559,7 +1559,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "730caf88cd33ccd8c54e5815722767a7b51009b9c48fdbd881d2193c32bdbe28",
+    "source_sha256": "c327c31ecd2ecff92412da8865fca49f7bc86912b7bedce5e241bc2ed5c6f9f2",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1574,6 +1574,11 @@
       "test_schedule_cleanup_listing_error_refuses_before_clone_boot",
       "test_clone_writes_proxy_and_own_acl_and_reject_defaults_before_start",
       "test_boot_files_reach_the_copy_before_its_first_start_and_before_the_node_services_apply",
+      "test_the_browser_files_and_an_empty_linker_cache_reach_a_copy_of_an_old_seed_before_its_first_start",
+      "test_the_node_root_ca_reaches_the_copy_under_its_hashed_name_before_its_first_start",
+      "test_an_intent_cannot_smuggle_a_delete_through_a_plain_boot_file",
+      "test_another_source_path_and_a_missing_node_ca_fail_by_name_before_the_copy",
+      "test_a_seed_that_trusts_an_older_root_loses_its_old_hashed_name",
       "test_a_running_copy_and_a_clone_without_boot_files_push_none",
       "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement",
       "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry",
