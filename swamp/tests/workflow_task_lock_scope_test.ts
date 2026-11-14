@@ -61,3 +61,19 @@ Deno.test("a sync names its group only for the clone and the bundle on 209", () 
   const sync = (group: number) => ({ operation_id: 900 + group, intent: { group_id: group, node_id: node, ssh_execution: ssh } });
   assertEquals(scoped("workflow-operation-task-sync.yaml", sync(41), sync(42)), ["Bundle the refs", "Clone the refs"]);
 });
+
+Deno.test("a copy's base names its group only for the base phase, which runs up to 600 s", () => {
+  const base = (group: number) => ({ node_id: node, group_id: group, phase: "base", intent: { ...workspace, ssh_execution: ssh },
+    git_authorization: { vault: "orbit-control-inputs", key: "task-sync-token-0b8a4c1e-5d1f-4c55-9d35-1c0f6a2b7e10" } });
+  assertEquals(scoped("workflow-task-copy-base.yaml", base(41), base(42)), ["Bring in the base"]);
+});
+
+Deno.test("the sync passes its group to both calls of the copy's base", () => {
+  const calls = steps("workflow-operation-task-sync.yaml").filter((step) => step.task.workflowIdOrName === "task-copy-base");
+  assertEquals(calls.map((call) => call.name), ["Bring in the base", "Discard the base scratch"]);
+  for (const call of calls) {
+    const group = call.task.inputs?.group_id;
+    assertEquals(typeof group, "string", `${call.name} passes no group_id`);
+    assertEquals(Number(cel.evaluate(expression(String(group)), { inputs: { intent: { group_id: 42 } } })), 42, call.name);
+  }
+});

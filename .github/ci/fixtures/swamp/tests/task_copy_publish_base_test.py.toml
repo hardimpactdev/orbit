@@ -1,0 +1,28 @@
+file = "swamp/tests/task_copy_publish_base_test.py"
+slices = false
+cost = 15
+source_sha256 = "4c47f326a1f38ae48077d4a15a8175913492beb5a81bd66f2127f32388cab4b0"
+cases = [
+  "test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing",
+  "test_a_branch_behind_without_a_shared_path_is_stated_and_publishes",
+  "test_a_branch_behind_with_a_shared_path_and_no_conflict_is_stated_and_publishes_once",
+  "test_a_real_conflict_is_refused_with_its_paths_before_the_push",
+  "test_a_read_that_fails_never_states_a_base_or_lets_the_push_run",
+  "test_only_a_copy_reads_its_base_with_the_push_authorization_and_known_intent_keys"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/workflows/workflow-operation-task-publish.yaml",
+  "swamp/extensions/behaviors/operations/task-repository/**",
+  "swamp/extensions/behaviors/operations/tasks/publish.ts"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_branch_level_with_main_is_zero_behind_and_overlaps_nothing" = 2
+"test_a_branch_behind_without_a_shared_path_is_stated_and_publishes" = 2
+"test_a_branch_behind_with_a_shared_path_and_no_conflict_is_stated_and_publishes_once" = 4
+"test_a_real_conflict_is_refused_with_its_paths_before_the_push" = 2
+"test_a_read_that_fails_never_states_a_base_or_lets_the_push_run" = 2
+"test_only_a_copy_reads_its_base_with_the_push_authorization_and_known_intent_keys" = 3

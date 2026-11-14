@@ -23,6 +23,8 @@ A task copy's publish also carries the waiver lines of its proposed pull request
 
 Orbit merges no pull request of a group whose workspace is a task copy; a person merges it on GitHub. See [No merge](/reference/tasks#no-merge).
 
+A copy's publish also states its base. Right before the push it reads the default branch head on origin and reports `base_commit`, the merge base of the checked commit and that head, `default_commit`, `behind_by` and `overlapping_paths`, the paths that both sides changed since the base, at most 100 in at most 3,000 bytes, with `overlapping_more` counting the rest. A pull request body gets a fixed `## Base` section with the same facts after your text. Being behind, with or without overlapping paths, never refuses. Only a real merge conflict fails with `tasks.publish_conflict`, which names the conflicting paths in `conflicting_paths`, and nothing is pushed: bring main into the copy with [`task:sync`](/cli/task/sync#a-task-copy), merge or rebase, check again and publish. See [the base of a copy publish](/reference/tasks#the-base-of-a-copy-publish).
+
 ## How it works
 
 <div className="flow-at" data-chart="task/publish"></div>

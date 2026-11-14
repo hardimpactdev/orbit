@@ -83,13 +83,24 @@ final readonly class TaskInstanceWorkspace
     {
         // Readiness first: a copy whose create still runs has no start commit yet, and it is only not ready.
         $this->requireReady();
-        $start = $this->instance->starting_commit;
+        $start = $this->start();
         $environment = InstanceContainer::environmentFile($this->instance);
-        if (! is_string($start) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $start) !== 1 || ! str_starts_with($environment, self::Root.'/')) {
+        if (! str_starts_with($environment, self::Root.'/')) {
             throw new ResourceOperationException('tasks.no_workspace', 'The task copy has no recorded start commit.', 409);
         }
 
         return [...$this->intent(), 'start' => $start, 'environment_path' => substr($environment, strlen(self::Root) + 1)];
+    }
+
+    /** The copy's recorded start commit, the seed's commit that its branch began at. */
+    public function start(): string
+    {
+        $start = $this->instance->starting_commit;
+        if (! is_string($start) || preg_match('/\A(?:[a-f0-9]{40}|[a-f0-9]{64})\z/D', $start) !== 1) {
+            throw new ResourceOperationException('tasks.no_workspace', 'The task copy has no recorded start commit.', 409);
+        }
+
+        return $start;
     }
 
     /**

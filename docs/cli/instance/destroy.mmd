@@ -235,7 +235,7 @@ sequenceDiagram
   opt container clone
     SW->>N: Delete the container<br/>Ansible · tags remove
     %%> What it does:
-    %%> - removes the container, volume, snapshots, Processes, T3, proxy, owned ACL, firewall rules and mirror
+    %%> - removes the container, volume, snapshots, Processes, T3, proxy, owned ACL, firewall rules, mirror and, for a task copy, the Node scratch `/var/tmp/orbit-task-base-<id>` that a cancelled `task:sync` may leave; it holds no credential
     %%> - requires successful Route withdrawal when present, and owned database removal; other Instances stay
     Note over SW: Read container removal
     %%> Failure:

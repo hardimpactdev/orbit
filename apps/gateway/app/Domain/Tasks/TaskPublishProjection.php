@@ -52,6 +52,37 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
     }
 
     /**
+     * The base a task copy's publish states: the merge base of the checked commit and the default head at publish time, how far
+     * behind, and the paths both sides changed, bounded with the count beyond. A task VM publish, or a run that started on the
+     * workflow before the base step, has no statement and records none of the fields.
+     *
+     * @return array<string,mixed>
+     */
+    private static function base(mixed $captured): array
+    {
+        if (! is_string($captured) || trim($captured) === '') {
+            return [];
+        }
+        $facts = ValidatedData::object(json_decode($captured, true, flags: JSON_THROW_ON_ERROR));
+
+        return array_intersect_key($facts, array_flip(['base_commit', 'default_commit', 'behind_by', 'overlapping_paths', 'overlapping_more']));
+    }
+
+    /**
+     * The paths of a refused conflict, from the check's line `tasks.publish_conflict: "a", "b" and N more`, wherever it stands in the
+     * step's detail: at most 100 paths in at most 3,000 bytes, so the line fits the detail the Gateway keeps, then the count.
+     *
+     * @return array{conflicting_paths: list<string>, conflicting_more: int}
+     */
+    private static function conflict(string $detail): array
+    {
+        preg_match('/^tasks\.publish_conflict: (.*?)(?: and ([1-9][0-9]*) more)?$/m', $detail, $match);
+        $paths = json_decode('['.($match[1] ?? '').']', true);
+
+        return ['conflicting_paths' => is_array($paths) ? array_values(array_filter($paths, is_string(...))) : [], 'conflicting_more' => (int) ($match[2] ?? 0)];
+    }
+
+    /**
      * Swamp's own error when a step waited too long for a behavior lock that another run held, on any step: the whole detail is that one
      * line, for a lock file under `.swamp/data` (docs/reference/tasks.md#a-refused-automatic-publish). It names the holder unless the holder let
      * go at the deadline. A step that ran out of its own time reads `<step> timed out after <n>s` and is no lock timeout.
@@ -79,15 +110,16 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
             if ($status === OperationStatus::Succeeded) {
                 $pull = isset($native['pull_receipt']) ? ValidatedData::object(json_decode(ValidatedData::string($native['pull_receipt']), true, flags: JSON_THROW_ON_ERROR)) : [];
                 $result = ['branch' => $operation->input['branch'], 'commit' => $operation->input['commit'],
-                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null];
+                    'pull_request_number' => $pull['pull_request_number'] ?? null, 'pull_request_url' => $pull['pull_request_url'] ?? null, ...self::base($native['base'] ?? null)];
             } elseif (in_array($status, [OperationStatus::Failed, OperationStatus::Interrupted], true)) {
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
-                $code = self::lockTimeout($detail) ? TaskDonePublication::LockTimeoutCode : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')))));
+                $code = self::lockTimeout($detail) ? TaskDonePublication::LockTimeoutCode : ($step === 'Check the base' && is_string($detail) && preg_match('/^tasks\.publish_conflict: /m', $detail) === 1 ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed'))))));
                 $data['error_code'] = $code;
-                $result = ['error_code' => $code];
+                // A conflict names its paths, as the check's one line lists them.
+                $result = ['error_code' => $code, ...($code === 'tasks.publish_conflict' ? self::conflict(ValidatedData::string($detail)) : [])];
             } else {
                 $result = [];
             }

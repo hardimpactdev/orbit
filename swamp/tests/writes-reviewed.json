@@ -85,6 +85,7 @@
   "@nckrtl/task-maintenance-input#synchronized": "Compares supplied lock versions and writes only Swamp verification data.",
   "@nckrtl/task-maintenance-input#verify": "Compares supplied locks and audit reports and writes only Swamp verification data.",
   "@nckrtl/task-provision-data#revoke": "Summarizes supplied token revoke outcomes; it performs no revoke request.",
+  "@nckrtl/task-publication-data#base": "Reads the saved base files of the run's scratch and writes only the Swamp base statement.",
   "@nckrtl/task-publication-data#imported": "Compares supplied bundle identities and writes only Swamp verification data.",
   "@nckrtl/task-publication-data#pushed": "Reads saved push replies and writes only the Swamp outcome.",
   "@nckrtl/task-publication-data#verify": "Compares supplied workspace observations and writes only Swamp verification data.",

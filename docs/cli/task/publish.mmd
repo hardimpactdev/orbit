@@ -3,6 +3,7 @@ sequenceDiagram
   %% Tightened: flow-tighten 2026-11-02, rule 16 (no tip read: a push without force refuses a divergent tip and pushes nothing for an identical one); rule 22 (no shipped scripts: task VM work is `@swamp/ssh exec` argv, 209 work is inline `git` and `gh api`; one workspace check, since import checks the bundled commit and tree).
   %% Task copy (2026-11-14): a group whose workspace is a task copy exports through its container's workspace phase; the push stays on the worker. The .env Orbit wrote never leaves a copy: the range from the copy's start is checked before the mint. docs/reference/tasks.md#task-copy.
   %% Task group modes (ADR 0257): a copy group's done check publishes without --check, by a person's release or by the task:pr-when-done tick (docs/cli/task/pr-when-done.mmd), with the same admission and run. docs/reference/tasks.md#task-group-modes.
+  %% Base (2026-11-14): a copy's run fetches the default branch into its scratch repository after the mint and before the push, states the checked base, how far it is behind and the overlapping paths, and refuses only a real merge conflict. It reads only intent keys the publish already has. docs/reference/tasks.md#the-base-of-a-copy-publish.
   %% status: migrated
   %% command: task:publish
   %% kind: tasks.publish
@@ -128,6 +129,22 @@ sequenceDiagram
   %%> - the Gateway checks the Operation, the run and the repository, mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two vault values; the reply holds the vault descriptors only
   %%> - a prep run passes its own run id to this step, so the token is minted minutes before the push, not when the prep run was admitted
   %%> - no step writes the token into the task VM; the VM receives no credential, in the bundle, the Git configuration or the environment
+  opt a task copy
+    SW->>GH: Read the base
+    %%> How:
+    %%> - one bounded fetch of the default branch head into the scratch repository, with the minted token as an extra header, so the head is the one at publish time
+    %%> - `git merge-base` of the candidate and that head is the checked base; `git rev-list --count candidate..<default>` is `behind_by`
+    %%> - the overlapping paths are the paths that both the candidate and the default branch changed since the base
+    %%> - `git merge-tree --write-tree` merges the two in the repository alone; no checkout and no workspace is touched
+    %%> - of the intent it reads only `remote`, `base` and `node_id`, which the publish intent already had; the candidate is the bundle it imported
+    %%> - it writes its statement and exit code to the private scratch; Swamp keeps no stderr of a failed command step
+    Note over SW: Check the base
+    %%> How:
+    %%> - typed data reads the statement: `base_commit`, `default_commit`, `behind_by` and `overlapping_paths`, at most 100 paths in at most 3,000 bytes, with `overlapping_more` counting the rest
+    %%> - a conflict of the merge fails with `tasks.publish_conflict`, naming at most 100 conflicting paths in at most 3,000 bytes, so the line fits the 4,096 bytes of detail the Gateway keeps, and the count beyond, before the push; any other error fails with `tasks.publish_failed`
+    %%> - a copy pushes only after this step succeeded; a skip of it is never a pass
+    %%> - `behind_by` and overlapping paths never refuse on their own
+  end
   SW->>GH: Push the branch
   %%> How:
   %%> - one bounded push without force; authorization is a vault-backed extra header in the environment
@@ -142,6 +159,9 @@ sequenceDiagram
     %%> How:
     %%> - typed data selects an open PR or creation and writes unchanged caller prose into a JSON input file
     %%> - with `--draft` the creation carries `draft: true`; an update of an open PR sends only title and body, so a PR keeps its state
+    %%> - for a task copy, a fixed `## Base` section follows the caller's body: the base commit, the default head, how far behind, and the overlapping paths or none
+    %%> - an Orbit marker opens the section, so a caller body that carries an earlier one gets it replaced: a re-publish states it once
+    %%> - the section follows the text the .env check read: the caller's body and its waiver lines; the whole stays within 65,536 characters, naming only the count of the paths when their list does not fit
     SW->>GH: Write the PR
     %%> How:
     %%> - one bounded native command on the worker; no shipped script
@@ -171,6 +191,7 @@ sequenceDiagram
     GH-->>SW: Branch pushed · head sha
     %%> Returns:
     %%> - the branch, commit, and the PR number and URL, or null PR fields for a push alone
+    %%> - for a task copy also `base_commit`, `default_commit`, `behind_by`, `overlapping_paths` and `overlapping_more`; a run that started on the workflow before the base step has none of them and no `## Base` section
     SW-->>GW: Run succeeded<br/>terminal event
     %%> How the Gateway learns it:
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
@@ -193,6 +214,7 @@ sequenceDiagram
     %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
     %%> - a commit of a task copy holds the `.env` content or one of its values under any name: `tasks.publish_secret_content`; remove it from the branch history and check again
     %%> - the content check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
+    %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, with `conflicting_paths` and `conflicting_more`; nothing is pushed; merge or rebase in the copy, check again and publish
     %%> - a step waited 60 s for a behavior lock that another run held: `tasks.publish_lock_timeout`; a step after the push can fail so too, so the branch may be pushed already
     SW--xGW: Run failed<br/>error_code, failed step
     %%> The Gateway reads:
