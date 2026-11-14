@@ -866,10 +866,10 @@ jobs:
       role: swamp
     queueTimeout: 30
     dependsOn:
+    # The revoke is guarded off when no token was minted, and each path guards off the other path's scratch step;
+    # a skipped dependency must still let the end check run.
     - step: Revoke the token
-      condition:
-        type: completed
-    # Each path guards off the other path's scratch step; a skipped dependency must still let the end check run.
+      condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove remote scratch
       condition: {type: or, conditions: [{type: completed}, {type: skipped}]}
     - step: Remove local scratch
