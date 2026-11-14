@@ -133,7 +133,9 @@ A deploy step is a named command that runs during a deployment. Each production 
 
 Use `project:dev-deploy-step:list`, `project:dev-deploy-step:create`, `project:dev-deploy-step:update`, and `project:dev-deploy-step:destroy`, with `--project=ID`. The API collection is `/api/v1/projects/{project}/dev-deploy-steps`; GET lists, POST creates, and PATCH or DELETE on `/{name}` changes or removes one step. MCP exposes the same operations.
 
-Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lowercase letters, digits, and hyphens, with a letter or digit at each end, and are at most 63 characters. Commands are nonempty UTF-8 strings of at most 16 KiB without NUL bytes. Timeouts are 1–900 seconds, default 300. `required` is a JSON boolean, default `true`; the CLI accepts `--required=true` or `--required=false`. PATCH accepts any of command, timeout, required, or placement; omitted fields stay unchanged.
+Each step has `name`, `command`, `timeout_seconds`, and `required`. Names use lowercase letters, digits, and hyphens, with a letter or digit at each end, and are at most 63 characters. Commands are nonempty UTF-8 strings of at most 16 KiB without NUL bytes. Timeouts are 1–900 seconds, default 300. `required` is a JSON boolean, default `true`; the CLI accepts `--required=true` or `--required=false`. PATCH accepts any of command, timeout, required, inputs, or placement; omitted fields stay unchanged.
+
+A step may also list `inputs`: at most 16 repository-relative paths of files or folders, such as `composer.json`, `composer.lock` or `apps/web/bun.lock`. Each path is 1–255 characters, does not start with `/`, and has no `..` segment, NUL byte or glob character (`*`, `?`, `[`). The paths are unique. Responses return `inputs` as a list, empty when the step has none. On PATCH, a list replaces the inputs, and `null` or `[]` clears them.
 
 A new step appends unless `before` or `after` names another step in this Project's development deploy list. The fields are exclusive. Updates without placement keep their position. Names cannot be renamed. Each list permits at most 32 steps and 3,600 seconds of total timeout. Unknown names, duplicate names, invalid fields, unknown placement, self-placement, and limit violations are refused without changing the list. Node access follows the Project's owning Node. Activity records never include commands.
 
@@ -144,6 +146,10 @@ Development commands are captured as named vault execution copies and delivered 
 At run start the Gateway mints a repository-scoped Contents read token with the GitHub App and writes it into a 0600 credential file for the fetch. The next step removes the file. A public origin, or one without an App installation, fetches anonymously. GitHub CLI source access is refused for this native path. Command output is discarded so application secrets cannot enter native history.
 
 Required steps must pass before Orbit records the commit as deployed. A failed or timed-out best-effort step (`required: false`) does not fail the deployment, and the files it wrote stay. Use required steps for installs, builds, and migrations, and best-effort steps for cache warm-up.
+
+#### Step inputs
+
+A container deployment skips a step with `inputs` when nothing it depends on changed. Orbit compares the Git object ID of each input at the deployed commit, and the step's command, with the values at the step's last successful run in that workspace. When all are the same, the step does not run. A changed input or command, an input that does not exist at the commit, or no recorded successful run runs the step. A step without `inputs` always runs, and a checkout deployment runs every step.
 
 ### Production deploy steps
 
@@ -610,7 +616,7 @@ The kind uses the direct writer by default. The per-kind setting cannot select t
 
 Default development checkouts use `operation-instance-deploy-direct`. Every Node action of this kind is one official `@swamp/ssh` command from 209, as the admitted Node account with the stored host keys. The shared Vite+ manager setup uses official cfgmgmt resources and bounded command arguments.
 
-The Gateway freezes the Node placement, repository, branch, ordered Project command digests and timeouts. It copies the exact commands and the fetch credential to Operation-scoped vault keys before it starts one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
+The Gateway freezes the Node placement, repository, branch, and the ordered Project steps with their command digests, timeouts and inputs. It copies the exact commands and the fetch credential to Operation-scoped vault keys before it starts one native run. Command bytes, target dotenv values, registry settings and GitHub tokens stay out of workflow inputs and history. Development rollback refuses `deployment_config.unavailable` because development checkouts have no retained releases.
 
 The run has six parts:
 
