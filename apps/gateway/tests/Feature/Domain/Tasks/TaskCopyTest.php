@@ -201,10 +201,18 @@ describe('the decision point', function (): void {
     it('starts a task of a Project whose default is a container as a copy, and a default without a container keeps the task VM', function (): void {
         $default = copySource('app', nested: false);
         $project = $default->project;
-        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Copy)
-            ->and(copyRefusal(fn () => InstancePlacement::taskWorkspace($project)))->toBe('operation.kind_unavailable 503');
+        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Copy);
         InstanceRuntime::query()->where('instance_id', $default->id)->delete();
         expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Vm);
+    });
+
+    it('leaves the task VM writers and a group without a copy on the VM path when the default of a flag-off Project is a container', function (): void {
+        $project = copySource('app', nested: false)->project;
+        InstancePlacement::taskWorkspace($project);
+        $group = copyGroup($project);
+        $group->update(['status' => TaskGroupStatus::Running]);
+
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe('task_vm.project_unsupported 409');
     });
 });
 

@@ -48,9 +48,9 @@ final readonly class InstancePlacement
     }
 
     /**
-     * Where a task of the Project runs: a copy of its default Instance for a nested-fleet Project or a Project whose default is a
+     * Where a new task of the Project starts: a copy of its default Instance for a nested-fleet Project or a Project whose default is a
      * container, a task VM for a Project whose default is a host checkout (docs/reference/development-containers.md#tasks-in-an-instance-container).
-     * The one place that decides it for tasks.
+     * The one place that decides it for a start. Later work follows the group's own workspace: a group that owns a copy works in it.
      */
     public static function taskRuntime(Project $project): TaskRuntime
     {
@@ -58,11 +58,14 @@ final readonly class InstancePlacement
             ? TaskRuntime::Copy : TaskRuntime::Vm;
     }
 
-    /** A writer of a task workspace on a task VM: task provision and admission, and a proof's workspace. A task copy has no VM. */
+    /**
+     * A writer of a task workspace on a task VM: task provision and admission, and a proof's workspace. No task VM can hold a nested-fleet
+     * Project's work. Every other Project keeps its VM path here, whatever its default is.
+     */
     public static function taskWorkspace(Project $project): void
     {
-        if (self::taskRuntime($project) === TaskRuntime::Copy) {
-            throw new ResourceOperationException('operation.kind_unavailable', 'A task of this Project runs in a copy of its default Instance, which has no task VM.', 503);
+        if ($project->nested_fleet) {
+            throw self::unavailable();
         }
     }
 

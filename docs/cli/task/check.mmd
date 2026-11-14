@@ -28,7 +28,7 @@ sequenceDiagram
   %%> - the task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - subtask 7 is the current open subtask, else `tasks.subtask_not_current`
   %%> - a baseline only before any implementer started, else `tasks.baseline_done`
-  %%> - a group that owns a recorded container Instance workspace skips the task VM wake and VM ownership checks; `task:start` of a nested-fleet Project creates that ownership with a task copy
+  %%> - a group that owns a recorded container Instance workspace skips the task VM wake and VM ownership checks; `task:start` of a Project whose default is a container, or of a nested-fleet Project, creates that ownership with a task copy
   %%> - that workspace needs a running runtime, else `tasks.instance_not_running`, and a recorded branch, else `tasks.no_workspace`
   %%> - that workspace refuses a handoff that needs hosted CI (`tasks.instance_hosted_check_unavailable`), before a check row exists
   %%> - its baseline has an empty setup list: the copied seed already ran the Project's setup steps
