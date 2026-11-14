@@ -175,7 +175,9 @@ describe('the recorded Incus project', function (): void {
                 'root' => ['type' => 'disk', 'path' => '/', 'pool' => 'orbit-instances', 'size' => '40GiB'],
                 'eth0' => ['type' => 'nic', 'name' => 'eth0', 'network' => 'orbitinst0', 'ipv4.address' => $runtime->bridge_address,
                     'security.port_isolation' => 'true', 'security.acls' => 'orbitinst0-proxy,'.$runtime->container_name,
-                    'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject'],
+                    'security.acls.default.egress.action' => 'reject', 'security.acls.default.ingress.action' => 'reject',
+                    // The NIC accepts only its own IPv4 and MAC address, as create, clone and migrate write it.
+                    'security.ipv4_filtering' => 'true', 'security.mac_filtering' => 'true'],
                 'orbit-runtime' => ['type' => 'disk', 'source' => '/opt/orbit-runtime', 'path' => '/opt/orbit-runtime', 'readonly' => 'true', 'shift' => 'true'],
                 'orbit-agent' => ['type' => 'disk', 'source' => '/opt/orbit-agent', 'path' => '/opt/orbit-agent', 'readonly' => 'true', 'shift' => 'true'],
                 ...($clone ? ['t3' => ['type' => 'proxy', 'listen' => 'tcp:10.44.0.7:'.$runtime->t3_port, 'connect' => 'tcp:'.$runtime->bridge_address.':3773', 'nat' => 'true']] : []),

@@ -196,6 +196,7 @@ swamp/ansible/instance_migrate_*.py  instance:migrate
 swamp/ansible/instance_migrate_files.py  instance:migrate
 swamp/ansible/instance_migrate_links.py  instance:migrate
 swamp/ansible/instance_network.py  instance:create instance:migrate
+swamp/ansible/instance-nic-filters.json  instance:create instance:migrate
 swamp/ansible/instance_node_runtime.py  instance:create instance:migrate
 swamp/ansible/instance_node_services.py  instance:create instance:migrate
 swamp/ansible/operation-instance-create.yml  instance:create

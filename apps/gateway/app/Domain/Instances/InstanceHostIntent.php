@@ -32,6 +32,15 @@ final readonly class InstanceHostIntent
 
     public const string NicAcl = self::Network.'-proxy';
 
+    /**
+     * The address filters of every Instance NIC: it accepts only its own IPv4 and MAC address. Swamp holds the same keys in
+     * `instance_network.py` (Python) and `instance-nic-filters.json` (Ansible); `swamp/tests/instance_clone_test.py` keeps the three
+     * equal (docs/reference/development-containers.md#network).
+     *
+     * @var array<string, string>
+     */
+    public const array NicFilters = ['security.ipv4_filtering' => 'true', 'security.mac_filtering' => 'true'];
+
     /** The Incus storage pool the Node provides: ZFS, so a copy is a clone, or `dir` on a nested proof Node. */
     public const string Pool = 'orbit-instances';
 
