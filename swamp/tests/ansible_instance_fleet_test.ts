@@ -1189,6 +1189,7 @@ Deno.test({
         intentRead,
         ...compareReads,
         ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
+        shrinkCall + "check " + shrinkArgs,
         ...readyCalls,
         toolsCall,
         recordWrite,
