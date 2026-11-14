@@ -487,7 +487,6 @@ describe('a cancel while a database copy runs', function (): void {
     })->with([
         'completion fill succeeded' => ['step_completed', 'instance.complete', 'server-database-fill'],
         'completion fill failed' => ['step_failed', 'instance.complete', 'server-database-fill'],
-        'clone create fill succeeded' => ['step_completed', 'instance.create', 'clone-server-database-fill'],
         'host create fill failed' => ['step_failed', 'instance.create', 'server-database-fill'],
     ]);
 
@@ -579,7 +578,7 @@ describe('a cancel while a database copy runs', function (): void {
             ->and($operation->state['native_cancel_requested_at'] ?? null)->not->toBeNull()
             ->and(array_column($socket->frames, 'type'))->not->toContain('workflow.cancel')
             ->and(app(NativeRunCancellation::class)->awaitsForwarding($operation))->toBeFalse();
-    })->with([['instance.complete', 'server-database-fill'], ['instance.create', 'clone-server-database-fill']]);
+    })->with([['instance.complete', 'server-database-fill'], ['instance.create', 'server-database-fill']]);
 
     it('forwards a cancel recorded while the start was in flight as soon as the run binds', function (): void {
         Queue::fake();

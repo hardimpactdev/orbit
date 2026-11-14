@@ -29,7 +29,8 @@ final readonly class NativeRunCancellation
      * `NativeRunCancellationTest` ties each name and bound to the workflow files.
      */
     public const array CopySteps = [
-        'instance.create' => ['server-database-fill' => 600, 'clone-server-database-fill' => 600],
+        // A clone's create copies no database: its completion does.
+        'instance.create' => ['server-database-fill' => 600],
         'instance.complete' => ['server-database-fill' => 600],
     ];
 

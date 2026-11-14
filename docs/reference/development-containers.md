@@ -8,7 +8,7 @@ covers:
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts}
-  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php,app/Jobs/RecordWorkspaceBaseline.php}
+  - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py},app/Infrastructure/Instances/ContainerWorkspaceRead.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
 ---
 
@@ -734,13 +734,32 @@ A web-serving Project without a PHP version refuses with `project.source_default
 
 ### Create
 
-`orbit instance:create PROJECT NODE NAME` clones the default Instance. It copies the default container with `incus copy`, a ZFS clone, and clones the default database through the database family. Then it starts the container and creates the Instance's branch from the default branch.
+`orbit instance:create PROJECT NODE NAME` clones the default Instance. A clone's create ends when the user can start a thread: the checkout, T3 and its registration. Its [completion](#complete-a-clone) does the rest. The create copies the default container with `incus copy`, a ZFS clone. Then it starts the container and creates the Instance's branch from the default branch. A nested-fleet clone gets its Club key right after that start.
 
-Two steps then start at the same time. The workspace step writes the `.env` and starts the Processes. The T3 step first writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
+Two steps then start at the same time. The workspace step runs the `checkout` part of the workspace phase: the branch, the checkout mark and `.env`. The T3 step first writes the agent settings, the note links and `/etc/orbit/instance`, then starts T3 and adds the T3 project at `/srv/workspace`. The T3 step never writes the workspace, and T3 runs Git with `GIT_OPTIONAL_LOCKS=0`, so it takes no lock that the checkout needs. So it does not wait for the workspace.
 
-Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy, the Club key, the fleet start and the database steps. So both start when the copy ends, or when the last database step or the fleet start ends. In a clone with a nested fleet, T3 thus starts after the fleet start, beside the workspace. T3 reads nothing of the fleet or the database steps.
+Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). Both steps are in the level after the copy and the Club key, so both start when the Club key step ends or skips.
 
-The sessions check waits for both lines, because it checks the branch, the checkout mark and every Process unit. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The Route publishes in its own job. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+The sessions check waits for both lines, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+
+The levels and their measured seconds, with about 1.2 s of dispatch in each step:
+
+| Job | Steps by level | Seconds |
+| --- | --- | --- |
+| (start) | Gateway admission, Swamp start | 3.8 |
+| `input` | the intent | 1.3 |
+| `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-workspace` beside `clone-t3` · `clone-sessions` · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.2 · 2.6 · 1.4 · 1.3 |
+| `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure, and the run-folder cleanup · `accepted` | 1.3 · 0.3 · 0 |
+
+A plain clone's create succeeds about 24 seconds after the click. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
+
+When the run succeeds, the Gateway reads the [workspace baseline](#workspace-work-state) over SSH, before its transaction. Then, in one transaction, it records the T3 server, writes the baseline and turns the create `succeeded`. The clone stays `source_resolved` with its `starting_commit`, and its runtime is `running`. In the same transaction, after the create row is terminal, the Gateway admits `instance.complete` with the Instance lock. The create's result names it in `completion_operation_id`. The completion's vault copy and its Swamp start run after the commit.
+
+The create's admission captures the clone's Route publication as the completion will, and keeps nothing of it: a Route that the capture refuses, such as a Cluster Route without a recorded Router (`cluster.router_required`), refuses the create before anything is recorded.
+
+The same capture runs again at the completion's admission, because fleet state can change in between: a Cluster's Router, the stored environment, an Ingress firewall. If it refuses then, the projection records a failed `instance.complete` with that code, `failed_step: complete` and the recovery `instance:complete`; any other error at that point is recorded the same way with `operation.admission_failed`. The create still succeeds and names that completion, so Conn, the failure alerts and a task copy see an ordinary failed completion.
+
+A clone is fully set up only when its `status` is `active`. Only a succeeded completion sets it. Every reader of `active` keeps its meaning: deploy, migrate, sleep, renewal and task copies. `orbit instance:create --wait-active` follows both Operations and exits 0 only on `active`.
 
 A clone starts at the commit of the default's newest seed snapshot, with its dependencies installed. It copies no development deploy commands to the execution vault and runs no deploy step. Its branch is the matching origin branch, fetched on the Node, or a new branch at the seed's commit.
 
@@ -792,25 +811,27 @@ Clones are built for the Nodes of the [build list](#the-build-list).
 | T3 port | The proxy device `t3` in NAT mode, from the Node's WireGuard address and the T3 port to port 3773 |
 | UFW | Under the comment prefix `orbit:instance-<id>-`: a route deny from the task VM range, then a route allow to port 3773; and the rule to the database server |
 | Agent files | `/home/agent/.config/orbit/model.env` with the placeholder key from the vault, Codex's and Claude Code's settings that point at the forwarder, the note links, and `/etc/orbit/instance` |
-| Processes | FrankenPHP's unit, rewritten for the clone's own address |
+| Processes | In the [completion](#complete-a-clone): FrankenPHP's unit, rewritten for the clone's own address, and the Project's Process units |
 | T3 | Its first start, a check of `/.well-known/t3/environment` within 30 seconds, and the T3 project `/srv/workspace` |
 | Registration | [T3 registration](#t3-registration-and-pairing), from the run's result |
 
-A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container and withdraw the Route. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
+A failed or cancelled create keeps its reservation, runtime, and any container, workspace, owned databases, test databases and role until the owner acts. A refused retry removes none of them. After work starts, Orbit attempts to stop the container. A clone's create publishes no Route and creates no database, so there is nothing to withdraw. Compensation can fail; its step then stays failed. Shared service endpoint records and rules may remain even after destroy until endpoint lifecycle work is live.
 
-Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. The PostgreSQL template copy runs again on a resume, so a resume starts from the default's data again. A resume also issues new T3 sessions. The `Orbit Gateway` session of the failed run stays valid in T3 until the cleanup after the next renewal revokes it; its `Orbit Swamp` session stays valid until it ends.
+A run that succeeded can still fail the create in the Gateway: when the baseline read fails, the create fails with `instance.workspace_baseline_unavailable` and `failed_step: register`. The T3 server is not recorded and no completion starts. The run already ended without its container stop, so the container keeps running; a retry runs the create again over it, and every phase of the create accepts a running copy.
+
+Its Operation reports `recovery.state=retained_for_retry` and names `instance:create` with the same Project, Node, name and options, using a new idempotency key. It also names `instance:destroy INSTANCE --yes --force`. A failed or cancelled default create reports the same retry path and marks destroy unavailable; container-default removal is not built. A resume also issues new T3 sessions. When it succeeds, it admits a new completion, also when an earlier completion of the clone failed or never ran. The `Orbit Gateway` session of the failed run stays valid in T3 until the cleanup after the next renewal revokes it; its `Orbit Swamp` session stays valid until it ends.
 
 A resume never moves a branch that this Instance checked out. After its first checkout, the workspace phase checks that the branch and the commit are the fetched ones. Then it writes the mark `/var/lib/orbit/workspace-checkout`, owned by root, with the Instance id and that commit. A default never writes this mark, and a mark that names another Instance does not count. So the first run checks out the fetched commit, even when the copy is already on a branch with the same name.
 
-When the mark names this Instance, a resume skips the fetch and the checkout, and commits on the branch stay. The sessions check then needs the branch name and the mark, not the commit. The result's `commit` is the commit of the mark, so `starting_commit` stays the commit that the workspace started at, not a later commit of the user.
+When the mark names this Instance, a resume skips the fetch and the checkout, and commits on the branch stay. The sessions check needs only the branch name and the mark, not the commit. The result's `commit` is the commit of the mark, so `starting_commit` stays the commit that the workspace started at, not a later commit of the user.
 
-When an admitted Project Process fails with `instance.container_process_inactive`, `recovery.retry.requires=project_process_definition` tells clients that the definition needs a change first. Built-in unit failures and other failures keep the plain retry shape.
+A clone's create checks no Process unit. A dead Process fails the completion's `check` step with `instance.container_process_inactive` and its `process_failure` receipt. When the Process comes from a Project definition, the completion's recovery says `retry.requires=project_process_definition`: change or remove the definition, then run `instance:complete`. Its admission installs the Project's development definitions as they are then.
 
 A deployment of the default can replace the admitted seed before the copy. The copy then refuses with `instance.default_seed_moved`, and the same command takes the new seed. A clone already copied does not need its seed: on ZFS, Incus keeps a deleted snapshot's blocks while a clone uses them.
 
 ### Complete a clone
 
-[`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([ADR 0256](/decisions/0256-a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, the Route and a check. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
+[`instance:complete`](/cli/instance/complete) is the second Operation of a clone create, kind `instance.complete` ([why](#a-clone-create-is-two-operations)). It does the part of a create that the user does not wait for: the clone's database, a nested fleet, the Processes, the Route and a check. The `checkout` and `T3` parts stay in the create. A clone is fully set up when its `status` is `active`, and only a succeeded completion makes it so.
 
 The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing. The input is the create's admitted database plan and Processes, and a Route publication captured again from the current site catalog. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
 
@@ -827,9 +848,9 @@ The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob
 
 Success turns the Route `active`, then the Instance `active` with `provisioning_step=active` and `first_setup_pending=false`, in one transaction. A failed or cancelled run withdraws a Route that it published, and keeps the clone `source_resolved` with `failed_step` and `error_code`. The runtime stays `running` and the Conn environment stays registered, so the user keeps the thread. The result's `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone as for a failed create.
 
-The completion holds the Route publication Nodes for the whole run, like a create. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
+The completion holds the Route publication Nodes for the whole run. A clone's create captures no Route publication, so it holds no Node, and two creates admitted together never wait on each other. The budget is 1,800 seconds: the 600-second fill and the 900-second fleet start with margin.
 
-Today the create still runs every step itself and makes the clone `active`. The create hands over to the completion in a later change, so no clone reaches this kind in normal use yet: an `active` clone refuses with `instance.complete_unavailable`.
+The create's terminal projection admits the first completion. A completion that ends `succeeded` or `failed` moves a [task copy](/reference/tasks#task-copy) on, as a create's end does: `active` makes its task run, and a failure fails it.
 
 ### Clone the database
 
@@ -894,11 +915,13 @@ Work is what lies beyond the Instance's baseline:
 
 Build output that appears after the create counts too. It stays work until the Project's `.gitignore` covers it.
 
-The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. When a create or clone of a non-default container succeeds, a queued job records the local branch heads, the stash ids and the untracked set. They go to the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
+The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. It holds the local branch heads, the stash ids and the untracked set, in the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 
-The job normally runs seconds after the create ends; work done in those seconds falls into the baseline. A job that starts more than 60 seconds after the end records nothing, because the workspace may then hold work of its own. When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
+A clone's create reads it before the transaction that ends the create, and writes it with `workspace_baseline_at` in that transaction. The user can reach T3 only through a pairing, and Conn pairs only after it reads the create `succeeded`, so the baseline holds no work of the user. The completion writes no tracked or unignored file, so the read stays `clean` while it runs. A failed read fails the create with `instance.workspace_baseline_unavailable`. A resumed create keeps a recorded baseline.
 
-An Instance without a recorded baseline, such as one made before baselines existed, compares with the Project default as it is at the time of the read.
+When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
+
+An Instance without a recorded baseline, such as one made before baselines existed or one moved into a container by a migration, compares with the Project default as it is at the time of the read.
 
 A commit counts only when the default does not reach it from its local branches, so a default branch that moved on since the copy still covers what the clone inherited. A stash counts when the default does not hold it. Its answer says `baseline: default_now`, and all its untracked files count. If the default cannot be read, the answer is the plain state, `baseline: none`. A default Instance has no baseline: its answer is always the plain state.
 
@@ -1838,6 +1861,22 @@ A container gets full outbound access, but only through one proxy on its Node, s
 ### Registration from the result
 
 A step may call the Gateway only to sign or to mint. A container that could call the Gateway would act as its Node.
+
+### A clone create is two Operations
+
+Decided on 2026-11-13 by the owner of the create experience. The user needs only the checkout, `.env` and T3 to start work; the Processes, the database fill, a nested fleet and the Route can follow.
+
+One Operation has one run, one budget and one terminal projection ([How an operation runs](/reference/operations#how-an-operation-runs)). So the part that can follow is a second Operation of its own kind, `instance.complete`. The create's terminal projection admits it in the same transaction, with the Instance lock. One field, `active`, means fully set up for every reader, and one action admits the completion for every caller.
+
+The thread opens about 10 seconds sooner. "Fully set up" comes about 10 seconds later, because two runs start and stage their folders.
+
+A nested-fleet clone keeps its Club key in the create, right after the container's first start, because the copy's inner Swamp serve starts with the container and reads the key at its first start. Its fleet start is in the completion.
+
+Rejected:
+
+- A child workflow of the create: measured 8 seconds slower on a plain clone. The child must wait for the checkout; the Route and database steps started beside the container before.
+- A ready mark inside one run: it saves the same seconds for the user, but gives one Operation two meanings of "done" and needs a mid-run Gateway endpoint.
+- `instance:setup`: it runs Project setup steps on a checkout, not a clone's services.
 
 ## Evidence
 

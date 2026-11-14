@@ -4,26 +4,35 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
-use App\Domain\Logs\LogRedactor;
+use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Processes\ProcessInstanceOperation;
 use App\Domain\Routes\RouteStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Infrastructure\Swamp\NativeStepFailure;
+use App\Infrastructure\Instances\ContainerWorkspaceRead;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
-use App\Jobs\RecordWorkspaceBaseline;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
-/** Project the original native terminal receipt once; no running phase callbacks. */
+/**
+ * Project the original native terminal receipt once; no running phase callbacks. A container clone's create ends when its thread is
+ * usable: its success records the T3 server and the workspace baseline, keeps the clone `source_resolved`, and admits `instance.complete`
+ * in the same transaction (docs/reference/development-containers.md#create).
+ */
 final readonly class DevelopmentInstanceCreateProjection implements DirectOperationProjection
 {
+    /** A clone whose run succeeded fails its create when the Gateway cannot read its workspace baseline before the user can work. */
+    public const string BaselineUnavailable = 'instance.workspace_baseline_unavailable';
+
     public function __construct(private DirectOperation $direct) {}
 
     public function input(Operation $operation): array
@@ -33,13 +42,26 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
 
     public function apply(Operation $operation, array $data): Operation
     {
-        // A clone's T3 session is read from the vault before the transaction, so no lock waits on Swamp.
+        // A clone's T3 session is read from the vault, and its workspace baseline from its Node, before the transaction, so no lock waits
+        // on the network.
         $container = ValidatedData::object($operation->input['direct_provisioning'] ?? [])['container'] ?? null;
         $clone = $container === null ? null : (ValidatedData::object($container)['clone'] ?? null);
-        $server = $clone !== null && $data['status'] === 'succeeded'
-            ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? [])) : null;
+        $alreadyActive = (ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true;
+        $handover = $clone !== null && $data['status'] === 'succeeded' && ! $alreadyActive;
+        $server = $handover ? $this->server(ValidatedData::object(ValidatedData::object($clone)['t3']), ValidatedData::object($data['result'] ?? [])) : null;
+        $baseline = $handover && ! $operation->status->terminal() ? $this->baseline($operation) : null;
+        if ($baseline === false) {
+            // The run succeeded, but nothing proves what the workspace held before the user could work: the create fails, and no
+            // completion starts. The run ended without its container stop, so the container keeps running for a retry or a destroy.
+            $data = [...$data, 'status' => 'failed', 'error_code' => self::BaselineUnavailable,
+                'failure' => ['failed_step' => 'clone-register', 'detail' => 'The workspace baseline could not be read.', 'stderr_recorded' => false],
+                'result' => [...array_diff_key(ValidatedData::object($data['result'] ?? []), ['t3' => true]), 'ready' => false,
+                    'failed_step' => 'register', 'error_code' => self::BaselineUnavailable]];
+            $server = $baseline = null;
+            $handover = false;
+        }
 
-        return DB::transaction(function () use ($operation, $data, $container, $server): Operation {
+        return DB::transaction(function () use ($operation, $data, $container, $server, $baseline, $handover): Operation {
             $operation->refresh();
             $this->direct->assertRun($operation, ValidatedData::string($data['run_id']));
             $result = ValidatedData::object($data['result'] ?? []);
@@ -48,17 +70,6 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);
             }
             unset($result['club_key']);
-            if (($result['failed_step'] ?? null) === 'fleet') {
-                // A nested-fleet clone's fleet phase says why in the run's result file, the only record of a step that exits nonzero:
-                // it becomes the failure's detail, redacted again, as a deployment's fleet phase does (ContainerDeployOutcome).
-                if (is_string($result['detail'] ?? null) && $result['detail'] !== '') {
-                    $native = ValidatedData::object($data['failure'] ?? []);
-                    $data['failure'] = ['failed_step' => is_string($native['failed_step'] ?? null) ? $native['failed_step'] : 'clone-fleet',
-                        'detail' => mb_strcut(app(LogRedactor::class)->redact($result['detail'], []), 0, NativeStepFailure::MaximumBytes, 'UTF-8'),
-                        'stderr_recorded' => true];
-                }
-                unset($result['detail']);
-            }
             if (is_array($operation->input['branch_selection'] ?? null)) {
                 $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
                 $result['branch'] = $selection->target;
@@ -68,8 +79,7 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['mail_keys_set'] = ValidatedData::stringList($operation->input['mail_keys_set'] ?? []);
             }
             if ($container !== null && in_array($data['status'], ['failed', 'cancelled'], true)) {
-                $recovery = $this->recovery($operation, ValidatedData::object($container), $data['status'] === 'failed'
-                    ? [...$result, 'error_code' => $data['error_code'] ?? $result['error_code'] ?? null] : []);
+                $recovery = $this->recovery($operation, ValidatedData::object($container));
                 if ($recovery === null) {
                     return $this->direct->project($operation, $data, $result);
                 }
@@ -96,25 +106,30 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                     $instance->forceFill(['environment_owned_keys' => ValidatedData::stringList($input['environment_keys'] ?? [])])->save();
                 }
                 $route = ($input['route_id'] ?? null) === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
-                if ($data['status'] === 'succeeded') {
+                if ($handover && $server !== null) {
+                    // A clone's thread is usable: it runs, the Conn layer records its T3 server, and the baseline records what the workspace
+                    // held before any pairing (development-containers.md#workspace-work-state). It stays `source_resolved`: only its
+                    // completion makes it, and its Route, active.
+                    $instance->update(['failed_step' => null, 'error_code' => null]);
+                    $runtime = $instance->runtime()->lockForUpdate()->firstOrFail();
+                    $runtime->update(['power_state' => InstanceRuntimePowerState::Running,
+                        ...(is_array($baseline) && $runtime->workspace_baseline === null ? ['workspace_baseline' => $baseline, 'workspace_baseline_at' => now()] : [])]);
+                    app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
+                } elseif ($data['status'] === 'succeeded') {
                     // An active routed Instance needs its active Route, so the Route turns active first.
                     $route?->update(['status' => RouteStatus::Active, 'sites_published' => true, 'failed_step' => null, 'error_code' => null]);
                     $instance->update(['status' => InstanceState::Active, 'provisioning_step' => 'active', 'first_setup_pending' => false, 'failed_step' => null, 'error_code' => null,
                         ...($container === null ? [] : ['development_projection_pending' => false])]);
-                    if ($server !== null) {
-                        // A clone runs, and the Conn layer records its T3 server from the run's result.
-                        $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running]);
-                        app(InstanceLifecycleContributions::class)->projectCreate($instance, $server);
-                    } elseif ($container !== null) {
+                    if ($container !== null) {
                         // A container default runs, and clones start at the seed snapshot the run took of its commit.
                         $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running, 'seed_commit' => ValidatedData::string($result['commit'])]);
                     }
-                    if ($container !== null && $instance->name !== DefaultInstanceName::Name) {
-                        // What the new workspace holds now is not work of its own (development-containers.md#workspace-work-state).
-                        RecordWorkspaceBaseline::dispatch($instance->id);
-                    }
                 } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                     $instance->update(['failed_step' => $result['failed_step'] ?? 'source', 'error_code' => $data['error_code'] ?? 'operation.cancelled']);
+                    if (($data['error_code'] ?? null) === self::BaselineUnavailable) {
+                        // The run ended without its container stop: the copy runs until a retry or a destroy.
+                        $instance->runtime()->firstOrFail()->update(['power_state' => InstanceRuntimePowerState::Running]);
+                    }
                     if (($result['failed_step'] ?? null) === 'route') {
                         $route?->update(['failed_step' => 'native-create', 'error_code' => $result['error_code'] ?? 'instance.create_route_failed']);
                     }
@@ -123,8 +138,12 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                     ValidatedData::nullableString($data['error_code'] ?? null), $result);
                 $container = ValidatedData::object($input['direct_provisioning'])['container'] ?? null;
                 if (is_array($container) && in_array($data['status'], ['succeeded', 'failed', 'cancelled'], true)) {
-                    app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
-                        ValidatedData::nullableString($data['error_code'] ?? null));
+                    // A clone's Processes start in its completion, whose end records them; a create that failed only at its baseline read
+                    // started none.
+                    if (! $handover && ($data['error_code'] ?? null) !== self::BaselineUnavailable) {
+                        app(ContainerProcesses::class)->complete($instance, $container['processes'] ?? [], $data['status'] === 'succeeded',
+                            ValidatedData::nullableString($data['error_code'] ?? null));
+                    }
                     if ($data['status'] === 'succeeded') {
                         // A clone installs, but does not start, a Process that is stopped on its default.
                         $result['processes_stopped'] = $instance->processes()->where('desired_state', DesiredProcessState::Stopped)
@@ -132,19 +151,55 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                     }
                 }
             }
+            $ended = $operation->status->terminal();
+            $operation = $this->direct->project($operation, $data, $result);
+            if ($handover && ! $ended) {
+                // The create row is terminal and has let go of the Instance lock; the completion takes it in this same transaction, so
+                // nothing takes the Instance in between. Its vault copy and its Swamp start run after the commit.
+                // The admission runs in its own savepoint. A refusal, such as a Route whose Cluster lost its Router since the create's
+                // admission, is recorded as a failed completion, so the create still ends and names it; any other error is recorded the
+                // same way with `operation.admission_failed`, rather than leave the create to the reconciler until its budget ends.
+                $complete = app(StartInstanceCompleteAction::class);
+                try {
+                    $completion = DB::transaction(fn (): Operation => app(OperationIdempotency::class)->suspended(
+                        fn (): Operation => $complete->admit($instance, $operation->triggered_by, $operation->request_id)));
+                } catch (ResourceOperationException $refusal) {
+                    $completion = $complete->refused($instance, $operation, $refusal->errorCode, $refusal->getMessage());
+                } catch (Throwable $error) {
+                    report($error);
+                    $completion = $complete->refused($instance, $operation, 'operation.admission_failed', 'The completion could not be admitted.');
+                }
+                app(OperationStore::class)->change($operation, ['result' => [...($operation->result ?? []), 'completion_operation_id' => $completion->id]]);
+                $operation->refresh();
+            }
 
-            return $this->direct->project($operation, $data, $result);
+            return $operation;
         });
+    }
+
+    /**
+     * The workspace baseline of a clone whose run succeeded: the recorded one stays (a resumed create never hides the user's work), a new
+     * one is read over SSH, and false means the read failed.
+     *
+     * @return array{heads: list<string>, stashes: list<string>, untracked: list<string>|null}|false|null
+     */
+    private function baseline(Operation $operation): array|false|null
+    {
+        $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
+        if ($instance->runtime()->first()?->workspace_baseline !== null) {
+            return null;
+        }
+
+        return app(ContainerWorkspaceRead::class)->baseline($instance) ?? false;
     }
 
     /**
      * The reservation is intentional; name the existing recovery paths without claiming physical cleanup.
      *
      * @param  array<string, mixed>  $container
-     * @param  array<string, mixed>  $result
      * @return array<string, mixed>|null
      */
-    public function recovery(Operation $operation, array $container, array $result = []): ?array
+    public function recovery(Operation $operation, array $container): ?array
     {
         $input = $operation->input;
         $retained = Instance::query()->whereKey($operation->target_id)->where('id', $input['instance_id'])
@@ -155,10 +210,6 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
             return null;
         }
         $clone = ($container['clone'] ?? null) !== null;
-        $failure = is_array($result['process_failure'] ?? null) ? $result['process_failure'] : [];
-        $requiresDefinition = ($result['error_code'] ?? null) === 'instance.container_process_inactive'
-            && is_int($failure['process_id'] ?? null)
-            && in_array($failure['process_id'], array_column(is_array($container['processes'] ?? null) ? $container['processes'] : [], 'id'), true);
 
         return [
             'state' => 'retained_for_retry',
@@ -166,7 +217,6 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 'command' => 'instance:create',
                 'project_id' => $input['project_id'], 'node_id' => $input['node_id'], 'name' => $input['name'],
                 'reuse_original_options' => true, 'new_idempotency_key' => true,
-                ...($requiresDefinition ? ['requires' => 'project_process_definition'] : []),
             ],
             'destroy' => [
                 'command' => 'instance:destroy', 'instance_id' => $operation->target_id,

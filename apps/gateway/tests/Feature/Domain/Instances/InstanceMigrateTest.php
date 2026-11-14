@@ -44,7 +44,6 @@ use App\Domain\InstanceMigration\MigrateSchedules;
 use App\Domain\Instances\ContainerProcesses;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
-use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\DirectInstanceDestroyIntent;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
@@ -54,6 +53,7 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Instances\NodeServiceTargetOperation;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
@@ -896,8 +896,8 @@ describe('the databases of a move', function (): void {
             expect($exception->errorCode)->toBe('swamp.start_uncertain');
         }
         $clone = Operation::query()->where('kind', 'instance.create')->latest('id')->firstOrFail();
-        $input = app(DevelopmentInstanceCreateProjection::class)->input($clone);
-        $fill = $input['intent']['server_database']['fill'];
+        // The clone's completion runs the fill, from the database plan its create admitted (NativeInstanceCompleteInput).
+        $fill = app(NativeDevelopmentInstanceInput::class)->serverDatabase($clone, $clone->input['direct_provisioning']['server_database'])['fill'];
 
         expect($fill)->toContain('CREATE DATABASE "tool_feature" TEMPLATE "tool_default" OWNER "tool_feature"')
             ->and($fill)->toContain('ALTER DATABASE "tool_default" ALLOW_CONNECTIONS true');

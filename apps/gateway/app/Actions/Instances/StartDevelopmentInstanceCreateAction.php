@@ -224,9 +224,15 @@ final readonly class StartDevelopmentInstanceCreateAction
             }
             if ($route !== null) {
                 // The Route publishes the Instance awake only when this run starts every one of its Processes.
-                $input = [...$input, ...app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id,
+                $capture = app(NativeRouteAdmission::class)->capture('route.create', $route, ['mode' => 'converge'], $node->id,
                     preserveEnvironment: true, preparedWorkloads: true,
-                    wakePreparedWorkloads: ! $container && ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists())];
+                    wakePreparedWorkloads: ! $container && ! $instance->processes()->whereNotIn('id', array_column($input['members'], 'id'))->exists());
+                // A clone's create publishes no Route: its completion captures the publication again and holds the Route Nodes
+                // (StartInstanceCompleteAction), so this create keeps no capture, holds no Node and never waits for another Route write.
+                // The capture here still refuses, before anything is recorded, a Route that the completion could not publish.
+                if (! $source instanceof Instance) {
+                    $input = [...$input, ...$capture];
+                }
             }
             // A clone runs no deploy steps: the default ran them before its seed snapshot.
             $steps = $container && $provisioning['already_active'] !== true
@@ -239,9 +245,9 @@ final readonly class StartDevelopmentInstanceCreateAction
                 $input['direct_provisioning']['container']['branch_selection'] = $selection->toArray();
             }
             if ($steps !== null) {
-                // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts. A clone runs
-                // no deploy step but adds its database copy and its T3 start.
-                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null ? 0 : 180);
+                // F8: no container create has run yet, so the run starts at 30 minutes, plus the deploy step timeouts and a default's
+                // own database. A clone runs no deploy step and no database step: its completion copies the database.
+                $input['run_budget_seconds'] = 1800 + array_sum(array_column($steps, 'timeout_seconds')) + ($server === null || $source instanceof Instance ? 0 : 180);
 
                 return $this->operations->execute('instance.create', 'instance', $instance->id, $node->id, $input, $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
             }

@@ -34,6 +34,15 @@ use Throwable;
  */
 trait FollowsOperations
 {
+    /** The Operation that the last followOperation call followed to its end, for a command that follows another one after it. */
+    protected ?OperationResponse $followedOperation = null;
+
+    /** A command that follows a second Operation after this one prints only that one's JSON. */
+    protected function writesOperationJson(OperationResponse $operation): bool
+    {
+        return true;
+    }
+
     /** A command whose Ctrl-C and SIGTERM must end the work, not only the follow, returns true. */
     protected function interruptCancelsOperation(): bool
     {
@@ -126,7 +135,10 @@ trait FollowsOperations
         }
 
         $final = $this->sendOrThrow($connector, new ShowOperationRequest($operation->id), OperationResponse::class);
-        $this->writeJson($final->toArray());
+        $this->followedOperation = $final;
+        if ($this->writesOperationJson($final)) {
+            $this->writeJson($final->toArray());
+        }
 
         return $final->succeeded() ? self::SUCCESS : self::FAILURE;
     }
@@ -142,6 +154,7 @@ trait FollowsOperations
 
             return $operation;
         });
+        $this->followedOperation = $operation;
         $outcome = $this->operationOutcome($operation, $verb);
         $progress->complete('native', $outcome instanceof ProgressOutcome ? $outcome->state : match ($operation->status) {
             'succeeded' => ProgressState::Success,

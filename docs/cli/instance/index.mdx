@@ -37,7 +37,7 @@ Placement commands create, adopt, inspect, and remove an Instance on one Node. I
 
 | Command | Result |
 | --- | --- |
-| [`instance:create`](/cli/instance/create) | Create a development Instance on an app-dev Node with its own database (a copy of the default one, or on `--database-server`) and, for a container clone of a default with a Valkey target, its own Valkey user, run its setup steps, start its Processes, and create its Route. A failed create withdraws the Route it published and keeps the Instance, marked failed. |
+| [`instance:create`](/cli/instance/create) | Create a development Instance on an app-dev Node with its own database (a copy of the default one, or on `--database-server`), run its setup steps, start its Processes, and create its Route. A container clone's create ends when its thread is usable; its [completion](/cli/instance/complete) does the database, a Valkey user, the Processes and the Route. A failed create withdraws the Route it published and keeps the Instance, marked failed. |
 | [`instance:complete`](/cli/instance/complete) | Finish the setup of a container clone: its database, a nested fleet, its Processes, its Route and a check. Retry it after a failed completion. |
 | [`instance:register`](/cli/instance/register) | Adopt the current Git checkout or worktree as a managed Instance. |
 | [`instance:setup`](/cli/instance/setup) | Run the Project setup steps for one development Instance. |

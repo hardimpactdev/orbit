@@ -123,45 +123,35 @@ Deno.test("Route primitive and shared publication children use one209selector", 
     }
 });
 
-Deno.test("a clone publishes its prepared Route beside workspace without waiting for app startup", async () => {
+Deno.test("a clone's completion publishes its prepared Route beside the services without waiting for app startup", async () => {
+    // A clone's create publishes no Route: its completion does (docs/cli/instance/complete.mmd).
     const create = await steps("operation-instance-create");
-    const early = create.find((step) => step.name === "clone-route")!;
-    assert(early, "clones need their own early publication path");
-    assertEquals(early.dependsOn!.map((item) => item.step), [
-        "clone-route-csr",
-    ]);
-    assertEquals(early.task.workflowIdOrName, "operation-route-create");
-    assertEquals(early.task.inputs?.prepared, "${{ string(inputs.node_id) }}");
+    assert(!create.some((step) => step.name.startsWith("clone-route")), "a clone's create has no Route step");
     const normal = create.find((step) => step.name === "route")!;
     assert(
         normal.dependsOn!.some((item) => item.step === "container-processes"),
     );
     const finish = create.find((step) => step.name === "finish")!;
-    assert(
-        String(finish.task.inputs?.route).includes(
-            'steps["clone-route"].status',
-        ),
-    );
-    const { flow } = await read("operation-instance-create");
+    assertEquals(finish.task.inputs?.route, '${{ "route" in steps ? steps.route.status : "skipped" }}');
+
+    const complete = await steps("operation-instance-complete");
+    const early = complete.find((step) => step.name === "route")!;
+    assertEquals(early.dependsOn!.map((item) => item.step), ["route-csr"]);
+    assertEquals(early.task.workflowIdOrName, "operation-route-create");
+    assertEquals(early.task.inputs?.prepared, "${{ string(inputs.node_id) }}");
+    const { flow } = await read("operation-instance-complete");
     const chain = flow.jobs.find((job) =>
-        job.steps.some((step) => step.name === "clone-container")
+        job.steps.some((step) => step.name === "clone-services")
     )!;
     const publication = flow.jobs.find((job) =>
-        job.steps.some((step) => step.name === "clone-route")
+        job.steps.some((step) => step.name === "route")
     )!;
     assert(chain !== publication);
     assert(
         chain.steps.every((step) =>
-            !(step as Step).dependsOn?.some((item) =>
-                item.step === "clone-route"
-            )
+            !(step as Step).dependsOn?.some((item) => item.step === "route")
         ),
     );
-
-    const withdraw = create.find((step) => step.name === "withdraw-route")! as
-        & Step
-        & { guard: string };
-    assert(withdraw.guard.includes('steps["clone-route"].status != "skipped"'));
 });
 
 // Match the Swamp pin; execute the shipped expressions, never a copied predicate.

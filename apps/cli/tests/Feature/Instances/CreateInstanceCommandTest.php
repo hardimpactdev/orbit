@@ -12,8 +12,12 @@ use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
+use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
+use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
+use Saloon\Http\PendingRequest;
 use Saloon\Http\Request;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -128,6 +132,68 @@ describe('instance:create database server', function (): void {
             'database_server' => 'beast-mysql',
         ]);
     });
+});
+
+/**
+ * A clone's create that names its completion, the completion with `$completionStatus`, and the Instance with `$instanceStatus`.
+ *
+ * @return array<class-string, mixed>
+ */
+function clone_create_responses(string $completionStatus, string $instanceStatus): array
+{
+    $create = instance_operation_payload('instance.create', ['instance_id' => 5, 'ready' => true, 'commit' => str_repeat('a', 40), 'completion_operation_id' => 902]);
+    $completion = instance_operation_payload('instance.complete', ['instance_id' => 5, 'ready' => $completionStatus === 'succeeded'],
+        ['id' => 902, 'status' => $completionStatus, ...($completionStatus === 'failed' ? ['failed_step' => 'clone-check', 'error_code' => 'instance.container_process_inactive'] : [])]);
+    $meta = ['request_id' => instance_request_id()];
+
+    return [
+        CreateInstanceRequest::class => MockResponse::make(['data' => $create, 'meta' => $meta], 202),
+        ShowRealtimeRequest::class => MockResponse::make([], 503),
+        ShowOperationRequest::class => static fn (PendingRequest $request): MockResponse => MockResponse::make(['data' => str_ends_with($request->getUrl(), '/902') ? $completion : $create, 'meta' => $meta]),
+        ShowInstanceRequest::class => MockResponse::make(['data' => [...instance_payload(), 'status' => $instanceStatus], 'meta' => $meta]),
+    ];
+}
+
+describe('instance:create of a container clone', function (): void {
+    it('ends at the create by default and names the completion in its result', function (): void {
+        $mock = MockClient::global(clone_create_responses('running', 'source_resolved'));
+
+        $exitCode = Artisan::call('instance:create', ['project' => '3', 'node' => '4', 'name' => 'feature', '--json' => true, '--no-interaction' => true]);
+        $output = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        expect($exitCode)->toBe(0)
+            ->and([$output['kind'], $output['status'], $output['result']['completion_operation_id']])->toBe(['instance.create', 'succeeded', 902]);
+        $mock->assertNotSent(ShowInstanceRequest::class);
+
+        expect(Artisan::call('instance:create', ['project' => '3', 'node' => '4', 'name' => 'feature', '--no-interaction' => true]))->toBe(0)
+            ->and(preg_replace('/\s+/', ' ', Artisan::output()))->toContain('Completion: 902 Active when it succeeds: orbit operation:show 902');
+    });
+
+    it('with --wait-active follows the completion and exits 0 only when the Instance is active', function (string $completion, string $instance, int $exit): void {
+        MockClient::global(clone_create_responses($completion, $instance));
+
+        $exitCode = Artisan::call('instance:create', ['project' => '3', 'node' => '4', 'name' => 'feature', '--wait-active' => true, '--json' => true, '--no-interaction' => true]);
+        $output = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        // One JSON document: the last Operation the command followed, the completion.
+        expect($exitCode)->toBe($exit)
+            ->and([$output['id'], $output['kind'], $output['status']])->toBe([902, 'instance.complete', $completion]);
+    })->with([
+        'completed and active' => ['succeeded', 'active', 0],
+        'completion failed' => ['failed', 'source_resolved', 1],
+        'completed but not active' => ['succeeded', 'source_resolved', 1],
+    ]);
+
+    it('with --wait-active reads the Instance after a create that has no completion', function (string $instance, int $exit): void {
+        $mock = MockClient::global([...instance_operation_responses(CreateInstanceRequest::class, 'instance.create'),
+            ShowInstanceRequest::class => MockResponse::make(['data' => [...instance_payload(), 'status' => $instance], 'meta' => ['request_id' => instance_request_id()]])]);
+
+        $exitCode = Artisan::call('instance:create', ['project' => '3', 'node' => '4', 'name' => 'default', '--wait-active' => true, '--json' => true, '--no-interaction' => true]);
+
+        expect($exitCode)->toBe($exit)
+            ->and(json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR)['kind'])->toBe('instance.create');
+        $mock->assertSent(ShowInstanceRequest::class);
+    })->with([['active', 0], ['source_resolved', 1]]);
 });
 
 describe('instance registration project options', function (): void {

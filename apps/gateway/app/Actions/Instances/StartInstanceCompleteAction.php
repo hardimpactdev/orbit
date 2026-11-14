@@ -6,9 +6,11 @@ namespace App\Actions\Instances;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Routes\NativeRouteAdmission;
 use App\Domain\Shared\ResourceOperationException;
@@ -34,7 +36,13 @@ final readonly class StartInstanceCompleteAction
             return $replay;
         }
 
-        return DB::transaction(fn (): Operation => $this->admit($instance, $caller, $requestId));
+        return DB::transaction(function () use ($instance, $caller, $requestId): Operation {
+            // A retry installs the Processes from the Project's development definitions as they are now, as a create retry does; the
+            // first completion, which the create's projection admits, keeps the ones its create admitted.
+            app(InstantiateProjectRuntimeDefinitionsAction::class)->captureForDevelopment(Instance::query()->lockForUpdate()->findOrFail($instance->id));
+
+            return $this->admit($instance, $caller, $requestId);
+        });
     }
 
     /**
@@ -76,6 +84,27 @@ final readonly class StartInstanceCompleteAction
 
         return $this->operations->execute(self::Kind, 'instance', $instance->id, $instance->node_id, $input, $caller, $requestId,
             lockKey: OperationStore::lockKey('instance', $instance->id));
+    }
+
+    /**
+     * A completion that the create's projection could not admit: recorded as a failed `instance.complete` at once, in the projection's
+     * transaction, with the recovery of a failed run. So the create names it, and Conn, the alerts and a task copy see an ordinary failed
+     * completion. No run starts and no lock is taken.
+     */
+    public function refused(Instance $instance, Operation $create, string $code, string $detail): Operation
+    {
+        $store = app(OperationStore::class);
+        $operation = app(OperationIdempotency::class)->suspended(fn (): Operation => $store->create(self::Kind, 'instance', $instance->id, $instance->node_id,
+            ['instance_id' => $instance->id, 'create_operation_id' => $create->id, 'route_id' => $create->input['route_id'] ?? null],
+            $create->triggered_by, $create->request_id));
+        $instance->update(['failed_step' => 'complete', 'error_code' => $code]);
+        $store->change($operation, ['status' => OperationStatus::Failed, 'error_code' => $code, 'failed_step' => 'complete',
+            'started_at' => now(), 'finished_at' => now(), 'lock_key' => null,
+            'result' => ['instance_id' => $instance->id, 'ready' => false, 'failed_step' => 'complete', 'error_code' => $code,
+                'recovery' => InstanceCompleteProjection::recovery($instance)],
+            'state' => [...($operation->state ?? []), 'native_failure' => ['failed_step' => 'complete', 'detail' => $detail, 'stderr_recorded' => false]]]);
+
+        return $operation->refresh();
     }
 
     public static function refuse(string $message): never

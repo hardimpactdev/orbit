@@ -348,7 +348,9 @@ Conn follows that Operation with `GET /operations/{id}`. Conn Operation show als
 
 Operation show returns the same recorded `steps` as core Operation show, in recorded order: `name`, `job`, `status`, `started_at` and `finished_at`. Steps contain no command output, secrets or environment values. Both endpoints accept `after_sequence` but currently return all recorded steps.
 
-Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. `clone-t3` runs beside `clone-workspace`, so it can start and end before `clone-workspace` ends; `clone-register` always comes after both. Renaming or removing any of these four names is a breaking change for Conn.
+Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. `clone-t3` runs beside `clone-workspace`, so it can start and end before `clone-workspace` ends; `clone-register` always comes after both. Renaming or removing any of these four names is a breaking change for Conn. `clone-workspace` runs only the checkout part now: the branch, the checkout mark and `.env`.
+
+A succeeded `instance.create` means the thread is usable: T3 is registered and the workspace is checked out. It does not mean fully set up. The create's result names the clone's completion in `completion_operation_id`; the database, the Processes, a nested fleet and the Route follow there, and only the Instance's `status: active` means fully set up ([Complete a clone](/reference/development-containers#complete-a-clone)). A Conn build that does not follow the completion marks every create row done at the create's success: `Copy the container`, `Copy the workspace`, `Start the T3 server` and `Register with Orbit` are done then, and `Publish the address` is not published yet. A failed baseline read fails the create at `Register with Orbit`.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
@@ -428,7 +430,7 @@ Three cases are not covered. A run that the Gateway times out or loses during th
 
 The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
 
-While the completion runs, the remove sheet's read answers as for any running container: the completion writes no tracked file, so a workspace without the user's work reads `clean`. Its `baseline` is `default_now` until the create records the baseline. After a failed or cancelled completion the clone stays `source_resolved` with its container running; the read and the removal work as for a retained failed create.
+While the completion runs, the remove sheet's read answers as for any running container: the completion writes no tracked file, so a workspace without the user's work reads `clean`. Its `baseline` is `recorded`: the create records it before it ends. After a failed or cancelled completion the clone stays `source_resolved` with its container running; the read and the removal work as for a retained failed create.
 
 A retry of a removal never starts after a completion that an earlier call named: from Conn it cancels the running completion and waits again; from the CLI it refuses while the completion runs.
 

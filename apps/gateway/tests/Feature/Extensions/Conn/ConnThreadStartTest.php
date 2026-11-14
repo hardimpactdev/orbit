@@ -21,7 +21,6 @@ use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Domain\TaskVms\TaskVmModelRoute;
-use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Certificates\GatewayLeafCertificateSigner;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Processes\NativeProcessRunner;
@@ -1301,9 +1300,10 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
     return $value;
 }
 
-// Frozen from main a38e037e; accepted deltas: clone-mail progress folds into clone-container; clone-fleet (skipped unless the intent has
-// `fleet`) joins the clone job after clone-club-key; every clone's `clone.boot_files` carries the shared browser, font and Git files, an
-// empty linker cache and the Node root CA entry (InstanceContainer::bootFiles). Conn maps only its four stable stage names (docs/reference/conn.md), so no delta reaches its card.
+// Frozen from main a38e037e; accepted deltas: clone-mail progress folds into clone-container; every clone's `clone.boot_files` carries the
+// shared browser, font and Git files, an empty linker cache and the Node root CA entry (InstanceContainer::bootFiles); the clone job ends at
+// clone-register, and its database, fleet, Process and Route steps are the completion's. Conn maps only its four stable stage names
+// (docs/reference/conn.md), so no delta reaches its card.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();
     $default = threadDefault($this->beast, 'tool');
@@ -1344,22 +1344,9 @@ it('adds explicit branch fields to a successful clone receipt without replacing 
     $response = threadCall($this->phone, 'POST', "projects/{$default->project_id}/instances", $body)->assertAccepted();
     $operation = Operation::query()->findOrFail($response->json('data.id'));
     $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => 'success-run']]);
-    $frame = [];
-    $socket = Mockery::mock(WebSocketClient::class);
-    $socket->shouldReceive('connect')->once();
-    $socket->shouldReceive('isConnected')->andReturn(true);
-    $socket->shouldReceive('send')->once()->withArgs(static function (array $message) use (&$frame): bool {
-        $frame = $message;
-
-        return $message['type'] === 'vault.read-secret';
-    });
-    $socket->shouldReceive('receive')->once()->andReturnUsing(static function () use (&$frame): array {
-        return [['id' => $frame['id'], 'type' => 'vault.read-secret', 'payload' => ['data' => ['vaultName' => $frame['payload']['vaultName'],
-            'secretKey' => $frame['payload']['secretKey'], 'vaultType' => 'local_encryption', 'value' => 'fixture-session']]]];
-    });
-    $socket->shouldReceive('close');
-    app()->instance(WebSocketClient::class, $socket);
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'fixture-run-token']);
+    swampVaultStandIn();
+    // The create reads the clone's workspace baseline at its end (CloneCreateHandoverTest).
+    workspaceReader();
     $native = ['ready' => true, 'instance_id' => $operation->target_id, 'commit' => str_repeat('a', 40), 't3' => [
         'environment_id' => 'env-branch', 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
         'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
@@ -1372,7 +1359,8 @@ it('adds explicit branch fields to a successful clone receipt without replacing 
         'status' => 'succeeded', 'run_id' => 'success-run', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => $native]);
     $additions = $branch === null ? [] : ['branch' => $branch['mode'] === 'new' ? 'fix-login' : 'feature/login',
         'base_branch' => $branch['mode'] === 'new' ? 'release' : null];
-    expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => [], 'processes_stopped' => []]);
+    $completion = Operation::query()->where('kind', 'instance.complete')->where('target_id', $operation->target_id)->sole();
+    expect($operation->refresh()->result)->toBe([...$native, ...$additions, 'mail_keys_set' => [], 'processes_stopped' => [], 'completion_operation_id' => $completion->id]);
     threadCall($this->phone, 'GET', "operations/{$operation->id}")->assertOk()->assertJsonPath('data.status', 'succeeded');
 })->with([
     'legacy' => [null], 'legacy mail warning' => [null, true], 'new' => [['mode' => 'new', 'from' => 'release']], 'existing' => [['mode' => 'existing', 'name' => 'feature/login']],
