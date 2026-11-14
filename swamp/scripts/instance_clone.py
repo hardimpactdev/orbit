@@ -24,6 +24,101 @@ INCUS_SOCKET = "/var/lib/incus/unix.socket"
 # Mirrored by the guest emitter; the clone tests keep the two sets in sync.
 GUEST_COMMANDS = ("curl", "git", "mkdir", "php", "python3", "systemctl", "t3")
 
+# A failed command's detail: its code line, what it did and the end of its stderr, in at most this many UTF-8 bytes, so the native
+# step's wrapper ("exec failed on 1/1 host(s): target (exit 1: ...)") still fits the Gateway's 4,096-byte detail.
+DETAIL_BYTES = 4000
+# The shortest private value that is replaced; shorter ones would blank ordinary words (the Gateway's LogRedactor::ShortestValue).
+SHORTEST_VALUE = 8
+
+
+class PhaseFailure(RuntimeError):
+    """A phase's failure with its public detail: the code line, then the redacted end of the command's stderr."""
+
+    def __init__(self, line, detail=""):
+        super().__init__(line)
+        self.line = line
+        self.detail = detail
+
+
+def private_values(*texts):
+    """Every private value a phase holds: each string of its framed stdin JSON (or the text itself), each line of it and each value
+    of a KEY=VALUE line, at least SHORTEST_VALUE characters long, longest first."""
+    values = set()
+
+    def add(text):
+        for piece in [text, *text.splitlines()]:
+            for value in (piece, piece.split("=", 1)[1].strip().strip("'\"") if "=" in piece else ""):
+                if len(value.strip()) >= SHORTEST_VALUE:
+                    values.add(value.strip())
+
+    def walk(item):
+        if isinstance(item, dict):
+            for value in item.values():
+                walk(value)
+        elif isinstance(item, list):
+            for value in item:
+                walk(value)
+        elif isinstance(item, str):
+            add(item)
+
+    for text in texts:
+        if not text:
+            continue
+        try:
+            walk(json.loads(text))
+        except ValueError:
+            pass
+        add(text)
+    return sorted(values, key=len, reverse=True)
+
+
+def public_text(text, values, room):
+    """The end of a command's stderr that may leave the Node, in at most `room` UTF-8 bytes. Known private values are replaced in one
+    pass; credentials in URLs, Authorization headers and `password=`-style pairs are replaced by shape; a line that still holds an
+    8-character piece of a private value is dropped; only whole lines are kept. The Gateway redacts the detail once more."""
+    text = text.encode("utf-8", "surrogateescape").decode("utf-8", "replace")[-65536:]
+    text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
+    if values:
+        text = re.sub("|".join(re.escape(value) for value in values), "[REDACTED]", text)
+    # The shapes of the Gateway's CommandActivityInputSanitizer::redactText, applied here because native run history keeps stderr.
+    text = re.sub(r"-----BEGIN [A-Z0-9 ]+-----.*?(?:-----END [A-Z0-9 ]+-----|\Z)", "[REDACTED]", text, flags=re.S)
+    text = re.sub(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@", r"\1[REDACTED]@", text)
+    text = re.sub(r"(?i)\b((?:proxy-)?authorization)\s*:\s*\S+(?:\s+\S+)?", r"\1: [REDACTED]", text)
+    text = re.sub(r"(?i)\bbearer\s+\S{8,}", "Bearer [REDACTED]", text)
+    text = re.sub(r"(?<![A-Za-z0-9])(?:gh[pousr]_[A-Za-z0-9_]{16,}|github_pat_[A-Za-z0-9_]{20,})(?![A-Za-z0-9])", "[REDACTED]", text)
+    text = re.sub(r"(?<![A-Fa-f0-9])[A-Fa-f0-9]{64}(?![A-Fa-f0-9])", "[REDACTED]", text)
+    text = re.sub(r"(?i)\b(\w*(?:password|passwd|secret|token|api[_-]?key|credential)\w*)\s*([=:])\s*(?:\"[^\"]*\"|'[^']*'|[^\s,;&]+)",
+                  r"\1\2[REDACTED]", text)
+    # Pieces come from the values themselves, not from whole KEY=VALUE lines or files, whose keys are public words.
+    pieces = {value[i:i + SHORTEST_VALUE] for value in values if "\n" not in value and not re.match(r"[A-Za-z_][A-Za-z0-9_]*=", value)
+              for i in range(len(value) - SHORTEST_VALUE + 1)}
+    kept, used = [], 0
+    for line in reversed(text.strip().splitlines()):
+        if any(line[i:i + SHORTEST_VALUE] in pieces for i in range(len(line) - SHORTEST_VALUE + 1)):
+            continue
+        used += len(line.encode()) + 1
+        if used > room + 1:
+            break
+        kept.append(line)
+    return "\n".join(reversed(kept))
+
+
+def purpose(argv):
+    """What a command did, in public words: its program and plain arguments, such as `incus file push - instance-7/usr/...`.
+    Options, their values, `-c` programs and configuration pairs, long values and values with `=` never appear."""
+    words = []
+    skip = False
+    for word in argv:
+        if skip:
+            skip = False
+        elif word in {"--project", "--uid", "--gid", "--mode", "-c", "--output", "--write-out", "--unix-socket"}:
+            skip = True
+        elif not word.startswith("-") and ("=" not in word or word.startswith("/")) and "\n" not in word and len(word) <= 120:
+            words.append(word)
+        if len(words) == 8:
+            break
+    return " ".join(words)
+
 
 
 def select_branch(container, git, remote_git, run, mirror):
@@ -95,6 +190,12 @@ def main():
         def __exit__(self, *_):
             timings[self.part] = round(timings.get(self.part, 0) + time.monotonic() - self.started, 2)
 
+    def failure(code, argv, result, content=None):
+        """A failed command as the phase's failure: its code line, what it did, and the redacted end of its stderr."""
+        values = private_values(secret, content if isinstance(content, str) else None)
+        line = code + " (" + public_text(purpose(argv), values, 400) + ")"
+        return PhaseFailure(line, public_text(result.stderr or "", values, DETAIL_BYTES - len(line.encode()) - 2))
+
     def run(argv, content=None, check=True):
         remaining = 100 if workspace_deadline is None else workspace_deadline - time.monotonic()
         if remaining <= 0:
@@ -111,15 +212,9 @@ def main():
             env=dict(os.environ, LC_ALL="C", GIT_TERMINAL_PROMPT="0"),
         )
         if check and result.returncode:
-            # Tools may echo private input in stderr. Report the phase, never that output.
-            raise RuntimeError(
-                "instance.container_"
-                + phase
-                + "_failed: command "
-                + Path(argv[0]).name
-                + " exited "
-                + str(result.returncode)
-            )
+            # Tools may echo private input in stderr: only its redacted end leaves, after the code line.
+            raise failure("instance.container_" + phase + "_failed: command " + Path(argv[0]).name + " exited " + str(result.returncode),
+                          argv, result, content)
         return result
 
     def branch_commit():
@@ -128,12 +223,13 @@ def main():
         mirror lacks (`rev-parse` exit 1) starts at the seed; any other Git failure fails the phase."""
         mirror = Path(container["mirror"])
         if (mirror / "HEAD").exists():
-            held = run(["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(mirror), "rev-parse", "--verify",
-                        "--quiet", "refs/heads/" + container["branch"] + "^{commit}"], check=False)
+            argv = ["git", "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-C", str(mirror), "rev-parse", "--verify",
+                    "--quiet", "refs/heads/" + container["branch"] + "^{commit}"]
+            held = run(argv, check=False)
             if held.returncode == 0:
                 return held.stdout.strip(), False
             if held.returncode != 1:
-                raise RuntimeError("instance.container_" + phase + "_failed: command git exited " + str(held.returncode))
+                raise failure("instance.container_" + phase + "_failed: command git exited " + str(held.returncode), argv, held)
         seed = container.get("clone", {}).get("seed_commit")
         if not seed:
             raise RuntimeError("instance.clone_source_unavailable")
@@ -152,13 +248,12 @@ def main():
         return owner
 
     def inside(member, private=""):
+        intent = container
         if member in {"workspace", "services"}:
-            # Install the shipped helper outside the app-owned store. Its only store
-            # entry runs as orbit inside the existing workspace launch below.
-            change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0",
-                              "--mode", "0755", "-", name + "/usr/local/libexec/orbit-instance-node-runtime.py"],
-                   json.loads(sys.argv[6])["node"])
-        payload = ["python3", "-c", guest, member, json.dumps(container)]
+            # The guest writes the shipped Node runtime helper itself, in this one exec: no Incus file call, whose helper may exit as
+            # the request reaches it (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command).
+            intent = {**container, "node_runtime": json.loads(sys.argv[6])["node"]}
+        payload = ["python3", "-c", guest, member, json.dumps(intent)]
         result = run(project + ["exec", name, "--"] + payload, private, check=False)
         if result.returncode:
             if member == 'check':
@@ -172,23 +267,21 @@ def main():
                     public = {key: evidence[key] for key in ('error_code', 'process_failure') if key in evidence}
                     print(json.dumps(public))
                     raise RuntimeError(public['error_code'])
-            # Only the guest's complete, output-free diagnostic may cross this boundary.
-            diagnostic = result.stderr.strip()
+            # The guest's own diagnostic line becomes the code line; any other first line, such as Incus's own error, makes it
+            # "command incus exited N". The rest of the stderr follows only as its redacted end.
+            first, _, rest = (result.stderr or "").strip().partition("\n")
             if re.fullmatch(
                 r"instance\.container_"
                 + member
                 + r"_failed: command (?:"
                 + "|".join(GUEST_COMMANDS)
                 + r") exited -?[0-9]+",
-                diagnostic,
+                first,
             ):
-                raise RuntimeError(diagnostic)
-            raise RuntimeError(
-                "instance.container_"
-                + member
-                + "_failed: command incus exited "
-                + str(result.returncode)
-            )
+                values = private_values(secret, private)
+                raise PhaseFailure(first, public_text(rest, values, DETAIL_BYTES - len(first.encode()) - 2))
+            raise failure("instance.container_" + member + "_failed: command incus exited " + str(result.returncode),
+                          project + ["exec", name, "--", "python3", "guest", member], result, private)
         return json.loads(result.stdout)
 
     if phase == "cleanup":
@@ -414,10 +507,11 @@ def main():
             # The copy's own ACL by its name; the list of every ACL on the Node took about a second.
             acl_timer = timed("acl")
             acl_timer.__enter__()
-            held = run(["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"], check=False)
+            acl_query = ["incus", "query", f"/1.0/network-acls/{urllib.parse.quote(container['acl'])}?project=default"]
+            held = run(acl_query, check=False)
             # Incus answers a missing ACL with 404 "Network ACL not found"; anything else refuses before the copy.
             if held.returncode and "network acl not found" not in held.stderr.lower():
-                raise RuntimeError("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode))
+                raise failure("instance.container_" + phase + "_failed: command incus exited " + str(held.returncode), acl_query, held)
             found = json.loads(held.stdout) if held.returncode == 0 else None
             if found is None:
                 change(
@@ -977,6 +1071,10 @@ def main():
 
 try:
     main()
+except PhaseFailure as error:
+    # The Operation's error detail: the code line, then the redacted end of the failed command's stderr.
+    print(error.line + (":\n" + error.detail if error.detail else ""), file=sys.stderr)
+    raise SystemExit(1) from None
 except Exception as error:  # noqa: BLE001 - redact private subprocess failures at the command boundary.
     message = str(error)
     code = (
