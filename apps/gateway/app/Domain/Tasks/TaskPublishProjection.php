@@ -53,13 +53,13 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
 
     /**
      * Swamp's own error when a step waited too long for a behavior lock that another run held, on any step: the whole detail is that one
-     * line, for a lock file under `.swamp/data` (docs/reference/tasks.md#a-refused-automatic-publish). A step that ran out of its own time
-     * reads `<step> timed out after <n>s` and is no lock timeout.
+     * line, for a lock file under `.swamp/data` (docs/reference/tasks.md#a-refused-automatic-publish). It names the holder unless the holder let
+     * go at the deadline. A step that ran out of its own time reads `<step> timed out after <n>s` and is no lock timeout.
      */
     private static function lockTimeout(mixed $detail): bool
     {
         return is_string($detail)
-            && preg_match('~\ALock "[^"\n]*/\.swamp/data/[^"\n]+/\.lock" held by [^\n]+ \(pid [1-9][0-9]*\) — timed out after [0-9]+ms\z~u', trim($detail)) === 1;
+            && preg_match('~\ALock "[^"\n]*/\.swamp/data/[^"\n]+/\.lock"(?: held by [^\n]+ \(pid [1-9][0-9]*\))? — timed out after [0-9]+ms\z~u', trim($detail)) === 1;
     }
 
     /** Only the check's own refusal line names content; any other failure of the check refuses as unchecked. */

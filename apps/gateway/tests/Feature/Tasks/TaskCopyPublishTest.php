@@ -263,6 +263,7 @@ it('names a step that timed out on a Swamp behavior lock tasks.publish_lock_time
     'with a final newline' => ['Run workspace phase', CopyPublishLockTimeout."\n", 'tasks.publish_lock_timeout'],
     'the push step' => ['Push the branch', CopyPublishLockTimeout, 'tasks.publish_lock_timeout'],
     'the content check' => ['Check the .env content', CopyPublishLockTimeout, 'tasks.publish_lock_timeout'],
+    'a holder that let go at the deadline' => ['Run workspace phase', 'Lock "/home/orbit/apps/orbit-monorepo-staging/checkout/swamp/.swamp/data/command/shell/d52d75df-895d-4824-92c3-7bc1fea709d9/.lock" — timed out after 60002ms', 'tasks.publish_lock_timeout'],
     'a step that ran out of time' => ['Run workspace phase', 'Run workspace phase timed out after 1800s', 'tasks.publish_failed'],
     'a lock line inside other output' => ['Run workspace phase', "fatal: x\n".CopyPublishLockTimeout, 'tasks.publish_failed'],
     'a lock that is no Swamp lock file' => ['Run workspace phase', 'Lock "/var/lib/dpkg/lock" held by root (pid 7) — timed out after 60002ms', 'tasks.publish_failed'],
