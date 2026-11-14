@@ -65,6 +65,7 @@ sequenceDiagram
     %%> Mail:
     %%> - the same launch applies the exact SMTP path before the four root-owned mail units; no separate mail playbook or step
     %%> - two IPv4 loopback sockets forward 1025 and 2525; foreign units or listeners skip setup without stopping their Process
+    %%> - the seed's mail socket links stay: the units are the Node's, so a clone's launch reports `unchanged` unless the Node's endpoint changed
     %%> On mail failure:
     %%> - keep a mail warning and continue workspace, T3 and registration; mail:update remains the repair command
     %%> ACL:
@@ -110,7 +111,9 @@ sequenceDiagram
     %%> What it does, in one step:
     %%> - the agent part: writes the placeholder key for `agent` from SSH stdin, and the Claude Code and Codex settings that point at the model forwarder
     %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all
-    %%> - the T3 part: T3 starts for the first time and creates its identity; the T3 project `/srv/workspace` is added as `agent`
+    %%> - the T3 part: T3 starts for the first time and creates its identity; while it starts, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
+    %%> - after T3 answers, the T3 project `/srv/workspace` is added as `agent`; during T3's start that call fails
+    %%> - a failed session issue fails this step with `instance.t3_unready`
     %%> Check:
     %%> - waits up to 30 s for `/.well-known/t3/environment`, else `instance.t3_unready`
     %%> On failure:
@@ -122,6 +125,7 @@ sequenceDiagram
     %%> When: the join; the sessions check waits for T3 and the checkout, because it checks the branch and the checkout mark
     %%> On a failed checkout: no sessions check, no registration; the container stop below still runs
     %%> What it does:
+    %%> - the sessions check issues no session: it checks the two that the T3 step issued against the running T3
     %%> - see conn/environment-renew.mmd: the sessions go to the vault, and the step checks the environment id and scopes
     %%> - checks no Process unit: the units start in the completion, whose check refuses a dead one with `instance.container_process_inactive`
   alt all steps pass in budget
