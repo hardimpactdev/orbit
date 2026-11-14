@@ -22,21 +22,18 @@ sequenceDiagram
   %%> Why:
   %%> - each Node keeps its own seed; nothing is copied between Nodes
   loop each switched-on Node
-    SW->>N: Keep the current seed<br/>before any change
+    SW->>N: Prepare the container<br/>start · fleet check · seed · fetch
+    %%> What it does:
+    %%> - one play: starts the default, checks its running fleet once, keeps the current seed, fetches the release commit
     %%> Why:
-    %%> - a failure then restores a seed that holds the fleet
-    SW->>C: Deploy the release commit<br/>fetch · checkout · deploy steps
+    %%> - a later failure then restores a seed that holds the fleet; a failure here changes nothing and restores nothing
+    SW->>C: Deploy the release commit<br/>checkout · deploy steps
     %%> What it does:
     %%> - the same steps as every container default deployment
-    SW->>C: Refresh the inner fleet<br/>apply · converge · Doctor
+    SW->>C: Finish the container<br/>processes · refresh · seed · check
     %%> What it does:
-    %%> - starts the fleet, migrates the nested Gateway, converges the three nested Nodes, waits for Doctor
-    SW->>C: Retake base<br/>fleet stopped
-    %%> Why:
-    %%> - a restore reverts device and config keys, so `base` holds every fleet rule
-    SW->>N: Take the seed snapshot<br/>Processes stopped · ZFS
-    %%> What it does:
-    %%> - refuses when the Club key is a file on the default's disk; the key lives outside it
+    %%> - one play: installs the Processes, refreshes the inner fleet (migrate, converge, Doctor, and `base` retaken for the containers whose disk changed), takes the seed snapshot with the Processes stopped, and checks the default
+    %%> - refuses the seed when the Club key is a file on the default's disk; the key lives outside it
     %%> - a default with an inner volume: also snapshots the volume under the same name, right after a flush of the volume (`sync -f`); the two snapshots are the seed, and older pairs go after both new halves exist
   end
   alt the run passes on a Node
