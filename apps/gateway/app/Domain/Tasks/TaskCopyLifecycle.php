@@ -90,7 +90,9 @@ final readonly class TaskCopyLifecycle
         $result = $completion->result ?? [];
         $step = $completion->failed_step ?? $result['failed_step'] ?? null;
         $code = $completion->error_code ?? $result['error_code'] ?? null;
-        $requires = $result['recovery']['retry']['requires'] ?? null;
+        $recovery = is_array($result['recovery'] ?? null) ? $result['recovery'] : [];
+        $retry = is_array($recovery['retry'] ?? null) ? $recovery['retry'] : [];
+        $requires = $retry['requires'] ?? null;
 
         return ['operation_id' => $completion->id, 'failed_step' => is_string($step) ? $step : 'complete',
             'error_code' => is_string($code) ? $code : 'operation.'.$completion->status->value, 'retry' => 'orbit instance:complete '.$copy->id,
