@@ -22,6 +22,8 @@ class UpdateDevelopmentDeployStepCommand extends GatewayCommand
         {--command= : Replacement shell command}
         {--timeout= : Timeout in seconds}
         {--required= : true for required or false for best effort}
+        {--input=* : Repository-relative path the step depends on; repeat for each path; replaces the stored list}
+        {--clear-inputs : Remove all inputs of the step}
         {--before= : Place before this step}
         {--after= : Place after this step}
         {--json : Return machine-readable JSON}';
@@ -36,6 +38,16 @@ class UpdateDevelopmentDeployStepCommand extends GatewayCommand
 
         if ($required === 'invalid') {
             return $this->renderGatewayFailure('development_deploy_step.required_invalid', 'Required must be true or false.');
+        }
+
+        $inputs = $this->developmentInputs($this->option('input'));
+
+        if ($this->option('clear-inputs') === true) {
+            if ($inputs !== null) {
+                return $this->renderGatewayFailure('development_deploy_step.option_invalid', 'Choose either --input or --clear-inputs.');
+            }
+
+            $inputs = [];
         }
 
         $projectId = $this->projectId();
@@ -64,6 +76,7 @@ class UpdateDevelopmentDeployStepCommand extends GatewayCommand
             before: $this->stringOption('before'),
             after: $this->stringOption('after'),
             required: $required,
+            inputs: $inputs,
         ), DevelopmentDeployStepResponse::class, ['Update step', 'Updating step', 'Updated step']);
 
         return $response instanceof DevelopmentDeployStepResponse ? $this->renderDevelopmentDeployStep($response) : self::FAILURE;

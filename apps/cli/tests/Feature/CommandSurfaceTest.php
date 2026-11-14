@@ -587,10 +587,10 @@ it('keeps the exact approved arguments options and defaults', function (): void 
                 'json' => false],
         ],
         'project:destroy' => [['project'], ['yes' => false, 'json' => false]],
-        'project:dev-deploy-step:create' => [['name'], ['project' => null, 'command' => null, 'timeout' => null, 'required' => null, 'before' => null, 'after' => null, 'json' => false]],
+        'project:dev-deploy-step:create' => [['name'], ['project' => null, 'command' => null, 'timeout' => null, 'required' => null, 'input' => [], 'before' => null, 'after' => null, 'json' => false]],
         'project:dev-deploy-step:destroy' => [['name'], ['project' => null, 'yes' => false, 'json' => false]],
         'project:dev-deploy-step:list' => [[], ['project' => null, 'json' => false]],
-        'project:dev-deploy-step:update' => [['name'], ['project' => null, 'command' => null, 'timeout' => null, 'required' => null, 'before' => null, 'after' => null, 'json' => false]],
+        'project:dev-deploy-step:update' => [['name'], ['project' => null, 'command' => null, 'timeout' => null, 'required' => null, 'input' => [], 'clear-inputs' => false, 'before' => null, 'after' => null, 'json' => false]],
         'project:show' => [['project'], ['json' => false]],
         'project:update' => [
             ['project'],
