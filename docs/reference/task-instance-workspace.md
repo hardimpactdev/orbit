@@ -39,9 +39,11 @@ Worker input and result files are private and removed after the phase settles, i
 
 ## Check phases
 
-`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. Today only a test fixture creates that state; attach and task start add it later. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
+`tasks.check` takes this path when the group owns a container Instance: the group's Instance has a recorded runtime and names the group as its workspace owner. A [task copy](/cli/task/start) creates that state. The admission skips the task VM wake and VM ownership checks and calls no task VM admission, slot or image code. It requires a running runtime (`tasks.instance_not_running`) and a recorded Instance branch (`tasks.no_workspace`).
 
-Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`) and a setup step named `@orbit/ci-caches` (`tasks.instance_setup_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
+Before it records a check row, it refuses a handoff whose Project requires hosted CI (`tasks.instance_hosted_check_unavailable`). The hosted push from the Node arrives with publication. There is no task VM fallback.
+
+A baseline in a container workspace runs no setup steps: its intent holds an empty `setup` list. The container is a copy of the Project default, whose seed already ran them, as for every [clone](/reference/development-containers#lifecycle). The baseline runs the Project check alone; a Project without one passes on the snapshot. A task VM baseline keeps every setup step.
 
 The intent is the task VM check intent with two differences: `checkout_path` is `/srv/workspace`, and `workspace` holds the recorded Incus project and container, the Instance branch and a new scratch ID. The SSH target is the Instance Node. The parent workflow runs `Check in the Instance` and skips the task VM steps.
 
@@ -49,7 +51,7 @@ The child runs three Ansible phases through this playbook. Each runs as `agent` 
 
 | Phase | What it does |
 | --- | --- |
-| `check` | Runs baseline setup, the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
+| `check` | Runs the Project check, the snapshot, each command deliverable and its start-commit run, and the final snapshot |
 | `commit` | Stages everything, commits as Orbit with hooks off and reads back `HEAD`, its tree and its parent |
 | `commit-ref` | Records the accepted candidate under `refs/orbit/check-operations/{operation}` |
 
@@ -78,7 +80,6 @@ A failed phase returns one of these codes.
 | `tasks.workspace_phase_failed` | A tool, command time limit, transfer or cleanup failed |
 | `tasks.instance_not_running` | The check admission found a stopped container runtime |
 | `tasks.instance_hosted_check_unavailable` | A container handoff needs hosted CI, which needs the Node push |
-| `tasks.instance_setup_unavailable` | A container baseline names the `@orbit/ci-caches` setup step |
 
 ## Execution choices
 
