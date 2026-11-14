@@ -102,7 +102,8 @@ sequenceDiagram
   %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
   %%> - at the same commit the new snapshot is `next-COMMIT` until it exists; then the old `seed-COMMIT` goes and the new one takes its name: never `--reuse`, which deletes first
   %%> - a default with an inner volume also snapshots the volume under the same name with the Processes stopped; the pair is the seed, and the older pair goes only after both new halves exist
-  %%> - a failed half deletes only the new halves and fails `instance.container_seed_failed` or `instance.seed_volume_snapshot_failed` with the cause in the detail; the old seed stays
+  %%> - right before the volume's half: `sync -f /srv/inner-pool` as root in the container, so the block snapshot holds what btrfs has not committed yet (it commits every 30 s); no freeze, which the unprivileged container may not do
+  %%> - a failed half or flush deletes only the new halves and fails `instance.container_seed_failed`, `instance.seed_volume_flush_failed` or `instance.seed_volume_snapshot_failed` with the cause in the detail; the old seed stays
   %%> - the inner fleet runs during the snapshot when the refresh kept `base`: on the directory pool the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut; on an inner volume the two halves are taken one after the other, a fraction of a second apart
   %%> - the seed holds the refresh record of the fleet it holds
   SW->>C: Check the container<br/>Ansible · tags check

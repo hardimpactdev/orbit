@@ -77,7 +77,7 @@ sequenceDiagram
   SW->>N: Take the seed snapshot<br/>Ansible · tags seed
   %%> What it does:
   %%> - stops the Processes for a moment and snapshots the container as `seed-<commit>`, which clones copy
-  %%> - a default with an inner volume: also snapshots the volume as `seed-<commit>` while the Processes are stopped; the two snapshots of one name are the seed. A failed volume snapshot deletes both halves and fails with `instance.seed_volume_snapshot_failed`
+  %%> - a default with an inner volume: also snapshots the volume as `seed-<commit>` while the Processes are stopped; the two snapshots of one name are the seed. Right before the volume's half, `sync -f /srv/inner-pool` as root in the container commits btrfs, so the snapshot holds the inner pool. A failed flush or volume snapshot deletes both halves and fails with `instance.seed_volume_flush_failed` or `instance.seed_volume_snapshot_failed`
   alt all steps pass in budget
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record default Instance<br/>active · seed commit
