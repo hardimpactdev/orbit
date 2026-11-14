@@ -27,7 +27,8 @@
                 "peak_context_tokens": 9800,
                 "cost_usd": null,
                 "lines_added": 120,
-                "lines_deleted": 14
+                "lines_deleted": 14,
+                "questions": null
             },
             {
                 "id": 2,
@@ -39,7 +40,7 @@
                 "effort": "high",
                 "driver": "t3",
                 "external_id": "thread-reviewer",
-                "state": "working",
+                "state": "asking_for_input",
                 "observed_at": "2026-09-23T09:59:00+00:00",
                 "observation_error": "T3 did not answer in time.",
                 "error": null,
@@ -51,7 +52,31 @@
                 "peak_context_tokens": null,
                 "cost_usd": null,
                 "lines_added": null,
-                "lines_deleted": null
+                "lines_deleted": null,
+                "questions": [
+                    {
+                        "request_id": "request:1",
+                        "id": "Which color?",
+                        "header": "Color",
+                        "question": "Which color?",
+                        "options": [
+                            {
+                                "label": "Red",
+                                "description": "Choose red",
+                                "value": null
+                            },
+                            {
+                                "label": "Blue",
+                                "description": "Choose blue",
+                                "value": null
+                            }
+                        ],
+                        "multi_select": false,
+                        "allow_custom_answer": null,
+                        "initial_answer": null,
+                        "required": null
+                    }
+                ]
             }
         ],
         "meta": {

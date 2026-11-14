@@ -64,6 +64,14 @@ final class ListTaskAgentsCommand extends TaskCommand
             if ($error !== null) {
                 $this->writeHumanMessage("Thread {$agent->id}: {$error}");
             }
+
+            // A question ends a turn in a task copy; the thread's next turn answers it.
+            foreach ($agent->questions ?? [] as $question) {
+                $options = implode(', ', array_map(static fn (mixed $option): string => is_array($option) && is_string($option['label'] ?? null) ? $option['label'] : '',
+                    is_array($question['options'] ?? null) ? $question['options'] : []));
+                $text = is_string($question['question'] ?? null) ? $question['question'] : '';
+                $this->writeHumanMessage("Thread {$agent->id} asks: {$text}".($options === '' ? '' : " Options: {$options}."));
+            }
         }
 
         $this->writeHumanMessage("Request ID: {$agents->requestId}");
