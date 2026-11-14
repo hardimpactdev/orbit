@@ -78,6 +78,7 @@ sequenceDiagram
     SW->>N: Install Orbit's layer<br/>Ansible phase: agent
     %%> What it does:
     %%> - applies the agent, Orbit-owned files and units, and the kernel policy (SCTP blocked, non-local bind); restarts only changed services
+    %%> - writes the units the Node's roles own (the Swamp worker template, the websocket unit) and reloads systemd; it never starts or restarts them, and never writes the Swamp serve unit
     %%> - with a CLI plan: requires and installs its pinned release and root profile
     %%> - without a CLI plan: needs no CLI release or probe; removes the managed `/usr/local/bin/orbit` link, regular `orbit-0.N.0` binaries and root profile at `/root/.orbit/config.json` in this phase, under the Node update lock; preserves unrelated executables, backups and directories
     SW->>N: Install pinned software<br/>Ansible phase: software

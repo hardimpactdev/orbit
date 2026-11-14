@@ -11,8 +11,10 @@ use App\Models\NodeRole;
 
 /**
  * The systemd units that a Node's role assignments own: the Swamp worker template for `swamp`, `orbit-websocket.service` for
- * `websocket`. Every converge intent carries them as `role_units`, base included, so the base digest that a nested-fleet refresh
- * compares moves when their text moves. The Swamp serve unit is not among them: its repository is the one the Node's serve really
+ * `websocket` (docs/reference/node-provisioning.md#role-units-at-a-converge). Every converge intent carries them as `role_units`, base
+ * included, so the base digest that a nested-fleet refresh compares moves when their text moves. The `agent` phase writes them and
+ * reloads systemd; it never starts or restarts one. A running service takes the new text at its next start: a Swamp worker at its
+ * renewal restart, Reverb at a reboot, a new Reverb release or a changed `.env`. The Swamp serve unit is not among them: its repository is the one the Node's serve really
  * reads, which the role does not render for a Gateway that is its own Swamp Node.
  */
 final readonly class NodeRoleUnits
