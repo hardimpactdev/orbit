@@ -26,7 +26,9 @@ When the end check `Check the written file` fails, the file on the Node differs 
 
 ## On a container Instance
 
-On an Instance in a container, `env:sync` does not render the whole file, unlike on a host Instance. Orbit never renders an existing container's `.env` again. The sync writes ONLY the keys of the Instance's attached connections, in place, in the `.env` inside the container: for a MySQL or PostgreSQL connection under prefix `DB`, `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD`. Run it after `database:create --instance` or `instance:database:add` on an existing container Instance. `--force` has no effect there, and `env:import` stays refused for a container.
+On an Instance in a container, `env:sync` does not render the whole file, unlike on a host Instance. Orbit never renders an existing container's `.env` again. The sync writes ONLY the keys of the Instance's attached connections and the keys that `env:update` stored since the last sync, in place, in the `.env` inside the container: for a MySQL or PostgreSQL connection under prefix `DB`, `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME` and `DB_PASSWORD`. Run it after `database:create --instance`, `instance:database:add` or `env:update` on an existing container Instance. `--force` has no effect there, and `env:import` stays refused for a container.
+
+A key that `env:update` stores on a container Instance waits for the next `env:sync`. That sync writes it once, with the stored value, by the rules below. A connection key of the same name keeps the connection's line. After a passed sync the key leaves the wait list: later syncs do not write it again, so a later hand edit of that line stays. A failed sync keeps the wait list. A key whose stored value is gone, for example after a detach, leaves the list unwritten.
 
 - A key the file already has gets the connection's value, also when the owner set it by hand.
 - A key the file lacks is added at the end.

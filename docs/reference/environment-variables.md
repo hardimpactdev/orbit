@@ -132,7 +132,7 @@ On `app-prod`, every release links `.env` in its application directory to the pr
 
 A container Instance keeps its `.env` in its workspace, for `orbit` with group `work`; its create flow writes it. A clone keeps its default's `.env` from the seed snapshot, except the keys it must own, and points copied values on the default's Route host at its own. It keeps the keys of a connection its default [shares](/reference/database-connections#share-a-connection-with-clones); see [the environment of a clone](/reference/development-containers#the-environment-of-a-clone).
 
-`env:import` refuses a container Instance with `operation.kind_unavailable`. `env:sync` on a container Instance never renders the file again: it writes only the keys of the attached connections in place, and leaves every other line as it is; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). See [the default Instance](/reference/development-containers#the-default-instance).
+`env:import` refuses a container Instance with `operation.kind_unavailable`. `env:sync` on a container Instance never renders the file again: it writes only the keys of the attached connections and the keys that `env:update` stored since the last sync, in place, and leaves every other line as it is; see [env:sync on a container Instance](/cli/env/sync#on-a-container-instance). See [the default Instance](/reference/development-containers#the-default-instance).
 
 ## Import
 
