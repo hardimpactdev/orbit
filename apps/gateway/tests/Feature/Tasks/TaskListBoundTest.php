@@ -10,10 +10,12 @@ use App\Domain\Tasks\TaskBroadcasts;
 use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
+use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -97,6 +99,14 @@ function taskListSelectsNoHeavyColumn(array $queries): void
     }
 }
 
+/** The workspace runs on its own Node, which makes its group a task copy (TaskInstanceWorkspace::forGroup). */
+function taskListCopyRuntime(Instance $workspace, int $n): void
+{
+    Node::query()->whereKey($workspace->node_id)->update(['instance_bridge' => '10.253.0.0/24']);
+    InstanceRuntime::query()->create(['node_id' => $workspace->node_id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test', 'instance_id' => $workspace->id,
+        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$workspace->id, 'bridge_address' => '10.253.0.'.(4 + $n), 'seed_commit' => str_repeat('a', 40)]);
+}
+
 /** @return array{0: TestResponse, 1: list<string>} the response and the reads it ran */
 function taskListRead(string $query = ''): array
 {
@@ -148,7 +158,8 @@ describe('the task list', function (): void {
         $group = taskListGroup($this->orbit, TaskGroupStatus::Reserved, 3);
         $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-1', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.137', 'public_ssh_host' => '10.44.0.137', 'user' => 'orbit']));
         $workspace = Instance::query()->create(['project_id' => $this->orbit->id, 'node_id' => $node->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Reserved]);
-        $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id, 'capacity_wait_reason' => 'task places full', 'pr_branch' => 'feature']);
+        taskListCopyRuntime($workspace, 1);
+        $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id, 'capacity_wait_reason' => 'task places full', 'pr_branch' => 'feature', 'pr_mode' => TaskPrMode::PrWhenDone]);
         $group->tasks()->firstOrFail()->update(['fixup_problem' => 'A failed check.']);
         $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'test']);
         $route = Route::withoutEvents(fn (): Route => Route::query()->create(['kind' => 'app', 'project_id' => $this->orbit->id, 'cluster_id' => $cluster->id, 'provenance' => 'explicit',
@@ -162,14 +173,34 @@ describe('the task list', function (): void {
         [$list] = taskListRead();
         $detail = $this->getJson('/api/v1/tasks/'.$group->id)->assertOk()->json('data');
 
-        $expected = [...$detail, 'subtasks' => array_map(static function (array $subtask): array {
+        $expected = [...array_diff_key($detail, ['publication' => true]), 'subtasks' => array_map(static function (array $subtask): array {
             unset($subtask['completion_summary'], $subtask['fixup_problem'], $subtask['check']['output']);
 
             return $subtask;
         }, $detail['subtasks'])];
         expect($list->json('data.0'))->toBe($expected)
             ->and($expected['preview_url'])->toBe('https://workspace.orbit.test')->and($expected['vm_power'])->toBe('running')->and($expected['capacity_wait']['position'] ?? null)->toBe(1)
-            ->and($expected['review_and_merge']['reviewed_commits'])->toHaveCount(1)->and($expected['resolved_agents'])->not->toBe([]);
+            ->and($expected['review_and_merge']['reviewed_commits'])->toHaveCount(1)->and($expected['resolved_agents'])->not->toBe([])
+            ->and($expected['pr_mode'])->toBe('pr_when_done')->and($expected['pr_mode_source'])->toBe('group')
+            ->and($detail['publication']['state'] ?? null)->toBe('working');
+    });
+
+    it('lists task copies in the same number of reads as one, without their publication', function (): void {
+        $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-1', 'status' => 'active', 'platform' => 'linux', 'wireguard_ip' => '10.44.0.137', 'public_ssh_host' => '10.44.0.137', 'user' => 'orbit']));
+        foreach (range(1, 3) as $n) {
+            $group = taskListGroup($this->orbit, TaskGroupStatus::Running, $n);
+            $workspace = Instance::query()->create(['project_id' => $this->orbit->id, 'node_id' => $node->id, 'name' => 'workspace-'.$n, 'source_layout' => InstanceSourceLayout::Checkout, 'checkout_path' => '/home/orbit/apps/orbit/workspace-'.$n, 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Reserved]);
+            taskListCopyRuntime($workspace, $n);
+            $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
+        }
+
+        [, $one] = taskListRead('?limit=1');
+        [$page, $three] = taskListRead('?limit=3');
+
+        expect(count($three))->toBe(count($one))
+            ->and(array_column($page->json('data'), 'pr_mode_source'))->toBe(['gateway', 'gateway', 'gateway'])
+            ->and(array_filter($page->json('data'), static fn (array $row): bool => array_key_exists('publication', $row)))->toBe([]);
+        taskListSelectsNoHeavyColumn($three);
     });
 
     it('pages newest first by cursor until the last page', function (): void {

@@ -574,7 +574,9 @@ A task moves to `todo`, by create or update, only when it has subtasks and every
 
 `project_id` and `status` filter the groups before the page is cut, so a filtered list pages the same way. With `parent_id`, the list returns that group's subtasks in position order, whole and unpaged; `limit` and `cursor` are refused with it. With `parent_id`, `status` takes a subtask status, and a `project_id` other than the group's Project lists nothing.
 
-A list row has every field of `task:show` except, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Read one group with `task:show` to get them. The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route, thread tokens, activity and capacity wait in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
+A list row has every field of `task:show` except the group's [`publication`](#publication-state) and, on each subtask, `completion_summary`, `fixup_problem` and the latest check's `output`. A summary is stored in full and a check keeps 16 KiB of output, so a page of full rows grows without bound. Publication reads the group's publish Operations and done check, several reads per group. Read one group with `task:show` to get them.
+
+The list reads each row's columns, subtasks, latest checks, task VM, reviewed commits, workspace route and runtime, task group mode, thread tokens, activity and capacity wait in a fixed number of queries per page, whatever the number of groups. `compact` still applies on top of a list row.
 
 ### Change subtasks
 

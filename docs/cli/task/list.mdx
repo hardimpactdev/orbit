@@ -18,7 +18,7 @@ orbit task:list [--parent=ID] [--project=ID] [--status=STATUS] [--limit=N] [--cu
 
 An invalid filter fails with `task.project_invalid` or `task.status_invalid` before the request. An invalid `--limit` or `--cursor` fails with `input.invalid`. The CLI does not prompt for a filter.
 
-The list shows the newest groups first. When there are more groups, a line names the cursor of the next page. Send it back with the same filters. JSON returns `task_groups` and `next_cursor`, null on the last page. A subtask in the list leaves out its completion summary, fixup problem and check output; [`task:show`](/cli/task/show) returns them. [List tasks](/reference/tasks#list-tasks) gives the rules.
+The list shows the newest groups first. When there are more groups, a line names the cursor of the next page. Send it back with the same filters. JSON returns `task_groups` and `next_cursor`, null on the last page. A group in the list leaves out its `publication`, and a subtask its completion summary, fixup problem and check output; [`task:show`](/cli/task/show) returns them. [List tasks](/reference/tasks#list-tasks) gives the rules.
 
 With `--parent=ID`, `--project=ID` filters by the parent's Project. A different Project returns an empty list. The subtasks of a parent come whole, so `--parent` refuses `--limit` and `--cursor`.
 

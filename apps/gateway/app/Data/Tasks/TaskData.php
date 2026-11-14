@@ -55,8 +55,11 @@ final class TaskData extends Data
     ) {}
 
     /** @return array<string, mixed> */
-    public function toListArray(): array
+    public function toListArray(bool $compact = false): array
     {
+        if ($compact) {
+            return $this->toCompactArray();
+        }
         $data = $this->toArray();
         unset($data['completion_summary'], $data['fixup_problem']);
         if (is_array($data['check'])) {

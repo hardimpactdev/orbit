@@ -45,8 +45,11 @@ final readonly class ListTaskGroupsAction
                 'latestVm' => static fn ($query) => $query->select(self::qualified('task_vms', ['id', 'group_id', 'state', 'stop_confirmed_at'])),
                 'reviewedCommits',
                 'taskable' => static fn (MorphTo $morph) => $morph
-                    ->constrain([Instance::class => static fn ($query) => $query->select(['id', 'task_workspace_owner_id'])])
-                    ->morphWith([Instance::class => ['routes' => static fn ($query) => $query->select(self::qualified('routes', ['id', 'domain', 'status', 'web_root']))]]),
+                    ->constrain([Instance::class => static fn ($query) => $query->select(['id', 'project_id', 'node_id', 'task_workspace_owner_id'])])
+                    ->morphWith([Instance::class => [
+                        'routes' => static fn ($query) => $query->select(self::qualified('routes', ['id', 'domain', 'status', 'web_root'])),
+                        'runtime' => static fn ($query) => $query->select(['id', 'instance_id', 'node_id']),
+                    ]]),
             ])
             ->when($projectId !== null, static fn ($query) => $query->where('project_id', $projectId))
             ->when($status instanceof TaskGroupStatus, static fn ($query) => $query->where('status', $status))

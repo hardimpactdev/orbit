@@ -250,7 +250,7 @@ final class TaskGroupsController extends Controller
         }
 
         return response()->json([
-            'data' => array_map(static fn (TaskData|TaskGroupData $row): array => $request->boolean('compact') ? $row->toCompactArray() : $row->toListArray(), $rows),
+            'data' => array_map(static fn (TaskData|TaskGroupData $row): array => $row->toListArray($request->boolean('compact')), $rows),
             'meta' => [...$this->meta($request), 'next_cursor' => $nextCursor],
         ]);
     }
