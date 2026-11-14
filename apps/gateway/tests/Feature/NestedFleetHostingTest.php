@@ -273,6 +273,15 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             $files = array_search('files', array_keys($expected['clone']), true);
             $expected['clone'] = [...array_slice($expected['clone'], 0, $files, true), 'boot_files' => $actual['clone']['boot_files'],
                 ...array_slice($expected['clone'], $files, null, true)];
+            // The second change: T3 starts with the copy (development-containers.md#t3-starts-with-the-copy). The unit's condition file,
+            // the model environment's frame line, and the files that go in before the first start.
+            $expected['clone']['t3']['condition'] = '/etc/orbit/instance';
+            $expected['clone']['model_environment']['frame'] = '#orbit-model-environment';
+            foreach ($expected['clone']['files'] as $index => $file) {
+                $expected['clone']['files'][$index] = ['path' => $file['path'], 'before_start' => true, ...array_diff_key($file, ['path' => true])];
+            }
+            expect(array_column($actual['clone']['files'], 'before_start', 'path'))->toBe(['/etc/orbit/instance' => true,
+                '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
                 ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                     '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh']);
