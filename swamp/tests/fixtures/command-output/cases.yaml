@@ -1009,6 +1009,24 @@ contexts:
       stdout_lines:
       - '<html>Bad Gateway</html>'
       - HTTP 502
+  # A deployment with two watched steps: `cat-file --batch-check=%(objectname)` names one object per input (or `missing`), and
+  # `grep -rH` prints each record as `<path>:<digest>`.
+  deploy-steps-read:
+    container: {workspace: /srv/workspace}
+    deploy_steps_watched:
+    - {name: install-root, inputs: [composer.json, composer.lock], command_digest: aaaa}
+    - {name: install-web, inputs: [apps/web/bun.lock], command_digest: bbbb}
+    deploy_steps_objects:
+      rc: 0
+      stdout_lines:
+      - 1111111111111111111111111111111111111111
+      - 2222222222222222222222222222222222222222
+      - HEAD:apps/web/bun.lock missing
+    deploy_steps_done:
+      rc: 0
+      stdout_lines:
+      - /srv/workspace/.git/orbit-deploy-steps/done/install-root:3333333333333333333333333333333333333333333333333333333333333333
+      - /srv/workspace/.git/orbit-deploy-steps/done/broken:short
 cases:
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
@@ -2150,6 +2168,24 @@ cases:
   field: when
   context: root-odd-form
   expected: false
+- file: tasks/instance-container-phase.yml
+  task: Read the deploy step inputs at the commit
+  field: ansible.builtin.command.stdin
+  context: deploy-steps-read
+  expected: "HEAD:composer.json\nHEAD:composer.lock\nHEAD:apps/web/bun.lock"
+- file: tasks/instance-container-phase.yml
+  task: Work out each deploy step's digest
+  field: ansible.builtin.set_fact.deploy_steps_recorded
+  context: deploy-steps-read
+  expected:
+    install-root: '3333333333333333333333333333333333333333333333333333333333333333'
+- file: tasks/instance-container-phase.yml
+  task: Work out each deploy step's digest
+  field: ansible.builtin.set_fact.deploy_steps_digest
+  context: deploy-steps-read
+  expected:
+    install-root: 6ccb28b9f44de8cdf8af525fb074eeb5a7ca9a9f4c1b82e2245dc0e53ee17baa
+    install-web: ''
 non_command_output:
 - file: tasks/instance-fleet-refresh.yml
   task: Read the digests of the checkout
