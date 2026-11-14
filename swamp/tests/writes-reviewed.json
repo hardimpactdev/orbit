@@ -338,7 +338,6 @@
    "Check Process state": "idempotent",
    "Check the checkout lock": "unreviewed",
    "Check the container": "idempotent",
-   "Check the inner fleet": "read-only",
    "Check the local branch": "unreviewed",
    "Check tracked changes": "unreviewed",
    "Count commits after it": "unreviewed",
