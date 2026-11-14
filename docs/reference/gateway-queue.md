@@ -26,7 +26,7 @@ After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services`
 
 ## Queues
 
-Laravel Horizon runs seven queues on the connection with five supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs, operations and the prompt projection of operations keep separate supervisors:
+Laravel Horizon runs eight queues on the connection with six supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs, operations, Operation starts and the prompt projection of operations keep separate supervisors:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
@@ -34,10 +34,17 @@ Laravel Horizon runs seven queues on the connection with five supervisors. The `
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
-| `operations` | 1 | Native run starts and the jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
+| `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
+| `operation-starts` | 4 | Native run starts ([Direct Swamp starts](/reference/operations#direct-swamp-starts)), side by side. Job timeout 150 seconds, memory cap 256 MB |
 | `operations-prompt` | 1 | The projection of one Operation whose root run just ended ([How an operation runs](/reference/operations#how-an-operation-runs)). Job timeout 150 seconds, memory cap 256 MB |
 
 A pass on `operations` neither drops nor holds back a job on `operations-prompt`.
+
+A start waits for Swamp's confirmation for up to 120 seconds. On one worker such a wait held every other start, and every job on `operations`, behind it. Four start workers, one for each CPU of the Swamp Node, let other starts go on while one waits.
+
+Running side by side is safe: the status change at the start of a submission admits one job per Operation, and a target hold refuses a second Operation for the same held target until the first ends. Kinds that take no target hold, such as `process.*` and `schedule.*`, never had an ordered start: a deferred start could already run after a later one.
+
+Each start worker uses at most 256 MB. To change the count, change `maxProcesses` and `minProcesses` of `operation-starts` in `apps/gateway/config/horizon.php`; the next release starts Horizon with it.
 
 Image and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
@@ -136,6 +143,8 @@ The switch also restarts other running services whose working directory is under
 `orbit process:restart`, `orbit process:stop` and `bin/gateway-rollback` wait for running jobs up to the drain, because the unit carries the stop policy. To restart Horizon on the current release without a wait, run `php artisan horizon:terminate`.
 
 ### Switch back to an older release
+
+A release from before the `operation-starts` supervisor does not work that queue. Starts queued there wait in Redis, with their Operations `queued` and their target holds kept, until a release with the supervisor runs again. To start them on the older release, run one worker by hand as `orbit` in `/home/orbit/orbit/apps/gateway` until the queue is empty: `php artisan queue:work gateway --queue=operation-starts --stop-when-empty --tries=1 --timeout=150`.
 
 A release from before Horizon has no `horizon` command. If the rollback script restarts Horizon on that release, the Process fails at each start until systemd gives up. The Process shows the failure in `orbit process:list`. Stop it with `orbit process:stop <id>`. The older release's scheduler runs its own workers on the database queues meanwhile, and jobs left in Redis wait. The next release with Horizon starts the Process again, and Horizon works the jobs left in Redis.
 

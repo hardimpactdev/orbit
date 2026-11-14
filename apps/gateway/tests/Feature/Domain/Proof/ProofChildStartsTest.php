@@ -130,7 +130,7 @@ it('spaces the successor from a slow answer and lets unrelated work run before i
     Queue::assertPushed(StartAdmittedSwampRun::class, 3);
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $third->id);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id
-        && $job->queue === 'operations' && $job->connection === 'gateway' && $job->delay->equalTo($began->addSeconds(102)));
+        && $job->queue === 'operation-starts' && $job->connection === 'gateway' && $job->delay->equalTo($began->addSeconds(102)));
     $this->travel(19)->seconds();
     app()->call([new StartAdmittedSwampRun($second->id), 'handle']);
     expect($second->refresh()->status)->toBe(OperationStatus::Queued)
@@ -326,10 +326,10 @@ it('starts a delayed child delivered at the database queues whole-second precisi
     $this->travelTo(CarbonImmutable::parse('2026-11-13T12:00:00.900000Z'));
     (new StartAdmittedSwampRun($first->id))->failed(new RuntimeException('first answered'));
     $job = Queue::pushed(StartAdmittedSwampRun::class)->first(fn ($job): bool => $job->operationId === $second->id);
-    $id = $nativeQueue->later($job->delay, $job, queue: 'operations');
+    $id = $nativeQueue->later($job->delay, $job, queue: 'operation-starts');
     // Laravel uses getTimestamp(), discarding fractions, for the native queue's available_at.
     $this->travelTo(CarbonImmutable::createFromTimestamp($job->delay->getTimestamp())->addMicroseconds(100000));
-    $delivered = $nativeQueue->pop('operations');
+    $delivered = $nativeQueue->pop('operation-starts');
     expect($delivered)->not->toBeNull();
     expect($delivered->getJobId())->toBe($id);
     proofStartAnswer();

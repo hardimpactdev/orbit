@@ -46,7 +46,7 @@ it('answers create admission with 202 before attempting the native start and rep
 
     expect(Operation::query()->sole()->status)->toBe(OperationStatus::Queued);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $id
-        && $job->connection === 'gateway' && $job->queue === 'operations');
+        && $job->connection === 'gateway' && $job->queue === 'operation-starts');
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
 });
 
@@ -58,7 +58,7 @@ it('fails the accepted Operation when the queued start cannot connect and permit
 
     $operation = containerCreate($project, $node);
     expect($operation->status)->toBe(OperationStatus::Queued);
-    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operations', '--once' => true, '--tries' => 1])->assertSuccessful();
+    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operation-starts', '--once' => true, '--tries' => 1])->assertSuccessful();
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
         ->and($operation->error_code)->toBe('swamp.start_unavailable')
@@ -94,7 +94,7 @@ it('starts the committed create once in the worker, including its execution copi
 
     $operation = containerCreate($project, $node);
     expect($frames)->toBe([]);
-    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operations', '--once' => true, '--tries' => 1])->assertSuccessful();
+    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operation-starts', '--once' => true, '--tries' => 1])->assertSuccessful();
     app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)
@@ -415,7 +415,7 @@ it('keeps the queued job successful and bound when success logging throws, with 
         });
     Bus::dispatch(new StartAdmittedSwampRun($operation->id));
 
-    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operations', '--once' => true, '--tries' => 1])->assertSuccessful();
+    $this->artisan('queue:work', ['connection' => 'gateway', '--queue' => 'operation-starts', '--once' => true, '--tries' => 1])->assertSuccessful();
     app()->call([new StartAdmittedSwampRun($operation->id), 'handle']);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)
