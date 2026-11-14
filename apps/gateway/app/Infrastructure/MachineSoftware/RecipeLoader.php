@@ -374,20 +374,44 @@ final readonly class RecipeLoader
 
                     continue;
                 }
-                $this->object($part, $field, $programless ? ['version', 'artifacts'] : ['version', 'artifacts', 'bin']);
+                $this->object($part, $field, [...($programless ? ['version', 'artifacts'] : ['version', 'artifacts', 'bin']),
+                    ...(property_exists($part, 'trust_module') ? ['trust_module'] : [])]);
                 $version = $this->text($part->version, "{$field}.version");
                 $this->require(preg_match('/^[0-9][0-9A-Za-z.+:~_-]*$/D', $version) === 1, "{$field}.version: expected an exact version, not a channel or constraint.");
                 $artifacts = $this->object($part->artifacts, "{$field}.artifacts");
                 $this->require(array_keys(get_object_vars($artifacts)) === $architectures, "{$field}.artifacts: expected exactly one amd64 pin.");
-                $parts[$name] = new FolderPin($version, $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version), $bin);
+                $artifact = $this->artifact($artifacts->{$architectures[0]}, "{$field}.artifacts.{$architectures[0]}", $name, 'artifact', $version);
+                $trustModule = property_exists($part, 'trust_module') ? $this->trustModule($part->trust_module, $folder, $artifact, $field) : null;
+                $parts[$name] = new FolderPin($version, $artifact, $bin, $trustModule);
             }
             $this->require($parts !== [], "instances.{$folder}: expected at least one part.");
+            // Chromium in every container loads the runtime folder's one trust module (docs/reference/development-containers.md#trust).
+            $trusted = array_filter($parts, static fn (FolderPin $part): bool => $part->trustModule !== null);
+            $this->require($folder !== 'runtime' || count($trusted) === 1, 'instances.runtime: expected exactly one part with a trust_module.');
             // Every container's environment names the Vite+ home, so the runtime folder always has one.
             $this->require($folder !== 'runtime' || $vitePlus instanceof VitePlusHome, 'instances.runtime: expected a Vite+ part, the recipe tool vp-cli.');
             $folders[$folder] = $parts;
         }
 
         return new InstanceFolders($folders['runtime'], $folders['agent'], $this->staticPhpBuilds($raw->php, $php), $vitePlus);
+    }
+
+    /**
+     * The PKCS#11 trust module of a Debian package part of the runtime folder: its path inside the package, and the container package
+     * it needs at exactly the part's version, as a package of one source pins its own library (docs/reference/development-containers.md#trust).
+     *
+     * @return array{path: string, library: string}
+     */
+    private function trustModule(mixed $value, string $folder, ArtifactPin $artifact, string $field): array
+    {
+        $module = $this->object($value, "{$field}.trust_module", ['path', 'library']);
+        $path = $this->text($module->path, "{$field}.trust_module.path");
+        $library = $this->text($module->library, "{$field}.trust_module.library");
+        $this->require($folder === 'runtime' && str_ends_with((string) parse_url($artifact->location, PHP_URL_PATH), '.deb'), "{$field}.trust_module: expected a Debian package part of the runtime folder.");
+        $this->require(preg_match('~^[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\.so$~D', $path) === 1 && ! in_array('..', explode('/', $path), true), "{$field}.trust_module.path: expected a relative path to a module inside the package.");
+        $this->require(preg_match('/^[a-z0-9][a-z0-9.+-]+$/D', $library) === 1, "{$field}.trust_module.library: expected a Debian package name.");
+
+        return ['path' => $path, 'library' => $library];
     }
 
     /** @param array<string, ToolPin> $tools */

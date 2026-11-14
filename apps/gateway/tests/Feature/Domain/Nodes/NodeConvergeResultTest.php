@@ -27,7 +27,7 @@ function converge_receipt(?string $failure = null, array $tools = []): array
         $failed = $failed || $name === $failure;
     }
 
-    return ['outcome' => $failure === null ? 'succeeded' : 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => array_sum(array_column($phases, 'elapsed_seconds')), 'tools' => $tools, 'cleanup_complete' => true]
+    return ['outcome' => $failure === null ? 'succeeded' : 'failed', 'phases' => $phases, 'changed' => 0, 'elapsed_seconds' => array_sum(array_column($phases, 'elapsed_seconds')), 'tools' => $tools, 'browser_trust' => [], 'cleanup_complete' => true]
         + ($failure === null ? [] : ['failed_phase' => $failure, 'error_code' => 'operation.native_failed']);
 }
 
@@ -112,6 +112,27 @@ it('projects each admitted Tool independently without failing the parent or chan
         ->and($role->refresh()->getAttributes())->toBe($before);
     $again = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => $result]);
     expect($again->result)->toBe($result);
+});
+
+it('keeps each Instance container without Chromium\'s trust store and its reason in a successful Operation result', function (): void {
+    // docs/reference/development-containers.md#trust: one container's own state never fails the converge; the result names it.
+    $observations = $this->tools->map(fn (Tool $tool): array => ['id' => $tool->id, 'status' => 'installed', 'installed_version' => '2.3.4'])->all();
+    $listed = [['container' => 'orbit-instances/instance-7', 'reason' => 'version mismatch: 0.25.5-3 != 0.26.2-2'],
+        ['container' => 'orbit-instances/instance-8', 'reason' => 'path refused: /home/agent/.pki/nssdb/pkcs11.txt is symlink'],
+        ['container' => 'orbit-instances-nested/instance-9', 'reason' => 'no agent home'],
+        ['container' => 'orbit-instances/instance-10', 'reason' => 'not running']];
+    $result = [...converge_receipt(null, $observations), 'browser_trust' => $listed];
+    // The list is part of every terminal result, like `tools`: a result without it is refused.
+    $without = converge_receipt(null, $observations);
+    unset($without['browser_trust']);
+    expect(fn () => NodeConvergeResult::parse($without))->toThrow(ResourceOperationException::class, 'terminal result is invalid');
+
+    $operation = app(NodeConvergeProjection::class)->apply($this->operation, [...$this->native, 'result' => $result]);
+    expect($operation->status)->toBe(OperationStatus::Succeeded)->and($operation->result['browser_trust'])->toBe($listed);
+    expect(fn () => NodeConvergeResult::parse([...$result, 'browser_trust' => [['container' => 'instance-7', 'reason' => 'no agent home']]]))
+        ->toThrow(ResourceOperationException::class, 'terminal result is invalid')
+        ->and(fn () => NodeConvergeResult::parse([...$result, 'browser_trust' => [['container' => 'orbit-instances/instance-7', 'reason' => "no\nhome"]]]))
+        ->toThrow(ResourceOperationException::class, 'terminal result is invalid');
 });
 
 it('does not project unadmitted or incomplete Tool receipts', function (string $case): void {

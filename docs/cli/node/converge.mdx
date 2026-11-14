@@ -64,6 +64,8 @@ Reasons are selected in this order:
 
 The failed phase remains in `result.failed_phase`. The Operation's error detail keeps its existing native failure summary.
 
+On an [Instance container host](/reference/development-containers#trust), the roles phase also lists in `result.browser_trust` each container that got no Chromium trust store: its `container` (`<project>/<name>`) and its `reason`. Such a container never fails the converge. The list is empty when every running, stopped or frozen container has its store. A container in another state, such as `Error`, is left out of the whole files step and of this list.
+
 <div className="flow-at" data-chart="node/converge"></div>
 
 ## Errors

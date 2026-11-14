@@ -170,6 +170,9 @@ Deno.test("a clone's create delivers a nested clone's Club key and has no fleet,
   const afterKey = [{ step: "clone-container", condition: { type: "succeeded" } },
     { step: "clone-club-key", condition: { type: "or", conditions: [{ type: "succeeded" }, { type: "skipped" }] } }];
   assertEquals([step("clone-workspace").dependsOn, step("clone-t3").dependsOn], [afterKey, afterKey]);
+  // T3 is registered only after the join, so a task copy's cleaning in the checkout ends before anyone can reach its T3.
+  assertEquals(step("clone-sessions").dependsOn, [{ step: "clone-t3", condition: { type: "succeeded" } }, { step: "clone-workspace", condition: { type: "succeeded" } }]);
+  assertEquals(step("clone-register").dependsOn, [{ step: "clone-session-copy", condition: { type: "succeeded" } }]);
   // The workspace step runs the checkout part only; the services part is the completion's.
   assert(step("clone-workspace").task.inputs.argv.endsWith('+ ["checkout"] }}'));
   const skips = (intent: Record<string, unknown>) => environment.evaluate(swampExpression(step("clone-club-key").guard), { inputs: { intent } });

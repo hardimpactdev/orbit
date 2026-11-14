@@ -1,6 +1,7 @@
 order = 930
-source_sha256 = "87d98cb7df890f50cc4c67bab12cb877d5bd4f1134638e64174e96106b9e6e67"
+source_sha256 = "d62c2252cd35a2c279c97475d11315ac08f567a9c56532a3b9aa9ad5eda14ddc"
 cases = [
+  "converge reports each container without Chromium's trust store and why, and only those fixed reasons",
   "converge reports all phases, live no-op counts and measured elapsed time; hub changes are not target changes",
   "converge stops reporting success at input and preserves the first failure",
   "converge stops reporting success at agent and preserves the first failure",

@@ -131,6 +131,7 @@ sequenceDiagram
       SW-->>GW: Run succeeded<br/>terminal result
       %%> Result:
       %%> - the shared reader marks the Operation succeeded and records each Tool's result
+      %%> - the result lists each Instance container that got no Chromium trust store, with its reason
       %%> - a repeat is another full run, not an admission skip; matching tasks report zero changes
     else a phase fails
       %% path: phase-failed

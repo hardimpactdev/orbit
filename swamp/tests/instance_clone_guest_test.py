@@ -261,6 +261,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         self.expected = self.head(self.origin)
         self.git(self.base, "clone", "--quiet", str(self.origin), str(self.workspace))
         self.exclude_users = []
+        self.git_calls = []
 
     def git(self, cwd, *args):
         return subprocess.run(["git", "-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", *args], cwd=cwd,
@@ -305,8 +306,10 @@ class WorkspaceCheckoutTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, "Orbit Agent\n", "")
             if actual[0] == "git":
                 actual = [str(self.base / "tmp/proof.bundle") if a == container["bundle"] else a for a in actual]
+                self.git_calls.append((actual, _kwargs.get("env", {})))
                 return REAL_RUN(actual, cwd=self.workspace, check=False, capture_output=True, text=True, timeout=10,
-                                      env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null"))
+                                input=_kwargs.get("input"), errors=_kwargs.get("errors", "strict"),
+                                env=dict(os.environ, GIT_CONFIG_NOSYSTEM="1", GIT_CONFIG_GLOBAL="/dev/null", LC_ALL="C"))
             stdout = ""
             if "/usr/local/libexec/orbit-instance-node-runtime.py" in actual:
                 stdout = '{"status":"unchanged"}'
@@ -408,6 +411,168 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         # The result names the commit the workspace started at, not the user's.
         self.assertEqual(result["commit"], self.expected)
         self.assertEqual(self.phase("sessions")["phase"], "sessions")
+
+    def task_copy(self):
+        return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
+                "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/.env", "units": [], "processes": [],
+                "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}, "clean_workspace": True}}
+
+    def default_tree(self):
+        """The seed as production takes it: the default's branch at the seed commit, with the default's own work in its tree."""
+        self.seed("main", self.expected)
+        (self.workspace / ".git/info/exclude").write_text("/vendor/\n*.sqlite\n")
+        (self.workspace / "file").write_text("the default's edit")
+        (self.workspace / "staged.txt").write_text("staged on the default")
+        self.git(self.workspace, "add", "staged.txt")
+        (self.workspace / "wip.txt").write_text("untracked")
+        (self.workspace / "tests").mkdir()
+        (self.workspace / "tests/NavigationTest.php").write_text("<?php")
+        (self.workspace / "pkg").mkdir()
+        self.git(self.workspace / "pkg", "init", "--quiet")
+        (self.workspace / "vendor/package").mkdir(parents=True)
+        (self.workspace / "vendor/package/x.php").write_text("<?php")
+        (self.workspace / "database.sqlite").write_text("db")
+        (self.workspace / ".env").write_text("APP_KEY=base64:fixture-key\n")
+
+    def test_a_task_copy_starts_on_its_start_commit_alone_and_keeps_what_git_ignores(self):
+        self.default_tree()
+        result = self.phase("workspace", self.task_copy())
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertEqual((self.branch(), self.head(self.workspace)), ("proof", self.expected))
+        self.assertEqual((self.workspace / "file").read_text(), "fetched")
+        for gone in ["staged.txt", "wip.txt", "tests", "pkg"]:
+            self.assertFalse((self.workspace / gone).exists(), gone)
+        # What Git ignores is what the copy needs to run: dependencies, the database file and the default's `.env`, which the merge read.
+        self.assertEqual((self.workspace / "vendor/package/x.php").read_text(), "<?php")
+        self.assertEqual((self.workspace / "database.sqlite").read_text(), "db")
+        self.assertTrue((self.workspace / ".env").read_text().startswith("APP_KEY=base64:fixture-key"))
+        self.assertEqual(result["cleaned"], {"reset_count": 2, "reset": ["file", "staged.txt"],
+                                             "removed_count": 3, "removed": ["pkg/", "tests/", "wip.txt"]})
+        self.assertIn("clean", result["changes"])
+        self.assertEqual(self.mark()[0], {"instance_id": 9, "commit": self.expected})
+
+    def test_an_untracked_gitignore_of_the_default_hides_nothing_from_the_clean(self):
+        # The default ignored its scratch folder in a `.gitignore` it never committed; the copy's start commit has none.
+        self.seed("main", self.expected)
+        (self.workspace / ".gitignore").write_text("scratch/\n")
+        self.git(self.workspace, "add", ".gitignore")
+        self.git(self.workspace, "commit", "--quiet", "-m", "ignore scratch")
+        self.git(self.workspace, "reset", "--quiet", "--soft", "HEAD~1")
+        self.git(self.workspace, "reset", "--quiet")
+        (self.workspace / "scratch").mkdir()
+        (self.workspace / "scratch/notes.md").write_text("wip")
+        cleaned = self.phase("checkout", self.task_copy())["cleaned"]
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertEqual((cleaned["removed_count"], cleaned["removed"]), (2, [".gitignore", "scratch/"]))
+
+    def test_the_clean_reads_the_start_commits_gitignore_when_the_default_edited_it(self):
+        # The start commit ignores nothing in scratch/; the default's uncommitted edit of `.gitignore` does.
+        self.git(self.origin, "switch", "--quiet", "proof")
+        (self.origin / ".gitignore").write_text("*.log\n")
+        self.git(self.origin, "add", ".gitignore")
+        self.git(self.origin, "commit", "--quiet", "-m", "ignore logs")
+        self.expected = self.head(self.origin)
+        self.git(self.workspace, "fetch", "--quiet", "origin", "proof")
+        self.seed("main", self.expected)
+        (self.workspace / ".gitignore").write_text("*.log\nscratch/\n")
+        (self.workspace / "scratch").mkdir()
+        (self.workspace / "scratch/notes.md").write_text("wip")
+        (self.workspace / "keep.log").write_text("ignored")
+        cleaned = self.phase("checkout", self.task_copy())["cleaned"]
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertEqual((cleaned["reset"], cleaned["removed"]), ([".gitignore"], ["scratch/"]))
+        self.assertTrue((self.workspace / "keep.log").exists())
+
+    def test_a_flag_in_the_defaults_index_hides_no_edit_from_the_clean(self):
+        self.seed("main", self.expected)
+        (self.workspace / "file").write_text("the default's hidden edit")
+        self.git(self.workspace, "update-index", "--skip-worktree", "file")
+        self.git(self.workspace, "update-index", "--assume-unchanged", "file")
+        self.assertEqual(self.git(self.workspace, "ls-files", "-v", "file").stdout, "s file\n")
+        cleaned = self.phase("checkout", self.task_copy())["cleaned"]
+        self.assertEqual((self.workspace / "file").read_text(), "fetched")
+        self.assertEqual(self.git(self.workspace, "ls-files", "-v", "file").stdout, "H file\n")
+        self.assertEqual(cleaned["reset"], ["file"])
+
+    def test_the_clean_reads_no_global_git_configuration_as_the_task_check(self):
+        self.seed("main", self.expected)
+        self.phase("checkout", self.task_copy())
+        cleaning = [env for argv, env in self.git_calls if "clean" in argv or "status" in argv or "diff" in argv]
+        self.assertTrue(cleaning)
+        for env in cleaning:
+            self.assertEqual((env["GIT_CONFIG_GLOBAL"], env["GIT_CONFIG_NOSYSTEM"], env["LC_ALL"]), ("/dev/null", "1", "C"))
+
+    def test_a_file_name_that_is_not_utf8_is_cleaned_and_named_escaped(self):
+        self.seed("main", self.expected)
+        name = os.fsdecode(b"caf\xe9.txt")
+        (self.workspace / name).write_text("wip")
+        cleaned = self.phase("checkout", self.task_copy())["cleaned"]
+        self.assertFalse((self.workspace / name).exists())
+        self.assertEqual(cleaned["removed_count"], 1)
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+
+    def test_a_deep_chain_of_untracked_gitignore_files_is_cleaned_whole(self):
+        # Each level's `.gitignore` hides the next; the repository also hides untracked files from its own status.
+        self.seed("main", self.expected)
+        self.git(self.workspace, "config", "status.showUntrackedFiles", "no")
+        level = self.workspace
+        for depth in range(6):
+            level = level / f"l{depth}"
+            level.mkdir()
+            (level.parent / ".gitignore").write_text(f"l{depth}/\n")
+        (level / "leaf").write_text("wip")
+        self.phase("checkout", self.task_copy())
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertFalse((self.workspace / "l0").exists())
+
+    def test_the_clean_reads_the_agents_ignore_file_as_the_task_check_does(self):
+        self.seed("main", self.expected)
+        self.phase("checkout", self.task_copy())
+        cleans = [argv for argv, _env in self.git_calls if "clean" in argv]
+        self.assertTrue(cleans)
+        for argv in cleans:
+            self.assertIn("core.excludesFile=" + GUEST.AGENT_IGNORE, argv)
+
+    def test_a_staged_rename_names_both_paths(self):
+        self.seed("main", self.expected)
+        self.git(self.workspace, "mv", "file", "moved")
+        cleaned = self.phase("checkout", self.task_copy())["cleaned"]
+        self.assertEqual(cleaned["reset"], ["file", "moved"])
+        self.assertFalse((self.workspace / "moved").exists())
+
+    def test_a_task_copy_of_a_clean_seed_reports_nothing_removed(self):
+        self.seed("main", self.expected)
+        result = self.phase("checkout", self.task_copy())
+        self.assertEqual(result["cleaned"], {"reset_count": 0, "reset": [], "removed_count": 0, "removed": []})
+        self.assertNotIn("clean", result["changes"])
+
+    def test_the_cleaning_names_the_first_files_and_counts_them_all(self):
+        self.seed("main", self.expected)
+        (self.workspace / "node_modules").mkdir()
+        (self.workspace / "node_modules/a.js").write_text("a")
+        for index in range(GUEST.CLEANED_NAMES + 5):
+            (self.workspace / f"w{index:02}.txt").write_text("w")
+        cleaned = self.phase("checkout", self.task_copy())["cleaned"]
+        # A Project that does not ignore node_modules loses it: the count and the first names say so.
+        self.assertEqual(cleaned["removed_count"], GUEST.CLEANED_NAMES + 6)
+        self.assertEqual(cleaned["removed"][0], "node_modules/")
+        self.assertEqual(len(cleaned["removed"]), GUEST.CLEANED_NAMES)
+        self.assertFalse((self.workspace / "node_modules").exists())
+
+    def test_a_retry_of_a_task_copy_never_cleans_the_users_work_again(self):
+        self.default_tree()
+        self.phase("workspace", self.task_copy())
+        (self.workspace / "agent-notes.md").write_text("the agent's work")
+        result = self.phase("workspace", self.task_copy())
+        self.assertNotIn("cleaned", result)
+        self.assertEqual((self.workspace / "agent-notes.md").read_text(), "the agent's work")
+
+    def test_a_clone_that_is_no_task_copy_keeps_the_defaults_tree(self):
+        self.default_tree()
+        result = self.phase("workspace")
+        self.assertNotIn("cleaned", result)
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain").stdout,
+                         " M file\nA  staged.txt\n?? pkg/\n?? tests/\n?? wip.txt\n")
 
     def test_sessions_refuse_a_workspace_without_this_instances_mark(self):
         self.seed("proof", self.expected)
@@ -916,6 +1081,7 @@ class CloneGuestTest(unittest.TestCase):
             env.write_text("PRIVATE=env\n")
             container = {
                 "workspace": "/srv/workspace",
+                "clone": {},
                 "branch": "proof",
                 "expected_commit": "abc123",
                 "instance_id": 9,
@@ -966,6 +1132,7 @@ class CloneGuestTest(unittest.TestCase):
             env.write_text(base_env)
             container = {
                 "workspace": "/srv/workspace",
+                "clone": {},
                 "branch": "proof",
                 "expected_commit": "abc123",
                 "instance_id": 9,
@@ -1063,6 +1230,7 @@ class CloneGuestTest(unittest.TestCase):
             settings.write_text("memory_limit = 1G\n")
             container = {
                 "workspace": "/srv/workspace",
+                "clone": {},
                 "branch": "proof",
                 "expected_commit": "abc123",
                 "instance_id": 9,

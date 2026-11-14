@@ -54,6 +54,15 @@ const fail = (message: string) => {
 };
 const instance = (named: string) =>
   state.instances.find((r: { name: string }) => r.name === named);
+/**
+ * The installed version of a package in a container, as its dpkg status holds it: the stock Ubuntu 26.04 image's libp11-kit0 unless
+ * the state names another (`null`: not installed).
+ */
+const installedVersion = (named: string, pkg: string): string | null =>
+  state.packages?.[named]?.[pkg] !== undefined ? state.packages[named][pkg] : ({"libp11-kit0": "0.26.2-2"} as Record<string, string>)[pkg] ?? null;
+const dpkgStatus = (named: string) => [["libc6", "2.42-0ubuntu1"], ["libp11-kit0", installedVersion(named, "libp11-kit0")]]
+  .filter(([, version]) => version !== null)
+  .map(([pkg, version]) => `Package: ${pkg}\nStatus: install ok installed\nArchitecture: amd64\nVersion: ${version}\n`).join("\n");
 /** Incus splits `key=value` at the first `=`: a value such as `port=0` holds one itself. */
 const pair = (argument: string) => {
   const at = argument.indexOf("=");
@@ -287,6 +296,45 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   Deno.writeTextFileSync(file, JSON.stringify(state));
   if (state.publish_alias_failure) fail("Injected publication alias assignment failure");
   state.images.at(-1).aliases.push({name: alias});
+} else if (family === "exec" && args.includes("--user")) {
+  // A command as a container user runs for real against a copy of that container's /home/agent from the state, which it then
+  // replaces: what the user's own script makes, with its own modes, is what the container holds.
+  if (!instance(action)) fail("Instance not found");
+  // A user command that hangs: `timeout` inside the container ends it with 124.
+  if (state.agent_hangs?.includes(action)) Deno.exit(124);
+  // A user command that prints bytes that are not UTF-8.
+  if (state.agent_bytes?.includes(action)) {
+    Deno.stdout.writeSync(Uint8Array.from([0xff, 0xfe, 0x0a]));
+    Deno.exit(0);
+  }
+  const prefix = `${action}/home/agent`;
+  const root = Deno.makeTempDirSync();
+  const local = (key: string) => `${root}/home/agent${key.slice(prefix.length)}`;
+  const under = (key: string) => key === prefix || key.startsWith(`${prefix}/`);
+  for (const key of Object.keys(state.dirs ?? {}).filter(under).sort()) Deno.mkdirSync(local(key), { recursive: true });
+  for (const [key, row] of Object.entries(state.files ?? {}).filter(([key]) => under(key)) as [string, { content: string }][]) {
+    Deno.writeTextFileSync(local(key), row.content);
+  }
+  for (const [key, target] of Object.entries(state.links ?? {}).filter(([key]) => under(key)) as [string, string][]) Deno.symlinkSync(target, local(key));
+  const command = args.slice(args.indexOf("--") + 1).map((arg) => arg.startsWith("/home/agent") ? `${root}${arg}` : arg);
+  const ran = new Deno.Command(command[0], { args: command.slice(1), cwd: root }).outputSync();
+  for (const kind of ["dirs", "files", "links"]) {
+    state[kind] = Object.fromEntries(Object.entries(state[kind] ?? {}).filter(([key]) => !under(key)));
+  }
+  const walk = (path: string, key: string) => {
+    const info = Deno.lstatSync(path);
+    const mode = "0" + (info.mode! & 0o777).toString(8);
+    if (info.isSymlink) state.links[key] = Deno.readLinkSync(path);
+    else if (info.isDirectory) {
+      state.dirs[key] = { mode, uid: "2750", gid: "2750" };
+      for (const entry of Deno.readDirSync(path)) walk(`${path}/${entry.name}`, `${key}/${entry.name}`);
+    } else state.files[key] = { content: Deno.readTextFileSync(path), mode, uid: "2750", gid: "2750" };
+  };
+  try { Deno.lstatSync(`${root}/home/agent`); walk(`${root}/home/agent`, prefix); } catch { /* no home */ }
+  Deno.removeSync(root, { recursive: true });
+  Deno.writeTextFileSync(file, JSON.stringify(state));
+  Deno.stdout.writeSync(new TextEncoder().encode(new TextDecoder().decode(ran.stdout).replaceAll(root, "")));
+  Deno.exit(ran.code);
 } else if (family === "exec") {
   if (!instance(action)) fail("Instance not found");
   const command = args.slice(args.indexOf("--") + 1);
@@ -328,6 +376,12 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
       for (const name of state.ldcache[action] ?? []) console.log(`\t${name} (libc6,x86-64) => ${lib}/${name}`);
     }
   }
+  // `dpkg-query --show --showformat=${Version} <package>`: the package's version, or exit 1 when it is not installed.
+  if (command[0] === "dpkg-query") {
+    const version = installedVersion(action, command.at(-1)!);
+    if (version === null) fail(`dpkg-query: no packages found matching ${command.at(-1)}`);
+    Deno.stdout.writeSync(new TextEncoder().encode(version!));
+  }
   if (command[0] === "sh" && command[1] === "-c" && instance(action).groups) {
     accounts(instance(action), command[2]);
   }
@@ -342,11 +396,18 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
   }
 } else if (family === "file" && action === "pull") {
   // The files the converge wrote, by `<instance>/<path>`; any other path is missing, as `incus file pull` reports it.
-  const pulled = state.files?.[args[2]];
+  // A status file of raw bytes, as base64, for a container whose dpkg status is not UTF-8.
+  const raw = args[2].endsWith("/var/lib/dpkg/status") ? state.raw_status?.[args[2].split("/")[0]] : undefined;
+  if (raw !== undefined) {
+    Deno.stdout.writeSync(Uint8Array.from(atob(raw), (c) => c.charCodeAt(0)));
+    Deno.exit(0);
+  }
+  const pulled = state.files?.[args[2]] ?? (args[2].endsWith("/var/lib/dpkg/status") && instance(args[2].split("/")[0])
+    ? { content: dpkgStatus(args[2].split("/")[0]) } : undefined);
   if (pulled === undefined) fail("Error: not found");
   Deno.stdout.writeSync(new TextEncoder().encode(pulled.content));
 } else if (family === "file" && action === "create") {
-  // Only symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.
+  // Symlinks: `incus file create --type=symlink --force <instance>/<path> <target>`.
   state.links ??= {};
   state.links[args.at(-2)!] = args.at(-1)!;
 } else if (family === "file" && action === "delete") {
