@@ -201,6 +201,14 @@ describe('the task list', function (): void {
         $this->getJson('/api/v1/tasks?'.$query)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed');
     })->with(['limit=0', 'limit=101', 'cursor=abc', 'cursor=0']);
 
+    it('refuses a page with parent_id, which lists every subtask of one group', function (string $page): void {
+        $group = taskListGroup($this->orbit, TaskGroupStatus::Running, 1);
+
+        $this->getJson('/api/v1/tasks?parent_id='.$group->id.'&'.$page)->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')
+            ->assertJsonPath('error.details.parent_id', fn (mixed $messages): bool => $messages !== null);
+        $this->getJson('/api/v1/tasks?parent_id='.$group->id)->assertOk()->assertJsonCount(2, 'data');
+    })->with(['limit=5', 'cursor=10']);
+
     it('lists the subtasks of a parent in a fixed number of queries, without long text or JSON columns', function (): void {
         $group = taskListGroup($this->orbit, TaskGroupStatus::Running, 1);
         foreach (range(3, 40) as $position) {
