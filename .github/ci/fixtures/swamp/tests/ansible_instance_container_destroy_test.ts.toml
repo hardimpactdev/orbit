@@ -1,11 +1,12 @@
 order = 360
-source_sha256 = "31082dae6c4e042f090cb0fdb802adef7931a9372323f80472995a96b6ff0b19"
+source_sha256 = "4d50f0c9bb9883c57fbfe3435503966bb276d54360b2a15f045775ac01eddf1c"
 cases = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing",
+  "a destroy deletes the inner volume its intent names, with its snapshots, after the container; another volume stays and a retry changes nothing",
 ]
 file = "swamp/tests/ansible_instance_container_destroy_test.ts"
-cost = 13
+cost = 24
 # Completed Deno case times rounded up by one second; startup is added per slice.
 # Unmeasured cases use the observed maximum (12s); these are estimates, not completed measurements.
 slices = 1
@@ -25,3 +26,4 @@ inputs = [
 [case_costs]
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config" = 1
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker and mirror; a retry changes nothing" = 12 # CENSORED lower bound 6.893s, run 43010311414; not a completed measurement
+  "a destroy deletes the inner volume its intent names, with its snapshots, after the container; another volume stays and a retry changes nothing" = 11 # estimate: local run on Beast, not a CI measurement

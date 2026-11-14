@@ -185,6 +185,46 @@ describe('the recorded Incus project', function (): void {
     })->with([false, true]);
 });
 
+describe('the inner volume', function (): void {
+    it('is recorded only for a new nested-fleet default, and its intent, start guard and removal name it', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $project = otherProject('nested', true);
+        $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/nested/default']);
+        $runtime = app(InstanceContainer::class)->reserve($default, $node);
+        $intent = app(InstanceContainer::class)->intent($default, $runtime);
+
+        expect($runtime->incus_project)->toBe('orbit-instances-nested')
+            ->and($runtime->inner_volume)->toBe('inner-'.$default->id)
+            ->and($intent['inner_volume'])->toBe(['name' => 'inner-'.$default->id, 'pool' => 'orbit-instances', 'size' => '30GiB',
+                'config' => ['zfs.block_mode' => 'true', 'block.filesystem' => 'btrfs', 'block.mount_options' => 'user_subvol_rm_allowed,discard', 'security.shifted' => 'true'],
+                'device' => 'inner-pool', 'path' => '/srv/inner-pool', 'inner_pool' => ['name' => 'inner', 'source' => '/srv/inner-pool/pool']])
+            ->and($intent['allowed_devices']['inner-pool'])->toBe(['type' => 'disk', 'pool' => 'orbit-instances', 'source' => 'inner-'.$default->id, 'path' => '/srv/inner-pool'])
+            ->and(app(ContainerInstanceDestroy::class)->capture($default)['inner_volume'])->toBe('inner-'.$default->id);
+
+        // A clone of it copies its default and records none.
+        $clone = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'feature', 'checkout_path' => '/test/nested/feature']);
+        expect(app(InstanceContainer::class)->reserve($clone, $node, $default)->inner_volume)->toBeNull();
+
+        // A non-default runtime with no clone source, as a migration reserves one, records none either.
+        $moved = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'moved', 'checkout_path' => '/test/nested/moved']);
+        expect(app(InstanceContainer::class)->reserve($moved, $node)->inner_volume)->toBeNull();
+    });
+
+    it('is absent for a normal default and for a nested runtime that records none, as Instance 2454', function (string $shape): void {
+        $node = containerDefaultNode();
+        $instance = $shape === 'normal'
+            ? Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/default'])
+            : recordedNestedInstance(containerDefaultProject(), $node);
+        $runtime = $shape === 'normal' ? app(InstanceContainer::class)->reserve($instance, $node) : $instance->runtime()->firstOrFail();
+        $intent = app(InstanceContainer::class)->intent($instance, $runtime);
+
+        expect($runtime->inner_volume)->toBeNull()
+            ->and($intent)->not->toHaveKey('inner_volume')
+            ->and($intent['allowed_devices'] ?? [])->not->toHaveKey('inner-pool')
+            ->and(app(ContainerInstanceDestroy::class)->capture($instance))->not->toHaveKey('inner_volume');
+    })->with(['normal', 'nested without a volume']);
+});
+
 describe('a normal Node and a normal Instance stay byte-identical to main', function (): void {
     it('keeps the full host intent of a normal Node with the switch absent or off', function (string $switch, bool $taskContainers): void {
         $this->freezeTime();

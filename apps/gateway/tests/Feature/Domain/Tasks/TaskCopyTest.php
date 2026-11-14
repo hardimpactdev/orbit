@@ -126,8 +126,10 @@ function copySource(string $slug = 'trial', bool $nested = true): Instance
         'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => $nested]);
     $default = Instance::query()->findOrFail(containerCreate($project, $node->refresh())->target_id);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
+    // The nested-fleet default that tasks copy today was made before the inner volume, so it records none; a default made with one
+    // cannot be copied yet (docs/reference/development-containers.md#the-inner-volume).
     InstanceRuntime::query()->where('instance_id', $default->id)->firstOrFail()
-        ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running]);
+        ->update(['seed_commit' => str_repeat('c', 40), 'power_state' => InstanceRuntimePowerState::Running, 'inner_volume' => null]);
 
     return $default->refresh();
 }
@@ -238,6 +240,16 @@ describe('a task start on the copy path', function (): void {
             ->and($group->taskable_id)->toBe($copy->id)
             ->and(TaskVm::query()->count())->toBe(0);
         Queue::assertNotPushed(AdmitTaskVm::class);
+    });
+
+    it('refuses a task of a nested-fleet default made with an inner volume before any record, until the clone copies the volume', function (): void {
+        $default = copySource();
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['inner_volume' => 'inner-'.$default->id]);
+        $group = copyGroup($default->project);
+        $before = copyRows();
+
+        expect(copyRefusal(fn () => startCopy($group)))->toBe('instance.inner_volume_clone_unavailable 409')
+            ->and(copyRows())->toBe($before);
     });
 
     it('admits a plain clone for a Project whose default is a container: no nested project, no fleet, no Club key', function (): void {

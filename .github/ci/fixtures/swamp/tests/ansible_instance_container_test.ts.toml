@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "8714ca10a30b946843b1ae10596d434f96bbb87e2d16d25997e17b463d6373f1"
+source_sha256 = "f16b3ea0ca0f421a990d028a943d514aa910d5460c5b2ddf371cdd1e4445cef0"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -56,6 +56,9 @@ cases = [
   "a normal container start never writes boot.autostart",
   "a nested-fleet create refuses by name, before any Incus change, while the host converge records a failed nested-fleet image build",
   "without a recorded failed build a nested-fleet create makes its container from the nested-fleet image, and a normal create never reads the record",
+  "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",
+  "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool",
+  "the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent",
   "a normal host intent runs the exact tasks, Incus command lines and host files of main",
   "a switched-on host with a short subuid range refuses before any nesting change",
   "a switched-on host with a short subgid range refuses before any nesting change",
@@ -80,6 +83,11 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 3989
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The inner volume cases, 20 to 31s each locally: any of them pushes the file to 9 hosted shards, above the 8-shard PR limit.
+  # The PR keeps the guard's volume keys in instance_clone_test.py (InnerVolumeGuardTest).
+  "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",
+  "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool",
+  "the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   # 144.1s on PR run 43421256788 and cut at the 180s unit ceiling on main run 43423841440 (job 131880584016): two converges of a
   # switched-on host do not fit a 150-second lane. The Main full set runs it with its own ceiling.

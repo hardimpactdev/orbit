@@ -1865,6 +1865,124 @@ Deno.test({
   },
 });
 
+/** NestedFleetInnerVolume::intent of a new nested-fleet default, and the disk the start guard admits for it. */
+const INNER_CONFIG: Record<string, string> = {
+  "zfs.block_mode": "true", "block.filesystem": "btrfs", "block.mount_options": "user_subvol_rm_allowed,discard", "security.shifted": "true",
+};
+function innerVolumeCreate(f: ReturnType<typeof fixture>) {
+  nestedCreate(f);
+  const container = f.container as unknown as Record<string, unknown> & {allowed_devices: Record<string, Record<string, string>>};
+  container.inner_volume = {name: "inner-7", pool: "orbit-instances", size: "30GiB", config: INNER_CONFIG, device: "inner-pool",
+    path: "/srv/inner-pool", inner_pool: {name: "inner", source: "/srv/inner-pool/pool"}};
+  container.allowed_devices["inner-pool"] = {type: "disk", pool: "orbit-instances", source: "inner-7", path: "/srv/inner-pool"};
+  f.write();
+}
+const volumeCalls = (f: ReturnType<typeof fixture>) => incusCalls(f).filter((call) => call[0] === "storage" || call.includes("inner-pool"));
+
+Deno.test({
+  name: "a new nested-fleet default gets its inner volume before the container, its disk before the first start and the inner pool after it",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      const result = f.run("container");
+      assert(result.ok, result.output);
+      const state = f.state();
+      assertEquals(state.volumes["inner-7"].config, {"volatile.uuid": state.volumes["inner-7"].config["volatile.uuid"], ...INNER_CONFIG, size: "30GiB"});
+      assertEquals(state.volumes["inner-7"].project, "orbit-instances-nested");
+      const calls = incusCalls(f).map((call) => call.join(" "));
+      const create = calls.findIndex((call) => call.startsWith("storage volume create orbit-instances inner-7"));
+      const init = calls.findIndex((call) => call.includes(" init "));
+      const attach = calls.findIndex((call) => call.includes("config device add instance-7 inner-pool disk"));
+      const start = calls.findIndex((call) => call.endsWith("start instance-7"));
+      assert(create >= 0 && create < init && init < attach && attach < start, JSON.stringify(calls));
+      assertEquals(state.containers["instance-7"].added["inner-pool"],
+        {type: "disk", settings: ["pool=orbit-instances", "source=inner-7", "path=/srv/inner-pool"]});
+      assertEquals(state.inner_pools["instance-7"], {inner: ["btrfs", "source=/srv/inner-pool/pool"]});
+      // A retry reuses the volume, the disk and the pool: it creates none of them again.
+      const before = volumeCalls(f).filter((call) => !call.includes("query")).length;
+      const stopped = f.state();
+      stopped.containers["instance-7"].status = "Stopped";
+      Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(stopped));
+      assert(f.run("container").ok);
+      assertEquals(volumeCalls(f).filter((call) => !call.includes("query")).length, before);
+      assertEquals(Object.keys(f.state().inner_pools["instance-7"]), ["inner"]);
+    } finally { f.cleanup(); }
+  },
+});
+
+Deno.test({
+  name: "a nested-fleet default without an inner volume (Instance 2454's shape) and a normal default make no volume, disk or inner pool",
+  ignore: !hasAnsible,
+  fn() {
+    for (const shape of ["nested", "normal"]) {
+      const f = fixture();
+      try {
+        if (shape === "nested") nestedCreate(f);
+        const result = f.run("container");
+        assert(result.ok, result.output);
+        assertEquals(volumeCalls(f), [], shape);
+        assertEquals(f.state().volumes, undefined, shape);
+        assertEquals(f.state().inner_pools, undefined, shape);
+        for (const task of ["Create the inner volume", "Add the inner volume's disk", "Create the inner pool on the inner volume"]) {
+          assert(!result.output.includes(`TASK [${task}]`) || /skipping: \[node\]/.test(result.output.split(`TASK [${task}]`)[1]), `${shape}: ${task}`);
+        }
+      } finally { f.cleanup(); }
+    }
+  },
+});
+
+// One key of the inner volume changed after the create: the deploy's start refuses it before the start and names the key.
+const volumeDamage: Record<string, (config: Record<string, string>) => void> = {
+  "changed-mount-options": (config) => { config["block.mount_options"] = "discard"; },
+  "missing-shifted": (config) => { delete config["security.shifted"]; },
+  "extra-key": (config) => { config["block.create_options"] = "-O no-holes"; },
+  "delegated": (config) => { config["zfs.delegate"] = "true"; },
+  "changed-size": (config) => { config.size = "300GiB"; },
+};
+Deno.test({
+  name: "the start gate admits the inner volume only with its exact keys, never a delegated volume, and never its disk without the intent",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      innerVolumeCreate(f);
+      assert(f.run("container").ok);
+      const created = f.state();
+      created.containers["instance-7"].status = "Stopped";
+      const intent = structuredClone(f.container);
+      const named: Record<string, string> = {"changed-mount-options": "volume inner-pool block.mount_options", "missing-shifted": "volume inner-pool security.shifted",
+        "extra-key": "volume inner-pool block.create_options", "delegated": "volume inner-pool zfs.delegate", "changed-size": "volume inner-pool size",
+        "delegated-root": "volume root zfs.delegate", "disk-without-volume-intent": "instance.container_network_unsafe: inner-pool"};
+      for (const damage of [...Object.keys(named), "clean"]) {
+        const state = structuredClone(created);
+        volumeDamage[damage]?.(state.volumes["inner-7"].config);
+        if (damage === "delegated-root") state.containers["instance-7"].volume_config = {"zfs.delegate": "true"};
+        Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
+        Object.assign(f.container, structuredClone(intent));
+        if (damage === "disk-without-volume-intent") {
+          // An Instance whose runtime records no inner volume never starts with such a disk.
+          const container = f.container as unknown as Record<string, unknown> & {allowed_devices: Record<string, unknown>};
+          delete container.inner_volume;
+          delete container.allowed_devices["inner-pool"];
+        }
+        f.write();
+        const result = f.run("start");
+        if (damage === "clean") {
+          assert(result.ok, result.output);
+          assertEquals(f.state().containers["instance-7"].status, "Running");
+          continue;
+        }
+        assert(!result.ok, `${damage}: ${result.output}`);
+        assertEquals(f.result(), {error_code: "instance.container_network_unsafe"}, damage);
+        assertEquals(f.state().containers["instance-7"].status, "Stopped", damage);
+        assert(result.output.includes(named[damage]), `${damage}: ${result.output}`);
+      }
+    } finally { f.cleanup(); }
+  },
+});
+
 /**
  * What a host converge did: every Incus command line, every task that ran (ok or changed, never a skipped one or an include line)
  * and every host file it wrote in place of a kernel module, sysctl or firewall rule. Fixture paths read FIXTURE.
