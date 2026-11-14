@@ -993,7 +993,7 @@ A failed, cancelled, interrupted or unadmitted `instance.complete` of a copy kee
 
 The task asks for assistance with kind `failure`, unless a direction request is open. The reason names the completion Operation, its failed step, its error code and the retry `orbit instance:complete <copy-id>`. When a Process of the Project's definitions died, it says to fix that definition before the retry. The request replaces any other open failure, so the held copy always shows. `task:show` and `task:status` show it.
 
-Until a completion succeeds, a turn, a check, a publish and a proof answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn, a check, a publish and a proof answer `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
+Until a completion succeeds, a turn, a check, a publish and a proof answer `tasks.copy_completion_failed` (409). The details name `operation_id`, `failed_step`, `error_code` and `retry`, and `requires` when the retry needs a changed Process definition first. The copy's Processes and inner fleet did not start, and a retry may run at the same time. While a retry runs, a turn, a check, a publish and a proof answer `tasks.copy_not_ready`. A retry that succeeds runs the task and clears that assistance request, and only that one.
 
 #### Removal by Orbit
 
@@ -1001,7 +1001,7 @@ Orbit removes a task copy by itself only after a failed create, through one queu
 
 The job destroys the copy at once only when the records prove that no agent could have worked in it: the create did not succeed and no T3 server is registered for the copy. Otherwise it first reads the copy's work, as [`task:cancel`](/cli/task/cancel) does. It destroys a copy that holds no work origin lacks.
 
-A copy with such work, or a read that does not answer, stays. The failed task then asks for assistance with kind `removal_failure`, the kind that an ended task keeps. The reason names the unpushed commits, the uncommitted files and how many of them are untracked, or why the read did not answer. It ends with `orbit task:cancel <task-id>`, with `--discard` if the work is not wanted.
+A copy with such work, or a read that does not answer, stays. The failed task then asks for assistance with kind `removal_failure`, the kind that an ended task keeps. The reason names the unpushed commits, the uncommitted files, how many of them are untracked and the stashes, or why the read did not answer. It ends with `orbit task:cancel <task-id>`, with `--discard` if the work is not wanted.
 
 `task:cancel` and `task:complete` are a person's removals and keep their own rules.
 

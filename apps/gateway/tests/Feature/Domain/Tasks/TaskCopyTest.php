@@ -894,7 +894,6 @@ describe('the end of the copy\'s create', function (): void {
         $operation->forceFill(['status' => 'failed', 'finished_at' => now()])->save();
 
         $group->update(['status' => TaskGroupStatus::Running]);
-        $calls = $this->ssh->calls;
         destroyTaskCopy($copy);
         expect(Operation::query()->where('kind', 'instance.destroy')->count())->toBe(0);
 
@@ -916,7 +915,7 @@ describe('the end of the copy\'s create', function (): void {
         $group->update(['status' => TaskGroupStatus::Failed]);
         $this->ssh->answer = ['state' => 'dirty', 'baseline' => 'recorded', 'head' => str_repeat('e', 40),
             'modified' => ['count' => 1, 'names' => ['a.php']], 'untracked' => ['count' => 2, 'names' => ['b', 'c']],
-            'stashes' => ['count' => 0, 'names' => []], 'commits' => ['count' => 4, 'branch_count' => 1, 'branches' => [['name' => $copy->name, 'count' => 4]]]];
+            'stashes' => ['count' => 1, 'names' => ['stash@{0}']], 'commits' => ['count' => 4, 'branch_count' => 1, 'branches' => [['name' => $copy->name, 'count' => 4]]]];
 
         $calls = $this->ssh->calls;
         destroyTaskCopy($copy);
@@ -926,7 +925,7 @@ describe('the end of the copy\'s create', function (): void {
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
             ->and($group->taskable_id)->toBe($copy->id)
             ->and($group->assistance_kind)->toBe(AssistanceKind::RemovalFailure)
-            ->and($group->assistance_reason)->toBe(DestroyTaskCopy::KeptReason.'it holds work that origin lacks: 4 unpushed commits, 3 uncommitted files, 2 of them untracked. '
+            ->and($group->assistance_reason)->toBe(DestroyTaskCopy::KeptReason.'it holds work that origin lacks: 4 unpushed commits, 3 uncommitted files, 2 of them untracked, 1 stashes. '
                 ."End it with `orbit task:cancel {$group->id}`, with `--discard` if the work is not wanted.");
     })->with([
         'a registered T3 server' => [fn () => copyT3Registered()],
@@ -966,6 +965,7 @@ describe('the end of the copy\'s create', function (): void {
             ->and($this->ssh->calls)->toBe($calls + 1)
             ->and($group->refresh()->assistance_requested)->toBeFalse();
     });
+
     it('reads the guards again after the read and neither destroys nor asks when another Operation took the copy meanwhile', function (string $state): void {
         $group = copyGroup(copySource()->project);
         $operation = startCopy($group);

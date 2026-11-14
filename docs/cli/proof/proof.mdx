@@ -77,7 +77,7 @@ Each case ends `passed`, `failed` or `unrun`, as in [`proof:run`](/cli/proof/run
 | `proof.wrong_project` | A task VM's group is not on the Orbit Project, or a task copy's Project has no nested fleet. Cases exist only for the Orbit repository, and they need a nested fleet. |
 | `tasks.no_workspace` | The group has no owned task VM workspace and no task copy. |
 | `tasks.copy_not_ready` | The task copy is not `active` yet. |
-| `tasks.copy_completion_failed` | The task copy's last completion failed. The details name `operation_id`, `failed_step`, `error_code` and `retry`, the command `orbit instance:complete <copy-id>` ([when the start fails](/cli/task/start#when-the-start-fails)). |
+| `tasks.copy_completion_failed` | The task copy's last completion failed. The details name `operation_id`, `failed_step`, `error_code`, `retry`, and `requires` when present; `retry` is the command `orbit instance:complete <copy-id>` ([when the start fails](/cli/task/start#when-the-start-fails)). |
 | `tasks.instance_not_running` | The container of the task copy is not running. |
 | `proof.copy_fleet_used` | A proof or an agent turn has already run in the task copy, and a copy cannot restore its fleet yet. Start a new task copy. |
 | `tasks.copy_turn_unended` | An earlier turn may still run in the task copy or left its checkout unrestored. Run `task:cancel` to end it with the copy. |

@@ -103,7 +103,7 @@ final class DestroyTaskCopy implements ShouldQueue
     {
         $count = static fn (string $key): string => is_int($workspace[$key] ?? null) ? (string) $workspace[$key] : 'unknown';
         $held = $workspace['state'] === 'dirty'
-            ? "it holds work that origin lacks: {$count('unpushed')} unpushed commits, {$count('uncommitted')} uncommitted files, {$count('untracked')} of them untracked."
+            ? "it holds work that origin lacks: {$count('unpushed')} unpushed commits, {$count('uncommitted')} uncommitted files, {$count('untracked')} of them untracked, {$count('stashes')} stashes."
             : 'its workspace could not be read: '.(is_string($workspace['reason'] ?? null) ? $workspace['reason'] : 'unknown').'.';
 
         return self::KeptReason.$held." End it with `orbit task:cancel {$group->id}`, with `--discard` if the work is not wanted.";
