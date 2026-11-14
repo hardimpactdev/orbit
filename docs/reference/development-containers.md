@@ -680,7 +680,7 @@ Who writes the names:
 | --- | --- |
 | Create, migrate and start phases | Deploy and wake run the start phase |
 | `env:sync` | In a running container |
-| A clone's create | In the copy before its first start. It replaces the seed's block with its own, or removes it when the clone has no name, and resets the seed's proxy bypass |
+| A clone's create | Right after the copy's first start, after its hosts template ran. It replaces any block with its own, or removes it when the clone has no name |
 
 A clone holds no app of its default, so its names are its [own site](#the-own-site-from-inside) names.
 
@@ -1013,13 +1013,21 @@ A deployment of the default can replace the admitted seed before the copy. The c
 
 #### What a clone has at its first start
 
-The clone script writes these into the copy before it starts, so its first boot reads them with no converge or `env:sync`:
+The clone script writes these, so a new clone works with no converge or `env:sync`:
 
-| Part | What the copy has |
-| --- | --- |
-| Trust | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
-| Private names | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
-| `NO_PROXY` | The composed value in the `environment.*` keys and in both drop-ins, with those names. See [proxy settings](#proxy-settings-in-a-container) |
+| Part | When | What the copy has |
+| --- | --- | --- |
+| Trust | Before the first start | The Orbit root as a local CA file, its two links, and in `/etc/ssl/certs/ca-certificates.crt`, so curl, PHP and Chromium trust Orbit's sites. See [trust](#trust) |
+| `NO_PROXY` | Before the first start | The composed value in the `environment.*` keys and in both drop-ins, with the private names. See [proxy settings](#proxy-settings-in-a-container) |
+| Private names | Right after the first start | The plan's `private_names` in `/etc/hosts`, such as the clone's own Route names. See [private names](#private-names-of-the-access-plan) |
+
+The hosts block comes after the start because the copy's own Incus template rewrites `/etc/hosts` at that start. The stock image's metadata holds `templates: /etc/hosts: when: [create, copy]`, which renders `127.0.1.1 <name>` and the localhost lines. A clone copies that metadata from its default, so a write before the start is lost.
+
+Right after the start, the clone script reads `/etc/hosts` with `incus exec … cat`, as `env:sync` does. It renders the file with the same `hosts` command and pushes it as root with `0644` only when its lines change. This is still before the create reports anything. A failure fails the create with `instance.clone_private_names_failed`, and the create's `stop-container` step stops the started copy. A retry runs the write again.
+
+Orbit does not change the template instead. The template lives in each container's own metadata, copied from its default. A new image would not reach existing defaults, and editing each default's metadata would add hidden state.
+
+To check a new clone, run `getent hosts <its Route name>` inside it right after the create. It answers with the bridge's gateway address.
 
 A task copy is a clone like any other, so it gets the same. So does a clone in the nested-fleet project, and a clone that an inner Gateway makes in its own fleet.
 
@@ -2129,7 +2137,7 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.clone_browser_trust_mismatch` | 502 | A clone's copy holds another `libp11-kit0` than the trust module needs. The create stops before the copy starts |
 | `instance.clone_browser_trust_refused` | 502 | A path of `agent`'s NSS store in a clone's copy has another type than expected, or is a link. The create stops before the copy starts |
 | `instance.clone_trust_bundle_refused` | 502 | A clone's copy has no regular `/etc/ssl/certs/ca-certificates.crt`, or the file API could not read it. The create stops before the copy starts |
-| `instance.clone_private_names_refused` | 502 | A clone's copy has `/etc/hosts` as a link or another type than a file, or the file API could not read it. The create stops before the copy starts |
+| `instance.clone_private_names_failed` | 502 | A clone's create could not read, render or write `/etc/hosts` right after the copy's first start. The create's failure step stops the copy, and a retry writes it again |
 | `deployment.processes_inactive` | 409 | A container default's units were not active at the end of a deployment |
 | `process.target_unsupported` | 409 | A container Instance's Process definition is a Docker Process or uses a preset, or a Process change would go to the Node agent |
 | `process.target_unavailable` | 503 | The direct container Process journal read failed |
