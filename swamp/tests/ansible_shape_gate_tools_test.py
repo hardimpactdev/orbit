@@ -1,6 +1,7 @@
 """The shape gate finds the tools that the task image holds and never downloads them."""
 import importlib.machinery
 import importlib.util
+import io
 import os
 import shutil
 import stat
@@ -8,6 +9,7 @@ import subprocess
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from threading import Event
 from unittest import mock
@@ -54,6 +56,20 @@ class ShapeGateToolsTest(unittest.TestCase):
         self.addCleanup(self.system.chmod, stat.S_IRWXU)
         with mock.patch.object(subprocess, 'run', side_effect=AssertionError('the gate downloaded')):
             self.assertEqual(self.gate.tool_path(self.system), venv / 'bin')
+
+    def test_a_first_build_keeps_standard_output_free(self):
+        # The proof runner reads standard output of its fleet preparation, which builds these tools, as JSON.
+        cache = Path(self.folder.name) / 'cache'
+        stdout, stderr = io.StringIO(), io.StringIO()
+        def build(argv, **_kwargs):
+            if argv[1:3] == ['-m', 'venv']:
+                Path(argv[3]).mkdir(parents=True)
+
+        with mock.patch.object(subprocess, 'run', side_effect=build) as run, redirect_stdout(stdout), redirect_stderr(stderr):
+            self.assertEqual(self.gate.tool_path(cache), cache / self.gate.venv_name() / 'bin')
+        self.assertEqual(run.call_count, 2)
+        self.assertEqual(stdout.getvalue(), '')
+        self.assertIn('Installing the pinned shape tools', stderr.getvalue())
 
     @unittest.skipUnless(shutil.which('ansible-playbook'), 'ansible-playbook is not installed')
     def test_the_playbook_names_the_tools_as_the_gate_does(self):

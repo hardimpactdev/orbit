@@ -185,7 +185,8 @@ def tool_path(tools):
             fcntl.flock(lock, fcntl.LOCK_EX)
             if not (venv / '.complete').exists():
                 shutil.rmtree(venv, ignore_errors=True)
-                print(f'Installing the pinned shape tools into {venv}', flush=True)
+                # Standard error: the proof runner reads standard output of its fleet preparation as JSON.
+                print(f'Installing the pinned shape tools into {venv}', file=sys.stderr, flush=True)
                 subprocess.run([sys.executable, '-m', 'venv', str(venv)], check=True)
                 subprocess.run([str(venv / 'bin/pip'), 'install', '--disable-pip-version-check', '-q', '-r', str(REQUIREMENTS)], check=True)
                 (venv / '.complete').write_text('')

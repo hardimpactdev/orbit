@@ -1,5 +1,6 @@
 """The outer machine of the runner: a task VM (user `orbit`) or an Instance container (user `agent`). The facts about it come from the runner's
 own process; the facts about the nested Nodes never move. Every test goes through the public calls of the fleet."""
+import json
 import os
 import subprocess
 import sys
@@ -116,6 +117,22 @@ class InstanceTest(unittest.TestCase):
         self.assertEqual(profile[:10], ['incus', 'exec', 'nested-app-prod', '--user', '1000', '--cwd', '/home/orbit', '--env', 'HOME=/home/orbit', '--env'])
         self.assertIn('--ca=/home/orbit/.orbit/nested-ca.pem', profile)
         self.assertEqual([call for call in calls if call is not push and any('/home/agent' in word for word in call)], [])
+
+
+class PrepareTest(unittest.TestCase):
+    """`prepare` reads the fleet that the preparation process prints. Anything else is an infrastructure failure that names the text."""
+
+    def test_output_that_is_not_the_fleet_is_a_fleet_error_with_its_text(self):
+        fleet = {role: {'instance': 'nested-' + role, 'node_id': number, 'bridge': f'10.232.2.{10 + number}'} for number, role in enumerate(('gateway', 'app-dev', 'app-prod'), 1)}
+        printed = 'Installing the pinned shape tools into /home/agent/.cache/orbit-shape-gate/venv-0123\n' + json.dumps(fleet) + '\n'
+        with patch.object(fleet_module.Fleet, 'must', return_value=completed(out=printed)):
+            with self.assertRaises(fleet_module.FleetError) as caught:
+                fleet_module.prepare()
+        self.assertIn('Installing the pinned shape tools', str(caught.exception))
+
+    def test_the_printed_fleet_is_the_fleet(self):
+        with patch.object(fleet_module.Fleet, 'must', return_value=completed(out='{"app-prod": {"instance": "nested-app-prod"}}\n')):
+            self.assertEqual(fleet_module.prepare().nodes, {'app-prod': {'instance': 'nested-app-prod'}})
 
 
 class ControllerTest(unittest.TestCase):
