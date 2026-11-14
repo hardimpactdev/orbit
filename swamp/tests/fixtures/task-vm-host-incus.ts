@@ -303,7 +303,8 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
     const root = state.files[`${action}/usr/local/share/ca-certificates/orbit-managed-root-ca.crt`];
     state.files[`${action}/etc/ssl/certs/ca-certificates.crt`] = { content: root?.content ?? "", mode: "0644", uid: "0", gid: "0" };
     // As the real tool: `<name>.pem` links to the local CA file, and its rehash replaces each hashed name with a relative link.
-    if (root) {
+    // An image build pushes the CA file by local path, which this fake records without content: no root to rehash then.
+    if (root?.content) {
       const pem = Deno.makeTempFileSync();
       Deno.writeTextFileSync(pem, root.content);
       const hash = new TextDecoder().decode(new Deno.Command("openssl", { args: ["x509", "-noout", "-subject_hash", "-in", pem] }).outputSync().stdout).trim();

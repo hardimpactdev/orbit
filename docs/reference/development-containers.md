@@ -426,7 +426,7 @@ A container holds the root as a local CA file, `/usr/local/share/ca-certificates
 
 | Where | What Orbit does |
 | --- | --- |
-| Image | The build pushes the Node's root and runs `update-ca-certificates`. The image name does not depend on the root |
+| Image | The build pushes the Node's root; the image definition runs `update-ca-certificates`. A later root reaches its containers at the converge |
 | Clone | `boot_files` names the Node file as a source. The clone script reads it before the copy and writes the file and its links |
 | Clone source | Only that one Node path may be a source. A missing or unreadable file fails the create with `instance.clone_trust_unavailable` |
 | Running container | The converge writes the file and its links. When the bundle lacks the root, it runs `update-ca-certificates` |

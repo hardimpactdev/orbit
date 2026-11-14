@@ -168,7 +168,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "a881f68693af2f30491f1c7515586fb77655cc1cc04b56a9d9880ba5effbb6e3",
+    "source_sha256": "3a50e8242780529230a7ae501a34da067bb0e8908dd8c61c7e8900b640e6afd4",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -260,7 +260,7 @@
     ]
   },
   "swamp/tests/ansible_instance_host_image_test.ts": {
-    "source_sha256": "7461b0dcb188890ffb3e75de9514f5ad702f9d204882a2caa89cc98bbc9f1795",
+    "source_sha256": "bb45ddeded10e20b6be5a5b52cbb32da1730b18125020a872675e9ccf9a8f73e",
     "cases": [
       "a new image definition takes the stable alias while retaining the old image",
       "a Node without its Instance pool is refused before anything changes",

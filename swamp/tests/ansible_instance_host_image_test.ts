@@ -293,8 +293,8 @@ Deno.test({
                 .map((byte) => byte.toString(16).padStart(2, "0")).join("");
             // Captured from the tasks at 2a-local 7b9e25ba02, before the nested-fleet image existed, with this same host shape; and
             // again when the image removed its linker cache last and the converge read the existing containers (two calls more), and
-            // when the image took the Node's Orbit root CA (one push and `update-ca-certificates`, two calls more).
-            assertEquals([f.calls().length, digest], [57, "63e10e071e2e7cc0878df6ecca6eb3440ce5e1cf4023bee56b4fba8c97199355"]);
+            // when the image took the Node's Orbit root CA (one push, and `update-ca-certificates` in the definition's finish: two calls more).
+            assertEquals([f.calls().length, digest], [57, "17192b9d380bc5414d71944b0ac6c31f0d0acdb3e7fcb4233879ffa6157f6b28"]);
             assert(f.calls().some((call) => call.includes("exec") && call.at(-1) === "update-ca-certificates"));
             assert(f.calls().some((call) => call.includes("exec") && call.slice(-3).join(" ") === "rm -f /etc/ld.so.cache"));
             assert(f.calls().some((call) => call[0] === "query" && call.at(-1) === "/1.0/instances?all-projects=true&recursion=1"));
