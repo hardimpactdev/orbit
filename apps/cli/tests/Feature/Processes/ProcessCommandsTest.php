@@ -1870,7 +1870,7 @@ it('names the Instance of a container Process in the destroy request, and refuse
 
     expect($exit)->toBe(0);
     $mock->assertSent(fn ($request, $response): bool => $request instanceof DestroyProcessRequest
-        && $response->getPendingRequest()->query()->all() === ['instance' => 572]);
+        && json_decode((string) $response->getPendingRequest()->body(), true) === ['instance' => 572]);
 
     $sent = count($mock->getRecordedResponses());
     [$invalid] = process_cli_display('process:destroy', ['process' => '236', '--instance' => 'abc', '--yes' => true, '--json' => true]);

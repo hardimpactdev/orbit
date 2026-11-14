@@ -26,7 +26,7 @@ Installed writes return and follow an Operation. `--json` prints the final Opera
 | `--node=ID-or-name` | Managed Node | The Process runs as the Node's managed user. A systemd Process can set `--user`. Shared services such as a Docker database use this owner. |
 | `--project=ID --for=production` | Project definition | The Gateway records a definition. Production preparation copies it into a stopped Instance Process. |
 
-`process:show`, `process:update`, and `process:destroy` with `--project` select a definition by name. `process:update`, `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--project` take the numeric Process ID from `process:list`. An installed Process update uses that record's owner; it takes no `--instance` or `--node` selector.
+`process:show`, `process:update`, and `process:destroy` with `--project` select a definition by name. `process:update`, `process:start`, `process:stop`, `process:restart`, `process:logs`, and `process:destroy` without `--project` take the numeric Process ID from `process:list`. An installed Process update uses that record's owner; it takes no `--instance` or `--node` selector. `process:destroy` of a Process in an Instance container also takes `--instance`, which must name that Process's Instance.
 
 ## Commands
 

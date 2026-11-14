@@ -20,6 +20,8 @@ An Instance container’s Process start and restart use nonblocking systemd jobs
 
 A retained container create retry derives its Processes from the Project's current development definitions at admission. Changed definitions update their Processes, and removed definitions remove theirs. On a container default, the next deployment removes the Process of a removed definition and names it in `processes_removed`; until then, `process:start`, `process:stop` and `process:restart` refuse it with `process.removing`. See [create retry](/reference/development-containers#processes) for the units, environment files and recovery result.
 
+A clone has no deployment. On a clone, and for a container Process recorded without a definition, [`process:destroy --instance`](/cli/process/destroy#a-process-in-an-instance-container) removes a Process that no current definition owns. It stops and removes only that Process's unit and folder in the container, then deletes the record. The id must belong to the named Instance.
+
 ## Execution
 
 Process create, update, start, stop, restart, and destroy record an Operation and return HTTP 202. The Gateway validates the request and stores intent. Swamp executes the local Node actions and returns a bounded native result. The Gateway projects that result into the Process lifecycle or removes its record. After an install or control command, Swamp reads the observed runtime state. The Gateway uses that result for status events and the Process status index. Reads keep their existing Gateway paths. An Idempotency-Key replays the admitted Operation, including after removal.

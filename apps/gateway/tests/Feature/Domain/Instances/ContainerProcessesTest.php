@@ -227,6 +227,21 @@ describe('the Process target of a container Instance', function (): void {
             ->and($this->process->refresh()->status)->toBe(LifecycleStatus::Removing);
     })->with(['removed definition', 'no definition']);
 
+    it('reads the named Instance from the destroy request', function (): void {
+        $this->process->update(['source_definition_id' => null]);
+        $node = Node::query()->findOrFail($this->instance->node_id);
+        $node->accessibleNodes()->syncWithoutDetaching([$node->id]);
+
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+            ->deleteJson('/api/v1/processes/'.$this->process->id, ['instance' => $this->instance->id + 1000])
+            ->assertStatus(422)->assertJsonPath('error.code', 'process.instance_mismatch');
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip])
+            ->deleteJson('/api/v1/processes/'.$this->process->id, ['instance' => 'abc'])
+            ->assertStatus(422);
+
+        expect(Operation::query()->where('target_type', 'process')->count())->toBe(0);
+    });
+
     it('never sends a container Process to the Node agent, for a change or a live log stream', function (): void {
         expect(processContainerError(fn () => app(RemoteProcessRuntimeManager::class)->restart($this->process)))->toBe('process.target_unsupported')
             ->and(processContainerError(fn () => app(LogStreamTargetResolver::class)->forProcess($this->process)))->toBe('process.target_unsupported');
