@@ -82,3 +82,52 @@ Deno.test("publication maps a private PR reply to its admitted public repository
         await Deno.remove(directory, { recursive: true });
     }
 });
+
+Deno.test("the .env check passes on exit 0 and fails with its own refusal line or as unchecked", async () => {
+    const directory = await Deno.makeTempDir();
+    try {
+        const run = (exit_code: number) => {
+            const { context, getWrittenResources } = createModelTestContext();
+            return {
+                result: behavior.methods.content.execute(
+                    { directory, exit_code },
+                    context,
+                ),
+                getWrittenResources,
+            };
+        };
+        const passed = run(0);
+        await passed.result;
+        assertEquals(passed.getWrittenResources().map(({ data }) => data), [{
+            checked: true,
+        }]);
+        const line =
+            "tasks.publish_secret_content: a value of the .env is in the file 'notes/a.txt' (" +
+            "c".repeat(40) + ") in commit " + "d".repeat(40);
+        // A refusal without its line, an error exit and a line of any other shape are unchecked.
+        for (const exit of [3, 1, 2, 124]) {
+            await assertRejects(
+                () => run(exit).result,
+                Error,
+                "tasks.publish_secret_unchecked",
+            );
+        }
+        await Deno.writeTextFile(`${directory}/content.result`, line + "\n");
+        await assertRejects(() => run(3).result, Error, line);
+        await assertRejects(
+            () => run(1).result,
+            Error,
+            "tasks.publish_secret_unchecked",
+        );
+        for (const text of ["other: x\n", line + "\nsecond line\n", ""]) {
+            await Deno.writeTextFile(`${directory}/content.result`, text);
+            await assertRejects(
+                () => run(3).result,
+                Error,
+                "tasks.publish_secret_unchecked",
+            );
+        }
+    } finally {
+        await Deno.remove(directory, { recursive: true });
+    }
+});

@@ -575,6 +575,7 @@
    "Copy the bundle": "idempotent",
    "Read bundle contents": "read-only",
    "Read open PRs": "unreviewed",
+   "Read the .env check": "read-only",
    "Read workspace HEAD": "unreviewed"
   },
   "operation-task-review-round": {

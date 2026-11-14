@@ -46,7 +46,7 @@ function requireSuccess<T extends { error_code: string }>(
 /** Typed comparisons and private CLI reply shaping only; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.02.3",
+    version: "2026.11.14.1",
     resources: {
         public: {
             description: "Public publication observations",
@@ -140,6 +140,35 @@ export const behavior = {
                     number: plan.number,
                     body_file: path,
                 });
+            },
+        },
+        content: {
+            description:
+                "Read the .env content check: pass, or fail with its refusal line or tasks.publish_secret_unchecked",
+            arguments: PrivateReply,
+            execute: async (
+                args: z.infer<typeof PrivateReply>,
+                ctx: Context,
+            ) => {
+                if (args.exit_code === 0) return save(ctx, { checked: true });
+                let line = "";
+                if (args.exit_code === 3) {
+                    try {
+                        const text = await read(
+                            args.directory,
+                            "content.result",
+                        );
+                        line = text.endsWith("\n") ? text.slice(0, -1) : text;
+                    } catch {
+                        line = "";
+                    }
+                }
+                // The step writes one line that names no value; anything else is an error of the check.
+                throw new Error(
+                    /^tasks\.publish_secret_content: [^\n]{1,1000}$/.test(line)
+                        ? line
+                        : "tasks.publish_secret_unchecked",
+                );
             },
         },
         written: {
