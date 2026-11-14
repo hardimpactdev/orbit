@@ -49,7 +49,13 @@ final readonly class NodeIdMapRead
             return null;
         }
 
-        return $result->succeeded() ? self::decode($result->stdout) : null;
+        $read = $result->succeeded() ? self::decode($result->stdout) : null;
+        if ($read !== null) {
+            // Doctor warns from the last read; it never reaches the Node itself (FactDoctor).
+            Node::query()->whereKey($node->id)->update(['id_ranges' => json_encode([...$read['ranges']->summary(), 'read_at' => now()->toIso8601String()], JSON_THROW_ON_ERROR)]);
+        }
+
+        return $read;
     }
 
     /** @return array{ranges: IsolatedIdRanges, containers: list<string>}|null */

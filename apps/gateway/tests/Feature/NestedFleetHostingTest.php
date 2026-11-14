@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 use App\Actions\Schedules\RunScheduleAction;
 use App\Data\Nodes\NodeTaskVmsData;
+use App\Domain\Doctor\DoctorFamily;
+use App\Domain\Doctor\FactDoctor;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
 use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
@@ -63,7 +65,8 @@ function recordedNestedInstance(Project $project, Node $node, string $name = 'de
     DB::rollBack();
     $project->update(['nested_fleet' => $flag]);
     unset($row['id']);
-    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject]);
+    InstanceRuntime::query()->create([...$row, 'incus_project' => InstancePlacement::NestedProject,
+        'idmap_size' => $source?->runtime()->value('idmap_size') ?? InstanceHostIntent::TaskPlaceIds]);
 
     return $instance->refresh();
 }
@@ -128,8 +131,9 @@ describe('the one placement rule', function (): void {
     });
 
     it('gives the nested project its six container keys and the normal project none', function (): void {
-        expect(InstancePlacement::config('orbit-instances'))->toBe([])
-            ->and(InstancePlacement::config('orbit-instances-nested'))->toBe([
+        expect(InstancePlacement::config('orbit-instances', null))->toBe([])
+            ->and(InstancePlacement::config('orbit-instances-nested', 1165536)['security.idmap.size'])->toBe('1165536')
+            ->and(InstancePlacement::config('orbit-instances-nested', 101000000))->toBe([
                 'security.nesting' => 'true', 'security.syscalls.intercept.mknod' => 'true', 'security.syscalls.intercept.setxattr' => 'true',
                 'security.idmap.isolated' => 'true', 'security.idmap.size' => '101000000', 'limits.memory' => '12GiB', 'boot.autostart' => 'false',
             ]);
@@ -167,7 +171,7 @@ describe('the recorded Incus project', function (): void {
         }
         $runtime = $instance->runtime()->firstOrFail();
         $intent = app(InstanceContainer::class)->intent($instance, $runtime);
-        expect($intent['config'])->toMatchArray(InstancePlacement::config('orbit-instances-nested'))
+        expect($intent['config'])->toMatchArray(InstancePlacement::config('orbit-instances-nested', $runtime->idmap_size))
             ->and($intent['config'])->not->toHaveKeys(['raw.lxc', 'raw.idmap', 'security.privileged'])
             // A nested runtime starts from the nested-fleet image; the normal intent below keeps `orbit-instance`.
             ->and($intent['image'])->toBe('orbit-instance-nested')
@@ -407,3 +411,122 @@ JS]);
     expect($validate->isSuccessful())->toBeTrue($validate->getErrorOutput())
         ->and($workflow['jobs'][0]['steps'][0]['task']['inputs']['argv'])->toContain('inputs.intent.container.project');
 })->with([false, true]);
+
+describe('the id map size', function (): void {
+    it('records the full size for a new nested default and its copies, the converted size for copies made after the conversion, and none for a normal container', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $project = otherProject('sized', true);
+        $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/sized/default']);
+        $runtime = app(InstanceContainer::class)->reserve($default, $node);
+        $old = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'old', 'checkout_path' => '/test/sized/old']);
+        $oldRuntime = app(InstanceContainer::class)->reserve($old, $node, $default);
+        expect($runtime->idmap_size)->toBe(101000000)->and($oldRuntime->idmap_size)->toBe(101000000)
+            ->and(app(InstanceContainer::class)->intent($default, $runtime)['config']['security.idmap.size'])->toBe('101000000');
+
+        // docs/reference/development-containers.md#convert-a-default: the record follows the operator's change on the Node and clears the seed.
+        $runtime->update(['seed_commit' => str_repeat('a', 40)]);
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $default->id, 'size' => '1165536'])->assertSuccessful();
+        $runtime->refresh();
+        expect($runtime->idmap_size)->toBe(1165536)->and($runtime->seed_commit)->toBeNull()
+            ->and(app(InstanceContainer::class)->intent($default, $runtime)['config']['security.idmap.size'])->toBe('1165536');
+
+        // After the next passed deployment's seed, a copy takes the converted size; the older copy keeps its own, so its start guard still matches.
+        $runtime->update(['seed_commit' => str_repeat('b', 40)]);
+        $new = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'new', 'checkout_path' => '/test/sized/new']);
+        $newRuntime = app(InstanceContainer::class)->reserve($new, $node, $default);
+        expect($newRuntime->idmap_size)->toBe(1165536)
+            ->and(app(InstanceContainer::class)->intent($new, $newRuntime)['config']['security.idmap.size'])->toBe('1165536')
+            ->and($oldRuntime->fresh()?->idmap_size)->toBe(101000000)
+            ->and(app(InstanceContainer::class)->intent($old, $oldRuntime->fresh())['config']['security.idmap.size'])->toBe('101000000');
+
+        $normal = Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal']);
+        $normalRuntime = app(InstanceContainer::class)->reserve($normal, $node);
+        expect($normalRuntime->idmap_size)->toBeNull()
+            ->and(app(InstanceContainer::class)->intent($normal, $normalRuntime)['config'])->not->toHaveKey('security.idmap.size');
+    });
+
+    it('counts each nested container\'s recorded size in the Node\'s subordinate ID demand', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $before = app(InstanceHostIntent::class)->for($node)['ids'];
+        $default = recordedNestedInstance(otherProject('demand', true), $node);
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
+        recordedNestedInstance($default->project, $node, 'feature', $default);
+        recordedNestedInstance(otherProject('legacy', true), $node);
+
+        expect(app(InstanceHostIntent::class)->for($node)['ids'] - $before)->toBe(2 * 1165536 + 101000000);
+    });
+
+    it('refuses a size, Instance or moment the conversion record does not fit, and changes nothing', function (string $case, string $code): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $default = recordedNestedInstance(otherProject('refused', true), $node);
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('a', 40)]);
+        $target = match ($case) {
+            'a clone' => recordedNestedInstance($default->project, $node, 'feature', $default),
+            'a normal default' => (function () use ($node): Instance {
+                $normal = Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal']);
+                app(InstanceContainer::class)->reserve($normal, $node);
+
+                return $normal;
+            })(),
+            default => $default,
+        };
+        if ($case === 'a rollback under a small copy') {
+            InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
+            recordedNestedInstance($default->project, $node, 'small', $default);
+        }
+        if ($case === 'an open Operation') {
+            DB::table('operations')->insert(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $node->id,
+                'status' => 'running', 'input' => '{}', 'state' => '{}', 'created_at' => now(), 'updated_at' => now()]);
+        }
+        $size = match ($case) {
+            'another size' => '65536',
+            'a rollback under a small copy' => '101000000',
+            default => '1165536',
+        };
+        $this->artisan('gateway:instance-idmap-size', ['instance' => (string) $target->id, 'size' => $size])->expectsOutputToContain($code)->assertFailed();
+        expect(InstanceRuntime::query()->where('instance_id', $default->id)->first(['idmap_size', 'seed_commit'])?->only(['idmap_size', 'seed_commit']))
+            ->toBe(['idmap_size' => $case === 'a rollback under a small copy' ? 1165536 : 101000000, 'seed_commit' => str_repeat('a', 40)]);
+    })->with([
+        'another size' => ['another size', 'instance.idmap_size_invalid'],
+        'a clone' => ['a clone', 'instance.idmap_size_not_nested_default'],
+        'a normal default' => ['a normal default', 'instance.idmap_size_not_nested_default'],
+        'an open Operation' => ['an open Operation', 'operation.target_busy'],
+        'a rollback under a small copy' => ['a rollback under a small copy', 'instance.idmap_size_copies_smaller'],
+    ]);
+
+    it('warns in Doctor from the kept ID map read while a full-size nested container is on the Node, and not after its conversion', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        // Doctor observes only a Node whose SSH management is verified.
+        DB::table('nodes')->where('id', $node->id)->update(['ssh_host_fingerprint' => 'SHA256:test']);
+        $default = recordedNestedInstance(otherProject('doctor', true), $node);
+        $issues = static fn (): array => array_values(array_filter(app(FactDoctor::class)->report([$node->refresh()], [DoctorFamily::Node])->toArray()['nodes'][0]['families'][0]['issues'],
+            static fn (array $issue): bool => $issue['code'] === 'node.id_ranges_low'));
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 1, 'small' => 10, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toHaveCount(1);
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 2, 'small' => 3, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toHaveCount(1)->and($issues()[0]['observed'])->toBe('2 full-size, 3 normal slots free, read at 2026-11-14T13:00:00+00:00');
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 2, 'small' => 4, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        expect($issues())->toBe([]);
+
+        DB::table('nodes')->where('id', $node->id)->update(['id_ranges' => json_encode(['full' => 0, 'small' => 0, 'read_at' => '2026-11-14T13:00:00+00:00'])]);
+        // An old copy keeps the full size but retakes no seed, so only the default's own size counts.
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['seed_commit' => str_repeat('a', 40)]);
+        $copy = recordedNestedInstance($default->project, $node, 'feature', $default);
+        expect($issues())->toHaveCount(1);
+        InstanceRuntime::query()->where('instance_id', $default->id)->update(['idmap_size' => 1165536]);
+        expect($copy->runtime()->value('idmap_size'))->toBe(101000000)->and($issues())->toBe([]);
+    });
+
+    it('fills the full size for every nested runtime that exists when the column comes, and none for a normal one', function (): void {
+        $node = nestedSwitch(containerDefaultNode(), true);
+        $nested = recordedNestedInstance(otherProject('existing', true), $node);
+        $normal = Instance::query()->create(['project_id' => containerDefaultProject()->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/test/normal']);
+        app(InstanceContainer::class)->reserve($normal, $node);
+        $migration = require database_path('migrations/2027_02_16_000000_add_idmap_size_to_instance_runtimes.php');
+        $migration->down();
+        $migration->up();
+
+        expect(InstanceRuntime::query()->where('instance_id', $nested->id)->value('idmap_size'))->toBe(101000000)
+            ->and(InstanceRuntime::query()->where('instance_id', $normal->id)->value('idmap_size'))->toBeNull();
+    });
+});
