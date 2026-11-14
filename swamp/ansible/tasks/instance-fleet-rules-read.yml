@@ -3,6 +3,7 @@
 # lacks, with the container, the rule's name and its class. instance-fleet-rules.yml reads before it applies and again to check.
 # Classes: `owned`, a rule Orbit writes on an existing fleet; `build`, a build rule whose key is absent; `foreign`, a build rule whose
 # key holds another value, or a nested container or the inner bridge that cannot be read. Only `owned` and `build` are ever written.
+# Every file rule is owned, so a comparison that only refuses (`fleet_rules_files` false: the check and the start) never reads the files.
 - name: Read the nested containers
   ansible.builtin.command: { argv: "{{ ['timeout', '30'] + fleet_incus + ['query', '/1.0/instances/' ~ intent.fleet.guests[item]] }}" }
   loop: "{{ fleet_roles }}"
@@ -15,6 +16,7 @@
   changed_when: false
   failed_when: false
 - name: Read the fleet files
+  when: fleet_rules_files | default(true) | bool
   ansible.builtin.command:
     argv: "{{ ['timeout', '30'] + fleet_incus + ['file', 'pull', item.container ~ item.path, '-'] }}"
   loop: "{{ fleet_files }}"
@@ -58,7 +60,7 @@
       {%-     endif -%}
       {%-   endfor -%}
       {%- endif -%}
-      {%- for read in fleet_files_read.results -%}
+      {%- for read in fleet_files_read.results | default([]) | selectattr('rc', 'defined') -%}
       {%-   if read.rc != 0 or read.stdout | trim != read.item.content | trim -%}
       {%-     set _ = out.append({'container': read.item.container, 'kind': 'file', 'name': read.item.path, 'want': read.item.content,
                                 'class': 'owned'}) -%}

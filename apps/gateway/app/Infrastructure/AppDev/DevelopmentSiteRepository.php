@@ -288,12 +288,15 @@ final readonly class DevelopmentSiteRepository
             ->filter(
                 static fn (Instance $target): bool => (
                     is_string(app(RouteRenderContext::class)->wireguardIp($target->node))
-                    // A clone publishes its preview Route before its first success (instance.clone).
+                    // A clone publishes its preview Route before its first success (instance.clone). A container clone publishes its
+                    // address during its create, while it is still reserved (development-containers.md#the-address-during-the-create);
+                    // the catalog holds only published Routes, and a removal admitted during the create captures the site it may meet.
                     && (in_array(
                         $target->status,
                         [InstanceState::SourceResolved, InstanceState::Active],
                         true,
-                    ) || $target->cloneInProgress())
+                    ) || $target->cloneInProgress()
+                        || ($target->status === InstanceState::Reserved && $target->runtime?->clone_source_instance_id !== null))
                 ),
             )
             ->values();

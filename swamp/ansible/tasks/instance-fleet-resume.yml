@@ -1,7 +1,7 @@
 ---
 # Start a nested fleet whose nested Gateway already runs the schema of its checkout, and wait for readiness
-# (docs/cli/instance/container/fleet-refresh.mmd): after a passed refresh, the fleet that the refresh stopped for `base` and the seed;
-# after a failed refresh, the fleet of the restored seed. Input: instance-fleet.yml. The phase's failure names the failed check; the
+# (docs/cli/instance/container/fleet-refresh.mmd): inside the refresh, the fleet it stopped for `base`; after a failed refresh, the fleet
+# of the restored seed; and a clone's copied fleet. Input: instance-fleet.yml. The phase's failure names the failed check; the
 # rescue of instance-container.yml says in plain words which fleet did not start.
 - { name: Start the fleet, ansible.builtin.import_tasks: instance-fleet-start.yml }
 - { name: Wait for readiness, ansible.builtin.import_tasks: instance-fleet-ready.yml }

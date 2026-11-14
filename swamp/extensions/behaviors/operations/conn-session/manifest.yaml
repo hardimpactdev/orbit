@@ -1,0 +1,8 @@
+manifestVersion: 1
+name: "@nckrtl/conn-session"
+version: 2026.11.14.1
+visibility: private
+license: MIT
+description: Typed private T3 pairing-link and redeem replies, stored as unique native sensitive fields.
+behaviors:
+  - operations/conn-session/mod.ts

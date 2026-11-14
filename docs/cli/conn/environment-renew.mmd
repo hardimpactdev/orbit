@@ -14,7 +14,7 @@ sequenceDiagram
   %%> When:
   %%> - each session of an active Instance's T3 server that ends within seven days, or has ended
   %%> - the route admits one at once, also past the wait below
-  %%> - a successful `instance.wake` admits one at once for its Instance (instance/wake.mmd), outside the limits below
+  %%> - a successful `instance.wake` admits one at once for its Instance (instance/wake.mmd), outside the limits below; the wake also renews the Instance's held sessions that end within seven days
   %%> Skips:
   %%> - a sleeping Instance (`power_state` `stopped`): its wake renews it
   %%> Limits:
@@ -22,6 +22,8 @@ sequenceDiagram
   %%> - after `conn.environment_stopped`, the server waits six hours
   %%> Result:
   %%> - one Operation a server, holding the server's lock; the intent has no session
+  %%> Same tick, afterwards:
+  %%> - the held sessions of Nodes (session-hold.mmd): withdraw a session whose Node lost its grant, renew each that ends within seven days, those whose last renewal failed last, admit each owed revoke while its server runs
   GW->>SW: Start run, full intent<br/>operation-conn-environment-renew
   SW->>N: Issue the Gateway session<br/>t3 auth session issue
   %%> Command, over the Node's SSH account, then in the container as `agent`:
@@ -43,7 +45,8 @@ sequenceDiagram
     %%> What it does:
     %%> - stores the session encrypted, clears the last refusal, deletes the vault copy
     %%> Result:
-    %%> - then admits the cleanup that revokes older `Orbit Gateway` sessions; it waits while a pairing that carries the old session runs
+    %%> - then admits the cleanup that revokes older `Orbit Gateway` sessions; it waits while a pairing or a held-session run that carries the old session runs
+    %%> - then renews the server's held sessions that end within seven days, which waited for this session
   else a step refused
     SW--xGW: Run failed<br/>conn.* code
     %%> Result:

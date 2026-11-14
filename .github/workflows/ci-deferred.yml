@@ -1,0 +1,138 @@
+name: Main deferred fixtures
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Ancestor commit before the changes to check on current main
+        default: HEAD^
+        type: string
+permissions:
+  contents: read
+# No shared concurrency group: every push keeps its exact-SHA deferred run.
+# This workflow is independent of Required, delivery, and release verification.
+
+jobs:
+  plan:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      has_shards: ${{ steps.plan.outputs.has_shards }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        with:
+          deno-version: v2.9.8
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - name: Test receiver tooling without fixture bodies
+        run: |
+          python3 -m pip install --disable-pip-version-check 'PyYAML==6.0.3'
+          python3 -m unittest discover -s tools -p 'test_ci_full_set.py'
+          python3 -m unittest discover -s tools -p 'test_ci_deferred.py'
+      - name: Plan every omitted case for this main push
+        id: plan
+        env:
+          BASE: ${{ github.event.before || inputs.base || 'HEAD^' }}
+        run: bin/ci-deferred plan --base "$BASE" --output "$RUNNER_TEMP/full-set-plan.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: full-set-plan
+          path: ${{ runner.temp }}/full-set-plan.json
+          if-no-files-found: error
+
+  fixtures:
+    needs: plan
+    if: needs.plan.result == 'success' && needs.plan.outputs.has_shards == 'true'
+    name: Deferred (${{ matrix.name }})
+    runs-on: [self-hosted, orbit-shard, sabre]
+    timeout-minutes: 50
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        timeout-minutes: 2
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        timeout-minutes: 2
+        with:
+          name: full-set-plan
+          path: ${{ runner.temp }}/full-set-input
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed
+        timeout-minutes: 3
+        with:
+          deno-version: v2.9.8
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        timeout-minutes: 2
+        with:
+          python-version: '3.13'
+      - uses: ./.github/actions/php
+        timeout-minutes: 4
+        with:
+          coverage: none
+      - name: Run two bounded fixture workers
+        timeout-minutes: 36
+        env:
+          SHARD_NAME: ${{ matrix.name }}
+        run: bin/ci-deferred run --plan "$RUNNER_TEMP/full-set-input/full-set-plan.json" --shard "$SHARD_NAME" --output "$RUNNER_TEMP/full-set-times-$SHARD_NAME.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        timeout-minutes: 1
+        with:
+          name: full-set-times-${{ matrix.name }}
+          path: ${{ runner.temp }}/full-set-times-${{ matrix.name }}.json
+          if-no-files-found: error
+
+  report:
+    needs: [plan, fixtures]
+    if: always() && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: read
+      pull-requests: write
+      statuses: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0
+        with:
+          python-version: '3.13'
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        continue-on-error: true # The report names missing artifacts instead of skipping its status.
+        with:
+          pattern: full-set-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/full-set-results
+      - name: Publish the exact tested SHA and every deferred outcome
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BASE: ${{ github.event.before || inputs.base || 'HEAD^' }}
+          SHARD_RESULT: ${{ needs.fixtures.result }}
+        run: bin/ci-deferred report --base "$BASE" --plan "$RUNNER_TEMP/full-set-results/full-set-plan.json" --results "$RUNNER_TEMP/full-set-results" --shard-result "$SHARD_RESULT" --output "$RUNNER_TEMP/full-set-report.json"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: always()
+        with:
+          name: full-set-report
+          path: ${{ runner.temp }}/full-set-report.json
+          if-no-files-found: error

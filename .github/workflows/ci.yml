@@ -400,6 +400,15 @@ jobs:
         run: |
           composer docs-build
           composer docs-lint
+      - name: Cache CLI test dependencies
+        if: github.event_name == 'pull_request'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: apps/cli/vendor
+          key: cli-tests-dev-${{ runner.os }}-8.5-${{ hashFiles('apps/cli/composer.json', 'apps/cli/composer.lock', 'packages/php-sdk/composer.json', 'packages/php-sdk/composer.lock') }}
+      - name: Install CLI dev dependencies for the contract replay
+        if: github.event_name == 'pull_request'
+        run: composer install --working-dir=apps/cli --no-interaction --prefer-dist --no-scripts
       - name: Require documentation updates or visible PR acknowledgements
         id: docs-body
         if: github.event_name == 'pull_request'

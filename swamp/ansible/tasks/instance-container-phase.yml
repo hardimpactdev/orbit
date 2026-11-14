@@ -1232,11 +1232,11 @@
         ansible_python_interpreter: "{{ ansible_playbook_python }}"
 
 # The inner fleet of a nested-fleet default (docs/reference/development-containers.md#refresh-after-a-release). Only such an intent has
-# `fleet`, and only its deployment runs these tags: `fleet_check` compares the fleet with its rules before the run changes anything,
-# `fleet_start` starts the fleet without a Doctor wait, `fleet_refresh` migrates and restarts the nested Gateway, converges the nested
-# Nodes and waits for readiness, each only when its inputs changed, and retakes their `base` with the fleet stopped only when the
-# fleet's disks changed (tasks/instance-fleet-refresh.yml), and `fleet_resume` starts a refreshed or restored fleet
-# and waits for readiness (tasks/instance-fleet-*.yml).
+# `fleet`: `fleet_start` is a deployment's one fleet check before the run changes anything (rules, start what is stopped, tunnel; no
+# Doctor wait), `fleet_refresh` migrates and restarts the nested Gateway and converges the nested Nodes, each only when its inputs
+# changed, retakes their `base` only when the fleet's disks changed and waits for readiness (tasks/instance-fleet-refresh.yml),
+# `fleet_resume` starts a restored fleet and waits for readiness, and a clone's `fleet_check` compares the fleet it copied
+# (tasks/instance-fleet-*.yml).
 - name: Run the phase of the nested fleet
   tags: [fleet_check, fleet_start, fleet_refresh, fleet_resume]
   when: phase in ['fleet_check', 'fleet_start', 'fleet_refresh', 'fleet_resume']

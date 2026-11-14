@@ -68,6 +68,9 @@ final readonly class InstanceContainer
     /** T3's command in a container, from the agent release its image holds. */
     public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
+    /** The runtime's Node.js in a container, which runs Orbit's T3 RPC helper of a task copy's turn. */
+    public const string Node = InstanceHostIntent::RuntimeFolder.'/current/bin/node';
+
     /** The Claude Code efforts of a task copy's T3: one provider instance each (docs/reference/development-containers.md#turn-model-and-effort). */
     public const array ClaudeEfforts = ['low', 'medium', 'high', 'xhigh', 'max'];
 
@@ -431,6 +434,12 @@ final readonly class InstanceContainer
     public static function claudeInstance(string $effort): string
     {
         return 'claude'.ucfirst($effort);
+    }
+
+    /** The effort a task copy's T3 provider instance carries: `medium` for `claudeMedium`; null for an instance Orbit did not write. */
+    public static function claudeEffort(string $instance): ?string
+    {
+        return array_find(self::ClaudeEfforts, static fn (string $effort): bool => self::claudeInstance($effort) === $instance);
     }
 
     /**

@@ -7,6 +7,12 @@
 # The tunnel is made with `ip` and `wg`, never `wg-quick`, which segfaults in the Instance container. Its key is the operator key that the
 # container holds, its peer the nested Gateway's hub key. The tunnel does not outlive a stop of the container; the next start makes it.
 # Without the Club key the nested Gateway's Swamp stays down and the fleet still starts: the `club-key` device is not required.
+- { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
+# A deployment's one fleet check is this start, and the container may have just started: the inner Incus starts by socket then, and a
+# read before it is ready is not a drift.
+- name: Wait for the inner Incus
+  ansible.builtin.command: { argv: "{{ ['timeout', '90'] + fleet_incus + ['admin', 'waitready', '--timeout', '80'] }}" }
+  changed_when: false
 - { name: Check the fleet rules, ansible.builtin.import_tasks: instance-fleet-rules.yml, vars: { fleet_rules_apply: false } }
 
 - name: Read the state of the nested containers

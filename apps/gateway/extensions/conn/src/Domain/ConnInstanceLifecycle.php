@@ -54,19 +54,27 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
 
     /**
      * A woken Instance's server renews at once when its session ends within the sweep's margin or has ended: the sweep skips a
-     * sleeping Instance, and the run issues a new session without the old one. A busy server or Conn switched off starts nothing.
+     * sleeping Instance, and the run issues a new session without the old one. Its held sessions within the margin renew too. A busy
+     * server or Conn switched off starts nothing.
      */
     public function projectWake(Instance $instance): void
     {
-        $environment = ConnEnvironment::query()->where('instance_id', $instance->id)
-            ->where('admin_session_expires_at', '<', Carbon::now()->addDays(ConnRenewalSweep::MarginDays))->first();
+        $environment = ConnEnvironment::query()->where('instance_id', $instance->id)->first();
         if (! $environment instanceof ConnEnvironment || ! $this->extensions->enabled('conn')) {
             return;
         }
-        try {
-            app(AdmitConnRenewalAction::class)->execute($environment);
-        } catch (ResourceOperationException $error) {
-            Log::warning('conn.renewal_start_failed', ['environment_id' => $environment->environment_id, 'error_code' => $error->errorCode]);
+        if ($environment->admin_session_expires_at->lt(Carbon::now()->addDays(ConnRenewalSweep::MarginDays))) {
+            try {
+                app(AdmitConnRenewalAction::class)->execute($environment);
+            } catch (ResourceOperationException $error) {
+                Log::warning('conn.renewal_start_failed', ['environment_id' => $environment->environment_id, 'error_code' => $error->errorCode]);
+            }
+        }
+        // Held sessions renew with the session they find; one that waits on an ended Gateway session renews once that is recorded.
+        // A revoke owed while it slept starts too; one the server cannot take yet waits for the hourly tick.
+        if ($environment->admin_session_expires_at->isFuture()) {
+            app(ConnHeldSessions::class)->renewDue($environment);
+            app(ConnHeldSessions::class)->revokeNext($environment->id);
         }
     }
 
@@ -97,6 +105,10 @@ final readonly class ConnInstanceLifecycle implements InstanceLifecycleContribut
             $environment->cleanup_completed_version = $environment->cleanup_version;
         }
         $environment->forceFill(['instance_id' => $instance->id])->save();
+        // The creating profile's Nodes get their held sessions now, so their first attach is one read.
+        if ($this->extensions->enabled('conn')) {
+            DB::afterCommit(fn () => app(ConnHeldSessions::class)->preMint($instance, $environment));
+        }
         if ($replaced) {
             DB::afterCommit(function () use ($environment, $instance): void {
                 try {

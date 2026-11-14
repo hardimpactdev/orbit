@@ -101,3 +101,18 @@ it('closes no row with an index-less skip of a started forEach item', function (
     expect(array_map(static fn (array $row): array => [$row['name'], $row['status']], progressRows($operation)))
         ->toBe([['Sign the CSR-0-0', 'running'], ['Sign the CSR-0', 'skipped']]);
 });
+
+it('keeps a failed publication step of a clone create out of its failed step, so a later clone failure names itself', function (): void {
+    $operation = progressOperation();
+    $operation->update(['kind' => 'instance.create', 'input' => ['route_id' => 3, 'route_create' => ['route_id' => 3],
+        'direct_provisioning' => ['container' => ['clone' => ['source' => 'instance-1']]]]]);
+    $progress = app(NativeRunProgress::class);
+    // A child of clone-route fails, then clone-route itself; the create goes on (docs/reference/development-containers.md#the-address-during-the-create).
+    $progress->apply($operation->id, 'run-1', ['kind' => 'step_failed', 'jobId' => 'create', 'stepId' => 'site', 'parentRunId' => 'run-1', 'seq' => 1]);
+    $progress->apply($operation->id, 'run-1', ['kind' => 'step_failed', 'jobId' => 'publication', 'stepId' => 'clone-route', 'seq' => 2]);
+    expect($operation->refresh()->failed_step)->toBeNull()
+        ->and($operation->state)->not->toHaveKey('native_failure');
+
+    $progress->apply($operation->id, 'run-1', ['kind' => 'step_failed', 'jobId' => 'clone', 'stepId' => 'clone-container', 'seq' => 3]);
+    expect($operation->refresh()->failed_step)->toBe('clone-container');
+});

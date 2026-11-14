@@ -15,6 +15,9 @@ final readonly class ConnOperationCompletion
 {
     public function complete(Operation $operation, OperationOutcome $outcome): void
     {
+        if ($operation->kind === 'conn.pairing_revoke') {
+            app(ConnHeldSessions::class)->revoked($operation, $outcome);
+        }
         if ($outcome->status !== OperationStatus::Succeeded) {
             return;
         }

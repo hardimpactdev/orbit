@@ -26,6 +26,7 @@ sequenceDiagram
   %%> CLI requirements:
   %%> - Node access to the Instance's Node and no other lifecycle Operation holds the Instance
   %%> - a running completion refuses with `operation.target_busy` and names it in `details.operation_id`
+  %%> - a running create is cancelled and the removal is admitted `waiting` behind it (`after_operation_id`), for every caller; it starts when the create has ended
   %%> - a non-default container Instance, cloned or migrated, and a removable default (below); every other default refuses
   %%> - `--force` is required until guarded removal is built; no work or turn check runs
   alt container default, not removable

@@ -544,8 +544,9 @@ def main():
                             or (index == 4 and item.startswith("orbit-schedule-") and item.endswith(".timer"))
                             or (index == 5 and item.endswith((".sh", ".complete")))
                             or (index == 2 and item not in own_ids)
-                            or (index == 3 and (item in {"orbit-mail-1025.socket", "orbit-mail-2525.socket"}
-                                               or item.startswith("orbit-node-service-")))
+                            # The seed's mail sockets stay enabled: their units are the Node's, the same for every copy, and the
+                            # mail apply below finds them in place (docs/reference/development-containers.md#mail).
+                            or (index == 3 and item.startswith("orbit-node-service-"))
                             or (index == 1 and item.startswith("orbit-node-service-"))
                         ):
                             (links if directory.endswith(".wants") else remove).append(name + directory + "/" + item)
@@ -889,8 +890,9 @@ def main():
             expected_commit()
             with timed("guest"):
                 output = inside(phase, cached.read_text() if cached.exists() else "")
+        # The T3 step's reply is the two sessions it issued; the sessions step's is the checked registration, which replaces it.
         reply = output.pop("private_reply", None)
-        if reply is not None and not cached.exists():
+        if reply is not None:
             owner = private_folder()
             cached.write_text(json.dumps(reply))
             cached.chmod(0o600)

@@ -6,11 +6,15 @@ namespace App\Domain\Operations;
 
 use App\Actions\Instances\StartInstanceRestoreAction;
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Instances\ClonePublication;
 use App\Domain\Routes\NativeRouteCreatePlan;
 use App\Domain\Shared\ResourceOperationException;
+use App\Infrastructure\AppDev\DevelopmentSite;
+use App\Infrastructure\AppDev\DevelopmentSiteRepository;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\PromoteRouteWrites;
+use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
@@ -32,6 +36,9 @@ final class RoutePublicationHolds
     /** @var list<string> */
     private const array Kinds = ['instance.create', 'instance.complete', 'instance.destroy', 'instance.clone', 'instance.transfer', 'instance.migrate',
         'instance.restore', 'route.create', 'route.update', 'route.destroy', 'route.target_set'];
+
+    /** Kinds that render their whole publication again from the current catalog when a promotion starts them. */
+    private const array RefreshedKinds = ['instance.create', 'instance.complete', 'instance.clone', 'instance.restore', 'route.create'];
 
     /** A timed-out write that Swamp never confirmed stopped gives its Nodes back after this long. */
     private const int UnconfirmedMinutes = 15;
@@ -167,10 +174,50 @@ final class RoutePublicationHolds
         if (! $after && ! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->acquire($operation->id, $nodes)) {
             return true;
         }
+        // A clone's create never waits for a Route Node: it leaves its publication to its completion and starts at once. The insert above
+        // is the decision, so of two creates admitted together exactly one takes the Nodes.
+        if (ClonePublication::takesFreeNodesOnly($operation)) {
+            app(ClonePublication::class)->defer($operation);
+
+            return true;
+        }
+        // A write that publishes a render made now records the sites its Nodes serve, so its start can tell when they changed.
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Waiting,
-            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes]]);
+            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes, ...(self::rendersAtStart($operation) ? [] : ['hold_sites' => self::served($nodes)])]]);
 
         return false;
+    }
+
+    /**
+     * The site domains each Node serves now, one digest per Node. A site published or withdrawn on a Node changes its digest.
+     *
+     * @param  list<int>  $nodes
+     * @return array<int, string>
+     */
+    private static function served(array $nodes): array
+    {
+        $served = [];
+        foreach ($nodes as $nodeId) {
+            // A Node that is gone serves nothing.
+            $node = Node::query()->find($nodeId);
+            $domains = $node === null ? [] : app(DevelopmentSiteRepository::class)->forNode($node)
+                ->map(static fn (DevelopmentSite $site): string => $site->domain)->unique()->sort()->values()->all();
+            $served[$nodeId] = hash('sha256', implode("\n", $domains));
+        }
+
+        return $served;
+    }
+
+    /**
+     * A waiting write that publishes the whole Caddyfile it rendered at its admission, when a site was published or withdrawn on its
+     * Nodes meanwhile: its render would drop or bring back that site. It is refused at its start with `route.publication_stale`, and
+     * the same command run again renders from the current catalog (docs/reference/routes.md#coordinate-publication).
+     */
+    private static function stale(Operation $operation): bool
+    {
+        $recorded = $operation->state['hold_sites'] ?? null;
+
+        return is_array($recorded) && $recorded !== self::served(self::waitingNodes($operation));
     }
 
     /** Frees the Nodes of a finished Operation, then asks for the waiting ones to start, after the caller's transaction. */
@@ -305,6 +352,25 @@ final class RoutePublicationHolds
         }
     }
 
+    /**
+     * Gives back the Nodes a clone's create took at admission once its `clone-route` step has succeeded, in the caller's transaction
+     * that activates the Route, then asks for the waiting writes to start (ClonePublication).
+     */
+    public function releasePublished(Operation $operation): void
+    {
+        // A waiting write that renders at its admission is refused at its start, because the new site changed what its Nodes serve.
+        if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
+            PromoteRouteWrites::dispatch()->afterCommit();
+        }
+    }
+
+    /** A write whose Caddy input is fresh when it starts: a create that renders again at promotion, or a removal that composes from the live file. */
+    private static function rendersAtStart(Operation $operation): bool
+    {
+        return $operation->kind === 'instance.destroy'
+            || (in_array($operation->kind, self::RefreshedKinds, true) && isset($operation->input['route_create']));
+    }
+
     /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
     public function releaseWithdrawn(Operation $operation): void
     {
@@ -386,6 +452,12 @@ final class RoutePublicationHolds
     private function start(array $operations): void
     {
         foreach ($operations as $operation) {
+            if (self::stale($operation)) {
+                app(StartSwampRun::class)->refuse($operation, new ResourceOperationException('route.publication_stale',
+                    'A Route site on a Node of this write changed while it waited; run the command again.', 409));
+
+                continue;
+            }
             try {
                 $this->refreshPublication($operation);
             } catch (Throwable $exception) {
@@ -407,7 +479,7 @@ final class RoutePublicationHolds
     /** Only unstarted creates can replace their whole publication from the current catalog; their resource intent stays fixed. */
     private function refreshPublication(Operation $operation): void
     {
-        if (! in_array($operation->kind, ['instance.create', 'instance.complete', 'instance.clone', 'instance.restore', 'route.create'], true) || ! isset($operation->input['route_create'])) {
+        if (! in_array($operation->kind, self::RefreshedKinds, true) || ! isset($operation->input['route_create'])) {
             return;
         }
         DB::transaction(function () use ($operation): void {

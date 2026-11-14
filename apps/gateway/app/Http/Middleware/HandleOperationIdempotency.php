@@ -36,7 +36,7 @@ final readonly class HandleOperationIdempotency
         }
 
         $start = StartsOperation::forRoute($route);
-        if ($start === null) {
+        if ($start === null || ! $start->keyed) {
             return $next($request);
         }
         $kind = $start->requestKind($request);

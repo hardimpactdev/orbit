@@ -11,7 +11,7 @@ import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
 type RecordValue = Record<string, unknown>;
-type Mode = "success" | "dead-unit" | "route-failure" | "cancel";
+type Mode = "success" | "dead-unit" | "route-failure" | "cancel" | "published";
 /** The long completion steps a cancel must stop: the services, the database fill and the fleet start. */
 const LONG = ["clone-services", "server-database-fill", "clone-fleet"] as const;
 type Long = typeof LONG[number];
@@ -89,7 +89,8 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
             server_database: slow === "server-database-fill" ? { node_id: 5, fill: ["true"],
                 intent: { ssh_execution: { target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: [] }, identity_file: "/none" }, owner_client: ["true"] } } : null,
             ...(slow === "clone-fleet" ? { fleet: { seed: "e".repeat(40) } } : {}),
-            server_valkey: null, route: { leaf_indexes: [0] }, route_mutations: { artifacts: {}, restore: {} },
+            // A Route its create published is not captured again: the completion carries none (StartInstanceCompleteAction).
+            server_valkey: null, route: mode === "published" ? null : { leaf_indexes: [0] }, route_mutations: mode === "published" ? null : { artifacts: {}, restore: {} },
             ssh_execution: { target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: [] }, identity_file: "/none" } },
     });
     const history = async () => JSON.parse((await call("workflow", "history", "get", created.name)).stdout);
@@ -213,3 +214,17 @@ for (const [slow, step] of [["clone-services", "workspace"], ["server-database-f
         }
     } });
 }
+
+Deno.test({ name: "pinned complete: a clone whose create published its address runs no Route step and withdraws nothing", ignore: !binary, async fn() {
+    const f = await fixture("published");
+    try {
+        const done = await execute(f, false);
+        assert(done.success, text(done.stdout) + text(done.stderr));
+        const steps = await f.steps();
+        for (const name of ["clone-input", "clone-services", "clone-check", "finish", "accepted"]) assertEquals(stub(steps, name), "succeeded", name);
+        assertEquals([stub(steps, "route"), stub(steps, "withdraw-route"), "route-csr-0" in steps], ["skipped", "skipped", false]);
+        assertEquals(result(steps).ready, true);
+    } finally {
+        f.cleanup();
+    }
+} });

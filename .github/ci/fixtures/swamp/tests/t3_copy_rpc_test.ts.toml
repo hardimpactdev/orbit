@@ -1,0 +1,13 @@
+order = 1450
+source_sha256 = "b54d367cd6655f851d71b8ecec79b4b9b566e54057fc099c1db476d511c17a77"
+cases = [
+  "the read prints every pending question in the result step's shape and stops nothing; free text without options is stored whole",
+  "the stop ends the run only while it waits for exactly the stored questions",
+  "a session issue that prints no JSON fails without quoting it and still revokes the session it names",
+]
+file = "swamp/tests/t3_copy_rpc_test.ts"
+cost = 1
+# Local Deno case times on Beast rounded up; not CI measurements.
+inputs = [
+  "swamp/ansible/t3_copy_rpc.mjs",
+]

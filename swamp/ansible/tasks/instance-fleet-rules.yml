@@ -8,7 +8,11 @@
 # writes it with the fleet stopped. With it, only owned rules and absent build rules are written, and then every rule must hold.
 # Input: instance-fleet.yml. Each change is one inner `incus` call; a rerun changes nothing.
 - { name: Name the fleet commands, ansible.builtin.import_tasks: instance-fleet.yml }
-- { name: Read the fleet rules, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
+# A comparison that only refuses reads no file: every file rule is owned and passes it. A refresh that compares a partly stopped
+# fleet sets `fleet_rules_compare_files`, so a file that differs there fails it.
+- name: Read the fleet rules
+  ansible.builtin.include_tasks: instance-fleet-rules-read.yml
+  vars: { fleet_rules_files: "{{ fleet_rules_apply | default(true) | bool or fleet_rules_compare_files | default(false) | bool }}" }
 
 - name: Name the differences that Orbit does not write
   vars:
@@ -64,7 +68,7 @@
       loop_control: { label: "{{ item.container }} {{ item.name }}" }
       changed_when: true
     - { name: Write the fleet files, ansible.builtin.import_tasks: instance-fleet-files.yml }
-    - { name: Read the fleet rules again, ansible.builtin.include_tasks: instance-fleet-rules-read.yml }
+    - { name: Read the fleet rules again, ansible.builtin.include_tasks: instance-fleet-rules-read.yml, vars: { fleet_rules_files: true } }
 
 - name: Check the fleet rules
   when: fleet_rules_apply | default(true)

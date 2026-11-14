@@ -19,7 +19,8 @@ use Orbit\Extensions\Conn\Models\ConnPairing;
 
 final readonly class IssueConnPairingAction
 {
-    private const array Scopes = [
+    /** T3's administrative scopes; a held session carries the same ones as a device pairing. */
+    public const array Scopes = [
         'orchestration:read', 'orchestration:operate', 'settings:write', 'providers:manage',
         'environment:maintain', 'preview:operate', 'diagnostics:read', 'terminal:read',
         'terminal:operate', 'source-control:write', 'filesystem:read', 'filesystem:write',
@@ -39,7 +40,9 @@ final readonly class IssueConnPairingAction
             // waits for, or the new one ([Renewal of an Instance server](/reference/conn#renewal-of-an-instance-server)).
             $environment = ConnEnvironment::query()->lockForUpdate()->findOrFail($environment->id);
             $this->assertSession($environment);
-            if ($renew && ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)->latest('id')->first()?->revoked_at !== null) {
+            // Held pairings are the Gateway's own ([Held sessions](/reference/conn#held-sessions)); only the device's pairings decide here.
+            if ($renew && ConnPairing::query()->where('node_id', $node->id)->where('conn_environment_id', $environment->id)->where('held', false)
+                ->latest('id')->first()?->revoked_at !== null) {
                 throw new ResourceOperationException('conn.pairing_revoked', "This Node's newest pairing on {$environment->label} was revoked, so it is not renewed. Pair again without renew to bring the server back.", 409);
             }
             $pairing = ConnPairing::query()->create(['node_id' => $node->id, 'conn_environment_id' => $environment->id,

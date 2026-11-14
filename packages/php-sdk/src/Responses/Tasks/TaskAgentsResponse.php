@@ -12,7 +12,7 @@ final readonly class TaskAgentsResponse
         public string $requestId,
     ) {}
 
-    /** @return array{agents: list<array<string, int|string|null>>, request_id: string} */
+    /** @return array{agents: list<array<string, int|string|list<array<string, mixed>>|null>>, request_id: string} */
     public function toArray(): array
     {
         return [

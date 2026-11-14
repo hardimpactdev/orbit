@@ -22,6 +22,7 @@ WORKFLOW = '.github/workflows/ci-full-set.yml'
 CEILING = 540
 DEADLINE = 2100
 WORKERS = 2
+SYSTEMD_FIXTURE = 'swamp/tests/node_worker_systemd_cleanup_test.ts'
 
 
 def module(name, path):
@@ -114,7 +115,7 @@ def collect_current(file):
     return {'cases': cases}
 
 
-def build_plan(config, inventory, collect, fixture_api, snapshot=None):
+def build_plan(config, inventory, collect, fixture_api, snapshot=None, requested=None):
     """Refresh populations; committed metadata is a cost hint, never an admission gate."""
     budget = {**config['budget'], 'shard_seconds': 300, 'shard_workers': WORKERS,
               'unit_ceiling_seconds': CEILING, 'shard_deadline_seconds': DEADLINE,
@@ -122,6 +123,11 @@ def build_plan(config, inventory, collect, fixture_api, snapshot=None):
     fixtures = {f['file']: dict(f) for f in config.get('fixture', [])}
     for file in fixture_api.fixture_steps():
         fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
+    if requested is not None:
+        missing = requested.keys() - fixtures.keys()
+        if missing:
+            raise ValueError('Unknown deferred fixtures: ' + ', '.join(sorted(missing)))
+        fixtures = {file: f for file, f in fixtures.items() if file in requested}
     if snapshot:
         snapshot({'budget': budget, 'fixtures': fixtures, 'shards': [{'name': 'planning', 'units': list(fixtures)}],
                   'units': [{'unit': file, 'cases': [], 'status': 'NOT RUN'} for file in fixtures]})
@@ -143,6 +149,8 @@ def build_plan(config, inventory, collect, fixture_api, snapshot=None):
         fixture.pop('after_merge', None)
         fixture.setdefault('inputs', [])
         fixture.setdefault('cost', budget['default_cost'])
+        if error and requested is not None:
+            raise ValueError(file + ': deferred registration failed: ' + error)
         if error:
             # Execute all registrations without a slice or expected-name guard.
             fixture.update(slices=False)
@@ -161,6 +169,12 @@ def build_plan(config, inventory, collect, fixture_api, snapshot=None):
         average = math.ceil(fixture['cost'] / max(1, len(retained)))
         weights = {name: old_weights.get(name, config['budget']['unit_ceiling_seconds'] if name in excluded
                                         else average if name in old else budget['default_cost']) for name in names}
+        if requested is not None and requested[file] is not None:
+            wanted = set(requested[file])
+            if not wanted or wanted - set(names):
+                raise ValueError(file + ': deferred case names are empty or no longer registered')
+            fixture['after_merge_cases'] = [name for name in names if name not in wanted]
+            weights = {name: cost for name, cost in weights.items() if name in wanted}
         fixture.update(case_costs=weights, cost=sum(weights.values()), slices=1)
         # Reuse the shared stride slicer and cost calculation. Increase slicing until each
         # unit fits the ceiling, or until an indivisible case has its own named unit.
@@ -171,7 +185,7 @@ def build_plan(config, inventory, collect, fixture_api, snapshot=None):
                 break
     units = [(name, cost, (0, 0, 0)) for f in fixtures.values() for name, cost in fixture_api.units_for(f, budget)]
     # No PR capacity limit. Oversized indivisible cases execute and time out by name.
-    budget['shard_seconds'] = max(300, min(CEILING, max(cost for _, cost, _ in units)))
+    budget['shard_seconds'] = max(300, min(CEILING, max((cost for _, cost, _ in units), default=300)))
     packing = [(name, min(cost, CEILING), priority) for name, cost, priority in units]
     shards = None
     while shards is None:
@@ -184,7 +198,7 @@ def build_plan(config, inventory, collect, fixture_api, snapshot=None):
             'units': [{'unit': name, 'declared_seconds': cost, 'status': 'NOT RUN',
                        'cases': fixture_api.case_names(name, fixtures)} for name, cost, _ in units],
             'after_merge_files': after_merge_files, 'restored_pr_exclusions': restored, 'collection_errors': collection_errors,
-            'files_total': len(fixtures), 'cases_total': sum(len(f.get('cases', [])) for f in fixtures.values())}
+            'files_total': len(fixtures), 'cases_total': sum(len(fixture_api.case_names(name, fixtures)) for name, _, _ in units)}
 
 
 def frankenphp_runtime(cache):
@@ -230,7 +244,7 @@ def run_shard(plan, name, output):
         os.environ[variable] = receipt.read_text()
     # The runner service is not a login session. Its managed user manager lives
     # at the standard per-UID socket; do not inherit another user's bus.
-    if any(unit.split('#')[0] == 'swamp/tests/node_worker_systemd_cleanup_test.ts' for unit in shard['units']):
+    if any(unit.split('#')[0] == SYSTEMD_FIXTURE for unit in shard['units']):
         runtime = f'/run/user/{os.getuid()}'
         os.environ.update(XDG_RUNTIME_DIR=runtime, DBUS_SESSION_BUS_ADDRESS=f'unix:path={runtime}/bus')
     budget = {**plan['budget'], 'shard_deadline_seconds': max(.001, deadline - time.monotonic())}
@@ -240,8 +254,9 @@ def run_shard(plan, name, output):
 def reconcile(plan, directory, shard_result):
     problems, warnings = [], []
     expected = {u['unit']: u for u in plan['units']}
-    if not expected or not plan['shards']:
-        problems.append({'unit': 'full-set plan', 'reason': 'missing or empty full-set-plan.json', 'files': []})
+    empty = plan.get('empty_selection') is True and not expected and not plan['shards']
+    if (not expected or not plan['shards']) and not empty:
+        problems.append({'unit': 'full-set plan', 'reason': plan.get('planner_error', 'missing or empty full-set-plan.json'), 'files': []})
     seen = set()
     for shard in plan['shards']:
         path = directory / f'full-set-times-{shard["name"]}.json'
@@ -281,7 +296,7 @@ def reconcile(plan, directory, shard_result):
                 warnings.append({'unit': unit, 'reason': f'{row["seconds"]}s exceeds 80% of {CEILING}s ceiling', 'files': [unit.split('#')[0]]})
     for unit in expected.keys() - seen:
         problems.append({'unit': unit, 'reason': 'missing unit result (NOT RUN); matrix result: ' + shard_result, 'files': [unit.split('#')[0]]})
-    if shard_result != 'success' and not problems:
+    if shard_result != 'success' and not (empty and shard_result == 'skipped') and not problems:
         problems.append({'unit': 'fixture jobs', 'reason': 'matrix result: ' + shard_result, 'files': []})
     return problems, warnings
 
@@ -298,8 +313,9 @@ def candidate_prs(github, commits):
 
 
 def report_payloads(plan, problems, warnings, candidates, link, selection):
-    status = {'state': 'failure' if problems else 'success', 'context': 'Main full set',
-              'description': f'{len(problems)} failures; {len(warnings)} budget warnings', 'target_url': link}
+    status = {'state': 'failure' if problems else 'success', 'context': plan.get('context', 'Main full set'),
+              'description': 'No deferred cases selected' if plan.get('empty_selection') and not problems else
+                  f'{len(problems)} failures; {len(warnings)} budget warnings', 'target_url': link}
     comments = {}
     for item in [*problems, *warnings]:
         matched = []
@@ -316,7 +332,7 @@ def report_payloads(plan, problems, warnings, candidates, link, selection):
             comments.setdefault(number, []).append(line)
     payloads = []
     for number, lines in comments.items():
-        heading = (f'Main full set on `{plan["sha"]}`. [Run and named timing artifacts]({link}).\n\n'
+        heading = (f'{plan.get("context", "Main full set")} on `{plan["sha"]}`. [Run and named timing artifacts]({link}).\n\n'
                    f'Covered range: `{plan["base"] or "repository root"}..{plan["sha"]}`.\n\n')
         # Split long reports instead of losing named outcomes at GitHub's body limit.
         body = heading
@@ -350,8 +366,9 @@ def report(github, plan, directory, shard_result, link, output):
                   'status': status, 'commented_prs': [n for n, _ in comments],
                   'planned_files': plan.get('files_total'), 'planned_cases': plan.get('cases_total'),
                   'planned_units': len(plan['units']), 'after_merge_files': plan.get('after_merge_files', []),
-                  'restored_pr_exclusions': plan.get('restored_pr_exclusions', [])})
-    summary = f'Main full set: {status["state"]}\n\n' + '\n'.join(f'- {i["unit"]}: {i["reason"]}' for i in [*problems, *warnings])
+                  'restored_pr_exclusions': plan.get('restored_pr_exclusions', []),
+                  'empty_selection': plan.get('empty_selection', False), 'commits': plan['commits']})
+    summary = f'{status["context"]}: {status["state"]}\n\n' + '\n'.join(f'- {i["unit"]}: {i["reason"]}' for i in [*problems, *warnings])
     print(summary)
     if os.environ.get('GITHUB_STEP_SUMMARY'):
         Path(os.environ['GITHUB_STEP_SUMMARY']).write_text(summary + '\n')

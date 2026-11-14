@@ -6,6 +6,7 @@ cluster.router_unset
 conn.gateway_sessions_revoke
 conn.pairing_create
 conn.pairing_revoke
+conn.session_hold
 database.create
 database.destroy
 database.import

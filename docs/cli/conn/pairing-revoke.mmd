@@ -40,7 +40,9 @@ sequenceDiagram
   %%> - no other revocation runs for env-beast; the Gateway holds one lock per server
   %%> What it does:
   %%> - captures the subject Node's open pairings on env-beast: their exact labels, issue windows, source IP and link IDs; the subject defaults to the caller
-  %%> - overlapping windows on that Node and environment refuse with conn.revocation_ambiguous before any T3 call
+  %%> - a held pairing (session-hold.mmd) is selected only by its `pairing_id`, never without it; it is marked `held`, and its session is matched by its exact label alone
+  %%> - a selected held pairing that is not revoked is withdrawn now: the session handle stops serving it; if its hold still runs, the task records that
+  %%> - overlapping windows of the Node's own pairings on that environment refuse with conn.revocation_ambiguous before any T3 call; a held pairing never overlaps
   %%> - pushes the admin session to the Swamp vault as `conn-session-5171` after commit (R3)
   %%> Why a run:
   %%> - calling T3's API is an effect; the Gateway's only execution primitives are mint and sign
@@ -63,7 +65,7 @@ sequenceDiagram
   %%> - no read is needed when no admitted pairing or cleanup label exists
   Note over SW: Select the sessions
   %%> What it does:
-  %%> - typed data matches Conn one-time-token sessions by exact label; mcp-client sessions by exact Node IP and issue window
+  %%> - typed data matches Conn one-time-token sessions by exact label; mcp-client sessions by exact Node IP and issue window, except for a held pairing
   %%> - the current admin is preserved; an empty selection or a delivered pairing with no matching session refuses with conn.revocation_unmatched
   %%> - an invalid or failed list refuses before any revoke
   SW->>T3: Revoke the sessions
@@ -96,6 +98,8 @@ sequenceDiagram
     Note over GW: Mark pairings revoked<br/>revoked_at · task done
     %%> Result:
     %%> - the subject Node's pairings on env-beast get `revoked_at`, and their stored links are removed
+    %%> - a held pairing is settled: it owes no revoke
+    %%> - the next owed held revoke on env-beast starts
     %%> - the device loses env-beast at once; its other servers and Orbit access stay
     %%> - task #5171 succeeds
   else listing, matching or a revoke fails
@@ -108,6 +112,8 @@ sequenceDiagram
     Note over GW: Mark revoked ones only<br/>task failed · rerun is safe
     %%> Result:
     %%> - unmatched failures keep every pairing row unchanged; other failures mark only pairings whose sessions and links completed; task #5171 fails
+    %%> - an unmatched revoke of one held pairing by its id proves nothing of it is left, so it is settled, unless its hold ran at admission: then it stays withdrawn, and the hold's end revokes it again by its id
+    %%> - the next owed held revoke on env-beast starts; one whose hold still runs waits for that hold's end
     %%> Retry:
     %%> - use pairing_id to retry a revoked row whose session still lives; an empty retry fails with conn.revocation_unmatched
   end

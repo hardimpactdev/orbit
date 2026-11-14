@@ -29,12 +29,18 @@ final readonly class ConnServerAccess
             : $query->whereIn('node_id', $this->access->accessibleNodeIds($caller));
     }
 
+    public function allows(Node $caller, ConnEnvironment $environment): bool
+    {
+        $node = $environment->node;
+
+        return $node instanceof Node ? $this->access->allows($caller, $node) : $this->access->hasGatewayAuthority($caller);
+    }
+
     public function assert(Node $caller, ConnEnvironment $environment): void
     {
         $node = $environment->node;
-        $allowed = $node instanceof Node ? $this->access->allows($caller, $node) : $this->access->hasGatewayAuthority($caller);
 
-        if (! $allowed) {
+        if (! $this->allows($caller, $environment)) {
             throw new ResourceOperationException('node_access.required', 'Node access is required.', 403, details: [
                 'consumer_node' => ['id' => $caller->id, 'name' => $caller->name],
                 'serving_node' => $node instanceof Node ? ['id' => $node->id, 'name' => $node->name] : null,

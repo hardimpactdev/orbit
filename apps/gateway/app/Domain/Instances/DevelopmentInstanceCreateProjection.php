@@ -26,7 +26,8 @@ use Throwable;
 /**
  * Project the original native terminal receipt once; no running phase callbacks. A container clone's create ends when its thread is
  * usable: its success records the T3 server and the workspace baseline, keeps the clone `source_resolved`, and admits `instance.complete`
- * in the same transaction (docs/reference/development-containers.md#create).
+ * in the same transaction (docs/reference/development-containers.md#create). Its result says what became of its address
+ * (`route_publication`, ClonePublication).
  */
 final readonly class DevelopmentInstanceCreateProjection implements DirectOperationProjection
 {
@@ -70,6 +71,11 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $result['nested_fleet_club_key'] = NestedFleetClubKey::outcome($result['club_key'] ?? null, $result['error_code'] ?? $data['error_code'] ?? null);
             }
             unset($result['club_key']);
+            // A removal admitted during the run cancelled it and owns the Instance: the run's end changes no record of it, and no completion
+            // starts (docs/reference/conn.md#remove-an-instance).
+            if (Instance::query()->find($operation->target_id)?->status === InstanceState::Removing) {
+                return $this->direct->project($operation, $data, $result);
+            }
             if (is_array($operation->input['branch_selection'] ?? null)) {
                 $selection = InstanceBranchSelection::fromArray(ValidatedData::object($operation->input['branch_selection']));
                 $result['branch'] = $selection->target;
@@ -106,10 +112,22 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                     $instance->forceFill(['environment_owned_keys' => ValidatedData::stringList($input['environment_keys'] ?? [])])->save();
                 }
                 $route = ($input['route_id'] ?? null) === null ? null : Route::query()->findOrFail(ValidatedData::integer($input['route_id']));
+                // A clone's address never decides its create. A published one is active whatever the create's end, also when the progress
+                // event of `clone-route` was lost; this transaction's terminal state frees the Route Nodes. A failed one is marked, and the
+                // completion publishes it again (docs/reference/development-containers.md#the-address-during-the-create).
+                $publication = ClonePublication::outcome($operation, $result);
+                if ($publication !== null) {
+                    $result[ClonePublication::Field] = $publication;
+                    match ($publication) {
+                        'published' => app(ClonePublication::class)->activate($operation),
+                        'failed' => app(ClonePublication::class)->failed($operation),
+                        default => null,
+                    };
+                }
                 if ($handover && $server !== null) {
                     // A clone's thread is usable: it runs, the Conn layer records its T3 server, and the baseline records what the workspace
                     // held before any pairing (development-containers.md#workspace-work-state). It stays `source_resolved`: only its
-                    // completion makes it, and its Route, active.
+                    // completion makes it active.
                     $instance->update(['failed_step' => null, 'error_code' => null]);
                     $runtime = $instance->runtime()->lockForUpdate()->firstOrFail();
                     $runtime->update(['power_state' => InstanceRuntimePowerState::Running,

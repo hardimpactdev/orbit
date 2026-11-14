@@ -35,6 +35,7 @@ inputs:
               issuedAfter: {type: string}
               expiresAt: {type: string}
               delivered: {type: boolean}
+              held: {type: boolean}
             required: [id, label, ipAddress, issuedAfter, expiresAt, delivered]
             additionalProperties: false
         links:

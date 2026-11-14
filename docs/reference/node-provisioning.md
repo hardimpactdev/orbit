@@ -651,7 +651,7 @@ A Node inside the nested subnet of a [task VM](/reference/compute-drivers) (`10.
 
 A play with an `apt_proxy` writes `/etc/apt/apt.conf.d/90orbit-package-cache` before its first apt call: `Acquire::http::Proxy` with the cache, no pipelining, and `Acquire::https::Proxy "DIRECT"`, because the cache refuses https tunnels. A play without one removes that file. Every other Node has no `apt_proxy` and reads the archive.
 
-The same subnet holds the nested fleet of a [nested-fleet Instance container](/reference/development-containers#fleet-rules), where no `apt-cacher-ng` runs. There the fleet refresh writes the Node's egress proxy into that file before the base converge. A role add through the nested Gateway still writes the task VM address back, and the next refresh replaces it.
+The same subnet holds the nested fleet of a [nested-fleet Instance container](/reference/development-containers#fleet-rules), where no `apt-cacher-ng` runs. There the fleet refresh writes the Node's egress proxy into that file before the base converge. A role add through the nested Gateway still writes the task VM address back. The next refresh that reads the fleet files replaces it: one whose files moved, one that converges, or one that retakes `base`.
 
 The [Gateway bootstrap](#gateway-bootstrap-prerequisites) of a nested fleet takes the value from its input, and `php artisan orbit:bootstrap-plan --apt-proxy=URL` puts it in the plan.
 

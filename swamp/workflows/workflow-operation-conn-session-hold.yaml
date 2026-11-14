@@ -1,0 +1,202 @@
+id: 6b0e2d4a-8f1c-4c7e-9a35-2d7f1e9c4b58
+name: operation-conn-session-hold
+description: Make the session the Gateway holds for one Node on a container T3 server (docs/cli/conn/session-hold.mmd). Mint a pairing link with the admin session, redeem it on T3's normal pairing endpoint, store the session as a native sensitive field, then clean up and assert.
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: conn.session_hold}
+    intent:
+      type: object
+      properties:
+        url:
+          type: string
+        environment:
+          type: integer
+          minimum: 1
+        pairing_id:
+          type: integer
+          minimum: 1
+        label:
+          type: string
+        request_body:
+          type: string
+          minLength: 1
+      required:
+      - url
+      - environment
+      - pairing_id
+      - label
+      - request_body
+      additionalProperties: false
+    execution_secrets:
+      type: object
+      properties:
+        admin_session:
+          type: object
+          properties:
+            vault:
+              type: string
+              enum:
+              - orbit-control-inputs
+            key:
+              type: string
+              pattern: ^conn-session-hold-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$
+          required:
+          - vault
+          - key
+          additionalProperties: false
+      required:
+      - admin_session
+      additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: hold
+  steps:
+  - name: Create private replies
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("conn-session-folder-" + string(inputs.intent.environment)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 5 mktemp -d /tmp/orbit-conn-session.XXXXXXXX
+    writes: true
+  - name: Mint a pairing link
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("conn-session-mint-" + string(inputs.intent.environment)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: 'timeout 15 curl --silent --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_ADMIN_SESSION --expand-header ''Authorization: Bearer {{ORBIT_CONN_ADMIN_SESSION}}''
+          --header ''Content-Type: application/json'' --data "$ORBIT_CONN_BODY" --output "$ORBIT_CONN_DIRECTORY/link.json" --write-out ''%{http_code}'' "${ORBIT_CONN_URL%/}/api/auth/pairing-token"
+          2>/dev/null'
+        env:
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_BODY: ${{ inputs.intent.request_body }}
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Create private replies
+      condition:
+        type: succeeded
+    writes: true
+  - name: Read the link
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-session'
+      behaviorName: ${{ ("conn-session-" + string(inputs.intent.environment)).split(".").join("-") }}
+      methodName: link
+      inputs:
+        intent: ${{ inputs.intent }}
+        directory: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+        http_status: ${{ steps["Mint a pairing link"].outputs.stdout }}
+        env:
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+    dependsOn:
+    - step: Mint a pairing link
+      condition:
+        type: succeeded
+  - name: Redeem the link
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("conn-session-redeem-" + string(inputs.intent.environment)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: 'timeout 15 curl --silent --max-time 10 --max-filesize 4194304 --variable %ORBIT_CONN_LINK --data-urlencode ''grant_type=urn:ietf:params:oauth:grant-type:token-exchange''
+          --data-urlencode ''subject_token_type=urn:t3:params:oauth:token-type:environment-bootstrap'' --data-urlencode ''requested_token_type=urn:ietf:params:oauth:token-type:access_token''
+          --expand-data-urlencode ''subject_token={{ORBIT_CONN_LINK}}'' --output "$ORBIT_CONN_DIRECTORY/session.json" --write-out ''%{http_code}'' "${ORBIT_CONN_URL%/}/oauth/token"
+          2>/dev/null'
+        env:
+          ORBIT_CONN_URL: ${{ inputs.intent.url }}
+          ORBIT_CONN_LINK: ${{ vault.get("orbit-control-inputs", steps["Read the link"].outputs.credential_key) }}
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+    dependsOn:
+    - step: Read the link
+      condition:
+        type: succeeded
+    writes: true
+  - name: Store the session
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/conn-session'
+      behaviorName: ${{ ("conn-session-" + string(inputs.intent.environment)).split(".").join("-") }}
+      methodName: hold
+      inputs:
+        intent: ${{ inputs.intent }}
+        directory: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+        http_status: ${{ steps["Redeem the link"].outputs.stdout }}
+        link:
+          id: ${{ steps["Read the link"].outputs.id }}
+          expiresAt: ${{ steps["Read the link"].outputs.expiresAt }}
+        env:
+          ORBIT_CONN_ADMIN_SESSION: ${{ vault.get(inputs.execution_secrets.admin_session.vault, inputs.execution_secrets.admin_session.key) }}
+          ORBIT_CONN_LINK: ${{ vault.get("orbit-control-inputs", steps["Read the link"].outputs.credential_key) }}
+    dependsOn:
+    - step: Redeem the link
+      condition:
+        type: succeeded
+- name: cleanup
+  dependsOn:
+  - job: hold
+    condition:
+      type: completed
+  steps:
+  - name: Remove private replies
+    labels:
+      role: swamp
+    queueTimeout: 30
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ ("conn-session-cleanup-" + string(inputs.intent.environment)).split(".").join("-") }}
+      methodName: execute
+      inputs:
+        run: timeout 5 rm -rf -- "$ORBIT_CONN_DIRECTORY"
+        env:
+          ORBIT_CONN_DIRECTORY: ${{ steps["Create private replies"].outputs.stdout.trim() }}
+    writes: true
+    guard: ${{ !("Create private replies" in steps) || steps["Create private replies"].status != "succeeded" }}
+  - name: Confirm session
+    labels:
+      role: swamp
+    queueTimeout: 30
+    dependsOn:
+    - step: Remove private replies
+      condition:
+        type: succeeded
+    task:
+      type: assert
+      expr: '"Store the session" in steps && steps["Store the session"].status == "succeeded"'
+      message: conn.session_outcome_unknown
+      severity: high

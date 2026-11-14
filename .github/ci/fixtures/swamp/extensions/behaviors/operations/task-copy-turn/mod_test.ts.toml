@@ -1,8 +1,12 @@
 order = 370
-source_sha256 = "22fded92deef5e01d49aea9b7341b5336c3e26004801a1ebf30d1ca2dba65fd5"
+source_sha256 = "ac6def7fbdedb68bbbdb75c11b9ce52c7ba84411e38bab0738f2a2e5d98fab67"
 cases = [
   "a completed run is done and over, and records the message transcript and the T3 thread",
-  "a run that waits for an answer asks for input and is not over; any other end fails the turn with T3's status",
+  "a run that asks has its question stored and its run stopped: it asks for input, is over, and keeps every question in its own words",
+  "an earlier turn still running launches nothing and fails tasks.copy_turn_unended; the turns found settled are named",
+  "a free-text question with no options is stored whole, so the run it stopped asks for input and is over",
+  "a question Orbit could not read is not stopped and not over; a stop that failed says so and is not over",
+  "a run that ends other than done or asking fails the turn with T3's status",
   "a wait that the bound killed is tasks.turn_timeout, records the thread found by its title, and is over only when T3's thread is",
   "a phase cut before the start's end is over only when nothing was launched or T3 holds no such thread",
   "a continued turn reads like a new one, and one whose thread T3 does not hold is tasks.copy_thread_missing with nothing launched",

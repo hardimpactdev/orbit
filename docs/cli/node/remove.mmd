@@ -92,6 +92,7 @@ sequenceDiagram
     Note over GW: Delete the Node record
     %%> Result:
     %%> - the Node record and its owned records are deleted, and the removal is broadcast
+    %%> - before the delete, extensions keep what must outlive the Node: Conn withdraws the Node's held sessions and hands their owed revokes to the Gateway Node, which revokes each by pairing_id
     %%> - the result lists `roles_shed` and `retained_on_node`; for an unreachable machine it also names the Orbit keys and the worker unit that stay on it
   else a step fails, is cancelled or the budget ends
     N--xSW: exit ≠ 0 or timeout

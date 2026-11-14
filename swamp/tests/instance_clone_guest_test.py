@@ -9,6 +9,7 @@ import runpy
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -37,6 +38,9 @@ def checkout_mark(instance_id=9):
         mark.write_text(json.dumps({"instance_id": instance_id, "commit": "abc123"}) + "\n")
         with patch.object(GUEST.pathlib, "Path", lambda p: base / str(p).lstrip("/")):
             yield mark
+
+# The clone T3 step's own intent keys for the readiness fixture.
+T3_INTENT = {"unit": "t3.service", "title": "Proof", "project_mark": "/home/agent/.config/orbit/t3-project"}
 
 # The default's .env of the seed copy, with hand-set keys .env.example lacks. Every value is a fixture.
 DEFAULT_ENV = """APP_NAME=Lindaretel
@@ -924,8 +928,8 @@ class CloneGuestTest(unittest.TestCase):
             self.assertTrue(output.getvalue().startswith("orbit-commit=first-checkout\n"))
             self.assertNotIn('"commit"', output.getvalue())
 
-    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=False, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
-                  branch="proof", mark=None):
+    def readiness(self, phase, php=None, fail=None, entrypoint=False, existing=True, inactive=False, state=None, desired="running", is_active=1, expected_exit=1,
+                  branch="proof", mark=None, t3=None, on_curl=None):
         container = {
             "workspace": "/srv/workspace",
             "branch": "proof",
@@ -936,7 +940,7 @@ class CloneGuestTest(unittest.TestCase):
             "processes": [{"name": "orbit-process-vp-dev.service", "id": 19, "desired": desired}] if inactive else [],
             "clone": {
                 "seed_commit": "abc123",
-                "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"},
+                "t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3", **(t3 or {})},
             },
         }
         commands = []
@@ -951,6 +955,8 @@ class CloneGuestTest(unittest.TestCase):
             if actual[0] == fail:
                 code = 17
             if actual[0] == "curl":
+                if on_curl is not None:
+                    on_curl(commands)
                 stdout = json.dumps(
                     {"environmentId": "proof", "serverVersion": "0.1.7"}
                 )
@@ -962,7 +968,7 @@ class CloneGuestTest(unittest.TestCase):
             if actual[0] == "git":
                 stdout = branch + "\n" if "symbolic-ref" in actual else "abc123\n"
             if actual[0] == "/opt/agent/bin/t3":
-                stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n"
+                stdout = actual[actual.index("--label") + 1] + "-PRIVATE-TOKEN\n" if "--label" in actual else "project-proof\n"
             return subprocess.CompletedProcess(argv, code, stdout, "token=ghp_SUPER_PRIVATE_TOKEN_12345678901234567890")
 
         sessions = {
@@ -991,6 +997,7 @@ class CloneGuestTest(unittest.TestCase):
                 io.StringIO(json.dumps(sessions) if existing else ""),
             ),
             patch.object(GUEST.http.client, "HTTPConnection", return_value=connection),
+            patch.object(GUEST.os, "chown"),
             checkout_mark((mark or {}).get("instance_id", 9)),
             contextlib.redirect_stdout(output),
             contextlib.redirect_stderr(error),
@@ -1079,17 +1086,56 @@ class CloneGuestTest(unittest.TestCase):
         self.assertEqual(error, 'instance.container_process_inactive\n')
 
     def test_non_php_sessions_keep_both_authenticated_sessions_without_php(self):
-        for existing in [False, True]:
-            with self.subTest(existing=existing):
-                commands, output, _ = self.readiness("sessions", existing=existing)
-                result = json.loads(output)
-                self.assertEqual(result["phase"], "sessions")
-                self.assertEqual(result["private_reply"]["gateway"]["status"], 200)
-                self.assertEqual(result["private_reply"]["swamp"]["status"], 200)
-                self.assertEqual(
-                    result["changes"], [] if existing else ["sessions-issued"]
-                )
-                self.assertFalse(any(argv[0] == "php" for argv in commands))
+        commands, output, _ = self.readiness("sessions")
+        result = json.loads(output)
+        self.assertEqual(result["phase"], "sessions")
+        self.assertEqual(result["private_reply"]["gateway"]["status"], 200)
+        self.assertEqual(result["private_reply"]["swamp"]["status"], 200)
+        self.assertEqual(result["changes"], [])
+        self.assertFalse(any(argv[0] == "php" for argv in commands))
+        # The sessions step checks the T3 step's sessions and issues none: no T3 CLI start on its path.
+        self.assertFalse(any(argv[0] == "/opt/agent/bin/t3" for argv in commands))
+
+    def test_sessions_without_the_t3_steps_sessions_fail_and_issue_none(self):
+        commands, output, error = self.readiness("sessions", existing=False, entrypoint=True)
+        self.assertEqual((output, error), ("", "instance.container_sessions_failed\n"))
+        self.assertFalse(any(argv[0] == "/opt/agent/bin/t3" for argv in commands))
+
+    def test_the_t3_step_issues_both_sessions_while_t3_starts_and_adds_the_project_after_its_answer(self):
+        seen = {}
+
+        def at_curl(commands):
+            # When the step starts to wait for T3's answer, both session issues have started; `project add`, which fails during
+            # T3's start, has not.
+            deadline = time.monotonic() + 2
+            while time.monotonic() < deadline and sum("--label" in argv for argv in list(commands)) < 2:
+                time.sleep(0.01)
+            seen["issues"] = sum("--label" in argv for argv in list(commands))
+            seen["project"] = any(argv[1:3] == ["project", "add"] for argv in list(commands))
+
+        commands, output, error = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, on_curl=at_curl)
+        result = json.loads(output)
+        cli = [argv for argv in commands if argv[0] == "/opt/agent/bin/t3"]
+        self.assertEqual(sorted(argv[1:3] for argv in cli), [["auth", "session"], ["auth", "session"], ["project", "add"]])
+        self.assertEqual(sorted(argv[argv.index("--label") + 1] for argv in cli if "--label" in argv), ["Orbit Gateway", "Orbit Swamp"])
+        self.assertEqual(seen, {"issues": 2, "project": False})
+        self.assertTrue(any(change.endswith(T3_INTENT["project_mark"]) for change in result["changes"]))
+        # The tokens leave only as the private reply, which the Node keeps in the run's private file; never in the public receipt.
+        self.assertEqual(result["private_reply"], {"gateway": {"token": "Orbit Gateway-PRIVATE-TOKEN"}, "swamp": {"token": "Orbit Swamp-PRIVATE-TOKEN"}})
+        public = {key: value for key, value in result.items() if key != "private_reply"}
+        self.assertNotIn("PRIVATE", json.dumps(public) + error)
+        # A retry that finds a mark (here: a file the copy holds) adds no second project, which T3 would refuse.
+        commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3={**T3_INTENT, "project_mark": GUEST.CHECKOUT_MARK})
+        self.assertFalse(any(argv[:3] == ["/opt/agent/bin/t3", "project", "add"] for argv in commands))
+
+    def test_a_t3_that_does_not_answer_adds_no_project_so_a_retry_adds_it_once(self):
+        commands, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=T3_INTENT)
+        self.assertEqual((output, error), ("", "instance.container_t3_failed: command curl exited 17\n"))
+        self.assertFalse(any(argv[1:3] == ["project", "add"] for argv in commands))
+
+    def test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit(self):
+        _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/t3", entrypoint=True, t3=T3_INTENT)
+        self.assertEqual((output, error), ("", "instance.container_t3_failed: command t3 exited 17\n"))
 
     def test_non_php_check_has_no_php_probe(self):
         commands, _, _ = self.readiness("check")

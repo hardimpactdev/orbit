@@ -19,13 +19,16 @@ use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use App\Models\WebSocketRuntime;
 use App\Support\ValidatedData;
+use Illuminate\Container\Attributes\Tag;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
 /** Database projection only. The owning native DAG decides when cleanup is complete. */
 final readonly class NodeRemovalRecords
 {
-    public function __construct(private RecordEventBroadcaster $broadcaster, private WebSocketRegistry $registry) {}
+    /** @param iterable<NodeRemovalHook> $hooks */
+    public function __construct(private RecordEventBroadcaster $broadcaster, private WebSocketRegistry $registry,
+        #[Tag(NodeRemovalHook::class)] private iterable $hooks = []) {}
 
     /** Public membership transition requested by the owning native DAG.
      * @param  array<string,mixed>  $snapshot
@@ -73,6 +76,9 @@ final readonly class NodeRemovalRecords
             TaskVm::query()->where('host_node_id', $node->id)->delete();
             TaskVmImageBuild::query()->where('host_node_id', $node->id)->whereIn('state', [TaskVmImageBuildState::Succeeded, TaskVmImageBuildState::Failed])->delete();
             WebSocketRuntime::query()->where('node_id', $node->id)->delete();
+            foreach ($this->hooks as $hook) {
+                $hook->removing($node);
+            }
             $node->delete();
             DB::afterCommit(fn () => $this->broadcaster->broadcast(RecordEventType::NodeDeleted, $node->id, ['id' => $node->id, 'name' => $node->name]));
         });

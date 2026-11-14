@@ -23,6 +23,7 @@ use Orbit\Extensions\Conn\Data\IssuedConnPairingData;
 use Orbit\Extensions\Conn\Domain\ConnServerAccess;
 use Orbit\Extensions\Conn\Domain\T3PairingUrl;
 use Orbit\Extensions\Conn\Http\Requests\IssueConnPairingRequest;
+use Orbit\Extensions\Conn\Http\Requests\ListConnPairingsRequest;
 use Orbit\Extensions\Conn\Http\Requests\RevokeConnPairingsRequest;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 use Orbit\Extensions\Conn\Models\ConnPairing;
@@ -33,18 +34,20 @@ final class ConnPairingsController extends Controller
 {
     public function __construct(private readonly ConnServerAccess $access) {}
 
-    public function index(Request $request, ConnEnvironment $environment): JsonResponse
+    public function index(ListConnPairingsRequest $request, ConnEnvironment $environment): JsonResponse
     {
         $this->assertServer($request, $environment);
+        $held = $request->includeHeld();
 
         return response()->json([
             'data' => ConnPairing::query()
                 ->where('conn_environment_id', $environment->id)
                 ->whereNotNull('pairing_link_id')
+                ->when(! $held, static fn ($query) => $query->where('held', false))
                 ->with(['environment', 'node'])
                 ->orderByDesc('id')
                 ->get()
-                ->map(static fn (ConnPairing $pairing): array => ConnPairingData::fromModel($pairing)->toArray())
+                ->map(static fn (ConnPairing $pairing): array => [...ConnPairingData::fromModel($pairing)->toArray(), ...$held ? ['held' => $pairing->held] : []])
                 ->values()
                 ->all(),
             'meta' => $this->meta($request),
