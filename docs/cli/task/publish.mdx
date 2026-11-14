@@ -19,6 +19,8 @@ For a group whose workspace is a task copy, `task:publish <group>` without `--ch
 orbit task:publish 42
 ```
 
+A task copy's publish also carries the waiver lines of its proposed pull request body, `.git/orbit/proposed-pr-bodies/task-<id>.md`, into the body: each `Docs-unaffected:` line that the body lacks is appended while the body stays within the limit, and the `.env` content check reads the final body. See [Docs-impact waivers in a copy](/reference/tasks#docs-impact-waivers-in-a-copy).
+
 Orbit merges no pull request of a group whose workspace is a task copy; a person merges it on GitHub. See [No merge](/reference/tasks#no-merge).
 
 ## How it works

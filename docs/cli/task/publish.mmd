@@ -67,6 +67,7 @@ sequenceDiagram
     %%> How:
     %%> - the workspace phase bundles the branch as `agent`, checks its head and tree against the candidate, and fetches it to this worker; the Node keeps no copy
     %%> - the Node also pulls the copy's `.env` as a regular file and fetches it beside the bundle; its bytes enter no result or log
+    %%> - and the copy's proposed pull request body for the task branch, `.git/orbit/proposed-pr-bodies/task-GROUP.md`, when it is a regular file of at most 64 KiB: data, never run; without it the publish sends the caller's text
   else a task VM
     SW->>N: Read the index
     %%> How:
@@ -103,12 +104,16 @@ sequenceDiagram
   %%> How:
   %%> - typed data compares the imported commit and tree without a second workspace observation
   opt a task copy
+    Note over SW: Add the waiver lines
+    %%> How:
+    %%> - typed data writes the PR title and body: the caller's body, then each `Docs-unaffected:` line of the proposed body that the body lacks, in the file's order, while the body stays within 65,536 characters
+    %%> - the next checks read this text, so the PR gets exactly what they checked; a copy without a pull request skips the step
     Note over SW: Check the environment file
     %%> How:
     %%> - every commit from the copy's start to the candidate must hold the `.env` path exactly as the start does; a commit that adds it, even one a later commit removes, refuses with `tasks.publish_secret_path` before any token exists
     Note over SW: Check the .env content
     %%> How:
-    %%> - every object new in the range (file contents, file names, commit messages) and the pull request title and body are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
+    %%> - every object new in the range (file contents, file names, commit messages) and the final pull request title and body, waiver lines included, are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
     %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`
     Note over SW: Read the .env check
     %%> How:

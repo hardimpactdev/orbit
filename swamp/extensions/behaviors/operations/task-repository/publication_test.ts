@@ -131,3 +131,83 @@ Deno.test("the .env check passes on exit 0 and fails with its own refusal line o
         await Deno.remove(directory, { recursive: true });
     }
 });
+
+function copyInput(body: string) {
+    return PublishInput.parse({
+        group_id: 1,
+        instance_id: 2,
+        node_id: 3,
+        check: 4,
+        checkout_path: "/srv/workspace",
+        commit: "a".repeat(40),
+        tree: "b".repeat(40),
+        repository: "acme/shop",
+        base: "main",
+        branch: "task-1",
+        pull_request: { title: "Add the export", body },
+    });
+}
+
+Deno.test("a copy's publish writes the PR text with the proposed body's waiver lines, and the caller's text without the file", async () => {
+    for (
+        const proposed of [
+            null,
+            "Prose.\nDocs-unaffected: docs/reference/mcp.mdx: generated.\n",
+        ]
+    ) {
+        const directory = await Deno.makeTempDir();
+        try {
+            if (proposed !== null) {
+                await Deno.writeTextFile(
+                    `${directory}/proposed-body`,
+                    proposed,
+                );
+            }
+            const { context } = createModelTestContext();
+            await behavior.methods.waivers.execute({
+                input: copyInput("Adds the export."),
+                directory,
+            }, context);
+            assertEquals(
+                await Deno.readTextFile(`${directory}/pull-title`),
+                "Add the export",
+            );
+            assertEquals(
+                await Deno.readTextFile(`${directory}/pull-body`),
+                proposed === null
+                    ? "Adds the export."
+                    : "Adds the export.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.",
+            );
+        } finally {
+            await Deno.remove(directory, { recursive: true });
+        }
+    }
+});
+
+Deno.test("the PR plan sends the text the copy's content check read", async () => {
+    const directory = await Deno.makeTempDir();
+    try {
+        await Deno.writeTextFile(`${directory}/pulls.json`, "[]");
+        await Deno.writeTextFile(`${directory}/pull-title`, "Add the export");
+        await Deno.writeTextFile(
+            `${directory}/pull-body`,
+            "Adds the export.\n\nDocs-unaffected: docs/a.md: ok.",
+        );
+        const { context } = createModelTestContext();
+        await behavior.methods.pull.execute({
+            input: copyInput("Adds the export."),
+            directory,
+            exit_code: 0,
+        }, context);
+        const sent = JSON.parse(
+            await Deno.readTextFile(`${directory}/pull-body.json`),
+        );
+        assertEquals(
+            sent.body,
+            "Adds the export.\n\nDocs-unaffected: docs/a.md: ok.",
+        );
+        assertEquals(sent.title, "Add the export");
+    } finally {
+        await Deno.remove(directory, { recursive: true });
+    }
+});

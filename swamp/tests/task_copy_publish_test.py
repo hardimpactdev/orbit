@@ -96,6 +96,47 @@ class CopyExportTest(unittest.TestCase):
         self.assertNotIn('not-a-real-key', json.dumps(exported) + output)
         self.assert_node_scratch_removed()
 
+    def proposed(self, scratch):
+        self.intent.update({'proposed_body_path': '.git/orbit/proposed-pr-bodies/task-1.md', 'worker_proposed_body': str(scratch / 'proposed-body')})
+
+    def test_a_publication_export_fetches_the_proposed_body_of_the_task_branch_as_data(self):
+        (self.checkout / '.env').write_text('APP_KEY=base64:not-a-real-key\n')
+        folder = self.checkout / '.git/orbit/proposed-pr-bodies'
+        folder.mkdir(parents=True)
+        (folder / 'task-1.md').write_text('Summary.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.\n')
+        scratch = self.publication()
+        self.intent['environment_path'] = '.env'
+        self.proposed(scratch)
+        exported, output = self.phase('export')
+        self.assertEqual((scratch / 'proposed-body').read_text(), 'Summary.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.\n')
+        self.assertNotIn('Docs-unaffected', json.dumps(exported))
+        self.assert_node_scratch_removed()
+
+    def test_a_publication_export_without_a_proposed_body_or_with_a_link_there_fetches_none(self):
+        for link in [False, True]:
+            with self.subTest(link=link):
+                self.setUp()
+                (self.checkout / '.env').write_text('APP_KEY=base64:not-a-real-key\n')
+                if link:
+                    folder = self.checkout / '.git/orbit/proposed-pr-bodies'
+                    folder.mkdir(parents=True)
+                    (folder / 'task-1.md').symlink_to(self.checkout / '.env')
+                scratch = self.publication()
+                self.intent['environment_path'] = '.env'
+                self.proposed(scratch)
+                self.phase('export')
+                self.assertTrue((scratch / 'candidate.bundle').exists())
+                self.assertFalse((scratch / 'proposed-body').exists())
+
+    def test_a_publication_export_refuses_a_proposed_body_path_outside_the_task_branch_file(self):
+        (self.checkout / '.env').write_text('APP_KEY=base64:not-a-real-key\n')
+        scratch = self.publication()
+        self.intent['environment_path'] = '.env'
+        self.proposed(scratch)
+        self.intent['proposed_body_path'] = '.env'
+        with self.assertRaises(Exception):
+            self.phase('export')
+
     def test_a_publication_export_refuses_a_copy_without_a_regular_environment_file(self):
         (self.checkout / 'apps/web').mkdir(parents=True)
         (self.checkout / 'apps/web/.gitignore').write_text('.env\n')
@@ -276,7 +317,14 @@ class TaskCopyPublishTest(unittest.TestCase):
         for name in [step, read]:
             self.assertIn({'step': name, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
                           steps[mint]['dependsOn'])
-        self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}}])
+        self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}},
+                                                    {'step': 'Add the waiver lines', 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}}])
+        # The waiver lines join the body after the import and before the content check; only a copy with a pull request runs the step.
+        waivers = steps['Add the waiver lines']
+        self.assertEqual((waivers['task']['behaviorType'], waivers['task']['methodName']), ('@nckrtl/task-publication-data', 'waivers'))
+        self.assertEqual(waivers['dependsOn'], [{'step': 'Check imported commit', 'condition': {'type': 'succeeded'}}])
+        self.assertIs(self.cel('Add the waiver lines', 'guard', {**self.copy, 'pull_request': {'title': 'Fix', 'body': 'Done.'}}, {}), False)
+        self.assertIs(self.cel('Add the waiver lines', 'guard', {**self.copy, 'pull_request': None}, {}), True)
         self.assertIs(steps[step]['task']['inputs']['ignoreExitCode'], True)
         self.assertEqual(steps[read]['dependsOn'], [{'step': step, 'condition': {'type': 'succeeded'}}])
         self.assertEqual((steps[read]['task']['behaviorType'], steps[read]['task']['methodName']), ('@nckrtl/task-publication-data', 'content'))
@@ -293,12 +341,16 @@ class TaskCopyPublishTest(unittest.TestCase):
         """The step's own script. `club` is a nested-fleet copy's Club key; without it the step's vault read gets the render again."""
         directory = directory or Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
         (directory / 'environment').write_text(self.ENV if copy is None else copy)
+        # "Add the waiver lines" writes the text the PR gets; the check reads those files, never the intent's text.
+        if pull_request is not None and not pull_request.get('missing'):
+            (directory / 'pull-title').write_text(pull_request['title'])
+            (directory / 'pull-body').write_text(pull_request.get('final_body', pull_request['body']))
         step = 'Check the .env content'
         workspace = {**self.copy['workspace'], **({} if club is None else {'club_key': True})}
-        intent = {**self.copy, 'workspace': workspace, 'pull_request': pull_request}
+        intent = {**self.copy, 'workspace': workspace, 'pull_request': None if pull_request is None else {k: v for k, v in pull_request.items() if k not in ('final_body', 'missing')}}
         run = self.cel(step, 'run', intent, {})
         # The pull request text and the Club key flag come through the step's own expressions, with the pinned CEL engine.
-        names = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL_TITLE', 'ORBIT_PULL_BODY', 'ORBIT_NESTED']}
+        names = {name: self.cel(step, 'env.' + name, intent, {}) for name in ['ORBIT_PULL', 'ORBIT_NESTED']}
         done = subprocess.run(['/bin/sh', '-c', run], capture_output=True, text=True, check=False, timeout=120,
                               env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
                                    'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
@@ -406,6 +458,23 @@ class TaskCopyPublishTest(unittest.TestCase):
         self.assertEqual(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'draft': True}).returncode, 0)
         for pull in [{'title': 'Use pa55-w0rd-xyz', 'body': 'Done.'}, {'title': 'Fix', 'body': 'Key base64:c2VjcmV0LWtleS1ub3QtcmVhbA== set'}]:
             self.refused(self.content_check(repository, start, pull_request=pull), 'pull request title or body')
+
+    def test_the_content_check_reads_the_final_body_with_the_waiver_lines(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        repository = self.candidate(work)
+        clean = 'Done.\n\nDocs-unaffected: docs/reference/mcp.mdx: generated.'
+        self.assertEqual(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'final_body': clean}).returncode, 0)
+        # A waiver line that holds a value of the .env is refused, though the caller's body is clean.
+        leaked = 'Done.\n\nDocs-unaffected: docs/reference/mcp.mdx: pa55-w0rd-xyz'
+        self.refused(self.content_check(repository, start, pull_request={'title': 'Fix', 'body': 'Done.', 'final_body': leaked}), 'pull request title or body')
+
+    def test_the_content_check_refuses_as_unchecked_when_the_pull_request_text_is_missing(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        done = self.content_check(self.candidate(work), start, pull_request={'title': 'Fix', 'body': 'Done.', 'missing': True})
+        self.assertEqual(done.returncode, 1)
+        self.assertTrue(done.stderr.startswith('tasks.publish_secret_unchecked: '), done.stderr)
 
     CLUB = 'club-0123456789abcdef-not-a-real-key'
 

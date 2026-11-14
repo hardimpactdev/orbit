@@ -1222,6 +1222,8 @@ Docs-unaffected: docs/reference/tasks.md: <the specific reason>
 
 When a page is neither changed nor waived, the part's output names the file and says whether it is absent or holds no valid line for the page. The reviewer confirms the reason.
 
+[`task:publish`](#publish-an-external-group) carries these lines into the pull request: it appends each `Docs-unaffected:` line of the file that the body does not hold yet, while the body stays within 65,536 characters. The file is data and is never run. The [`.env` content check](#task-copy) reads the final body, waiver lines included, before any token exists.
+
 #### Parts
 
 [The scoped task check](/reference/implementation-loop#the-scoped-task-check) lists its parts, its budget and what it leaves to CI. A failed part fails the check.

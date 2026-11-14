@@ -6,6 +6,7 @@ import {
     pushed,
     run,
     verify,
+    withWaivers,
 } from "../tasks/publish.ts";
 
 type Context = {
@@ -29,6 +30,23 @@ async function read(directory: string, name: string): Promise<string> {
         throw new Error("tasks.publish_failed");
     }
 }
+/** A file of the scratch, or null when the copy held none. Any other error of the read fails the publish. */
+async function optional(
+    directory: string,
+    name: string,
+): Promise<string | null> {
+    try {
+        await Deno.lstat(`${directory}/${name}`);
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return null;
+        throw new Error("tasks.publish_failed");
+    }
+    return await read(directory, name);
+}
+const Waivers = z.object({
+    input: PublishInput,
+    directory: z.string().startsWith("/"),
+});
 const requireResult = <T extends { error_code: string }>(value: T): T => {
     if (value.error_code) throw new Error(value.error_code);
     return value;
@@ -46,7 +64,7 @@ function requireSuccess<T extends { error_code: string }>(
 /** Typed comparisons and private CLI reply shaping only; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.14.1",
+    version: "2026.11.14.2",
     resources: {
         public: {
             description: "Public publication observations",
@@ -106,9 +124,32 @@ export const behavior = {
                     ),
                 ),
         },
+        waivers: {
+            description:
+                "Write the PR title and body a copy publishes: the body plus the proposed body's waiver lines it lacks",
+            arguments: Waivers,
+            execute: async (args: z.infer<typeof Waivers>, ctx: Context) => {
+                const pull = args.input.pull_request;
+                if (pull === null) throw new Error("tasks.publish_failed");
+                // The proposed body is data that the export fetched beside the bundle; only its waiver lines are read.
+                const body = withWaivers(
+                    pull.body,
+                    await optional(args.directory, "proposed-body"),
+                );
+                await Deno.writeTextFile(
+                    `${args.directory}/pull-title`,
+                    pull.title,
+                    { mode: 0o600 },
+                );
+                await Deno.writeTextFile(`${args.directory}/pull-body`, body, {
+                    mode: 0o600,
+                });
+                return save(ctx, { added: body !== pull.body });
+            },
+        },
         pull: {
             description:
-                "Plan one PR write and materialize its unchanged JSON input",
+                "Plan one PR write and materialize its JSON input, with the title and body a copy's check read",
             arguments: PrivateReply.extend({ input: PublishInput }),
             execute: async (
                 args: z.infer<typeof PrivateReply> & {
@@ -116,9 +157,24 @@ export const behavior = {
                 },
                 ctx: Context,
             ) => {
+                // A copy publishes exactly the text its .env content check read; any other publish sends the caller's text.
+                const title = await optional(args.directory, "pull-title");
+                const body = await optional(args.directory, "pull-body");
+                const input =
+                    args.input.pull_request !== null && title !== null &&
+                        body !== null
+                        ? {
+                            ...args.input,
+                            pull_request: {
+                                ...args.input.pull_request,
+                                title,
+                                body,
+                            },
+                        }
+                        : args.input;
                 const plan = requireResult(
                     pullPlan({
-                        input: args.input,
+                        input,
                         steps: {
                             read_pull: {
                                 outputs: {
