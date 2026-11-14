@@ -1,0 +1,17 @@
+order = 1460
+source_sha256 = "773432f616b8335ff9dcb370a163eb469820decd16800f241131dafdbea39602"
+cases = [
+  "a deployment without a step that has inputs reads no skip list, and its steps run with the command they had",
+  "a step with inputs that the checkout named unchanged is skipped; any other step runs",
+  "a step with inputs that runs and passes moves its pending record to done; a failed one keeps it pending",
+]
+file = "swamp/tests/workflow_instance_deploy_steps_test.ts"
+cost = 1
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
+]

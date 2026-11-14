@@ -486,6 +486,53 @@ Deno.test({
 });
 
 Deno.test({
+  name: "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const record = `${f.folder}/containers/instance-7/srv/workspace/.git/orbit-deploy-steps`;
+      const skip = () => Deno.readTextFileSync(`${f.folder}/run/deploy-steps-skip`);
+      const pass = (name: string) => Deno.renameSync(`${record}/pending/${name}`, `${record}/done/${name}`);
+      const steps: Record<string, unknown>[] = [
+        { name: "install-root", timeout_seconds: 300, required: true, inputs: ["index.php"], command_digest: "a".repeat(64) },
+        { name: "install-gone", timeout_seconds: 300, required: true, inputs: ["no-such-file"], command_digest: "b".repeat(64) },
+        { name: "migrate", timeout_seconds: 300, required: true, inputs: [], command_digest: "c".repeat(64) },
+      ];
+      f.intent.deployment = { variant: "container", steps };
+      f.write();
+      // No record yet: both watched steps are due; only the one whose inputs exist gets a pending record.
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",,");
+      assertEquals([...Deno.readDirSync(`${record}/pending`)].map((entry) => entry.name), ["install-root"]);
+      pass("install-root");
+      // A record of a step that is no longer watched goes, so it can never match by chance later.
+      Deno.writeTextFileSync(`${record}/done/removed-step`, "e".repeat(64));
+      // The same commit again: the passed step is unchanged; the step with a missing input stays due.
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",install-root,");
+      assertEquals([...Deno.readDirSync(`${record}/done`)].map((entry) => entry.name), ["install-root"]);
+      assertEquals([...Deno.readDirSync(`${record}/pending`)].length, 0);
+      // Its command changed: due again, with a new pending record and no old `done` one.
+      steps[0].command_digest = "d".repeat(64);
+      f.write();
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",,");
+      assertEquals([...Deno.readDirSync(`${record}/done`)].length, 0);
+      pass("install-root");
+      // A new commit that moves its input: due again.
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 9;\n");
+      git(f.source, "commit", "--quiet", "-am", "moves the input");
+      for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
+      assertEquals(skip(), ",,");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
   name: "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   ignore: !hasAnsible,
   fn() {

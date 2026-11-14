@@ -1912,7 +1912,27 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+  - name: Read the steps to skip
+    # The checkout wrote the names of the development deploy steps whose `inputs` and command are as at their last passed run in the
+    # workspace (docs/cli/instance/container/deploy-default.mmd). Only a deployment with a step that has `inputs` reads them.
+    labels:
+      role: swamp
+    dependsOn:
+    - step: Check out in the container
+      condition:
+        type: succeeded
+    guard: ${{ inputs.intent.deployment.variant != "container" || !inputs.intent.deployment.steps.exists(s, size(s.inputs) > 0) || steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "instance-deploy-container-steps-skip-" + string(inputs.node_id) }}
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/deploy-steps-skip"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
   - name: Run dev deploy steps
+    # A step with `inputs` that the checkout found unchanged is skipped; when it runs and passes, it moves its pending record to `done`.
     labels:
       role: swamp
     writes: true
@@ -1920,7 +1940,13 @@ jobs:
     - step: Check out in the container
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") }}
+    - step: Read the steps to skip
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -1940,7 +1966,7 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["incus", "exec", "--project", inputs.intent.container.project, "--cwd", inputs.intent.container.workspace, inputs.intent.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.container.environment + ["/bin/sh", "-c", self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)] }}'
+        argv: '${{ ["incus", "exec", "--project", inputs.intent.container.project, "--cwd", inputs.intent.container.workspace, inputs.intent.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.container.environment + ["/bin/sh", "-c"] + (size(self.step.inputs) > 0 ? [self.step.required ? "s=$(cat) && timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1 && { [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; }" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; r=$?; [ \"$r\" -ne 0 ] || [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; echo \"$r\"", "sh", string(self.step.timeout_seconds), inputs.intent.container.workspace + "/.git/orbit-deploy-steps", self.step.name] : [self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)]) }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
         stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}
     forEach:
