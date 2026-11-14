@@ -59,6 +59,10 @@ class FleetShrinkTest(unittest.TestCase):
         info.mkdir(parents=True)
         (info / 'rust-coreutils.md5sums').write_text('\n'.join(lines) + '\n')
         (disk / 'var/lib/dpkg/status').write_text('Package: rust-coreutils\nStatus: install ok installed\nVersion: 0.10.0-1ubuntu2\n')
+        archives = disk / 'var/cache/apt/archives'
+        (archives / 'partial').mkdir(parents=True)
+        for name in ['acl_2.3.2-2_amd64.deb', 'partial/caddy_2.11.7_amd64.deb', 'lock']:
+            (archives / name).write_bytes(b'x' * 1000)
 
     def shrink(self, mode, path=None):
         done = subprocess.run([sys.executable, '-I', '-c', SCRIPT.read_text(), mode, str(self.record), str(self.pools), *NAMES], capture_output=True, text=True,
@@ -86,6 +90,20 @@ class FleetShrinkTest(unittest.TestCase):
         # Nothing changed since: the check is current and a forced run relinks nothing.
         self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
         self.assertEqual(self.shrink('run')['relinked'], 0)
+
+    def test_the_package_files_in_apt_archives_go_and_the_lock_stays(self):
+        self.shrink('run')
+        for name in NAMES:
+            archives = self.disk(name) / 'var/cache/apt/archives'
+            self.assertEqual(sorted(str(path.relative_to(archives)) for path in archives.rglob('*')), ['lock', 'partial'])
+
+    def test_a_record_of_an_older_rule_is_due_once(self):
+        self.shrink('run')
+        recorded = json.loads(self.record.read_text())
+        self.record.write_text(json.dumps({**recorded, 'rule': '1'}))
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
+        self.shrink('run')
+        self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'current'})
 
     def test_a_file_that_differs_from_the_shipped_one_is_never_replaced(self):
         changed = self.disk('nested-app-dev') / LINKS[1]

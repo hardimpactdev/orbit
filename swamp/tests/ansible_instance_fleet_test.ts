@@ -35,11 +35,18 @@ const idmap = "both 1000 1000\nuid 2750 2750\ngid 2760 2760";
 const aptFile = `Acquire::http::Proxy "${proxy.HTTP_PROXY}";\nAcquire::https::Proxy "${proxy.HTTPS_PROXY}";\n`;
 const environmentFile = 'PATH="/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin"\n' +
   Object.entries(proxy).map(([key, value]) => `${key}="${value}"`).join("\n") + "\n";
+/** The size files of every nested container: apt keeps no package file, and journald keeps 64 MiB. */
+const sizeFiles = {
+  "/etc/apt/apt.conf.d/91orbit-nested-package-files": 'APT::Keep-Downloaded-Packages "false";\n',
+  "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
+};
 const egress = { "/etc/apt/apt.conf.d/90orbit-package-cache": aptFile, "/etc/environment": environmentFile };
-/** Each file rule in the order the rules read it: the nested Gateway's drop-ins, then the egress files of each container. */
+/** Every file the fleet rules own in each nested container: the egress files, then the size files. */
+const owned = { ...egress, ...sizeFiles };
+/** Each file rule in the order the rules read it: the nested Gateway's drop-ins, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
-  ...names.flatMap((name) => Object.keys(egress).map((path): [string, string] => [name, path])),
+  ...names.flatMap((name) => Object.keys(owned).map((path): [string, string] => [name, path])),
 ];
 /** The inner bridge as the seed's first fleet has it, and with its rule: its dnsmasq has no upstream. */
 const exportedBridge = { "ipv4.address": "10.232.2.1/24", "ipv4.nat": "true", "ipv6.address": "none" };
@@ -60,7 +67,7 @@ function ruled() {
   for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
   containers["nested-gateway"].files = Object.fromEntries(units.map((unit) => [unit, dropIn]));
-  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...egress };
+  for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...owned };
   return containers;
 }
 
@@ -849,7 +856,7 @@ Deno.test({
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
         // The live fleet was built before the egress files; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...egress };
+        want.files = { ...(want.files ?? {}), ...owned };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -876,7 +883,7 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => Object.keys(egress).map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => Object.keys(owned).map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
         [...egressWrites, ...names.map((name) => `incus config set ${name} boot.autostart=true`)]);
       assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge ")), calls.join("\n"));
@@ -1567,7 +1574,7 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 /** A time as the record keeps the oldest token's creation: `YYYYMMDDHHMMSS`, UTC. */
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
-const fleetFiles = fileRules.map(([container, path]) => ({ container, path, content: units.includes(path) ? dropIn : egress[path as keyof typeof egress] }));
+const fleetFiles = fileRules.map(([container, path]) => ({ container, path, content: units.includes(path) ? dropIn : owned[path as keyof typeof owned] }));
 /**
  * The record a passed refresh of the fixture's default inputs writes, with `converged` at the given time (seconds) and the oldest
  * token made at `tokens` (a day ago by default, as the fake's tokens are).

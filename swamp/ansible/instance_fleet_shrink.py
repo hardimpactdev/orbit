@@ -5,7 +5,9 @@ The fleet refresh runs it as root in the Instance container: `python3 -I -c <thi
 in its `base` window, with the three containers stopped, their old `base` deleted and before the new one is taken, so the new `base`
 and the seed hold the small form.
 
-Two parts:
+Three parts:
+- Caches. The package files in each nested container's apt archives go (CACHES): apt keeps no new ones, and the egress proxy
+  serves a package again when apt needs it.
 - Relink. Ubuntu's rust-coreutils ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in
   `/usr/lib/cargo/bin/coreutils/`. In the first nested fleet they were 116 separate copies, 1.26 GiB per machine. RELINK names each
   package and the one file it ships with links. Only the files of that package that dpkg records with that file's digest are
@@ -38,7 +40,10 @@ from pathlib import Path
 # Each package and the file it ships with links: every file of the package with that file's digest is one of them (see the docstring).
 RELINK = {'rust-coreutils': 'usr/bin/coreutils'}
 # A new rule changes this, so every record is stale once.
-RULE = '1'
+RULE = '2'
+# Caches of a nested container that the shrink empties: apt's downloaded package files. apt keeps no new ones (the fleet file
+# 91orbit-nested-package-files); the egress proxy serves them again when apt needs one.
+CACHES = ('var/cache/apt/archives',)
 
 
 def rootfs(pools, name):
@@ -100,16 +105,33 @@ def relink(disk):
     return replaced
 
 
+def empty_caches(disk):
+    """Remove the package files in each cache folder of `disk`; the bytes it freed."""
+    freed = 0
+    for cache in CACHES:
+        for folder in (disk / cache, disk / cache / 'partial'):
+            if folder.is_symlink() or not folder.is_dir():
+                continue
+            for path in folder.iterdir():
+                if path.name.endswith('.deb') and path.is_file() and not path.is_symlink():
+                    freed += path.lstat().st_size
+                    path.unlink()
+    return freed
+
+
 def check(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
     recorded = read_record(record)
-    reason = 'record' if recorded is None else 'packages' if recorded != state(disks) else 'current'
+    # A record of an older rule is no record of this one.
+    reason = 'record' if recorded is None or recorded.get('rule') != RULE else 'packages' if recorded != state(disks) else 'current'
     return {'due': reason != 'current', 'reason': reason}
 
 
 def run(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
     replaced = sum(relink(disk) for disk, _ in disks.values())
+    for disk, _ in disks.values():
+        empty_caches(disk)
     if not all(btrfs for _, btrfs in disks.values()):
         dedupe = 'not_btrfs'
     elif shutil.which('duperemove') is None:
