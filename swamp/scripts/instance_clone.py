@@ -258,23 +258,37 @@ def main():
         content = bundle + ("\n" if bundle and not bundle.endswith("\n") else "") + item["content"] + ("" if item["content"].endswith("\n") else "\n")
         change(project + ["file", "push", "--uid", held["uid"], "--gid", held["gid"], "--mode", held["mode"], "-", name + item["bundle"]], content)
 
-    def private_names_and_proxy():
-        """The access plan's private names in the copy's /etc/hosts, and the composed proxy bypass in its two drop-ins, before the first
-        start, so its first boot reads them. One renderer gives the same bytes env:sync writes: instance_node_services.py `hosts` and
-        `proxy-files` (docs/reference/development-containers.md#private-names-of-the-access-plan). A seed's own block goes when the plan
-        has no name. Only `clone.proxy_environment` names drop-ins; without it the seed's stay."""
-        renderer = ["python3", "-c", json.loads(sys.argv[6])["node_services"]]
-        held = file_read("/etc/hosts", "instance.clone_private_names_refused")
-        hosts = "" if held is None else held["content"]
-        composed = json.loads(run(renderer + ["hosts"], json.dumps({"hosts": hosts, "private_names": container.get("private_names", [])})).stdout)
-        if composed["content"].splitlines() != hosts.splitlines():
-            change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], composed["content"])
+    def renderer(command):
+        """The one renderer of hosts text and proxy drop-ins: the bundle's instance_node_services.py, run on the Node."""
+        return ["python3", "-c", json.loads(sys.argv[6])["node_services"], command]
+
+    def proxy_drop_ins():
+        """The composed proxy bypass in the copy's two drop-ins, before the first start, so its first boot reads them. One renderer
+        gives the same bytes `write_proxy_environment` writes: instance_node_services.py `proxy-files`. Only `clone.proxy_environment`
+        names drop-ins; without it the seed's stay."""
         proxy = container["clone"].get("proxy_environment")
         if proxy is None:
             return
-        files = json.loads(run(renderer + ["proxy-files"], json.dumps({"proxy_environment": proxy})).stdout)["files"]
+        files = json.loads(run(renderer("proxy-files"), json.dumps({"proxy_environment": proxy})).stdout)["files"]
         for path, content in files.items():
             change(project + ["file", "push", "--create-dirs", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/" + path], content)
+
+    def private_names_hosts():
+        """The access plan's private names in the running copy's /etc/hosts, as env:sync writes them (tasks/instance-private-names.yml):
+        read with `cat`, rendered by instance_node_services.py `hosts`, pushed as root with 0644 only when its lines change. It runs
+        after the start, because the copy's own Incus template (`/etc/hosts: when: [create, copy]`, copied from its default) rewrites
+        the file at the first start. A seed's block goes when the plan has no name. Any failure fails the create by its own name
+        (docs/reference/development-containers.md#what-a-clone-has-at-its-first-start)."""
+        try:
+            read = run(project + ["exec", name, "--", "cat", "--", "/etc/hosts"], check=False)
+            if read.returncode and "No such file or directory" not in read.stderr:
+                raise RuntimeError("instance.clone_private_names_failed")
+            hosts = read.stdout if read.returncode == 0 else ""
+            composed = json.loads(run(renderer("hosts"), json.dumps({"hosts": hosts, "private_names": container.get("private_names", [])})).stdout)
+            if composed["content"].splitlines() != hosts.splitlines():
+                change(project + ["file", "push", "--uid", "0", "--gid", "0", "--mode", "0644", "-", name + "/etc/hosts"], composed["content"])
+        except (RuntimeError, OSError, ValueError, KeyError, subprocess.SubprocessError):
+            raise RuntimeError("instance.clone_private_names_failed") from None
 
     def installed(status, package):
         for stanza in status.split("\n\n"):
@@ -525,7 +539,7 @@ def main():
                         continue
                     change(project + ["file", "push", "--create-dirs", "--uid", str(item["uid"]), "--gid", str(item["gid"]),
                                       "--mode", item["mode"], "-", name + item["path"]], item["content"])
-                private_names_and_proxy()
+                proxy_drop_ins()
             for rule in container.get("firewall", []):
                 argv = (
                     ["ufw"]
@@ -564,6 +578,8 @@ def main():
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":
                 change(project + ["start", name])
+            # After the start, so the copy's hosts template has already run, and before the create reports anything.
+            private_names_hosts()
             if container.get("node_services"):
                 bundle = json.loads(sys.argv[6])
                 applied = run(["python3", "-c", bundle["node_services"],
