@@ -157,11 +157,29 @@ describe('task transport', function (): void {
         'group comment list' => [new ListTaskCommentsRequest(13)],
         'status' => [new ShowTasksStatusRequest],
         'question list' => [new ListTaskQuestionsRequest],
-        'cancel' => [new CancelTaskRequest(13, 'cancel.13')],
         'complete' => [new CompleteTaskGroupRequest(13)],
         'destroy' => [new DestroyTaskRequest(57)],
-        'subtask cancel' => [new CancelTaskRequest(57, 'cancel.child')],
         'agent show' => [new ShowTaskAgentRequest(13, 21)],
+    ]);
+
+    it('sends a cancel as a JSON object that carries discard only when asked', function (CancelTaskRequest $request, string $body): void {
+        $mockClient = new MockClient([MockResponse::make(['data' => ['id' => 1], 'meta' => ['request_id' => task_request_id()]], 202)]);
+        $connector = new GatewayConnector('https://10.44.0.1');
+        $connector->withMockClient($mockClient);
+
+        try {
+            $connector->send($request);
+        } catch (GatewayApiException) {
+            // Only the outgoing request matters here.
+        }
+
+        $sent = $mockClient->getLastPendingRequest()?->createPsrRequest();
+        expect((string) $sent?->getBody())->toBe($body)
+            ->and($sent?->getHeaderLine('Content-Type'))->toBe('application/json');
+    })->with([
+        'cancel' => [new CancelTaskRequest(13, 'cancel.13'), '{}'],
+        'subtask cancel' => [new CancelTaskRequest(57, 'cancel.child'), '{}'],
+        'cancel with discard' => [new CancelTaskRequest(13, 'cancel.13', discard: true), '{"discard":true}'],
     ]);
 });
 
@@ -736,5 +754,5 @@ it('transports keyed native cancellation and parses the accepted Operation', fun
     expect($operation)->toBeInstanceOf(OperationResponse::class)
         ->and($operation->kind)->toBe('tasks.cancel')->and($operation->status)->toBe('queued')
         ->and($request->headers()->get('Idempotency-Key'))->toBe('cancel.13')
-        ->and($request)->not->toBeInstanceOf(HasBody::class);
+        ->and($request->body()->all())->toBe('{}');
 });

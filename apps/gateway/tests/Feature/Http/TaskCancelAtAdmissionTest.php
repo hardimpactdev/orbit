@@ -99,3 +99,10 @@ it('accepts discard: true and refuses a discard that is not a boolean', function
         ->assertStatus(202)->assertJsonPath('data.status', 'succeeded');
     expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
 });
+
+it('accepts the empty JSON object the SDK sends for a cancel without discard', function (): void {
+    test()->call('POST', "/api/v1/tasks/{$this->group->id}/cancel", server: ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json',
+        'HTTP_IDEMPOTENCY_KEY' => 'cancel-empty-object'], content: '{}')
+        ->assertStatus(202)->assertJsonPath('data.status', 'succeeded');
+    expect($this->group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});

@@ -364,7 +364,7 @@ describe('requests', function (): void {
         $mock->assertNotSent(ShowTaskRequest::class);
     });
 
-    it('sends discard only with --discard, never with --yes alone', function (array $options, array $body): void {
+    it('sends discard only with --discard, never with --yes alone', function (array $options, string $body): void {
         $operation = ['id' => 42, 'kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => 1,
             'status' => 'succeeded', 'sequence' => 4, 'result' => ['cleanup_complete' => true]];
         $mock = MockClient::global([
@@ -377,8 +377,8 @@ describe('requests', function (): void {
 
         $mock->assertSent(static fn (Request $request): bool => $request instanceof CancelTaskRequest && $request->body()->all() === $body);
     })->with([
-        '--yes alone' => [[], []],
-        '--discard' => [['--discard' => true], ['discard' => true]],
+        '--yes alone' => [[], '{}'],
+        '--discard' => [['--discard' => true], '{"discard":true}'],
     ]);
 
     it('cancels a running subtask with --yes without reading the group first', function (): void {
