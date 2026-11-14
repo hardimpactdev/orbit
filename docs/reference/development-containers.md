@@ -2169,13 +2169,17 @@ A reset of a fleet restores `base` of all three containers in 7 to 8 s. Taking `
 
 | What changed | `base` retaken for |
 | --- | --- |
-| A step that writes a nested container's own disk reported a change: the migrate (output without "Nothing to migrate" counts as applied), or the grants reload (a recap other than `changed=0`) | That container: today the nested Gateway, whose disk holds the database and the grants |
+| A step that writes a nested container's own disk reported a change: the grants reload (a recap other than `changed=0`) | That container: today the nested Gateway, whose disk holds the grants |
 | The nested Gateway's tokens were reminted | The nested Gateway, whose disk holds the tokens and `.env` |
 | A converge reported a changed task on a Node | That Node and the nested Gateway, whose database records the converge |
 | A nested container has no `base` | That container |
 | The record is missing or unreadable, or a fleet rule or file differed on the running fleet | All three, with the rules applied on the stopped fleet |
 
-The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that migrated or reloaded grants comes up on the new schema and grants.
+The refresh lists each step that writes a nested container's own disk once, with that container. A new writer joins that list. So a reset after a refresh that reloaded grants comes up on the new grants.
+
+A migration is not such a writer. The migrate that applies one changes the nested Gateway's database, but `base` keeps the schema of the refresh that last took it. A reset restores `base` and then migrates the nested Gateway forward to its checkout, and restarts its services when a migration applied. Laravel's migrations run forward only, and the code is the checkout's.
+
+A migration that was edited after it ran once is not run again, so its new form never reaches a restored `base`; change a schema with a new migration. Retaking `base` for each migrating release cost 95 to 100 s (stop, a full file copy on the directory pool, start and readiness; Operations 21810 and 21978).
 
 The nested Gateway's other two state mounts need no rule. The refresh writes nothing to `swamp/vaults`: on the live default, no file there changed during a refresh.
 
@@ -2342,7 +2346,9 @@ Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-contai
 
 ### Reset
 
-A reset restores `base` of the three nested containers, then waits for the same Doctor check. `agent` runs it. A reset command is planned. Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds. On the [inner volume](#the-inner-volume) each restore is a btrfs snapshot restore: 1.9 to 3.1 s per container in the 2026-11-14 test, whatever changed. The reset on that volume follows separately.
+A reset restores `base` of the three nested containers, starts them, waits for the nested Gateway's state mounts, migrates it to its checkout (and restarts its services when a migration applied), then waits for the same Doctor check. `agent` runs it. A reset command is planned.
+
+Restore of all three: 7 to 8 s, measured; Doctor healthy 33 s after, measured. On a directory pool a restore copies back only the files that changed since `base`, so its time grows with the change. The proof's limit is 45 seconds. On the [inner volume](#the-inner-volume) each restore is a btrfs snapshot restore: 1.9 to 3.1 s per container in the 2026-11-14 test, whatever changed. The reset on that volume follows separately.
 
 ### Rebuild from stock
 
