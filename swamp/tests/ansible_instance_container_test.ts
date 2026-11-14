@@ -89,6 +89,7 @@ function fixture() {
   Deno.writeTextFileSync(`${folder}/tasks/instance-container-phase.yml`,
     stringify(tasks).replaceAll("/var/lib/orbit/instance-nested-image.json", `${folder}/nested-image.json`));
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
+    "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
     "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
@@ -161,8 +162,8 @@ function fixture() {
     control,
     intent,
     write,
-    run(phase: string, extra: Record<string, string> = {}, options: string[] = []) {
-      const done = new Deno.Command("ansible-playbook", {
+    command(phase: string, extra: Record<string, string> = {}, options: string[] = []) {
+      return new Deno.Command("ansible-playbook", {
         args: ["-i", "localhost,", "--tags", phase, "-e", "ansible_connection=local", "-e", "ansible_become=false",
           "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", ...options, `${folder}/instance-container.yml`],
         env: {
@@ -181,10 +182,19 @@ function fixture() {
           ORBIT_PROCESS_ENVIRONMENTS: "{}",
           ...extra,
         },
-      }).outputSync();
+        stdout: "piped",
+        stderr: "piped",
+      });
+    },
+    run(phase: string, extra: Record<string, string> = {}, options: string[] = []) {
+      const done = this.command(phase, extra, options).outputSync();
       const output = new TextDecoder().decode(done.stdout) + new TextDecoder().decode(done.stderr);
       // The Node's own recap line: the play that addresses it runs on localhost.
       return { ok: done.success, output, changed: Number(/^node\s*:.*changed=(\d+)/m.exec(output)?.[1] ?? -1) };
+    },
+    /** One play of several phases, in order, as a merged deploy step runs them: `--tags` and `phases` name the same list. */
+    phases(list: string[], extra: Record<string, string> = {}) {
+      return this.run(list.join(","), extra, ["-e", `phases=${list.join(",")}`]);
     },
     state: () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`)),
     result: () => JSON.parse(Deno.readTextFileSync(`${folder}/run/result.json`)),
@@ -545,22 +555,24 @@ Deno.test({
       git(f.source, "commit", "--quiet", "-am", "second");
       const second = git(f.source, "rev-parse", "HEAD");
 
-      for (const phase of ["start", "fetch", "checkout", "seed", "check"]) {
-        const result = f.run(phase);
-        assert(result.ok, `${phase}: ${result.output}`);
+      // As the workflow's steps: one play for start and fetch, the checkout, one play for the seed and the check (the processes phase of
+      // "Finish the container" has its own cases, and the after-merge case runs all three).
+      for (const phases of [["start", "fetch"], ["checkout"], ["seed", "check"]]) {
+        const result = f.phases(phases);
+        assert(result.ok, `${phases}: ${result.output}`);
       }
-      assertEquals(f.result(), { commit: second });
+      assertEquals(f.result(), { commit: second, phases_passed: ["seed", "check"] });
       assertEquals(f.workspace("rev-parse", "HEAD"), second);
       // Only what the workspace lacks travelled: the bundle's prerequisite is the workspace's HEAD before the fetch.
       assertEquals(f.state().bundles.at(-1).prerequisites, [first]);
       assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${second}`]);
 
-      // A pinned commit that is not on the branch refuses at the fetch.
+      // A pinned commit that is not on the branch refuses at the fetch, the second phase of the play: the result names it.
       f.container.commit = "f".repeat(40);
       f.write();
-      const stray = f.run("fetch");
+      const stray = f.phases(["start", "fetch"]);
       assert(!stray.ok);
-      assertEquals(f.result(), { error_code: "deployment.commit_not_on_branch" });
+      assertEquals(f.result(), { error_code: "deployment.commit_not_on_branch", failed_phase: "fetch", phases_passed: ["start"] });
 
       // Tracked changes in the workspace refuse the checkout and stay.
       f.container.commit = first;
@@ -588,12 +600,92 @@ Deno.test({
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
       assert(!f.run("check").ok);
       assertEquals(f.result(), { error_code: "deployment.processes_inactive" });
+      // In one play of several phases a failed phase stops the play, and the result names it.
       delete state.containers["instance-7"];
       Deno.writeTextFileSync(`${f.folder}/state.json`, JSON.stringify(state));
-      assert(!f.run("start").ok);
-      assertEquals(f.result(), { error_code: "instance.container_start_failed" });
+      const bundles = (f.state().bundles ?? []).length;
+      assert(!f.phases(["start", "fetch"]).ok);
+      assertEquals(f.result(), { error_code: "instance.container_start_failed", failed_phase: "start", phases_passed: [] });
+      assertEquals((f.state().bundles ?? []).length, bundles, "a failed phase stops the play: no fetch after a failed start");
     } finally {
       f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
+  ignore: !hasAnsible,
+  async fn() {
+    const merged = fixture();
+    const separate = fixture();
+    try {
+      // A handler that the processes phase notifies: as with separate plays, it runs before the seed stops the Processes.
+      const phaseFile = `${merged.folder}/tasks/instance-container-phase.yml`;
+      Deno.writeTextFileSync(phaseFile, stringify([...(parse(Deno.readTextFileSync(phaseFile)) as Task[]), {
+        name: "Notify the fixture handler", tags: ["processes"], when: "phase == 'processes'",
+        "ansible.builtin.command": { argv: ["true"] }, changed_when: true, notify: "Reload the fixture unit" }]));
+      const handlers = `${merged.folder}/tasks/instance-container-handlers.yml`;
+      Deno.writeTextFileSync(handlers, stringify([...(parse(Deno.readTextFileSync(handlers)) as Task[]), {
+        name: "Reload the fixture unit", "ansible.builtin.command": { argv: "{{ as_root + ['systemctl', 'reload', '--', 'orbit-fixture.service'] }}" },
+        changed_when: true }]));
+      const commits: string[] = [];
+      for (const f of [merged, separate]) {
+        for (const phase of ["container", "workspace", "processes", "seed"]) assert(f.run(phase).ok, phase);
+        Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 2;\n");
+        git(f.source, "commit", "--quiet", "-am", "second");
+        commits.push(git(f.source, "rev-parse", "HEAD"));
+      }
+      const before = (merged.state().systemctl as string[][]).length;
+      for (const phases of [["start", "fetch"], ["checkout"], ["processes", "seed", "check"]]) {
+        const done = merged.phases(phases);
+        assert(done.ok, `${phases}: ${done.output}`);
+      }
+      for (const phase of ["start", "fetch", "checkout", "processes", "seed", "check"]) {
+        const done = separate.run(phase);
+        assert(done.ok, `${phase}: ${done.output}`);
+      }
+      // The same end state: the result, the checkout, the bundle and the seed.
+      assertEquals(merged.result(), { commit: commits[0], phases_passed: ["processes", "seed", "check"] });
+      assertEquals(separate.result(), { commit: commits[1] });
+      for (const [f, commit] of [[merged, commits[0]], [separate, commits[1]]] as const) {
+        assertEquals(f.workspace("rev-parse", "HEAD"), commit);
+        assertEquals(f.state().containers["instance-7"].snapshots, [`seed-${commit}`]);
+      }
+      assertEquals(merged.state().bundles.at(-1).prerequisites.length, separate.state().bundles.at(-1).prerequisites.length);
+      // The handler ran once, after processes and before the seed's stop of the Processes.
+      const calls = (merged.state().systemctl as string[][]).slice(before);
+      const reload = calls.findIndex((call) => call[0] === "reload" && call.includes("orbit-fixture.service"));
+      const stop = calls.findIndex((call) => call[0] === "stop");
+      assert(reload >= 0 && stop > reload, JSON.stringify(calls));
+      assertEquals(calls.filter((call) => call[0] === "reload").length, 1);
+      // A play killed in a later phase (its step's timeout, a lost Node) runs no rescue: the result file still holds what the passed
+      // phases wrote, as their own plays did, so the Gateway knows the container started and keeps the start's values.
+      const hang = `${merged.folder}/tasks/instance-container-phase.yml`;
+      const kept = Deno.readTextFileSync(hang);
+      Deno.writeTextFileSync(hang, stringify([...(parse(kept) as Task[]), {
+        name: "Hang the fetch", tags: ["fetch"], when: "phase == 'fetch'", "ansible.builtin.command": { argv: ["sleep", "120"] },
+        changed_when: false }]));
+      Deno.removeSync(`${merged.folder}/run/result.json`);
+      const killed = merged.command("start,fetch", {}, ["-e", "phases=start,fetch"]).spawn();
+      const deadline = Date.now() + 300_000;
+      while (!(await Deno.stat(`${merged.folder}/run/result.json`).then(() => true, () => false)) && Date.now() < deadline) {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      killed.kill("SIGKILL");
+      // The orphaned `sleep` keeps the pipes open; the play is gone once its status is in.
+      await killed.status;
+      await Promise.all([killed.stdout.cancel(), killed.stderr.cancel()]);
+      assertEquals(merged.result(), { commit: null, phases_passed: ["start"] });
+      Deno.writeTextFileSync(hang, kept);
+      // A failure that is no refusal in a later phase names that phase in its code and in the result.
+      merged.container.repository = `file://${merged.folder}/missing`;
+      merged.write();
+      assert(!merged.phases(["start", "fetch"]).ok);
+      assertEquals(merged.result(), { error_code: "instance.container_fetch_failed", failed_phase: "fetch", phases_passed: ["start"] });
+    } finally {
+      merged.cleanup();
+      separate.cleanup();
     }
   },
 });
@@ -2674,6 +2766,12 @@ Deno.test({
       assert(!f.run("fleet_refresh").ok);
       assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
         detail: "Check the base converge: The base converge of the nested Node app-dev ended failed" });
+      // In "Finish the container", one play of four phases, the failed refresh names its phase and says why, and no seed is taken.
+      const snapshots = f.state().containers["instance-7"].snapshots;
+      assert(!f.phases(["processes", "fleet_refresh", "seed", "check"]).ok);
+      assertEquals(f.result(), { error_code: "instance.container_fleet_refresh_failed",
+        detail: "Check the base converge: The base converge of the nested Node app-dev ended failed", failed_phase: "fleet_refresh", phases_passed: ["processes"] });
+      assertEquals(f.state().containers["instance-7"].snapshots, snapshots);
       // The Doctor wait of a start names its check and the trimmed Doctor body.
       Deno.writeTextFileSync(`${f.folder}/tasks/instance-fleet-start.yml`,
         `- name: Check Doctor\n  ansible.builtin.assert: { that: false, fail_msg: "Readiness check 'doctor' failed after 300 s: {\\"data\\":{\\"healthy\\":false}}", quiet: true }\n`);

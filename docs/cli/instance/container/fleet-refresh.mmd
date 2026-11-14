@@ -30,13 +30,19 @@ sequenceDiagram
   %%> What it does:
   %%> - the intent carries `fleet` (NestedFleetIntent): the fleet's names, the operator, the checkout path and the egress proxy
   %%> - the run budget grows by the fleet steps' bounds
-  SW->>N: Start the container<br/>Ansible · tags start
+  SW->>N: Prepare the container<br/>Ansible · start · fetch
   %%> What it does:
+  %%> - one play runs the phases `start`, `fleet_start` (with `fleet_room_check`), `seed` and `fetch`, in this order; a normal default runs only `start` and `fetch`
+  %%> Why one step:
+  %%> - none of these phases changes the workspace, so a failure in any of them restores nothing: they share their failure handling
+  %%> - each Ansible step costs about 2.5 s to start its play: one step instead of four saves about 7.5 s of every refresh
+  %%> On failure:
+  %%> - the code and the detail name the failed phase, such as `instance.container_fleet_start_failed`, or the code is the phase's own refusal; nothing is restored
+  %%> Phase start:
   %%> - the one start of a container; the Club key is delivered there, outside the container's disk
-  %%> - grows the default's root disk to the intent's size (`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`) before the start guard, online; never shrinks it
   %%> - the presented machine name: a stopped container gets `/etc/hostname`, `/etc/machine-info` and the `127.0.1.1` line of `/etc/hosts` through the file API before the boot, so the boot gives the kernel and T3 the name; a running or frozen container gets nothing, and nothing restarts
-  SW->>F: Check the inner fleet<br/>Ansible · tags fleet_start
-  %%> What it does:
+  %%> - grows the default's root disk to the intent's size (`ORBIT_INSTANCES_NESTED_DEFAULT_ROOT_SIZE`) before the start guard, online; never shrinks it
+  %%> Phase fleet_start:
   %%> - first reads the room on the nested Nodes' disk (`df` in the container of `/`, or of the inner volume's mount when the default has one: where the nested Nodes' `/` lies): the inner Doctor wants at least 2 GiB and 10% of it free (`node.disk_low`), and a refresh writes up to 2 GiB more (checkout, installs, the nested Gateway's records, and a `base` retake); it refuses `instance.container_fleet_no_room` when the free space minus 2 GiB is under that floor, and the detail names the size, the free space, the floor and the need
   %%> - the one fleet check of the run: waits for the inner Incus, compares the three nested containers with the fleet rules, starts a nested container that is stopped, links the Club key and brings up `wg-nested` with `ip` and `wg`
   %%> - checks only what a start can promise: the three containers run and the tunnel reaches the hub; no Doctor wait
@@ -44,30 +50,39 @@ sequenceDiagram
   %%> - reads no fleet file: every file rule is owned and never refuses; the refresh reads the files when they matter
   %%> - refuses `instance.container_fleet_drift` when a rule Orbit does not write differs (`raw.idmap`), or a nested container or the inner bridge cannot be read; the Operation's result `fleet_drift` names each difference
   %%> - an owned rule that differs passes: the refresh writes it
-  %%> Why:
+  %%> fleet_start · why:
   %%> - the fleet keeps running between releases, so the run checks it once, before it changes anything; a refusal or a failed start restores no seed
   %%> - a refresh that cannot end above the inner Doctor's floor would fail only at its last readiness wait, after minutes of work and a restore: refresh 21617 did that on `node.disk_low`
   %%> - nothing in the run stops the fleet before the refresh, so no second start follows the checkout
   %%> - it takes the hub's key only when it is a WireGuard key: just after a boot, `wg` prints `(none)` with exit 0 until `wg-quick` has set the key
-  %%> On failure:
+  %%> fleet_start · on failure:
   %%> - no key within 60 s: the step says the nested Gateway's WireGuard key was not ready, and sets no peer
-  SW->>N: Keep the current seed<br/>Ansible · tags seed
-  %%> What it does:
+  %%> Phase seed:
   %%> - retakes `seed-COMMIT` of the default as it is, fleet included, before the run changes anything
   %%> - takes the new snapshot first, as `next-COMMIT` beside the old `seed-COMMIT`; only then does the old one go and the new one take its name (docs/reference/development-containers.md#a-retake-keeps-the-seed)
   %%> - refuses `instance.fleet_key_on_disk` first when the Club key path is a file on the container's disk; the key is never read
-  %%> On failure:
+  %%> seed · on failure:
   %%> - a snapshot Incus cannot take, such as one with no free isolated ID range: `instance.container_seed_failed`, and the error detail names why; the old seed stays, nothing else changed, and the run fails with no restore
-  %%> Why:
+  %%> seed · why:
   %%> - a failed refresh then restores a seed that holds the fleet, never one from before it
-  SW->>N: Fetch into the mirror<br/>Ansible · tags fetch
+  %%> Phase fetch:
+  %%> - fetches into the Node's mirror and pushes the branch into the container as a bundle; a pinned commit off the branch's first-parent chain refuses `deployment.commit_not_on_branch`
   SW->>C: Check out in the container<br/>Ansible · tags checkout
   %%> What it does:
   %%> - checks out the release commit in `/srv/workspace`; the nested Gateway and app-dev see it through their `checkout` device
   SW->>C: Run dev deploy steps<br/>incus exec · vault copy
-  SW->>C: Install the Processes<br/>Ansible · tags processes
-  SW->>F: Refresh the inner fleet<br/>Ansible · tags fleet_refresh
+  SW->>C: Finish the container<br/>Ansible · processes · seed · check
   %%> What it does:
+  %%> - one play runs the phases `processes`, `fleet_refresh`, `seed` and `check`, in this order; a normal default runs `processes`, `seed` and `check`
+  %%> - the handlers a phase notifies run before the next phase starts, as with separate plays
+  %%> Why one step:
+  %%> - every one of these phases runs after the checkout, so a failure in any of them restores the old seed: they share their failure handling
+  %%> - each Ansible step costs about 2.5 s to start its play: one step instead of four saves about 7.5 s of every refresh
+  %%> On failure:
+  %%> - the code and the detail name the failed phase, such as `instance.container_fleet_refresh_failed`, or the code is the phase's own refusal; the run restores the old seed
+  %%> Phase processes:
+  %%> - installs the new and changed Process units and waits for each running unit
+  %%> Phase fleet_refresh:
   %%> - reads the refresh record in the container (`/var/lib/orbit/fleet-refresh.json`) and the digest `code` of the checkout: `apps/gateway`, which holds the migrations and the Composer lock of packages that ship migrations, and `apps/agent/contract`, which it reads
   %%> - after the migrate, makes the digest `converge` from what a base converge reads: the `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists, the nested Gateway's digest of each Node's base intent (`orbit:node-converge-digest`, which admits and writes nothing) and the fleet intent
   %%> - a part runs when its digest differs from the record; a missing record, or one it cannot read, makes every part run, and an unreadable record adds a warning
@@ -92,7 +107,7 @@ sequenceDiagram
   %%> - removes the record before its first write to a nested disk and writes it again last, so a run that stops in the middle leaves none, and the next run does every part and retakes `base` of all three
   %%> - the result names each part, ran or skipped, why the converge ran or was skipped, the tasks the converges changed, what it did with the tokens and why (`tokens`, `tokens_reason`), what it did with the shape tools and why (`tools`, `tools_reason`), `base` retaken or kept and for which containers, and the seconds of each part
   %%> - every API call goes from the container over `wg-nested`, never through the container's egress proxy; a failed Doctor wait names the last status and every issue of the last body (code, Node and summary, each bounded), or curl's error
-  %%> Why:
+  %%> fleet_refresh · why:
   %%> - most releases change nothing the nested Nodes hold: stopping the fleet and copying `base` three times cost about 3 minutes, and three base converges that change nothing about 87 s
   %%> - a file list cannot follow the Gateway code that builds a base intent, so the nested Gateway hashes the intent itself; the `swamp` list has a cover test
   %%> - the nested Gateway's Swamp tokens live 30 days, and a fleet lives longer: the refresh keeps them young, so no copy stops with expired tokens; an older fleet with only workers a and b gets worker c first, because the remint renews all three
@@ -102,11 +117,10 @@ sequenceDiagram
   %%> - the set stays consistent: the nested Gateway's database holds the schema and records each converge, so its `base` is retaken with any other
   %%> - a snapshot of a running container on a directory pool is a file copy, not a consistent state, so `base` is taken with the fleet stopped
   %%> - the proof runner in a copy needs the pinned Ansible controller, and the default is never rebuilt from a new image: the seed after this step gives every copy the tools of its own commit, so no copy builds them or needs `python3-venv`
-  %%> On failure:
+  %%> fleet_refresh · on failure:
   %%> - the start after `base` fails: the refresh fails, and the run restores the old seed; the new `base` snapshots are inside the container's disk, so the restore takes them back too; the default then runs on the old seed's commit and fleet; existing copies are clones of older seeds and stay as they are; new copies clone the restored seed until the next release
   %%> - a failed tools install does not fail the refresh: the result says `tools: failed` with the step in `tools_reason`, the log shows the end of its error output, and the seed is taken without ready tools (the venv's `.complete` is written last); a proof in such a copy builds the tools in its own cache, and when that fails its fleet preparation fails with the line that names the missing pinned folder
-  SW->>N: Take the seed snapshot<br/>Ansible · tags seed
-  %%> What it does:
+  %%> Phase seed:
   %%> - refuses `instance.fleet_key_on_disk` when the Club key path is a file on the container's disk; the key is never read
   %%> - stops the Processes, snapshots `seed-COMMIT` again even at the same commit, starts them, deletes the older seeds
   %%> - at the same commit the new snapshot is `next-COMMIT` until it exists; then the old `seed-COMMIT` goes and the new one takes its name: never `--reuse`, which deletes first
@@ -115,7 +129,8 @@ sequenceDiagram
   %%> - a failed half or flush deletes only the new halves and fails `instance.container_seed_failed`, `instance.seed_volume_flush_failed` or `instance.seed_volume_snapshot_failed` with the cause in the detail; the old seed stays
   %%> - the inner fleet runs during the snapshot, also after a retaken `base`: on the directory pool the inner pool lies on the container's disk, so the seed is one point in time of the whole fleet, as after a power cut; on an inner volume the two halves are taken one after the other, apart by the flush: seconds at most under load
   %%> - the seed holds the refresh record of the fleet it holds
-  SW->>C: Check the container<br/>Ansible · tags check
+  %%> Phase check:
+  %%> - the branch is at the release commit and the units are active
   alt every step passes
     SW-->>GW: Run succeeded<br/>terminal event
     Note over GW: Record the seed commit
@@ -124,7 +139,7 @@ sequenceDiagram
   else a step fails from the checkout on
     SW->>N: Restore the old seed<br/>Ansible · tags fleet_restore
     %%> What it does:
-    %%> - stops the container and restores its newest seed by creation time: the one "Keep the current seed" took, or a newer one
+    %%> - stops the container and restores its newest seed by creation time: the one the `seed` phase of "Prepare the container" took, or a newer one
     %%> - a default with an inner volume restores the volume to its snapshot of the same name too; a failed volume restore fails the run with the container already restored
     %%> - refuses `instance.fleet_seed_missing` when no seed is left, or when the inner volume lacks the seed's half; both are checked before anything is restored
     SW->>N: Start on the old seed<br/>Ansible · tags start

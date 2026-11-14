@@ -81,6 +81,7 @@ additionalFiles:
   - ansible/tasks/instance-nested-club-key.yml
   - ansible/tasks/instance-container-handlers.yml
   - ansible/tasks/instance-container-process.yml
+  - ansible/tasks/instance-container-run-phase.yml
   - ansible/tasks/instance-fleet.yml
   - ansible/tasks/instance-fleet-rules.yml
   - ansible/tasks/instance-fleet-rules-read.yml
