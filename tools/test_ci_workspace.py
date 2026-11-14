@@ -42,7 +42,7 @@ class WorkspaceFixturesTest(unittest.TestCase):
         current = units.collect(publish['file'])
         self.assertEqual(publish['source_sha256'], current['source_sha256'])
         self.assertEqual(publish['cases'], current['cases'])
-        self.assertEqual(len(current['cases']), 18)
+        self.assertEqual(len(current['cases']), 22)
         self.assertFalse(set(seen) & set(current['cases']))
         self.assertLessEqual(publish['cost'] + budget['slice_startup_seconds'], 90)
         harness = runpy.run_path(str(ROOT / 'swamp/tests/_support/task_instance_workspace.py'))

@@ -1545,7 +1545,7 @@ A unit in the fleet reads its secret from `SetCredential` or a file, never `Load
 
 ### The Club key of the nested Gateway
 
-The nested Gateway's `swamp serve` needs a Swamp Club API key. It is never the proof Club key. Orbit gives it to a nested-fleet container at each start that Orbit runs, and it never lands on the container's disk. No snapshot, seed, clone copy or export of the container can hold it.
+The nested Gateway's `swamp serve` needs a Swamp Club API key. It is never the proof Club key. Orbit gives it to a nested-fleet container at each start that Orbit runs, and it never lands on the container's disk. No snapshot, seed, clone copy or export of the container can hold it. A [publish](/reference/tasks#task-copy) from a nested-fleet task copy reads the same vault entry, so its content check refuses a commit that holds the key.
 
 | Part | Rule |
 | --- | --- |

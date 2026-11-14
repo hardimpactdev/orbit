@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Data\Tasks\StartTaskPublishData;
+use App\Domain\GatewayReleases\GatewayReleaseLayout;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationKinds;
@@ -43,7 +45,7 @@ beforeEach(function (): void {
  *
  * @return array{Task, TaskCheck, Instance, InstanceRuntime}
  */
-function copyPublishWorld(?string $root = 'public'): array
+function copyPublishWorld(?string $root = 'public', string $incusProject = 'orbit-instances'): array
 {
     $node = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'work', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.71', 'public_ssh_port' => 22,
@@ -56,7 +58,7 @@ function copyPublishWorld(?string $root = 'public'): array
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'task-'.$group->id, 'checkout_path' => '/var/lib/incus/rootfs/srv/workspace',
         'status' => InstanceState::Active, 'branch' => 'task-'.$group->id, 'task_workspace_owner_id' => $group->id, 'starting_commit' => str_repeat('a', 40)]);
     $runtime = InstanceRuntime::query()->create(['node_id' => $node->id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test', 'instance_id' => $instance->id,
-        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.5', 'seed_commit' => str_repeat('a', 40)]);
+        'incus_project' => $incusProject, 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.5', 'seed_commit' => str_repeat('a', 40)]);
     $group->update(['taskable_type' => $instance->getMorphClass(), 'taskable_id' => $instance->id]);
     $subtask = Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Change', 'brief' => 'Change it.', 'status' => 'todo']);
     $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed, 'pid' => 1, 'process_started' => 'x',
@@ -154,6 +156,37 @@ it('gives the run of a copy publish the .env Orbit renders for the Instance as a
     expect(app(DirectOperation::class)->workflowInputs($vm)['execution_secrets'])->not->toHaveKey('environment')
         ->and($vault->puts)->toHaveCount(1);
 });
+
+it('gives the run of a nested-fleet copy the Club key reference the nested starts read, and no other copy', function (?string $key, bool $nested, bool $expected): void {
+    [$group, $check] = copyPublishWorld('public', $nested ? InstancePlacement::NestedProject : 'orbit-instances');
+    $base = sys_get_temp_dir().'/orbit-publish-club-'.bin2hex(random_bytes(4));
+    mkdir($base.'/shared', 0700, true);
+    file_put_contents($base.'/shared/gateway.env', "APP_NAME=Orbit\n".($key === null ? '' : 'ORBIT_NESTED_FLEET_CLUB_API_KEY='.$key."\n"));
+    chmod($base.'/shared/gateway.env', 0600);
+    app()->instance(GatewayReleaseLayout::class, new GatewayReleaseLayout($base.'/current/apps/gateway'));
+    app()->instance(WebSocketClient::class, $vault = publishEnvironmentVault());
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token']);
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+
+    $inputs = app(DirectOperation::class)->workflowInputs($operation);
+
+    $workspace = $inputs['intent']['workspace'] ?? $inputs['workspace'];
+    if ($expected) {
+        expect($inputs['execution_secrets']['club_key'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'nested-fleet-club-api-key'])
+            ->and($workspace['club_key'])->toBeTrue()
+            ->and(collect($vault->puts)->firstWhere('key', 'nested-fleet-club-api-key'))->toBe(['key' => 'nested-fleet-club-api-key', 'value' => $key]);
+    } else {
+        expect($inputs['execution_secrets'])->not->toHaveKey('club_key')
+            ->and($workspace)->not->toHaveKey('club_key')
+            ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('nested-fleet-club-api-key');
+    }
+    expect(json_encode($inputs))->not->toContain('fake-nested-club-key')
+        ->and($operation->refresh()->input['workspace'])->not->toHaveKey('club_key');
+})->with([
+    'nested copy with a key' => ['fake-nested-club-key-for-publish', true, true],
+    'nested copy, the Gateway holds no key' => [null, true, false],
+    'normal clone' => ['fake-nested-club-key-for-publish', false, false],
+]);
 
 it('refuses a copy publish without a start commit or a running container, before any Operation', function (Closure $arrange, string $code): void {
     [$group, $check, $instance, $runtime] = copyPublishWorld();

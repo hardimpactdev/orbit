@@ -46,6 +46,7 @@ sequenceDiagram
   %%> - the commit, tree, branch `task-42`, default branch and the optional title and body
   %%> - the vault key names of the token and Git authorization header, never their values; no token exists yet
   %%> - for a task copy: the `.env` the Gateway renders from the Instance's stored values, as the vault copy `task-publish-environment-<operation>`; the agent cannot change it
+  %%> - for a copy in the nested-fleet project: the Club key's one vault entry `nested-fleet-club-api-key`, which every nested start reads, when the Gateway holds a key
   GW-->>CLI: 202 Accepted<br/>task #5165
   %%> What you get:
   %%> - the task number, at once
@@ -103,7 +104,7 @@ sequenceDiagram
     %%> - every commit from the copy's start to the candidate must hold the `.env` path exactly as the start does; a commit that adds it, even one a later commit removes, refuses with `tasks.publish_secret_path` before any token exists
     Note over SW: Check the .env content
     %%> How:
-    %%> - every object new in the range (file contents, file names, commit messages) and the pull request title and body are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render
+    %%> - every object new in the range (file contents, file names, commit messages) and the pull request title and body are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
     %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`; a copy mints only after this step succeeded
   end
   SW->>GW: Mint the push token<br/>operation:direct:github-token
