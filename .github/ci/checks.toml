@@ -265,8 +265,9 @@ after_merge_cases = [
   # switched-on host do not fit a 150-second lane. The Main full set runs it with its own ceiling.
   "only a switched-on host prepares the nested project, its profile and the nesting modules",
   # 52s estimated: with it the file needs 9 hosted shards, above the 8-shard PR limit, and the whole file would defer. The PR
-  # keeps the same rule in the clone tests (the NIC check and the nested guard report a stock NIC, a real defect still refuses).
-  "start admits a stock NIC without the address filters and reports it; the rollout's device set keeps the status and ends the report",
+  # keeps the same rule in the clone tests (the NIC check and the nested guard refuse a NIC without the filters with exit 2, a real
+  # defect keeps exit 1, and the native clone maps exit 2 to instance.nic_filters_missing).
+  "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them",
 ]
 # Each retained case cost is the 90th percentile of its completed hosted PR times across the runs listed in
 # docs/reference/implementation-loop.md (2026-11-13), rounded up plus one second; startup is added per slice.
@@ -1973,7 +1974,7 @@ inputs = [
 
 [[fixture]]
 file = "swamp/tests/instance_clone_test.py"
-cost = 99
+cost = 101
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -2011,8 +2012,9 @@ inputs = [
   "test_clone_uses_the_admitted_common_acl_name" = 2
   "test_clone_refuses_unsafe_effective_nics_before_start" = 2
   "test_normal_clone_uses_the_exact_original_checker_program_and_argv" = 2
-  "test_nic_check_reports_a_stock_nic_without_filters_and_still_refuses_a_real_defect" = 2
-  "test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it" = 2
+  "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address" = 2
+  "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start" = 2
+  "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code" = 2
   "test_the_three_holders_of_the_nic_filters_are_equal" = 2
   "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2

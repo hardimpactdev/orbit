@@ -17,7 +17,7 @@
 # The error code stays the result; the log names the key or device that the nested guard refused.
 - name: Name what the nested guard refused
   tags: [always]
-  when: network_nested and network_nic_check.rc != 0
+  when: network_nested and network_nic_check.rc == 1
   ansible.builtin.debug:
     msg: "{{ network_failure }}: {{ network_nic_check.stdout }}"
   vars:
@@ -27,13 +27,8 @@
   tags: [always]
   ansible.builtin.assert:
     that: network_nic_check.rc == 0
-    fail_msg: >-
-      {{ network_failure if expected_network_device is defined else network_failure ~ ': ' ~ network_nic_check.stdout }}
+    fail_msg: "{{ network_code if expected_network_device is defined else network_code ~ ': ' ~ network_nic_check.stdout }}"
     quiet: true
-
-# A NIC without the filter keys passes until every existing NIC has them; the log names it (docs/reference/development-containers.md#network).
-- name: Report a NIC without the address filters
-  tags: [always]
-  when: network_nic_check.rc == 0 and network_nic_check.stdout != ''
-  ansible.builtin.debug:
-    msg: "instance.nic_unfiltered: {{ network_nic_check.stdout_lines | join('; ') }}"
+  vars:
+    # Exit 2: a NIC with its own address lacks the address filters (docs/reference/development-containers.md#network).
+    network_code: "{{ 'instance.nic_filters_missing' if network_nic_check.rc == 2 else network_failure }}"

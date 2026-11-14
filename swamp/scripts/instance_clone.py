@@ -441,6 +441,8 @@ def main():
                 effective,
                 check=False,
             )
+            if checked.returncode == 2:
+                raise RuntimeError("instance.nic_filters_missing")
             if checked.returncode:
                 raise RuntimeError("instance.container_network_unsafe")
             if read["status"] != "Running":

@@ -5,7 +5,8 @@ config is the intent's own `container.config`, the map that create and clone wri
 Incus writes `volatile.*` and `image.*` itself and Orbit writes none, so the guard does not judge them; `environment.*` keys only set the environment of processes in the container, and
 come from both the intent and the project's profile. Every other key must be in the allowed config with the same value, and
 every allowed key must be set: a missing `security.idmap.isolated` would fall back to the shared map. The NIC filter keys
-(`FILTERS` of the shared functions) are left out of the device comparison: the shared report names a NIC without them.
+(`FILTERS` of the shared functions) are left out of the device comparison: the shared rule refuses a NIC without them with its own
+code, `instance.nic_filters_missing` (exit 2).
 """
 
 import json
@@ -52,4 +53,4 @@ if __name__ == "__main__":
     if device:
         print(device)
         sys.exit(1)
-    print(globals()["unfiltered_report"](container, sys.argv[1]), end="")
+    globals()["refuse"](container, sys.argv[1], None)
