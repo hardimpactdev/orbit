@@ -183,7 +183,7 @@
     ]
   },
   "swamp/tests/ansible_instance_container_test.ts": {
-    "source_sha256": "dc3dd278e4bf90f187068bb89df17f78d2a353ecda4c1255d58ee6d00f4cb811",
+    "source_sha256": "54d91a2a9101a28c99d742170f5ae17997cce594350f6ebab69fe3a9ec3f9047",
     "cases": [
       "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
       "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -216,7 +216,7 @@
       "start refuses a NIC with missing ACL before starting the container",
       "start refuses a NIC with permissive default before starting the container",
       "start refuses a NIC with bridge union ACL before starting the container",
-      "start admits a stock NIC without the address filters and reports it; the rollout's device set keeps the status and ends the report",
+      "start refuses a NIC without the address filters with its own code, and starts it once the device set adds them",
       "start refuses an unguarded extra bridge NIC beside guarded eth0",
       "first attach adds an exact bridge endpoint, retries ETag conflicts and repeats without changes",
       "a copied seed with an unguarded extra local NIC refuses before the clone starts",
@@ -1591,7 +1591,7 @@
     ]
   },
   "swamp/tests/instance_clone_test.py": {
-    "source_sha256": "ad66964eee91576bc0c995f9d11290f1703badaccc10f54422c9cd3804b847a5",
+    "source_sha256": "d44db346646501fb9f5a83fd42d67378c590861da8f2c27961788d9a33de2417",
     "cases": [
       "test_legacy_new_branch_still_uses_seed_without_selection",
       "test_legacy_existing_remote_branch_still_uses_its_tip",
@@ -1619,10 +1619,11 @@
       "test_mail_failure_keeps_clone_launch_and_later_branch_work_successful",
       "test_clone_uses_the_admitted_common_acl_name",
       "test_clone_refuses_unsafe_effective_nics_before_start",
-      "test_nic_check_reports_a_stock_nic_without_filters_and_still_refuses_a_real_defect",
+      "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address",
+      "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start",
       "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code",
       "test_the_three_holders_of_the_nic_filters_are_equal",
-      "test_nested_guard_admits_a_stock_nic_without_filters_and_reports_it",
+      "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code",
       "test_normal_clone_uses_the_exact_original_checker_program_and_argv",
       "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices",
       "test_nested_guard_admits_the_live_shape_of_the_first_nested_container",

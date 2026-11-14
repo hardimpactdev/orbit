@@ -385,7 +385,17 @@ if (family === "query" && args.at(-1)!.includes("/files?")) {
     }
   }
   const config = Object.fromEntries(args.flatMap((arg, index) => arg === "--config" ? [pair(args[index + 1])] : []));
-  state.instances.push({ name: args[2], project, status: "Stopped", config: {...config, "volatile.base_image": source?.fingerprint} });
+  // As `incus init --device name,key=value` does: the profile's device becomes a local device with the given keys over it.
+  const devices: Record<string, Record<string, string>> = {};
+  for (const override of args.flatMap((arg, index) => arg === "--device" ? [args[index + 1]] : [])) {
+    const comma = override.indexOf(",");
+    const name = override.slice(0, comma);
+    devices[name] ??= structuredClone(state.profiles[project]?.devices?.[name] ?? {});
+    const [key, value] = pair(override.slice(comma + 1));
+    devices[name][key] = value;
+  }
+  state.instances.push({ name: args[2], project, status: "Stopped", config: {...config, "volatile.base_image": source?.fingerprint},
+    ...(Object.keys(devices).length ? { devices } : {}) });
 } else if (family === "copy") {
   if (!instance(action)) fail("Instance not found");
   // As Incus copies an instance: its local config comes along, without the volatile keys.

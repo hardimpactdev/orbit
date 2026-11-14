@@ -1,12 +1,15 @@
-"""The effective-NIC gate shared by native clones and Ansible starts and host audits."""
+"""The effective-NIC gate shared by native clones and Ansible starts and host audits.
+
+Exit 1: an unguarded NIC (no ACL, no default egress reject, the bridge union ACL, or an unexpected NIC). Exit 2: a NIC with its own
+address that lacks the address filters (`instance.nic_filters_missing`).
+"""
 
 import json
 import sys
 
 # Each Instance NIC accepts only its own IPv4 and MAC address (docs/reference/development-containers.md#network). The Python holder
 # of the keys: the native clone reads them from this source. Ansible reads instance-nic-filters.json, the Gateway
-# InstanceHostIntent::NicFilters; instance_clone_test.py keeps the three equal. A NIC made before them is reported, not refused, until
-# every existing NIC has them.
+# InstanceHostIntent::NicFilters; instance_clone_test.py keeps the three equal.
 FILTERS = {"security.ipv4_filtering": "true", "security.mac_filtering": "true"}
 
 
@@ -38,26 +41,36 @@ def unsafe_device(container, network, expected_device=""):
     return None
 
 
-def unfiltered_report(container, network):
-    """One line per bridge NIC that lacks a filter key; empty when every NIC has them."""
-    return "".join(
-        container["name"] + "/" + name + " lacks " + " and ".join(FILTERS) + "\n"
-        for name, device in container["expanded_devices"].items()
-        if device.get("type") == "nic"
-        and network in (device.get("network"), device.get("parent"))
-        and any(device.get(key) != value for key, value in FILTERS.items())
-    )
+def unfiltered_device(container, network):
+    """The first bridge NIC with its own `ipv4.address` that lacks a filter key, or None.
+
+    Every Instance NIC holds its own address: create, clone and migrate write it with the filters. A NIC without one takes a DHCP
+    lease from the bridge: the project profile's `eth0`, which the host converge's clone probe uses. The probe is a copy of a copy, so
+    a fixed address would be held twice, and no address is reserved for it: it carries no filter and this rule does not apply to it;
+    its ACL rules above still do.
+    """
+    for name, device in container["expanded_devices"].items():
+        if (
+            device.get("type") == "nic"
+            and network in (device.get("network"), device.get("parent"))
+            and device.get("ipv4.address")
+            and any(device.get(key) != value for key, value in FILTERS.items())
+        ):
+            return name
+    return None
+
+
+def refuse(container, network, device):
+    """Exit 1 for an unguarded NIC, 2 for a NIC without the address filters, and return when every NIC passes."""
+    if device:
+        print(container["name"] + "/" + device + " needs an effective ACL with default egress reject and no bridge union ACL")
+        raise SystemExit(1)
+    unfiltered = unfiltered_device(container, network)
+    if unfiltered is not None:
+        print(container["name"] + "/" + unfiltered + " lacks " + " and ".join(FILTERS))
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":
     container = json.load(sys.stdin)
-    device = unsafe_device(container, *sys.argv[1:])
-    if device is not None:
-        print(
-            container["name"]
-            + "/"
-            + device
-            + " needs an effective ACL with default egress reject and no bridge union ACL"
-        )
-        raise SystemExit(1)
-    print(unfiltered_report(container, sys.argv[1]), end="")
+    refuse(container, sys.argv[1], unsafe_device(container, *sys.argv[1:]))
