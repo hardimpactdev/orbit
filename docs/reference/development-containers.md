@@ -6,7 +6,7 @@ covers:
   - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
-  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml}
+  - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
   - swamp/{scripts/instance_clone{,_guest}.py,ansible/instance_{bridge,network,node_services}.py,extensions/behaviors/operations/instance-dev-command/result.ts,ansible/task-copy-turn.yml,workflows/workflow-operation-task-copy-turn.yaml,extensions/behaviors/operations/task-copy-turn/*}
   - apps/gateway/{config/instances.php,database/migrations/{2027_02_03_000000_create_instance_runtimes,2027_02_11_000001_add_workspace_baseline_to_instance_runtimes,2027_02_12_000000_add_idle_watch_started_at_to_instance_runtimes,2027_02_15_000000_add_t3_port_last_to_nodes,2027_02_16_000000_add_idmap_size_to_instance_runtimes,2027_02_16_000001_add_id_ranges_to_nodes}.php,resources/instances/{notes/**,frankenphp.Caddyfile,workspace-git-read.py,id-map-read.py},app/Infrastructure/Instances/{ContainerWorkspaceRead,NodeIdMapRead}.php}
   - swamp/ansible/tasks/{instance-host,instance-folder,instance-image,instance-egress,instance-network-check,instance-network-nic-check,instance-network-move,instance-network-move-nic,instance-bridge-rules,instance-bridge-refresh,instance-mail}.yml
@@ -2007,7 +2007,7 @@ The Operation's result says what the start did, never what the Gateway held at a
 
 Right after a boot, the inner Incus can wait behind `network-online.target`, and its client then blocks. So after the write the script touches the inner Incus only when `incus.service` is active and `incus list` answers within 5 seconds; each restart command has 10 seconds. Otherwise it skips the restart and says `changed_serve_pending`. The step never waits on the inner Incus.
 
-The step runs right after `Start the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
+The delivery is part of the `start` phase, the first phase of a deployment's step `Prepare the container`, before any check of the inner fleet. That covers the restart after a failed refresh too, which starts the container through the same `start` phase. A clone runs its own step, `clone-club-key`, right after `clone-container`.
 
 In Ansible the value is the module stdin of a pipelined task with `no_log`. Without pipelining, or with remote files kept, Ansible writes the module with its arguments to `~/.ansible/tmp` on the Node. So the task forces pipelining and refuses with `instance.nested_club_key_unsafe_transfer` before it reads the value when pipelining is off. A clone gets the value on the SSH stdin of `instance_clone.py club-key`. Both pass it on as the stdin of `incus exec ... sh -c`.
 
@@ -2047,6 +2047,18 @@ After each Gateway release, Orbit deploys each nested-fleet default to the relea
 
 A default gets `fleet` when its runtime is in `orbit-instances-nested`, its Project has `nested_fleet` on and its Node's switch is on (`InstancePlacement::keepsFleet`). Every other deployment runs the same steps and calls as before.
 
+The container phases of a deployment run in two Ansible steps, each one play that runs its phases in order ([deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/deploy.mmd)). The phases of one step share their failure handling:
+
+| Step | Phases of a normal default | Phases of a nested-fleet default | A failure |
+| --- | --- | --- | --- |
+| Prepare the container | `start`, `fetch` | `start`, `fleet_start`, `seed`, `fetch` | restores nothing: the workspace has not changed |
+| Check out in the container | `checkout` | `checkout` | restores the old seed of a nested-fleet default |
+| Finish the container | `processes`, `seed`, `check` | `processes`, `fleet_refresh`, `seed`, `check` | restores the old seed of a nested-fleet default |
+
+Each Ansible step costs about 2.5 s to start its play (Python, the address play and SSH), and each Swamp step about 0.8 s more. The two merged steps save six of the nine play starts of a nested-fleet refresh, about 20 s, and three of the six of a normal deployment, about 10 s. The handlers a phase notifies run before the next phase starts, as with separate plays.
+
+Each phase writes the result file as it ends, as its own play did, with the phases that passed so far as `phases_passed`. So a step killed in a later phase, by its timeout or a lost Node, keeps what the passed phases wrote, such as the Club key's word. A failed phase stops the step. The result file names it as `failed_phase`, and the code is the phase's own refusal or `instance.container_<phase>_failed`. The container counts as started once `start` is among the passed phases; otherwise its power state stays as it was.
+
 The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fleets --commit <release>` from the new release. It admits one deployment per nested-fleet default. With none, it prints one line and admits nothing. A default whose admission fails with an error that is no refusal gets the line `operation.admission_failed`; the other defaults are still admitted.
 
 The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. The live fleet has it on since 13 November 2026. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
@@ -2061,7 +2073,7 @@ The run deploys the release commit itself. A commit missing from the Project's r
 | The fleet stays | A step that fails from the checkout on restores the newest seed: the one the run took first, or a newer one. A restore never goes back past the fleet |
 | Room before a change | The check reads the room on the nested Nodes' disk first. When a refresh could not end above the inner Doctor's floor, it refuses with `instance.container_fleet_no_room` and the numbers. Nothing changed |
 | Check before a change | The check compares the inner fleet with its [rules](#fleet-rules) before the first seed. A refusal, `instance.container_fleet_drift`, changes nothing and restores nothing |
-| A failure names its step | The Operation names the first failed step and its code, such as `instance.container_fleet_refresh_failed`. `error.detail` names the failed task and its message |
+| A failure names its phase | The Operation names the first failed step, and its code names the failed phase, such as `instance.container_fleet_refresh_failed` from "Finish the container". `error.detail` names the failed task and its message |
 | Migrate before Doctor | The check checks only the containers and the tunnel. The refresh migrates the nested Gateway before its Doctor wait |
 | The fleet runs after the run | The refresh starts again what it stopped for `base`, before the seed. After a restore, the run starts the restored fleet |
 
@@ -2201,7 +2213,7 @@ The Operation's result has `fleet_refresh`. It holds `migrate` (`applied`, `noth
 
 The seed is taken while the inner fleet runs, also after a retaken `base`. The inner storage pool is a directory pool on the outer container's disk, one ZFS dataset. So the seed is one point in time of all three containers and the inner Incus database, the state a power cut leaves. The nested Gateway's database is SQLite, which recovers from a power cut. A copy boots its nested containers cold, as a copy of a stopped seed does.
 
-The first seed of every run, "Keep the current seed", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
+The first seed of every run, the `seed` phase of "Prepare the container", was always taken with the fleet running. On a nested proof Node with a directory pool, the seed is a file copy and not one point in time; that affects only proofs.
 
 After a restore, the run starts the restored fleet and waits for readiness. If that start fails, the detail says so too.
 | An update, not a rebuild | The image variant's tools change only with a new image |
@@ -2232,7 +2244,19 @@ What stops during a refresh:
 | A whole refresh whose converges change nothing (`base` kept) | About 3 min 55 s, estimated | Operation 20121 minus stop, `base` and start |
 | A whole refresh that changes neither `apps/gateway` nor `swamp` | About 2 min 20 s, estimated | Operation 20121 minus the converges too |
 
-Each step has a bound. The check, the run's one fleet start, has 400 s, the first seed 120 s and the refresh 4,200 s, with the start of what it stopped for `base`. The restore has 150 s, the start after it 120 s, and the start of the restored fleet 600 s. The run budget grows by their sum, 5,590 s. Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
+Each step has a bound, the sum of the bounds of the phases it runs. So a normal default's step ends no later than its phases did as steps of their own, though one phase may now use the time another left:
+
+| Step | Bound | Phases |
+| --- | --- | --- |
+| Prepare the container | 520 s for a normal default, 1,040 s for a nested-fleet default | `start` 120 s, the check (the run's one fleet start) 400 s, the first seed 120 s, `fetch` 400 s |
+| Finish the container | 300 s for a normal default, 4,500 s for a nested-fleet default | `processes` 120 s, the refresh 4,200 s (with the start of what it stopped for `base`), the seed 120 s, `check` 60 s |
+| Restore the old seed | 150 s | `fleet_restore` |
+| Start on the old seed | 120 s | `start` |
+| Start the restored fleet | 600 s | `fleet_resume` |
+
+The run budget grows by the fleet's part of these bounds, 5,590 s: the check 400 s, the first seed 120 s, the refresh 4,200 s and the three restore steps 870 s. A normal default's run budget stays the deploy step timeouts plus 900 s.
+
+Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each, and each Node converge by 900 s.
 
 ### A clone starts its fleet
 
@@ -2267,7 +2291,7 @@ The Gateway admits the start only for an active development clone whose runtime 
 
 The run reads the Club key once, at its start. Without a key the fleet's Swamp cannot start, and Doctor cannot pass. So the run then fails before any change, with `instance.nested_club_key_missing`.
 
-The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment does. It keeps `boot.autostart=false` and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
+The step `Start the container` runs the `start` part of `instance-container.yml`, as a deployment's `Prepare the container` does. It keeps `boot.autostart=false` and checks the egress gates of every bridge NIC. Then it starts the container and delivers the [Club key](#the-club-key-of-the-nested-gateway) into its `/run`.
 
 The step `Start the inner fleet` runs the [fleet step](#the-fleet-step)'s check and resume, as the clone's create does. It checks the fleet rules and starts the nested containers and the tunnel. Then it waits for Doctor. It records its time as `fleet_seconds`.
 

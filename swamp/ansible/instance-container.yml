@@ -7,12 +7,14 @@
 #     nested-fleet default (its intent has `fleet`) runs `fleet_check` and `fleet_resume` after its start.
 #   deploy: `start`, `fetch`, `checkout`, `processes`, `seed`, `check`. A nested-fleet default (its intent has `fleet`) adds
 #     `fleet_start` (its one fleet check) and `seed` right after `start`, `fleet_refresh` before the last `seed`, and after a failure
-#     `fleet_restore`, then `start` and `fleet_resume`.
+#     `fleet_restore`, then `start` and `fleet_resume`. One run holds the phases that share their failure handling: `phases`, a
+#     comma-separated list in order with the same tags, such as `-e phases=start,fetch --tags start,fetch`.
 #   process: `process`, for one Process's start, stop, restart, status or logs (ORBIT_PROCESS_ACTION).
 # The Project's deploy commands are not here: Swamp runs each one in the container from its vault copy, as `orbit`.
 # Git runs on the Node with a read token in a 0600 file; the container gets the branch as a bundle and never a token. The intent is
 # the Gateway's admitted intent in the run folder; `intent.container` names the container, its paths, its ACL and its units.
-# Every phase writes `result.json` in the run folder: the commit it left checked out, or the public error code of the refusal.
+# Every run writes `result.json` in the run folder: the commit it left checked out, or the public error code of the refusal.
+# Without `phases` a run is the one phase of its first tag.
 - name: Pin the Node and address it
   hosts: localhost
   connection: local
@@ -29,7 +31,7 @@
     - name: Address the Node
       ansible.builtin.import_tasks: tasks/address-node.yml
 
-- name: Run one phase of the default Instance's container
+- name: Run the phases of the default Instance's container
   hosts: container_node
   gather_facts: false
   become: true
@@ -37,64 +39,48 @@
     intent: "{{ lookup('ansible.builtin.file', lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/intent.json') | from_json }}"
     container: "{{ intent.container }}"
     run_id: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN_ID') }}"
+    container_phases: "{{ (phases | default(ansible_run_tags | first)).split(',') }}"
+    # The phase that runs now; tasks/instance-container-run-phase.yml sets it as each phase starts.
+    container_phase_running: "{{ container_phases | first }}"
+    # The phases of this run that ended; tasks/instance-container-run-phase.yml adds each one, and a run of several phases names them in
+    # its result, so a play that is killed later still says which phases passed.
+    container_phases_passed: []
+    # A nested-fleet container's result names what a start of this run did with its Club key: the delivery script's word, `changed`,
+    # `changed_serve_pending` or `unchanged`. Each phase writes the result file again, so a later phase keeps an earlier phase's word.
+    # Any other container's result never names it. The result and the failure use the same two values.
+    club_key_result_file: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/result.json' }}"
+    club_key_carried: >-
+      {{ {} if container.club_key is not defined
+         else {'club_key': club_key_written} if club_key_written is defined
+         else {'club_key': (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key}
+           if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key | default('') in ['changed', 'changed_serve_pending', 'unchanged']
+         else {} }}
+    # What the refresh of a nested fleet did, part by part (tasks/instance-fleet-refresh.yml): its phase sets it, and each later phase
+    # of the run keeps it from the result file, as the Club key's word.
+    fleet_refresh_carried: >-
+      {{ {'fleet_refresh': fleet_refresh_result} if fleet_refresh_result is defined
+         else {'fleet_refresh': (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh}
+           if intent.fleet is defined and club_key_result_file is file
+              and (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh | default(none) is mapping
+         else {} }}
   tasks:
-    - name: Run the phase
+    - name: Run the phases
       block:
-        # Select the phase by tags before evaluating task conditions. Unrelated phases never enter the task queue.
-        - name: Run the phase's tasks
+        - name: Run each phase in order
+          tags: [always]
           ansible.builtin.include_tasks:
-            file: "tasks/{{ 'instance-container-process.yml' if ansible_run_tags | first == 'process' else 'instance-container-phase.yml' }}"
-            apply:
-              tags: "{{ ['always'] if ansible_run_tags | first == 'process' else [] }}"
-          tags: [always]
-          vars:
-            phase: "{{ ansible_run_tags | first }}"
-        # A Process read's result holds journal lines: it goes only to the run folder, never to the run's output.
-        - name: Write the result
-          tags: [always]
-          ansible.builtin.copy:
-            content: >-
-              {{ ({'node_services': node_services_result} if node_services_result is defined else
-                  (mail_result if mail_result is defined else
-                  (process_result if process_result is defined else
-                   (node_runtime_result if node_runtime_result is defined and ansible_run_tags | first in ['node-store', 'node-runtime']
-                    else {'commit': container_commit | default(none)})))) | combine(club_key_carried)
-                 | combine(wake_result | default({})) | combine(fleet_refresh_carried) | to_json }}
-            dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
-            mode: "0600"
-          no_log: true
-          delegate_to: localhost
-          become: false
-          # The result file lives in the run folder on the worker: no change to the Node.
-          changed_when: false
-          vars:
-            ansible_connection: local
-            ansible_python_interpreter: "{{ ansible_playbook_python }}"
-            # A nested-fleet container's result names what a start of this run did with its Club key: the delivery script's word,
-            # `changed`, `changed_serve_pending` or `unchanged`. Each phase writes the result file again, so a later phase keeps an
-            # earlier phase's word. Any other container's result never names it. The failure below uses the same two values.
-            club_key_result_file: &club_key_result_file "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') ~ '/result.json' }}"
-            club_key_carried: &club_key_carried >-
-              {{ {} if container.club_key is not defined
-                 else {'club_key': club_key_written} if club_key_written is defined
-                 else {'club_key': (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key}
-                   if club_key_result_file is file and (lookup('ansible.builtin.file', club_key_result_file) | from_json).club_key | default('') in ['changed', 'changed_serve_pending', 'unchanged']
-                 else {} }}
-            # What the refresh of a nested fleet did, part by part (tasks/instance-fleet-refresh.yml): its phase sets it, and each later
-            # phase of the run keeps it from the result file, as the Club key's word.
-            fleet_refresh_carried: &fleet_refresh_carried >-
-              {{ {'fleet_refresh': fleet_refresh_result} if fleet_refresh_result is defined
-                 else {'fleet_refresh': (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh}
-                   if intent.fleet is defined and club_key_result_file is file
-                      and (lookup('ansible.builtin.file', club_key_result_file) | from_json).fleet_refresh | default(none) is mapping
-                 else {} }}
+            file: tasks/instance-container-run-phase.yml
+          loop: "{{ container_phases }}"
+          loop_control:
+            loop_var: container_phase
       rescue:
         # The code of a refusal is the fail_msg of its assert; anything else is the phase's own failure. A swamp step that exits
         # nonzero keeps no output, so a failed fleet phase also writes why into the result: `detail`, the failed task and its
         # message (a command's stderr tail with it). The fleet's messages are written to be safe to show; the Gateway redacts them
         # again. A deployment starts its fleet with `fleet_resume` only after a restore: it keeps the first failure's result and adds
         # `restore_failure`. A clone's `fleet_resume` (a create intent, no `deployment`) took no seed, so its failure says only why the
-        # fleet it copied did not start.
+        # fleet it copied did not start. The code names the phase that ran; a run of several phases adds it as `failed_phase`, with the
+        # phases that passed before it.
         - name: Write the failure
           tags: [always]
           ansible.builtin.copy:
@@ -106,7 +92,9 @@
                   | combine(migrate_process_failure | default({})) | combine(node_runtime_failure | default({}))
                   | combine(fleet_drift_failure if (fleet_drift_failure | default({})).fleet_drift | default([]) else {})
                   | combine(failure_unit_detail) | combine(failure_fleet_detail) | combine(seed_failure | default({})) | combine(fleet_room_failure | default({})) | combine(club_key_carried)
-                  | combine(wake_result | default({})) | combine(fleet_refresh_carried))) | to_json }}
+                  | combine(wake_result | default({})) | combine(fleet_refresh_carried)
+                  | combine({'failed_phase': failure_phase, 'phases_passed': container_phases_passed}
+                            if phases is defined else {}))) | to_json }}
             dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
             mode: "0600"
           delegate_to: localhost
@@ -114,10 +102,7 @@
           vars:
             ansible_connection: local
             ansible_python_interpreter: "{{ ansible_playbook_python }}"
-            club_key_result_file: *club_key_result_file
-            club_key_carried: *club_key_carried
-            fleet_refresh_carried: *fleet_refresh_carried
-            failure_phase: "{{ ansible_run_tags | first }}"
+            failure_phase: "{{ container_phase_running }}"
             failure_code: >-
               {{ ansible_failed_result.msg
                  if (ansible_failed_result.msg | default('') is match('^[a-z]+\.[a-z0-9_]+$'))

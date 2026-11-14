@@ -1,0 +1,51 @@
+---
+# One phase of instance-container.yml, `container_phase`, in the order of the run's phases. A run of several phases is one play, so the
+# rescue and the result name the phase that runs now, the handlers of one phase run before the next phase starts, and each phase writes
+# the result file as it ends, as each did at the end of a play of its own. A play that is killed later (its step's timeout, a lost
+# Node) keeps what the phases before passed: the Club key's word and the passed phases.
+- name: Name the running phase
+  tags: [always]
+  ansible.builtin.set_fact:
+    container_phase_running: "{{ container_phase }}"
+
+# Select the phase by tags before evaluating task conditions. Unrelated phases never enter the task queue.
+- name: Run the phase's tasks
+  tags: [always]
+  ansible.builtin.include_tasks:
+    file: "tasks/{{ 'instance-container-process.yml' if container_phase == 'process' else 'instance-container-phase.yml' }}"
+    apply:
+      tags: "{{ ['always'] if container_phase == 'process' else [] }}"
+  vars:
+    phase: "{{ container_phase }}"
+
+- name: Run the phase's handlers
+  tags: [always]
+  ansible.builtin.meta: flush_handlers
+
+- name: Count the phase as passed
+  tags: [always]
+  ansible.builtin.set_fact:
+    container_phases_passed: "{{ container_phases_passed + [container_phase] }}"
+
+# A Process read's result holds journal lines: it goes only to the run folder, never to the run's output.
+- name: Write the result
+  tags: [always]
+  ansible.builtin.copy:
+    content: >-
+      {{ ({'node_services': node_services_result} if node_services_result is defined else
+          (mail_result if mail_result is defined else
+          (process_result if process_result is defined else
+           (node_runtime_result if node_runtime_result is defined and container_phase in ['node-store', 'node-runtime']
+            else {'commit': container_commit | default(none)})))) | combine(club_key_carried)
+         | combine(wake_result | default({})) | combine(fleet_refresh_carried)
+         | combine({'phases_passed': container_phases_passed} if phases is defined else {}) | to_json }}
+    dest: "{{ lookup('ansible.builtin.env', 'ORBIT_RUN') }}/result.json"
+    mode: "0600"
+  no_log: true
+  delegate_to: localhost
+  become: false
+  # The result file lives in the run folder on the worker: no change to the Node.
+  changed_when: false
+  vars:
+    ansible_connection: local
+    ansible_python_interpreter: "{{ ansible_playbook_python }}"

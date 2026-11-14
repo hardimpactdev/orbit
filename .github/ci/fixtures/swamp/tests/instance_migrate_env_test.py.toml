@@ -1,5 +1,5 @@
 order = 1180
-source_sha256 = "32d376768810ab3fd7503d0f0109b53c38d459672242dc57cbfcf1accf258606"
+source_sha256 = "70e61b1cafcdd7aa1090e948777702700a3a0b99e1740c0513e225e2e70a3798"
 cases = [
   "test_stock_mysql_without_a_host_listener_warns_instead_of_refusing",
   "test_answering_unattached_loopback_service_retains_the_refusal",
