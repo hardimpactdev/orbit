@@ -8,7 +8,8 @@ use Illuminate\Support\Facades\Schema;
 
 /**
  * The Conn thread index (docs/reference/conn.md#thread-index): one row per thread of a container T3 server, with no message text
- * beyond its title, and each server's last read. The rows go with their server's environment, which goes with its Instance.
+ * beyond its title, and each server's reads: its last try and that try's error, and the start of its last read that was written.
+ * The rows go with their server's environment, which goes with its Instance.
  */
 return new class extends Migration
 {
@@ -32,13 +33,14 @@ return new class extends Migration
         Schema::table('conn_environments', function (Blueprint $table): void {
             $table->timestamp('threads_read_at')->nullable();
             $table->string('threads_read_error')->nullable();
+            $table->timestamp('threads_applied_at')->nullable();
         });
     }
 
     public function down(): void
     {
         Schema::table('conn_environments', function (Blueprint $table): void {
-            $table->dropColumn(['threads_read_at', 'threads_read_error']);
+            $table->dropColumn(['threads_read_at', 'threads_read_error', 'threads_applied_at']);
         });
         Schema::dropIfExists('conn_threads');
     }

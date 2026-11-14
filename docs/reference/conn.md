@@ -254,7 +254,11 @@ The index stores no message text. The title is the only text, and it can still l
 
 Every minute, one pass reads the shell of every container server whose Instance runs: `GET /api/orchestration/shell` with the admin session the Gateway holds and renews, and `x-t3-orchestration-protocol: 2`, the read of the [idle sleep](#the-idle-sleeps-read). It writes nothing in the container. All servers are read at once; each has 3 seconds to connect and 10 seconds in total, so one server never holds the pass. The pass is the command `conn:threads:read`, a unique job on the `problems` queue of the [Gateway queue](/reference/gateway-queue#scheduled-work). It waits behind task work and never runs on `operations`; it ends within seconds, so a release's Horizon hand-over waits at most one pass.
 
-A server's read replaces its rows: each listed thread is written, and a thread that left the shell leaves the index. A row that a write-through recorded after the read began stays. A read that began before the server's last recorded read is dropped, so a slow read never brings back a thread that a newer read removed. A server that is not read keeps its rows and their `seen_at`, and its record says why in `threads_read_error`:
+A server's read replaces its rows: each listed thread is written, and a thread that left the shell leaves the index. A row that a write-through recorded after the read began stays.
+
+A read that began before the server's last written read is dropped, so a slow read never brings back a thread that a newer read removed. A failed try does not count for that order, and a late failure never sets the server's `read_at` back. Reads that begin within the same second are not ordered: the index stores times to the second.
+
+A server that is not read keeps its rows and their `seen_at`, and its record says why in `threads_read_error`:
 
 | Reason | Meaning |
 | --- | --- |
@@ -285,7 +289,7 @@ The write is one upsert on the row's key, so a read that writes the same thread 
 
 Browsing is one Gateway read. A list of every server, or of a Project, reads only the index and never a server; a device judges how fresh a server's rows are from its `read_at`.
 
-Only a list that names one `instance`, the server a device opens a thread on, reads that server through first: while the switch is on, the server runs and its last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds.
+Only a list that names one `instance`, the server a device opens a thread on, reads that server through first: while the switch is on, the server runs and its last read is older than 10 seconds. That read waits at most 0.5 seconds; a server that misses it keeps its rows and records the reason, and the list does not try it again within 10 seconds. So a list that names an Instance can take up to about 0.5 seconds more when its server is slow; the 300 ms target holds for the lists that read only the index.
 
 ### Cost
 

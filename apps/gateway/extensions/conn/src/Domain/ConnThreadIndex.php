@@ -219,7 +219,8 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
 
     /**
      * Writes one server's read: its threads are upserted, and a row it no longer lists leaves, unless a write-through recorded it after
-     * the read began. A read that began before the server's last recorded read is dropped: it would bring back what that read removed.
+     * the read began. A read that began before the server's last written read is dropped: it would bring back what that read removed.
+     * A failed try does not count: only a written read orders the reads. Reads that begin within the same second are not ordered.
      *
      * @param  list<array{thread_id: string, title: string, state: ?string, needs_input: bool, last_user_message_at: ?CarbonImmutable, last_run_completed_at: ?CarbonImmutable}>  $threads
      * @return array{environment_id: string, instance_id: int, outcome: string, reason: ?string, threads: int, bytes: int}
@@ -228,8 +229,8 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
     {
         $instance = (int) $environment->instance_id;
         $applied = DB::transaction(function () use ($environment, $threads, $readAt, $instance): bool {
-            $last = ConnEnvironment::query()->whereKey($environment->id)->toBase()->value('threads_read_at');
-            if (is_string($last) && CarbonImmutable::parse($last)->isAfter($readAt)) {
+            $applied = ConnEnvironment::query()->whereKey($environment->id)->toBase()->value('threads_applied_at');
+            if (is_string($applied) && CarbonImmutable::parse($applied)->isAfter($readAt)) {
                 return false;
             }
             foreach (array_chunk($threads, self::UpsertChunk) as $chunk) {
@@ -239,7 +240,8 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
             }
             // Every listed thread now has this read's time; an older row is one the shell no longer lists.
             ConnThread::query()->where('conn_environment_id', $environment->id)->where('seen_at', '<', $readAt)->delete();
-            $environment->forceFill(['threads_read_at' => $readAt, 'threads_read_error' => null])->save();
+            $environment->forceFill(['threads_applied_at' => $readAt]);
+            $this->recordTry($environment, $readAt, null);
 
             return true;
         });
@@ -253,11 +255,24 @@ final readonly class ConnThreadIndex implements InstanceThreadContribution
     {
         // A tried read records when it began and why it failed, so the list does not try it again within the stale window.
         if ($triedAt !== null) {
-            $environment->forceFill(['threads_read_at' => $triedAt, 'threads_read_error' => $reason])->save();
+            DB::transaction(fn () => $this->recordTry($environment, $triedAt, $reason));
         }
 
         return ['environment_id' => $environment->environment_id, 'instance_id' => (int) $environment->instance_id, 'outcome' => 'skipped',
             'reason' => $reason, 'threads' => ConnThread::query()->where('conn_environment_id', $environment->id)->count(), 'bytes' => 0];
+    }
+
+    /**
+     * Records a try of the server that began at `$triedAt`, and its error, unless a try that began later is recorded already: a late
+     * answer never sets the server's read time back, nor marks fresh rows failed. Saves the environment either way.
+     */
+    private function recordTry(ConnEnvironment $environment, CarbonImmutable $triedAt, ?string $error): void
+    {
+        $last = ConnEnvironment::query()->whereKey($environment->id)->toBase()->value('threads_read_at');
+        if (! is_string($last) || ! CarbonImmutable::parse($last)->isAfter($triedAt)) {
+            $environment->forceFill(['threads_read_at' => $triedAt, 'threads_read_error' => $error]);
+        }
+        $environment->save();
     }
 
     /**

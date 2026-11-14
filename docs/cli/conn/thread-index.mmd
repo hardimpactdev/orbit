@@ -58,7 +58,10 @@ sequenceDiagram
     %%> On failure:
     %%> - the server keeps its rows and records the reason; the list does not try it again within 10 seconds
     %%> Order:
-    %%> - a read that began before the server's last recorded read is dropped, so it never brings back a removed thread
+    %%> - a read that began before the server's last written read is dropped, so it never brings back a removed thread
+    %%> - a failed try does not count, and never sets `read_at` back; reads that begin within the same second are not ordered
+    %%> Time:
+    %%> - a slow server adds up to 0.5 s to this list; lists that read only the index stay under 300 ms
     T3-->>GW: Threads and run state
   end
   GW-->>C: Rows with seen_at<br/>meta.environments

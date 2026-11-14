@@ -15,6 +15,7 @@ use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Projects\ProjectType;
@@ -109,6 +110,19 @@ it('lets the extensions read the threads one last time before the sleep is admit
     app()->instance(InstanceThreadContributions::class, new InstanceThreadContributions([$contribution]));
 
     expect(app(InstanceSleep::class)->start($clone, null, null)->kind)->toBe(InstanceSleep::Kind);
+});
+
+it('replays a sleep under the same Idempotency-Key without the extensions\' read', function (): void {
+    $clone = sleepingClone();
+    $contribution = Mockery::mock(InstanceThreadContribution::class);
+    $contribution->shouldReceive('beforeSleep')->once();
+    app()->instance(InstanceThreadContributions::class, new InstanceThreadContributions([$contribution]));
+    $idempotency = app(OperationIdempotency::class);
+
+    $first = $idempotency->under(InstanceSleep::Kind, 'key-1', 'print-1', fn () => app(InstanceSleep::class)->start($clone, null, null));
+    $replayed = $idempotency->under(InstanceSleep::Kind, 'key-1', 'print-1', fn () => app(InstanceSleep::class)->start($clone, null, null));
+
+    expect($replayed->id)->toBe($first->id)->and($first->idempotency_key)->toBe('key-1');
 });
 
 it('lets no extension read a refused Instance before its refusal', function (): void {

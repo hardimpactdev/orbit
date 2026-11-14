@@ -196,8 +196,8 @@ describe('the poll', function (): void {
     it('drops a read that began before the server\'s last recorded read, so it never brings back a removed thread', function (): void {
         $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
         Http::fake(['*' => function () use ($tool): mixed {
-            // While this read is on its way, a newer read ends: it removed `gone` and keeps `kept`.
-            $tool->forceFill(['threads_read_at' => now()->addSeconds(5)])->save();
+            // While this read is on its way, a newer read is written: it removed `gone` and keeps `kept`.
+            $tool->forceFill(['threads_read_at' => now()->addSeconds(5), 'threads_applied_at' => now()->addSeconds(5)])->save();
             ConnThread::query()->create(['conn_environment_id' => $tool->id, 'instance_id' => $tool->instance_id, 'thread_id' => 'kept', 'title' => 'Kept',
                 'seen_at' => now()->addSeconds(5)]);
 
@@ -207,6 +207,38 @@ describe('the poll', function (): void {
         $results = app(ConnThreadIndex::class)->pass();
 
         expect($results[0]['outcome'])->toBe('superseded')->and(ConnThread::query()->pluck('thread_id')->all())->toBe(['kept']);
+    });
+
+    it('writes a read although a newer try failed meanwhile, and keeps that newer try as the server\'s last read', function (): void {
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        Http::fake(['*' => function () use ($tool): mixed {
+            // While this read is on its way, a read-through that began later times out.
+            $tool->forceFill(['threads_read_at' => now()->addSeconds(3), 'threads_read_error' => 'conn.server_unreachable'])->save();
+
+            return Http::response(stockShell([stockThread('t1')]));
+        }]);
+
+        $results = app(ConnThreadIndex::class)->pass();
+
+        expect($results[0]['outcome'])->toBe('read')->and(ConnThread::query()->pluck('thread_id')->all())->toBe(['t1'])
+            ->and($tool->refresh()->only(['threads_read_error']))->toBe(['threads_read_error' => 'conn.server_unreachable'])
+            ->and($tool->threads_read_at?->toIso8601String())->toBe('2026-11-14T12:00:03+00:00')
+            ->and($tool->threads_applied_at?->toIso8601String())->toBe('2026-11-14T12:00:00+00:00');
+    });
+
+    it('never sets a server\'s read time back, nor marks fresh rows failed, when an older try fails late', function (): void {
+        $tool = indexedClone($this->beast, $this->project, 'clone', 'http://10.44.0.7:3840');
+        Http::fake(['*' => function () use ($tool): mixed {
+            // While this try is on its way, a read that began later is written.
+            $tool->forceFill(['threads_read_at' => now()->addSeconds(5), 'threads_applied_at' => now()->addSeconds(5), 'threads_read_error' => null])->save();
+
+            throw new ConnectionException('timed out');
+        }]);
+
+        app(ConnThreadIndex::class)->pass();
+
+        expect($tool->refresh()->threads_read_at?->toIso8601String())->toBe('2026-11-14T12:00:05+00:00')
+            ->and($tool->threads_read_error)->toBeNull();
     });
 
     it('skips a server whose write fails, reports it, and still writes the others', function (): void {
