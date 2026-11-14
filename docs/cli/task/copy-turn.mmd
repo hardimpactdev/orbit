@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role, continued by default, effort per role through T3 provider instances): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue.
+  %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role, continued by default, effort per role through T3 provider instances; 2026-11-14 provider, model and effort per role from the group, the Project or the Gateway, checked against the copy's offer): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue.
   %% status: draft
   %% command: task:turn
   %% kind: tasks.copy_turn
@@ -22,7 +22,8 @@ sequenceDiagram
   %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`; every other group takes the task VM turn (`turn.mmd`). A nested-fleet group without a copy refuses here with `tasks.no_workspace`
   %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit
   %%> - without `--thread`, the turn continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread, when it is a `t3` thread of this copy. A role with no such thread starts one. `--thread=new` starts a new one; `--thread=ID` must name the thread the turn would continue
-  %%> - a new thread records the driver `t3`, the copy's Node, the role's copy model (`ORBIT_TASKS_COPY_IMPLEMENTER_MODEL` or `ORBIT_TASKS_COPY_REVIEWER_MODEL`, each `claude-opus-5-5` by default) and the role's effort (`ORBIT_TASKS_IMPLEMENTER_EFFORT`, default `medium`, or `ORBIT_TASKS_REVIEWER_EFFORT`, default `high`). The T3 provider instance of that effort carries it, as `claudeMedium` or `claudeHigh`
+  %%> - a new thread takes the role's provider, model and effort, each from the group, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_<ROLE>_PROVIDER`, `_MODEL` and `_EFFORT` (shipped: `claude`, `claude-opus-5-5`, `medium` for the implementer and `high` for the reviewer)
+  %%> - the provider and the effort name the T3 provider instance that carries the effort, as `claudeMedium`; the thread records the driver `t3`, the copy's Node, the model, the effort and that instance
   %%> - a continued thread keeps its model and effort: T3 keeps the thread's provider instance
   %%> - a reviewer turn names the subtask's checked candidate with `--check`, as on a task VM; the commit goes into the turn
   %%> - the intent names the copy's container, the T3 command, whether the turn starts or continues its thread, the provider instance and model, the candidate, the 3,600 s bound and a title that names the Orbit thread; no credential and no vault key
@@ -31,7 +32,8 @@ sequenceDiagram
   %%> - an implementer or reviewer turn with no caller's model; a consult or `--model` answers `tasks.copy_turn_unsupported`
   %%> - `--thread=ID` names the role's thread that the turn would continue; otherwise `tasks.thread_role_mismatch`
   %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`
-  %%> - the role's copy model is a model name, and the role's effort is `low`, `medium`, `high`, `xhigh` or `max`; otherwise `tasks.copy_turn_model_invalid` or `tasks.copy_turn_effort_invalid`
+  %%> - a new thread's provider and effort name a provider instance that Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`. Otherwise `tasks.copy_turn_unoffered` (422) with what the copy offers in `details.offered`, and nothing is recorded. Orbit owns this list, so the check reads nothing in the copy
+  %%> - the Gateway's model setting is a model name; otherwise `tasks.copy_turn_model_invalid` (503)
   %%> - no other Operation of the group runs; otherwise `operation.target_busy`
   %%> - no earlier turn of the group may still run in the copy: the latest turn of each thread whose run started but whose result does not show T3's run over answers `tasks.copy_turn_unended` with its Operation in `details.operation_id`; a check of the copy refuses the same way, until `task:cancel`. One case passes: a turn that ended `waiting` for an answer does not hold a turn that continues its own thread, so the answer can be sent (that `t3 thread send` answers a waiting run is an assumption read from T3 0.1.7's CLI). A reviewer turn whose checkout is not restored holds the same way: its result is not over
   GW->>SW: Start one run<br/>operation-task-copy-turn
@@ -45,6 +47,8 @@ sequenceDiagram
   %%> What it does:
   %%> - one Ansible phase on the copy's Node: `incus exec` into the copy, then `runuser -u agent`, non-login, with the agent's groups
   %%> - first one `true` in the copy: a copy the phase cannot reach fails before anything is launched, so its group stays free
+  %%> - a new thread then checks its model against T3's model catalog in the copy, before any checkout or start: `settings.json` names the instance's driver, and T3's cached `model-manifest.json` lists that driver's model slugs and aliases. A model it does not list fails with `tasks.copy_turn_model_unoffered` and the offered slugs; nothing is launched
+  %%> - stock T3 0.1.7 checks no model at `thread start` and offers no command that lists its models, so the cache file is the only cheap read. Without the file (T3 fetched no catalog and uses the one it ships) or without the driver in it, the check is skipped, and a model that Claude Code does not know fails in the run with `tasks.turn_failed`
   %%> - a continued turn first finds its T3 thread by its title with `t3 thread list`. A list that fails or is not JSON fails with `tasks.copy_turn_failed`; when T3 holds not exactly one thread of the title, the phase fails with `tasks.copy_thread_missing`. Nothing is launched
   %%> - a reviewer turn then requires a clean checkout on a branch, reads the branch's tip and checks the candidate out, detached; a checkout with changes fails with `tasks.copy_tree_dirty` before anything is launched. The detach mark is written as soon as the checkout is detached
   %%> - a new thread: `t3 thread start --provider --model --title --wait --json /srv/workspace -`; a continued one: `t3 thread send --wait --json THREAD -`. The prompt goes on stdin, bounded by `timeout` at 3,600 s
@@ -58,7 +62,7 @@ sequenceDiagram
   %%> - Claude Code takes that variable over the `--effort` T3 passes, so the thread runs at its recorded effort: verified with Claude Code 2.1.311 and T3 0.1.7
   Note over SW: result
   %%> What it does:
-  %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed`, a thread to continue that T3 does not hold fails with `tasks.copy_thread_missing`
+  %%> - maps the run's status: `completed` is done, `waiting` asks for input, any other status fails with `tasks.turn_failed`, a cut wait fails with `tasks.turn_timeout`, a start that T3 refused fails with `tasks.copy_turn_failed` and T3's own message, a thread to continue that T3 does not hold fails with `tasks.copy_thread_missing`, a model the catalog does not list fails with `tasks.copy_turn_model_unoffered`
   %%> - a reviewer turn with the detach mark and no restore that reads clean on its branch at its tip fails with `tasks.copy_review_unrestored`, whatever its run did, also when it failed or nothing was launched; the error keeps the run's own error
   %%> - keeps the message text of the thread, all its turns, redacted and bounded to 256 KiB with the newest kept; T3's CLI gives no tool items and no token use
   %%> - records whether the turn is over: nothing was launched, the start printed an end other than a wait for an answer, or T3 lists no thread of this title or lists it in no active state. An unrestored reviewer turn is never over, so it holds its group until `task:cancel`
