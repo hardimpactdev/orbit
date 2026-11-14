@@ -211,6 +211,26 @@ Deno.test("a container default takes its commit from the workspace and finishes 
     assertEquals(create({ workspace: { status: "succeeded", outputs: { stdout: "" } }, deploy: [], processes: "skipped", seed: "skipped" }).failed_step, "workspace");
     assertEquals(create({ launch: "failed", workspace: null, deploy: [], processes: "skipped", seed: "skipped" }).failed_step, "container");
 });
+Deno.test("a clone's result carries the seconds of each part of its phases, names and numbers only", () => {
+    const step = (stdout: string) => ({ status: "succeeded", outputs: { stdout } });
+    const result = (container: Record<string, unknown>, observed: Record<string, string> = {}) =>
+        JSON.parse(createResult({ ...intent, setup_steps: [], container: { clone: { source: "instance-1" } } }, {
+            ...phases, checkout: { status: "skipped" }, setup: "skipped", processes: [], route: "skipped",
+            container: { launch: "succeeded", workspace: step(`orbit-commit=${commit}\n`), deploy: [], processes: "succeeded", seed: "skipped",
+                t3: "succeeded", register: "succeeded", server: null, ...container },
+            ...observed,
+        }).stdout);
+    const launched = step('orbit-mail=unchanged\n{"phase":"container","changed":true,"timings":{"acl":0.01,"copy":0.4,"firewall":1.2,"Bad Name":3,"start":"x"}}\n');
+    const checkout = step(`orbit-commit=${commit}\n{"phase":"checkout","changes":[],"timings":{"guest":0.6}}\n`);
+    assertEquals(result({ mail: launched, workspace: checkout }, {
+        t3_observation: '{"phase":"t3","ready_at":"2026-11-14T12:48:42.202Z","timings":{"agent":0.5,"t3":4.1}}',
+        sessions_observation: '{"phase":"sessions","checked_at":"2026-11-14T12:48:46.033Z","timings":{"guest":2.4}}',
+    }).timings, { container: { acl: 0.01, copy: 0.4, firewall: 1.2 }, checkout: { guest: 0.6 }, t3: { agent: 0.5, t3: 4.1 }, sessions: { guest: 2.4 } });
+    // A phase that printed no timings (a release before them), or failed, gives none; no phase at all gives no `timings`.
+    assertEquals(result({ mail: launched, workspace: { status: "failed", outputs: { stdout: checkout.outputs.stdout } } }).timings,
+        { container: { acl: 0.01, copy: 0.4, firewall: 1.2 } });
+    assertEquals("timings" in result({ mail: step('{"phase":"container","changed":true}') }), false);
+});
 Deno.test("a clone finishes only with its registered T3 server, which the receipt carries; it has no deploy step or seed", () => {
     const server = JSON.stringify({
         environment_id: "env-9",

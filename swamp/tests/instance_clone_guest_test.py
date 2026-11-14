@@ -305,7 +305,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
                 # The agent part of the T3 step wrote the agent's Git identity.
                 return subprocess.CompletedProcess(argv, 0, "Orbit Agent\n", "")
             if actual[0] == "git":
-                actual = [str(self.base / "tmp/proof.bundle") if a == container["bundle"] else a for a in actual]
+                actual = [str(self.base / "tmp/proof.bundle") if a == container.get("bundle") else a for a in actual]
                 self.git_calls.append((actual, _kwargs.get("env", {})))
                 # In a container another user owns /srv/workspace, and only `orbit`'s global configuration trusts it: a call without
                 # that configuration sees a foreign owner, as Git's own test switch makes it.
@@ -416,6 +416,35 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         # The result names the commit the workspace started at, not the user's.
         self.assertEqual(result["commit"], self.expected)
         self.assertEqual(self.phase("sessions")["phase"], "sessions")
+
+    def seed_branch(self, task=False):
+        """A clone of a new branch at the seed's commit: the Node pushes no bundle, so the container names none."""
+        container = self.task_copy() if task else {"instance_id": 9, "workspace": "/srv/workspace", "branch": "fix-login",
+                                                   "expected_commit": self.expected, "php": None, "environment_file": "/srv/workspace/.env",
+                                                   "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
+        container.pop("bundle", None)
+        container["branch"] = "fix-login"
+        return container
+
+    def test_a_new_branch_at_the_seeds_commit_is_checked_out_from_the_seeds_own_repository(self):
+        # The seed: the default's branch at the seed's commit. No bundle reaches the copy.
+        self.seed("main", self.expected)
+        result = self.phase("checkout", self.seed_branch())
+        self.assertIn("checkout", result["changes"])
+        self.assertEqual((self.branch(), self.head(self.workspace)), ("fix-login", self.expected))
+        self.assertEqual(self.mark()[0], {"instance_id": 9, "commit": self.expected})
+        self.assertFalse(any("fetch" in call for call, _ in self.git_calls))
+        # The branch has no origin ref: it is not on GitHub.
+        self.assertNotEqual(subprocess.run(["git", "rev-parse", "--verify", "--quiet", "refs/remotes/origin/fix-login"], cwd=self.workspace,
+                                           capture_output=True, check=False).returncode, 0)
+
+    def test_a_task_copy_of_a_new_branch_at_the_seeds_commit_is_still_cleaned_to_it(self):
+        self.default_tree()
+        result = self.phase("checkout", self.seed_branch(task=True))
+        self.assertEqual((self.branch(), self.head(self.workspace)), ("fix-login", self.expected))
+        self.assertEqual(self.git(self.workspace, "status", "--porcelain", "--untracked-files=all").stdout, "")
+        self.assertEqual(result["cleaned"]["removed"], ["pkg/", "tests/", "wip.txt"])
+        self.assertTrue((self.workspace / "vendor/package/x.php").exists())
 
     def task_copy(self):
         return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
@@ -851,6 +880,8 @@ class CloneGuestTest(unittest.TestCase):
                 "mirror": folder,
                 "branch": "feature",
             }
+            # A fetched branch: the Node's mirror holds it, so the phase pushes it in as a bundle.
+            Path(folder, "HEAD").write_text("ref: refs/heads/feature\n")
             output = io.StringIO()
             with (
                 patch.object(
