@@ -62,8 +62,9 @@ final readonly class NativeDevelopmentInstanceInput
         }
 
         $testing = $environment->testing($instance);
-        // A clone's create ends when its thread is usable: its completion creates the database, starts a nested fleet and publishes the
-        // Route (NativeInstanceCompleteInput), so its create run gets none of them and no vault copy for them.
+        // A clone's create ends when its thread is usable: its completion creates the database and starts a nested fleet
+        // (NativeInstanceCompleteInput), so its create run gets neither and no vault copy for them. Its Route is the admitted one: present
+        // only when the admission took the free Route Nodes (ClonePublication).
         $clone = $container !== null && (ValidatedData::object($container)['clone'] ?? null) !== null;
         $server = $clone || ($plan['server_database'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_database']));
         $valkey = $clone || ($plan['server_valkey'] ?? null) === null ? null : $this->serverDatabase($operation, ValidatedData::object($plan['server_valkey']));
@@ -74,7 +75,7 @@ final readonly class NativeDevelopmentInstanceInput
         $club = NestedFleetClubKey::forRun($container === null ? null : ValidatedData::object($container));
 
         return ['intent' => [...$plan, 'container' => $club['container'], 'ssh_execution' => $input['ssh_execution'],
-            ...($clone ? ['database' => null, 'route' => null] : []),
+            ...($clone ? ['database' => null] : []),
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),

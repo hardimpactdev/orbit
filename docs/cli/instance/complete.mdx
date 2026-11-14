@@ -1,7 +1,7 @@
 ---
 title: "orbit instance:complete"
 sidebarTitle: "instance:complete"
-description: "Finish the setup of a container clone: start its Processes, fill its database, publish its Route, and make it active."
+description: "Finish the setup of a container clone: start its Processes, fill its database, publish its Route if the create did not, and make it active."
 covers:
   - apps/gateway/app/Actions/Instances/StartInstanceCompleteAction.php
   - apps/gateway/app/Domain/Instances/{InstanceCompleteProjection,NativeInstanceCompleteInput}.php
@@ -23,13 +23,13 @@ orbit instance:complete <instance> [--idempotency-key=KEY] [--json]
 | `--idempotency-key=KEY` | generated | Reuse an [Operation start](/reference/operations#start-an-operation). |
 | `--json` | off | Print the final Operation as [JSON](/reference/cli-ux#input-and-output-modes). |
 
-A clone's create ends when its workspace is checked out and its T3 server is registered. The completion does the rest: it creates and fills the clone's database, starts a nested fleet, starts the Processes, publishes the Route and checks the clone. Only a completion that succeeds makes the clone `active`. [Complete a clone](/reference/development-containers#complete-a-clone) explains the two Operations.
+A clone's create ends when its workspace is checked out and its T3 server is registered. The completion does the rest: it creates and fills the clone's database, starts a nested fleet, starts the Processes and checks the clone. It publishes the Route only when the Route's sites are not published: the create found the Route's Nodes held, or its publication failed, or an earlier completion failed to publish it. Only a completion that succeeds makes the clone `active`. [Complete a clone](/reference/development-containers#complete-a-clone) explains the two Operations.
 
 The create's terminal projection starts the first completion by itself, in the transaction that ends the create; the create's result names it in `completion_operation_id`. Run this command to retry after a failed completion.
 
 The Gateway refuses before any change with `instance.complete_unavailable` when the Instance is not a container clone, is not `source_resolved`, has no recorded starting commit, or its T3 server is not registered. An `active` clone is complete, so a repeat after success is refused the same way. Another Operation that holds the Instance gives `operation.target_busy`.
 
-The completion writes no tracked file in the workspace, so the user's work in the checkout stays as it is. A failed or cancelled completion keeps the clone `source_resolved` with `failed_step` and `error_code`. The container keeps running and T3 keeps its thread. A Route that the run published is withdrawn again. The result's `recovery` names this command as the retry, and [`instance:destroy`](/cli/instance/destroy) to remove the clone. After a dead Process of a Project definition it adds `retry.requires=project_process_definition`: change or remove the definition first. The command takes the Project's development definitions as they are when it starts. A failed completion sends the same failure notification as a failed create.
+The completion writes no tracked file in the workspace, so the user's work in the checkout stays as it is. A failed or cancelled completion keeps the clone `source_resolved` with `failed_step` and `error_code`. The container keeps running and T3 keeps its thread. A Route that the run published is withdrawn again. An address the create published stays up and answers 502 until a retry or [`instance:destroy`](/cli/instance/destroy), which withdraws it; a retry that succeeds keeps it as it is. The result's `recovery` names this command as the retry, and [`instance:destroy`](/cli/instance/destroy) to remove the clone. After a dead Process of a Project definition it adds `retry.requires=project_process_definition`: change or remove the definition first. The command takes the Project's development definitions as they are when it starts. A failed completion sends the same failure notification as a failed create.
 
 The API is `POST /api/v1/instances/{instance}/complete`. The MCP tool is `instance-complete`. Conn's Retry calls [`POST /api/v1/conn/instances/{instance}/complete`](/reference/conn#retry-a-completion), the same admission.
 
@@ -53,6 +53,6 @@ A destroy from the CLI while the completion runs refuses with `operation.target_
 | `instance.create_workspace_failed` | The services part of the workspace failed. |
 | `instance.container_process_inactive` | A Process unit is not running. `process_failure` names it. |
 | `instance.complete_check_failed` | The check of the clone failed for another reason. |
-| `instance.create_route_failed` | The Route publication or its TLS probe failed. |
+| `instance.create_route_failed` | The Route publication or its TLS probe failed in this completion, after the create did not publish it. Retry with this command. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |

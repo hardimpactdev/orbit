@@ -245,6 +245,16 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         container: {phase: "container", output: container?.mail}, checkout: {phase: "checkout", output: container?.workspace},
         t3: {phase: "t3", output: phases.t3_observation}, sessions: {phase: "sessions", output: phases.sessions_observation},
     }) : null;
+    // A clone's Route publication never decides its create: the create ends at the registration, and a Route that is not published
+    // gets its completion's publication (docs/reference/development-containers.md#the-address-during-the-create). The Gateway reads
+    // a clone create without `route` and with a Route as `deferred`.
+    const publication = (intent.container as {clone?: unknown} | null)?.clone != null && intent.route != null
+        ? (phases.route === "succeeded" && certificates.every((status) => status === "succeeded") ? "published" : "failed")
+        : null;
+    const warnings = [
+        ...(mail?.status === "failed" ? [{code: "instance.mail_update_failed", step: "mail"}] : []),
+        ...(publication === "failed" ? [{code: "instance.create_route_failed", step: "route"}] : []),
+    ];
     const result = {
         instance_id: intent.instance_id,
         ready: failed === undefined,
@@ -258,7 +268,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
         ...(mail ? {mail} : {}),
         ...(club ? {club_key: club} : {}),
         ...(timings ? {timings} : {}),
-        ...(mail?.status === "failed" ? {warnings: [{code: "instance.mail_update_failed", step: "mail"}]} : {}),
+        ...(publication ? {route_publication: publication} : {}),
+        ...(warnings.length > 0 ? {warnings} : {}),
         ...(failed
             ? {
                 failed_step: failed[0],
@@ -300,8 +311,8 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
 /**
  * A container default's phases in order: the container, the workspace with its commit, each development deploy step, the
  * Processes, the Route and the seed snapshot. A clone's create ends when its thread is usable: the copy, the checkout with its commit,
- * the T3 step (the agent's files, then T3) and the registration, whose receipt must name the server. Its database, a nested fleet,
- * the Processes and the Route are its completion's (complete_result.ts).
+ * the T3 step (the agent's files, then T3) and the registration, whose receipt must name the server. Its database, a nested fleet and
+ * the Processes are its completion's (complete_result.ts); its Route is `route_publication`, which never decides the create.
  */
 function containerOutcomes(
     intent: Record<string, unknown>,

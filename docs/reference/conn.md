@@ -494,7 +494,20 @@ Operation show returns the same recorded `steps` as core Operation show, in reco
 
 Conn maps these stable container-clone step names to stage detail, in this order: `clone-container`, `clone-workspace`, `clone-t3`, `clone-register`. Other steps can occur between them. `clone-t3` runs beside `clone-workspace`, so it can start and end before `clone-workspace` ends; `clone-register` always comes after both. Renaming or removing any of these four names is a breaking change for Conn. `clone-workspace` runs only the checkout part now: the branch, the checkout mark and `.env`.
 
-A succeeded `instance.create` means the thread is usable: T3 is registered and the workspace is checked out. It does not mean fully set up. The create's result names the clone's completion in `completion_operation_id`; the database, the Processes, a nested fleet and the Route follow there, and only the Instance's `status: active` means fully set up ([Complete a clone](/reference/development-containers#complete-a-clone)). A Conn build that does not follow the completion marks every create row done at the create's success: `Copy the container`, `Copy the workspace`, `Start the T3 server` and `Register with Orbit` are done then, and `Publish the address` is not published yet. A failed baseline read fails the create at `Register with Orbit`.
+A succeeded `instance.create` means the thread is usable: T3 is registered and the workspace is checked out. It does not mean fully set up. The create's result names the clone's completion in `completion_operation_id`; the database, the Processes and a nested fleet follow there, and only the Instance's `status: active` means fully set up ([Complete a clone](/reference/development-containers#complete-a-clone)). A Conn build that does not follow the completion marks every create row done at the create's success: `Copy the container`, `Copy the workspace`, `Start the T3 server` and `Register with Orbit` are done then. A failed baseline read fails the create at `Register with Orbit`.
+
+The address of a clone with a Route is published in the create when its Route Nodes are free at admission, else in the completion ([the address during the create](/reference/development-containers#the-address-during-the-create)). The create's steps then hold job `publication`: `clone-route-csr-<i>` per certificate leaf and `clone-route`, with the Route create children (`csr`, `sign`, `Install cert, publish site-<i>`, `site`, `Publish private DNS-<i>`, `records`, `catalog`, `restart`, `Probe the site over TLS-<i>`). The create's `result.route_publication` names the outcome:
+
+| `route_publication` | Create steps | Completion steps | `Publish the address` |
+| --- | --- | --- | --- |
+| `published` | `clone-route-csr-<i>` and `clone-route` succeeded | no `route-csr-<i>`; `route` skipped | done when `clone-route` ends |
+| `deferred` | `clone-route` skipped; no `clone-route-csr-<i>` | job `publication`: `route-csr-<i>` and `route`, as before | follows the completion's job `publication` |
+| `failed` | a `clone-route-csr-<i>` or `clone-route` failed; the create still succeeds | job `publication` publishes again | follows the completion's job `publication`; its failure is `failed_step: route`, `instance.create_route_failed`, and Retry is `instance:complete` |
+| absent | no Route: `clone-route` skipped | `route` skipped | done |
+
+The step names and jobs that installed Conn builds map stay: the completion's job `publication` with `route-csr-<i>` and `route`, the completion's `failed_step: route`, the create's clone steps, and the older names `csr`, `sign`, `clone-route`, `site` and the address prefixes.
+
+An installed build that maps create steps by name shows `clone-route` and its children on `Publish the address` during the create, ignores `clone-route-csr-<i>`, `records`, `catalog` and `restart`, and marks the row running again at the create's success until the completion ends. So after `published` the row can read done, then running for the about 7 seconds of the completion, then done; it is never done before the address answers TLS. A newer build reads `route_publication`: `published` keeps the row done; `deferred` and `failed` follow the completion's job `publication`.
 
 A server of an Instance names its `instance_id` and the container's `power_state`, `running` or `stopped`. Other servers have `null` for both. Conn shows a `stopped` server as asleep.
 
@@ -570,7 +583,7 @@ The removal starts when the completion has ended. The completion's SSH and shell
 
 A database fill that already runs is not cut: the cancel waits until the fill has ended, within its 600-second limit ([Cancel an operation](/reference/operations#cancel-an-operation)). Meanwhile the removal shows `waiting` and the completion keeps the clone's lock and its Route hold. Then the completion takes the cancel, withdraws its Route and ends, and the removal drops a database that no copy touches.
 
-Three cases are not covered. A run that the Gateway times out or loses during the fill gets the cancel at once, so its copy can still outlive it. A cancel that reaches Swamp in the moment the fill starts, before the Gateway has recorded that start, can cut it. A CLI destroy of a clone whose create still runs its fill is admitted beside the create, and can race that copy.
+Two cases are not covered. A run that the Gateway times out or loses during the fill gets the cancel at once, so its copy can still outlive it. A cancel that reaches Swamp in the moment the fill starts, before the Gateway has recorded that start, can cut it.
 
 The removal's run budget counts from its start, not from its admission. Several removals at once each wait for their own clone's completion; removals that share Route Nodes start one after another, oldest first, as every Route write does.
 
@@ -579,6 +592,12 @@ While the completion runs, the remove sheet's read answers as for any running co
 A retry of a removal never starts after a completion that an earlier call named: from Conn it cancels the running completion and waits again; from the CLI it refuses while the completion runs.
 
 The CLI and the core API keep their refusal: `instance:destroy` while the completion runs answers `operation.target_busy` (409) with `details.operation_id`, the completion. Follow it to its end, or cancel it, then destroy again.
+
+### Remove a clone whose create runs
+
+A removal while the clone's create runs is accepted at once from every caller: Conn, the CLI and the core API. In one transaction the Gateway records the cancel of the create and admits the removal with status `waiting` and `after_operation_id` set to the create. The call answers 202. Swamp is asked to stop the create after the commit, and the reconciler asks again on each pass until it stops. A create that had not started yet ends `cancelled` at once.
+
+The removal starts when the create has ended. The create's own `withdraw-route` step takes back a publication that it started and did not finish. A removal admitted during the create marks the Route retiring, so an address that `clone-route` publishes after it stays down, and the removal's withdrawal captures the clone's site in either state. The create's end records nothing of the removed clone and admits no completion. Several removals at once each wait behind their own clone's create. Conn's cancel of an `instance.create` still answers 404.
 
 The same caller, key, Instance ID and body return the same Operation with HTTP 202, even after the Instance was deleted. Reusing the key with a changed body refuses with `operation.idempotency_conflict` (409). A missing Instance without that receipt keeps the normal 404.
 

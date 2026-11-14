@@ -11,6 +11,7 @@ use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Data\Tasks\StartTaskCheckData;
 use App\Data\Tasks\TaskTurnData;
+use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -21,12 +22,14 @@ use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\InstanceThreadContribution;
 use App\Domain\Instances\InstanceThreadContributions;
+use App\Domain\Instances\NativeDevelopmentInstanceInput;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
+use App\Domain\Operations\RoutePublicationHolds;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AgentThreadState;
@@ -57,6 +60,7 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Route;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
@@ -140,16 +144,22 @@ beforeEach(function (): void {
  * A Project and its container default as a finished create (and, for a nested-fleet Project, refresh) leaves it: active, running, with
  * a seed. A nested-fleet Project's Node has its switch on; any other Project's default is a plain container.
  */
-function copySource(string $slug = 'trial', bool $nested = true): Instance
+function copySource(string $slug = 'trial', bool $nested = true, bool $web = false): Instance
 {
     $node = Node::query()->where('name', 'beast')->first() ?? containerDefaultNode();
+    if ($web) {
+        $node->update(['tld' => 'beast.test']);
+    }
     if ($nested) {
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true]]);
     }
     Http::fake(['api.github.com/repos/nckrtl/'.$slug => Http::response(['full_name' => 'nckrtl/'.$slug, 'private' => false])]);
-    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => 'node-package', 'repository_url' => 'https://github.com/nckrtl/'.$slug.'.git',
-        'default_branch' => 'main', 'root' => '.', 'is_laravel' => false, 'source_facts_captured_at' => now(), 'nested_fleet' => $nested]);
+    // A web-serving Project's default and copies have a Route each; a node package has none.
+    $project = Project::query()->create(['name' => $slug, 'slug' => $slug, 'type' => $web ? 'laravel-app' : 'node-package', 'repository_url' => 'https://github.com/nckrtl/'.$slug.'.git',
+        'default_branch' => 'main', 'root' => $web ? 'public' : '.', 'is_laravel' => false, 'php_version' => $web ? '8.5' : null, 'source_facts_captured_at' => now(), 'nested_fleet' => $nested]);
     $default = Instance::query()->findOrFail(containerCreate($project, $node->refresh())->target_id);
+    // The default's create published its Route; an active routed Instance needs it active.
+    Route::query()->where('project_id', $project->id)->update(['status' => 'active', 'sites_published' => true]);
     $default->update(['status' => InstanceState::Active, 'first_setup_pending' => false]);
     // The nested-fleet default that tasks copy today was made before the inner volume, so it records none
     // (docs/reference/development-containers.md#the-inner-volume); a test that needs the volume sets it.
@@ -559,6 +569,48 @@ describe('a task start on the copy path', function (): void {
         expect(copyRefusal(fn () => startCopy($group)))->toBe('tasks.copy_name_taken 409');
         $group->update(['status' => TaskGroupStatus::Backlog]);
         expect(copyRefusal(fn () => startCopy($group)))->toBe('tasks.not_todo 409');
+    });
+});
+
+describe('the address of a copy (docs/reference/development-containers.md#the-address-during-the-create)', function (): void {
+    it('keeps the nested-fleet task copy of Project 78\'s kind route-free: no Route, no publication, no hold', function (): void {
+        swampVaultStandIn();
+        // Guard: `requiresRoute()` is false for a Project that serves no web pages, so the admission captures nothing.
+        $operation = startCopy(copyGroup(copySource()->project));
+
+        expect($operation->input['route_id'])->toBeNull()
+            ->and($operation->input)->not->toHaveKey('route_create')
+            ->and(RoutePublicationHolds::nodes($operation))->toBe([])
+            ->and(app(NativeDevelopmentInstanceInput::class)->create($operation)['intent']['route'])->toBeNull();
+    });
+
+    it('publishes the address of a web-serving nested-fleet task copy in its create when the Node is free; copies started together publish one and defer the rest', function (): void {
+        swampVaultStandIn();
+        $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
+        config(['orbit.tasks.copies_max' => 3]);
+        // The Swamp Node probes the Route over SSH: it needs its host key.
+        Node::query()->where('name', 'control')->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']);
+        $default = copySource('site', true, true);
+        // The default's create has ended: its hold of the Node is gone.
+        DB::table('route_publication_holds')->delete();
+        $first = startCopy(copyGroup($default->project));
+        $second = startCopy(copyGroup($default->project));
+        $third = startCopy(copyGroup($default->project));
+
+        expect(DB::table('route_publication_holds')->pluck('operation_id')->all())->toBe([$first->id])
+            ->and($first->input['route_id'])->not->toBeNull()
+            ->and($first->input)->toHaveKey('route_create')
+            ->and(app(NativeDevelopmentInstanceInput::class)->create($first)['intent']['route'])->toBe($first->input['route_create']);
+        foreach ([$second, $third] as $deferred) {
+            expect($deferred->refresh()->status)->not->toBe(OperationStatus::Waiting)
+                ->and($deferred->input['route_id'])->not->toBeNull()
+                ->and($deferred->input)->not->toHaveKey('route_create')
+                ->and(RoutePublicationHolds::nodes($deferred))->toBe([]);
+        }
+        // The copy is a nested-fleet clone: its Club key comes in the same run as its publication.
+        $run = app(NativeDevelopmentInstanceInput::class)->create($first);
+        expect($run['intent']['container']['project'])->toBe(InstancePlacement::NestedProject)
+            ->and($run['intent']['container']['club_key'] ?? null)->not->toBeNull();
     });
 });
 

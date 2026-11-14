@@ -490,7 +490,11 @@ An operation holds its target from the start request to its terminal status. A s
 
 ### One Route write per Node
 
-A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)). A clone's `instance.create` captures no Route publication, so it holds no Node; its `instance.complete` holds them. The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
+A Route write holds the Nodes that serve its site, from admission to its terminal status ([Coordinate publication](/reference/routes#coordinate-publication)).
+
+A clone's `instance.create` takes its Nodes only when they are all free at admission, and never waits: with one held, it drops its publication and its `instance.complete` publishes and holds them. A clone's create that took them gives them back when its `clone-route` step ends: the run's progress event of that step turns the Route `active` and frees the Nodes in one transaction. An `instance.complete` of a Route that its create published captures no publication and holds no Node.
+
+The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
 `instance.destroy` gives its Nodes back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
 
