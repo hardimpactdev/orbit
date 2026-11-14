@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "ae97f27291fc53e9017ed3e677fb194976b3b930bdbde43b12ab533bd1222e71"
+source_sha256 = "3e5191579d4a3e29663a965662752e837a94588707fd029001b912434a020838"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -9,6 +9,7 @@ cases = [
   "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
+  "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
   "a clone copies the seed, takes its own address, ACL, firewall rules and T3 port, starts T3 and hands over its sessions; a rerun changes nothing",
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes",
@@ -92,9 +93,15 @@ cases = [
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left",
 ]
 file = "swamp/tests/ansible_instance_container_test.ts"
-cost = 4029
+cost = 4042
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
+  # its start phase, and a later phase's failure; about 145s locally): a 72nd slice would push the file above the 8-shard PR limit. The PR keeps the merged plays of a normal
+  # default's deploy (start,fetch and seed,check), a refusal in the second phase and a failed first phase in "a deployment checks out
+  # the branch's new commit", at its former cost, and a failed fleet_refresh in a four-phase play in "a nested-fleet default runs its
+  # fleet phases by tag"; the workflow test checks the handler flush after each phase.
+  "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   # The deploy-step record across four checkouts (45s locally, run in full before the PR): a 72nd slice would defer the whole file. The PR
   # keeps the decision's expressions in cases.yaml (deploy-steps-read) and the guard and argv in workflow_instance_deploy_steps_test.ts.
   "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
@@ -175,7 +182,7 @@ inputs = [
 [case_costs]
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary" = 72 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 43.6-73.7s
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing" = 135 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 82.0-126.2s; plus 11s ESTIMATE for three workspace runs of the .env exclude (local 5s x 2.1, rounded up)
-  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s
+  "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses" = 144 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 96.9-146.7s; the merged plays (2026-11-14) ran as long locally: 63-68s on main, 65-67s merged
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP" = 57 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 33.6-61.7s
   "the agent phase preserves runtime JSON keys, repairs managed keys and reruns without changes" = 68 # p90 of 21 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 36.0-71.1s
   "a clone refuses a seed that a deployment replaced, and fails with instance.t3_unready when T3 does not answer" = 91 # p90 of 19 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 56.5-95.7s
@@ -241,6 +248,6 @@ inputs = [
   "a nested-fleet start refuses the key transfer by name, before it reads the value: pipelining turned off" = 16 # ESTIMATE: fewer than five hosted runs (2, max 14.5s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a nested-fleet start refuses a /run that is not a tmpfs, before it reads the value" = 17 # ESTIMATE: fewer than five hosted runs (2, max 15.7s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a normal container's create and deploy start run no Club key task and no Club key command" = 48 # ESTIMATE: fewer than five hosted runs (1, max 46.7s); largest of the earlier estimate and hosted max rounded up plus 1s
-  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 87 # p90 of 5 completed hosted PR runs on 2026-11-13, rounded up, plus 1s; range 56.1-86.4s
+  "a nested-fleet default runs its fleet phases by tag, retakes its seed at the same commit and refuses a Club key on its disk" = 100 # p90 87 of 5 completed hosted PR runs on 2026-11-13 (range 56.1-86.4s), plus 13s ESTIMATE for the failed four-phase play (local 47, 51 and 58s on main, 59, 51 and 64s with it: 6s x 2.1, rounded up)
   "a failed nested-fleet deployment restores the newest seed with the container stopped, and refuses when no seed is left" = 77 # ESTIMATE: fewer than five hosted runs (2, max 75.5s); largest of the earlier estimate and hosted max rounded up plus 1s
   "a deployment at the seed's commit retakes the seed; a seed phase outside a deployment keeps it" = 72 # ESTIMATE: local 23s against 22s local for the converted-store seed case (69), rounded up

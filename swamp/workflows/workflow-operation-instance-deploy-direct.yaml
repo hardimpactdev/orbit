@@ -1756,7 +1756,8 @@ jobs:
   steps:
   - name: Write the container intent
     # A default Instance in a container deploys in it (docs/cli/instance/container/deploy-default.mmd). Each machine phase is a tag of
-    # instance-container.yml; the Project's commands run in the container as `orbit`, each from its own vault copy.
+    # instance-container.yml, and one step runs the phases that share their failure handling; the Project's commands run in the
+    # container as `orbit`, each from its own vault copy.
     labels:
       role: swamp
     writes: true
@@ -1769,7 +1770,14 @@ jobs:
       inputs:
         intent: ${{ inputs.intent }}
         path: ${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}
-  - name: Start the container
+  - name: Prepare the container
+    # The container's phases before the checkout, in one play and in this order (docs/cli/instance/deploy.mmd): `start`, the one start
+    # of the container; for a nested-fleet default (only its intent has `fleet`) its one fleet check, `fleet_start`, and the seed of the
+    # default as it is, fleet included, `seed` (docs/cli/instance/container/fleet-refresh.mmd); then `fetch`. None of them changes the
+    # workspace, so a failure in any of them restores nothing. The phases share one play start, about 2.5 s each. The fleet check reads
+    # the room a refresh needs first (`fleet_room_check`) and refuses instance.container_fleet_no_room or instance.container_fleet_drift;
+    # the failed phase names the code. Each phase writes the result file as it ends, as its own play did, so a play that is killed
+    # later keeps what the earlier phases did.
     labels:
       role: swamp
     writes: true
@@ -1781,10 +1789,10 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-start-" + string(inputs.node_id) }}
+      behaviorName: ${{ "instance-deploy-container-prepare-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"
+        run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true "$ORBIT_ANSIBLE/instance-container.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
@@ -1793,107 +1801,19 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "start,fleet_start,seed,fetch" : "start,fetch" }}'
+          # The sum of the bounds of the phases it runs: start 120, fetch 400, and for a nested fleet the check 400 and the seed 120.
+          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "1040" : "520" }}'
           # Only a nested-fleet container's start gets its Club key, from its one vault copy; Ansible passes it on stdin. Any other run
           # names a key it always has, which Ansible never delivers (docs/reference/swamp-command-steps.md#secret-inputs).
           ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
-  - name: Check the inner fleet
-    # A nested-fleet default checks its inner fleet once, before the run changes anything (docs/cli/instance/container/fleet-refresh.mmd):
-    # it compares the fleet with the fleet rules, starts a nested container that is stopped and brings up the tunnel, with no Doctor wait.
-    # A fleet that differs where Orbit does not write is refused with instance.container_fleet_drift; nothing changed, so no seed is
-    # restored. Like a start, it starts what is stopped, sets the Club key link and brings up the tunnel; it writes no key. First it reads
-    # the room a refresh needs and refuses instance.container_fleet_no_room when the inner Doctor's floor could not hold.
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Start the container
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps.exists(k, steps[k].status == "failed") }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fleet-check-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_start -e fleet_room_check=true "$ORBIT_ANSIBLE/instance-container.yml"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_RUN_ID: ${{ run.id }}
-          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
-          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
-          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
-          ANSIBLE_FORCE_COLOR: '0'
-          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-  - name: Keep the current seed
-    # A nested-fleet default first retakes its seed as it is, fleet included, so a failed refresh restores that seed and never one
-    # from before the fleet (docs/cli/instance/container/fleet-refresh.mmd). It refuses while the Club key is on the disk.
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Start the container
-      condition:
-        type: succeeded
-    - step: Check the inner fleet
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps.exists(k, steps[k].status == "failed") }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fleet-keep-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_RUN_ID: ${{ run.id }}
-          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
-          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
-          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
-          ANSIBLE_FORCE_COLOR: '0'
-          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-  - name: Fetch into the mirror
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Start the container
-      condition:
-        type: succeeded
-    - step: Keep the current seed
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fetch-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 400 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fetch "$ORBIT_ANSIBLE/instance-container.yml"
-        env:
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
-          ORBIT_RUN_ID: ${{ run.id }}
-          ORBIT_ANSIBLE: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets : "" }}'
-          ANSIBLE_CONFIG: '${{ "Write the container intent" in steps && steps["Write the container intent"].status == "succeeded" ? steps["Write the container intent"].outputs.assets + "/ansible.cfg" : "" }}'
-          ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
-          ANSIBLE_FORCE_COLOR: '0'
-          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
           ORBIT_GIT_CREDENTIAL: ${{ vault.get(inputs.execution_secrets.credential.vault, inputs.execution_secrets.credential.key) }}
   - name: Check out in the container
     labels:
       role: swamp
     writes: true
     dependsOn:
-    - step: Fetch into the mirror
+    - step: Prepare the container
       condition:
         type: succeeded
     guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
@@ -1973,9 +1893,12 @@ jobs:
       item: step
       in: '${{ inputs.intent.deployment.variant != "container" ? [] : inputs.intent.deployment.steps }}'
     concurrency: 1
-  - name: Install the Processes
-    # The Project's development Processes: changed units and environment files go in and restart, and a moved commit restarts the
-    # Processes that restart on deploy. Each environment file comes from the vault.
+  - name: Finish the container
+    # The container's phases after the checkout and the dev deploy steps, in one play and in this order: `processes`, the Project's
+    # development Processes (changed units and environment files from the vault go in and restart, and a moved commit restarts the
+    # Processes that restart on deploy); for a nested-fleet default `fleet_refresh`, which refreshes its running inner fleet so clones
+    # copy a fleet on the new commit; `seed`, the seed snapshot; and `check`. A failure in any of them restores the old seed of a
+    # nested-fleet default. The handlers a phase notifies run before the next phase, and each phase writes the result file as it ends.
     labels:
       role: swamp
     writes: true
@@ -1990,10 +1913,10 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-processes-" + string(inputs.node_id) }}
+      behaviorName: ${{ "instance-deploy-container-finish-" + string(inputs.node_id) }}
       methodName: execute
       inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags processes "$ORBIT_ANSIBLE/instance-container.yml"
+        run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" "$ORBIT_ANSIBLE/instance-container.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_RUN_ID: ${{ run.id }}
@@ -2002,83 +1925,19 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ORBIT_PHASES: '${{ "fleet" in inputs.intent ? "processes,fleet_refresh,seed,check" : "processes,seed,check" }}'
+          # The sum of the bounds of the phases it runs: processes 120, seed 120, check 60, and for a nested fleet the refresh 4,200.
+          ORBIT_PHASE_SECONDS: '${{ "fleet" in inputs.intent ? "4500" : "300" }}'
           ORBIT_PROCESS_ENVIRONMENTS: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.credential.key) }}'
-  - name: Refresh the inner fleet
-    # A nested-fleet default (only its intent has `fleet`) refreshes its running inner fleet before the seed, so clones copy a fleet on
-    # the new commit. Every other deployment skips it. It starts again what it stopped for `base`, so the fleet runs after it.
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Install the Processes
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps.exists(k, steps[k].status == "failed") }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fleet-refresh-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 4200 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_refresh "$ORBIT_ANSIBLE/instance-container.yml"
-        env: *container_ansible
-  - name: Take the seed snapshot
-    labels:
-      role: swamp
-    writes: true
-    dependsOn:
-    - step: Install the Processes
-      condition:
-        type: succeeded
-    - step: Refresh the inner fleet
-      condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-seed-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags seed "$ORBIT_ANSIBLE/instance-container.yml"
-        env: *container_ansible
-  - name: Check the container
-    labels:
-      role: swamp
-    dependsOn:
-    - step: Take the seed snapshot
-      condition:
-        type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-check-" + string(inputs.node_id) }}
-      methodName: execute
-      inputs:
-        run: timeout 60 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags check "$ORBIT_ANSIBLE/instance-container.yml"
-        env: *container_ansible
   - name: Restore the old seed
     # A nested-fleet default that failed after its container changed (from the checkout on) goes back to its newest seed, the one
-    # "Keep the current seed" took or a newer one, and starts again through `start`, so the start delivers what every start delivers.
+    # the `seed` phase of "Prepare the container" took or a newer one, and starts again through `start`, so the start delivers what every start delivers.
     # The failed phase's result file stays the run's result.
     labels:
       role: swamp
     writes: true
     dependsOn:
-    - step: Start the container
-      condition:
-        type: always
-    - step: Check the inner fleet
-      condition:
-        type: always
-    - step: Keep the current seed
-      condition:
-        type: always
-    - step: Fetch into the mirror
+    - step: Prepare the container
       condition:
         type: always
     - step: Check out in the container
@@ -2087,19 +1946,10 @@ jobs:
     - step: Run dev deploy steps
       condition:
         type: always
-    - step: Install the Processes
+    - step: Finish the container
       condition:
         type: always
-    - step: Refresh the inner fleet
-      condition:
-        type: always
-    - step: Take the seed snapshot
-      condition:
-        type: always
-    - step: Check the container
-      condition:
-        type: always
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2116,7 +1966,7 @@ jobs:
     - step: Restore the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2132,7 +1982,7 @@ jobs:
           ANSIBLE_SSH_ARGS: ${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
-          # The restart is a start of the container, so it delivers the Club key as "Start the container" does.
+          # The restart is a start of the container, so it delivers the Club key as the `start` phase of "Prepare the container" does.
           ORBIT_CLUB_KEY: '${{ vault.get(inputs.execution_secrets.credential.vault, inputs.intent.deployment.variant == "container" && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.credential.key) }}'
   - name: Start the restored fleet
     # The restored seed holds the inner fleet stopped; this starts it and waits for readiness, so the default is as it was before the
@@ -2144,7 +1994,7 @@ jobs:
     - step: Start on the old seed
       condition:
         type: succeeded
-    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Start the container", "Check the inner fleet", "Keep the current seed", "Fetch into the mirror"])) }}
+    guard: ${{ inputs.intent.deployment.variant != "container" || !("fleet" in inputs.intent) || steps["Write the container intent"].status != "succeeded" || !steps.exists(k, steps[k].status == "failed" && !(k in ["Prepare the container"])) }}
     task:
       type: behavior
       behaviorType: command/shell
@@ -2158,10 +2008,7 @@ jobs:
     labels:
       role: swamp
     dependsOn:
-    - step: Start the container
-      condition:
-        type: always
-    - step: Fetch into the mirror
+    - step: Prepare the container
       condition:
         type: always
     - step: Check out in the container
@@ -2170,13 +2017,10 @@ jobs:
     - step: Run dev deploy steps
       condition:
         type: always
-    - step: Install the Processes
+    - step: Finish the container
       condition:
         type: always
-    - step: Take the seed snapshot
-      condition:
-        type: always
-    - step: Check the container
+    - step: Restore the old seed
       condition:
         type: always
     - step: Start on the old seed

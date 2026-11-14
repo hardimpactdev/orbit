@@ -337,7 +337,6 @@
    "Check PHP runtime": "idempotent",
    "Check Process state": "idempotent",
    "Check the checkout lock": "unreviewed",
-   "Check the container": "idempotent",
    "Check the local branch": "unreviewed",
    "Check tracked changes": "unreviewed",
    "Count commits after it": "unreviewed",
