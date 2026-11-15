@@ -230,6 +230,39 @@ class CaptureTest(Fixture):
         self.assertEqual(self.incus.actions, ["freeze"])
 
 
+class ResidualTest(Fixture):
+    def stat(self, anon, file):
+        self.write(os.path.join(self.container, "memory.stat"), f"anon {anon}\nfile {file}\nanon_thp 0\n")
+
+    def test_each_call_reads_the_counters_once_and_a_repeated_sleep_returns_the_last_read(self):
+        self.prepare(11)
+        self.stat(8192, 4096)
+        first = power.residual(self.host, ID, 11)
+        self.assertEqual(first["outcome"], "recorded")
+        self.assertEqual((first["prepared_restore"]["residual_anon_bytes"], first["prepared_restore"]["residual_file_bytes"]),
+                         (8192, 4096))
+        self.stat(0, 0)
+        last = power.residual(self.host, ID, 11)
+        self.assertEqual(last["prepared_restore"]["status"], "ready")
+        self.assertEqual((last["prepared_restore"]["residual_anon_bytes"], last["prepared_restore"]["residual_file_bytes"]), (0, 0))
+        again = power.prepare(self.host, ID, 13, self.intent(13))
+        self.assertEqual(again["prepared_restore"], last["prepared_restore"])
+        self.assertEqual(self.incus.actions, ["freeze"])
+
+    def test_another_sleep_or_a_container_that_is_not_frozen_changes_nothing(self):
+        self.prepare(11)
+        self.stat(8192, 0)
+        path = os.path.join(self.state, "instances", str(ID), "sleep.json")
+        before = open(path).read()
+        self.assertEqual(power.residual(self.host, ID, 12)["outcome"], "not_recorded")
+        self.incus.status = "running"
+        self.assertEqual(power.residual(self.host, ID, 11)["outcome"], "not_recorded")
+        self.incus.status, self.incus.incarnation = "frozen", "uuid-2"
+        self.assertEqual(power.residual(self.host, ID, 11)["state_after"], "missing")
+        self.assertEqual(open(path).read(), before)
+        self.assertEqual(self.kernel.calls, [])
+
+
 class SwapTest(Fixture):
     def test_only_zero_limits_open_and_only_those_close_and_a_vanished_cgroup_does_not_fail(self):
         self.write(os.path.join(self.container, "app", "memory.swap.max"), "33554432\n")
@@ -469,6 +502,7 @@ class EntryTest(Fixture):
                             (["prepare", "--instance", "7", "--operation", "-1"], intent),
                             (["prepare", "--instance", "7", "--operation", "11", "--pid", "1"], intent),
                             (["restore", "--instance=7", "--operation", "11"], intent),
+                            (["residual", "--instance", "7", "--operation", "11"], b""),
                             (["prepare", "--instance", "7", "--operation", "11"], b"x" * (power.MAX_INPUT + 1)),
                             (["prepare", "--instance", "7", "--operation", "11"],
                              json.dumps(dict(self.intent(11), incus_name="instance-8")).encode()),

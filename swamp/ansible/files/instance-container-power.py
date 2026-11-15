@@ -5,6 +5,7 @@
 #   capabilities                                  probe the kernel primitives and write the capability manifest
 #   prepare --instance <id> --operation <opid>    open swap, pause, record the plan, reclaim (intent on stdin)
 #   restore --instance <id> --operation <opid>    validate the plan, restore pages while frozen, unfreeze, close swap
+#   residual --instance <id> --operation <opid>   read the frozen container's memory once and store it in the sleep's result
 #   discard --instance <id> [--plan-only]         remove the Instance's helper files, or only its plan
 # The only dynamic arguments are positive decimal ids. stdout is one JSON object of at most 64 KiB. No address, PID or raw /proc
 # data leaves the helper: results carry counts, sizes and durations only. The kernel is called through ctypes; the scan works on
@@ -1100,6 +1101,31 @@ def restore(host, instance_id, operation_id, intent):
     return dict(result, outcome="resumed", state_after="running")
 
 
+def residual(host, instance_id, operation_id):
+    """Read the frozen container's memory.stat once and store its anonymous and file bytes in sleep.json of the sleep
+    `operation_id`. The sleep phase calls it until both are 0; Ansible owns that wait. It changes nothing when the container is not
+    frozen or sleep.json belongs to another sleep."""
+    target = read_target(host, instance_id)
+    if target is None:
+        raise Refused("no target descriptor")
+    project, name = target["incus_project"], target["incus_name"]
+    live = host.incus.instance(project, name)
+    state = "missing" if live is None or live["incarnation"] != target["incarnation"] else live["status"]
+    result = {"outcome": "not_recorded", "error_code": None, "state_before": state, "state_after": state,
+              "prepared_restore": None}
+    path = os.path.join(host.instance_dir(instance_id), "sleep.json")
+    sleep = read_json(path, MAX_INPUT * 4)
+    if state != "frozen" or not isinstance(sleep, dict) or sleep.get("sleep_operation_id") != operation_id or \
+            not isinstance(sleep.get("prepared_restore"), dict):
+        return result
+    stat = read_value(os.path.join(host.cgroups, host.container_cgroup(project, name), "memory.stat"))
+    counters = dict(line.split() for line in stat.splitlines() if line.count(" ") == 1)
+    prepared = dict(sleep["prepared_restore"], residual_anon_bytes=int(counters["anon"]),
+                    residual_file_bytes=int(counters["file"]))
+    write_json(path, dict(sleep, prepared_restore=prepared))
+    return dict(result, outcome="recorded", prepared_restore=prepared)
+
+
 def discard(host, instance_id, plan_only):
     base = host.instance_dir(instance_id)
     if plan_only:
@@ -1131,7 +1157,7 @@ def parse_args(argv):
 
     if argv == ["capabilities"]:
         return "capabilities", None, None, False
-    if len(argv) == 5 and argv[0] in ("prepare", "restore") and argv[1] == "--instance" and argv[3] == "--operation":
+    if len(argv) == 5 and argv[0] in ("prepare", "restore", "residual") and argv[1] == "--instance" and argv[3] == "--operation":
         return argv[0], number(argv[2]), number(argv[4]), False
     if argv[:2] == ["discard", "--instance"] and len(argv) in (3, 4) and (len(argv) == 3 or argv[3] == "--plan-only"):
         return "discard", number(argv[2]), None, len(argv) == 4
@@ -1154,6 +1180,8 @@ def run(host, argv, stdin, unit):
         body = capabilities(host)
     elif command == "discard":
         body = discard(host, instance_id, plan_only)
+    elif command == "residual":
+        body = residual(host, instance_id, operation_id)
     else:
         raw = stdin.read(MAX_INPUT + 1) if stdin is not None else b""
         intent = parse_intent(raw, instance_id, operation_id) if raw.strip() or command == "prepare" else None
