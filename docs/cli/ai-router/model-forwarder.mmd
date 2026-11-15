@@ -16,6 +16,7 @@ sequenceDiagram
   %%> What it does:
   %%> - renders the guard as `ai-router:task-guard` does, with the Node's WireGuard address added to its sources, or removed
   %%> - renders the forwarder's Caddyfile: the bridge address at port 8319, proxied unchanged to the guard origin; it holds no key
+  %%> - and its two Orbit routes: exactly `/orbit/v1/copy/whoami` and `/orbit/v1/copy/pull-request`, each rewritten to its fixed `/api/v1/copy/...` path on the Gateway's WireGuard address over HTTPS, trusting only `/etc/orbit/agent/ca.pem`; a task copy's own key decides there (docs/reference/ai-router.md#orbit-routes-for-task-copies)
   %%> - pushes vault copies of the task key and the anchor key for the guard; the intent holds neither, and the forwarder gets neither
   %%> - takes the lock `ai_router_guard:<router Node>`, which guard runs share
   %%> Requirements:

@@ -5,7 +5,7 @@ description: "Create a task. It starts in `backlog` unless you ask for `todo`."
 ---
 
 ```bash
-orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--review=MODE] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--pr-mode=MODE] [--json]
+orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--brief=TEXT] [--status=STATUS] [--orchestration=MODE] [--subtasks=FILE] [--preview] [--current-recipe] [--review=MODE] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--pr-mode=MODE] [--issue=NUMBER] [--json]
 ```
 
 | Input | Default | Meaning |
@@ -25,6 +25,7 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--reviewer-model=MODEL` | Project's, else Gateway's | The reviewer's model in a task copy. |
 | `--reviewer-effort=LEVEL` | Project's, else Gateway's | The reviewer's effort in a task copy. |
 | `--pr-mode=MODE` | the Project's, else the Gateway's | What Orbit does once the work of a task in a task copy is done. `review_before_pr`: it waits for `task:publish <task>`. `pr_when_done`: it opens a ready pull request by itself. Any other value returns `task.pr_mode_invalid`. `task:show` returns the mode as `pr_mode` with its source. See [Task group modes](/reference/tasks#task-group-modes). |
+| `--issue=NUMBER` | none | The GitHub issue of the Project's repository that the task works on. The pull request of its task copy then closes it: Orbit adds `Closes #NUMBER` when the reviewer's body does not close it. A number from 1 up; anything else returns `validation.failed` on `issue`. `task:show` returns it as `issue`. See [Closes the issue](/reference/tasks#closes-the-issue). |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
 
 ```bash
@@ -49,6 +50,6 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 
 Use `--parent=ID` in place of `--project=ID` to append a subtask. Its Project and workspace are inherited. A contradictory Project, a child parent, or a deeper hierarchy is refused. `--deliverables=FILE` applies to child creation. Creating in Todo changes board state only. Use `task:start` to start the parent VM.
 
-Parent creation refuses `--deliverables`. Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--pr-mode`, `--preview`, `--current-recipe` and the agent options.
+Parent creation refuses `--deliverables`. Child creation refuses the parent options `--status`, `--orchestration`, `--subtasks`, `--review`, `--pr-mode`, `--issue`, `--preview`, `--current-recipe` and the agent options.
 
 A task that names no agent value takes each one from its Project's default, then from the Gateway; [copy turn agents](/reference/tasks#copy-turn-agents) describes the order and how a turn checks the values against the copy.

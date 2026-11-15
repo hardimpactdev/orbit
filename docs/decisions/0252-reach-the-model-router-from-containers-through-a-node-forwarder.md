@@ -18,6 +18,8 @@ Principle: [Lean](/mission#principles). The guard stays the one rule; the forwar
 
 Per-container usage attribution is open for Nick. This ADR takes the recommendation below.
 
+- **Amended 2026-11-15:** the forwarder is also a task copy's one path to Orbit. It sends exactly two paths, `/orbit/v1/copy/whoami` and `/orbit/v1/copy/pull-request`, to fixed Gateway paths over HTTPS, and still holds no credential. The model key cannot tell containers apart, so each task copy gets its own copy key, stored only as a hash on its runtime and accepted only from its own Node's WireGuard address. It is the one Orbit credential in a copy: it can only send the reviewer's pull request text of the copy's own group, and no Git token enters the copy. See [Orbit routes for task copies](/reference/ai-router#orbit-routes-for-task-copies) and [The copy key](/reference/development-containers#the-copy-key).
+
 ## Context
 
 The [task VM guard](/reference/ai-router#task-vm-guard) is a Caddy on the router's Node, `services`, at port 8318. It passes a request only when it comes from the task VM WireGuard range, carries the one task key, and is a `POST` with no query to one of the inference routes. Then it swaps in the anchor key.
