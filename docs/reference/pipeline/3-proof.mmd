@@ -19,15 +19,14 @@ sequenceDiagram
   %%> - runs the command's cases on the author's own development VM; no new VM
   %%> - the cases file (`swamp/proof/FAMILY/COMMAND.cases.yaml`) names the batch of each case; `swamp/proof/batches.yaml` defines the shared batches and their order; nothing is picked at run time
   %%> - one command per run; in CI, `proof:run` proves each affected command separately, on its own proof VM
-  %%> - a proof child claims a place as any task provision does (Nick, 2026-11-07: docs/cli/task/start.mmd); the claim starts the VM, fetches the PR head onto the warm checkout and starts the containers from `base`, in under 30 s
+  %%> - task VMs are removed: `proof:run` runs each shard in a copy of the proof Project's default ([chart](/cli/proof/run)), which brings in the commit and resets its inner fleet before each batch
   %%> Built, not yet passed live:
-  %%> - the command `orbit proof COMMAND` ([chart](/cli/proof/proof)): the Gateway finds the VM by the calling Node and admits the operation `proof.verify`; Swamp starts `proof-fleet-verify` with this VM as input, with `restore_first` and `final_restore` set; `proof:run` is the CI path on a VM of its own
+  %%> - the command `orbit proof COMMAND --group` ([chart](/cli/proof/proof)): the Gateway admits the operation `proof.verify` on the named group's task copy, and a request without a group is refused with `proof.group_required`; Swamp starts `proof-fleet-verify` with the copy as input, with `restore_first` set; `proof:run` is the CI path in copies of its own
   %%> - built: the cases file format, the runner and the Swamp workflows `proof-fleet-verify` and `proof-fleet-verify-batch`, which run the batches and the cases below, and `proof-fleet-restore`, which restores and starts `base`, applies the checkout and checks readiness before every batch but the first
   %%> - the runner finds the fleet by the guest names `nested-gateway`, `nested-app-dev` and `nested-app-prod`; no environment setting is needed
   Note over GW: Authorize<br/>mint tokens
-  %%> Decided by the orchestrator, for Nick's review (2026-11-07):
-  %%> - the Gateway places the proof only on a host whose promoted image includes every change of the playbooks, pins and lock files up to the merge base of the commit under proof with main (stage 2 chart), so a proof never runs on a nested fleet that lacks a change of what the image carries
-  %%> - this is about the image of the host. The next step checks the other side, the head of the proof against main
+  %%> - the host freshness check of the task VM image is removed with task VMs: a copy starts from the default's seed, which the refresh after each release brings up to date, and brings in the commit under proof
+  %%> - the next step checks the head of the proof against main
   GW->>SW: Start the proof<br/>cases file · this VM
   SW->>VM: Check the workspace commit<br/>HEAD is the commit under proof
   %%> Decided by the top orchestrator, for Nick's review (2026-11-07). Try 13's list run (`proof.command` 12701) went on after the import of its bundle failed in the provision: its kept VM (tvm-866) held a clone of main, not the commit under proof (4e3c2e93), so the cases would have proved the wrong code.

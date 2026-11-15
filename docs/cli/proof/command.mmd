@@ -5,52 +5,30 @@ sequenceDiagram
   autonumber
   participant GW as Gateway
   participant SW as Swamp
-  participant VM as Proof VM
-  GW->>SW: Start one shard<br/>full intent
-  %%> Record one group and VM with its whole batch assignments and expected expanded case ids. Operator proofs instead carry one full command from task admission. Record the run budget of the shard from its batches: 600 s, 180 s a batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
-  SW->>VM: Claim a place
-  SW->>VM: Read the workspace commit
+  participant CP as Proof copy
+  GW->>SW: Start one shard<br/>operation-proof-run-copy
+  %%> Admission recorded one group and its copy with the whole batch assignments and the expected expanded case ids, and the run budget of the shard from its batches: 600 s, 180 s a batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours. The run starts only once its copy is active. Each development deploy step's command goes to its own vault key at the start.
+  SW->>CP: Bring in the commit
+  %%> One Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository, as `orbit`, and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run; nothing retries.
+  SW->>CP: Read the steps to skip
+  SW->>CP: Run dev deploy steps
+  %%> Each development deploy step whose inputs changed since the seed, from its vault copy, as a deployment runs it.
+  SW->>CP: Read the workspace commit
   SW->>SW: Check the workspace commit
   %%> A mismatch fails before cases and records expected and found commits.
   loop assigned batches, one at a time
-    SW->>VM: Restore the head checkout
-    %%> A prior flagged-case check may have left the checkout at the merge base. Restore the admitted head before planning.
-    SW->>VM: Plan the assigned batch
-    %%> runner plan --lines --only-batch restricts execution to the whole admitted batch. An operator run plans the full command.
-    SW->>VM: Restore the base snapshot
-    SW->>VM: Run batch setup
-    SW->>VM: Run batch cases
-    %%> The runner schedules cases within the fleet's existing concurrency and isolation rules. Keep every verdict line in the output artifact.
-    opt CI replay after every head case passed
-      SW->>SW: Check head verdicts
-      SW->>VM: Read runner capabilities
-      %%> Read head runner help. Without replay support, skip selection and replay.
-      SW->>VM: Check out the base
-      SW->>VM: Select replay cases
-      %%> Use the runner's case-level comparison, then keep fails_on_base: true. Unchanged flags and unflagged cases never replay, even under whole-file code or tooling selection.
-      SW->>VM: Remove the base copy
-      SW->>SW: Scope replay case ids
-      %%> Keep only cases admitted to this batch.
-      SW->>VM: Switch to the base
-      SW->>VM: Read nested commit
-      SW->>SW: Check nested commit
-      SW->>VM: Take head case files
-      %%> Copy cases, batches and the spec loader. Keep base runner and step implementations.
-      SW->>VM: Restore base snapshot
-      SW->>VM: Run replay setup
-      SW->>VM: Run replay cases
-      SW->>SW: Join replay verdicts
-      %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
-    end
-    VM-->>SW: Batch verdicts
+    SW->>CP: Prove assigned batches
+    %%> Each batch is one proof-fleet-verify child: the reset of the copy's inner fleet to base, the batch setup and its cases, with every verdict line in the output artifact. A copy replays no flagged case on the merge base (`fails_on_base: true`) until the replay is ported to copies.
+    CP-->>SW: Batch verdicts
     SW-->>GW: Batch run ended
     %%> The Gateway reads each ended batch run with the parent's reconcile and records its full report artifact on the shard, once.
   end
-  SW->>VM: Release the place
-  %%> Always after success or failure. Only operator proofs can keep a failed VM for 60 minutes. CI always deletes.
+  SW->>CP: Remove the run folder
   SW->>SW: Report<br/>full verdict artifact
   %%> Prefix each line with its command, file and batch. The fixed capture reads the full artifact rather than the 4 KiB history summary.
   SW-->>GW: Native terminal result
   GW->>GW: Record all expected cases
-  %%> Preserve native interrupted status and record outcome interrupted; it never passes, even with all passed rows. Otherwise failed, missing, duplicate or unassigned verdicts fail the shard. Keep recorded batch reports even if interruption prevents the final report. Keep completed case verdicts and synthesize missing cases as unrun. A missing or failed delete schedules normal group cancellation. The parent closes one merged report after all shards end.
+  %%> Preserve native interrupted status and record outcome interrupted; it never passes, even with all passed rows. Otherwise failed, missing, duplicate or unassigned verdicts fail the shard. Keep recorded batch reports even if interruption prevents the final report. Keep completed case verdicts and synthesize missing cases as unrun. The parent closes one merged report after all shards end.
   %%> A shard that reaches its run budget is timed out: it keeps the recorded verdicts of the batches that ended, and only the cases of the other batches are unrun.
+  GW->>GW: Cancel the group
+  %%> Every end of the run, however it ends, cancels its group with discard, which destroys the copy.

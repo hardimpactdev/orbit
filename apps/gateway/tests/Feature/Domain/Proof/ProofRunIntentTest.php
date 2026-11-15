@@ -457,6 +457,15 @@ describe('proof:run admission', function (): void {
             ->and(Operation::query()->where('status', OperationStatus::Waiting)->count())->toBe(0);
     })->with(['operator' => [false, false], 'report only' => [true, false], 'CI' => [true, true]]);
 
+    it('fails a proof whose proof Project is missing by the same refusal, with no group', function (): void {
+        proofWorldWithoutCopies();
+        config(['proof.project' => 999]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe(TaskVmRemoved::Code)->and(Task::query()->count())->toBe(0);
+    });
+
     // The refusal is the proof's own: it does not wait behind a working proof, as the task VM admission did before it refused.
     it('refuses a proof of a Project whose tasks do not run as copies at once, even while another proof works', function (): void {
         proofWorldWithoutCopies();

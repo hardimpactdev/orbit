@@ -250,6 +250,8 @@ describe('proof:run in copies: admission', function (): void {
             ->and($runs)->toHaveCount(2)->and($copies)->toHaveCount(2)
             ->and(Operation::query()->where('kind', 'instance.create')->whereIn('target_id', $copies->pluck('id'))->count())->toBe(2)
             ->and($runs->every(static fn (Operation $run): bool => $run->input['copy'] === true && $copies->contains('id', $run->input['instance_id'])))->toBeTrue()
+            // One unmeasured batch a shard: (600 + 180 + 1) x 1.5 s, rounded up to five minutes.
+            ->and($runs->pluck('input.run_budget_seconds')->all())->toBe([1200, 1200])
             ->and(collect($proof->input['runs'])->pluck('instance_id')->sort()->values()->all())->toBe($copies->pluck('id')->sort()->values()->all())
             ->and(app(DirectOperation::class)->workflowFor($runs->first()))->toBe('operation-proof-run-copy')
             ->and(Task::topLevel()->whereKey($runs->pluck('target_id'))->get()->every(static fn (Task $group): bool => $group->status === TaskGroupStatus::Reserved))->toBeTrue();

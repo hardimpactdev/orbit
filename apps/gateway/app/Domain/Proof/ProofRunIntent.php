@@ -119,8 +119,9 @@ final readonly class ProofRunIntent
             }
             // Record all children together, after the trust check above: only then may a copy, which holds the nested fleet's Club key, be made.
             $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
-            $project = Project::query()->findOrFail($this->settings->projectId());
-            if (! ProofCopies::runs($project)) {
+            // A missing proof Project has no default to copy either: the same refusal names what to do.
+            $project = Project::query()->find($this->settings->projectId());
+            if (! $project instanceof Project || ! ProofCopies::runs($project)) {
                 throw TaskVmRemoved::refusal();
             }
             $this->admitCopies($proof, $commit, $intent, $batches, $project, $waitStep);
