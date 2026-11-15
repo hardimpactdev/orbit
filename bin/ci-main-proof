@@ -31,14 +31,32 @@ def report(claim, receipt, job_result='success'):
         if key in seen or case.get('verdict') != 'passed':
             problems.append({'unit': ': '.join(key), 'reason': 'Duplicate or nonpassing case: ' + str(case), 'files': [case.get('file', '')]})
         seen.add(key)
-    range_covered = claim['mode'] == 'range' and receipt.get('base') == claim['base']
-    if claim['mode'] == 'range' and not range_covered:
+    well_formed = isinstance(result.get('cases'), list) and len(seen) == len(cases) and all(
+        isinstance(case, dict) and case.get('command') and case.get('case')
+        and case.get('verdict') in ('passed', 'failed') for case in cases)
+    selected = result.get('selected_commands')
+    selection_complete = well_formed and isinstance(selected, list) and all(
+        isinstance(command, str) and any(case.get('command') == command for case in cases) for command in selected)
+    terminal = receipt.get('operation_status') in ('succeeded', 'failed')
+    verdict_reached = bool(receipt.get('commit') == claim['sha'] and result.get('commit', claim['sha']) == claim['sha']
+                           and well_formed and terminal and (
+        (receipt.get('started_at') and cases and selection_complete and selected
+         and result.get('outcome') in ('passed', 'failed'))
+        or (receipt.get('outcome') == 'passed' and result.get('outcome') == 'nothing_to_prove'
+            and receipt.get('operation_status') == 'succeeded' and not cases and selected in (None, []))))
+    if not verdict_reached:
+        problems.append({'unit': 'proof admission or incomplete execution',
+                         'reason': 'No completed proof verdict; checkpoint retained', 'files': []})
+    range_covered = verdict_reached and claim['mode'] == 'range' and receipt.get('base') == claim['base']
+    if claim['mode'] == 'range' and receipt.get('base') != claim['base']:
         problems.append({'unit': 'proof range', 'reason': 'Missing or mismatched range base in receipt', 'files': []})
     if claim['mode'] == 'all':
         missing = KINDS - {command for command, _ in seen}
         if missing:
             problems.append({'unit': 'nightly kinds', 'reason': 'Missing ' + ', '.join(sorted(missing)), 'files': []})
-    return {'claim': claim, 'passed': not problems, 'range_covered': range_covered,
+    return {'claim': claim, 'passed': not problems, 'range_covered': range_covered, 'verdict_reached': verdict_reached,
+            'admission_retry': {'attempt': claim.get('admission_attempt'), 'limit': claim.get('admission_limit'),
+                                'state': 'answered' if verdict_reached else ('exhausted; operator retry required' if claim.get('admission_attempt', 0) >= 3 else 'pending; retry on next run')},
             'selection': 'all kinds on newest tree' if claim['mode'] == 'all' else ('union of per-commit selections at tested SHA' if range_covered else 'range not covered'),
             'not_individually_tested': claim['commits'][:-1], 'problems': problems, 'receipt': receipt}
 

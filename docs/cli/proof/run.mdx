@@ -105,6 +105,8 @@ Every run end removes its copy: Orbit cancels the run's group with discard, whic
 
 Orbit reads the full case reports, checks the expected case identities and merges every copy’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The line on which a copy's batch reports the reset seconds of its inner fleet is evidence, not a verdict. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without a copy.
 
+The [main proof consumer](/reference/main-full-set#proof-consumer) retains an unproven range after an admission or transport failure. Its bounded retries do not gate a merge or a release.
+
 ## The execution switch
 
 `proof:run` works in two stages. Admission checks the commit and selects the cases. Execution creates the group and runs them. Execution is on by default: the Gateway setting `proof.execution` (`ORBIT_PROOF_RUN_EXECUTION`) is `true`. Set it to `false` and a commit that selects cases ends with `proof.execution_disabled`, and the proof Operation holds the selected cases and the uncovered paths. While it is off, the command works as a dry run: it creates no group and starts nothing. A commit with nothing to prove still succeeds, and every refusal of admission still applies.
