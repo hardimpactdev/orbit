@@ -100,6 +100,27 @@
         stdin: "{{ container_arc_max }}"
       changed_when: true
 
+# A copy of a nested-fleet default copies its inner volume, a block-backed btrfs zvol, with `incus storage volume copy`. Incus 7.0.2
+# clones it without a volmode, so it inherits `default` (geom), and then sets `dev`: ZFS re-creates the device in the background,
+# and Incus can run btrfstune on the old /dev/zdNN (docs/reference/development-containers.md#the-inner-volume). With `dev` on the
+# parent, the copy's device is made once. Volumes that Incus creates or clones itself set their own volmode; a received, imported
+# or fully copied zvol in this subtree now gets its device in dev mode too, and Orbit's inner volumes use none of those paths.
+- name: Make inner-volume copies with their device in dev mode
+  when: instances.nested is defined and (instance_pool_read.stdout | from_json).driver == 'zfs'
+  block:
+    - name: Read the dataset root of the Instance pool
+      ansible.builtin.command: { argv: [incus, storage, get, "{{ instances.pool }}", zfs.pool_name] }
+      register: instance_pool_root
+      changed_when: false
+    - name: Read the volmode of the pool's custom volumes
+      ansible.builtin.command: { argv: [zfs, get, -H, -o, value, volmode, "{{ instance_pool_root.stdout | trim }}/custom"] }
+      register: instance_custom_volmode
+      changed_when: false
+    - name: Set the volmode of the pool's custom volumes to dev
+      when: instance_custom_volmode.stdout | trim != 'dev'
+      ansible.builtin.command: { argv: [zfs, set, volmode=dev, "{{ instance_pool_root.stdout | trim }}/custom"] }
+      changed_when: true
+
 - name: Install the shared folders
   ansible.builtin.include_tasks: instance-folder.yml
   loop: [runtime, agent]
