@@ -1,8 +1,10 @@
 import { assert, assertEquals } from "jsr:@std/assert@1.0.19";
+import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 import { parse } from "jsr:@std/yaml@1.0.12";
 
 type Step = {
     name: string;
+    guard?: string;
     task?: { workflowIdOrName?: string; inputs?: Record<string, unknown> };
     dependsOn?: { step?: string; condition?: { type?: string } }[];
 };
@@ -12,6 +14,41 @@ type Workflow = { name: string; jobs: Job[] };
 const directory = new URL("../workflows/", import.meta.url);
 const purposes = ["clone", "dependencies", "publish", "pull_request", "dependency_merge", "ci_rerun"];
 const minted = /vault\.get\([^)]*(write_token|read_token|github_token|git_authorization|dependency_auth)/;
+
+/** A copy-only step can use the mint's vault but read a pre-existing environment/Club key. */
+function readsMintedKey(step: Step): boolean {
+    const text = JSON.stringify(step.task ?? {});
+    if (!minted.test(text)) return false;
+    // Only this guard proves that the VM alternative of a conditional secret is never consumed.
+    if (step.guard?.replace(/\s/g, "") !== '${{!("workspace"ininputs.intent)}}') return true;
+    const expressions: string[] = [];
+    const visit = (value: unknown): void => {
+        if (typeof value === "string") {
+            for (const match of value.matchAll(/\$\{\{([\s\S]*?)\}\}/g)) {
+                if (minted.test(match[1])) expressions.push(match[1].trim());
+            }
+        } else if (value !== null && typeof value === "object") {
+            Object.values(value).forEach(visit);
+        }
+    };
+    visit(step.task);
+    assert(expressions.length > 0, `${step.name}: minted reference is not a CEL expression`);
+    const keys = ["write_token", "read_token", "github_token", "git_authorization", "dependency_auth"];
+    const execution_secrets = Object.fromEntries([...keys, "environment", "club_key"].map(key => [key, { vault: "shared", key }]));
+    for (const workspace of [{}, { club_key: false }, { club_key: true }]) {
+        const reads: string[] = [];
+        const cel = new Environment({ unlistedVariablesAreDyn: true })
+            .registerFunction("vaultget(dyn, dyn): string", (_vault: unknown, key: unknown) => {
+                reads.push(String(key));
+                return "secret";
+            });
+        for (const expression of expressions) {
+            cel.evaluate(expression.replaceAll("vault.get(", "vaultget("), { inputs: { intent: { workspace }, execution_secrets } });
+        }
+        if (reads.some(key => keys.includes(key))) return true;
+    }
+    return false;
+}
 
 async function workflows() {
     const found: { file: string; text: string; workflow: Workflow }[] = [];
@@ -94,7 +131,7 @@ Deno.test("a step reads a minted key only after the step that mints it", async (
         for (const job of workflow.jobs) {
             for (const step of job.steps) {
                 const text = JSON.stringify(step.task ?? {});
-                if (step.task?.workflowIdOrName === "task-github-mint" || !minted.test(text)) continue;
+                if (step.task?.workflowIdOrName === "task-github-mint" || !readsMintedKey(step)) continue;
                 const purpose = purposeOf(text);
                 const owner = mints.find(({ step: mint }) => purpose === null || mint.task?.inputs?.purpose === purpose);
                 const where = `${file}: "${step.name}" in job "${job.name}"`;
@@ -143,4 +180,16 @@ Deno.test("a workflow that writes the dependency auth removes it on every outcom
         }
     }
     assert(writers >= 1, `expected the package install to write the dependency auth through the shared child, found ${writers}`);
+});
+
+Deno.test("copy-only secret checks do not read the VM mint key, and losing that guard or reading the key is detected", async () => {
+    const workflow = (await workflows()).find(row => row.file === "workflow-operation-task-publish.yaml")!.workflow;
+    const steps = workflow.jobs.flatMap(job => job.steps);
+    const check = steps.find(step => step.name === "Check the .env content")!;
+    assertEquals(readsMintedKey(check), false);
+    assertEquals(readsMintedKey({ ...check, guard: undefined }), true);
+    const changed = structuredClone(check);
+    changed.task!.inputs!.env = { TOKEN: "${{ vault.get(inputs.execution_secrets.git_authorization.vault, inputs.execution_secrets.git_authorization.key) }}" };
+    assertEquals(readsMintedKey(changed), true);
+    assertEquals(readsMintedKey(steps.find(step => step.name === "Read the base")!), true);
 });

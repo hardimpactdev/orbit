@@ -150,3 +150,5 @@ A coalesced proof range selects each intervening commit against its own first pa
 A manual hosted proof checks out trusted workflow code, passes the tested SHA only as data, and preserves the existing caller’s signal forwarding. A successful zero-case selection does not prove hosted execution.
 
 Give scheduled full sweeps their own default-off switch when rolling out an incremental consumer. Enabling range processing must not silently enable a longer nightly run.
+
+A fixture that replaces a subprocess environment must retain the interpreter's loader paths. Mint-order audits must distinguish a vault name from the resolved key on each live path. Size long fixture files from completed per-case receipts; keep censored estimates explicit and split before the whole-file ceiling.

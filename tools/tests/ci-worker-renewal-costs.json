@@ -1,0 +1,53 @@
+{
+  "run_id": "43664446092",
+  "sha": "402778ae5dd9741a324892757b19972e6051cf52",
+  "source_sha256": "2e3a4a2b9c9a08e5c8e6c48e1c96c247f36f0b2478f9bb718e027690dc08c979",
+  "completed_max_seconds": {
+    "worker renewal: two permanent peers accept before a drains and c stays running": 22.691467382000003,
+    "worker renewal: b renews next while fresh a and permanent c stay connected": 20.823212522,
+    "worker renewal: c renews as an equal permanent worker when it is oldest": 21.217542205000004,
+    "worker renewal: three due workers finish sequential 75 minute drains before their session caps": 62.317256205,
+    "worker renewal: two 4h45 bases renew beside fresh c without a second retirement drain": 37.64949706100002,
+    "worker renewal: full b keeps eight accepting slots with c during a long drain and queued work succeeds": 18.282347846999997,
+    "worker renewal: both full survivors defer without draining anyone": 12.930585847999987,
+    "worker renewal: disconnected peer blocks all maintenance": 9.30984504700001,
+    "worker renewal: draining peer blocks all maintenance": 8.91030168200002,
+    "worker renewal: peer probe empty prevents any drain": 12.32685364700001,
+    "worker renewal: peer probe at capacity prevents any drain": 13.208748793000007,
+    "worker renewal: peer probe data plane failed prevents any drain": 12.163987449000008,
+    "worker renewal: peer fill during probe cannot reduce the accepting pool": 13.961594710000005,
+    "worker renewal: peer drain during probe cannot reduce the accepting pool": 15.078973494000035,
+    "worker renewal: peer shrink during probe cannot reduce the accepting pool": 16.425266617000045,
+    "worker renewal: failed re-enrollment leaves both survivors running and blocks the next round": 79.03973940700001,
+    "worker renewal: failed peer during blocking drain logs detection after restart and stops": 17.397374415000026,
+    "worker renewal: bootstrap quoted names resolve for all three units": 17.585842612000008,
+    "worker renewal: remint ANSI names resolve for all three units": 19.42945762499998,
+    "worker renewal: missing c receipt logs stopped renewal without drain": 7.371744607000029,
+    "worker renewal: unreadable c receipt logs stopped renewal without drain": 7.6246588999999805,
+    "worker renewal: fresh workers stay persistent and no credential API exists at renewal time": 9.128202327999984,
+    "worker renewal: old stop allowance prevents any drain": 9.344907964000013,
+    "worker renewal: peer approaching eight-hour cap during probe blocks drain": 13.926094505999995,
+    "worker renewal: same-process reconnect clears old enrolledAt lockout and renews on connection age": 28.033181714000005,
+    "worker renewal: proof remint with missing c enrollment fails before any service stops": 3.611650568000041,
+    "worker renewal: proof remint with missing c server fails before any service stops": 3.3346369600000325,
+    "worker renewal: proof remint with missing c empty server fails before any service stops": 3.4147660660000403,
+    "worker renewal: proof remint preflight passes a c without directory, which the remint makes after serve stops": 3.6969897239999847,
+    "worker renewal: proof remint preflight passes a c without files, which the remint makes after serve stops": 3.205329335000017,
+    "worker renewal: proof remint preflight accepts c without exposing tokens": 3.8555260140000027,
+    "worker renewal: proof remint preflight accepts c-1794127800 without exposing tokens": 3.982443867999944
+  },
+  "estimates": {
+    "worker renewal: recovers a failed unit past its restart limit before voluntary renewal": 120,
+    "worker renewal: recovers a inactive unit past its restart limit before voluntary renewal": 120,
+    "worker renewal: does not recover a down unit without two serving peers": 120,
+    "worker renewal: proof remint rejects c bare enrollment before any service stops": 120,
+    "worker renewal: proof remint rejects c wrong enrollment name before any service stops": 120,
+    "worker renewal: proof remint rejects c bare server before any service stops": 120,
+    "worker renewal: proof remint rejects c wrong server name before any service stops": 120,
+    "worker renewal: proof remint rejects c empty secret before any service stops": 120,
+    "worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output": 120
+  },
+  "censored_seconds": {
+    "worker renewal: recovers a failed unit past its restart limit before voluntary renewal": 8.62
+  }
+}

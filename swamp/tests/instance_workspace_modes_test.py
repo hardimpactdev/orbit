@@ -72,7 +72,7 @@ class WorkspaceModesTest(unittest.TestCase):
 
     def run_pass(self, **environment):
         return subprocess.run([sys.executable, '-I', '-c', INJECT + PROGRAM, str(self.workspace)], check=False, capture_output=True, text=True,
-                              env={'PATH': os.environ['PATH'], **environment})
+                              env={**os.environ, 'VANISH': '', 'LOCKED': '', **environment})
 
     def test_entries_that_vanish_during_the_pass_are_skipped_and_the_rest_gets_the_group_bits(self):
         done = self.run_pass(VANISH='pack-1.pack,.tmp-1-pack-2.pack,react')

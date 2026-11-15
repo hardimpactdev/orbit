@@ -67,7 +67,7 @@ class FleetShrinkTest(unittest.TestCase):
 
     def shrink(self, mode, path=None):
         done = subprocess.run([sys.executable, '-I', '-c', SCRIPT.read_text(), mode, str(self.record), str(self.pools), *NAMES], capture_output=True, text=True,
-                              check=False, env={'PATH': path or f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
+                              check=False, env={**os.environ, 'PATH': path or f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout.splitlines()[-1])
 
@@ -132,7 +132,7 @@ class FleetShrinkTest(unittest.TestCase):
     def run_on_a_directory_pool(self):
         self.driver = 'dir'
         done = subprocess.run([sys.executable, '-I', '-c', SCRIPT.read_text(), 'run', str(self.record), str(self.pools), *NAMES], capture_output=True,
-                              text=True, check=False, env={'PATH': f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
+                              text=True, check=False, env={**os.environ, 'PATH': f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
         self.assertEqual(done.returncode, 0, done.stderr)
         return json.loads(done.stdout.splitlines()[-1]), done.stderr
 

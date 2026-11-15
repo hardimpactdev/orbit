@@ -18,6 +18,10 @@ The plan installs pinned PyYAML before checking its workflow policy, then loads 
 
 Saved hashes never block this run. Saved costs guide packing; new cases use the table's default estimate. A failed collector runs the whole file instead and names the collection error. Python fixtures run as files. The runner installs the pinned Ansible tools and collections and supplies the pinned Swamp and FrankenPHP binaries after checking their archive checksums. Missing dependencies fail by name.
 
+Python fixtures preserve the interpreter's runtime environment, including `LD_LIBRARY_PATH` from setup-python, while overriding their fixture-specific variables. Container deployment fixtures supply the Gateway's required `steps` list. The mint-order check evaluates copy-only secret reads on the copy path and still rejects an actual GitHub key read before its mint.
+
+Worker-renewal cases use individual hosted costs and are split into bounded units. Costs for censored or unrun cases remain explicit estimates until a complete hosted receipt replaces them; none is removed from the full set.
+
 Native create, complete and migrate fixtures use an isolated throwaway credential and signed proof, following the pinned upstream auth fixture. They never read a developer’s login. The runner container supplies a persistent user systemd manager; the full-set job passes its runtime directory and bus address so the worker-restart case exercises the rendered service policy.
 
 Migration phase fixtures copy the shipped private-name renderer beside their playbooks, as the production input bundle does. Their registry inputs include the copied helpers and templates. The reboot SSH stand-in reads the module from piped stdin before returning its synthetic connection failure; a terminal needs no drain. This preserves the timeout diagnostic that an early pipe closure can hide. Changes to the stand-in select its fixture too.

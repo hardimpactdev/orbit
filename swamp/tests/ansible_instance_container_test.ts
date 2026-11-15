@@ -380,7 +380,7 @@ Deno.test({
         assert(done.ok, done.output);
       }
       const head = git(f.source, "rev-parse", "HEAD");
-      f.intent.deployment = { variant: "container" };
+      f.intent.deployment = { variant: "container", steps: [] };
       f.write();
       const full = f.state();
       full.no_id_range = true;
