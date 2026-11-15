@@ -5,7 +5,7 @@ description: "Planned, ADR 0263: a production Instance's releases are Incus cont
 
 # Production containers
 
-**Planned.** Nothing on this page is built. It is the target contract of [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers). Until it is built, production Instances deploy as [Instance releases](/reference/deployments) describes.
+**Planned.** Nothing on this page is built. It is the target contract of [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers). Until it is built, production Instances deploy as [Instance releases](/reference/deployments) describes. The ADR's open question 1 can still change when old is removed; this page follows the ADR's proposal.
 
 A production Instance keeps one record: its id, Routes, environment, deploy steps, attachments, Processes and Schedules. Each release of it is an Incus container on its `app-prod` Node, made with the same machinery as [Instance containers](/reference/development-containers): the image, ZFS clones and snapshots, the runtime folder, the bridge and the egress proxy. A production container has only the user `orbit`, no agent and no model route, and it never sleeps.
 
@@ -19,7 +19,7 @@ Each release container has one release state.
 | `live` | The release that serves | FrankenPHP for every Route of the Instance, the Processes, the container timers and the Schedule fires |
 | `old` | The release before live, stopped | Nothing |
 
-A deploy has at most three containers: hot, live and old. Only hot and live run. When hot is ready, it becomes live, the previous live becomes old, and the earlier old is removed.
+Between deploys, live runs and old is stopped. A deploy adds hot, so it has at most three containers, and only hot and live run. When hot is ready, it becomes live, the previous live becomes old, and the earlier old is removed.
 
 ## Records
 
@@ -30,11 +30,11 @@ The Gateway keeps the Instance and its release states. The Node keeps the contai
 | The Instance | Gateway | Id, Routes, environment, deploy steps, attachments, Processes, Schedules, shared paths, memory limit (4 GiB by default) |
 | Runtime rows | Gateway, `instance_runtimes` | One per release container: container name, bridge address, `release_state`, release name, commit, image fingerprint, `runtime_version`, `power_state` |
 | Deployment history | Gateway | One row per deploy or rollback, as [History](/reference/deployments#history) describes. `release` names the release container that the deploy built |
-| Release container | Node | `app-instance-<instance>-<release>` in the Incus project `orbit-instances`. The release name follows from the deploy Operation, as today |
-| Release snapshot | Node | The snapshot `release` of each release container, taken after its deploy steps and before any request |
-| Storage volume | Node | The filesystem custom volume `app-instance-<instance>-shared`, mounted at `/srv/shared` in every release container |
-| Live link | Node | `/var/lib/orbit/production/<instance>/live`: the name of the live container |
-| Upstream file | Node | `/var/lib/orbit/production/<instance>/upstream.caddy`: live's bridge address and port 8080. The Caddy site of each Route of the Instance imports it |
+| Release container | Node | `instance-<id>-<release>` in the Incus project `orbit-instances`, in the [`instance-<id>` form](/reference/development-containers#the-machine-name). The release name follows from the deploy Operation, as today |
+| Release snapshot | Node | The snapshot `release` of each release container, taken after its deploy steps and before any request. It holds that release's code, dependencies and `.env` |
+| Storage volume | Node | The filesystem custom volume `instance-<id>-shared`, mounted at `/srv/shared` in every release container |
+| Live link | Node | `/var/lib/orbit/production/<id>/live`: the name of the live container |
+| Upstream file | Node | `/var/lib/orbit/production/<id>/upstream.caddy`: live's bridge address and port 8080. The Caddy site of each Route of the Instance imports it |
 
 The database keeps these rules:
 
@@ -59,6 +59,8 @@ The first part builds hot while live serves.
 7. **Before steps.** Each `before_activation` step runs in order as `orbit` at the repository root, after the [Vite+ preparation](/reference/deployments#vite-store-prerequisite) that a step needs. The `migrate` step changes the shared database here. Live still serves.
 8. **Install and snapshot.** Orbit installs a disabled unit for each Process and a disabled container timer for each systemd-calendar Schedule. It restarts FrankenPHP and takes hot's `release` snapshot.
 
+A warm hot carries live's `.env` from its clone until step 6 writes the new one, because live's snapshot holds it. Secrets never come from the image or the mirror.
+
 ### Go live
 
 The second part moves traffic and work to hot.
@@ -67,14 +69,14 @@ The second part moves traffic and work to hot.
 2. **Switch.** See [Switch](#switch).
 3. **Handover.** See [Handover](#handover).
 4. **After steps.** Each `after_activation` step runs in order, in the new live.
-5. **Retire.** The previous live stops and becomes old. The earlier old is removed, with its snapshot.
+5. **Retire.** See [Retire](#retire).
 6. **Check.** Orbit reads back the live link, the upstream file, the commit and the Process states.
 
 The Gateway records the release states, the commit and the Process outcomes from the run's result.
 
 ### Cold hot
 
-Hot launches from the image instead of a clone in three cases: the Instance has no live release, the Node's image is newer than live's image, or a [migration](#first-release-and-migration) builds the first release. A cold hot installs every dependency. It also starts a new ZFS clone chain.
+Hot launches from the image instead of a clone in three cases: the Instance has no live release, the Node's image is newer than live's image, or a [migration](#a-checkout-production-instance) builds the first release. A cold hot installs every dependency. It also starts a new ZFS clone chain.
 
 ## Ready
 
@@ -90,30 +92,41 @@ Orbit sends each request from the Node to hot's bridge address on port 8080. The
 
 ## Switch
 
-The switch writes the new upstream file and the new live link beside the old ones, validates the Node's Caddy configuration with them, renames both into place and reloads Caddy once. New requests go to the new live. Requests in progress on the previous live finish there. A Cluster Route needs no Router change, because the Router still sends to the same Node.
+The switch writes the new upstream file and the new live link beside the current ones and validates the Node's Caddy configuration with them. Then it renames both into place, keeps the previous files, and reloads Caddy once. New requests go to the new live. Requests in progress on the previous live finish there. A Cluster Route needs no Router change, because the Router still sends to the same Node.
+
+When the validation fails, nothing was renamed. When the reload fails, Caddy keeps its running configuration, and Orbit renames the previous files back. In both cases the files name live again, and live serves unchanged.
 
 The shared Reverb is outside the containers, so the switch needs no Reverb handover. A Caddy reload can end open WebSocket streams through the Node; Pusher clients reconnect.
 
 ## Handover
 
+One rule keeps work in one container: a release container's Process units and container timers are enabled only while it is live, and only live has the Incus setting `boot.autostart` on. Hot installs its units and timers disabled. So a Node reboot brings back live with its Processes and timers, and a start of old or hot runs none of them.
+
 After the switch, Orbit moves the work from the previous live to the new live, in this order:
 
-1. It stops the previous live's container timers, lets a running fire finish, and starts the new live's timers.
-2. It stops each Process of the previous live gracefully, within 120 seconds: Horizon terminates and queue workers finish their current job. Then systemd ends the rest.
-3. It starts each Process of the new live whose desired state is `running`.
+1. It disables and stops the previous live's container timers, and a running timer fire finishes. Then it enables and starts the new live's timers.
+2. It disables each Process unit of the previous live and stops it gracefully, within 120 seconds: Horizon terminates and queue workers finish their current job. Then systemd ends the rest.
+3. It enables and starts each Process of the new live whose desired state is `running`.
+4. It turns `boot.autostart` on for the new live and off for the previous live.
 
-A native Schedule fire reads the live link at each fire and runs its command in that container as `orbit`. No Process, timer or fire runs in two release containers.
+A native Schedule fire reads the live link when it starts and runs its command in that container as `orbit`, as a transient unit named for its Schedule. No Process, timer or fire runs in two release containers.
+
+## Retire
+
+Retire waits until no native Schedule fire runs in the previous live, up to that Schedule's timeout. Then it stops the previous live, which becomes old, and removes the earlier old.
+
+Incus keeps the removed container's dataset while a ZFS clone still depends on it, so the removal frees disk only when no later release needs its blocks.
 
 ## Rollback
 
 `instance:rollback <instance>` returns to old. The planned chart is `docs/cli/instance/container/rollback-production.mmd`.
 
-1. Orbit writes the Instance's current `.env` into old and starts it.
+1. Orbit writes the Instance's current `.env` into old and starts it. Its units and timers are disabled, so nothing but FrankenPHP runs.
 2. Orbit checks old as [ready](#ready), without the snapshot condition: old already has its snapshot.
 3. The [switch](#switch) and the [handover](#handover) run as in a deploy.
-4. The rolled-away live stops and becomes old.
+4. [Retire](#retire) stops the rolled-away live, which becomes old. No container is removed.
 
-A rollback runs no deploy step, fetches nothing and changes no data. It pauses automatic deploys and blocks the rolled-away commit, as [Pause](/reference/deployments#pause) describes. Without an old release, it refuses with `rollback.release_not_retained`. To go back further, deploy the earlier commit with `instance:deploy --commit`.
+A rollback runs no deploy step, fetches nothing and changes no data. It pauses automatic deploys and blocks the rolled-away commit, as [Pause](/reference/deployments#pause) describes. Without an old release, it refuses with `rollback.release_not_retained`. To go back further, deploy the earlier commit with `instance:deploy --commit`. That deploy builds a warm hot from live's snapshot.
 
 ## Database
 
@@ -137,7 +150,9 @@ The storage volume holds what must outlive a release: the shared paths, `storage
 
 Each release container has the Instance's memory limit. During a deploy, hot and live run and old is stopped. A clone's disk holds only its changed blocks.
 
-Before the clone, the deploy checks that the Node's available memory covers hot's memory limit plus 1 GiB, and that the pool has 10 GiB free. Otherwise it fails with `deployment.node_capacity` and changes nothing. That failure comes before any step, so the automatic tick retries it with its [backoff](/reference/deployments#failures-of-automatic-deployments).
+Before the clone, the deploy checks that the Node's available memory covers hot's memory limit plus 1 GiB, and that the pool has 10 GiB free. Otherwise it fails with `deployment.node_capacity` and changes nothing.
+
+The automatic tick retries that failure at its [backoff](/reference/deployments#failures-of-automatic-deployments) times, but it does not count toward the three failures that block a commit: the cause is the Node, not the commit. A commit that waits 30 minutes raises the stalled-commit alert.
 
 ## PHP runtime
 
@@ -149,16 +164,20 @@ The planned chart `docs/cli/instance/container/create-production.mmd` covers bot
 
 ### After a clone
 
-[`instance:clone`](/reference/instance-cloning) records the production Instance, its environment, its Process and Schedule copies, its preview Route and its storage volume. It makes no container. The first deploy builds a cold hot and switches the Routes to it.
+[`instance:clone`](/reference/instance-cloning) records the production Instance, its environment, its Process and Schedule copies, its preview Route and its storage volume. It makes no container. With `--sqlite-source-path`, the clone writes the seeded database into the volume as `database.sqlite`, and the rendered `.env` names `/srv/shared/database.sqlite`. The first deploy builds a cold hot and switches the Routes to it.
 
 ### A checkout production Instance
 
 [`instance:migrate`](/cli/instance/migrate) moves a checkout production Instance in these steps:
 
-1. It builds a cold hot at the commit that `current` selects.
-2. It copies each shared path of the home into the volume. The checkout still serves.
-3. It switches the Routes to the container and stops the host Processes, timers and PHP-FPM pool.
-4. It copies the changes again, without deleting a file in the volume.
+1. It launches a cold hot and attaches the volume.
+2. It copies each shared path of the home into the volume, and a SQLite database of the home. The checkout still serves.
+3. It builds hot at the commit that `current` selects, as a deploy does. The steps see the copied files, such as existing Passport keys.
+4. It checks hot as ready and switches the Routes to it.
+5. It disables and stops the host Processes, Node timers and PHP-FPM pool. Then it enables and starts the new live's Processes and timers.
+6. It copies the changes again, without deleting a file in the volume.
+
+Each native Schedule keeps firing in the home until the run ends. Then the Gateway rewrites its workflow for the live link and sets its trigger again, as an [Instance transfer](/reference/schedules#execution) does. No fire is skipped and none runs twice.
 
 The home stays unserved until the next successful deploy removes it and the production account.
 
@@ -169,10 +188,10 @@ The failed boundary decides what serves.
 | Failed boundary | Serves | Hot |
 | --- | --- | --- |
 | Check, capacity, clone, upgrade, source, links, environment, a `before_activation` step, install, snapshot or readiness | Live, unchanged | Removed |
-| Switch | Live, unchanged: Caddy keeps its configuration when validation or reload fails | Removed |
+| Switch | Live, unchanged, with its previous files back in place | Removed |
 | Handover, an `after_activation` step or retire | The new live | Is live |
 
-A failed migration keeps what it changed. A failure in a deploy step or later blocks the commit for the automatic tick; a failure before the deploy steps is retried with backoff.
+A failed migration keeps what it changed. A failure in a deploy step or later blocks the commit for the automatic tick. A failure before the deploy steps is retried with backoff, and only `deployment.node_capacity` never counts toward the block.
 
 ## Errors
 
