@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
-import { register, renew } from "./mod.ts";
+import { parse } from "jsr:@std/yaml@1.0.12";
+import { behavior, createRegister, register, renew } from "./mod.ts";
 
 const gatewayToken = "private-gateway-sentinel";
 const swampToken = "private-swamp-sentinel";
@@ -9,15 +10,30 @@ const session = (scopes: string[], status = 200) => ({
     body: JSON.stringify({ authenticated: true, scopes, expiresAt: "2026-12-10T10:00:00.000Z" }),
 });
 
+const commit = "c".repeat(40);
+/** A ready clone's create arguments, as the workflow's `create_inputs` map hands them to `finish` and `clone-register`. */
+const createArgs = (run: string, changes: Record<string, unknown> = {}) => ({
+    intent: { instance_id: 7, already_active: false, name_converted_from: null, setup_steps: [], route: null,
+        container: { clone: { source: "instance-1" } } },
+    folder: run, t3_file: `${run}-t3.json`, checkout: null, database: "skipped", setup: "skipped", processes: [], route: "skipped",
+    container: { launch: "succeeded", workspace: { status: "succeeded", outputs: { stdout: `orbit-commit=${commit}` } }, deploy: [],
+        processes: "skipped", seed: "skipped", t3: "succeeded", register: "skipped", server: null },
+    ...changes,
+});
+
+/** The run folder (a Route clone's input) and the t3.json that clone-session-copy put beside it. */
 async function fixture(reply: unknown, run: (directory: string) => Promise<void>) {
     const directory = await Deno.makeTempDir({ prefix: "orbit-ansible-", dir: "/tmp" });
     try {
-        await Deno.writeTextFile(`${directory}/t3.json`, JSON.stringify(reply));
+        await Deno.writeTextFile(`${directory}-t3.json`, JSON.stringify(reply));
         await run(directory);
     } finally {
-        await Deno.remove(directory, { recursive: true });
+        await Deno.remove(directory, { recursive: true }).catch(() => undefined);
+        await Deno.remove(`${directory}-t3.json`).catch(() => undefined);
     }
 }
+
+const exists = (path: string) => Deno.stat(path).then(() => true, () => false);
 
 function context() {
     const writes: { spec: string; name: string; data: unknown }[] = [];
@@ -31,33 +47,65 @@ function context() {
     };
 }
 
-Deno.test("a checked reply stores both sessions as sensitive fields and returns only their vault keys", () =>
-    fixture({
-        environment,
-        gateway: { token: gatewayToken, ...session(["access:read", "access:write", "orchestration:read"]) },
-        swamp: { token: swampToken, ...session(["orchestration:read"]) },
-    }, async (run) => {
+const ready = {
+    environment,
+    gateway: { token: gatewayToken, ...session(["access:read", "access:write", "orchestration:read"]) },
+    swamp: { token: swampToken, ...session(["orchestration:read"]) },
+};
+
+Deno.test("a checked reply stores both sessions as sensitive fields and returns the create's result with only their vault keys", () =>
+    fixture(ready, async (run) => {
         const ctx = context();
-        await register({ instance_id: 7, folder: run }, ctx);
+        await createRegister(createArgs(run), ctx);
         assertEquals(ctx.writes.slice(0, 2), [
             { spec: "session", name: "gateway-7", data: { token: gatewayToken } },
             { spec: "session", name: "swamp-7", data: { token: swampToken } },
         ]);
         const terminal = ctx.writes[2];
         assertEquals(terminal.spec, "terminal");
-        const stdout = (terminal.data as { stdout: string }).stdout;
-        assert(!stdout.includes(gatewayToken) && !stdout.includes(swampToken));
+        const data = terminal.data as { stdout: string; ready: boolean; removed: boolean };
+        assert(!data.stdout.includes(gatewayToken) && !data.stdout.includes(swampToken));
         const prefix = "nckrtl-instance-t3-00000000-0000-4000-8000-000000000001-register-session-";
-        assertEquals(JSON.parse(stdout), {
+        // The same result finish builds for a ready clone: the registered server is its `t3`.
+        assertEquals([data.ready, data.removed], [true, true]);
+        assertEquals(JSON.parse(data.stdout), { instance_id: 7, ready: true, name_converted_from: null, commit, t3: {
             environment_id: "env-7",
             server_version: "0.1.7",
             expires_at: "2026-12-10T10:00:00.000Z",
             gateway_session: { vault: "orbit-control-inputs", key: `${prefix}gateway-7-token` },
             swamp_session: { vault: "orbit-control-inputs", key: `${prefix}swamp-7-token` },
-        });
+        } });
+        // The copy of the sessions and the ready create's run folder are gone.
+        assertEquals([await exists(`${run}-t3.json`), await exists(run)], [false, false]);
     }));
 
-Deno.test("each failed check refuses with the code of POST /conn/environments and stores nothing", async () => {
+Deno.test("a migrate's registration reads the run folder's t3.json and returns only the server with its vault keys", async () => {
+    const run = await Deno.makeTempDir({ prefix: "orbit-ansible-", dir: "/tmp" });
+    try {
+        await Deno.writeTextFile(`${run}/t3.json`, JSON.stringify(ready));
+        const ctx = context();
+        await register({ instance_id: 7, folder: run }, ctx);
+        assertEquals(ctx.writes.map((write) => [write.spec, write.name]), [["session", "gateway-7"], ["session", "swamp-7"], ["terminal", "terminal"]]);
+        const stdout = (ctx.writes[2].data as { stdout: string }).stdout;
+        assert(!stdout.includes(gatewayToken) && !stdout.includes(swampToken));
+        assertEquals(Object.keys(JSON.parse(stdout)), ["environment_id", "server_version", "expires_at", "gateway_session", "swamp_session"]);
+        await assertRejects(() => register({ instance_id: 7, folder: `${run}-none` }, context()), Error, "conn.response_invalid");
+    } finally {
+        await Deno.remove(run, { recursive: true });
+    }
+});
+
+Deno.test("a registration whose result is not ready keeps the run folder for finish and the container stop", () =>
+    fixture(ready, async (run) => {
+        const ctx = context();
+        // A workspace without its commit line is not finished: the result names it, and finish runs after this step.
+        await createRegister(createArgs(run, { container: { launch: "succeeded", workspace: { status: "succeeded", outputs: { stdout: "" } },
+            deploy: [], processes: "skipped", seed: "skipped", t3: "succeeded", register: "skipped", server: null } }), ctx);
+        const data = ctx.writes[2].data as { ready: boolean; removed: boolean };
+        assertEquals([data.ready, data.removed, await exists(run), await exists(`${run}-t3.json`)], [false, false, true, false]);
+    }));
+
+Deno.test("each failed check refuses with the code of POST /conn/environments, stores nothing and removes the copy", async () => {
     const cases: [unknown, string][] = [
         [{ environment, gateway: { token: "g", ...session(["access:read"]) }, swamp: { token: "s", ...session([]) } }, "conn.admin_scope_missing"],
         [{ environment, gateway: { token: "g", status: 401, body: "" }, swamp: { token: "s", ...session([]) } }, "conn.session_rejected"],
@@ -69,8 +117,8 @@ Deno.test("each failed check refuses with the code of POST /conn/environments an
     for (const [reply, code] of cases) {
         await fixture(reply, async (run) => {
             const ctx = context();
-            await assertRejects(() => register({ instance_id: 7, folder: run }, ctx), Error, code);
-            assertEquals(ctx.writes, []);
+            await assertRejects(() => createRegister(createArgs(run), ctx), Error, code);
+            assertEquals([ctx.writes, await exists(`${run}-t3.json`)], [[], false]);
         });
     }
 });
@@ -163,4 +211,27 @@ Deno.test("a renewal without a readable copy reports conn.response_invalid and r
     await renew({ instance_id: 7, folder, url: "http://127.0.0.1:9", environment_id: "env-7" }, ctx);
     assertEquals(JSON.parse((ctx.writes[0].data as { stdout: string }).stdout), { outcome: "failed", error_code: "conn.response_invalid" });
     await gone(folder);
+});
+
+// Every workflow step that calls this behavior names a method it has and passes exactly the arguments that method requires: the
+// migrate's registration keeps `{instance_id, folder}` while the create's takes the create's result inputs (`create_register`).
+Deno.test("each workflow step of @nckrtl/instance-t3 passes the arguments of the method it names", async () => {
+    type Step = { name: string; task?: { behaviorType?: string; methodName?: string; inputs?: Record<string, unknown> } };
+    const folder = new URL("../../../../workflows/", import.meta.url);
+    let seen = 0;
+    for await (const file of Deno.readDir(folder)) {
+        if (!file.name.endsWith(".yaml")) continue;
+        const flow = parse(await Deno.readTextFile(new URL(file.name, folder))) as { jobs?: { steps: Step[] }[] };
+        for (const step of (flow.jobs ?? []).flatMap((job) => job.steps)) {
+            if (step.task?.behaviorType !== "@nckrtl/instance-t3") continue;
+            seen++;
+            const method = (behavior.methods as Record<string, { arguments: { shape: Record<string, { isOptional(): boolean }> } }>)[step.task.methodName!];
+            assert(method !== undefined, `${file.name} ${step.name}: no method ${step.task.methodName}`);
+            const given = Object.keys(step.task.inputs ?? {}).sort();
+            const required = Object.entries(method.arguments.shape).filter(([, field]) => !field.isOptional()).map(([key]) => key);
+            for (const key of required) assert(given.includes(key), `${file.name} ${step.name}: missing ${key}`);
+            for (const key of given) assert(key in method.arguments.shape, `${file.name} ${step.name}: unknown ${key}`);
+        }
+    }
+    assert(seen >= 3, `${seen} steps`);
 });

@@ -128,7 +128,9 @@ Deno.test("a clone publishes its prepared Route beside the copy in its create, a
     // completion publishes one the create did not (docs/cli/instance/complete.mmd).
     const create = await steps("operation-instance-create");
     const clone = create.find((step) => step.name === "clone-route")!;
-    assertEquals(clone.dependsOn!.map((item) => item.step), ["clone-route-csr"]);
+    // The site child reads the run folder that clone-route-input writes beside the CSR: a clone runs no create input step.
+    assertEquals(clone.dependsOn!.map((item) => item.step), ["clone-route-csr", "clone-route-input"]);
+    assert(String(clone.task.inputs?.admitted).includes('steps["clone-route-input"].outputs.path'));
     assertEquals(clone.task.workflowIdOrName, "operation-route-create");
     // The copy's root disk is not there yet: the site step skips the Route access and APP_URL.
     assertEquals(clone.task.inputs?.prepared, "${{ string(inputs.node_id) }}");
