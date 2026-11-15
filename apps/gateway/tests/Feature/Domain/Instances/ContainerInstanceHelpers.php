@@ -153,3 +153,21 @@ function swampVaultStandIn(): object
 
     return $socket;
 }
+
+/**
+ * Points the Gateway at a recipe whose agent folder also pins a Conn Server release, as the recipe will once one exists
+ * (docs/reference/development-containers.md#container-server). The release is a fixture: nothing fetches it.
+ */
+function containerServerConnPinned(): void
+{
+    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), true, flags: JSON_THROW_ON_ERROR);
+    $recipe['instances']['agent']['conn-server'] = ['version' => '0.1.0', 'artifacts' => ['amd64' => [
+        'url' => 'https://github.com/nckrtl/conn/releases/download/conn-server-v0.1.0/conn-server-0.1.0-linux-x64.tar.gz', 'sha256' => str_repeat('a', 64)]],
+        'bin' => ['conn-server' => 'conn-server-0.1.0-linux-x64/conn-server']];
+    $root = sys_get_temp_dir().'/orbit-conn-recipe-'.bin2hex(random_bytes(6));
+    mkdir($root.'/release/apps/gateway/resources/machine-software', 0777, true);
+    file_put_contents($root.'/release/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT));
+    // The Gateway reads the recipe of its checkout when the checkout is a release link.
+    symlink($root.'/release', $root.'/orbit');
+    config(['orbit.gateway_checkout' => $root.'/orbit/apps/gateway']);
+}

@@ -825,6 +825,8 @@ Deno.test({
             { path: "/home/agent/.t3/userdata/settings.json", uid: 2750, gid: 2750, mode: "0600", json: { linkedEnvironmentsEnabled: true } },
             // A folder the image lacks: the push makes it (a migrate builds the container from the image).
             { path: "/etc/systemd/system/t3.service.d/10-orbit-boot.conf", uid: 0, gid: 0, mode: "0644", content: "[Unit]\nDefaultDependencies=no\n" },
+            // The runtime's container server (docs/reference/development-containers.md#container-server).
+            { path: "/etc/systemd/system/t3.service.d/20-orbit-server.conf", uid: 0, gid: 0, mode: "0644", content: "[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve\n" },
           ],
           links: [{ path: "/home/agent/.claude/CLAUDE.md", target: "/opt/orbit-agent/current/notes/web-app.md" }],
         },
@@ -858,6 +860,10 @@ Deno.test({
       assertEquals(state.containers["instance-7"].snapshots, [`seed-${seed}`]);
       assertEquals(Deno.readTextFileSync(`${clone}/etc/orbit/instance`), "ORBIT_INSTANCE_ID=8\n");
       assertEquals(Deno.readTextFileSync(`${clone}/etc/systemd/system/t3.service.d/10-orbit-boot.conf`), "[Unit]\nDefaultDependencies=no\n");
+      assertEquals(Deno.readTextFileSync(`${clone}/etc/systemd/system/t3.service.d/20-orbit-server.conf`), "[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve\n");
+      // The agent part wrote the drop-ins into a running container: systemd reads them before the unit starts.
+      const units = state.systemctl.map((call: string[]) => call.join(" "));
+      assertEquals(units[units.indexOf("start -- t3.service") - 1], "daemon-reload");
       assertEquals(JSON.parse(Deno.readTextFileSync(`${clone}/home/agent/.t3/userdata/settings.json`)), { linkedEnvironmentsEnabled: true });
       assertEquals(Deno.statSync(`${clone}/home/agent/.t3/userdata`).mode! & 0o777, 0o700);
       assertEquals(Deno.readTextFileSync(`${clone}/home/agent/.config/orbit/model.env`), "ORBIT_MODEL_KEY=placeholder\n");

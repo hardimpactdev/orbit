@@ -117,7 +117,7 @@ if rest[:3] == ['/usr/bin/timeout', '20', '/usr/bin/cat']:
     sys.exit(0)
 if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node', '-']:
     assert stdin == open(os.environ['T3_HELPER']).read(), 'the shipped helper arrives on stdin'
-    assert rest[4] == '/opt/orbit-agent/current/agent/bin/t3', rest
+    assert rest[4] == os.environ['T3_PROGRAM'], rest
     if rest[5:] == ['read', thread]:
         ask = os.environ.get('T3_ASK', 'questions')
         if ask == 'fail':
@@ -137,7 +137,7 @@ if rest[:4] == ['/usr/bin/timeout', '60', '/opt/orbit-runtime/current/bin/node',
 if rest == ['/usr/bin/true']:
     sys.exit(1 if os.environ['T3_START'] == 'unreachable' else 0)
 if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
-    assert rest[2] == '3600' and rest[3] == '/opt/orbit-agent/current/agent/bin/t3', rest
+    assert rest[2] == '3600' and rest[3] == os.environ['T3_PROGRAM'], rest
     assert rest[4:] == ['thread', 'send', '--wait', '--json', thread, '-'] or (rest[4:6] == ['thread', 'start'] and rest[-4:] == ['--wait', '--json', '/srv/workspace', '-']), rest
     mode = os.environ['T3_START']
     if mode == 'garbled':
@@ -155,7 +155,7 @@ if rest[0] == '/usr/bin/timeout' and rest[1] == '--kill-after=30':
         mode = 'completed'
     print(json.dumps({'threadId': thread, 'runId': 'run:1', 'status': mode, 'reply': 'done', 'error': None}))
     sys.exit({'completed': 0, 'waiting': 2}.get(mode, 1))
-assert rest[0] == '/usr/bin/timeout' and rest[1] == '60' and rest[2] == '/opt/orbit-agent/current/agent/bin/t3', rest
+assert rest[0] == '/usr/bin/timeout' and rest[1] == '60' and rest[2] == os.environ['T3_PROGRAM'], rest
 if rest[3:5] == ['thread', 'list']:
     if os.environ['T3_START'] == 'listfail':
         sys.stderr.write('server not running')
@@ -186,7 +186,7 @@ async function phase(start: string, change: Record<string, unknown> = {}, tree =
         const done = await new Deno.Command("ansible-playbook", {
             args: ["-i", "localhost,", "-e", "ansible_connection=local", "-e", "ansible_become=false", "-e", "ansible_python_interpreter={{ ansible_playbook_python }}",
                 `${shipped}/task-copy-turn.yml`],
-            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, ...copy,
+            env: { ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`, T3_CALLS: `${folder}/calls`, T3_START: start, T3_TREE: tree, T3_ASK: ask, T3_SETTLE: settle, T3_PROGRAM: String(change.t3 ?? turn.t3), ...copy,
                 T3_HELPER: `${shipped}/t3_copy_rpc.mjs`,
                 ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1", ANSIBLE_CONFIG: `${shipped}/ansible.cfg` },
         }).output();
@@ -249,6 +249,20 @@ Deno.test({ name: "a continued turn whose thread list fails launches nothing and
     assert(!failed.ok, failed.output);
     assert(failed.output.includes("tasks.copy_turn_failed") && !failed.output.includes("tasks.copy_thread_missing"), failed.output);
     assertEquals([failed.resumed, failed.launched, failed.start, failed.calls.length], [{ list_exit: 1, found: 0 }, false, null, 2]);
+} });
+
+// The container server the copy's runtime recorded (docs/reference/development-containers.md#container-server): every call runs its program.
+Deno.test({ name: "a turn in a Conn Server copy runs the Conn Server's program for every call, and a program outside the agent folder is refused", ignore: !available, async fn() {
+    const conn = "/opt/orbit-agent/current/agent/bin/conn-server";
+    const done = await phase("completed", { t3: conn });
+    assert(done.ok, done.output);
+    const programs = done.calls.map((call) => call.args.slice(15)).filter((args) => args[0] === "/usr/bin/timeout" && args.includes("thread"))
+        .map((args) => args.find((arg) => arg.startsWith("/opt/orbit-agent/")));
+    assertEquals([programs.length > 0, programs.every((program) => program === conn)], [true, true]);
+
+    const refused = await phase("completed", { t3: "/usr/local/bin/conn-server" });
+    assert(!refused.ok && refused.output.includes("tasks.copy_turn_invalid"), refused.output);
+    assertEquals([refused.calls.length, refused.launched], [0, false]);
 } });
 
 const candidate = "c".repeat(40);

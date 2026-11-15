@@ -972,7 +972,7 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 ### Drivers
 
-A turn runs in a [task copy](#task-copy) on T3: Swamp runs stock `t3 thread start` or `t3 thread send` in the copy as user `agent`, and the thread records the driver `t3`. When the turn's projection commits, the copy's T3 thread and its title go to the [Conn thread index](/reference/conn#thread-index), so a device lists it at once. A caller never supplies a runtime URL. A thread takes its [copy turn agent](#copy-turn-agents).
+A turn runs in a [task copy](#task-copy) on T3: Swamp runs `t3 thread start` or `t3 thread send` in the copy as user `agent`, with the program of the copy's [recorded container server](/reference/development-containers#container-server), stock T3's `t3` or the Conn Server's `conn-server`. The thread records the driver `t3` with either. When the turn's projection commits, the copy's T3 thread and its title go to the [Conn thread index](/reference/conn#thread-index), so a device lists it at once. A caller never supplies a runtime URL. A thread takes its [copy turn agent](#copy-turn-agents).
 
 The `pi` driver ran turns on task VMs and is removed with the Pi task loop. Threads of old groups keep the driver `pi` and stay readable. A completion or cancel of such a group interrupts nothing, because the task VM and its Pi server are gone. A new task still stores `pi` in its `implementer_agent_driver` and `reviewer_agent_driver` columns, which nothing reads; the Gateway reads none of `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER`, `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT`.
 

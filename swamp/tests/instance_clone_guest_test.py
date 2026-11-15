@@ -1161,6 +1161,18 @@ class CloneGuestTest(unittest.TestCase):
                          [["systemctl", "reset-failed", "t3.service"], ["systemctl", "start", "t3.service"]])
         self.assertIn("restart:t3", result["changes"])
 
+    def test_a_t3_the_step_starts_is_started_after_a_reload_so_it_runs_the_recorded_server(self):
+        # The agent part wrote the server's drop-in into a running copy: the start must read it (development-containers.md#container-server).
+        for unit in ("inactive", "failed"):
+            with self.subTest(unit=unit):
+                commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit=unit)
+                systemctl = [argv[1] for argv in commands if argv[:1] == ["systemctl"] and argv[1] in ("daemon-reload", "reset-failed", "start")]
+                self.assertEqual(systemctl[0], "daemon-reload")
+                self.assertEqual(systemctl[-1], "start")
+        # A T3 the copy's boot started already read the drop-ins at that boot: no reload.
+        commands, _, _ = self.readiness("t3", existing=False, expected_exit=0, t3=T3_INTENT, t3_unit="active")
+        self.assertNotIn(["systemctl", "daemon-reload"], commands)
+
     def test_a_t3_that_does_not_answer_adds_no_project_so_a_retry_adds_it_once(self):
         commands, output, error = self.readiness("t3", existing=False, fail="curl", entrypoint=True, t3=T3_INTENT)
         self.assertEqual((output, error), ("", "instance.container_t3_failed: command curl exited 17\n"))
@@ -1169,6 +1181,12 @@ class CloneGuestTest(unittest.TestCase):
     def test_a_failed_session_issue_fails_the_t3_step_by_the_command_and_its_exit(self):
         _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/t3", entrypoint=True, t3=T3_INTENT)
         self.assertEqual((output, error), ("", "instance.container_t3_failed: command t3 exited 17\n"))
+
+    def test_a_failed_session_issue_of_the_conn_server_names_its_program(self):
+        # A copy whose runtime records the Conn Server runs its program (docs/reference/development-containers.md#container-server).
+        conn = {**T3_INTENT, "t3": "/opt/agent/bin/conn-server"}
+        _, output, error = self.readiness("t3", existing=False, fail="/opt/agent/bin/conn-server", entrypoint=True, t3=conn)
+        self.assertEqual((output, error), ("", "instance.container_t3_failed: command conn-server exited 17\n"))
 
     def test_non_php_check_has_no_php_probe(self):
         commands, _, _ = self.readiness("check")

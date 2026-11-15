@@ -42,6 +42,7 @@ use App\Domain\InstanceMigration\InstanceMigrationRoute;
 use App\Domain\InstanceMigration\MigratedProcessDefinitions;
 use App\Domain\InstanceMigration\MigrateSchedules;
 use App\Domain\Instances\ContainerProcesses;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DatabaseClone\InstanceDatabaseClonePlanner;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
@@ -645,6 +646,34 @@ describe('migration without a default seed', function (): void {
         expect(containerRefusal(fn () => migrateStart($feature)))->toBe('instance.default_missing')
             ->and($feature->runtime()->exists())->toBeFalse();
     })->with(['missing' => true, 'another Node' => false]);
+
+    it('records the Project\'s container server on the moved non-default, which its server drop-in and calls name', function (): void {
+        containerServerConnPinned();
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        $project->update(['container_server' => ContainerServer::Conn]);
+        migrateCheckout($project, $node);
+        $feature = migrateCheckout($project, $node, 'feature');
+
+        $clone = migrateStart($feature)->input['container']['clone'];
+
+        expect($feature->runtime()->firstOrFail()->container_server)->toBe(ContainerServer::Conn)
+            ->and($clone['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
+            ->and(collect($clone['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])->toContain('/agent/bin/conn-server serve');
+    });
+
+    it('refuses a non-default whose container server the recipe does not pin, before it reserves anything', function (): void {
+        $node = containerDefaultNode();
+        $project = containerDefaultProject();
+        Project::query()->whereKey($project->id)->update(['container_server' => 'conn']);
+        migrateCheckout($project, $node);
+        $feature = migrateCheckout($project->refresh(), $node, 'feature');
+        $lastPort = $node->refresh()->t3_port_last;
+
+        expect(containerRefusal(fn () => migrateStart($feature)))->toBe('project.container_server_unavailable')
+            ->and($feature->runtime()->exists())->toBeFalse()
+            ->and($node->refresh()->t3_port_last)->toBe($lastPort);
+    });
 
     it('keeps the model-router prerequisite before the host default moves', function (): void {
         $node = containerDefaultNode();

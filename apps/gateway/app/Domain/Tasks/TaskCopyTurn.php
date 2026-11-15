@@ -110,7 +110,7 @@ final readonly class TaskCopyTurn
             ...$data->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
             'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
-            'turn' => ['t3' => InstanceContainer::T3, 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
+            'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
                 'prompt' => TaskTurnPrompt::compose($task, $prompt)],
         ];

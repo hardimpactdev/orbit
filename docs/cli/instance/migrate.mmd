@@ -33,11 +33,12 @@ sequenceDiagram
   %%> - `vp-dev` keeps its identity, assigned port and desired state; unsupported preset versions, custom commands, external paths and recorded container port conflicts refuse before downtime, naming the Process and reason
   %%> - a web-serving Project names its PHP version; a missing version refuses with `project.source_defaults_incomplete`, naming `orbit project:update PROJECT --source-access=github_app` to record it from source
   %%> - a database on a Database server has an IPv4 address and a port, else `instance.database_clone_unsupported`
+  %%> - a non-default Instance: the recipe's agent folder pins the program of the Project's `container_server`, else `project.container_server_unavailable` (409) before any record
   %%> Result:
   %%> - the runtime reservation records its owning Operation; late receipts cannot change a newer owner
   %%> - the whole-run budget is 5,700 seconds: 4,830 seconds of declared phase and child timeouts, including Node preparation, restoration and cleanup, rounded up to five minutes, plus 600 seconds for admission and settlement
   %%> - maps only known host command locations, preserving opaque env/shell strings, and records each Process/from/to translation in the terminal receipt
-  %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the next free T3 port after the Node's last one
+  %%> - the runtime record is reserved: the next bridge address and, for a non-default Instance, the next free T3 port after the Node's last one and the Project's `container_server`, which names the program of every call and the unit's `ExecStart`
   %%> - the checkout stays the Instance's runtime until the Route has moved; the Route's Node is held for the run
   %%> - the Instance takes no deployment and no wake while the run lasts
   %%> - a non-default Instance's placeholder model key goes to the vault
@@ -110,7 +111,7 @@ sequenceDiagram
   %%> - starts FrankenPHP and the Instance's existing Processes as `orbit`, with the same ids and desired states; their environment files come through the vault
   %%> - writes the shared FrankenPHP Caddyfile and unit; only the Node's bridge peer with `X-Forwarded-Proto: https` sets PHP's HTTPS scheme, port and resolved client IP; other requests keep native values
   %%> - `vp-dev` uses the runtime folder’s `current/bin/vp`, workspace paths and its assigned port on `0.0.0.0`; only the Node can reach that port, and Caddy sends `/__orbit/vite` there
-  %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings and its T3 server, registered as in create
+  %%> - a non-default Instance gets `/etc/orbit/instance`, the agent settings with the drop-in that names its recorded container server, and that server, started after a systemd reload and registered as in create
   %%> - a default Instance gets its first `seed-<commit>` snapshot
   %%> - attached Node service proxies are installed and proven before quiesce, inside the container launch; their Processes run without root
   SW->>N: Move the Route<br/>child route-mutation-forward

@@ -344,6 +344,10 @@ describe('project requests', function (): void {
             ->and(new UpdateProjectRequest(projectId: 3, defaultAutoDeploy: true)->body()->all())->toBe(['default_auto_deploy' => true])
             ->and(new UpdateProjectRequest(projectId: 3, name: 'App')->body()->all())->not->toHaveKey('default_auto_deploy');
     });
+    it('sends container_server only when provided', function (): void {
+        expect(new UpdateProjectRequest(projectId: 3, containerServer: 'conn')->body()->all())->toBe(['container_server' => 'conn'])
+            ->and(new UpdateProjectRequest(projectId: 3, name: 'App')->body()->all())->not->toHaveKey('container_server');
+    });
 });
 
 function project_gateway_connector(MockClient $mockClient): GatewayConnector

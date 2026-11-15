@@ -361,6 +361,14 @@
                                 "gid": 0,
                                 "mode": "0644",
                                 "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+                            },
+                            {
+                                "path": "/etc/systemd/system/t3.service.d/20-orbit-server.conf",
+                                "before_start": true,
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644",
+                                "content": "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"
                             }
                         ],
                         "links": [
@@ -795,6 +803,14 @@
                                     "gid": 0,
                                     "mode": "0644",
                                     "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+                                },
+                                {
+                                    "path": "/etc/systemd/system/t3.service.d/20-orbit-server.conf",
+                                    "before_start": true,
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644",
+                                    "content": "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"
                                 }
                             ],
                             "links": [

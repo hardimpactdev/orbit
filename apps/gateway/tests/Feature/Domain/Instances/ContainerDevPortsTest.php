@@ -54,7 +54,7 @@ function devPortWorld(string $publication = 'private'): array
     $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
     $runtime = static fn (Instance $instance, string $address, ?Instance $source, ?int $port): InstanceRuntime => InstanceRuntime::query()->create([
         'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id,
-        'bridge_address' => $address, 't3_port' => $port, 'runtime_version' => 'r', 'agent_version' => 'a', 'clone_source_instance_id' => $source?->id,
+        'bridge_address' => $address, 't3_port' => $port, 'container_server' => $port === null ? null : 't3', 'runtime_version' => 'r', 'agent_version' => 'a', 'clone_source_instance_id' => $source?->id,
         'power_state' => InstanceRuntimePowerState::Running]);
     $default = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/d', 'status' => InstanceState::Active]);
     $runtime($default, '10.253.0.2', null, null)->update(['seed_commit' => str_repeat('c', 40)]);

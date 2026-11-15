@@ -108,7 +108,7 @@ function heldServer(Project $project, Node $node, string $name, string $power = 
 {
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/srv/'.$name, 'status' => InstanceState::Active]);
     InstanceRuntime::query()->create(['node_id' => $node->id, 'power_state' => $power, 'runtime_version' => 'test', 'agent_version' => 'test', 'instance_id' => $instance->id,
-        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.1.'.($instance->id % 250 + 2), 't3_port' => 3800 + $instance->id]);
+        'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.1.'.($instance->id % 250 + 2), 't3_port' => 3800 + $instance->id, 'container_server' => 't3']);
     $environment = ConnEnvironment::query()->create(['environment_id' => 'env-'.$name, 'label' => 'tool / '.$name, 'url' => 'http://'.$node->wireguard_ip.':'.(3800 + $instance->id),
         'node_id' => $node->id, 'admin_session' => 'private-admin-'.$name, 'admin_session_expires_at' => now()->addDays(20), 'registered_at' => now()]);
     $environment->forceFill(['instance_id' => $instance->id])->save();

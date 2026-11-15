@@ -6,7 +6,6 @@ namespace Orbit\Extensions\Conn\Actions;
 
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Integrations\IntegrationAvailability;
 use App\Domain\Nodes\NodeAccessAuthorizer;
@@ -51,7 +50,8 @@ final readonly class AdmitConnRenewalAction
             return $this->operations->execute(self::Kind, 'conn_environment', $environment->id, $gateway, [
                 'conn_environment_id' => $environment->id, 'instance_id' => $instance->id, 'caller_node_id' => $caller?->id,
                 'intent' => ['instance_id' => $instance->id, 'environment_id' => $environment->environment_id, 'url' => $environment->url,
-                    't3' => InstanceHostIntent::AgentFolder.'/current/agent/bin/t3',
+                    // The program of the container's recorded server, whose store holds its sessions (docs/reference/development-containers.md#container-server).
+                    't3' => $runtime->server()->program(),
                     'container' => ['project' => $runtime->incus_project, 'name' => $runtime->container_name],
                     'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($node)],
             ], $caller === null ? 'schedule' : 'operator', null, lockKey: OperationStore::lockKey('conn_environment', $environment->id));

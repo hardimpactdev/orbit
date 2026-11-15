@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\WireGuard\Ipv4Subnet;
 use Illuminate\Database\Eloquent\Model;
@@ -26,6 +27,7 @@ use LogicException;
  * @property string $container_name
  * @property string $bridge_address
  * @property int|null $t3_port
+ * @property ContainerServer|null $container_server
  * @property string $runtime_version
  * @property string $agent_version
  * @property int|null $clone_source_instance_id
@@ -53,6 +55,7 @@ final class InstanceRuntime extends Model
         'container_name',
         'bridge_address',
         't3_port',
+        'container_server',
         'runtime_version',
         'agent_version',
         'clone_source_instance_id',
@@ -80,6 +83,12 @@ final class InstanceRuntime extends Model
         });
     }
 
+    /** The server this container runs; only a runtime with a T3 port has one (docs/reference/development-containers.md#container-server). */
+    public function server(): ContainerServer
+    {
+        return $this->container_server ?? throw new LogicException("Instance runtime [{$this->id}] runs no container server.");
+    }
+
     /** @return BelongsTo<Instance, $this> */
     public function instance(): BelongsTo
     {
@@ -100,6 +109,7 @@ final class InstanceRuntime extends Model
             'instance_id' => 'integer',
             'node_id' => 'integer',
             't3_port' => 'integer',
+            'container_server' => ContainerServer::class,
             'clone_source_instance_id' => 'integer',
             'idmap_size' => 'integer',
             'power_state' => InstanceRuntimePowerState::class,
