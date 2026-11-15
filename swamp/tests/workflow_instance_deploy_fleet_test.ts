@@ -70,9 +70,11 @@ Deno.test("a container deployment runs its phases in two steps, each one play of
     assert(names.indexOf("Run dev deploy steps") < names.indexOf("Finish the container"));
     assertEquals(step("Prepare the container").dependsOn, [{ step: "Write the container intent", condition: { type: "succeeded" } }]);
     assertEquals(step("Check out in the container").dependsOn, [{ step: "Prepare the container", condition: { type: "succeeded" } }]);
+    // With no dev deploy step the forEach is dropped from the graph; the last edge keeps the finish after the skip list then too.
     assertEquals(step("Finish the container").dependsOn, [
         { step: "Check out in the container", condition: { type: "succeeded" } },
         { step: "Run dev deploy steps", condition: { type: "always" } },
+        { step: "Read the steps to skip", condition: { type: "always" } },
     ]);
     // Each secret keeps its one vault expression: the Club key as the restart's start delivers it, the read token, the Processes' files.
     const prepare = step("Prepare the container").task.inputs.env!;

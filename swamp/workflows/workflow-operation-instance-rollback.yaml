@@ -115,7 +115,7 @@ jobs:
   - name: Restart Processes
     # Each Process reloads when its unit allows it, else restarts; a container restarts.
     labels: {role: swamp}
-    dependsOn: [{step: Swap current, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+    dependsOn: [{step: Swap current, condition: {type: succeeded}}, {step: Refresh PHP cache, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}, {step: Read current back, condition: {type: always}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
     writes: true
     forEach:
@@ -150,7 +150,7 @@ jobs:
   - name: Check the selection
     # The end check: the live link read back names the admitted release.
     labels: {role: swamp}
-    dependsOn: [{step: Read current back, condition: {type: succeeded}}]
+    dependsOn: [{step: Read current back, condition: {type: succeeded}}, {step: Restart Processes, condition: {type: always}}]
     guard: ${{ steps.exists(key, steps[key].status in ["failed", "cancelled"]) }}
     task:
       type: assert

@@ -86,10 +86,9 @@ jobs:
     dependsOn:
     - step: Check the databases
       condition:
-        type: or
-        conditions:
-        - type: succeeded
-        - type: skipped
+        type: not
+        condition:
+          type: failed
     guard: ${{ steps.exists(k, steps[k].status == "failed") }}
     task:
       type: workflow

@@ -1,0 +1,16 @@
+source_sha256 = "984a22c0af0e527b4a370fc50997a392358eab5d54d58ddafbf3452fa83be3b3"
+cases = [
+  "every workflow job orders its steps the same under both level rules",
+  "the model sees the level throttle: two steps beside a forEach with concurrency 1 run one at a time only under db3f6373",
+  "a forEach without concurrency in a throttled level runs one item at a time only under db3f6373",
+  "the workflow simulator reads `not(failed)` as the engine does: a restore without servers republishes, a failed check does not",
+  "an empty list moves its dependents up a level: the rules are compared in that shape too",
+]
+file = "swamp/tests/workflow_engine_order_test.ts"
+cost = 10 # every subset of empty lists for 426 jobs: about 5-10 s on Beast
+inputs = [
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/workflows/*.yaml",
+  "swamp/tests/_support/engine_order.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+]

@@ -77,7 +77,7 @@ export function failures(workflow: string, inputs: Record<string, unknown>): str
   return failed;
 }
 
-export type Condition = { type: string; conditions?: Condition[] };
+export type Condition = { type: string; conditions?: Condition[]; condition?: Condition };
 export type GraphStep = {
   name: string;
   guard?: string;
@@ -126,7 +126,8 @@ export function runWorkflow(
   const holds = (condition: Condition, status: string): boolean =>
     condition.type === "always" || condition.type === status ||
     (condition.type === "completed" && (status === "succeeded" || status === "failed")) ||
-    (condition.type === "or" && condition.conditions!.some((c) => holds(c, status)));
+    (condition.type === "or" && condition.conditions!.some((c) => holds(c, status))) ||
+    (condition.type === "not" && !holds(condition.condition!, status));
   let now = 0;
   const context = () => ({
     // Swamp hands JSON integers to CEL as int, never double; `instance_id % 4` needs that.

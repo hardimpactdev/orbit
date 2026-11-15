@@ -53,7 +53,7 @@ jobs:
             execution_secrets: '${{ "member_" + string(self.member.id) in inputs.execution_secrets ? {"environment": inputs.execution_secrets["member_" + string(self.member.id)]} : {} }}'
       - name: result
         labels: {role: swamp}
-        dependsOn: [{step: members, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
+        dependsOn: [{step: members, condition: {type: not, condition: {type: failed}}}]
         task:
           type: behavior
           behaviorType: command/shell
