@@ -34,10 +34,15 @@ final readonly class StartSwampRun
     private const array PreRunEvents = ['validating_inputs', 'superseded_runs', 'evaluating_workflow'];
 
     /**
-     * A start whose connection failed is queued again this many times. Serve admits 50 connections from one address in a fixed
-     * minute and answers a refused one with the rest of that minute as `Retry-After`; three deferrals cover more than a minute.
+     * A start that serve did not take is queued again until this many seconds have passed since its first deferral: a connection
+     * that failed (serve down, or its 50 handshakes a minute from one address used up) or an admission refusal (`not_ready` while
+     * serve boots, `draining` while it stops). It covers a serve restart: up to 6 minutes of stop (`TimeoutStopSec`) and its boot.
+     * Each attempt restarts the 600-second admission clock, so the start ends with its own code, never `operation.timed_out`.
      */
-    public const int MaxDeferrals = 3;
+    public const int DeferralBudgetSeconds = 420;
+
+    /** The refusals that serve's admission gate sends before it saves a run: serve booting, or serve stopping. */
+    private const array NotAdmitted = ['not_ready', 'draining'];
 
     /** The longest wait before a deferred start runs again: serve's window plus a margin. */
     public const int MaxDeferralSeconds = 65;
@@ -60,6 +65,7 @@ final readonly class StartSwampRun
         $submitted = false;
         $phases = [];
         $connectFailure = null;
+        $notAdmitted = null;
         try {
             if (! $this->begin($operation)) {
                 return;
@@ -70,7 +76,7 @@ final readonly class StartSwampRun
             }
             $endpoint = $this->endpoint();
             // The run-time execution copies and the start share one connection: one serve handshake per start.
-            $response = app(SwampDispatch::class)->shared(function () use ($operation, $endpoint, $started, &$submitted, &$phases, &$connectFailure): array {
+            $response = app(SwampDispatch::class)->shared(function () use ($operation, $endpoint, $started, &$submitted, &$phases, &$connectFailure, &$notAdmitted): array {
                 $payload = [
                     'workflowIdOrName' => app(DirectOperation::class)->workflowFor($operation),
                     'inputs' => app(DirectOperation::class)->workflowInputs($operation),
@@ -78,7 +84,7 @@ final readonly class StartSwampRun
                 ];
                 $phases['inputs_ms'] = $this->milliseconds($started);
 
-                return $this->request($endpoint, $payload, $submitted, $phases, $connectFailure);
+                return $this->request($endpoint, $payload, $submitted, $phases, $connectFailure, $notAdmitted);
             });
             $accepted = true;
             $binding = ($this->clock)();
@@ -97,7 +103,9 @@ final readonly class StartSwampRun
             // A run-time execution copy whose connect failed also ran before any start frame.
             $connectFailure ??= $exception instanceof ResourceOperationException && $exception->errorCode === 'swamp.vault_sync_unavailable'
                 && $exception->getPrevious() instanceof WebSocketException ? $exception->getPrevious() : null;
-            if ($connectFailure !== null && ! $submitted && $this->defer($operation, self::deferralSeconds($operation, $connectFailure))) {
+            // A start serve did not admit (`not_ready`, `draining`) ran no run either: it waits as a failed connection does.
+            if (($connectFailure !== null || $notAdmitted !== null) && ! $submitted
+                && $this->defer($operation, self::deferralSeconds($operation, $connectFailure, $notAdmitted))) {
                 $outcome = 'deferred';
 
                 return;
@@ -177,9 +185,11 @@ final readonly class StartSwampRun
     }
 
     /**
-     * Queues a start again whose connection failed. Nothing was sent on that connection, and `workflow.run` is the first
-     * frame of a start, so no run can exist. The Operation returns to `queued`; its new job begins it again under the same
-     * lock, so at most one job ever submits. A proof child keeps its own serialized retry; the last deferral fails as before.
+     * Queues a start again whose connection failed, or that serve's admission gate refused. Nothing was sent on a failed
+     * connection, and `workflow.run` is the first frame of a start; a refusal of the gate comes before serve saves a run. So no
+     * run can exist. The Operation returns to `queued`; its new job begins it again under the same lock, so at most one job ever
+     * submits. A proof child keeps its own serialized retry. Once the budget has passed since the first deferral, the start
+     * fails as before: `swamp.start_unavailable` (connection), `swamp.vault_sync_unavailable` (copy) or `swamp.start_refused`.
      */
     private function defer(Operation $operation, int $seconds): bool
     {
@@ -189,13 +199,14 @@ final readonly class StartSwampRun
         $deferred = DB::transaction(function () use ($operation): bool {
             $this->lock($operation);
             $count = is_int($operation->state['start_deferrals'] ?? null) ? $operation->state['start_deferrals'] : 0;
+            $since = is_int($operation->state['start_deferred_since'] ?? null) ? $operation->state['start_deferred_since'] : now()->getTimestamp();
             if ($operation->status !== OperationStatus::Running || isset($operation->state['swamp_run_id']) || $operation->dispatched_at !== null
-                || $operation->cancel_requested_at !== null || $count >= self::MaxDeferrals) {
+                || $operation->cancel_requested_at !== null || now()->getTimestamp() - $since >= self::DeferralBudgetSeconds) {
                 return false;
             }
             // started_at stays: the admission budget keeps counting from this start, and the next begin records a new one.
             app(OperationStore::class)->change($operation, ['status' => OperationStatus::Queued, 'error_code' => null,
-                'state' => [...($operation->state ?? []), 'start_deferrals' => $count + 1]]);
+                'state' => [...($operation->state ?? []), 'start_deferrals' => $count + 1, 'start_deferred_since' => $since]]);
 
             return true;
         });
@@ -215,13 +226,17 @@ final readonly class StartSwampRun
         return true;
     }
 
-    /** The wait before a start whose connection failed runs again: serve's `Retry-After` when it named one, else a doubling backoff. */
-    private static function deferralSeconds(Operation $operation, Throwable $exception): int
+    /**
+     * The wait before a deferred start runs again: a doubling backoff of 5, 10, 20, 40 seconds, never shorter than serve's
+     * `Retry-After` plus one second and never longer than 65 seconds. Serve asks a refused start back after 2 or 5 seconds; the
+     * backoff keeps a long drain from spending a handshake every few seconds per waiting start.
+     */
+    private static function deferralSeconds(Operation $operation, ?Throwable $exception, ?int $notAdmitted): int
     {
         $count = is_int($operation->state['start_deferrals'] ?? null) ? $operation->state['start_deferrals'] : 0;
-        $retryAfter = $exception instanceof WebSocketException ? $exception->retryAfterSeconds : null;
+        $retryAfter = $exception instanceof WebSocketException ? $exception->retryAfterSeconds : $notAdmitted;
 
-        return min(self::MaxDeferralSeconds, max(1, $retryAfter === null ? 5 << $count : $retryAfter + 1));
+        return min(self::MaxDeferralSeconds, max(5 << min($count, 4), ($retryAfter ?? 0) + 1));
     }
 
     /** Fails an admitted Operation whose run never started, such as after a failed execution copy. */
@@ -276,7 +291,7 @@ final readonly class StartSwampRun
      * @param  array<string,int>  $phases
      * @return array{run_id:string,failed:bool}
      */
-    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted, array &$phases, ?Throwable &$connectFailure = null): array
+    private function request(WebSocketEndpoint $endpoint, array $payload, bool &$submitted, array &$phases, ?Throwable &$connectFailure = null, ?int &$notAdmitted = null): array
     {
         $id = bin2hex(random_bytes(16));
         $stage = 'connect';
@@ -343,6 +358,10 @@ final readonly class StartSwampRun
                         ]);
                         // A refusal after only pre-run events, none of which confirms a run, proves that no run was accepted.
                         $submitted = false;
+                        // Only before any event that may follow a saved run: a resubmit must never follow a possible run.
+                        if ($remoteType === 'error' && ! $runMayExist && in_array($error['code'] ?? null, self::NotAdmitted, true)) {
+                            $notAdmitted = is_int($error['retryAfterSeconds'] ?? null) ? max(0, $error['retryAfterSeconds']) : 0;
+                        }
                         throw new ResourceOperationException('swamp.start_refused', 'Swamp refused the workflow start. Inspect Swamp before another admission.', 503);
                     }
                 }
