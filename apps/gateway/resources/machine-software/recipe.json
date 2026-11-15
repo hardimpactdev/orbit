@@ -885,12 +885,12 @@
             }
         },
         "swamp": {
-            "version": "20261103.000636.0-sha.db3f6373",
+            "version": "20261114.210101.0-sha.537e03d1",
             "source": "artifact",
             "artifacts": {
                 "amd64": {
-                    "url": "https://github.com/swamp-club/swamp/releases/download/v20261103.000636.0-sha.db3f6373/swamp-linux-x86_64",
-                    "sha256": "6e0fe06f91f07f448b7972ebcbbc4fb994422a9712f8012966c0cc07a41c42a3"
+                    "url": "https://github.com/swamp-club/swamp/releases/download/v20261114.210101.0-sha.537e03d1/swamp-linux-x86_64",
+                    "sha256": "0171346a3588019a73a0e9d28e64447688ad87261e6eceb49b3febf6bd603da3"
                 }
             }
         }

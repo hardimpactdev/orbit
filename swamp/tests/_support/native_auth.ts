@@ -1,5 +1,5 @@
 /** Offline subprocess credential, following the pinned Swamp integration/auth_gate_fixture.ts. */
-import { generateTestSigningKey, mintTestProof } from "https://raw.githubusercontent.com/swamp-club/swamp/db3f6373207cc41235d2334f19a7901b2b84620f/src/domain/auth/proof_test_helpers.ts";
+import { generateTestSigningKey, mintTestProof } from "https://raw.githubusercontent.com/swamp-club/swamp/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/auth/proof_test_helpers.ts";
 
 export async function nativeAuth(folder: string): Promise<Pick<Deno.CommandOptions, "env" | "clearEnv">> {
     const config = `${folder}/fixture-auth`;

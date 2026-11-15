@@ -11,7 +11,7 @@ use Closure;
 use Illuminate\Support\Str;
 
 /**
- * Serve's handshake limit as its source sets it (src/serve/rate_limiter.ts at db3f6373): 50 WebSocket upgrades from one address in a
+ * Serve's handshake limit as its source sets it (src/serve/rate_limiter.ts at 537e03d1; the address burst is the same as at db3f6373): 50 WebSocket upgrades from one address in a
  * fixed 60 s window, all tokens together, a refused one answered 429 with the rest of the window as Retry-After. Every Gateway
  * connect reaches serve through its local TLS proxy as the one address 10.44.0.2. It answers vault.put, vault.read-secret,
  * workflow.run and data.get like serve, and counts every upgrade by token. `$answer` may answer any other request.

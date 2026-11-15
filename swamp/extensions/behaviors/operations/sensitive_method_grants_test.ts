@@ -1,5 +1,5 @@
 /**
- * Swamp names a sensitive field's vault key from the METHOD that writes it (data_writer.ts at the pinned db3f6373):
+ * Swamp names a sensitive field's vault key from the METHOD that writes it (data_writer.ts at the pinned 537e03d1):
  * `<type>-<modelId>-<method>-<spec>-<instance>-<field>`, unless the field sets a static `vaultKey`. A workflow step that runs such a
  * behavior under a new or renamed method stores its secret under a key that no Gateway grant allows, and that the Gateway does not read.
  * #3794 did that (`create_register`); release 2086's pre-check caught it (docs/reference/implementation-loop.md, Swamp checks).

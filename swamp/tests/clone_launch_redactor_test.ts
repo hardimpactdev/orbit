@@ -7,7 +7,7 @@
  * CopyStepRedactionTest).
  */
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
-import { SecretRedactor } from "https://raw.githubusercontent.com/swamp-club/swamp/db3f6373207cc41235d2334f19a7901b2b84620f/src/domain/secrets/secret_redactor.ts";
+import { SecretRedactor } from "https://raw.githubusercontent.com/swamp-club/swamp/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/secrets/secret_redactor.ts";
 
 const read = (path: string) => Deno.readTextFileSync(new URL(`../${path}`, import.meta.url));
 // The public part as CloneStage::payload builds it, from the real release files.

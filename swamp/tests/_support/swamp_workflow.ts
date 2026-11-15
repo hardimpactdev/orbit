@@ -2,10 +2,10 @@ import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 import { swampExpression } from "./swamp_expression.ts";
-// The pinned Swamp's own level sort (Swamp 20261103.000636.0-sha.db3f6373), so the scheduler below cannot drift from the engine.
-import { TopologicalSortService } from "https://raw.githubusercontent.com/swamp-club/swamp/db3f6373207cc41235d2334f19a7901b2b84620f/src/domain/workflows/topological_sort_service.ts";
+// The pinned Swamp's own level sort (Swamp 20261114.210101.0-sha.537e03d1), so the scheduler below cannot drift from the engine.
+import { TopologicalSortService } from "https://raw.githubusercontent.com/swamp-club/swamp/537e03d18f517965c7a0e49b9f5954365f4da70c/src/domain/workflows/topological_sort_service.ts";
 
-/** The pinned Swamp's CEL compiler and environment (createExtensionCelEnvironment at db3f6373), with `vault.get` as a stand-in. */
+/** The pinned Swamp's CEL compiler and environment (createExtensionCelEnvironment at 537e03d1), with `vault.get` as a stand-in. */
 export const environment = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
   .registerFunction("vaultget(dyn, dyn): string", (vault: unknown, key: unknown) => `${vault}/${key}`);
 
@@ -100,7 +100,7 @@ export function levelsOf(workflow: string): { jobs: string[][]; steps: Record<st
 }
 
 /**
- * Runs a workflow file on a clock, with the pinned Swamp's own scheduling rule (execution_service.ts at db3f6373, lines 3866 and 5180):
+ * Runs a workflow file on a clock, with the pinned Swamp's own scheduling rule (execution_service.ts at 537e03d1, the job levels at line 4100 and the step levels at line 5485):
  * jobs and, inside each job, steps run in the depth levels of its TopologicalSortService. A level starts only when the whole level before
  * it has ended; in a level every step starts at once unless another step holds its behavior lock. A step whose dependency condition fails
  * or whose guard is true is skipped at once, and a job whose dependency condition fails is skipped. Guards, behavior names and `assert`
