@@ -241,6 +241,44 @@ jobs:
     - step: Preflight the copy
       condition:
         type: succeeded
+  - name: Check the copy
+    # The copy check (docs/reference/tasks.md#the-copy-check), IN the copy where the values are: root reads the copy's secrets, Git runs
+    # as agent, and the evidence names paths, lines and secret names, never a value. It also names a change of .github/workflows/,
+    # which the copy's token cannot push. The export ended first, so the check reads the branch the bundle holds.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: workflow
+      workflowIdOrName: task-instance-workspace
+      inputs:
+        node_id: ${{ inputs.intent.node_id }}
+        group_id: ${{ inputs.intent.group_id }}
+        phase: scan
+        intent: '${{ has(inputs.intent.workspace) ? {"runtime": inputs.intent.workspace.runtime, "branch": inputs.intent.workspace.branch, "head": inputs.intent.commit, "snapshot_id": inputs.intent.workspace.snapshot_id, "ssh_execution": inputs.intent.ssh_execution, "start": inputs.intent.workspace.start, "nested": has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key, "proposed_body_path": ".git/orbit/proposed-pr-bodies/" + inputs.intent.branch + ".md"} : {} }}'
+    dependsOn:
+    - step: Export the copy
+      condition:
+        type: succeeded
+  - name: Read the copy check
+    # A secret value refuses with tasks.publish_secret_value, a workflow change with tasks.publish_workflow_change, an error of the check
+    # with tasks.publish_secret_unchecked; each before any token exists.
+    labels:
+      role: swamp
+    queueTimeout: 30
+    guard: '${{ !("workspace" in inputs.intent) }}'
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/task-publication-data'
+      behaviorName: ${{ "task-publish-copy-check-" + string(inputs.intent.node_id) }}
+      methodName: scan
+      inputs:
+        evidence: '${{ "Check the copy" in steps && steps["Check the copy"].status == "succeeded" ? steps["Check the copy"].outputs.evidence : {} }}'
+    dependsOn:
+    - step: Check the copy
+      condition:
+        type: succeeded
   - name: Read the index
     labels:
       role: swamp
@@ -700,6 +738,9 @@ jobs:
           # The Club key of a nested-fleet copy counts as a value, also if the start tree holds it; a hit reads like any other.
           if [ -n "$ORBIT_NESTED" ]; then awk '{ sub(/\r$/, ""); gsub(/^[ \t]+|[ \t]+$/, "") } length($0) >= 8' "$work/club" >>"$work/checked"; fi
           timeout 60 git -C "$ORBIT_REPOSITORY" rev-list --objects "$range" -- >"$work/objects"
+          # The copy check read the copy's own repository: its object set must be the one this bundle pushes.
+          scanned=$(cut -d ' ' -f 1 "$work/objects" | sort -u | sha256sum | cut -d ' ' -f 1)
+          if [ "$scanned" != "$ORBIT_SCANNED" ]; then echo 'tasks.publish_secret_unchecked: the copy check read another range' >&2; exit 1; fi
           for file in "$ORBIT_FILE" "$work/rendered"; do
             if [ -s "$file" ]; then
               id=$(repo hash-object --no-filters --stdin <"$file")
@@ -738,9 +779,13 @@ jobs:
           ORBIT_NESTED: '${{ has(inputs.intent.workspace) && has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? "1" : "" }}'
           ORBIT_CLUB: '${{ vault.get(inputs.execution_secrets.git_authorization.vault, !has(inputs.intent.workspace) ? inputs.execution_secrets.git_authorization.key : has(inputs.intent.workspace.club_key) && inputs.intent.workspace.club_key ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.environment.key) }}'
           ORBIT_PULL: '${{ inputs.intent.pull_request == null ? "" : "1" }}'
+          ORBIT_SCANNED: '${{ "Read the copy check" in steps && steps["Read the copy check"].status == "succeeded" ? steps["Check the copy"].outputs.evidence.evidence.scan.objects_sha256 : "" }}'
         ignoreExitCode: true
     dependsOn:
     - step: Check the environment file
+      condition:
+        type: succeeded
+    - step: Read the copy check
       condition:
         type: succeeded
     - step: Add the waiver lines
@@ -769,8 +814,8 @@ jobs:
     labels:
       role: swamp
     queueTimeout: 30
-    # A copy mints only after its content check passed; a skip of that check is never a pass.
-    guard: '${{ "workspace" in inputs.intent && !("Read the .env check" in steps && steps["Read the .env check"].status == "succeeded") }}'
+    # A copy mints only after its content check and its copy check passed; a skip of either is never a pass.
+    guard: '${{ "workspace" in inputs.intent && !("Read the .env check" in steps && steps["Read the .env check"].status == "succeeded" && "Read the copy check" in steps && steps["Read the copy check"].status == "succeeded") }}'
     task:
       type: workflow
       workflowIdOrName: task-github-mint
@@ -787,6 +832,8 @@ jobs:
     - step: Check the .env content
       condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
     - step: Read the .env check
+      condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
+    - step: Read the copy check
       condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}
   - name: Read the base
     # A task copy states the base it publishes against: the default branch head at publish time, fetched into this run's scratch

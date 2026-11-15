@@ -36,7 +36,8 @@ A merge conflict with the base branch refuses the merge. The author rebases, whi
 | --- | --- | --- |
 | `project.review_and_merge_disabled` | 409 | The Project does not take part in review and merge. |
 | `project.pr_in_task_group` | 409 | An open Task group watches the PR. Use `task:pr-merge`. |
-| `tasks.copy_pr_no_merge` | 409 | A task copy's publish opened the PR, or its branch is `task-<id>` of a copy group. A person merges it on GitHub. |
+| `tasks.copy_pr_no_merge` | 409 | A task copy's publish opened the PR, or its branch is `task-<id>` of a copy group, of any Project on the same repository. A person merges it on GitHub. |
+| `project.pr_of_other_project` | 409 | A task group of another Project on the same repository published the PR, or its branch is that group's `task-<id>`. That Project merges it, or a person on GitHub. |
 | `operation.target_busy` | 409 | Another merge of the Project is running. |
 | `tasks_pr.no_pull_request` | 409 | The Project has no GitHub repository, or the PR is not open. |
 | `tasks_pr.draft` | 409 | The PR is still a draft. |

@@ -29,6 +29,7 @@ The caller supplies the recorded Incus project and container name, expected bran
 | `receipt` | Original digest and candidate head/tree | At most 65,536 UTF-8 bytes from the guest scratch receipt; reject a symlink, oversized data or a different snapshot/candidate |
 | `export` | Preflight identity and candidate head/tree | Create and verify the exact candidate bundle as `agent`; transfer it to Node scratch and verify its checksum, or with `worker_bundle` fetch it to the worker |
 | `discard` | Preflight identity | Remove only this snapshot's guest scratch after its users have stopped |
+| `scan` | Head, the copy's start and `nested` | Run [the copy check](/reference/tasks#the-copy-check) as root in the container, with Git as `agent`; return paths, lines, secret names, workflow paths and the object digest, never a value |
 | `base` | Branch, default branch, repository and mirror | Fetch the default branch into the copy's Node mirror and import only what the copy lacks into `refs/remotes/origin/<default branch>`; return the default head, branch commit, `behind_by` and start |
 | `base-cleanup` | The copy's Instance id | Remove the copy's bundle on the Node and its root-owned bundle folder in the guest |
 
@@ -41,6 +42,8 @@ The receipt lives at `/tmp/orbit-task-workspace-SNAPSHOT/receipt.json`, outside 
 Worker input and result files are private and removed after the phase settles, including failure. A failed phase retains guest evidence for diagnosis. A successful export returns its Node scratch path to the caller, which removes it after use.
 
 [`task:publish`](/reference/tasks#publish-an-external-group) of a task copy names `worker_bundle`, a path in its own publication scratch on the worker: the export fetches the bundle there, checks its checksum, and leaves no Node scratch. It also names `environment_path` and `worker_environment`: the Node pulls the copy's `.env` from `/srv/workspace/<environment_path>`, requires a regular file, and fetches it to that worker path for the publish content check. Its bytes enter no phase result or log. A missing file or a link fails the export.
+
+After the export, the publish runs the `scan` phase. It names the copy's `start`, `nested` (the copy's intent has `club_key`) and the proposed body's path. The phase sends `swamp/ansible/task_copy_scan.py` into the container as the `-c` argument of `python3 -I`, with no stdin and a clean environment, and records its one JSON line as the evidence. The program itself never fails the phase: an error is evidence too, `tasks.publish_secret_unchecked`, which the publish reads.
 
 The publish also names `proposed_body_path`, the task branch's proposed pull request body `.git/orbit/proposed-pr-bodies/task-<id>.md`, and `worker_proposed_body`. The Node pulls that file and fetches it to the worker only when it is a regular file of at most 64 KiB. A missing file or a link fetches nothing and does not fail the export. The file is data: the publish reads only its waiver lines ([Docs-impact waivers in a copy](/reference/tasks#docs-impact-waivers-in-a-copy)).
 

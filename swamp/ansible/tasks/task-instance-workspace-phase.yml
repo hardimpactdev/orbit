@@ -10,7 +10,7 @@
       - intent.snapshot_id | default('') is match('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$')
       - intent.branch | default('') | length > 0
       - workspace_phase in workspace_check_phases + workspace_base_phases or intent.head | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
-      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard'] + workspace_check_phases + workspace_base_phases
+      - workspace_phase in ['preflight', 'before', 'after', 'receipt', 'export', 'discard', 'scan'] + workspace_check_phases + workspace_base_phases
       - workspace_phase not in ['check', 'commit'] or intent.check | default(none) is mapping
       - workspace_phase != 'commit-ref' or intent.candidate_commit | default('') | length in [40, 64]
       # A publication's content check also takes the copy's .env, by its path under the fixed workspace root.
@@ -29,6 +29,8 @@
       - intent.start is not defined or intent.start is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
       # The copy's scratch is named by its Instance, so the next sync of the copy finds what a cancelled one left.
       - workspace_phase not in workspace_base_phases or (intent.instance_id | default(0) is integer and intent.instance_id | default(0) > 0)
+      # The copy check of a publication reads the range from the copy's recorded start.
+      - workspace_phase != 'scan' or intent.start | default('') is match('^[0-9a-f]{40}([0-9a-f]{24})?$')
     fail_msg: tasks.workspace_target_invalid
   vars:
     workspace_check_phases: [check, commit, commit-ref]
@@ -383,7 +385,7 @@
           sys.exit(1)
 
 - name: Run the workspace phase as agent
-  when: workspace_phase not in workspace_base_phases
+  when: workspace_phase not in workspace_base_phases + ['scan']
   ansible.builtin.command:
     argv: "{{ workspace_exec + [workspace_guest_program, workspace_phase, intent | to_json] }}"
     expand_argument_vars: false
@@ -406,13 +408,13 @@
   no_log: true
 
 - name: Check the workspace phase
-  when: workspace_phase not in workspace_base_phases
+  when: workspace_phase not in workspace_base_phases + ['scan']
   ansible.builtin.assert:
     that: workspace_guest.rc == 0
     fail_msg: "{{ (workspace_guest.stdout | from_json).error_code | default('tasks.workspace_phase_failed') }}"
 
 - name: Keep the workspace evidence
-  when: workspace_phase not in workspace_base_phases
+  when: workspace_phase not in workspace_base_phases + ['scan']
   ansible.builtin.set_fact:
     workspace_result: "{{ workspace_guest.stdout | from_json }}"
   no_log: true
@@ -814,6 +816,33 @@
       ansible.builtin.assert:
         that: workspace_check_cleanup.rc | default(1) == 0
         fail_msg: tasks.workspace_phase_failed
+
+# The copy check of a publication (docs/reference/tasks.md#the-copy-check): root in the copy reads the copy's secrets and compares the
+# range against them; Git runs as agent. The program prints one JSON line that names paths, lines and secret names, never a value, so
+# the result is the evidence as it stands. Its own refusal is evidence too: the publish reads it and refuses before any token exists.
+- name: Check the copy before its publication
+  when: workspace_phase == 'scan'
+  block:
+    - name: Run the copy check as root
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '300', 'incus', '--project', intent.runtime.project, 'exec', '--disable-stdin', intent.runtime.name, '--',
+              '/usr/bin/env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', '/usr/bin/python3', '-I', '-c',
+              lookup('ansible.builtin.file', playbook_dir ~ '/task_copy_scan.py'),
+              {'head': intent.head, 'start': intent.start, 'branch': intent.branch, 'nested': intent.nested | default(false),
+               'proposed_body_path': intent.proposed_body_path | default('')} | to_json] }}
+        expand_argument_vars: false
+        stdin: ''
+        stdin_add_newline: false
+      register: workspace_scan
+      changed_when: false
+      failed_when: false
+      no_log: true
+    - name: Keep the copy check
+      ansible.builtin.set_fact:
+        workspace_result: >-
+          {{ workspace_scan.stdout | from_json if workspace_scan.rc in [0, 1] else {'error_code': 'tasks.publish_secret_unchecked'} }}
+      no_log: true
 
 - name: Record the private workspace result
   ansible.builtin.copy:

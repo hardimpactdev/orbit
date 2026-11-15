@@ -25,6 +25,16 @@ args = sys.argv[1:]
 with open(os.environ['T1_CALLS'], 'a') as output:
     output.write(json.dumps(args) + '\\n')
 assert args[:3] == ['--project', 'alternate-proof', 'exec'] or args[:4] == ['--project', 'alternate-proof', 'file', 'pull'], args
+if args[2] == 'exec' and args[3:6] == ['--disable-stdin', 'proof-instance', '--']:
+    # The copy check of a publication: root in the copy, no cwd, a clean environment; in the test its root, Git user and workspace
+    # are the test's own folders.
+    assert args[6:12] == ['/usr/bin/env', '-i', 'PATH=/usr/local/bin:/usr/bin:/bin', '/usr/bin/python3', '-I', '-c'], args
+    assert len(args) == 14, args
+    assert sys.stdin.buffer.read() == b'', 'Incus stdin must be closed'
+    program = args[12].replace("def check(request, root='/', prefix=None, workspace=WORKSPACE):",
+        "def check(request, root=" + repr(os.environ['T1_ROOT']) + ", prefix=[], workspace=" + repr(os.environ['T1_GUEST']) + "):", 1)
+    assert program != args[12]
+    sys.exit(subprocess.run([sys.executable, '-I', '-c', program, args[13]], check=False).returncode)
 if args[2] == 'exec':
     assert args[3:12] == ['--disable-stdin', '--cwd', '/srv/workspace', 'proof-instance', '--', '/usr/sbin/runuser', '-u', 'agent', '--'], args
     assert args[12:17] == ['/usr/bin/env', '-i', 'HOME=/home/agent', 'PATH=/usr/local/bin:/usr/bin:/bin', '/usr/bin/python3'], args
@@ -108,7 +118,7 @@ class WorkspaceHarness(unittest.TestCase):
             env={**os.environ, 'PATH': str(self.bin) + ':' + os.environ['PATH'], 'T1_GUEST': str(self.checkout),
                  'T1_CALLS': str(self.calls), 'T1_CORRUPT': '1' if corrupt else '0',
                  'T1_ASSUME_DIFFERENT_OWNER': '1' if different_owner else '0',
-                 'T1_MOVE_TO': move_to or '', 'T1_CLEANUP_FAIL': '1' if cleanup_fail else '0',
+                 'T1_MOVE_TO': move_to or '', 'T1_ROOT': str(self.root / 'copy-root'), 'T1_CLEANUP_FAIL': '1' if cleanup_fail else '0',
                  'ANSIBLE_CONFIG': str(ROOT / 'ansible/ansible.cfg'), 'ANSIBLE_FORCE_COLOR': '0'})
         output = result.stdout + result.stderr
         if ok:

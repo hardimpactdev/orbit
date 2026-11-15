@@ -16,6 +16,7 @@ const Phase = z.enum([
     "receipt",
     "export",
     "discard",
+    "scan",
     "check",
     "commit",
     "commit-ref",
@@ -101,6 +102,26 @@ const Evidence = z.union([
     }).strict(),
     z.object({ cleaned: z.literal(true), changed: z.literal(false) })
         .strict(),
+    // The copy check of a publication: paths, line numbers and secret names, never a value; the publish reads it.
+    z.object({
+        scan: z.object({
+            secrets: z.array(z.object({
+                path: z.string(),
+                line: z.number().int().min(1).optional(),
+                secret: z.string().min(1),
+            }).strict()).max(20),
+            secrets_more: z.number().int().min(0),
+            workflows: z.array(z.string()).max(20),
+            workflows_more: z.number().int().min(0),
+            sources: z.array(z.string()),
+            values: z.number().int().min(0),
+            short_skipped: z.record(z.string(), z.number().int().min(0)),
+            objects: z.number().int().min(0),
+            objects_sha256: Digest,
+            seconds: z.number().min(0),
+        }).strict(),
+        changed: z.literal(false),
+    }).strict(),
 ]);
 const Result = z.object({ phase: Phase, evidence: Evidence });
 const Args = z.object({
@@ -115,7 +136,7 @@ type Context = {
 // All machine work stays in Ansible; this method only bounds and validates its result.
 export const behavior = {
     type: "@nckrtl/task-instance-workspace",
-    version: "2026.11.14.3",
+    version: "2026.11.15.1",
     resources: {
         result: { schema: Result, lifetime: "1d", garbageCollection: 10 },
     },

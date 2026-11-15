@@ -26,6 +26,17 @@ final readonly class RepositoryPullRequestAccess
         return $this->github->repositoryPullRequestToken($credentials, $installation, $repository);
     }
 
+    /**
+     * The push token of a task copy's publish: `contents` and `pull_requests` write on this one repository, never `workflows`. GitHub
+     * refuses a push of it that changes `.github/workflows/`; the publish refuses such a change before the push.
+     */
+    public function copyPublishToken(GitHubRepository $repository): string
+    {
+        [$credentials, $installation] = $this->installation($repository);
+
+        return $this->github->repositorySquashToken($credentials, $installation, $repository);
+    }
+
     /** A `contents: read` token for this one repository: commits, refs and comparisons. */
     public function contentsReadToken(GitHubRepository $repository): string
     {

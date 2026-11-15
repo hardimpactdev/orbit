@@ -2340,6 +2340,10 @@ non_command_output:
   field: ansible.builtin.assert.that[14]
   reason: Validates the admitted start commit of the copy, not command output.
 - file: tasks/task-instance-workspace-phase.yml
+  task: Validate the recorded workspace target
+  field: ansible.builtin.assert.that[16]
+  reason: Validates the admitted start commit of a publication's copy check, not command output.
+- file: tasks/task-instance-workspace-phase.yml
   task: Count the commits the copy lacks
   field: ansible.builtin.command.argv
   reason: Prefixes the commit ids that the mirror holds with ^ as rev-list exclusions; it parses no command output.

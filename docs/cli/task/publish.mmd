@@ -30,7 +30,7 @@ sequenceDiagram
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
   %%> - group 42 is an open external group with its own task copy whose container runs (`tasks.instance_not_running`) and has a start commit; a group without a task copy gets `tasks.no_workspace`: task VM workspaces are removed
-  %%> - a task copy's Project is released for publishing: a nested-fleet trial Project, or listed in the Gateway's `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`; otherwise HTTP 409 `tasks.copy_publish_held`, and the checked commit stays in the copy
+  %%> - a task copy's Project is released for publishing: a nested-fleet Project, such as the Orbit Project, or listed in the Gateway's `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`; otherwise HTTP 409 `tasks.copy_publish_held`, and the checked commit stays in the copy
   %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
   %%> - a task copy's last completion did not fail (`tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`), and the copy is `active` (`tasks.copy_not_ready`)
   %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
@@ -69,6 +69,16 @@ sequenceDiagram
     %%> - the phase runs as the behavior `task-workspace-NODE-GROUP` for up to 1,800 s, so a publish of another group's copy on this Node never waits for its lock; the content check, import and push name their group too
     %%> - the Node also pulls the copy's `.env` as a regular file and fetches it beside the bundle; its bytes enter no result or log
     %%> - and the copy's proposed pull request body for the task branch, `.git/orbit/proposed-pr-bodies/task-GROUP.md`, when it is a regular file of at most 64 KiB: data, never run; without it the publish sends the caller's text
+    SW->>N: Check the copy
+    %%> How:
+    %%> - the workspace phase `scan` runs `task_copy_scan.py` in the container as root; root reads the copy's secrets, Git runs as `agent` (docs/reference/tasks.md#the-copy-check)
+    %%> - the secrets: the Club key in `/run/orbit-club`, the operator WireGuard key, and of each inner machine its Gateway `.env` values, Swamp tokens, Orbit tokens and WireGuard keys; values under 16 bytes and values the start tree holds are skipped and counted
+    %%> - every object new from the copy's start to the candidate, and the proposed body, are searched for each value and for a private key block with a real body
+    %%> - commits that no remote branch of the copy holds are read for a change under `.github/workflows/`; a merge counts a path only when it differs from every parent
+    %%> - the evidence names paths, lines, secret names and the digest of the objects read, never a value; a nested-fleet copy without its inner machines is unchecked
+    SW->>SW: Read the copy check
+    %%> How:
+    %%> - typed data reads the evidence: a secret refuses with `tasks.publish_secret_value`, then a workflow change with `tasks.publish_workflow_change`, each naming its items; an error refuses with `tasks.publish_secret_unchecked`
   else a task VM
     SW->>N: Read the index
     %%> How:
@@ -116,15 +126,16 @@ sequenceDiagram
     %%> How:
     %%> - every object new in the range (file contents, file names, commit messages) and the final pull request title and body, waiver lines included, are searched for the whole `.env` and for each of its values of 8 bytes or more that the start tree does not hold, from the copy's file and from the Gateway's render; a nested-fleet copy's Club key counts as one more value
     %%> - a hit refuses with `tasks.publish_secret_content`, naming the commit and the object, and the file only when its path holds no value; any error refuses with `tasks.publish_secret_unchecked`
+    %%> - the range's object digest must equal the one the copy check read, else `tasks.publish_secret_unchecked`: the copy check read the objects this bundle pushes
     Note over SW: Read the .env check
     %%> How:
     %%> - typed data reads the check's exit code and its one refusal line from the private scratch, because Swamp keeps no stderr of a failed command step
-    %%> - exit 0 passes; a refusal fails the step with that line as its detail; anything else fails with `tasks.publish_secret_unchecked`; a copy mints only after this step succeeded
+    %%> - exit 0 passes; a refusal fails the step with that line as its detail; anything else fails with `tasks.publish_secret_unchecked`; a copy mints only after this step and "Read the copy check" succeeded
   end
   SW->>GW: Mint the push token<br/>operation:direct:github-token
   %%> How:
   %%> - one bounded `curl` step posts the run id to the Gateway when the push is next; the run id proves the caller
-  %%> - the Gateway checks the Operation, the run and the repository, mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two vault values; the reply holds the vault descriptors only
+  %%> - the Gateway checks the Operation, the run and the repository, mints a token for that one repository with `contents: write` and `pull_requests: write`, never `workflows`, and writes the two vault values; the reply holds the vault descriptors only
   %%> - no step writes the token into the task VM; the VM receives no credential, in the bundle, the Git configuration or the environment
   opt a task copy
     SW->>GH: Read the base
@@ -204,7 +215,9 @@ sequenceDiagram
     %%> - the workspace moved, the tip diverged, the push or PR write was refused, or a reply was lost
     %%> - a commit of a task copy holds the `.env` Orbit wrote, or the copy's start is gone from the branch history: `tasks.publish_secret_path`; cancel the copy and start the task again
     %%> - a commit of a task copy holds the `.env` content or one of its values under any name: `tasks.publish_secret_content`; remove it from the branch history and check again
-    %%> - the content check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
+    %%> - the content check or the copy check could not run: `tasks.publish_secret_unchecked`; nothing is pushed
+    %%> - a commit or the proposed body holds a secret value of the copy or a private key block: `tasks.publish_secret_value`, with `refused` (path:line and secret name) and `refused_more`; nothing is pushed; remove it from the branch history and check again
+    %%> - a commit new to the repository changes `.github/workflows/`: `tasks.publish_workflow_change`, with the paths in `refused`; nothing is pushed; a person makes that change in a pull request of their own (docs/reference/tasks.md#the-copy-check)
     %%> - a task copy's candidate conflicts with the default branch head: `tasks.publish_conflict`, with `conflicting_paths` and `conflicting_more`; nothing is pushed; merge or rebase in the copy, check again and publish
     %%> - a step waited 60 s for a behavior lock that another run held: `tasks.publish_lock_timeout`; a step after the push can fail so too, so the branch may be pushed already
     SW--xGW: Run failed<br/>error_code, failed step

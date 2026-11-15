@@ -254,6 +254,26 @@ it('names a refused environment file, its content and an unchecked content with 
     'typed read of an error' => ['Read the .env check', 'tasks.publish_secret_unchecked', 'tasks.publish_secret_unchecked'],
 ]);
 
+it('names the copy check\'s refusal with its code and its paths, lines and secret names, and nothing is pushed', function (string $step, ?string $detail, array $result): void {
+    [$group, $check] = copyPublishWorld();
+    $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);
+    $run = '6b69badf-4f06-4f2e-82d7-21b62c1f587a';
+    $operation->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run]]);
+
+    $projected = app(TaskPublishProjection::class)->apply($operation->refresh(), ['run_id' => $run, 'status' => 'failed', 'started_at' => now()->subMinute()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => [], 'failure' => ['failed_step' => $step, 'detail' => $detail]]);
+
+    expect($projected->error_code)->toBe($result['error_code'])->and($projected->result)->toBe($result)
+        ->and($group->refresh()->pr_url)->toBeNull();
+})->with([
+    'a secret value' => ['Read the copy check', 'tasks.publish_secret_value: "notes/leak.txt:2 nested-gateway:env:/var/lib/orbit-checkout-state/apps/gateway/.env:APP_KEY", "commit '.str_repeat('a', 40).' club-key:/run/orbit-club/swamp-club-api-key" and 3 more',
+        ['error_code' => 'tasks.publish_secret_value', 'refused' => ['notes/leak.txt:2 nested-gateway:env:/var/lib/orbit-checkout-state/apps/gateway/.env:APP_KEY', 'commit '.str_repeat('a', 40).' club-key:/run/orbit-club/swamp-club-api-key'], 'refused_more' => 3]],
+    'a workflow change' => ['Read the copy check', 'tasks.publish_workflow_change: ".github/workflows/x.yml"', ['error_code' => 'tasks.publish_workflow_change', 'refused' => ['.github/workflows/x.yml'], 'refused_more' => 0]],
+    'an error of the check' => ['Read the copy check', 'tasks.publish_secret_unchecked', ['error_code' => 'tasks.publish_secret_unchecked']],
+    'a failed check run' => ['Check the copy', 'tasks.workspace_phase_failed', ['error_code' => 'tasks.publish_secret_unchecked']],
+    'no detail' => ['Read the copy check', null, ['error_code' => 'tasks.publish_secret_unchecked']],
+]);
+
 it('names a step that timed out on a Swamp behavior lock tasks.publish_lock_timeout, on any step, and nothing else', function (string $step, ?string $detail, string $code): void {
     [$group, $check] = copyPublishWorld();
     $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id]), 'test', null);

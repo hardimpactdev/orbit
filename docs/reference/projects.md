@@ -18,7 +18,7 @@ A Project records one Git repository and the defaults for running it. New Instan
 
 ## Nested fleet setting
 
-`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. Do not set it on a real Project.
+`nested_fleet` is a stored and public boolean that defaults to false. Set it through the Project update API with a JSON boolean. It is for the Orbit Project: its default is a container with an inner fleet, which tracks the release commit on `main`. A copy of it publishes a draft pull request to the Project's repository, and nothing merges it by itself ([no merge](/reference/tasks#no-merge)). Other Projects keep it off.
 
 Every Instance of a Project with the flag on is a container in the nested Incus project, made from the [nested-fleet image](/reference/development-containers#the-nested-fleet-image). One placement rule in the Gateway decides this for every path that writes an Instance or its runtime. Only development create, its retry and Conn create make such an Instance: the Project's default, or a clone of it. They refuse every other result before any record:
 
@@ -61,7 +61,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
-| `nested_fleet` | Boolean, default false. While on, the Project's Instances are containers in the nested Incus project, which only `instance:create` makes; do not enable it on a real Project. See [Nested fleet setting](#nested-fleet-setting). |
+| `nested_fleet` | Boolean, default false. While on, the Project's Instances are containers in the nested Incus project, which only `instance:create` makes. It is for the Orbit Project, whose container holds an inner fleet. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |

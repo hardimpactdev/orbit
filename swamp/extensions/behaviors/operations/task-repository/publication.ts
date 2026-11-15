@@ -1,6 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import {
     baseFacts,
+    copyCheck,
     imported,
     PublishInput,
     pullPlan,
@@ -65,7 +66,7 @@ function requireSuccess<T extends { error_code: string }>(
 /** Typed comparisons and private CLI reply shaping only; no execution or HTTP. */
 export const behavior = {
     type: "@nckrtl/task-publication-data",
-    version: "2026.11.14.4",
+    version: "2026.11.15.1",
     resources: {
         public: {
             description: "Public publication observations",
@@ -203,6 +204,13 @@ export const behavior = {
                     body_file: path,
                 });
             },
+        },
+        scan: {
+            description:
+                "Read the copy check of a publication: pass with its public facts, or refuse with paths, lines and secret names",
+            arguments: z.object({ evidence: z.unknown() }),
+            execute: (args: { evidence: unknown }, ctx: Context) =>
+                save(ctx, requireSuccess(copyCheck(args.evidence), "checked", "tasks.publish_secret_unchecked")),
         },
         content: {
             description:

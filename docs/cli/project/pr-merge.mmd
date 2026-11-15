@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - a Node with an access grant to the Gateway; there is no `orbit` command
   %%> Refused at once:
   %%> - a Project without review and merge: `project.review_and_merge_disabled`
-  %%> - a PR that a task copy's publish opened, whether its group is open or ended: `tasks.copy_pr_no_merge` (409), before any GitHub read; a person merges it on GitHub
+  %%> - a PR that a task copy's publish opened, whether its group is open or ended, matched by the repository the publish pushed to, so a copy of another Project on the same repository counts: `tasks.copy_pr_no_merge` (409), before any GitHub read; a person merges it on GitHub
   GW->>GH: Read the PR and its checks<br/>read-only App token
   %%> What it does:
   %%> - reads the PR and the check runs of the head with read-only App tokens (`pull_requests: read`, `checks: read`)
@@ -33,7 +33,8 @@ sequenceDiagram
   %%> - the PR is open, no longer a draft, and its head is exactly `head_sha`
   %%> - the PR targets the default branch of the Project and comes from a branch of the repository itself, not from a fork
   %%> - the Project's merge check (`Required checks`) passed on that head
-  %%> - the PR's head branch is not `task-<id>` of a group that is or was a task copy group, else `tasks.copy_pr_no_merge`; it marks a copy publish that ended before it recorded the number
+  %%> - the PR's head branch is not `task-<id>` of a group on the same repository that is or was a task copy group, else `tasks.copy_pr_no_merge`; it marks a copy publish that ended before it recorded the number
+  %%> - no group of another Project on the same repository published the PR or owns its `task-<id>` branch, else `project.pr_of_other_project` (409)
   %%> - no open Task group watches the PR (a task PR merges through `task:pr-merge`; a group that ended no longer holds its PR) and no other merge of the Project runs
   %%> What it does:
   %%> - names the vault key `pr-merge-write-<uuid>` for the write token; it mints no token

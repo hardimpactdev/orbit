@@ -23,6 +23,7 @@ use App\Domain\Tasks\TaskPublishIntent;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
@@ -42,6 +43,7 @@ function tokenWorld(bool $installed = true, ?array &$scoped = []): object
     app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($installed, &$scoped): void {
         $github->shouldReceive('repositoryInstallation')->andReturn($installed ? 7 : null);
         $github->shouldReceive('repositoryPullRequestToken')->andReturn('push-token-value');
+        $github->shouldReceive('repositorySquashToken')->andReturn('copy-push-token-value');
         $github->shouldReceive('repositoryReadToken')->andReturn('read-token-value');
         $github->shouldReceive('scopedRepositoryToken')->andReturnUsing(function ($credentials, GitHubTokenGrant $grant) use (&$scoped): GitHubAccessToken {
             $scoped[] = $grant;
@@ -138,10 +140,23 @@ it('mints the push token of a publish when its step asks, and writes it only und
 
     expect($copies)->toBe($names)
         ->and(tokenPuts($socket))
-        ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'push-token-value'],
-            ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:push-token-value')]])
-        ->and(json_encode($copies))->not->toContain('push-token-value');
+        ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'copy-push-token-value'],
+            ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:copy-push-token-value')]])
+        ->and(json_encode($copies))->not->toContain('copy-push-token-value');
 })->with(['a publish' => ['tasks.publish']]);
+
+it('mints a task copy publish a token without workflows: contents and pull requests on its one repository', function (): void {
+    $socket = tokenWorld();
+    [$operation, $names] = pushOperation('tasks.publish', ['workspace' => ['branch' => 'task-1']]);
+
+    app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish');
+
+    $activity = Activity::query()->where('subject_id', $operation->id)->where('command', 'operation:github:mint')->sole();
+    expect(tokenPuts($socket))->toBe([['orbit-control-inputs', $names['github_token']['key'], 'copy-push-token-value'],
+        ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:copy-push-token-value')]])
+        ->and($activity->properties['repository'])->toBe('hardimpactdev/orbit')
+        ->and($activity->properties['permissions'])->toBe([['contents' => 'write', 'pull_requests' => 'write']]);
+});
 
 it('writes the clone header of a sync run as the Gateway starts it, and refuses a step that asks for it', function (): void {
     $socket = tokenWorld();

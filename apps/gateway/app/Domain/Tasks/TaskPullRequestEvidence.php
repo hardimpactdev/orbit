@@ -43,6 +43,8 @@ final readonly class TaskPullRequestEvidence
         // Before any GitHub read: a task copy's pull request is never Orbit's to merge.
         TaskCopyPullRequest::refuseGroup($group);
         $target = $this->target($group, $head);
+        // A head on the task branch of a copy group on this repository, of any Project, is a copy's pull request too.
+        TaskCopyPullRequest::refuseBranch($group->project, $target->pull->headRef);
         if ($target->pull->draft) {
             throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);
         }

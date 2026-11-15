@@ -266,7 +266,7 @@ For a group with a task copy, `task:publish <group>` without `--check` publishes
 
 The Gateway admits an open group, its owned workspace and an [eligible checked candidate](#check-an-external-group) belonging to that group. Required hosted CI must have passed for the recorded check and commit. Otherwise admission returns `422 tasks.commit_not_checked`. It pins the repository, default branch, candidate commit, checked tree and SSH target in the intent. Admission serializes publication with the group lock and refuses other active work. It mints no token. The intent names two vault keys, one for the GitHub installation token and one for its Git authorization header.
 
-A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two values. The reply holds vault descriptors only.
+A step of the run asks the Gateway for the token right before the push (`operation:direct:github-token`, with the run id), so the token is fresh whenever the run reaches that step. The Gateway checks the Operation, the run and the repository. It mints a token for that one repository with `contents: write` and `pull_requests: write`, and writes the two values. The token has no `workflows` permission, so it cannot push a change under `.github/workflows/` ([the copy check](#the-copy-check)). Its Activity row names the repository and these two permissions. The reply holds vault descriptors only.
 
 A worker on Node 209 uses official SSH to verify HEAD and the whole working tree against the checked candidate. Each VM read and command is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. Four reads take `git read-tree HEAD`, `git add --all` and `git write-tree` on a per-run index file, and `git rev-parse HEAD`. A moved candidate fails with `tasks.head_moved` before a push.
 
@@ -309,11 +309,31 @@ The content check catches copies and plain lines, not transformed text. It misse
 - an old value from before an `env:update` during the task;
 - the `.env.testing` of a copy with a test database;
 - a value in an unpushed start commit, because the start tree counts as public;
-- every secret that is not in this `.env` or, for a nested-fleet copy, the Club key.
+- every secret that is not in this `.env` or, for a nested-fleet copy, the Club key: [the copy check](#the-copy-check) covers the copy's other secrets.
 
 A long value of the copy that is no secret is refused too, when the start tree lacks it: its `APP_URL`, a host address or a user name. So is such a value in new commits of the default branch that the task branch merged. Remove it from the branch history and check again.
 
 A Project that tracks `.env` in Git cannot publish from a copy: Orbit's write changes the tracked file, so every check commit holds it. No task VM is released: the copy stays until `task:cancel`, and the group keeps its status. A moved head refuses in the preflight and fails with `tasks.publish_failed`, not `tasks.head_moved`.
+
+##### The copy check
+
+The publish of a copy also checks the copy itself, before any token exists. A workspace phase, `scan`, runs `swamp/ansible/task_copy_scan.py` in the container, where the secrets are. Root reads the secret values; Git runs as `agent`, so root never runs Git on a tree the agent controls. The program prints one line of evidence. It names paths, line numbers and secret names, never a value: no value reaches an Operation result, a log line, an error or a vault execution copy.
+
+| Part | Rule |
+| --- | --- |
+| Secrets | The Club key in `/run/orbit-club`; the operator WireGuard key in `/etc/wireguard`; and of each inner machine, under its root file system in the inner storage pool: the Gateway `.env` values, the Swamp tokens, the Orbit token files and the WireGuard keys. A plain copy has none of these and checks only for private keys |
+| Skipped | A value under 16 bytes matches by chance: it is skipped and counted per name. A value that the start tree already holds is public and skipped too |
+| Range | Every object new from the copy's start to the candidate: file contents, file names and commit messages, also of commits that a later commit undoes. The proposed pull request body counts too |
+| Private keys | A `-----BEGIN … PRIVATE KEY-----` block whose body holds 100 or more base64 characters. A test stub with a short body passes |
+| Workflows | A commit that no remote branch of the copy holds and that changes a path under `.github/workflows/`. A merge counts a path only when it differs from every parent, so a sync of the default branch is no change of the copy |
+| Result | A secret refuses with `tasks.publish_secret_value`, then a workflow change with `tasks.publish_workflow_change`. The publish result lists the items in `refused` (`path:line secret-name`, or the path of a workflow) and counts the rest in `refused_more`. An error refuses with `tasks.publish_secret_unchecked`, and so does a nested-fleet copy that shows no inner machine. Nothing is pushed |
+| Same objects | The worker's content check computes the digest of the objects it will push and refuses with `tasks.publish_secret_unchecked` unless it equals the digest the copy check read |
+
+A hit names the folder that holds a file name, and never prints a path that holds a value. On Orbit's own tree the program took 0.25 seconds for 80 values and 196 objects. The phase around it, one more Ansible run on the Node, adds an estimated 5 to 10 seconds to a publish. The program is bounded at 300 seconds.
+
+It catches copies of a value, not transformed text. It misses a value that is encoded, compressed, escaped or split over lines; a value under 16 bytes; a secret in a file it does not read, such as an inner machine's database files, or an inner `base` snapshot that holds an older token; and a value in the caller's own pull request title or body, which the content check reads for the `.env` only.
+
+A task cannot change a workflow from a copy. A change under `.github/workflows/` belongs to a person: the agent says what to change, and a person makes that pull request by hand, with their own GitHub account. The pipeline lane does the same.
 
 ##### The base of a copy publish
 
@@ -811,7 +831,7 @@ The copy's `.env` holds its secrets. Git never takes it: every container create 
 | --- | --- |
 | Source | The active default Instance with a seed, whose container runs or [sleeps](/reference/development-containers#sleep-and-wake). `task:start` reads it once: the power record can be stale. A container down without its asleep marker refuses |
 | Cap | A start needs a free [isolated ID range](/reference/development-containers#isolated-id-ranges) for the copy and one for the default's next seed, else `tasks.copy_id_range_full`. `ORBIT_TASKS_COPIES_MAX` (default 1) caps nested-fleet copies per Node: `tasks.copy_capacity_full`. Neither waits |
-| Publish | Only for a nested-fleet trial Project or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation. The [mode](#task-group-modes) decides whether Orbit publishes by itself once the work is done |
+| Publish | Only for a nested-fleet Project, such as the Orbit Project, or a Project on `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`. Otherwise `tasks.copy_publish_held` (409), before any Operation. The [mode](#task-group-modes) decides whether Orbit publishes by itself once the work is done |
 | Model key | The copy's agent gets the fixed task model key, as every clone does. It is not per task. Per-task model keys are an open decision |
 | Ready | The task runs when its copy is `active`: after the copy's [completion](/reference/development-containers#complete-a-clone) succeeded. A create that succeeds leaves the task `reserved` until then |
 | Failed create | The task is `failed`. A refused start or a cancel before the run counts too. Orbit removes the copy as [Removal by Orbit](#removal-by-orbit) describes |
@@ -868,7 +888,7 @@ A copy holds no credential, so it cannot fetch. [`task:sync`](/cli/task/sync) of
 
 The sync never merges or rebases `task-<id>`. HEAD, the working tree, the index and the local branches stay as they are. The result is `{ default_branch, default_commit, branch, branch_commit, behind_by, start }`, where `behind_by` counts the commits of the default branch that `task-<id>` lacks. The agent merges or rebases in the copy, then checks again.
 
-The source is the Project's repository, for every Project. The trial Project's repository receives `main` only through its release runbook, so its copies see the last released main, not the newest commit on Orbit's own repository.
+The source is the Project's repository, for every Project. When that is Orbit's own repository, the copy gets the newest commit of `main`. A repository that receives `main` only at a release, such as a trial copy of Orbit, gives the last released main.
 
 | Rule | What happens |
 | --- | --- |
@@ -1210,17 +1230,21 @@ A refused publish changes nothing else. The group keeps its status, and the task
 
 ### No merge
 
-Orbit never merges the pull request of a group whose workspace is a task copy, also after the group has ended. A pull request counts as such when a `tasks.publish` from a task copy opened it. It also counts when its branch is `task-<id>` of a group that is or was such a group: that covers a publish that ended before it recorded the number. Every merge path refuses it with `tasks.copy_pr_no_merge` (409):
+Orbit never merges the pull request of a group whose workspace is a task copy, also after the group has ended. A pull request counts as such when a `tasks.publish` from a task copy opened it. It also counts when its branch is `task-<id>` of a group that is or was such a group: that covers a publish that ended before it recorded the number. Every merge path refuses it with `tasks.copy_pr_no_merge` (409).
+
+Both records match by the repository, not by the Project. Two Projects can name one repository, as the old Orbit Project and the Orbit Project do, and a merge in one of them must still see the pull request that a copy of the other opened. The publish names the repository it pushed to, so a later change of a Project's repository does not move its old pull requests. `project:pr-merge` also refuses a pull request that a group of another Project on the same repository published, or whose head is such a group's `task-<id>` branch, with `project.pr_of_other_project` (409): that Project merges it, or a person on GitHub.
 
 | Path | Behavior |
 | --- | --- |
-| [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read |
-| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group, open or ended: by its number before any GitHub read, or by its `task-<id>` branch once read |
+| [`task:pr-merge`](/cli/task/pr-merge) | Refused before any GitHub read, also when the group's watched pull request is a copy's of any Project on its repository; and once read, when its head is a copy group's `task-<id>` branch |
+| [`project:pr-merge`](/cli/project/pr-merge) | Refused for the pull request of such a group of any Project on the repository, open or ended: by its number before any GitHub read, or by its `task-<id>` branch once read |
 | [`task:pr-gate`](#gate-check) | Skips the group with `tasks.copy_pr_no_merge`: no ready step and no merge |
 | [Review and merge](#review-and-merge) | Acts only through `task:pr-gate` and `project:pr-merge`, so it merges no such pull request |
 | [Dependency merge](#dependency-batch-squash-admission) | Refused for a batch group whose publish came from a task copy |
 | [Automatic deployments](/reference/deployments#automatic-deployments) | Deploy commits already on the default branch, and merge nothing |
-| Task VM paths | Push and publish, and merge nothing |
+| [Modes](#task-group-modes) `review_before_pr` and `pr_when_done` | Publish only: `pr_when_done` opens a ready pull request by itself, and nothing merges it |
+
+So for a copy of a nested-fleet Project, such as the Orbit Project, nothing merges by itself: a person merges its pull request on GitHub.
 
 A test in CI lists every Swamp workflow that calls GitHub's merge API. A new one fails the test until it refuses these pull requests too.
 

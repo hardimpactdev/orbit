@@ -4,6 +4,7 @@ import {
     BASE_MARK,
     BASE_PATHS,
     baseFacts,
+    copyCheck,
     BodyLimit,
     imported,
     PublishInput,
@@ -427,4 +428,39 @@ Deno.test("a long conflict or overlap stays within its byte bound and counts the
             (stated?.overlapping_more ?? 0),
         300,
     );
+});
+
+Deno.test("the copy check refuses a secret value, then a workflow change, and names no value", () => {
+    const scan = (over: Record<string, unknown> = {}) => ({
+        phase: "scan",
+        evidence: {
+            scan: {
+                secrets: [], secrets_more: 0, workflows: [], workflows_more: 0, sources: ["club-key"], values: 3,
+                short_skipped: { "nested-gateway:env": 2 }, objects: 4, objects_sha256: "e".repeat(64), seconds: 0.4, ...over,
+            },
+            changed: false,
+        },
+    });
+    assertEquals(copyCheck(scan()), {
+        checked: true, error_code: "", sources: ["club-key"], values: 3, short_skipped: { "nested-gateway:env": 2 }, objects: 4,
+        objects_sha256: "e".repeat(64), seconds: 0.4,
+    });
+    const secret = { path: "notes/a.txt", line: 2, secret: "club-key:/run/orbit-club/swamp-club-api-key" };
+    assertEquals(
+        copyCheck(scan({ secrets: [secret, { path: "commit " + "a".repeat(40), secret: "x" }], secrets_more: 4, workflows: [".github/workflows/x.yml"] })).error_code,
+        'tasks.publish_secret_value: "notes/a.txt:2 club-key:/run/orbit-club/swamp-club-api-key", "commit ' + "a".repeat(40) + ' x" and 4 more',
+    );
+    assertEquals(
+        copyCheck(scan({ workflows: [".github/workflows/x.yml", ".github/workflows/y.yml"] })).error_code,
+        'tasks.publish_workflow_change: ".github/workflows/x.yml", ".github/workflows/y.yml"',
+    );
+    // An error of the check, a value-shaped extra field or another phase is never a pass.
+    assertEquals(copyCheck({ phase: "scan", evidence: { error_code: "tasks.publish_secret_unchecked" } }).error_code, "tasks.publish_secret_unchecked");
+    const extra = scan();
+    (extra.evidence.scan as Record<string, unknown>).value = "made-up";
+    assertEquals(copyCheck(extra).error_code, "tasks.publish_secret_unchecked");
+    const many = Array.from({ length: 20 }, (_, n) => ({ path: "p/" + "x".repeat(200) + n, line: 1, secret: "s".repeat(100) }));
+    const line = copyCheck(scan({ secrets: many, secrets_more: 7 })).error_code;
+    assertEquals(new TextEncoder().encode(line).length <= 3000, true);
+    assertEquals(/ and [0-9]+ more$/.test(line), true);
 });
