@@ -250,3 +250,44 @@ it('starts no run for a blocked commit and deploys a newer head at once', functi
     app(DevelopmentDeployPrecheck::class)->check();
     expect($socket->frames)->toHaveCount(1);
 });
+
+it('holds a failed head for the first backoff, then lets the policy count it', function (): void {
+    $instance = developmentTickDefault();
+    $instance->update(['auto_deploy_state' => ['result' => 'failed', 'commit' => str_repeat('b', 40), 'head' => str_repeat('b', 40),
+        'since' => now()->subMinutes(5)->toIso8601String()]]);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->andReturn(str_repeat('b', 40));
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $socket = new DevelopmentTickSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/test-ca', 'swamp.run_token' => 'test-token']);
+
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toBe([]);
+
+    $this->travel(6)->minutes();
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toHaveCount(1);
+});
+
+it('lifts a blocked head after a manual deploy that ended after the block', function (): void {
+    $instance = developmentTickDefault();
+    $instance->update(['auto_deploy_state' => ['result' => 'commit_failed', 'commit' => str_repeat('b', 40), 'head' => str_repeat('b', 40),
+        'since' => now()->subHour()->toIso8601String()]]);
+    $heads = Mockery::mock(RemoteBranchHeads::class);
+    $heads->shouldReceive('head')->andReturn(str_repeat('b', 40));
+    app()->instance(RemoteBranchHeads::class, $heads);
+    $socket = new DevelopmentTickSocket;
+    app()->instance(WebSocketClient::class, $socket);
+    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/test-ca', 'swamp.run_token' => 'test-token']);
+    $deploy = ['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Failed, 'input' => [], 'state' => []];
+
+    Operation::query()->create([...$deploy, 'triggered_by' => 'swamp:auto-deploy', 'finished_at' => now()->subMinutes(5)]);
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toBe([]);
+
+    Operation::query()->create([...$deploy, 'triggered_by' => 'manual', 'finished_at' => now()->subMinutes(5)]);
+    app(DevelopmentDeployPrecheck::class)->check();
+    expect($socket->frames)->toHaveCount(1);
+});

@@ -36,6 +36,7 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Models\Activity;
 use App\Models\Instance;
+use App\Models\InstanceDeployment;
 use App\Models\InstanceEnvironmentValue;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
@@ -229,6 +230,22 @@ it('records a running container but no seed when a deployment fails after the co
     expect($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($runtime->seed_commit)->toBeNull()
         ->and($operation->refresh()->error_code)->toBe('deployment.checkout_dirty');
+});
+
+it('records the admitted commit on a failed automatic container deployment, so policy counts failures per commit', function (): void {
+    $instance = deployDefault(container: true);
+    $commit = str_repeat('c', 40);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'triggered_by' => 'swamp:auto-deploy',
+        'input' => ['commit' => $commit, 'deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'result' => ['steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => '{"commit":null}']],
+            'summary' => ['failed_steps' => ['Run dev deploy steps-0']]]]);
+
+    $row = InstanceDeployment::query()->findOrFail($operation->refresh()->state['deployment_id']);
+    expect($row->status)->toBe('failed')->and($row->commit)->toBe($commit)
+        ->and(InstanceRuntime::query()->where('instance_id', $instance->id)->value('seed_commit'))->toBeNull();
 });
 
 it('records a container default\'s step that waited 60 s for a behavior lock as instance.deploy_lock_timeout', function (string $detail, string $file, string $code): void {

@@ -92,7 +92,10 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $text = static fn (mixed $value, int $limit): ?string => $value === null ? null : mb_strcut(ValidatedData::string($value), 0, $limit, 'UTF-8');
             $facts = ['deployment_id' => $historyId, 'release' => $text(ValidatedData::object($payload['release'] ?? [])['name'] ?? null, 128),
                 'selected_release' => $text(ValidatedData::object($payload['selected_release'] ?? [])['name'] ?? null, 128),
-                'commit' => $text($payload['commit'] ?? null, 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
+                // A failed container deploy records the commit it was admitted for, so automatic policy counts its failures per commit.
+                'commit' => $text($payload['commit'] ?? ($status !== 'succeeded' && $status !== 'running'
+                    && ValidatedData::object($locked->input['deployment'])['variant'] === 'container' ? InstanceDeploymentIntent::commit($locked) : null), 64),
+                'failed_step' => $text($payload['failed_step'] ?? null, 255)];
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }
