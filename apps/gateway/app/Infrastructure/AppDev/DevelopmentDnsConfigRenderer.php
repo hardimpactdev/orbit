@@ -142,7 +142,123 @@ final readonly class DevelopmentDnsConfigRenderer
             $records->push($record);
         }
 
-        return '# Managed by Orbit.'.PHP_EOL.$records->unique()->sort()->implode(PHP_EOL).PHP_EOL;
+        $lines = array_values($records->unique()->sort()->all());
+        $answers = $this->selection->answers($nodeOverrides, $clusterOverrides);
+
+        return '# Managed by Orbit.'.PHP_EOL.implode(PHP_EOL, self::withoutAnsweredRecords($lines, $answers)).PHP_EOL;
+    }
+
+    /**
+     * Private DNS answers by TLD (ADR 0234, docs/reference/private-dns.md#records-a-tld-already-answers): an exact record is left out
+     * when every requester gets the same address without it. That holds when the listener's first matching suffix and dnsmasq's most
+     * specific `address=` rule both give the record's address, and each requester with overrides either names the domain itself or
+     * gets the same address from its suffix override. A record for a site on another Node, outside every TLD, or of a Router that
+     * a transition selects keeps its line.
+     *
+     * @param  list<string>  $lines  The sorted, unique lines of the file.
+     * @param  array{suffixes: array<string, string>, overrides: array<string, array<string, string>>}  $answers
+     * @return list<string>
+     */
+    private static function withoutAnsweredRecords(array $lines, array $answers): array
+    {
+        // dnsmasq matches `address=/name/` and `address=/.name/` alike; the listener's catalog reads only the dotted form
+        // (PrivateDnsAnswerCatalog::fromDnsmasqConfiguration), then the selection's suffixes.
+        [$addressRules, $listed] = [[], []];
+        foreach ($lines as $line) {
+            if (preg_match('/^address=\/(\.?)([^\/]+)\/(.+)$/', $line, $matches) === 1) {
+                $addressRules[self::normalizeName($matches[2])] = $matches[3];
+                if ($matches[1] === '.') {
+                    $listed[self::normalizeName($matches[2])] = $matches[3];
+                }
+            }
+        }
+        $suffixes = [...$listed, ...$answers['suffixes']];
+
+        return array_values(array_filter($lines, static function (string $line) use ($addressRules, $suffixes, $answers): bool {
+            if (preg_match('/^host-record=([^,]+),([^,#\s]+)$/', $line, $matches) !== 1) {
+                return true;
+            }
+            [$name, $address] = [self::normalizeName($matches[1]), $matches[2]];
+            $suffix = self::firstSuffix($name, $suffixes);
+            if ($suffix === null || $suffixes[$suffix] !== $address || self::mostSpecific($name, $addressRules) !== $address) {
+                return true;
+            }
+            foreach ($answers['overrides'] as $overrides) {
+                if (! isset($overrides[$name]) && ($overrides[$suffix] ?? $suffixes[$suffix]) !== $address) {
+                    return true;
+                }
+            }
+
+            return false;
+        }));
+    }
+
+    /**
+     * The LAN override of a name is left out when the requester gets the same address from its suffix override and no exact record
+     * stands in between, so a Route of the Cluster under its TLD changes no override (ADR 0234).
+     *
+     * @param  array<string, string>  $exact
+     * @param  array<string, string>  $suffixes
+     * @param  array<string, array<string, string>>  $overrides
+     * @return array<string, array<string, string>>
+     */
+    private static function withoutAnsweredOverrides(array $exact, array $suffixes, array $overrides): array
+    {
+        foreach ($overrides as $key => $names) {
+            foreach ($names as $name => $address) {
+                if (array_key_exists($name, $suffixes) || isset($exact[$name])) {
+                    continue;
+                }
+                $suffix = self::firstSuffix($name, $suffixes);
+                if ($suffix !== null && ($names[$suffix] ?? $suffixes[$suffix]) === $address) {
+                    unset($overrides[$key][$name]);
+                }
+            }
+        }
+
+        return $overrides;
+    }
+
+    /**
+     * The suffix the listener answers a name with: the first that matches, as PrivateDnsAnswerCatalog::addressFor walks them.
+     *
+     * @param  array<array-key, string>  $suffixes
+     */
+    private static function firstSuffix(string $name, array $suffixes): ?string
+    {
+        foreach (array_keys($suffixes) as $key) {
+            // PHP stores a numeric-string key as an integer.
+            $suffix = (string) $key;
+            if ($name === $suffix || str_ends_with($name, '.'.$suffix)) {
+                return $suffix;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The address dnsmasq answers a name with from its `address=` rules: the most specific rule that matches.
+     *
+     * @param  array<array-key, string>  $rules
+     */
+    private static function mostSpecific(string $name, array $rules): ?string
+    {
+        [$best, $address] = [null, null];
+        foreach ($rules as $key => $value) {
+            // PHP stores a numeric-string key as an integer.
+            $suffix = (string) $key;
+            if (($name === $suffix || str_ends_with($name, '.'.$suffix)) && ($best === null || strlen($suffix) > strlen($best))) {
+                [$best, $address] = [$suffix, $value];
+            }
+        }
+
+        return $address;
+    }
+
+    private static function normalizeName(string $name): string
+    {
+        return rtrim(strtolower($name), '.');
     }
 
     /**
@@ -197,13 +313,12 @@ final readonly class DevelopmentDnsConfigRenderer
             ];
         }
 
+        $suffixes = [...$catalog->suffixes, ...$answers['suffixes']];
+
         return new PrivateDnsAnswerCatalog(
             exact: $catalog->exact,
-            suffixes: [
-                ...$catalog->suffixes,
-                ...$answers['suffixes'],
-            ],
-            overrides: $overrides,
+            suffixes: $suffixes,
+            overrides: self::withoutAnsweredOverrides($catalog->exact, $suffixes, $overrides),
         );
     }
 

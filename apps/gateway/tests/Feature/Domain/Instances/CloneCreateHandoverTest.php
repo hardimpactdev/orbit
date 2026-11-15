@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 use App\Actions\GatewayReleases\WaitForGatewayReleaseIdleAction;
+use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Instances\StartInstanceCompleteAction;
+use App\Data\Instances\CreateInstanceData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
@@ -413,6 +415,29 @@ it('lets clone creates admitted together share the free Route Nodes: each publis
         ->and($ninth->refresh()->input)->not->toHaveKeys(['route_create', 'route_lifecycle'])
         ->and($ninth->input['direct_provisioning']['route'])->toBeNull()
         ->and(RoutePublicationHolds::nodes($ninth))->toBe([]);
+});
+
+it('shares the Node for clone creates on a fleet with private DNS: a domain under the Node TLD needs no record (ADR 0234)', function (): void {
+    $node = containerDefaultNode();
+    $default = handoverDefault($node);
+    // The live fleet publishes private DNS on a vpn Node; the clone domain sits under the Node's TLD `beast.test`.
+    $vpn = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
+        'wireguard_ip' => '10.44.0.2', 'public_ssh_host' => '10.44.0.2', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'vpn-host-key']));
+    $vpn->roles()->create(['role' => RoleName::Vpn, 'status' => 'active']);
+
+    $first = containerCreate($default->project, $node, 'first');
+    $second = containerCreate($default->project, $node, 'second');
+    foreach ([$first, $second] as $create) {
+        expect($create->refresh()->input['route_create']['dns'])->toBe([])
+            ->and(ClonePublication::sharesNodes($create))->toBeTrue();
+    }
+    expect(DB::table('route_withdrawal_holds')->orderBy('operation_id')->pluck('operation_id')->all())->toBe([$first->id, $second->id]);
+
+    // A domain outside every TLD still needs its record: that create keeps its private DNS work and holds the Node alone (or defers).
+    $outside = app(StartDevelopmentInstanceCreateAction::class)->execute(
+        new CreateInstanceData($default->project->id, $node->id, 'outside', null, 'outside.example.com', null), null, null);
+    expect(ClonePublication::sharesNodes($outside->refresh()))->toBeFalse()
+        ->and(DB::table('route_publication_holds')->where('operation_id', $outside->id)->exists())->toBeFalse();
 });
 
 it('keeps a clone create whose publication writes more than the Caddyfile on the exclusive hold', function (string $list): void {
