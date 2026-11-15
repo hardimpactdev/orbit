@@ -1398,7 +1398,9 @@ Build output that appears after the create counts too. It stays work until the P
 
 The baseline is what a new Instance held when it was made, so a fresh copy of a default with local branches, stashes or untracked files reads `clean`. It holds the local branch heads, the stash ids and the untracked set, in the Gateway's `instance_runtimes.workspace_baseline`, outside the container.
 
-A clone's create reads it before the transaction that ends the create, and writes it with `workspace_baseline_at` in that transaction. The user can reach T3 only through a pairing, and Conn pairs only after it reads the create `succeeded`, so the baseline holds no work of the user. The completion writes no tracked or unignored file, so the read stays `clean` while it runs. The read runs in Horizon on an SSH connection of its own. A failed try, such as a lost connect, is tried again after 1 second and again after 3 more seconds; each failed try writes its SSH exit code and the end of its stderr to the Gateway log. Only a third failed read fails the create with `instance.workspace_baseline_unavailable`. A resumed create keeps a recorded baseline.
+A clone's create reads it before the transaction that ends the create, and writes it with `workspace_baseline_at` in that transaction. The user can reach T3 only through a pairing, and Conn pairs only after it reads the create `succeeded`, so the baseline holds no work of the user. The completion writes no tracked or unignored file, so the read stays `clean` while it runs.
+
+The read runs in Horizon on an SSH connection of its own. A failed try, such as a lost connect, is tried again after 1 second and again after 3 more seconds; each failed try writes its SSH exit code and the end of its stderr to the Gateway log. Only a third failed read fails the create with `instance.workspace_baseline_unavailable`. A resumed create keeps a recorded baseline.
 
 When the untracked set has more than 2,000 entries, or the answer would pass 900 KB, Orbit drops it, so every untracked file counts. Nothing rewrites a recorded baseline: not a deploy, a rename or a removal restore.
 
