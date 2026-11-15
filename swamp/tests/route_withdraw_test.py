@@ -1,9 +1,11 @@
 """The Node-local Route withdrawal transaction: two writers, other Routes' sections, previous generations and failed tests or reloads."""
 
+import fcntl
 import importlib.util
 import json
 import multiprocessing
 import os
+import subprocess
 import tempfile
 import time
 import unittest
@@ -64,7 +66,11 @@ class Tools:
     def __init__(self, fail=(), sleep=0.0):
         self.calls, self.fail, self.sleep = [], set(fail), sleep
 
-    def __call__(self, argv, **_):
+    def __call__(self, argv, **kwargs):
+        if argv[0] == "flock":
+            # The lock is real: util-linux flock on the inherited descriptor, as on a Node.
+            done = subprocess.run(argv, pass_fds=kwargs.get("pass_fds", ()), capture_output=True, text=True, check=False, timeout=60)
+            return done.returncode, done.stdout, done.stderr
         self.calls.append(argv)
         joined = " ".join(argv)
         if "validate" in argv and self.sleep:
@@ -271,7 +277,7 @@ class RouteWithdrawTest(unittest.TestCase):
         lock = self.root / "etc/caddy/.orbit-publish.lock"
         descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)
         self.addCleanup(os.close, descriptor)
-        WITHDRAW.fcntl.flock(descriptor, WITHDRAW.fcntl.LOCK_EX)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
         live = self.caddy.read_text()
         context = multiprocessing.get_context("fork")
         queue = context.Queue()

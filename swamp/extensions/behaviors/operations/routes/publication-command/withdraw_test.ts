@@ -535,10 +535,11 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
         node.find((step) => step.name === "compose")!.task.methodName,
         "withdraw",
     );
-    // Removals on one Node run side by side: the plan, the Node transaction, the cleanup and the proof are each their run's own model, so
-    // none waits on another removal's model lock. The input writer and the phase result keep their fixed names (bin/source_test.ts).
+    // Removals of different Routes on one Node run side by side: the plan, the Node transaction, the cleanup and the proof are named by
+    // the withdrawn Route, so none waits on another Route's model lock, and two writes of one Route stay ordered. The input writer and the
+    // phase result keep their fixed names (bin/source_test.ts).
     for (const step of [...node, ...steps].filter((step) => ["compose", "apply", "cleanup", "forward"].includes(step.name))) {
-        assertEquals((step.task as { behaviorName: string }).behaviorName.includes("run.id"), true, step.name);
+        assertEquals((step.task as { behaviorName: string }).behaviorName.includes("route_id"), true, step.name);
     }
     const destroy = await load("operation-instance-destroy");
     const withdraw = destroy.jobs.flatMap((job) => job.steps).find((step) =>
@@ -672,4 +673,27 @@ Deno.test("the create workflow withdraws the Route of a failed create before it 
     );
     const route = await load("route-withdraw");
     assertEquals(route.inputs.properties.side.enum, ["forward", "restore"]);
+});
+
+Deno.test("the withdrawal names its Node steps by the withdrawn Route and Node, evaluated as Swamp evaluates them", async () => {
+    const { Environment } = await import("npm:@marcbachmann/cel-js@7.6.1");
+    const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
+    type Step = { name: string; task: { behaviorName?: string; inputs?: { intent?: { publication?: Record<string, string> } } } };
+    const load = async (name: string) =>
+        (parse(await Deno.readTextFile(`${ROOT}/workflows/workflow-${name}.yaml`)) as { jobs: { steps: Step[] }[] }).jobs.flatMap((job) => job.steps);
+    const evaluate = (value: string, context: Record<string, unknown>) => String(cel.evaluate(value.slice(3, -2).trim(), context));
+    const parent = await load("route-withdraw");
+    const node = parent.find((step) => step.name === "withdraw_node")!.task.inputs!.intent!.publication!;
+    const forward = parent.find((step) => step.name === "forward")!.task.behaviorName!;
+    for (const [routes, expected] of [[[{ route_id: 1150 }, { route_id: 1151 }], "1150"], [[], "none"]] as const) {
+        const context = { inputs: { side: "forward", intent: { route_mutations: { forward: { routes } } } }, self: { _index: 0, part: { node_id: 9 } } };
+        assertEquals(evaluate(node.route_id, context), expected);
+        assertEquals(evaluate(forward, context), `forward-result-0-${expected}`);
+    }
+    const child = await load("route-withdraw-node");
+    const context = { inputs: { intent: { publication: { route_id: "1150", node_id: 9 } } }, run: { id: "0f0e0d0c-0b0a-4908-8706-050403020100" } };
+    assertEquals(
+        ["compose", "apply", "cleanup"].map((name) => evaluate(child.find((step) => step.name === name)!.task.behaviorName!, context)),
+        ["route-withdraw-compose-1150-9", "route-withdraw-apply-1150-9", "route-withdraw-cleanup-1150-9"],
+    );
 });

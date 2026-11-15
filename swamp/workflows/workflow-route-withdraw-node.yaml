@@ -55,7 +55,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: '${{ "route-withdraw-compose-" + run.id }}'
+      behaviorName: '${{ ("route-withdraw-compose-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
       methodName: withdraw
       inputs:
         node_id: '${{ inputs.intent.publication.node_id }}'
@@ -78,7 +78,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "route-withdraw-apply-" + run.id }}'
+      behaviorName: '${{ ("route-withdraw-apply-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/route-withdraw.yml"
@@ -101,7 +101,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ "route-withdraw-cleanup-" + run.id }}'
+      behaviorName: '${{ ("route-withdraw-cleanup-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

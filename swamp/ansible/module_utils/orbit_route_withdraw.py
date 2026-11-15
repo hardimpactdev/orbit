@@ -7,7 +7,6 @@ Node therefore both land: the second reads what the first wrote. The merge is a 
 dns.ts); swamp/tests/route_withdraw_parity_test.ts holds the two to the same result.
 """
 
-import fcntl
 import json
 import os
 import pwd
@@ -142,9 +141,12 @@ def _normalize(value):
     return {} if isinstance(value, list) and not value else value
 
 
+def _as_map(value):
+    return value if isinstance(value, dict) else {}
+
+
 def _requesters(before, after, current):
-    as_map = lambda value: value if isinstance(value, dict) else {}
-    result, was, will = dict(as_map(current)), as_map(before), as_map(after)
+    result, was, will = dict(_as_map(current)), _as_map(before), _as_map(after)
     for key in dict.fromkeys([*was, *will]):
         if _same(was.get(key, MISSING), will.get(key, MISSING)):
             continue
@@ -171,8 +173,10 @@ def _catalog(before, after, current, alternatives, top=False):
             if value is not MISSING:
                 result[key] = value
         return result
-    as_map = lambda value: {} if value is MISSING else {"value": value}
-    return merge_sections(as_map(before), as_map(after), as_map(current), "dns", [as_map(value) for value in alternatives]).get("value", MISSING)
+    def leaf(value):
+        return {} if value is MISSING else {"value": value}
+
+    return merge_sections(leaf(before), leaf(after), leaf(current), "dns", [leaf(value) for value in alternatives]).get("value", MISSING)
 
 
 def merge_dns(before, after, current, alternatives=()):
@@ -184,6 +188,11 @@ def merge_dns(before, after, current, alternatives=()):
             "catalog": json.dumps(catalog, separators=(",", ":"), ensure_ascii=False) + "\n"}
 
 
+def _resolve(text, account):
+    """The account placeholders that route-create-site fills in every pool."""
+    return text.replace("__ORBIT_NODE_GROUP__", str(account.pw_gid)).replace("/__ORBIT_NODE_HOME__", account.pw_dir)
+
+
 def compose(plan, live, account=None):
     """The withdrawal applied to what the Node holds: {caddy, pools: {version: text}, dns: {records, catalog}} -> the same shape."""
     out = {"caddy": None, "pools": {}, "dns": None}
@@ -193,7 +202,9 @@ def compose(plan, live, account=None):
             content = merge_caddy(chain[step["from"]], chain[step["to"]], content, chain, step["had_served_groups"])
         out["caddy"] = content
     if plan.get("php"):
-        resolve = lambda text: text.replace("__ORBIT_NODE_GROUP__", str(account.pw_gid)).replace("/__ORBIT_NODE_HOME__", account.pw_dir)
+        def resolve(text):
+            return _resolve(text, account)
+
         for version in plan["php"]["versions"]:
             previous = resolve(_normalize(plan["php"]["before"]).get(version, ""))
             desired = resolve(_normalize(plan["php"]["after"]).get(version, ""))
@@ -256,8 +267,7 @@ def check_untouched(plan, live, composed, account=None):
         if read[0] is not None and read[0] != result[0]:
             raise WithdrawFailure("route.withdraw_foreign_change", "Caddy global options")
     for version, text in composed["pools"].items():
-        resolve = lambda t: t.replace("__ORBIT_NODE_GROUP__", str(account.pw_gid)).replace("/__ORBIT_NODE_HOME__", account.pw_dir)
-        states = [php_sections(resolve(_normalize(plan["php"][side]).get(version, "")))[1] for side in ("before", "after")]
+        states = [php_sections(_resolve(_normalize(plan["php"][side]).get(version, ""), account))[1] for side in ("before", "after")]
         owned = _owned(states)
         read, result = php_sections(live["pools"].get(version, "")), php_sections(text)
         for key in set(read[1]) | set(result[1]):
@@ -279,10 +289,11 @@ def check_untouched(plan, live, composed, account=None):
 # The transaction.
 
 class _Lock:
-    """An exclusive flock(2) on one of the Node's publication lock files; the deadline is shared by every lock of one withdrawal."""
+    """An exclusive lock on one of the Node's publication lock files, taken by util-linux `flock` on an inherited descriptor: the lock
+    belongs to the open file description, so it outlives the `flock` process until this context closes the descriptor."""
 
-    def __init__(self, path, deadline, busy):
-        self.path, self.deadline, self.busy, self.stream = path, deadline, busy, None
+    def __init__(self, path, run, seconds, busy):
+        self.path, self.run, self.seconds, self.busy, self.stream = path, run, seconds, busy, None
 
     def __enter__(self):
         try:
@@ -295,15 +306,14 @@ class _Lock:
                 or identity.st_uid != os.geteuid() or stat.S_IMODE(identity.st_mode) != 0o600):
             self.stream.close()
             raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a private regular file owned by the publisher.")
-        while True:
-            try:
-                fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-                return self
-            except BlockingIOError:
-                if time.monotonic() >= self.deadline:
-                    self.stream.close()
-                    raise WithdrawFailure(self.busy, f"{self.path.name} stayed held past the lock deadline.") from None
-                time.sleep(0.1)
+        rc, _, stderr = self.run(["flock", "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
+                                  str(self.stream.fileno())], pass_fds=(self.stream.fileno(),))
+        if rc != 0:
+            self.stream.close()
+            if rc == 75:
+                raise WithdrawFailure(self.busy, f"{self.path.name} stayed held past the lock deadline.")
+            raise WithdrawFailure("route.publish_lock_failed", stderr.strip()[-2000:])
+        return self
 
     def __exit__(self, *_):
         self.stream.close()
@@ -371,7 +381,10 @@ def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
 
     Both locks share one deadline of `wait` seconds, well inside the apply phase's 170-second timeout."""
     base = Path(root)
-    at = lambda path: base / path.lstrip("/")
+
+    def at(path):
+        return base / path.lstrip("/")
+
     previous = at("/var/lib/orbit/route-previous")
     locks = []
     if plan.get("caddy") or plan.get("php"):
@@ -385,7 +398,7 @@ def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
     held = []
     try:
         for path, busy in locks:
-            held.append(_Lock(path, deadline, busy).__enter__())
+            held.append(_Lock(path, run, deadline - time.monotonic(), busy).__enter__())
         return _transaction(plan, run, at, previous, caddy_gid)
     finally:
         for lock in reversed(held):
