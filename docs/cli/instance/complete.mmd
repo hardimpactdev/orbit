@@ -38,10 +38,9 @@ sequenceDiagram
   else the clone can be completed
     %% path: main
     GW->>SW: Start run, full intent<br/>operation-instance-complete
+    %%> What it sends:
+    %%> - the intent with the launcher program, and one vault copy: the release scripts beside the Process files, one line
     GW-->>CL: 202 Accepted<br/>Operation ID
-    SW->>N: Stage the run folder<br/>clone-input · SSH
-    %%> What it does:
-    %%> - writes this run's own private folder; the create's folder is not read
     opt a database
       SW->>N: Create the database<br/>database steps · SSH
       %%> What it does:
@@ -56,18 +55,16 @@ sequenceDiagram
       %%> On failure:
       %%> - `failed_step: fleet` with the fleet phase's code
     end
-    SW->>N: Start the services<br/>clone-services · SSH
+    SW->>N: Start, check services<br/>clone-services · SSH
     %%> What it does:
-    %%> - PHP settings, file rights, Process files, web config, the Node store, then the units
+    %%> - one dispatch: stages the release scripts from the completion's one copy into this run's own private folder; the create's folder is not read
+    %%> - the services: PHP settings, file rights, Process files, web config, the Node store, then the units
     %%> - refuses when the checkout mark names another Instance
     %%> - writes no tracked file: the user's work in the checkout stays as it is
+    %%> - then the check: the checkout mark, the agent's Git identity, PHP and every running unit
     %%> On failure:
-    %%> - `failed_step: workspace`
-    SW->>N: Check the clone<br/>clone-check · SSH
-    %%> What it does:
-    %%> - the checkout mark, the agent's Git identity, PHP and every running unit
-    %%> On failure:
-    %%> - a dead unit: `instance.container_process_inactive` with its `process_failure` receipt
+    %%> - the stage or the services: `failed_step: workspace`
+    %%> - a dead unit: `failed_step: check`, `instance.container_process_inactive` with its `process_failure` receipt
     opt a Route its create did not publish
       SW->>N: Publish the Route<br/>operation-route-create
       %%> When:

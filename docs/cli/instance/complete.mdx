@@ -29,6 +29,8 @@ The create's terminal projection starts the first completion by itself, in the t
 
 The Gateway refuses before any change with `instance.complete_unavailable` when the Instance is not a container clone, is not `source_resolved`, has no recorded starting commit, or its T3 server is not registered. An `active` clone is complete, so a repeat after success is refused the same way. Another Operation that holds the Instance gives `operation.target_busy`.
 
+The completion runs one step on the Node, `clone-services`: it stages the release scripts, starts the services, then checks the clone. A plain clone writes no run folder on the Swamp Node, so it reports `input` and `cleanup` skipped.
+
 The completion writes no tracked file in the workspace, so the user's work in the checkout stays as it is. A failed or cancelled completion keeps the clone `source_resolved` with `failed_step` and `error_code`. The container keeps running and T3 keeps its thread. A Route that the run published is withdrawn again. An address the create published stays up and answers 502 until a retry or [`instance:destroy`](/cli/instance/destroy), which withdraws it; a retry that succeeds keeps it as it is. The result's `recovery` names this command as the retry, and [`instance:destroy`](/cli/instance/destroy) to remove the clone. After a dead Process of a Project definition it adds `retry.requires=project_process_definition`: change or remove the definition first. The command takes the Project's development definitions as they are when it starts. A failed completion sends the same failure notification as a failed create.
 
 For a [task copy](/reference/tasks#a-failed-completion), a failed completion keeps the copy, and its task stays `reserved` with an assistance request that names this retry. A completion of the copy that succeeds runs the reserved task and ends that request; any other request stays.
@@ -52,7 +54,8 @@ A destroy from the CLI while the completion runs refuses with `operation.target_
 | `instance.create_database_failed` | The clone's database could not be created or filled. |
 | `instance.container_fleet_check_failed`, `instance.container_fleet_resume_failed`, `instance.container_fleet_drift` | The nested fleet did not start. The result names why. |
 | `instance.create_fleet_failed` | The fleet step failed and left no reason. |
-| `instance.create_workspace_failed` | The services part of the workspace failed. |
+| `instance.complete_launch_too_large` | The completion's one copy, the release scripts beside the Process files, is over 1 MiB. Refused before the run starts. |
+| `instance.create_workspace_failed` | The release scripts could not be staged, or the services part of the workspace failed. |
 | `instance.container_process_inactive` | A Process unit is not running. `process_failure` names it. |
 | `instance.complete_check_failed` | The check of the clone failed for another reason. |
 | `instance.create_route_failed` | The Route publication or its TLS probe failed in this completion, after the create did not publish it. Retry with this command. |
