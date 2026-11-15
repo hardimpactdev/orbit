@@ -192,13 +192,15 @@ final class RoutePublicationHolds
         if ($nodes === [] && ! $after) {
             return true;
         }
-        if (! $after && ! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->take($operation, $nodes)) {
+        // Null when it took the Nodes; else why not. An older write first: the Operation it starts after, or an older waiter on a Node.
+        $refused = $after || $this->olderWaiterOverlaps($operation->id, $nodes) ? ClonePublication::WaiterFirst : $this->take($operation, $nodes);
+        if ($refused === null) {
             return true;
         }
         // A clone's create never waits for a Route Node: it leaves its publication to its completion and starts at once. The insert above
         // is the decision: Caddy-only creates share the Nodes, up to the shared cap; any other create takes them alone or defers.
         if (ClonePublication::takesFreeNodesOnly($operation)) {
-            app(ClonePublication::class)->defer($operation);
+            app(ClonePublication::class)->defer($operation, $refused, self::sharers($nodes));
 
             return true;
         }
@@ -296,7 +298,7 @@ final class RoutePublicationHolds
                 continue;
             }
             $nodes = self::waitingNodes($waiter);
-            if (array_intersect($nodes, $blocked) !== [] || ! $this->take($waiter, $nodes)) {
+            if (array_intersect($nodes, $blocked) !== [] || $this->take($waiter, $nodes) !== null) {
                 $blocked = [...$blocked, ...$nodes];
 
                 continue;
@@ -427,45 +429,67 @@ final class RoutePublicationHolds
 
     /**
      * Takes the Nodes of an admitted write: shared among removals and Caddy-only clone creates, alone for every other Route write.
+     * Null when it holds them, else why not (ClonePublication's reason codes).
      *
      * @param  list<int>  $nodes
      */
-    private function take(Operation $operation, array $nodes): bool
+    private function take(Operation $operation, array $nodes): ?string
     {
-        return self::sharesNodes($operation) ? $this->share($operation->id, $nodes, $operation->kind === 'instance.destroy') : $this->acquire($operation->id, $nodes);
+        if (self::sharesNodes($operation)) {
+            return $this->share($operation->id, $nodes, $operation->kind === 'instance.destroy');
+        }
+
+        return $this->acquire($operation->id, $nodes) ? null : ClonePublication::NodesHeld;
+    }
+
+    /**
+     * The shared writers that hold each of the Nodes now.
+     *
+     * @param  list<int>  $nodes
+     * @return array<int, int>
+     */
+    private static function sharers(array $nodes): array
+    {
+        $sharers = [];
+        foreach ($nodes as $node) {
+            $sharers[$node] = DB::table('route_withdrawal_holds')->where('node_id', $node)->count();
+        }
+
+        return $sharers;
     }
 
     /**
      * All the Nodes or none, beside at most `SharedWriters - 1` other shared writers, and a removal beside at most `SharedRemovals - 1`
      * other removals: refused while a publisher holds one of them. The
-     * IMMEDIATE transaction makes the check and the insert one step against a publisher's `acquire`.
+     * IMMEDIATE transaction makes the check and the insert one step against a publisher's `acquire`. Null when it holds them, else
+     * why not: `nodes_held`, `share_cap` or, for a removal, `removal_cap`.
      *
      * @param  list<int>  $nodes
      */
-    private function share(int $operationId, array $nodes, bool $removal): bool
+    private function share(int $operationId, array $nodes, bool $removal): ?string
     {
         DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->whereIn('node_id', $nodes)->delete();
 
-        return DB::transaction(static function () use ($operationId, $nodes, $removal): bool {
+        return DB::transaction(static function () use ($operationId, $nodes, $removal): ?string {
             if (DB::table('route_publication_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)->exists()) {
-                return false;
+                return ClonePublication::NodesHeld;
             }
             $full = DB::table('route_withdrawal_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)
                 ->groupBy('node_id')->havingRaw('count(*) >= ?', [self::SharedWriters])->exists();
             if ($full) {
-                return false;
+                return ClonePublication::ShareCap;
             }
             $removals = $removal && DB::table('route_withdrawal_holds')->join('operations', 'operations.id', '=', 'route_withdrawal_holds.operation_id')
                 ->whereIn('route_withdrawal_holds.node_id', $nodes)->where('route_withdrawal_holds.operation_id', '!=', $operationId)
                 ->where('operations.kind', 'instance.destroy')->groupBy('route_withdrawal_holds.node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
             if ($removals) {
-                return false;
+                return 'removal_cap';
             }
             foreach ($nodes as $node) {
                 DB::table('route_withdrawal_holds')->insertOrIgnore(['node_id' => $node, 'operation_id' => $operationId, 'created_at' => now()]);
             }
 
-            return true;
+            return null;
         });
     }
 

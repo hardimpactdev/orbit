@@ -22,6 +22,9 @@ inputs:
     execution_secrets: {type: object, additionalProperties: false}
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
+# The Node steps take one of 16 names per Node, `<family>-<node>-<route id % 16>` (`-none` without a Route), as a clone's create does
+# (route-create-site): Swamp keeps every behavior definition, so names per Route grow its catalog for ever. Two withdrawals in one slot
+# on one Node run one after the other on that name's lock; each keeps its own run folder and step outputs.
 jobs:
 - name: withdraw
   labels: {role: swamp}
@@ -55,7 +58,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-publication-command'
-      behaviorName: '${{ ("route-withdraw-compose-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
+      behaviorName: '${{ ("route-withdraw-compose-" + string(inputs.intent.publication.node_id) + "-" + (inputs.intent.publication.route_id == "none" ? "none" : string(int(inputs.intent.publication.route_id) % 16))).split(".").join("-") }}'
       methodName: withdraw
       inputs:
         node_id: '${{ inputs.intent.publication.node_id }}'
@@ -80,7 +83,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-withdraw-apply-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
+      behaviorName: '${{ ("route-withdraw-apply-" + string(inputs.intent.publication.node_id) + "-" + (inputs.intent.publication.route_id == "none" ? "none" : string(int(inputs.intent.publication.route_id) % 16))).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/route-withdraw.yml"
@@ -103,7 +106,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-withdraw-cleanup-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
+      behaviorName: '${{ ("route-withdraw-cleanup-" + string(inputs.intent.publication.node_id) + "-" + (inputs.intent.publication.route_id == "none" ? "none" : string(int(inputs.intent.publication.route_id) % 16))).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

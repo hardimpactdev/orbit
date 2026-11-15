@@ -1,0 +1,15 @@
+order = 863
+source_sha256 = ""
+cases = [
+  "pinned route withdraw: pooled names, no empty vpn visit, and two withdrawals in one slot",
+]
+file = "swamp/tests/route_withdraw_native_test.ts"
+cost = 10
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/tests/_support/native_auth.ts",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-route-withdraw.yaml",
+  "swamp/workflows/workflow-route-withdraw-node.yaml",
+]

@@ -44,6 +44,7 @@ use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Orbit\Extensions\Conn\Models\ConnEnvironment;
 
@@ -111,7 +112,8 @@ function handoverDefault(Node $node, ProjectType $type = ProjectType::LaravelApp
 function handoverCreate(Instance $default, string $name = 'feature'): Operation
 {
     $operation = containerCreate($default->project, $default->node, $name);
-    $operation->forceFill(['status' => 'running', 'finished_at' => null, 'state' => ['swamp_run_id' => 'run-1']])->save();
+    // The start keeps what the admission recorded, such as the reason of a deferred publication.
+    $operation->forceFill(['status' => 'running', 'finished_at' => null, 'state' => [...($operation->state ?? []), 'swamp_run_id' => 'run-1']])->save();
 
     return $operation->refresh();
 }
@@ -408,13 +410,24 @@ it('lets clone creates admitted together share the free Route Nodes: each publis
     expect([$creates[0]->input['route_create']['php_files'], $creates[0]->input['route_create']['dns'], $creates[0]->input['route_create']['ingress'],
         $creates[0]->input['route_create']['lan']])->toBe([[], [], [], []]);
 
-    // The ninth shared writer on the Node leaves its address to its completion, as when the Node is held.
+    // The ninth shared writer on the Node leaves its address to its completion, as when the Node is held. One info line says why, with
+    // the shared writers on the Node, and its result names the cap (Operation 23271 had neither).
     $eighth = containerCreate($default->project, $node, 'clone8');
+    Log::spy();
     $ninth = containerCreate($default->project, $node, 'clone9');
     expect($eighth->refresh()->input)->toHaveKey('route_create')
         ->and($ninth->refresh()->input)->not->toHaveKeys(['route_create', 'route_lifecycle'])
         ->and($ninth->input['direct_provisioning']['route'])->toBeNull()
         ->and(RoutePublicationHolds::nodes($ninth))->toBe([]);
+    Log::shouldHaveReceived('info')->once()->with('Clone create deferred its Route publication',
+        ['operation_id' => $ninth->id, 'reason' => 'share_cap', 'sharers' => [$node->id => 8]]);
+    $ninth->forceFill(['status' => 'running', 'state' => [...$ninth->state, 'swamp_run_id' => 'run-1']])->save();
+    app(DevelopmentInstanceCreateProjection::class)->apply($ninth->refresh(), handoverSucceeded($ninth));
+    expect($ninth->refresh()->result)->toMatchArray(['route_publication' => 'deferred', 'route_publication_reason' => 'share_cap']);
+    $eighth->forceFill(['status' => 'running', 'state' => [...($eighth->state ?? []), 'swamp_run_id' => 'run-1']])->save();
+    app(DevelopmentInstanceCreateProjection::class)->apply($eighth->refresh(), handoverPublished($eighth, 'published'));
+    expect($eighth->refresh()->result['route_publication'])->toBe('published')
+        ->and($eighth->result)->not->toHaveKey('route_publication_reason');
 });
 
 it('shares the Node for clone creates on a fleet with private DNS: a domain under the Node TLD needs no record (ADR 0234)', function (): void {
@@ -461,7 +474,8 @@ it('defers a clone create while a whole-file writer holds the Node, and makes a 
     expect($writer->status)->toBe(OperationStatus::Waiting);
     // A newer create defers behind the older waiting writer, so the writer is not starved.
     $later = containerCreate($default->project, $node, 'later');
-    expect($later->refresh()->input)->not->toHaveKey('route_create');
+    expect($later->refresh()->input)->not->toHaveKey('route_create')
+        ->and($later->state['route_publication_reason'])->toBe('waiter_first');
 
     // Once the shared create published, its row goes and the writer starts.
     $create->refresh()->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
@@ -634,6 +648,7 @@ it('leaves the address to the completion when another Route write holds the Node
     $completion = handoverCompletion($create);
     $route = Route::query()->findOrFail($create->input['route_id']);
     expect($create->refresh()->result['route_publication'])->toBe('deferred')
+        ->and($create->result['route_publication_reason'])->toBe('nodes_held')
         ->and([$route->status->value, $route->sites_published, $route->failed_step])->toBe(['pending', false, null])
         // The completion captures the Route and holds its Node for its whole run, as before.
         ->and($completion->input)->toHaveKey('route_create')
@@ -656,6 +671,7 @@ it('keeps a create whose publication failed: the Route records it, the completio
     $completion = handoverCompletion($create);
     expect($create->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($create->result['route_publication'])->toBe('failed')
+        ->and($create->result)->not->toHaveKey('route_publication_reason')
         ->and([$route->sites_published, $route->failed_step, $route->error_code])->toBe([false, 'native-create', 'instance.create_route_failed'])
         ->and(DB::table('route_withdrawal_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
         ->and($completion->input)->toHaveKey('route_create')
@@ -680,12 +696,15 @@ it('takes a merge that a Node refused as deferred: the Route is not marked faile
     $create = handoverCreate(handoverDefault($node));
     // The site step failed after its refusal; the run's result names the address deferred (route-create-site.yml, create_result).
     handoverStep($create, 'publication', 'clone-route', 'step_failed', 1);
+    Log::spy();
     app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), handoverPublished($create, 'deferred'));
 
     $route = Route::query()->findOrFail($create->input['route_id']);
     $completion = handoverCompletion($create);
+    Log::shouldHaveReceived('info')->once()->with('Clone create deferred its Route publication', ['operation_id' => $create->id, 'reason' => 'node_refused']);
     expect($create->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($create->result['route_publication'])->toBe('deferred')
+        ->and($create->result['route_publication_reason'])->toBe('node_refused')
         ->and([$route->status->value, $route->sites_published, $route->failed_step, $route->error_code])->toBe(['pending', false, null, null])
         ->and(DB::table('route_withdrawal_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
         ->and($completion->input)->toHaveKey('route_create')

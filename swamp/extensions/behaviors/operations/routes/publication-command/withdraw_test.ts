@@ -675,7 +675,7 @@ Deno.test("the create workflow withdraws the Route of a failed create before it 
     assertEquals(route.inputs.properties.side.enum, ["forward", "restore"]);
 });
 
-Deno.test("the withdrawal names its Node steps by the withdrawn Route and Node, evaluated as Swamp evaluates them", async () => {
+Deno.test("the withdrawal names its Node steps from 16 slots per Node, evaluated as Swamp evaluates them", async () => {
     const { Environment } = await import("npm:@marcbachmann/cel-js@7.6.1");
     const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
     type Step = { name: string; task: { behaviorName?: string; inputs?: { intent?: { publication?: Record<string, string> } } } };
@@ -686,21 +686,75 @@ Deno.test("the withdrawal names its Node steps by the withdrawn Route and Node, 
     const node = parent.find((step) => step.name === "withdraw_node")!.task.inputs!.intent!.publication!;
     const forward = parent.find((step) => step.name === "forward")!.task.behaviorName!;
     // A destroy (side forward) desires no Route, so its forward stage lists none; its restore stage lists the withdrawn Routes. A failed
-    // create (side restore) lists its prior Route there. Both name the steps by that Route.
+    // create (side restore) lists its prior Route there. Both take the slot of that Route.
     const cases = [
-        ["forward", { forward: { routes: [] }, restore: { routes: [{ route_id: 1150 }, { route_id: 1151 }] } }, "1150"],
-        ["restore", { forward: { routes: [{ route_id: 77 }] }, restore: { routes: [{ route_id: 77 }] } }, "77"],
-        ["forward", { forward: { routes: [] }, restore: { routes: [] } }, "none"],
+        ["forward", { forward: { routes: [] }, restore: { routes: [{ route_id: 1150 }, { route_id: 1151 }] } }, "1150", "14"],
+        ["restore", { forward: { routes: [{ route_id: 77 }] }, restore: { routes: [{ route_id: 77 }] } }, "77", "13"],
+        ["forward", { forward: { routes: [] }, restore: { routes: [] } }, "none", "none"],
     ] as const;
-    for (const [side, mutations, expected] of cases) {
+    for (const [side, mutations, route, slot] of cases) {
         const context = { inputs: { side, intent: { route_mutations: mutations } }, self: { _index: 0, part: { node_id: 9 } } };
-        assertEquals(evaluate(node.route_id, context), expected);
-        assertEquals(evaluate(forward, context), `forward-result-0-${expected}`);
+        assertEquals(evaluate(node.route_id, context), route);
+        assertEquals(evaluate(forward, context), `forward-result-0-${slot}`);
     }
     const child = await load("route-withdraw-node");
-    const context = { inputs: { intent: { publication: { route_id: "1150", node_id: 9 } } }, run: { id: "0f0e0d0c-0b0a-4908-8706-050403020100" } };
-    assertEquals(
-        ["compose", "apply", "cleanup"].map((name) => evaluate(child.find((step) => step.name === name)!.task.behaviorName!, context)),
-        ["route-withdraw-compose-1150-9", "route-withdraw-apply-1150-9", "route-withdraw-cleanup-1150-9"],
-    );
+    const families = ["compose", "apply", "cleanup"];
+    const names = (route: string, nodeId: number) =>
+        families.map((name) =>
+            evaluate(child.find((step) => step.name === name)!.task.behaviorName!, {
+                inputs: { intent: { publication: { route_id: route, node_id: nodeId } } },
+                run: { id: "0f0e0d0c-0b0a-4908-8706-050403020100" },
+            })
+        );
+    assertEquals(names("1150", 9), ["route-withdraw-compose-9-14", "route-withdraw-apply-9-14", "route-withdraw-cleanup-9-14"]);
+    assertEquals(names("none", 9), ["route-withdraw-compose-9-none", "route-withdraw-apply-9-none", "route-withdraw-cleanup-9-none"]);
+    // The bound: a thousand withdrawals on one Node make 16 names per family, plus one for a stage without a Route; two Nodes never
+    // share a name; 16 consecutive Routes, as clones made together get, never share a slot; the proof step takes 16 names in all.
+    for (const nodeId of [1, 9, 209]) {
+        const pooled = new Set(Array.from({ length: 1000 }, (_, index) => names(String(index + 1), nodeId)).flat());
+        assertEquals(pooled.size, 3 * 16, `Node ${nodeId}`);
+        for (const name of pooled) assertEquals(new RegExp(`^route-withdraw-(compose|apply|cleanup)-${nodeId}-([0-9]|1[0-5])$`).test(name), true, name);
+    }
+    assertEquals(new Set(Array.from({ length: 16 }, (_, index) => names(String(2000 + index), 9)[1])).size, 16);
+    assertEquals(names("41", 9)[1] === names("57", 9)[1], true);
+    assertEquals(names("41", 9)[1] === names("41", 12)[1], false);
+    const proofs = new Set(Array.from({ length: 1000 }, (_, index) =>
+        evaluate(forward, { inputs: { side: "forward", intent: { route_mutations: { forward: { routes: [] }, restore: { routes: [{ route_id: index + 1 }] } } } }, self: { _index: 0 } })));
+    assertEquals(proofs.size, 16);
+    // The names stay apart from the mutation workflows' `forward-result-<i>` and from the create's `route-site-<node>-<slot>`.
+    for (const name of proofs) assertEquals(/^forward-result-0-([0-9]|1[0-5])$/.test(name), true, name);
+});
+
+Deno.test("the withdrawal visits a Node for private DNS only when the Route's captured DNS states differ there", async () => {
+    const { Environment } = await import("npm:@marcbachmann/cel-js@7.6.1");
+    const cel = new Environment({ enableOptionalTypes: true, unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false });
+    type Step = { name: string; forEach?: { in: string }; task: { inputs?: { required?: Record<string, string> } } };
+    const steps = (parse(await Deno.readTextFile(`${ROOT}/workflows/workflow-route-withdraw.yaml`)) as { jobs: { steps: Step[] }[] })
+        .jobs.flatMap((job) => job.steps);
+    const selector = steps.find((step) => step.name === "withdraw_node")!.forEach!.in;
+    const required = steps.find((step) => step.name === "forward")!.task.inputs!.required!.withdraw_node;
+    // One selection: the proof requires exactly the Nodes the step visits.
+    assertEquals(required.slice(3, -2).trim(), `size(${selector.slice(3, -2).trim()})`);
+    // Interned artifact indexes, as NativeRoutePublicationArtifacts::capture sends them: equal states share one index.
+    const states = (dns: (number | null)[], caddy = 0) =>
+        Object.fromEntries(["before", "prepared", "withdrawn", "after"].map((name, i) => [name, { caddy, php: 0, dns: dns[i] }]));
+    const vpn = (dns: (number | null)[]) => ({ node_id: 1, serves_routes: false, ...states(dns) });
+    const visited = (publications: Record<string, unknown>[], cleanup: Record<string, unknown>[] = [], side = "forward") =>
+        (cel.evaluate(selector.slice(3, -2).trim(), {
+            inputs: { side, intent: { route_mutations: { [side]: { publications, cleanup } } } },
+        }) as { node_id: number }[]).map((p) => p.node_id);
+    const router = { node_id: 9, serves_routes: true, ...states([null, null, null, null]) };
+    // An in-TLD clone: the vpn Node's four DNS states are one artifact, so only the Router is visited (Operations 23224 and 23227).
+    assertEquals(visited([router, vpn([0, 0, 0, 0])]), [9]);
+    assertEquals(visited([router, vpn([0, 0, null, null])]), [9]);
+    // A Route with a line on the vpn Node (outside the TLD, Node-scoped, on another Node, a Router change): the states differ.
+    assertEquals(visited([router, vpn([0, 0, 1, 1])]), [9, 1]);
+    assertEquals(visited([router, vpn([1, 1, 0, 0])], [], "restore"), [9, 1]);
+    assertEquals(visited([router, vpn([0, 1, 1, 1])]), [9, 1]);
+    assertEquals(visited([router, vpn([0, 0, 0, 1])]), [9, 1]);
+    // A Node without private DNS, and one that only holds a withdrawn certificate scope.
+    assertEquals(visited([{ node_id: 4, serves_routes: false, ...states([null, null, null, null]) }]), []);
+    assertEquals(visited([{ node_id: 4, serves_routes: false, ...states([null, null, null, null]) }], [{ node_id: 4, scope: "s" }]), [4]);
+    // A Router that also holds the private DNS is visited for its sites, whatever its DNS states.
+    assertEquals(visited([{ ...router, ...states([0, 0, 0, 0]), serves_routes: true }]), [9]);
 });

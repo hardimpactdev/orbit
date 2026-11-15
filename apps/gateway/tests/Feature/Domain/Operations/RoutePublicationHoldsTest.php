@@ -146,6 +146,8 @@ it('lets at most four removals among at most eight shared writers hold one Node,
         $holds->admit($create);
     }
     expect(array_map(static fn (Operation $create): bool => isset($create->fresh()->input['route_create']), $creates))->toBe([true, true, true, true, false])
+        ->and(array_map(static fn (Operation $create): ?string => $create->fresh()->state['route_publication_reason'] ?? null, $creates))
+        ->toBe([null, null, null, null, 'share_cap'])
         ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->count())->toBe(8);
 
     // A fifth removal waits, for the removal cap even once a create has gone, until a removal has withdrawn.
@@ -174,7 +176,8 @@ it('gives a clone create whose publication writes more than the Caddyfile the No
         ->and(DB::table('route_withdrawal_holds')->count())->toBe(0)
         ->and($first->fresh()->input)->toHaveKey('route_create')
         ->and($second->fresh()->input)->not->toHaveKey('route_create')
-        ->and($caddyOnly->fresh()->input)->not->toHaveKey('route_create');
+        ->and($caddyOnly->fresh()->input)->not->toHaveKey('route_create')
+        ->and([$second->fresh()->state['route_publication_reason'], $caddyOnly->fresh()->state['route_publication_reason']])->toBe(['nodes_held', 'nodes_held']);
 })->with([
     'a PHP-FPM pool' => [['php_files' => [['node_id' => 5, 'path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf']]]],
     'a private DNS record' => [['dns' => [['node_id' => 5]]]],

@@ -118,6 +118,10 @@ final readonly class DevelopmentInstanceCreateProjection implements DirectOperat
                 $publication = ClonePublication::outcome($operation, $result);
                 if ($publication !== null) {
                     $result[ClonePublication::Field] = $publication;
+                    $reason = ClonePublication::reason($operation, $publication);
+                    if ($reason !== null) {
+                        $result[ClonePublication::ReasonField] = $reason;
+                    }
                     match ($publication) {
                         'published' => app(ClonePublication::class)->activate($operation),
                         'failed' => app(ClonePublication::class)->failed($operation),

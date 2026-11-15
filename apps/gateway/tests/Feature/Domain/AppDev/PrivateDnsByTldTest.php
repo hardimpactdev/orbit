@@ -7,6 +7,8 @@ use App\Domain\AppDev\DnsRecordType;
 use App\Domain\AppDev\DnsRequester;
 use App\Domain\Clusters\ClusterState;
 use App\Domain\Nodes\RoleName;
+use App\Domain\Routes\NativeRoutePublicationArtifacts;
+use App\Domain\Routes\NativeRoutePublicationInput;
 use App\Domain\Routes\RoutePublicationSites;
 use App\Domain\Shared\LifecycleStatus;
 use App\Infrastructure\AppDev\DevelopmentDnsConfigRenderer;
@@ -173,4 +175,61 @@ it('writes the records again that a new Router no longer answers with the same a
         ->render(null, [], [$fleet['cluster']->id => ['router_node_id' => $fleet['sabre']->id]]), complete: true);
 
     expect($records)->toContain('address=/.test/10.44.0.10', 'host-record=r1.ihj-proof-h42.test,10.44.0.7', 'host-record=r10.ihj-proof-h42.test,10.44.0.7');
+});
+
+/**
+ * What a removal of one site captures for the vpn Node, through the capture every Route withdrawal uses: whether its four DNS states
+ * differ (route-withdraw then visits the Node; equal states intern as one artifact and it does not), and whether the vpn Node's render
+ * before the removal holds a line or catalog entry of the site's domain.
+ *
+ * @param  list<DevelopmentSite>  $sites
+ * @param  array<int, array<string, mixed>>  $clusterOverrides
+ * @return array{visits: bool, holds: bool}
+ */
+function vpnWithdrawal(array $sites, string $domain, array $clusterOverrides = []): array
+{
+    $vpn = Node::query()->where('name', 'vpn')->firstOrFail();
+    $render = static fn (array $sites): array => app(RoutePublicationSites::class)->render(collect($sites),
+        static fn (): array => app(NativeRoutePublicationInput::class)->dns($vpn, null, [], $clusterOverrides), complete: true);
+    $with = $render($sites);
+    $without = $render(array_values(array_filter($sites, static fn (DevelopmentSite $site): bool => $site->domain !== $domain)));
+    $state = static fn (array $dns): array => ['caddy' => ['content' => "# Managed by Orbit: Node Caddy build\n"], 'php' => ['configurations' => new stdClass],
+        'dns' => $dns, 'certificate_scopes' => []];
+    $captured = app(NativeRoutePublicationArtifacts::class)->capture([['node_id' => $vpn->id,
+        'before' => $state($with), 'prepared' => $state($with), 'withdrawn' => $state($without), 'after' => $state($without)]])['publications'][0];
+    $indexes = array_map(static fn (string $name): mixed => $captured[$name]['dns'], ['before', 'prepared', 'withdrawn', 'after']);
+
+    return ['visits' => count(array_unique($indexes)) > 1,
+        'holds' => str_contains($with['records'], "host-record={$domain},") || str_contains($with['catalog'], json_encode($domain, JSON_UNESCAPED_SLASHES))];
+}
+
+it('captures differing vpn DNS states for a removal exactly when the vpn Node holds a line of the Route', function (): void {
+    $fleet = liveShapedDnsFleet();
+    $sites = liveShapedDnsSites($fleet);
+    // A Cluster Route outside the TLD: a record, and a LAN override for each member.
+    Route::query()->create(['kind' => 'app', 'project_id' => $fleet['project']->id, 'cluster_id' => $fleet['cluster']->id, 'provenance' => 'explicit',
+        'publication' => 'private', 'domain' => 'dns-rewrite.example.org', 'status' => 'pending']);
+    $sites[] = new DevelopmentSite($fleet['beast']->id, '10.44.0.7', 'dns-rewrite', '/srv/dns-rewrite', '/srv/dns-rewrite/public', null, 'dns-rewrite.example.org');
+    $cases = [
+        // An in-TLD clone (fixture 69's shape), and a Route published before release 2091: today's render holds no line of either.
+        'r1.ihj-proof-h42.test' => false,
+        // Outside every TLD, as a Node Route and as a Cluster Route; a Node-scoped Route on the Router; a site on another Node.
+        'shop.example.com' => true,
+        'dns-rewrite.example.org' => true,
+        'node-beast.ihj-proof-h42.test' => true,
+        'node-sabre.ihj-proof-h42.test' => true,
+    ];
+    foreach ($cases as $domain => $visits) {
+        expect(vpnWithdrawal($sites, $domain))->toBe(['visits' => $visits, 'holds' => $visits], $domain);
+    }
+    // During a Router change the in-TLD sites keep their lines, so their removal visits the vpn Node.
+    expect(vpnWithdrawal($sites, 'r1.ihj-proof-h42.test', [$fleet['cluster']->id => ['router_node_id' => $fleet['sabre']->id]]))
+        ->toBe(['visits' => true, 'holds' => true]);
+    // A Cluster whose TLD changed since the Route was published: the capture renders the fleet as it is now, and the visit still
+    // follows the line the render holds.
+    $fleet['cluster']->forceFill(['tld' => 'dev'])->save();
+    foreach (array_keys($cases) as $domain) {
+        $outcome = vpnWithdrawal($sites, $domain);
+        expect($outcome['visits'])->toBe($outcome['holds'], $domain);
+    }
 });
