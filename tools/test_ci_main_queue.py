@@ -152,6 +152,8 @@ class RangePlanTest(unittest.TestCase):
             return ({'swamp/a.ts': ['old']} if sha == B else {'swamp/b.ts': None}), {'swamp/a.ts': ['old']}, ['reverted-input']
 
         with patch.dict(deferred.build_range.__globals__, historical_request=historical), patch.object(deferred.full, 'api', return_value=api), \
+                patch.object(deferred.full, 'git', return_value='swamp/a.ts\nswamp/b.ts'), \
+                patch.object(deferred.full, 'collect_current', return_value={'cases': ['old']}), \
                 patch.object(deferred.full, 'build_plan', return_value={}) as build:
             result = deferred.build_range(A, C, [B, C])
         self.assertEqual([(A, B), (B, C)], reads)
@@ -159,19 +161,52 @@ class RangePlanTest(unittest.TestCase):
         self.assertEqual(['reverted-input'], result['changed_paths'])
         self.assertEqual({'x': None}, deferred.union_requests([{'x': ['old']}, {'x': None}, {'x': ['new']}]))
 
-    def test_whole_live_population_still_refuses_a_disappeared_historical_case(self):
+    def test_whole_live_population_reports_old_names_gone_and_keeps_new_names(self):
         deferred = q.deferred
         api = Mock()
         api.registry.load.return_value = ({}, {})
-
-        def build(_config, _inventory, collect, _api, **_kwargs):
-            return collect('swamp/a.ts')
-
         with patch.dict(deferred.build_range.__globals__, historical_request=Mock(return_value=({'swamp/a.ts': None}, {'swamp/a.ts': ['old']}, []))), \
-                patch.object(deferred.full, 'api', return_value=api), patch.object(deferred.full, 'build_plan', build), \
-                patch.object(deferred.full, 'collect_current', return_value={'cases': ['new']}), \
-                self.assertRaisesRegex(ValueError, 'historical deferred cases no longer registered: old'):
-            deferred.build_range(A, B, [B])
+                patch.object(deferred.full, 'api', return_value=api), \
+                patch.object(deferred.full, 'git', return_value='swamp/a.ts'), \
+                patch.object(deferred.full, 'build_plan', return_value={}) as build, \
+                patch.object(deferred.full, 'collect_current', return_value={'cases': ['new']}):
+            result = deferred.build_range(A, B, [B])
+        self.assertEqual({'swamp/a.ts': None}, build.call_args.kwargs['requested'])
+        self.assertEqual({'cases': ['new']}, build.call_args.args[2]('swamp/a.ts'))
+        self.assertEqual([{'file': 'swamp/a.ts', 'case': 'old', 'reason': 'gone at tested SHA'}], result['gone_at_tested_sha'])
+        self.assertFalse(result['empty_selection'])
+
+    def test_partial_requests_drop_only_gone_names_and_never_run_unrequested_cases(self):
+        deferred = q.deferred
+        population = {'cases': ['kept', 'unrequested']}
+        kept, collected, gone = deferred.current_requests(
+            {'a.ts': ['kept', 'renamed'], 'deleted.ts': None, 'unknown.ts': None, 'empty.ts': ['gone']},
+            {'a.ts': ['kept', 'renamed'], 'deleted.ts': ['deleted'], 'empty.ts': ['gone']},
+            {'a.ts', 'empty.ts'}, lambda _file: population)
+        self.assertEqual({'a.ts': ['kept']}, kept)
+        self.assertEqual(population, collected['a.ts'])
+        self.assertEqual([('a.ts', 'renamed'), ('deleted.ts', 'deleted'), ('empty.ts', 'gone'), ('unknown.ts', None)],
+                         [(row['file'], row['case']) for row in gone])
+        self.assertTrue(all(row['reason'] == 'gone at tested SHA' for row in gone))
+
+    def test_collection_failure_is_not_a_disappeared_case(self):
+        with self.assertRaisesRegex(ValueError, 'broken import'):
+            q.deferred.current_requests({'a.ts': None}, {'a.ts': ['old']}, {'a.ts'}, Mock(side_effect=ValueError('broken import')))
+
+    def test_all_requested_cases_gone_is_an_empty_green_report_with_named_drops(self):
+        gone = [{'file': 'a.ts', 'case': 'old', 'reason': 'gone at tested SHA'}]
+        kept, _, actual = q.deferred.current_requests({'a.ts': ['old']}, {'a.ts': ['old']}, {'a.ts'}, lambda _file: {'cases': ['new']})
+        self.assertEqual({}, kept)
+        self.assertEqual(gone, actual)
+        c = claim()
+        plan = {**c, 'units': [], 'fixtures': {}, 'shards': [], 'empty_selection': True, 'gone_at_tested_sha': gone}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'plan.json'
+            path.write_text(json.dumps(plan))
+            report = q.fixture_report(c, path, Path(directory), 'skipped', 'success')
+        self.assertTrue(report['passed'])
+        self.assertEqual(gone, report['gone_at_tested_sha'])
+        self.assertEqual([], report['problems'])
 
 
     def test_new_unregistered_grouped_and_dotted_tests_keep_capacity_deferrals(self):
