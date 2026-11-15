@@ -44,9 +44,9 @@ Manual deferred backfill supplies an ancestor base. It uses a separate status an
 
 A separate serialized hosted caller uses the existing enrolled proof runner and Gateway `proof:run`. Swamp runs the cases in copies; the Gateway's proof place permits one proof Operation and at most two proof copies. The main consumer never runs on a pull request or a fork. The Gateway still checks the exact head and maintainer approval for a fork. The main consumer has its own enable switch, `ORBIT_MAIN_PROOF_ENABLED`, so enabling it does not enable the older PR proof jobs.
 
-Until the typed range input is live, the proof after a merge checks only the newest SHA's own selection. Its receipt explicitly says `range_covered: false`, names the waiting interval and lists the commits not selected individually. Its checkpoint means an answer was published, not that the interval passed.
+The main proof consumer passes the exclusive ancestor base and newest SHA to `proof:run`. Orbit unions each commit's selection and runs it on the newest tree. Its report names the covered interval and says `range_covered: true`; it does not claim to test each intermediate tree. The receipt's case and verdict fields stay unchanged.
 
-The nightly `--all` run checks every available kind at one pinned main SHA when this consumer is idle. Both receipts retain every returned case verdict and the exact tested SHA. They are independent of Required and releases. The later range input will request the union over the waiting interval; the consumer does not infer that coverage from today's single-commit API.
+The nightly `--all` run checks every available kind at one pinned main SHA when this consumer is idle. Both receipts retain every returned case verdict and the exact tested SHA. They are independent of Required and releases.
 
 ### Failure sweep on Beast
 

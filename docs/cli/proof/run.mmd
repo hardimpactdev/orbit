@@ -14,6 +14,12 @@ sequenceDiagram
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a copy. Trust passes before any copy exists: a copy holds the nested Club key, so untrusted code never reaches one.
+  opt --base supplied
+    GW->>GH: Verify the ancestor base<br/>list every intervening commit
+    %%> The base is exclusive and the tested commit is inclusive. Refuse a missing or non-ancestor base. An equal base selects nothing. Read each commit's changes against its first parent and its own selection list; never use the net diff of the range.
+    GW->>GW: Union per-commit selections<br/>on the tested tree
+    %%> A whole-file selection includes its current cases. Otherwise union selected ids and keep only ids still present at the tested commit. List removed files and ids as uncovered, gone at tested SHA. Trust remains on the newest exact SHA. Case receipts and execution are unchanged.
+  end
   CLI->>CLI: Expand base and head<br/>with the runner
   %%> The runner validates and expands fixtures, list vars, variants and batch setup. Compare its canonical per-case definitions by id. Command code changes select the whole file. Runner, selection code or selection list changes disable narrowing for every selected command. Tooling alone selects no commands. Unknown fixture keys and any planning doubt select the whole file.
   CLI->>GH: Publish the selection<br/>for this base and head
