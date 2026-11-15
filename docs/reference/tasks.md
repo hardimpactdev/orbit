@@ -1812,3 +1812,4 @@ Pi turns on task VMs, `tasks.turn` with the workflow `operation-task-turn`, are 
 ### Internal container workspace phases
 
 [Task Instance workspace phases](/reference/task-instance-workspace) define the internal evidence and export contract. `tasks.check` uses their [check phases](/reference/task-instance-workspace#check-phases) when a group owns a container Instance workspace: a [task copy](#task-copy).
+<!-- r2105 PR-text proof -->
