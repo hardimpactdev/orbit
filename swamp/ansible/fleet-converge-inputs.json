@@ -1,5 +1,5 @@
 {
-  "about": "What a nested Node's base converge reads from swamp/. The nested-fleet refresh hashes their Git object IDs into its converge digest, with the inner Gateway's base intent digests (orbit:node-converge-digest) and the fleet intent. swamp/tests/fleet_converge_inputs_test.ts fails on a file the base converge reads that is not here. A cut is an include whose guard is empty in every base intent. A cut import is a module the behavior file uses only in methods the converge workflow never calls, or only under a guard that is empty in every base intent. Rule: docs/reference/development-containers.md#what-a-refresh-skips",
+  "about": "What a nested Node's base converge reads from swamp/. The nested-fleet refresh hashes their Git object IDs into its converge digest, with the inner Gateway's base intent digests (orbit:node-converge-digest) and the fleet intent. swamp/tests/fleet_converge_inputs_test.ts fails on a file the base converge reads that is not here. A library/ module counts only when a reached task calls it, and a module_utils/ file only when a counted module imports it. A cut is an include whose guard is empty in every base intent. A cut import is a module the behavior file uses only in methods the converge workflow never calls, or only under a guard that is empty in every base intent. Rule: docs/reference/development-containers.md#what-a-refresh-skips",
   "inputs": [
     "swamp/workflows/workflow-operation-node-converge-direct.yaml",
     "swamp/extensions/behaviors/operations/analytics/clickhouse_files.ts",
@@ -15,8 +15,6 @@
     "swamp/ansible/build_vars.py",
     "swamp/ansible/requirements.txt",
     "swamp/ansible/requirements.yml",
-    "swamp/ansible/library/",
-    "swamp/ansible/module_utils/",
     "swamp/ansible/operation-node-converge.yml",
     "swamp/ansible/tasks/node-converge-address.yml",
     "swamp/ansible/tasks/node-converge-base.yml",
