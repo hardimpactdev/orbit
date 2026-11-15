@@ -66,7 +66,7 @@ sequenceDiagram
     Note over GW: Admit the routine group<br/>task group #813 · tasks.provision
     %%> Result with a request:
     %%> - task group #813 created for the routine, or the existing one with the same brief reused
-    %%> - the Gateway admits `tasks.provision`; the routine's updates run in its task VM, and a Pi turn starts only when tests fail
+    %%> - the Gateway admits `tasks.provision`, which starts the group's task copy; no maintenance run follows, because the native maintenance run and the Pi turn are removed with the Pi task loop
     %%> Result without a request:
     %%> - no task group; the blocking reason is in the result
     %%> Always:

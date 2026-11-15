@@ -508,7 +508,7 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/task/vm-release.mmd`). `task:cancel` and `task:complete` admit it only when origin already has the latest approved commit, under the shared [removal rule](/reference/tasks#cancel-a-stuck-task); `task:cancel` runs the release as the last step of its own run. Publication and the [idle release](/reference/tasks#release-an-idle-task-vm) of an open group admit it too; the group stays open and later work claims a fresh place.
+An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/task/vm-release.mmd`). `task:cancel` and `task:complete` admit it only when origin already has the latest approved commit, under the shared [removal rule](/reference/tasks#cancel-a-stuck-task); `task:cancel` runs the release as the last step of its own run. Publication of an open group admits it too; the group stays open.
 
 Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM is released as it is: the release deletes a stopped VM too, and nothing starts it. Release admission locks the VM row and refuses while a resume is open.
 
@@ -526,7 +526,7 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied places, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free places. Hosts with equal capacity use their configuration order.
 
-Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision and fix turns use the task pool. Base-refresh proofs use the CI pool. A [`proof:run`](/cli/proof/run#the-run) takes no VM place: it runs in copies of the proof Project's default, and its shards, budgets and verdicts are described there.
+Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision used the task pool. Base-refresh proofs use the CI pool. A [`proof:run`](/cli/proof/run#the-run) takes no VM place: it runs in copies of the proof Project's default, and its shards, budgets and verdicts are described there.
 
 The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings.
 

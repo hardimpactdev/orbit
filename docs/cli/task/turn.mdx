@@ -11,17 +11,18 @@ orbit task:turn <task> --role=implementer --prompt="Fix the failing test."
 orbit task:turn 43 --role=reviewer --prompt="Review the checked commit." --thread=new --check=19 --json
 ```
 
-The VM receives the title, brief and deliverables of the subtask, then your prompt, for every role. Send only what this turn adds; do not paste the brief.
+The agent receives the title, brief and deliverables of the subtask, then your prompt, for every role. Send only what this turn adds; do not paste the brief.
 
-`--thread=new` starts a new thread and `--thread=ID` continues one. On a task VM a turn without `--thread` starts a new thread; in a [task copy](#a-task-that-runs-in-a-copy) it continues the role's thread. `--model` selects a new thread's model. A continued thread keeps its model. A consult uses a reviewer thread and preserves the working tree.
+`--role` is `implementer` or `reviewer`. A turn without `--thread` continues the role's thread, `--thread=new` starts a new thread, and `--thread=ID` names the thread the turn continues. A new thread takes its role's model; a continued thread keeps its model.
+
+The role `consult` and `--model` belonged to the turn on a task VM, which is removed with the Pi task loop ([old paths](/reference/old-paths#the-pi-task-loop)). This CLI no longer offers them. A Gateway answers an older CLI that sends either with `validation.failed` (422) on that field.
 
 ### A task that runs in a copy
 
-A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it. `task:start` makes one for a Project whose default Instance is a container or that has a nested fleet; a nested-fleet task without a copy refuses with `tasks.no_workspace`. Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and records it as it records a task VM turn. What differs:
+A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it. `task:start` makes one for a Project whose default Instance is a container or that has a nested fleet; a nested-fleet task without a copy refuses with `tasks.no_workspace`. Its turn is the Operation `tasks.copy_turn`: Swamp runs the turn with T3's own CLI in the copy, as `agent`, and the Gateway records it on the thread. How it works:
 
 - The implementer and the reviewer each keep one ongoing T3 thread, so the agent keeps the whole earlier conversation. A turn without `--thread` continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread. The first turn of a role starts it. `--thread=new` starts a new thread, which later turns then continue. `--thread=ID` must name the thread the turn would continue. A thread continues only in the copy that started it.
-- A reviewer turn names the subtask's checked candidate with `--check`, as on a task VM, and its prompt names that commit. The reviewer works on the candidate: Orbit checks it out, detached, before the turn, and checks the task branch out again after it, at the commit it had, so nothing the reviewer changed stays. A checkout that is not clean on that branch and commit afterwards, also after a failed or cut turn, holds the group like a turn that may still run. A checkout with uncommitted changes refuses the reviewer turn with `tasks.copy_tree_dirty`. The group records the reviewer's thread.
-- A consult and `--model` answer `tasks.copy_turn_unsupported`.
+- A reviewer turn names the subtask's checked candidate with `--check`, and its prompt names that commit. The reviewer works on the candidate: Orbit checks it out, detached, before the turn, and checks the task branch out again after it, at the commit it had, so nothing the reviewer changed stays. A checkout that is not clean on that branch and commit afterwards, also after a failed or cut turn, holds the group like a turn that may still run. A checkout with uncommitted changes refuses the reviewer turn with `tasks.copy_tree_dirty`. The group records the reviewer's thread.
 - A new thread takes its role's provider, model and effort from the task, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_*` settings, which ship `claude` and `claude-opus-5-5` at `medium` effort for the implementer and `high` for the reviewer. See [copy turn agents](/reference/tasks#copy-turn-agents). A provider and effort with no instance in the copy's T3 answer `tasks.copy_turn_unoffered`; a model that T3's cached catalog does not list fails the turn with `tasks.copy_turn_model_unoffered` before anything runs. A continued thread keeps its model and effort.
 - T3 applies the effort through its own settings: the copy's create gives T3 one Claude provider instance per effort level, and the thread starts on the instance of its provider and effort. That Claude Code takes the instance's `CLAUDE_CODE_EFFORT_LEVEL` over the `--effort` T3 passes was verified with Claude Code 2.1.311 and T3 0.1.7. A copy made before this lacks those instances, so T3 refuses its new threads. Cancel it and start the task again.
 - The transcript is the whole thread's message text, the newest kept within its bound.
@@ -40,8 +41,6 @@ A task that owns a [task copy](/reference/tasks#task-copy) runs its turns in it.
 
 ## How it works
 
-<div className="flow-at" data-chart="task/turn"></div>
-
 ### In a task copy
 
 <div className="flow-at" data-chart="task/copy-turn"></div>
@@ -59,7 +58,7 @@ A turn in a task copy adds these answers and Operation errors:
 | `tasks.no_workspace` (409) | The group owns no task copy. |
 | `tasks.copy_not_ready` (409) | A turn, a check, a publish or a proof of the copy: the copy is not `active` yet, because its create, its completion or a retry of the completion still runs. |
 | `tasks.copy_completion_failed` (409) | A turn, a check, a publish or a proof of the copy: its last completion failed, was cancelled or interrupted, so its Processes and inner fleet did not start. The details name `operation_id`, `failed_step`, `error_code` and `retry`, the command `orbit instance:complete <copy-id>`, and `requires` when the retry needs a changed Process definition first. See [when the start fails](/cli/task/start#when-the-start-fails). |
-| `tasks.copy_turn_unsupported` (422) | The turn is a consult or names a model. |
+| `validation.failed` (422) | The request names the role `consult` or a `model`, as an older CLI may send. Both were options of the removed task VM turn. |
 | `tasks.thread_role_mismatch` (422) | `--thread=ID` is not the role's thread that the turn would continue in this copy. |
 | `tasks.commit_not_checked` (422) | A reviewer turn's `--check` is not the subtask's checked candidate. |
 | `tasks.copy_turn_unended` (409) | A check, a publish or a proof of the copy: an earlier turn is not settled; `details.operation_id` names it. The next turn settles it once its run ended. |

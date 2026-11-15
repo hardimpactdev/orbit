@@ -129,8 +129,6 @@ For example, `instance.migrate` has 5,700 seconds and `node.converge` 3,900 seco
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the former VM destroy bound of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
-`tasks.turn` has a fixed 3,600 seconds. Its history held short reviewer and consult turns: the longest was 12 minutes, so the derived budget was 18 minutes and ended an author turn that was still writing code. The `observe` step of the turn workflow ends after 3,300 seconds, so the snapshots and the receipt still run. A maintainer must update the fixed row once the history holds author turns.
-
 `tasks.copy_turn` has a fixed 4,560 seconds. Its Ansible phase ends after 4,400 seconds.
 
 That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. It holds six T3 or helper calls of up to a minute each: the settle's list, the list of a continued turn, the question's read and stop, and the list and show after the turn. It also holds sixteen Git commands of up to 20 seconds each, for the settle's restore and a reviewer's set-up and restore, and the SSH set-up. No run has finished yet; a maintainer must replace it with the longest run times 1.5 once the history holds turns.
@@ -147,7 +145,7 @@ An open Operation of a kind that left the registry, such as the removed `task_vm
 
 `gateway.release` has a provisional 3,600 seconds. The legacy runner's last 47 verified releases took 117 seconds at p95 and 125 at most. The Horizon drain waits for running jobs up to the longest supervisor timeout plus 30 seconds, 1,730 seconds. Their sum times 1.5 rounds up to 3,000; the busy guard adds up to 600 seconds. Before loading Swamp, the release checks queued, running and waiting Operations covered by the [release idle guard](/reference/gateway-recovery#release-idle-guard) every 5 seconds. It proceeds when idle or refuses with `gateway.release_busy` and the remaining IDs after 10 minutes. Force does not bypass the guard. An expiry [pauses releases](/reference/gateway-recovery#release-as-a-swamp-run). A maintainer must update the fixed row after measuring successful runs.
 
-A `tasks.script` and a `tasks.check` capture their budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every script and every check captures the budget of its kind's history.
+A `tasks.check` captures its budget at admission in `input.run_budget_seconds`, and the captured number is the Operation's run budget. Every check captures the budget of its kind's history.
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
 
@@ -335,10 +333,7 @@ Use the kind and target type to start or find the work of a command.
 | `task:start` | `tasks.provision` | `task_group` | Gateway |
 | `POST tasks/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
 | `task:check` | `tasks.check` | `task_group` | Gateway |
-| `POST tasks/{group}/script` | `tasks.script` | `task_group` | Gateway |
-| `POST tasks/{group}/package` | `tasks.package` | `task_group` | Gateway |
-| `task:turn` | `tasks.turn` | `task_group` | Gateway |
-| `task:turn` of a [task copy](/reference/tasks#task-copy) | `tasks.copy_turn` | `task_group` | Gateway |
+| `task:turn` in a [task copy](/reference/tasks#task-copy) | `tasks.copy_turn` | `task_group` | Gateway |
 | `task:publish` | `tasks.publish` | `task_group` | Gateway |
 | `POST tasks/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST tasks/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
@@ -354,7 +349,7 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them.
 
-The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds), so it does not wait for an old task VM row. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way, and so did the [Pi task loop](/reference/old-paths#the-pi-task-loop) kinds `tasks.prep`, `tasks.prep_fix`, `tasks.build` and `tasks.review_round`.
+The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds), so it does not wait for an old task VM row. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way, and so did the [Pi task loop](/reference/old-paths#the-pi-task-loop) kinds `tasks.prep`, `tasks.prep_fix`, `tasks.build`, `tasks.review_round`, `tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save` and `tasks.turn`.
 
 ## Start an operation
 
@@ -377,7 +372,7 @@ When the Gateway cannot confirm the start, it answers `swamp.start_uncertain` an
 
 ### Retry a start with a key
 
-Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{task}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{task}/turn` (`tasks.turn`, or `tasks.copy_turn` for a group that runs in a task copy, which takes the request's key). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
+Every route that starts an operation accepts an `Idempotency-Key` header. Most routes make it optional. Today these are `POST /api/v1/instances/{instance}/deploy` (`instance.deploy`), `POST /api/v1/instances/{instance}/rollback` (`instance.rollback`), `POST /api/v1/tasks/{task}/start` (`tasks.provision`), `POST /api/v1/tasks/{task}/check` (`tasks.check`), `POST /api/v1/instances/{instance}/deploy/automatic` (`instance.deploy`), and `POST /api/v1/tasks/{task}/turn` (`tasks.copy_turn`; a retry keeps the fingerprint it had when the route's kind was `tasks.turn`). The automatic deploy and worker start APIs require a key. The worker API excludes its enrollment secret from the fingerprint. A key has 1 to 128 characters from `A-Z a-z 0-9 . _ : -`. Keys are case-sensitive and scoped to the operation kind, across all calling Nodes.
 
 One read that may start an operation takes no key: `GET /api/v1/conn/environments/{environment}/session` (`conn.session_hold`, MCP `conn-environment-session`). It ignores the header, because a read must answer the current state, not replay an earlier `202`. Its open Operation dedupes concurrent first reads ([Held sessions](/reference/conn#attach)).
 
@@ -762,7 +757,7 @@ GitHub App tokens are a Gateway primitive: the Gateway keeps the App signing key
 
 The Gateway validates the returned permissions and expiry (at most about one hour), then reads `/installation/repositories` with the issued token to prove that it can access exactly the declared repository. A failed scope check, or a failed vault copy, revokes the issued token. Failures log only a fixed phase and HTTP status. They never log tokens or upstream response bodies. The token never enters an Operation, step output, receipt, Activity or shared token cache.
 
-`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a package install (`tasks.package`), a task publish, a pull request step, a dependency merge, a cancel and a prep run, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a prep run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403). A step that minted a setup token revokes it and reports the outcome in the result as `dependency_token` (`revoked`, `none` or `unrevoked` with a reason), for `tasks.provision` and `tasks.package`.
+`POST /api/v1/direct-operations/{operation}/github-token` serves only a kind that declares a `github_token_issuer`, such as a [development deploy](/reference/deployments#native-development-deployment), a task provision and its setup steps, a task publish, a pull request step, a dependency merge, and `tasks.check`. A task kind mints when the step that needs the token runs, never at admission: an installation token lives one hour, and a run can take longer to reach its publish step. Any other kind gets `operation.github_token_forbidden` (403). A step that minted a setup token revokes it and reports the outcome in the result as `dependency_token` (`revoked`, `none` or `unrevoked` with a reason), for `tasks.provision`.
 
 ### Intent-bound certificate signing
 

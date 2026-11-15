@@ -1827,7 +1827,7 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 - **No stop of a cut turn.** Orbit stops only a run that asks, through T3's own RPC. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
-- **No consult and no caller's model.** Both are refused with `tasks.copy_turn_unsupported`.
+- **No consult and no caller's model.** Both were options of the removed Pi turn; a request with either answers `validation.failed` on that field.
 
 ### Hold after a turn that may still run
 

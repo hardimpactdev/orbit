@@ -149,7 +149,7 @@ Container places are counted apart from VM places, and normal placement skips th
 
 Unknown fields, invalid names, wrong types, and out-of-range values are rejected before storage. Integer fields are integers in JSON, not strings. Invalid configuration leaves the stored setting unchanged. The apps-root filesystem checks below apply only to `apps.path`, not to this object.
 
-Task provision, fix turns and operator proofs use the task pool. Only an active caller Node with an active `ci-runner` role grants access to the CI pool. A full pool records a wait for up to two hours. Failed VMs still hold their place until deletion succeeds. Publishing the PR releases the VM, Node and keys. Later work claims a fresh VM from the base and the task branch.
+Task provision and operator proofs used the task pool. Only an active caller Node with an active `ci-runner` role grants access to the CI pool. A full pool records a wait for up to two hours. Failed VMs still hold their place until deletion succeeds. Publishing the PR releases the VM, Node and keys. Later work claims a fresh VM from the base and the task branch.
 
 The approved pool sizes are Beast 2 task / 2 CI, Shark 2 task / 2 CI, and Sabre 0 task / 2 CI. The operator sets these sizes after the pool implementation ships. Existing stored resource-unit settings grant no places under this model.
 
