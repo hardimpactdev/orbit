@@ -23,7 +23,7 @@ uses(LazilyRefreshDatabase::class);
 /*
  * Private DNS answers by TLD (ADR 0234, docs/reference/private-dns.md#records-a-tld-already-answers): a record that a TLD rule
  * already answers with the same address, for every requester, is not written. The fleet is shaped as the live one on 2026-11-15:
- * Cluster `dev` with TLD `test`, Router beast with a LAN address, members sabre and shark, a vpn Node, and a WireGuard peer outside
+ * Cluster `dev` with TLD `test`, Router beast with a LAN address, members sabre and shark (and quiet without a LAN address), the vpn Node, the Gateway, and a WireGuard peer outside
  * the Cluster. The golden file holds every requester x name answer of the renderer before this change.
  */
 
@@ -45,7 +45,9 @@ function liveShapedDnsFleet(): array
             }
         },
     );
-    $gateway = $node('gateway', '10.44.0.2', null, null, [RoleName::Gateway, RoleName::Vpn]);
+    $gateway = $node('gateway', '10.44.0.2', null, null, [RoleName::Gateway]);
+    // The vpn role on its own Node, as live (Node 1).
+    $node('vpn', '10.44.0.1', null, null, [RoleName::Vpn]);
     $beast = $node('beast', '10.44.0.7', '192.168.6.20', $cluster->id, [RoleName::Router, RoleName::AppDev]);
     $sabre = $node('sabre', '10.44.0.10', '192.168.6.21', $cluster->id, [RoleName::AppDev]);
     $shark = $node('shark', '10.44.0.11', '192.168.6.22', $cluster->id, [RoleName::AppDev]);
@@ -94,6 +96,7 @@ function privateDnsMatrix(array $fleet, array $sites, array $clusterOverrides = 
             'node:shark' => DnsRequester::registered(Node::query()->where('name', 'shark')->value('id'), '10.44.0.11'),
             'node:mini' => DnsRequester::registered(Node::query()->where('name', 'mini')->value('id'), '10.44.0.9'),
             'node:gateway' => DnsRequester::registered(Node::query()->where('name', 'gateway')->value('id'), '10.44.0.2'),
+            'node:vpn' => DnsRequester::registered(Node::query()->where('name', 'vpn')->value('id'), '10.44.0.1'),
             'node:quiet' => DnsRequester::registered(Node::query()->where('name', 'quiet')->value('id'), '10.44.0.12'),
             'unidentified' => DnsRequester::unidentified('10.44.0.200')];
         $names = [...array_map(static fn (DevelopmentSite $site): string => $site->domain, $sites), 'test', 'unknown.ihj-proof-h42.test', 'gateway.orbit', 'metrics.orbit', 'nothing.example.org'];

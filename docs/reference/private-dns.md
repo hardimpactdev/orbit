@@ -244,9 +244,9 @@ These keep their lines:
 
 Every requester gets the same address as with the exact record, also for AAAA and other types: `local=` keeps them NODATA. dnsmasq on the `vpn` Node also stops giving a reverse (PTR) answer for a name left out; nothing in Orbit asks for one. This is ADR 0234's rule, decided on 2026-10-26.
 
-A Route change merges only the keys its captured states change, so it never removes a line that an older render wrote. Such lines stay until a publication writes the whole records file and catalog: a create or `route:create` with a domain outside every TLD, or `node:add` of the `vpn` Node. While they stay they give the old answer.
+A Route change merges only the keys its captured states change, so it never removes a line that an older render wrote. Such lines stay until a publication writes the whole records file and catalog: a create or `route:create` with a domain outside every TLD, a Cluster Router select or revert, or `node:add` of the `vpn` Node. While they stay they give the old answer.
 
-That old answer equals the TLD's answer until a Router or LAN address of the Cluster changes; then the old address stays for those names. So the release that brings this rule ends with one such whole publication, after the creates admitted by the previous release have ended.
+That old answer equals the TLD's answer until a merged publication changes the TLD's answer, such as a Node provision that moves the Router's LAN or WireGuard address. Then the old address stays for those names. So the release that brings this rule ends with one whole publication, after every Operation admitted by the previous release has ended.
 
 ### Inspect the selection
 

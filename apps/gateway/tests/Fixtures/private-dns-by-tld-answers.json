@@ -100,6 +100,26 @@
             "metrics.orbit": null,
             "nothing.example.org": null
         },
+        "node:vpn": {
+            "r1.ihj-proof-h42.test": "10.44.0.7",
+            "r2.ihj-proof-h42.test": "10.44.0.7",
+            "r3.ihj-proof-h42.test": "10.44.0.7",
+            "r4.ihj-proof-h42.test": "10.44.0.7",
+            "r5.ihj-proof-h42.test": "10.44.0.7",
+            "r6.ihj-proof-h42.test": "10.44.0.7",
+            "r7.ihj-proof-h42.test": "10.44.0.7",
+            "r8.ihj-proof-h42.test": "10.44.0.7",
+            "r9.ihj-proof-h42.test": "10.44.0.7",
+            "r10.ihj-proof-h42.test": "10.44.0.7",
+            "node-beast.ihj-proof-h42.test": "10.44.0.7",
+            "node-sabre.ihj-proof-h42.test": "10.44.0.10",
+            "shop.example.com": "10.44.0.7",
+            "test": "10.44.0.7",
+            "unknown.ihj-proof-h42.test": "10.44.0.7",
+            "gateway.orbit": "10.44.0.2",
+            "metrics.orbit": null,
+            "nothing.example.org": null
+        },
         "node:quiet": {
             "r1.ihj-proof-h42.test": "10.44.0.7",
             "r2.ihj-proof-h42.test": "10.44.0.7",
@@ -223,6 +243,26 @@
             "nothing.example.org": null
         },
         "node:gateway": {
+            "r1.ihj-proof-h42.test": "10.44.0.7",
+            "r2.ihj-proof-h42.test": "10.44.0.7",
+            "r3.ihj-proof-h42.test": "10.44.0.7",
+            "r4.ihj-proof-h42.test": "10.44.0.7",
+            "r5.ihj-proof-h42.test": "10.44.0.7",
+            "r6.ihj-proof-h42.test": "10.44.0.7",
+            "r7.ihj-proof-h42.test": "10.44.0.7",
+            "r8.ihj-proof-h42.test": "10.44.0.7",
+            "r9.ihj-proof-h42.test": "10.44.0.7",
+            "r10.ihj-proof-h42.test": "10.44.0.7",
+            "node-beast.ihj-proof-h42.test": "10.44.0.7",
+            "node-sabre.ihj-proof-h42.test": "10.44.0.10",
+            "shop.example.com": "10.44.0.7",
+            "test": "10.44.0.10",
+            "unknown.ihj-proof-h42.test": "10.44.0.10",
+            "gateway.orbit": "10.44.0.2",
+            "metrics.orbit": null,
+            "nothing.example.org": null
+        },
+        "node:vpn": {
             "r1.ihj-proof-h42.test": "10.44.0.7",
             "r2.ihj-proof-h42.test": "10.44.0.7",
             "r3.ihj-proof-h42.test": "10.44.0.7",
