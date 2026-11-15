@@ -1,5 +1,5 @@
 order = 1481
-source_sha256 = "2bdc46e2e130257d521f91bbda3c9f0d3cd38608b1e5546d920024f52ef807e9"
+source_sha256 = "b5b397f1e3b6aa621ccb79fc325d12c515ce95e0af86ee3facb35cd385548486"
 cases = [
   "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
   "test_the_package_files_in_apt_archives_go_and_the_lock_stays",
@@ -12,6 +12,7 @@ cases = [
   "test_a_symlinked_folder_of_the_shipped_file_links_nothing_to_a_file_outside_the_disk",
   "test_a_symlinked_md5sums_or_dpkg_status_is_not_read",
   "test_a_symlinked_root_disk_fails_the_run_and_reaches_nothing_outside_the_pool",
+  "test_a_leftover_temporary_link_goes_and_its_path_is_linked",
   "test_a_record_that_is_no_object_is_no_record",
   "test_a_record_of_an_older_rule_is_due_once",
   "test_a_file_that_differs_from_the_shipped_one_is_never_replaced",
@@ -21,7 +22,7 @@ cases = [
   "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
 ]
 file = "swamp/tests/instance_fleet_shrink_test.py"
-cost = 18
+cost = 19
 # The file it reads: the shrink of the nested root disks, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -45,3 +46,4 @@ inputs = [
 "test_a_symlinked_root_disk_fails_the_run_and_reaches_nothing_outside_the_pool" = 1
 "test_a_path_that_starts_with_two_slashes_is_absolute_too" = 1
 "test_a_path_that_cannot_be_linked_is_skipped_and_the_others_are_linked" = 1
+"test_a_leftover_temporary_link_goes_and_its_path_is_linked" = 1

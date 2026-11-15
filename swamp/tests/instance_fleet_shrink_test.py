@@ -106,13 +106,13 @@ class FleetShrinkTest(unittest.TestCase):
         gateway, dev, prod = (self.disk(name) / 'var/cache/apt' for name in NAMES)
         # A symlinked parent, a symlinked archives folder and a symlinked package file.
         subprocess.run(['rm', '-rf', str(gateway)], check=True)
-        gateway.symlink_to(self.folder)
         (outside / 'apt').mkdir()
         (outside / 'apt/archives').symlink_to(outside)
+        gateway.symlink_to(outside / 'apt')
         subprocess.run(['rm', '-rf', str(dev / 'archives')], check=True)
         (dev / 'archives').symlink_to(outside)
         (prod / 'archives/linked.deb').symlink_to(outside / 'kept.deb')
-        self.shrink('run')
+        self.assertEqual(self.shrink('run')['shrink'], 'ran')
         self.assertEqual(sorted(str(path.relative_to(outside)) for path in outside.rglob('*.deb')), ['kept.deb', 'partial/kept.deb'])
         self.assertTrue((prod / 'archives/linked.deb').is_symlink())
 
@@ -163,12 +163,13 @@ class FleetShrinkTest(unittest.TestCase):
         (disk / long).write_bytes(BINARY)
         (disk / long).chmod(0o755)
         self.listed('nested-app-dev', long)
-        # A line that is no UTF-8 is one more path that is not there.
+        # A line that is no UTF-8 and a path with a NUL byte are two more paths that are not there.
         md5sums = disk / 'var/lib/dpkg/info/rust-coreutils.md5sums'
-        md5sums.write_bytes(md5sums.read_bytes() + hashlib.md5(BINARY).hexdigest().encode() + b'  usr/bin/\xff\n')
+        digest = hashlib.md5(BINARY).hexdigest().encode()
+        md5sums.write_bytes(md5sums.read_bytes() + digest + b'  usr/bin/\xff\n' + digest + b'  usr/bin/a\x00b\n')
         result, errors = self.run_on_a_directory_pool()
         self.assertEqual(result, {'shrink': 'ran', 'relinked': 8, 'dedupe': 'not_btrfs'})
-        self.assertIn('nested-app-dev: skipped 3 paths', errors)
+        self.assertIn('nested-app-dev: skipped 4 paths', errors)
         self.assertTrue((disk / 'usr/lib/cargo/bin/coreutils/.orbit-relink-ls').is_dir())
         self.assertEqual(self.links('nested-app-dev'), 3)
 
@@ -225,6 +226,14 @@ class FleetShrinkTest(unittest.TestCase):
         self.assertFalse(self.duperemove_log.exists())
         self.assertEqual((moved / 'usr/bin/coreutils').stat().st_nlink, 1)
         self.assertEqual(len(list((moved / 'var/cache/apt/archives').rglob('*.deb'))), 2)
+
+    def test_a_leftover_temporary_link_goes_and_its_path_is_linked(self):
+        # A run stopped between its link and its rename leaves the temporary.
+        folder = self.disk('nested-app-dev') / 'usr/lib/cargo/bin/coreutils'
+        os.link(self.disk('nested-app-dev') / 'usr/bin/coreutils', folder / '.orbit-relink-ls')
+        self.assertEqual(self.shrink('run')['relinked'], 9)
+        self.assertFalse(os.path.lexists(folder / '.orbit-relink-ls'))
+        self.assertEqual(self.links('nested-app-dev'), 4)
 
     def test_a_record_that_is_no_object_is_no_record(self):
         self.record.parent.mkdir(parents=True)

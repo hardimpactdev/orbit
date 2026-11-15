@@ -23,8 +23,10 @@ Three parts, in this order:
   instance_shape_tools.py keeps in the container; without it the first two parts run. Its arguments are the three root disks, named
   by the outer side; a root disk that is a symlink fails the run, and duperemove's own walk follows no symlink.
 
-Every file it reads, links or removes in a root disk is found through `inside`: the nested container's root owns those files, and a
-stopped container cannot change them while the step runs.
+Every file it reads, links or removes in a root disk is found through `inside`: the nested container's root owns those files. `run`
+links and removes only while the three are stopped, so they cannot change a path between its check and its use. `check` runs while
+they still run: a nested root that swaps its dpkg status for a symlink in that gap can at most make the check hash another file
+(nothing leaves the digest) or time out as `unreadable`.
 
 It costs nothing when nothing changed: the record holds the sha256 of each machine's dpkg status, and `check` is due only when the
 record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when the dedupe ran
