@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Prove one unpacked static PHP build on the CI runner. See docs/reference/compute-drivers.md#the-static-php-workflow.
 
-  tools/static-php/prove.py --version X.Y --bin DIR --config DIR
+  tools/static-php/prove.py build --version X.Y --bin DIR --config DIR  # glibc-only linkage, the check, and the CLI-only extensions in the CLI only
+  tools/static-php/prove.py coverage --clover FILE --source PATH         # exit 1 unless the clover report covers lines of PATH
 
-It fails unless php, frankenphp and each CLI-only extension need only glibc, no newer than Ubuntu 26.04's, and the build passes
-`bin/static-php-build check`. It then writes the CLI-only php-cli.ini that a container has into the config folder DIR, and
-fails unless `php -m` with it lists each CLI-only extension and a page that `frankenphp php-server` serves with it loads none.
+`build` fails unless php, frankenphp and each CLI-only extension need only glibc, no newer than Ubuntu 26.04's, and the build
+passes `bin/static-php-build check`. It then writes the CLI-only php-cli.ini that a container has into the config folder DIR,
+and fails unless `php -m` with it lists each CLI-only extension and a page that `frankenphp php-server` serves with it loads none.
+`coverage` reads the clover report of a Pest run with that ini: PCOV measured only if a source file the tests run has covered lines.
 
 The proof lives outside bin/static-php-build, whose digest is part of the build id: a change to the proof alone needs no new build.
 """
@@ -21,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import xml.etree.ElementTree as ElementTree
 import urllib.error
 import urllib.request
 
@@ -149,14 +152,44 @@ def prove(version, folder, config):
           ' and frankenphp php-server loads none of them.')
 
 
+def coverage_problems(clover, source):
+    """Why a clover report does not show that the coverage driver measured `source`, a path that the report's file names end with."""
+    try:
+        files = [element for element in ElementTree.fromstring(clover).iter('file') if element.get('name', '').endswith('/' + source)]
+    except ElementTree.ParseError as error:
+        return [f'The clover report is not XML: {error}.']
+    if not files:
+        return [f'The clover report has no file {source}.']
+    metrics = files[0].find('metrics')
+    covered = int(metrics.get('coveredstatements', '0')) if metrics is not None else 0
+    return [] if covered > 0 else [f'The clover report covers no line of {source}.']
+
+
+def coverage(clover, source):
+    if not clover.is_file():
+        raise ProofError(f'Pest wrote no clover report at {clover}: it found no coverage driver.')
+    problems = coverage_problems(clover.read_text(), source)
+    if problems:
+        raise ProofError('Pest did not measure coverage:\n  ' + '\n  '.join(problems))
+    print(f'Pest measured coverage of {source}.')
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('--version', required=True)
-    parser.add_argument('--bin', required=True, type=Path)
-    parser.add_argument('--config', required=True, type=Path)
+    commands = parser.add_subparsers(dest='command', required=True)
+    build_command = commands.add_parser('build')
+    build_command.add_argument('--version', required=True)
+    build_command.add_argument('--bin', required=True, type=Path)
+    build_command.add_argument('--config', required=True, type=Path)
+    coverage_command = commands.add_parser('coverage')
+    coverage_command.add_argument('--clover', required=True, type=Path)
+    coverage_command.add_argument('--source', required=True)
     args = parser.parse_args()
     try:
-        prove(args.version, args.bin, args.config)
+        if args.command == 'build':
+            prove(args.version, args.bin, args.config)
+        else:
+            coverage(args.clover, args.source)
     except (ProofError, build.BuildError, build.CHECK['StaticPhpError'], subprocess.CalledProcessError) as error:
         print(f'static-php prove: {error}', file=sys.stderr)
         return 1
