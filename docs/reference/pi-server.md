@@ -34,7 +34,7 @@ The Gateway reaches the server at `http://{wireguard_ip}:{ORBIT_PI_PORT}` on the
 
 By default the server accepts only subscription sign-ins. A provider signed in with an API key, including a key in the server's environment, is not available until `PI_SERVER_ALLOW_API_KEYS=1` is set or `--allow-provider` names it. A task VM names its one provider with `--allow-provider`. The binary also has `pi-server login <provider>` for a subscription sign-in. Task VMs do not use it, because the model router guard is their only model route. `pi-server login anthropic` is refused.
 
-The Gateway's `pi` driver refuses every Claude model, also through CLIProxyAPI. See [Claude is unavailable for task agents](#claude-is-unavailable-for-task-agents).
+The Gateway's `pi` driver refused every Claude model, also through CLIProxyAPI. See [Claude is unavailable for task agents](#claude-is-unavailable-for-task-agents). The Gateway's Pi turn and its `pi` agent driver are removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop); this page goes with `apps/pi-server`.
 
 ## Run Pi on a task VM
 
