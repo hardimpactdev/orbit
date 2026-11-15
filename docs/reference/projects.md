@@ -53,6 +53,8 @@ A choice is refused with `project.container_server_unavailable` (409) while the 
 
 [Project Documents](/reference/project-documents), the `documents` extension, are a native folder tree of notes and versioned attachments owned by the Project, independent of its Instances and Git branches. Orbit keeps their metadata in the Gateway database and their bodies in a dedicated private UpCloud bucket. The shared contract covers editing, upload/download, archive, permanent removal, and recovery across API, CLI, SDK, MCP, and web.
 
+A Project's own agent instructions, an `AGENTS.md` and skills, live in the reserved `agent/` folder of its Documents. Each new clone of the container default gets them at its create, and `project:show` reports them as `agent_instructions` ([Agent instructions](/reference/development-containers#agent-instructions)). The plug-in point `ProjectAgentInstructionSource` lets the `documents` extension answer for the Project.
+
 ## Fields
 
 A Project stores these fields. API responses, the SDK, and CLI JSON use the same names.

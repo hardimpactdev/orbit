@@ -67,4 +67,14 @@ describe(ProjectResponse::class, function (): void {
             ->and(ProjectResponse::fromGatewayData(['id' => 3, 'container_server' => 't3'], 'request-id')->toArray())->toMatchArray(['container_server' => 't3'])
             ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('container_server');
     });
+    it('maps agent_instructions and its label, and leaves it out when the Gateway sends none', function (): void {
+        $own = ProjectResponse::fromGatewayData(['id' => 3, 'agent_instructions' => ['source' => 'project', 'agents_md_version' => 2, 'skills' => ['a']]], 'request-id');
+        expect($own->agentInstructions)->toBe(['source' => 'project', 'agents_md_version' => 2, 'skills' => ['a']])
+            ->and($own->agentInstructionsLabel())->toBe('project: agent/AGENTS.md v2, skills: a')
+            ->and($own->toArray())->toMatchArray(['agent_instructions' => ['source' => 'project', 'agents_md_version' => 2, 'skills' => ['a']]])
+            ->and(ProjectResponse::fromGatewayData(['id' => 3, 'agent_instructions' => ['source' => 'type_note', 'agents_md_version' => null, 'skills' => []]], 'request-id')
+                ->agentInstructionsLabel())->toBe('type note')
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->agentInstructionsLabel())->toBeNull()
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('agent_instructions');
+    });
 });

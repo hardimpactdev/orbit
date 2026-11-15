@@ -20,6 +20,7 @@ use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceDestroyReplicationSlots;
 use App\Domain\Instances\InstanceHostIntent;
@@ -39,6 +40,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RoutePublicationHolds;
+use App\Domain\Projects\ProjectAgentInstructionSource;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Schedules\NativeSchedules;
 use App\Domain\Shared\ResourceOperationException;
@@ -426,6 +428,39 @@ describe('a task start on the copy path', function (): void {
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
             ->and($group->taskable_id)->toBe($copy->id)
             ->and(TaskVm::query()->count())->toBe(0);
+    });
+
+    it('reads the Project\'s agent instructions before its admission transaction and gives the copy them', function (): void {
+        $default = copySource('app', nested: false);
+        $group = copyGroup($default->project);
+        // A source that reads its bodies as Documents does: never inside a transaction deeper than the test's own.
+        $levels = [];
+        $outer = DB::transactionLevel();
+        $source = new class($levels) implements ProjectAgentInstructionSource
+        {
+            /** @param list<int> $levels */
+            public function __construct(public array &$levels) {}
+
+            public function files(Project $project): array
+            {
+                return ['AGENTS.md' => ['bytes' => 5, 'read' => function (): string {
+                    $this->levels[] = DB::transactionLevel();
+
+                    return "Test.\n";
+                }]];
+            }
+
+            public function summary(Project $project): ?array
+            {
+                return null;
+            }
+        };
+        app()->instance(InstanceAgentInstructions::class, new InstanceAgentInstructions([$source]));
+
+        $operation = startCopy($group);
+
+        expect($levels)->toBe([$outer])
+            ->and(containerIntentOf($operation)['clone']['agent_instructions']['files'][0]['content'])->toEndWith("# This Project\n\nTest.\n");
     });
 
     it('replays the same create for a retry with the request\'s key', function (): void {

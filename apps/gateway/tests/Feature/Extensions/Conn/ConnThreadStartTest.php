@@ -1307,7 +1307,8 @@ function threadLegacySnapshot(mixed $value, ?string $key = null): mixed
 // Frozen from main a38e037e; accepted deltas: clone-mail progress folds into clone-container; every clone's `clone.boot_files` carries the
 // shared browser, font and Git files, an empty linker cache, the Node root CA entry and agent's NSS store (InstanceContainer::bootFiles); the clone job ends at
 // clone-register, and its database, fleet, Process and Route steps are the completion's; the container intent carries its presented
-// `machine_name`, and its boot files the `/etc/machine-info` that T3's first start reads. Conn maps only its four stable stage names
+// `machine_name`, and its boot files the `/etc/machine-info` that T3's first start reads; a clone links its agents to its own agent folder,
+// which its create fills from the type note (InstanceAgentInstructions). Conn maps only its four stable stage names
 // (docs/reference/conn.md), so no delta reaches its card.
 it('matches the installed-client no-branch intent steps result and resume snapshot byte for byte', function (): void {
     $this->freezeTime();

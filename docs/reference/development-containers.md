@@ -3,7 +3,7 @@ title: "Instance containers"
 description: "ADR 0250, partly built: every Instance runs in an Incus container cloned from the Project's default Instance, with T3 inside. A user drives its T3 in development, Swamp drives it for a task. A Project setting turns on a nested fleet."
 covers:
   - apps/gateway/app/{Models/InstanceRuntime,Actions/Nodes/AllocateInstanceBridgeAction,Domain/Nodes/NodeBridges,Console/Commands/RefreshNestedFleetsCommand,Console/Commands/InstanceIdMapSizeCommand,Console/Commands/InstanceInnerVolumeCommand,Domain/Tasks/TaskCopyTurn,Domain/Tasks/TaskCopyTurnProjection}.php
-  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
+  - apps/gateway/app/Domain/Instances/{InstanceRuntimePowerState,ContainerNodes,InstanceHostIntent,InstanceImage,InstanceFolderPlan,InstanceNotes,InstanceAgentInstructions,InstanceContainer,InstanceEgress,DevelopmentMail,DevelopmentInstanceCreateProjection,ClonePublication,NestedFleetIntent,NestedFleetRefresh,IsolatedIdRanges,InstanceOperationAlerts}.php
   - apps/gateway/app/Domain/{InstanceMigration/**,Instances/Environment/DevelopmentCreateEnvironment.php,Instances/Deployment/{ContainerDeployOutcome,DevelopmentDeploySteps}.php}
   - apps/gateway/database/migrations/2027_02_{04_000000_add_seed_commit_to_instance_runtimes,04_000002_add_operation_owner_to_instance_runtimes,05_000001_clear_completed_container_default_projections,05_000002_clear_completed_container_default_projections_by_route_target}.php
   - swamp/ansible/{instance-container.yml,instance-container-destroy.yml,instance_node_runtime.py,instance_fleet_shrink.py,instance_migrate_git.py,tasks/instance-node-runtime.yml,tasks/instance-container-phase.yml,tasks/instance-container-run-phase.yml}
@@ -699,11 +699,49 @@ Each Project type has one note in the agent folder, at `notes/<note>.md`. The no
 | `monorepo` | `monorepo` |
 | `laravel-package`, `node-package` | `package` |
 
-When it creates an Instance, Orbit links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
+A container that runs T3 without a default to copy, such as a migrated checkout, links `/home/agent/.claude/CLAUDE.md` and `/home/agent/.codex/AGENTS.md` to the note of the Project's type. A clone reads the note through its own [agent instructions](#agent-instructions). A note states facts about the environment only. It names the two users and the workspace path, and points to `/etc/orbit/instance` for the Instance's URL. It says where PHP, Composer and the other runtime programs are.
 
 It says how previews work, and how an agent's own development server becomes reachable: the port range, the address to bind and the host name to allow. It says that there is no sudo and no direct internet, how the egress proxy works, and how Git leaves the container. The note does not state the nested-fleet exception yet, where `agent` has sudo.
 
-A note gives no instructions about the work. Instructions, skills and MCP servers come from the project's own files.
+A note gives no instructions about the work. The Project's own instructions and skills come from its [agent instructions](#agent-instructions); MCP servers come from the project's own files.
+
+## Agent instructions
+
+A Project keeps its own agent instructions in the reserved `agent/` folder of its [Project Documents](/reference/project-documents#agent-instructions) ([ADR 0259](/decisions/0259-deliver-per-project-agent-instructions-from-documents)):
+
+| Document path | In the clone |
+| --- | --- |
+| `agent/AGENTS.md` | `/home/agent/.config/orbit/agent/AGENTS.md`, after the note of the Project's type, under the heading `# This Project` |
+| `agent/.skills/<skill>/SKILL.md` and the files beside it | `/home/agent/.config/orbit/agent/.skills/<skill>/...` |
+
+The folder lives in the copy's own agent home, not in the Node's agent folder that every container mounts, so only the Project's own containers hold its text. It is owned by root; `agent` reads it. Every clone links its agents to it:
+
+| Link | Target | Read by |
+| --- | --- | --- |
+| `/home/agent/.claude/CLAUDE.md` | `AGENTS.md` | Claude Code |
+| `/home/agent/.codex/AGENTS.md` | `AGENTS.md` | Codex |
+| `/home/agent/.claude/skills` | `.skills` | Claude Code |
+| `/home/agent/.agents/skills` | `.skills` | Codex |
+
+### When a copy gets them
+
+A clone's create reads the Project's `agent/` folder before its admission. It puts the folder's whole content in the clone intent, as `clone.agent_instructions`. The agent part of the create's T3 step makes the folder again with exactly those files. A file that the Project removed is gone from the copy.
+
+A copy keeps the version of its create. A Documents change reaches the next copy. Claude Code and Codex read their instructions when their process starts, and each turn starts a new process.
+
+A Project without an `AGENTS.md` gets the type note alone as `AGENTS.md`. While the `documents` extension is off, no Project has instructions.
+
+### What counts
+
+An archived file or folder is absent. Only `AGENTS.md` and the files below `.skills/<skill>/` are instructions; other files in `agent/` stay out.
+
+The folder holds at most 32 files and 32 KiB in all, of UTF-8 text with no control character but a tab or a line end. The create intent crosses as one command argument, which Linux holds to 128 KiB; JSON escapes text to at most three times its size. Each name after `.skills` holds only letters, digits, `.`, `_` and `-`. When the folder breaks a limit, the create of a clone is refused before any record, with `projects.agent_instructions_too_large` or `projects.agent_instructions_invalid` (422). When the store fails, the create is refused with the store's own error, such as `project_documents.storage_unavailable`.
+
+### Other phases of a clone
+
+Only a clone's create writes the folder. The intent carries the content only for the agent part; the other parts of the create get the intent without it. A clone made before agent instructions existed keeps its links to the type note.
+
+[`project:show`](/cli/project/show) reports what the next copies read, from the records alone; it does not check the limits, which the next create checks.
 
 ## Development mail
 
@@ -2887,6 +2925,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.default_missing` | 409 | `instance:create` of a non-default Instance, or `task:start` in a clone, while the Project has no active default Instance on the Node. Also when the Project's default runs on another Node |
 | `instance.default_has_clones` | 409 | `instance:destroy` of a default Instance that other Instances were cloned from |
 | `project.container_server_unavailable` | 409 | `instance:create`, `instance:migrate` or `task:start` of a container with a server, while the recipe's agent folder does not pin the program of the Project's [container server](#container-server). Nothing is recorded |
+| `projects.agent_instructions_too_large` | 422 | `instance:create` or `task:start` of a clone while the Project's [agent instructions](#agent-instructions) hold more than 32 files or 32 KiB. Nothing is recorded |
+| `projects.agent_instructions_invalid` | 422 | `instance:create` or `task:start` of a clone while an agent instruction file breaks a rule of [What counts](#what-counts). Nothing is recorded |
 | `instance.migrate_unsupported` | 409 | `instance:migrate` of an Instance that is not an active development checkout on a Node of the build list |
 | `instance.migrate_retirement_blocked` | 409 | Owner dependencies, registered descendants, changed Git identity or submodule changes block retirement. Names 20 paths and total counts |
 | `instance.migrate_git_filter_unsupported` | 409 | A tracked path uses a clean/smudge filter; use an unfiltered checkout without changing source data |
