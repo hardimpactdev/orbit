@@ -58,6 +58,17 @@ function routeWrite(array $serving, string $kind = 'route.create', array $other 
         'status' => OperationStatus::Queued, 'state' => [], 'sequence' => 1, 'attempts' => 0]);
 }
 
+/** A container clone's create that captured its publication, with the shared-file lists of its Route plan. */
+function cloneCreateWrite(array $serving, array $plan = []): Operation
+{
+    $operation = routeWrite($serving, 'instance.create');
+    $operation->update(['input' => [...$operation->input, 'node_id' => $operation->node_id, 'route_id' => 1,
+        'direct_provisioning' => ['container' => ['clone' => ['source' => 'instance-7']], 'route' => ['route_id' => 1]],
+        'route_create' => [...['route_id' => 1, 'caddy' => [], 'php_files' => [], 'dns' => [], 'ingress' => [], 'lan' => []], ...$plan]]]);
+
+    return $operation->refresh();
+}
+
 function finish(Operation $operation, OperationStatus $status = OperationStatus::Succeeded): void
 {
     app(OperationStore::class)->change($operation, ['status' => $status, 'finished_at' => now(), 'lock_key' => null]);
@@ -124,19 +135,70 @@ it('starts two removals on one Node side by side, while a publisher waits for bo
         ->and(DB::table('route_withdrawal_holds')->pluck('operation_id')->all())->toBe([$third->id]);
 });
 
-it('lets at most eight shared writers hold one Node and starts the ninth removal when one of them has withdrawn', function (): void {
+it('lets at most four removals among at most eight shared writers hold one Node, and starts the fifth removal when one has withdrawn', function (): void {
     $holds = app(RoutePublicationHolds::class);
-    $removals = array_map(static fn (): Operation => routeWrite([5], 'instance.destroy'), range(1, 9));
-    expect(array_map(static fn (Operation $removal): bool => $holds->admit($removal), $removals))->toBe([...array_fill(0, 8, true), false])
-        ->and($removals[8]->fresh()->status)->toBe(OperationStatus::Waiting);
+    $removals = array_map(static fn (): Operation => routeWrite([5], 'instance.destroy'), range(1, 4));
+    expect(array_map(static fn (Operation $removal): bool => $holds->admit($removal), $removals))->toBe([true, true, true, true]);
 
-    $holds->releaseWithdrawn($removals[0]);
-    runPromotion();
-    expect($removals[8]->fresh()->status)->toBe(OperationStatus::Queued)
+    // Caddy-only clone creates fill the other four places, and a ninth shared writer leaves its address to its completion.
+    $creates = array_map(static fn (): Operation => cloneCreateWrite([5]), range(1, 5));
+    foreach ($creates as $create) {
+        $holds->admit($create);
+    }
+    expect(array_map(static fn (Operation $create): bool => isset($create->fresh()->input['route_create']), $creates))->toBe([true, true, true, true, false])
         ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->count())->toBe(8);
+
+    // A fifth removal waits, for the removal cap even once a create has gone, until a removal has withdrawn.
+    $fifth = routeWrite([5], 'instance.destroy');
+    expect($holds->admit($fifth))->toBeFalse();
+    finish($creates[0]);
+    $holds->release($creates[0]->id);
+    runPromotion();
+    expect($fifth->fresh()->status)->toBe(OperationStatus::Waiting);
+    $holds->releaseWithdrawn($removals[0]);
+    $holds->promoteAndStart();
+    expect($fifth->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->count())->toBe(7);
 });
 
-it('makes a removal wait while a publisher holds its Node, and a create defer its publication while a removal holds it', function (): void {
+it('gives a clone create whose publication writes more than the Caddyfile the Node alone: a second such create defers, a Caddy-only one too', function (array $plan): void {
+    $holds = app(RoutePublicationHolds::class);
+    $first = cloneCreateWrite([5], $plan);
+    $second = cloneCreateWrite([5], $plan);
+    $caddyOnly = cloneCreateWrite([5]);
+    foreach ([$first, $second, $caddyOnly] as $create) {
+        expect($holds->admit($create))->toBeTrue();
+    }
+
+    expect(DB::table('route_publication_holds')->pluck('operation_id')->all())->toBe([$first->id])
+        ->and(DB::table('route_withdrawal_holds')->count())->toBe(0)
+        ->and($first->fresh()->input)->toHaveKey('route_create')
+        ->and($second->fresh()->input)->not->toHaveKey('route_create')
+        ->and($caddyOnly->fresh()->input)->not->toHaveKey('route_create');
+})->with([
+    'a PHP-FPM pool' => [['php_files' => [['node_id' => 5, 'path' => '/etc/php/8.4/fpm/pool.d/orbit-scopes.conf']]]],
+    'a private DNS record' => [['dns' => [['node_id' => 5]]]],
+    'an Ingress site' => [['ingress' => [['node_id' => 5]]]],
+    'a LAN rule' => [['lan' => [['node_id' => 5, 'port' => 443]]]],
+]);
+
+it('lets a Caddy-only clone create share a Node with a removal, and makes a whole-file publisher wait for both', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $removal = routeWrite([5], 'instance.destroy');
+    $create = cloneCreateWrite([5]);
+    expect($holds->admit($removal))->toBeTrue()->and($holds->admit($create))->toBeTrue()
+        ->and($create->fresh()->input)->toHaveKey('route_create');
+    $publisher = routeWrite([5]);
+    expect($holds->admit($publisher))->toBeFalse();
+    finish($removal);
+    finish($create);
+    $holds->release($removal->id);
+    $holds->release($create->id);
+    runPromotion();
+    expect($publisher->fresh()->status)->toBe(OperationStatus::Queued);
+});
+
+it('makes a removal wait while a publisher holds its Node, and a step-scoped publisher wait while a removal holds it', function (): void {
     $holds = app(RoutePublicationHolds::class);
     $publisher = routeWrite([5]);
     $removal = routeWrite([5], 'instance.destroy');

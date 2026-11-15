@@ -58,10 +58,13 @@ final class RoutePublicationHolds
 
     /**
      * How many shared writers (removals and Caddy-only clone creates) hold one Node at most. Their Node transactions queue on the Node
-     * lock, which a publication holds for about 0.25 s and a withdrawal for a few seconds, and the lock wait is bounded at 30 s. A ninth
-     * removal waits here, in the Gateway, without a Swamp slot; a ninth create leaves its address to its completion.
+     * lock, which is bounded at 30 s. A publication holds it about 0.25 s; a withdrawal holds it a few seconds, so at most
+     * `SharedRemovals` of the eight are removals, as measured when removals first shared a Node. A removal over either cap waits here,
+     * in the Gateway, without a Swamp slot; a create over the cap leaves its address to its completion.
      */
     private const int SharedWriters = 8;
+
+    private const int SharedRemovals = 4;
 
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
@@ -429,26 +432,33 @@ final class RoutePublicationHolds
      */
     private function take(Operation $operation, array $nodes): bool
     {
-        return self::sharesNodes($operation) ? $this->share($operation->id, $nodes) : $this->acquire($operation->id, $nodes);
+        return self::sharesNodes($operation) ? $this->share($operation->id, $nodes, $operation->kind === 'instance.destroy') : $this->acquire($operation->id, $nodes);
     }
 
     /**
-     * All the Nodes or none, beside at most `SharedWriters - 1` other shared writers: refused while a publisher holds one of them. The
+     * All the Nodes or none, beside at most `SharedWriters - 1` other shared writers, and a removal beside at most `SharedRemovals - 1`
+     * other removals: refused while a publisher holds one of them. The
      * IMMEDIATE transaction makes the check and the insert one step against a publisher's `acquire`.
      *
      * @param  list<int>  $nodes
      */
-    private function share(int $operationId, array $nodes): bool
+    private function share(int $operationId, array $nodes, bool $removal): bool
     {
         DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->whereIn('node_id', $nodes)->delete();
 
-        return DB::transaction(static function () use ($operationId, $nodes): bool {
+        return DB::transaction(static function () use ($operationId, $nodes, $removal): bool {
             if (DB::table('route_publication_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)->exists()) {
                 return false;
             }
             $full = DB::table('route_withdrawal_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)
                 ->groupBy('node_id')->havingRaw('count(*) >= ?', [self::SharedWriters])->exists();
             if ($full) {
+                return false;
+            }
+            $removals = $removal && DB::table('route_withdrawal_holds')->join('operations', 'operations.id', '=', 'route_withdrawal_holds.operation_id')
+                ->whereIn('route_withdrawal_holds.node_id', $nodes)->where('route_withdrawal_holds.operation_id', '!=', $operationId)
+                ->where('operations.kind', 'instance.destroy')->groupBy('route_withdrawal_holds.node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
+            if ($removals) {
                 return false;
             }
             foreach ($nodes as $node) {

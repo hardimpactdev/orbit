@@ -1121,7 +1121,8 @@ Decided on 2026-11-14 by the owner: the create publishes the clone's address bes
 
 The admission then looks at the Route publication hold of the Route's serving Nodes ([coordinate publication](/reference/routes#coordinate-publication)):
 
-- **Free.** No publisher holds a Node and no older Route write waits for one. Fewer than eight shared writers hold each Node. The create takes the hold in its admission transaction.
+- **Free.** No publisher holds a Node and no older Route write waits for one. The create takes the hold in its admission transaction.
+- **Room.** A Caddy-only create needs fewer than eight shared writers on each Node; any other create needs none.
 - **Shared or alone.** A publication that is Caddy only takes a shared hold. Any other takes the Nodes alone.
 - **Publication.** With the hold, the create's job `publication` runs beside the clone steps: `clone-route-csr-<i>`, then `clone-route`, the Route create child with its TLS probe.
 - **Held.** The create never waits. Its intent carries no publication, and the completion publishes the address, as before.

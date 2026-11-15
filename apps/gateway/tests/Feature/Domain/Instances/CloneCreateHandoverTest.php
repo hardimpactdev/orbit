@@ -499,7 +499,7 @@ it('leaves a Route that another write has taken alone when clone-route succeeds,
     handoverStep($create, 'publication', 'clone-route', 'step_completed', 1);
 
     expect([$route->refresh()->status->value, $route->sites_published])->toBe(['retiring', false])
-        ->and(DB::table('route_publication_holds')->count())->toBe(0);
+        ->and(DB::table('route_withdrawal_holds')->count())->toBe(0);
 });
 
 /** A Route write on the Node that renders its whole Caddyfile at its admission and publishes it later. */
@@ -564,7 +564,7 @@ it('keeps the address of a create whose later clone step failed after clone-rout
     $route = Route::query()->findOrFail($create->input['route_id']);
     handoverStep($create, 'publication', 'clone-route', 'step_completed', 1);
     // The Route is active and the Nodes are free while the clone steps still run.
-    expect([$route->refresh()->status->value, $route->sites_published, DB::table('route_publication_holds')->count()])->toBe(['active', true, 0]);
+    expect([$route->refresh()->status->value, $route->sites_published, DB::table('route_withdrawal_holds')->count()])->toBe(['active', true, 0]);
     handoverStep($create, 'clone', 'clone-t3', 'step_failed', 2);
     expect($create->refresh()->failed_step)->toBe('clone-t3');
 
@@ -590,7 +590,7 @@ it('activates a published Route at the create\'s end when the progress event was
 
     $route = Route::query()->findOrFail($create->input['route_id']);
     expect([$route->status->value, $route->sites_published])->toBe(['active', true])
-        ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse();
+        ->and(DB::table('route_withdrawal_holds')->where('operation_id', $create->id)->exists())->toBeFalse();
 });
 
 it('leaves the address to the completion when another Route write holds the Node: the create says deferred, the completion publishes with today\'s names', function (): void {
@@ -632,7 +632,7 @@ it('keeps a create whose publication failed: the Route records it, the completio
     expect($create->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($create->result['route_publication'])->toBe('failed')
         ->and([$route->sites_published, $route->failed_step, $route->error_code])->toBe([false, 'native-create', 'instance.create_route_failed'])
-        ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
+        ->and(DB::table('route_withdrawal_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
         ->and($completion->input)->toHaveKey('route_create')
         ->and(RoutePublicationHolds::nodes($completion))->toBe([$node->id]);
 
@@ -662,7 +662,7 @@ it('takes a merge that a Node refused as deferred: the Route is not marked faile
     expect($create->refresh()->status)->toBe(OperationStatus::Succeeded)
         ->and($create->result['route_publication'])->toBe('deferred')
         ->and([$route->status->value, $route->sites_published, $route->failed_step, $route->error_code])->toBe(['pending', false, null, null])
-        ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
+        ->and(DB::table('route_withdrawal_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
         ->and($completion->input)->toHaveKey('route_create')
         ->and(RoutePublicationHolds::nodes($completion))->toBe([$node->id]);
 });
@@ -678,7 +678,7 @@ it('frees the Nodes of a create cancelled before clone-route ended and leaves it
 
     $route = Route::query()->findOrFail($create->input['route_id']);
     expect($create->refresh()->status)->toBe(OperationStatus::Cancelled)
-        ->and(DB::table('route_publication_holds')->count())->toBe(0)
+        ->and(DB::table('route_withdrawal_holds')->count())->toBe(0)
         ->and($route->sites_published)->toBeFalse()
         ->and($create->result['recovery']['retry']['command'])->toBe('instance:create')
         ->and(Operation::query()->where('kind', 'instance.complete')->exists())->toBeFalse();

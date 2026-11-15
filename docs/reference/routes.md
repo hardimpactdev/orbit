@@ -746,13 +746,15 @@ Each withdrawal reads what the Node holds under the lock. So two withdrawals of 
 
 It records any other publisher's hold in `route_publication_holds`, alone. A shared writer waits or defers while a publisher holds one of its Nodes, and a publisher waits while any shared writer holds one. Each take checks the other table in the same transaction.
 
-At most eight shared writers hold one Node. A ninth removal waits in the Gateway; a ninth create leaves its address to its completion. A publication holds the Node lock for about a quarter of a second and a withdrawal for a few seconds, so the transactions that queue on the lock stay well inside its 30-second wait.
+At most eight shared writers hold one Node, and at most four of them are removals. A removal over either cap waits in the Gateway; a create over the cap leaves its address to its completion. A publication holds the Node lock for about a quarter of a second and a withdrawal for a few seconds, so the transactions that queue on the lock stay well inside its 30-second wait.
 
 A removal gives its hold back right after its withdrawal held, not at its end; its later steps write no Caddy, PHP pool or DNS file. Create and clone still render Caddy and shared PHP input under their publication hold.
 
 A publisher other than a clone's create does not take the Node lock: the Gateway hold keeps it apart from every withdrawal.
 
-Across a release, the [release idle guard](/reference/gateway-recovery#release-idle-guard) waits for `instance.destroy` and `instance.create` before the Swamp load. A removal that the earlier release admits after that wait holds its Nodes alone in `route_publication_holds` and frees them at its end. Its intent is unchanged, so its run takes the new workflow and still holds its Nodes alone. A publisher of another kind, admitted by the earlier release, keeps its row in `route_publication_holds`, and the new code reads that row, so no withdrawal starts beside it. A rollback to a release without `route_withdrawal_holds` ignores the rows of removals that still run; wait until no `instance.destroy` runs before a rollback.
+Across a release, the [release idle guard](/reference/gateway-recovery#release-idle-guard) waits for `instance.destroy` and `instance.create` before the Swamp load. A removal that the earlier release admits after that wait holds its Nodes alone in `route_publication_holds` and frees them at its end. Its intent is unchanged, so its run takes the new workflow and still holds its Nodes alone. A publisher of another kind, admitted by the earlier release, keeps its row in `route_publication_holds`, and the new code reads that row, so no withdrawal starts beside it.
+
+A rollback to a release without `route_withdrawal_holds` ignores the rows of removals that still run; wait until no `instance.destroy` and no `instance.create` of a container clone runs before a rollback.
 
 Only one operation publishes private Caddy, DNS, or Metrics configuration at a time. The Gateway takes an exclusive lock on one file, `$ORBIT_HOME/.dnsmasq-projections.lock`, before it reads Route, target, Cluster, and Router state. It holds the lock through Caddy builds, DNS publication, and activation. Nested calls in one request share it. A competitor waits up to 30 seconds, or the rest of its command time when that is shorter. Then it returns HTTP 409 `app-dev.projection_busy` before it changes anything.
 
