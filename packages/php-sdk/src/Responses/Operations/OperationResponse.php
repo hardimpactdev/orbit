@@ -48,6 +48,7 @@ final readonly class OperationResponse
         public ?array $steps = null,
         public ?TaskPlaceWaitResponse $capacityWait = null,
         public ?string $overdueSince = null,
+        public ?string $holdWaitReason = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -93,6 +94,7 @@ final readonly class OperationResponse
             steps: self::steps($data['steps'] ?? null),
             capacityWait: TaskPlaceWaitResponse::fromGatewayData($data['capacity_wait'] ?? null, $requestId),
             overdueSince: self::text($data, 'overdue_since'),
+            holdWaitReason: self::text($data, 'hold_wait_reason'),
         );
     }
 
@@ -135,6 +137,7 @@ final readonly class OperationResponse
             'poll_after_seconds' => $this->pollAfterSeconds,
             'capacity_wait' => $this->capacityWait?->toArray(),
             'overdue_since' => $this->overdueSince,
+            'hold_wait_reason' => $this->holdWaitReason,
         ];
 
         return [...$data, ...($this->steps === null ? [] : ['steps' => $this->steps]), 'request_id' => $this->requestId];

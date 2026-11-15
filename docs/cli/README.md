@@ -184,6 +184,7 @@ Name a step's behavior after its target, never its run. Swamp reuses a definitio
 | Task VM | SSH steps: `<step-family>-<node_id>`, because the next VM reuses the WireGuard address. Local and data steps: `<step-family>-<address>` |
 | Task group | `<step-family>-<node_id>-<group_id>`, or `<step-family>-<group_id>` on 209, only for a step that two groups run at once on one target and that can hold its lock 60 s or more ([list](/reference/tasks#two-groups-on-one-node)) |
 | Container deploy | `<step-family>-<node_id>-<instance_id>` for the long steps of a default's container deployment; short steps keep `-<node_id>` |
+| Removal | `<step-family>-<node_id>-<instance_id % 64>` for the container path of `instance.destroy`; the Gateway keeps two removals of one slot on a Node apart ([Native order](/reference/instance-removal#native-order)) |
 | Family | Never one name such as `ssh-<node_id>` across step families |
 | Type | One behavior type per name; a fixed name that types would share carries its type, as in `result-network-command` |
 | Characters | `^[a-z0-9][a-z0-9_-]*$` |

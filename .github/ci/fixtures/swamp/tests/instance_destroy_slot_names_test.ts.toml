@@ -1,0 +1,13 @@
+order = 1341
+source_sha256 = "552039a3805ff38769f310a5c3623c41bb5f9a5a2220575742e76e0757995a77"
+cases = [
+  "a container removal names each step from 64 slots per Node, never per Instance",
+  "a name off the pool fails the check: one per Instance, or one per Node",
+]
+file = "swamp/tests/instance_destroy_slot_names_test.ts"
+cost = 2
+slices = false
+inputs = ["swamp/workflows/workflow-operation-instance-destroy.yaml"]
+[case_costs]
+"a container removal names each step from 64 slots per Node, never per Instance" = 1
+"a name off the pool fails the check: one per Instance, or one per Node" = 1

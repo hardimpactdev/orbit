@@ -73,10 +73,25 @@ final class RoutePublicationHolds
      */
     public const int WithdrawalSlots = 16;
 
-    /** A removal's own refusals: the removal cap, and another removal of the same withdrawal slot on a Node. It waits in the Gateway. */
+    /**
+     * A removal's container steps take one of this many names per Node, by the removed Instance's ID (workflow-operation-instance-destroy.yaml).
+     * They run after the removal gave its Route Nodes back, and a removal without a Route holds none, so the Route holds do not keep two
+     * removals of one slot apart: a removal starts only when no older removal of its slot on its Node is still open.
+     */
+    public const int DestroySlots = 64;
+
+    /**
+     * A removal's own refusals: the removal cap, another removal of the same withdrawal slot on a Node, and an older open removal of the
+     * same Instance slot on its Node. It waits in the Gateway.
+     */
     private const string RemovalCap = 'removal_cap';
 
     private const string RemovalSlot = 'removal_slot';
+
+    private const string InstanceSlot = 'instance_slot';
+
+    /** A write admitted to start after another Operation (`after_operation_id`) waits for that Operation to end. */
+    private const string AfterOperation = 'after_operation';
 
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
@@ -201,11 +216,17 @@ final class RoutePublicationHolds
         // A kind that holds per step takes no Node at admission: its run calls for the hold around its Route-publish step.
         $nodes = self::applies($operation->kind) ? self::nodes($operation) : [];
         $after = self::applies($operation->kind) && self::afterOpen($operation);
-        if ($nodes === [] && ! $after) {
+        $slot = self::slotOpen($operation);
+        if ($nodes === [] && ! $after && ! $slot) {
             return true;
         }
-        // Null when it took the Nodes; else why not. An older write first: the Operation it starts after, or an older waiter on a Node.
-        $refused = $after || $this->olderWaiterOverlaps($operation->id, $nodes) ? ClonePublication::WaiterFirst : $this->take($operation, $nodes);
+        // Null when it took the Nodes; else why not. An older write first: the Operation it starts after, an older removal of its Instance
+        // slot, or an older waiter on a Node.
+        $refused = match (true) {
+            $after || $this->olderWaiterOverlaps($operation->id, $nodes) => ClonePublication::WaiterFirst,
+            $slot => self::InstanceSlot,
+            default => $this->take($operation, $nodes),
+        };
         if ($refused === null) {
             return true;
         }
@@ -217,8 +238,10 @@ final class RoutePublicationHolds
             return true;
         }
         // A write that publishes a render made now records the sites its Nodes serve, so its start can tell when they changed.
+        // The reason is kept with the wait, so a read tells a held Node, a cap and a slot apart (`hold_wait_reason`).
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Waiting,
-            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes, ...(self::rendersAtStart($operation) ? [] : ['hold_sites' => self::served($nodes)])]]);
+            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes, 'hold_wait_reason' => $after ? self::AfterOperation : $refused,
+                ...(self::rendersAtStart($operation) ? [] : ['hold_sites' => self::served($nodes)])]]);
 
         return false;
     }
@@ -260,9 +283,9 @@ final class RoutePublicationHolds
     {
         $freed = DB::table('route_publication_holds')->where('operation_id', $operationId)->delete()
             + DB::table('route_withdrawal_holds')->where('operation_id', $operationId)->delete();
-        // A write that starts after this Operation may start now, even when this one held no Node.
+        // A write that starts after this Operation may start now, even when this one held no Node; so may a removal of its slot.
         $follower = Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)
-            ->where('input->after_operation_id', $operationId)->exists();
+            ->where(static fn ($query) => $query->where('input->after_operation_id', $operationId)->orWhere('kind', 'instance.destroy'))->exists();
         if ($freed > 0 || $wasWaiting || $follower) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
@@ -305,13 +328,23 @@ final class RoutePublicationHolds
         $promoted = [];
         $blocked = [];
         foreach ($this->waiters() as $waiter) {
-            // A write still waiting for its Operation claims nothing yet, so it holds back no younger write.
+            // A write still waiting for its Operation, or a removal for an older one of its slot, claims nothing yet, so it holds back no
+            // younger write.
             if (self::afterOpen($waiter)) {
+                $this->waitFor($waiter, self::AfterOperation);
+
+                continue;
+            }
+            if (self::slotOpen($waiter)) {
+                $this->waitFor($waiter, self::InstanceSlot);
+
                 continue;
             }
             $nodes = self::waitingNodes($waiter);
-            if (array_intersect($nodes, $blocked) !== [] || $this->take($waiter, $nodes) !== null) {
+            $refused = array_intersect($nodes, $blocked) !== [] ? ClonePublication::WaiterFirst : $this->take($waiter, $nodes);
+            if ($refused !== null) {
                 $blocked = [...$blocked, ...$nodes];
+                $this->waitFor($waiter, $refused);
 
                 continue;
             }
@@ -328,7 +361,48 @@ final class RoutePublicationHolds
     {
         return Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)->whereNull('state->swamp_run_id')
             ->when($before !== null, static fn ($query) => $query->where('id', '<', $before))->orderBy('id')->get()
-            ->filter(static fn (Operation $waiter): bool => self::waitingNodes($waiter) !== [] || self::after($waiter) !== null)->values();
+            ->filter(static fn (Operation $waiter): bool => self::waitingNodes($waiter) !== [] || self::after($waiter) !== null || self::destroySlot($waiter) !== null)->values();
+    }
+
+    /** Records why a waiting write still waits, when that changed; a write that left `waiting` meanwhile is left alone. */
+    private function waitFor(Operation $waiter, string $reason): void
+    {
+        if (($waiter->state['hold_wait_reason'] ?? null) === $reason) {
+            return;
+        }
+        DB::transaction(static function () use ($waiter, $reason): void {
+            $current = Operation::query()->lockForUpdate()->findOrFail($waiter->id);
+            if ($current->status === OperationStatus::Waiting && ! isset($current->state['swamp_run_id'])) {
+                app(OperationStore::class)->change($current, ['state' => [...($current->state ?? []), 'hold_wait_reason' => $reason]]);
+            }
+        });
+    }
+
+    /** The slot of a removal's container step names: its Instance's ID modulo `DestroySlots`. Null for any other kind. */
+    public static function destroySlot(Operation $operation): ?int
+    {
+        $instance = $operation->kind === 'instance.destroy' ? ($operation->input['instance_id'] ?? null) : null;
+
+        return is_int($instance) ? $instance % self::DestroySlots : null;
+    }
+
+    /**
+     * An older removal of the same Instance slot on the same Node is still open, or has ended while Swamp may still run it (`keepsNodes`:
+     * a timed-out run that still holds its target lock, or one that ended unconfirmed in the last minutes): this one starts after it, so
+     * the two never wait on one step name. Oldest first, so the oldest of a slot always goes.
+     */
+    private static function slotOpen(Operation $operation): bool
+    {
+        $slot = self::destroySlot($operation);
+        if ($slot === null || $operation->node_id === null) {
+            return false;
+        }
+
+        return Operation::query()->where('kind', 'instance.destroy')->where('node_id', $operation->node_id)->where('id', '<', $operation->id)
+            ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())->orWhereNotNull('lock_key')
+                ->orWhere('finished_at', '>', now()->subMinutes(self::UnconfirmedMinutes)))
+            ->get()->contains(static fn (Operation $other): bool => self::destroySlot($other) === $slot
+                && (! $other->status->terminal() || self::keepsNodes($other)));
     }
 
     /** @return list<int> */
@@ -343,7 +417,7 @@ final class RoutePublicationHolds
     private function olderWaiterOverlaps(int $operationId, array $nodes): bool
     {
         foreach ($this->waiters($operationId) as $waiter) {
-            if (! self::afterOpen($waiter) && array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
+            if (! self::afterOpen($waiter) && ! self::slotOpen($waiter) && array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
                 return true;
             }
         }
@@ -431,7 +505,7 @@ final class RoutePublicationHolds
     private function waitingOverlaps(array $nodes): bool
     {
         foreach ($this->waiters() as $waiter) {
-            if (! self::afterOpen($waiter) && array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
+            if (! self::afterOpen($waiter) && ! self::slotOpen($waiter) && array_intersect($nodes, self::waitingNodes($waiter)) !== []) {
                 return true;
             }
         }

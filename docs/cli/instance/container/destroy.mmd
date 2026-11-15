@@ -75,6 +75,13 @@ sequenceDiagram
       %%> When:
       %%> - the removal starts when the completion has ended, as a waiting Route write starts
     end
+    opt older removal of the same slot open on the Node
+      %% path: slot-wait
+      Note over GW: Wait for the slot<br/>instance_slot
+      %%> Why:
+      %%> - the container steps take one of 64 names per Node, `<family>-<node>-<instance id % 64>`; Swamp fails a step that waits 60 s for a name another run holds
+      %%> - the removal is admitted `waiting` with `hold_wait_reason: instance_slot` and claims no Node; it starts when the older removal of its slot has ended
+    end
     GW->>SW: Start run, full intent<br/>operation-instance-destroy
     GW-->>CLI: 202 Accepted<br/>Operation ID
     opt clone has a Route
@@ -98,6 +105,7 @@ sequenceDiagram
     end
     SW->>N: Delete the container<br/>Ansible · tags remove
     %%> What it does:
+    %%> - runs under `id-delete-the-container-<node>-<instance id % 64>`; removals of other slots delete side by side
     %%> - stops and deletes the clone, its Processes, T3 history, snapshots, storage volume and proxy device
     %%> - deleting T3 retires every session and unused pairing link; no T3 call or new vault key is needed
     %%> - removes its `instance-<id>` ACL from Incus project `default`, its owned UFW rules, its Node repository mirror and its private Node mail activation state

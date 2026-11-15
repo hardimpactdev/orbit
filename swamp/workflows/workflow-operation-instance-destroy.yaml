@@ -41,6 +41,9 @@ inputs:
   - intent
   - execution_secrets
   additionalProperties: false
+# Step names of the container path come from a bounded pool: `<family>-<node>-<instance_id % 64>`, and `-<index>` for the hibernation files. Swamp fails a step that waits 60 s
+# for a name another run holds, so the Gateway keeps two removals of one slot on one Node apart for the whole run (instance_slot,
+# RoutePublicationHolds::DestroySlots); the withdrawal child names its Node steps by the Route's own slot (removal_slot).
 jobs:
 - name: destroy
   labels:
@@ -54,7 +57,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: ${{ "id-input-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("id-input-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
       methodName: write
       inputs:
         intent: ${{ inputs.intent }}
@@ -186,7 +189,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "route-hold-release-withdrawn" }}
+      behaviorName: ${{ ("route-hold-release-withdrawn-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: "status=$(curl --silent --show-error --proto =https --max-time 30 --retry 2 --retry-all-errors --retry-delay 1 \\\n  --cacert /usr/local/share/ca-certificates/orbit-managed-root-ca.crt \\\n  --header 'Content-Type: application/json' --header 'Accept: application/json' \\\n  --output /dev/null --write-out '%{http_code}' --data \"$ORBIT_HOLD_REQUEST\" \"$ORBIT_HOLD_URL\") || status=000\nif [ \"$status\" = 200 ]; then released=true; else released=false; fi\nprintf '{\"route_hold_released\":%s,\"http_status\":\"%s\"}\\n' \"$released\" \"$status\"\n"
@@ -363,6 +366,7 @@ jobs:
         node_id: ${{ self.server.node_id }}
         kind: database.destroy
         intent: ${{ self.server.intent }}
+        slot: ${{ string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64) }}
         execution_secrets:
           fence: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_fence"] }}
           drop: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_drop"] }}
@@ -399,7 +403,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ ("instance-destroy-hibernation-" + string(self.file.instance_id) + "-" + string(self._index)).split(".").join("-") }}
+      behaviorName: ${{ ("instance-destroy-hibernation-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64) + "-" + string(self._index)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         path: ${{ self.file.path }}
@@ -478,7 +482,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "id-delete-the-container-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("id-delete-the-container-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 180 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags remove "$ORBIT_ANSIBLE/instance-container-destroy.yml"
@@ -508,7 +512,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "id-read-container-removal-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("id-read-container-removal-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 10 cat "$ORBIT_RUN/remove.json"
@@ -524,7 +528,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "id-clean-container-removal-files-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("id-clean-container-removal-files-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 10 rm -rf -- "$ORBIT_RUN"
