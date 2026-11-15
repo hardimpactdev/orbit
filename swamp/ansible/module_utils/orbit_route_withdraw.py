@@ -306,6 +306,8 @@ class _Lock:
                 or identity.st_uid != os.geteuid() or identity.st_mode & 0o022):
             self.stream.close()
             raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a regular file of the publisher that no group or other may write.")
+        # Another writer may have created it with its default umask: from now on only the publisher may open it.
+        os.fchmod(self.stream.fileno(), 0o600)
         rc, _, stderr = self.run(["flock", "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
                                   str(self.stream.fileno())], pass_fds=(self.stream.fileno(),))
         if rc != 0:
@@ -343,7 +345,14 @@ class _File:
         if self.old is not None:
             _write(self.previous_path, self.old, (os.geteuid(), os.getegid()), self.mode)
 
+    def still_as_read(self):
+        """Refuses when a writer that takes no Node lock changed the file since it was read: it is never overwritten from a stale read."""
+        current = self.path.read_bytes() if self.path.exists() else None
+        if current != self.old:
+            raise WithdrawFailure("route.live_changed", f"{self.path} changed since it was read; run the removal again.")
+
     def stage(self, content):
+        self.still_as_read()
         if content is None:
             self.path.unlink(missing_ok=True)
         else:
@@ -382,7 +391,7 @@ def _ok(run, argv, code, files, changed=False):
 def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
     """Runs wholly on the Node; run is AnsibleModule.run_command. Returns what changed and where each previous generation is.
 
-    Both locks share one deadline of `wait` seconds, well inside the apply phase's 170-second timeout."""
+    Both locks share one deadline of `wait` seconds, well inside the apply phase's 300-second timeout."""
     base = Path(root)
 
     def at(path):
@@ -394,7 +403,7 @@ def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
         locks.append((at("/etc/caddy/.orbit-publish.lock"), "caddy.publish_busy"))
     if plan.get("dns"):
         at("/var/lib/orbit/private-dns").mkdir(parents=True, exist_ok=True)
-        # The lock every private DNS writer of the Node takes: publish-dns.py and DnsmasqPrivateDnsManager.
+        # The lock the Gateway's private DNS publication (DnsmasqPrivateDnsManager) takes on this Node.
         at("/run/lock").mkdir(parents=True, exist_ok=True)
         locks.append((at("/run/lock/orbit-dnsmasq.lock"), "dns.publish_busy"))
     previous.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -459,6 +468,12 @@ def _transaction(plan, run, at, previous, caddy_gid):
                 raise WithdrawFailure("php.reload_failed", stderr.strip()[-2000:])
         pending = [file for file in pending if file not in pools.values()]
         if caddy_changed:
+            try:
+                caddy.still_as_read()
+            except WithdrawFailure:
+                for file in pending:
+                    file.restore()
+                raise
             os.replace(candidate, caddy.path)
             candidate = None
             caddy.staged = True
@@ -512,6 +527,9 @@ def _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_c
             dns[0].stage(composed["dns"]["records"])
             dns[1].stage(composed["dns"]["catalog"])
             _ok(run, ["timeout", "10", "dnsmasq", "--test"], "dns.test_failed", staged)
+    if caddy_changed:
+        # Checked once more right before the rename; a change found here leaves every file as it was read.
+        caddy.still_as_read()
     kept = []
     for file, changed in [(caddy, caddy_changed), *((pools[v], True) for v in pool_changes), *((f, dns_changed) for f in dns)]:
         if file is not None and changed and file.old is not None:

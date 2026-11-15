@@ -314,6 +314,28 @@ class RouteWithdrawTest(unittest.TestCase):
             self.withdraw(plan(7))
         self.assertEqual(refused.exception.code, "route.file_not_utf8")
 
+    def test_a_writer_without_the_lock_that_changes_the_caddyfile_meanwhile_is_never_overwritten(self):
+        pools = self.resolved_pool(7, 9)
+        other = caddyfile(site(7), PRODUCTION, site(8), site(9))
+
+        def run(argv, **kwargs):
+            # A whole-file build of another writer lands while the candidate is validated.
+            if "validate" in argv:
+                self.caddy.write_text(other)
+            return Tools()(argv, **kwargs)
+
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            WITHDRAW.withdraw(plan(7, php=True), run, root=str(self.root), wait=10)
+        self.assertEqual(refused.exception.code, "route.live_changed")
+        self.assertEqual((self.caddy.read_text(), self.pool.read_text()), (other, pools))
+
+    def test_a_lock_another_writer_created_becomes_private(self):
+        lock = self.root / "etc/caddy/.orbit-publish.lock"
+        lock.touch(mode=0o644)
+        lock.chmod(0o644)
+        self.withdraw(plan(7))
+        self.assertEqual(oct(lock.stat().st_mode & 0o777), "0o600")
+
     def test_a_held_lock_times_out_with_publish_busy(self):
         lock = self.root / "etc/caddy/.orbit-publish.lock"
         descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)

@@ -217,10 +217,14 @@ final readonly class StartInstanceDestroyAction
         ];
     }
 
+    /** The run budget of each withdrawn Route: route-withdraw-node's 300 s phase, its proof and the Route Node release. */
+    private const int RouteSeconds = 330;
+
     /**
-     * 60 s for the removal steps, the teardown timeouts of each member that runs its list (at most 540 s), 180 s for
-     * each Route it withdraws (CSR-free withdrawal, Caddy and PHP publication; an Instance removal waits no DNS grace), and 180 s
-     * when it removes owned databases. A fixed or history budget misses a routed removal (op 9603).
+     * 60 s for the removal steps, the teardown timeouts of each member that runs its list (at most 540 s), 330 s for
+     * each Route it withdraws (the 300 s Node transaction phase of route-withdraw-node, then its proof and the Route Node release;
+     * an Instance removal waits no DNS grace), and 180 s when it removes owned databases. The Operation must outlast the phase, so
+     * the Gateway never cancels a run inside a Node transaction. A fixed or history budget misses a routed removal (op 9603).
      *
      * @param  array<string,mixed>  $input
      */
@@ -241,7 +245,7 @@ final readonly class StartInstanceDestroyAction
         $database = ValidatedData::object(ValidatedData::object($input['direct_destroy'] ?? [])['database'] ?? []);
         $databases = ($database['servers'] ?? []) !== [] || ($database['sqlite'] ?? []) !== [] || ($database['connection_ids'] ?? []) !== [];
 
-        return (($input['container_destroy'] ?? null) === null ? 60 : 600) + min(LifecycleStep::MaxTotalTimeoutSeconds, $teardown) + 180 * $routes + ($databases ? 180 : 0);
+        return (($input['container_destroy'] ?? null) === null ? 60 : 600) + min(LifecycleStep::MaxTotalTimeoutSeconds, $teardown) + self::RouteSeconds * $routes + ($databases ? 180 : 0);
     }
 
     private function teardownDigest(Project $project): string
