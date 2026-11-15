@@ -253,11 +253,17 @@ When the operation ends, `result` holds `deployment_id`, `release`, `selected_re
 
 ### Execution copies
 
-A deploy hands its private material to the run as named vault execution copies in `orbit-control-inputs`. A development or container default's deploy writes `development-deploy-operation-<id>-credential`, `-processes` and `-step-<index>` for each admitted step. A production deploy writes `instance-deploy-operation-<id>-credential` and `-step-<index>`.
+A deploy hands its private material to the run as named vault execution copies in `orbit-control-inputs`. A development or container default's deploy writes `development-deploy-operation-<id>-credential`, `-processes` and `-step-<index>` for each admitted step. A production deploy writes `instance-deploy-operation-<id>-credential` and `-step-<index>`. Its Process environments go to `process-parent-operation-<id>-node-<node>-member-<process>` copies. The Gateway resolves their Node only when the run starts, so these copies are not yet deleted.
 
-When the deploy ends, the Gateway deletes these copies: after success, failure or cancel, a refused start, a cancel before the run and an unreadable result. A timed-out deploy keeps them until Swamp confirms that its run ended, because the run may still read them. A delete that fails leaves the deploy's end as it is and logs `Deploy execution copies could not be deleted`.
+When the deploy ends, the Gateway deletes the copies named after the deploy alone: after success, failure or cancel, a refused start, a cancel before the run and an unreadable result. A timed-out deploy keeps them while its run may still read them:
 
-`php artisan orbit:instance-deploy-copies-prune` deletes the copies of every ended deploy that are left: the copies of deploys from before this rule, and those of a failed delete. A deploy has ended when its status is terminal and it is not a timed-out deploy whose run is unsettled. Add `--dry-run` to count the deploys and key names first. The command reads no value; a key that is gone counts as deleted.
+- A deploy that holds its Instance keeps them until the shared reader settles it: with Swamp's terminal, or as `unproven` after the 60-minute hold limit.
+- A checkout default's deploy holds nothing. It keeps them until Swamp has confirmed the cancel.
+- When that confirmation never comes, the reconciler stops forwarding the cancel after 60 minutes. The prune command below then counts the run as lost.
+
+A delete that fails leaves the deploy's end as it is and logs `Deploy execution copies could not be deleted`.
+
+`php artisan orbit:instance-deploy-copies-prune` deletes the copies of every ended deploy that are left: the copies of deploys from before this rule, and those of a failed delete. A deploy has ended when its status is terminal. A timed-out deploy has ended only when the rule above releases its copies. Add `--dry-run` to count the deploys and key names first. The command reads no value; a key that is gone counts as deleted.
 
 ### The rollback operation
 

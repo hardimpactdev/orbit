@@ -6,6 +6,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
@@ -191,6 +192,41 @@ it('keeps a timed-out deploy\'s copies while its run may still read them, and de
     expect($this->socket->stored)->toBe([]);
 });
 
+it('deletes a timed-out deploy\'s copies when its hold ends without proof after the hold limit', function (): void {
+    $deploy = deployWithCopies();
+    $deploy->update(['started_at' => now()->subDays(1), 'lock_key' => 'instance:1']);
+    app(ExpireOperationAction::class)->execute($deploy->refresh());
+    $deploy->refresh()->update(['finished_at' => now()->subMinutes(ExpireOperationAction::HoldMinutes + 1)]);
+
+    expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1)
+        ->and($this->socket->stored)->toBe([]);
+});
+
+it('keeps a timed-out checkout default deploy\'s copies, which holds no lock, until Swamp confirms the cancel', function (): void {
+    $deploy = deployWithCopies('development');
+    $deploy->update(['started_at' => now()->subDays(1)]);
+
+    app(ExpireOperationAction::class)->execute($deploy->refresh());
+
+    expect($deploy->refresh()->error_code)->toBe('operation.timed_out')
+        ->and($deploy->lock_key)->toBeNull()
+        ->and($this->socket->stored)->toHaveCount(4);
+
+    // What NativeRunCancellation::forward records when serve accepted the cancel.
+    app(OperationStore::class)->change($deploy, ['state' => [...$deploy->state, 'native_cancel_confirmed_at' => now()->toISOString()]]);
+
+    expect($this->socket->stored)->toBe([]);
+});
+
+it('deletes a deploy\'s copies when the shared reader records its run\'s terminal result', function (): void {
+    $deploy = deployWithCopies();
+
+    app(DirectOperation::class)->project($deploy, ['run_id' => 'run-1', 'status' => 'succeeded', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String()], []);
+
+    expect($deploy->refresh()->status)->toBe(OperationStatus::Succeeded)->and($this->socket->stored)->toBe([]);
+});
+
 it('keeps the deploy\'s end when serve cannot delete its copies', function (): void {
     $deploy = deployWithCopies();
     $this->socket->down = true;
@@ -209,16 +245,19 @@ it('prunes the copies of every ended deploy and keeps those of open and unsettle
     $running = deployWithCopies();
     $queued = deployWithCopies(status: OperationStatus::Queued);
     $unsettled = deployWithCopies(status: OperationStatus::Failed);
-    $unsettled->update(['error_code' => 'operation.timed_out', 'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => ['budget_seconds' => 1]]]);
+    $unsettled->update(['error_code' => 'operation.timed_out', 'finished_at' => now(), 'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => ['budget_seconds' => 1]]]);
+    // A checkout default's timed-out deploy, whose unconfirmed cancel the reconciler stopped forwarding: its run counts as lost.
+    $lost = deployWithCopies('development', OperationStatus::Failed);
+    $lost->update(['error_code' => 'operation.timed_out', 'finished_at' => now()->subMinutes(61), 'state' => ['swamp_run_id' => 'run-1', 'native_timeout' => ['budget_seconds' => 1]]]);
     $open = [...InstanceDeployExecutionCopies::keys($running), ...InstanceDeployExecutionCopies::keys($queued), ...InstanceDeployExecutionCopies::keys($unsettled)];
 
     $this->artisan('orbit:instance-deploy-copies-prune', ['--dry-run' => true])
-        ->expectsOutput('Would delete 15 key names of 4 ended deploys; kept 1 timed-out deploys whose run has not settled.')->assertSuccessful();
+        ->expectsOutput('Would delete 19 key names of 5 ended deploys; kept 1 timed-out deploys whose run has not settled.')->assertSuccessful();
     expect($this->socket->connects)->toBe(0);
 
     $this->artisan('orbit:instance-deploy-copies-prune')
-        ->expectsOutput('Deleted 15 key names of 4 ended deploys; kept 1 timed-out deploys whose run has not settled.')->assertSuccessful();
+        ->expectsOutput('Deleted 19 key names of 5 ended deploys; kept 1 timed-out deploys whose run has not settled.')->assertSuccessful();
 
     expect(array_keys($this->socket->stored))->toEqualCanonicalizing($open)
-        ->and($this->socket->deleted)->toContain(...InstanceDeployExecutionCopies::keys($production), ...InstanceDeployExecutionCopies::keys($ended->first()));
+        ->and($this->socket->deleted)->toContain(...InstanceDeployExecutionCopies::keys($production), ...InstanceDeployExecutionCopies::keys($ended->first()), ...InstanceDeployExecutionCopies::keys($lost));
 });

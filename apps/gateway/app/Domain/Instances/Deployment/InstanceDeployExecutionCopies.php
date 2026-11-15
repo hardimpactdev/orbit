@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Deployment;
 
 use App\Actions\Operations\ExpireOperationAction;
+use App\Domain\Operations\NativeRunCancellation;
 use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Models\Operation;
 
 /**
- * The vault copies that one `instance.deploy` names after its own Operation id: its read credential, its Process environment files
- * and one command per admitted step. They leave the vault when the deploy has ended (docs/reference/deployments.md#execution-copies).
+ * The vault copies that one `instance.deploy` names after its own Operation id alone: its read credential, a container default's
+ * Process environment files and one command per admitted step. They leave the vault when the deploy has ended
+ * (docs/reference/deployments.md#execution-copies).
  */
 final readonly class InstanceDeployExecutionCopies
 {
@@ -19,12 +21,19 @@ final readonly class InstanceDeployExecutionCopies
     public function __construct(private SwampScheduleWorkflows $vault) {}
 
     /**
-     * Whether the deploy's run can no longer read its copies. A timed-out deploy whose run Swamp has not yet confirmed ended may still be
-     * running, or may be reopened when its run beat the deadline; it keeps its copies until that settles.
+     * Whether the deploy's run can no longer read its copies. A timed-out deploy's run may still be going, or be reopened when it beat the
+     * deadline. One that holds its Instance keeps its copies until the reader settles it, with Swamp's terminal or after the hold limit. A
+     * checkout default's deploy holds nothing and records no settlement: it keeps them until Swamp confirmed the cancel, or until the
+     * reconciler stops forwarding that cancel and the run counts as lost.
      */
     public static function ended(Operation $deploy): bool
     {
-        return $deploy->kind === 'instance.deploy' && $deploy->status->terminal() && ! ExpireOperationAction::expiredUnsettled($deploy);
+        if ($deploy->kind !== 'instance.deploy' || ! $deploy->status->terminal() || ExpireOperationAction::awaitsSettlement($deploy)) {
+            return false;
+        }
+
+        return ! ExpireOperationAction::expiredUnsettled($deploy) || isset($deploy->state['native_cancel_confirmed_at'])
+            || ($deploy->finished_at !== null && $deploy->finished_at->isBefore(now()->subMinutes(NativeRunCancellation::ForwardMinutes)));
     }
 
     /** @return list<string> */
