@@ -284,6 +284,9 @@ jobs:
     - step: Stop, remove Processes
       condition:
         type: always
+    - step: Release the Route Nodes
+      condition:
+        type: always
     guard: ${{ ("container_destroy" in inputs.intent && inputs.intent.container_destroy != null) || (steps.exists(k, steps[k].status == "failed") || ("Withdraw the Route" in steps &&
       steps["Withdraw the Route"].status == "succeeded" && !steps["Withdraw the Route"].outputs.result.ready)) }}
   - name: Remove SQLite files
@@ -504,6 +507,9 @@ jobs:
       condition:
         type: always
     - step: Withdraw the Route
+      condition:
+        type: always
+    - step: Remove SQLite files
       condition:
         type: always
     writes: true

@@ -124,7 +124,7 @@ jobs:
       - name: deploy
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: workspace, condition: {type: succeeded}}]
+        dependsOn: [{step: workspace, condition: {type: succeeded}}, {step: database-install, condition: {type: always}}]
         guard: '${{ (inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, k.startsWith("deploy") && steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         forEach: {item: step, in: '${{ inputs.intent.container == null ? [] : inputs.intent.container.steps }}'}
         concurrency: 1
@@ -154,6 +154,7 @@ jobs:
         dependsOn:
           - {step: workspace, condition: {type: succeeded}}
           - {step: deploy, condition: {type: always}}
+          - {step: server-database-check, condition: {type: always}}
         guard: '${{ (inputs.intent.already_active || inputs.intent.container == null || steps.exists(k, steps[k].status == "failed")) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior
@@ -203,6 +204,8 @@ jobs:
         dependsOn:
           - {step: database-snapshot, condition: {type: always}}
           - {step: database-install, condition: {type: always}}
+          - {step: deploy, condition: {type: always}}
+          - {step: server-database-check, condition: {type: always}}
         guard: '${{ (inputs.intent.already_active || inputs.intent.database == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: workflow
@@ -228,7 +231,7 @@ jobs:
             execution_secrets: '${{ inputs.intent.server_database == null ? {} : {"create": inputs.execution_secrets.server_database_create, "check": inputs.execution_secrets.server_database_check} }}'
       - name: server-database-check
         labels: {role: swamp}
-        dependsOn: [{step: server-database, condition: {type: succeeded}}]
+        dependsOn: [{step: server-database, condition: {type: succeeded}}, {step: database-install, condition: {type: always}}, {step: deploy, condition: {type: always}}]
         guard: '${{ (inputs.intent.already_active || inputs.intent.server_database == null) || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
         task:
           type: behavior

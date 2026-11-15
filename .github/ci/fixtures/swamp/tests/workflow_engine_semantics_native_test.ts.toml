@@ -1,0 +1,31 @@
+source_sha256 = "220341b61bc285f1d28fff4ea0ed15629f01a01bca63c77eb4c34ac09a1aa507"
+cases = [
+  "deploy (production): the steps the level throttle ordered run in that order, and Processes install one at a time",
+  "deploy (production): a failed Process install stops the other members, the Schedule timers and the restarts",
+  "deploy (production) without Processes or Schedules: a failed PHP check still keeps the after steps from running",
+  "restore: a restore without database servers still republishes the Route; a failed server check does not",
+  "clone: a clone without a Route skips the certificate and still checks the clone and reports its result",
+  "Process install: an Instance without members still writes the result; a failed member stops it",
+  "metrics exporter: with no files the units reload after the downloads and folders, not before them",
+  "destroy: with no Processes, a failed Route release still keeps the teardown steps from running; they run after the release, one at a time",
+  "harness: items of a forEach without a limit overlap, so a one-at-a-time check can fail",
+  "firewall: one planned change runs, the others are skipped by their guard, then the result is read and checked",
+  "task-check-ci: a tick without a pending check runs only its collect step",
+]
+file = "swamp/tests/workflow_engine_semantics_native_test.ts"
+cost = 60 # 11 cases in 45-70 s locally on Beast; each case inits a repository and runs one real workflow with stubbed steps
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+  "swamp/tests/_support/native_auth.ts",
+  "swamp/tests/_support/rendered_run.ts",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-deploy-direct.yaml",
+  "swamp/workflows/workflow-operation-instance-restore.yaml",
+  "swamp/workflows/workflow-operation-instance-clone.yaml",
+  "swamp/workflows/workflow-operation-process-install-instance-definitions.yaml",
+  "swamp/workflows/workflow-metrics-exporter-node.yaml",
+  "swamp/workflows/workflow-operation-firewall-direct.yaml",
+  "swamp/workflows/workflow-task-check-ci.yaml",
+]

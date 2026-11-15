@@ -734,6 +734,9 @@ jobs:
     - step: Prepare shared paths
       condition:
         type: always
+    - step: Check the branch commit
+      condition:
+        type: always
     writes: true
     forEach:
       item: link
@@ -837,6 +840,12 @@ jobs:
       role: swamp
     dependsOn:
     - step: Link the release
+      condition:
+        type: always
+    - step: Prepare shared paths
+      condition:
+        type: always
+    - step: Check the branch commit
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"]) }}
@@ -1492,6 +1501,9 @@ jobs:
     - step: dev-vp-manager-ready
       condition:
         type: succeeded
+    - step: Prepare Vite cache
+      condition:
+        type: always
     writes: true
   - name: dev-vp-cli
     writes: true
@@ -1666,6 +1678,9 @@ jobs:
       condition:
         type: always
     - step: dev-vp-verify
+      condition:
+        type: always
+    - step: Publish public Vite CLI
       condition:
         type: always
     task:
@@ -1907,6 +1922,9 @@ jobs:
       condition:
         type: succeeded
     - step: Run dev deploy steps
+      condition:
+        type: always
+    - step: Read the steps to skip
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "container" || steps.exists(k, steps[k].status == "failed") }}
@@ -2354,6 +2372,9 @@ jobs:
     - step: Prepare PHP directories
       condition:
         type: always
+    - step: Swap current
+      condition:
+        type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure }}
     task:
       type: behavior
@@ -2405,6 +2426,9 @@ jobs:
       role: swamp
     dependsOn:
     - step: Write PHP configuration
+      condition:
+        type: always
+    - step: Read local PHP tuning
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || inputs.intent.php_input == null || steps.exists(k, steps[k].status in ["failed", "cancelled"]) || !inputs.intent.php_input.configure || steps["Read local PHP tuning"].outputs.current.exists
@@ -2552,6 +2576,10 @@ jobs:
     - step: Check PHP runtime
       condition:
         type: always
+    - step: Write Schedule services
+      condition:
+        type: always
+    concurrency: 1
     forEach:
       item: member
       in: ${{ inputs.intent.process_members }}
@@ -2577,6 +2605,9 @@ jobs:
     writes: true
     dependsOn:
     - step: Refresh PHP cache
+      condition:
+        type: always
+    - step: Check PHP runtime
       condition:
         type: always
     task:
@@ -2606,6 +2637,9 @@ jobs:
     writes: true
     dependsOn:
     - step: Write Schedule services
+      condition:
+        type: always
+    - step: Install Processes
       condition:
         type: always
     task:
@@ -2664,6 +2698,9 @@ jobs:
     - step: Read Schedule timers
       condition:
         type: always
+    - step: Restart Processes
+      condition:
+        type: always
     task:
       type: assert
       severity: high
@@ -2677,6 +2714,15 @@ jobs:
       condition:
         type: always
     - step: Install Processes
+      condition:
+        type: always
+    - step: Install Schedule timers
+      condition:
+        type: always
+    - step: Read Schedule timers
+      condition:
+        type: always
+    - step: Check PHP runtime
       condition:
         type: always
     writes: true
@@ -2721,6 +2767,9 @@ jobs:
       condition:
         type: always
     - step: Check Schedule timers
+      condition:
+        type: always
+    - step: Check PHP runtime
       condition:
         type: always
     writes: true
@@ -2774,6 +2823,12 @@ jobs:
       condition:
         type: always
     - step: Run after steps
+      condition:
+        type: always
+    - step: Check Schedule timers
+      condition:
+        type: always
+    - step: Check PHP runtime
       condition:
         type: always
     allowFailure: true
@@ -2886,6 +2941,9 @@ jobs:
     - step: Check PHP runtime
       condition:
         type: always
+    - step: Check Schedule timers
+      condition:
+        type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
     task:
       type: behavior
@@ -2947,6 +3005,9 @@ jobs:
     - step: Read current back
       condition:
         type: always
+    - step: Check Process state
+      condition:
+        type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}
     task:
       type: behavior
@@ -2986,6 +3047,12 @@ jobs:
       role: swamp
     dependsOn:
     - step: Read current back
+      condition:
+        type: always
+    - step: Check Process state
+      condition:
+        type: always
+    - step: Read container state
       condition:
         type: always
     guard: ${{ inputs.intent.deployment.variant != "production" || steps.exists(k, steps[k].status in ["failed", "cancelled"] && !k.startsWith("Find releases in use") && !k.startsWith("Clean up releases")) }}

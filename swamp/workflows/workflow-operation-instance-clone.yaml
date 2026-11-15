@@ -263,9 +263,12 @@ jobs:
       condition:
         type: succeeded
     - step: Make a CSR on the Node
-      condition: *id001
+      condition: &not_failed
+        type: not
+        condition:
+          type: failed
     - step: Sign the CSR
-      condition: *id001
+      condition: *not_failed
     - step: Publish preview Route
       condition: *id001
   - name: Remove the snapshot

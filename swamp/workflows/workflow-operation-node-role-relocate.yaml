@@ -163,7 +163,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     guard: '${{ inputs.intent.websocket == null }}'
-    dependsOn: [{step: 'Enable Reverb', condition: {type: succeeded}}]
+    dependsOn: [{step: 'Enable Reverb', condition: {type: succeeded}}, {step: 'Route the private domain', condition: {type: always}}]
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
@@ -176,6 +176,7 @@ jobs:
     labels: {role: swamp}
     writes: true
     allowFailure: true
+    dependsOn: [{step: 'Enable Reverb', condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}]
     concurrency: 1
     forEach: {item: route, in: '${{ inputs.intent.gateway == null ? [] : inputs.intent.gateway.route }}'}
     task:

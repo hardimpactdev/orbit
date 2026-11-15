@@ -87,7 +87,7 @@ jobs:
         mode: ${{ self.file.mode }}
         content: '${{ "content" in self.file ? self.file.content : "" }}'
   - name: reload_units
-    dependsOn: [{step: files, condition: *done}]
+    dependsOn: [{step: files, condition: {type: not, condition: {type: failed}}}, {step: directories, condition: *done}, {step: downloads, condition: {type: always}}]
     <<: *effect
     task:
       type: behavior
