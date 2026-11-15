@@ -719,6 +719,21 @@ describe('project:update', function (): void {
         expect($refusedClient->getLastRequest())->toBeNull();
     })->with(['the program name' => 'conn-server', 'empty' => '']);
 
+    it('shows what the agents of the Project\'s next copies read', function (array $instructions, string $line): void {
+        MockClient::global([
+            ShowProjectRequest::class => MockResponse::make(['data' => [...app_payload(), 'agent_instructions' => $instructions], 'meta' => ['request_id' => app_request_id()]]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('Agent instructions')->toContain($line);
+    })->with([
+        'the Project\'s own' => [['source' => 'project', 'agents_md_version' => 3, 'skills' => ['release-notes']],
+            'project: agent/AGENTS.md v3, skills: release-notes'],
+        'skills only' => [['source' => 'project', 'agents_md_version' => null, 'skills' => ['release-notes']], 'project: skills: release-notes'],
+        'none' => [['source' => 'type_note', 'agents_md_version' => null, 'skills' => []], 'type note'],
+    ]);
+
     it('shows the Project container server', function (): void {
         MockClient::global([
             ShowProjectRequest::class => MockResponse::make(['data' => [...app_payload(), 'container_server' => 'conn'], 'meta' => ['request_id' => app_request_id()]]),

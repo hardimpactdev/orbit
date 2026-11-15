@@ -1688,7 +1688,7 @@ class T3PhaseTest(unittest.TestCase):
     VALUE = {"environment": "KEY=" + KEY + "\n", "processes": {}, "merge": None}
     SESSIONS = {"gateway": {"token": "fake-gateway-session-1a"}, "swamp": {"token": "fake-swamp-session-2b"}}
 
-    def phase(self, phase="t3", fail=None, timeout=None, cached=None):
+    def phase(self, phase="t3", fail=None, timeout=None, cached=None, clone=None):
         account = pwd.getpwuid(os.getuid())
         calls = []
 
@@ -1720,7 +1720,9 @@ class T3PhaseTest(unittest.TestCase):
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "ready_at": "2026-11-13T21:00:00+00:00"}), "")
             return subprocess.CompletedProcess(argv, 0, "abc123\n", "")
 
-        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": fetched_mirror(self), "branch": "proof", "php": None}
+        container = {"name": "instance-proof", "project": "orbit-instances", "mirror": fetched_mirror(self), "branch": "proof", "php": None,
+                     **({} if clone is None else {"clone": clone})}
+        self.calls = calls
         output, error = io.StringIO(), io.StringIO()
         code = 0
         with tempfile.TemporaryDirectory() as folder, (
@@ -1768,8 +1770,14 @@ console.log(created.stdout);
             return receipt["failed_step"], receipt["error_code"]
 
     def test_runs_the_checkout_beside_the_agent_and_t3_then_checks_the_sessions(self):
-        code, guest, output, error = self.phase()
+        content = {"folder": "/home/agent/.config/orbit/agent", "files": [{"path": "AGENTS.md", "content": "PROJECT-TEXT"}]}
+        code, guest, output, error = self.phase(clone={"agent_instructions": content})
         self.assertEqual((code, error), (0, ""))
+        # Only the agent part gets the agent folder's content in its one argument (development-containers.md#agent-instructions).
+        intents = {argv[argv.index("python3") + 3]: json.loads(argv[argv.index("python3") + 4]) for argv, _ in self.calls if "python3" in argv}
+        self.assertEqual(intents["agent"]["clone"]["agent_instructions"], content)
+        for member in ("checkout", "t3", "sessions"):
+            self.assertNotIn("agent_instructions", intents[member]["clone"], member)
         members = [member for member, _ in guest]
         # The checkout runs beside the agent part and T3; the agent part comes before T3, and the sessions check comes last.
         self.assertEqual(sorted(members), ["agent", "checkout", "sessions", "t3"])

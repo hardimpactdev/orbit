@@ -18,18 +18,21 @@ use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
 use App\Domain\Instances\Environment\InstanceEnvironmentStore;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceImage;
 use App\Domain\Instances\InstanceLifecycleContributions;
 use App\Domain\Instances\InstanceMachineName;
+use App\Domain\Instances\InstanceNotes;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\VitePreset;
 use App\Domain\Processes\VpDevPreset;
+use App\Domain\Projects\ProjectAgentInstructionSource;
 use App\Domain\Projects\ProjectEnvironmentTemplateRefresh;
 use App\Domain\Projects\ProjectSourceReader;
 use App\Domain\Projects\ProjectType;
@@ -283,7 +286,7 @@ describe('a clone of the container default', function (): void {
                 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"])
             ->and($clone['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
-            ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
+            ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/home/agent/.config/orbit/agent/AGENTS.md'])
             // WireGuard peers reach T3, the task VM range first refused.
             ->and($container['firewall'])->toBe([
                 ['route' => 'yes', 'interface_in' => 'orbit', 'interface_out' => 'orbitinst0', 'to_ip' => '10.253.0.3', 'to_port' => '3773', 'proto' => 'tcp',
@@ -1879,5 +1882,134 @@ describe('the server a container records', function (): void {
 
         expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 'conn']))
             ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
+    });
+});
+
+/**
+ * The Project's agent folder as a source answers it (DocumentsAgentInstructionsTest proves the Documents one): `$files` by path, and the
+ * paths whose body was read.
+ *
+ * @param  array<string, string>  $files
+ */
+function agentSource(array $files): object
+{
+    $source = new class($files) implements ProjectAgentInstructionSource
+    {
+        /** @var list<string> */
+        public array $read = [];
+
+        /** @param array<string, string> $files */
+        public function __construct(public array $files) {}
+
+        public function files(Project $project): array
+        {
+            return array_map(fn (string $content): array => ['bytes' => strlen($content), 'read' => function () use ($content): string {
+                $this->read[] = $content;
+
+                return $content;
+            }], $this->files);
+        }
+
+        public function summary(Project $project): ?array
+        {
+            return null;
+        }
+    };
+    app()->instance(InstanceAgentInstructions::class, new InstanceAgentInstructions([$source]));
+
+    return $source;
+}
+
+describe('the agent instructions of a clone', function (): void {
+    it('fills the copy\'s own agent folder from the type note and the Project\'s agent files, and links both agents to it', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node, ProjectType::NodePackage);
+        agentSource(['AGENTS.md' => "Run composer test before you commit.\n", '.skills/release-notes/SKILL.md' => "---\nname: release-notes\n---\nWrite the notes.\n",
+            '.skills/release-notes/template.md' => "# Notes\n", 'specs.md' => 'not an instruction']);
+
+        $clone = ValidatedData::object(containerIntentOf(containerCreate($default->project, $node, 'feature'))['clone']);
+        $note = InstanceNotes::all()['package'];
+
+        expect($clone['links'])->toBe([
+            ['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/home/agent/.config/orbit/agent/AGENTS.md'],
+            ['path' => '/home/agent/.codex/AGENTS.md', 'target' => '/home/agent/.config/orbit/agent/AGENTS.md'],
+            ['path' => '/home/agent/.claude/skills', 'target' => '/home/agent/.config/orbit/agent/.skills'],
+            ['path' => '/home/agent/.agents/skills', 'target' => '/home/agent/.config/orbit/agent/.skills'],
+        ])
+            ->and($clone['agent_instructions'])->toBe(['folder' => '/home/agent/.config/orbit/agent', 'files' => [
+                ['path' => 'AGENTS.md', 'content' => rtrim($note, "\n")."\n\n# This Project\n\nRun composer test before you commit.\n"],
+                ['path' => '.skills/release-notes/SKILL.md', 'content' => "---\nname: release-notes\n---\nWrite the notes.\n"],
+                ['path' => '.skills/release-notes/template.md', 'content' => "# Notes\n"],
+            ]]);
+    });
+
+    it('gives a copy the version of its create: the next copy gets a changed AGENTS.md, the earlier one keeps its own', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $source = agentSource(['AGENTS.md' => "First.\n"]);
+        $first = containerCreate($default->project, $node, 'first');
+        $source->files = ['AGENTS.md' => "Second.\n"];
+
+        $second = containerCreate($default->project, $node, 'second');
+
+        expect(containerIntentOf($first->refresh())['clone']['agent_instructions']['files'][0]['content'])->toEndWith("# This Project\n\nFirst.\n")
+            ->and(containerIntentOf($second)['clone']['agent_instructions']['files'][0]['content'])->toEndWith("# This Project\n\nSecond.\n")
+            // A later intent of the first copy carries no content: only its create writes the folder.
+            ->and(app(InstanceContainer::class)->intent(Instance::query()->findOrFail($first->target_id),
+                InstanceRuntime::query()->where('instance_id', $first->target_id)->firstOrFail())['clone'])->not->toHaveKey('agent_instructions');
+    });
+
+    it('gives a Project without agent files the type note alone', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        agentSource([]);
+        $clone = ValidatedData::object(containerIntentOf(containerCreate($default->project, $node, 'feature'))['clone']);
+
+        expect($clone['agent_instructions'])->toBe(['folder' => '/home/agent/.config/orbit/agent', 'files' => [['path' => 'AGENTS.md', 'content' => InstanceNotes::all()['package']]]]);
+    });
+
+    it('reads no agent file for the default\'s own create', function (): void {
+        $node = containerDefaultNode();
+        $source = agentSource(['AGENTS.md' => 'x']);
+        $default = containerCreate(containerDefaultProject(), $node);
+
+        expect($source->read)->toBe([])
+            ->and(containerIntentOf($default)['clone'])->not->toHaveKey('agent_instructions');
+    });
+
+    it('refuses the create of a copy whose agent folder is too large, has a stray file in .skills, or is not text, before any record', function (array $files, string $code, int $read): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $source = agentSource($files);
+        $before = ['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count()];
+
+        expect(containerRefusal(fn () => containerCreate($default->project, $node, 'feature')))->toBe($code)
+            ->and(['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count()])->toBe($before)
+            // The limits hold before any body is read.
+            ->and(count($source->read))->toBe($read);
+    })->with([
+        'over 32 KiB' => [['AGENTS.md' => str_repeat('a', 20000), '.skills/a/SKILL.md' => str_repeat('b', 12769)], 'projects.agent_instructions_too_large', 0],
+        'over 32 files' => [array_combine(array_map(static fn (int $n): string => ".skills/s{$n}/SKILL.md", range(1, 33)), array_fill(0, 33, 'x')), 'projects.agent_instructions_too_large', 0],
+        'a file outside a skill folder' => [['.skills/README.md' => 'loose'], 'projects.agent_instructions_invalid', 0],
+        'a name with a space' => [['.skills/my skill/SKILL.md' => 'x'], 'projects.agent_instructions_invalid', 0],
+        'a name ..' => [['.skills/../SKILL.md' => 'x'], 'projects.agent_instructions_invalid', 0],
+        'not UTF-8' => [['AGENTS.md' => "\xff\xfe"], 'projects.agent_instructions_invalid', 1],
+        'a NUL byte' => [['AGENTS.md' => "a\0b"], 'projects.agent_instructions_invalid', 1],
+        'a control character' => [['AGENTS.md' => "a\x1bb"], 'projects.agent_instructions_invalid', 1],
+    ]);
+
+    it('takes exactly 32 files of 32 KiB, and the escaped intent of the largest stays one command argument', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        // Two UTF-8 bytes that JSON escapes to six: the escape's worst case for text.
+        $files = array_combine(array_map(static fn (int $n): string => ".skills/s{$n}/SKILL.md", range(1, 32)), array_fill(0, 32, str_repeat('é', 512)));
+        agentSource($files);
+
+        $container = containerIntentOf(containerCreate($default->project, $node, 'feature'));
+        expect($container['clone']['agent_instructions']['files'])->toHaveCount(33)
+            ->and(array_sum(array_map(strlen(...), $files)))->toBe(InstanceAgentInstructions::MaxBytes)
+            // The guest's agent part takes the intent as one argument, which Linux holds to 128 KiB; the margin covers Python's spaced
+            // separators and a few Process units (instance_clone.py gives the other parts the intent without this content).
+            ->and(strlen(json_encode($container, JSON_THROW_ON_ERROR)))->toBeLessThan(120 * 1024);
     });
 });

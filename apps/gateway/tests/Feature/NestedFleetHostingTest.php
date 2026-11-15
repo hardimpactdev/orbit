@@ -11,6 +11,7 @@ use App\Domain\Instances\BaselineNormalInstanceHostIntent;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\Deployment\InstanceDeploymentIntent;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
@@ -322,6 +323,8 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             // The fourth change: the drop-in that names the runtime's container server (development-containers.md#container-server).
             $expected['clone']['files'][] = ['path' => InstanceContainer::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                 'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"];
+            // The fifth change: a clone's agents read its own agent folder, which its create fills (development-containers.md#agent-instructions).
+            $expected['clone']['links'] = InstanceAgentInstructions::links();
             expect(array_column($actual['clone']['files'], 'before_start', 'path'))->toBe(['/etc/orbit/instance' => true,
                 '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true, InstanceContainer::T3BootDropIn => true,
                 InstanceContainer::ServerDropIn => true]);
