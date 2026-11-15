@@ -525,6 +525,8 @@
   vars:
     container_php_ini_path: /etc/orbit/php/conf.d/99-orbit-runtime.ini
     container_php_ini_content: "memory_limit = 1G\nauto_prepend_file = /opt/orbit-runtime/current/php-data-bridge/bridge/prepend.php\n"
+    container_php_cli_ini_path: /etc/orbit/php/php-cli.ini
+    container_php_cli_ini_content: "{{ container.php_cli_ini | default(none) or '' }}"
   block:
     - name: Read the container's PHP settings
       ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_ini_path] }}" }
@@ -539,6 +541,32 @@
           container.name ~ container_php_ini_path] }}
         stdin: "{{ container_php_ini_content }}"
         stdin_add_newline: false
+      notify: Restart the running Orbit units after changed PHP settings
+      changed_when: true
+    # The CLI-only file: the Gateway renders one `extension=` line for each CLI-only extension of the Project's static build, such
+    # as PCOV, or none (docs/reference/php-runtime.md#pcov-in-the-cli-only). PHP reads `php-<SAPI name>.ini` in the config path
+    # (main/php_ini.c), and reads `php.ini` there only when it finds none; Orbit writes no `php.ini`. `php` and `frankenphp php-cli`
+    # have the SAPI name `cli`, so both read the file. Only the FrankenPHP server, with the SAPI name `frankenphp`, never does.
+    - name: Read the container's CLI-only PHP settings
+      ansible.builtin.command: { argv: "{{ as_root + ['cat', '--', container_php_cli_ini_path] }}" }
+      register: container_php_cli_ini_read
+      changed_when: false
+      failed_when: container_php_cli_ini_read.rc != 0 and 'No such file or directory' not in container_php_cli_ini_read.stderr
+    - name: Write the changed CLI-only PHP settings
+      when: >-
+        container_php_cli_ini_content != ''
+        and (container_php_cli_ini_read.rc != 0 or container_php_cli_ini_read.stdout ~ '\n' != container_php_cli_ini_content)
+      ansible.builtin.command:
+        argv: >-
+          {{ incus_project + ['file', 'push', '--create-dirs', '--uid', '0', '--gid', '0', '--mode', '0644', '-',
+          container.name ~ container_php_cli_ini_path] }}
+        stdin: "{{ container_php_cli_ini_content }}"
+        stdin_add_newline: false
+      notify: Restart the running Orbit units after changed PHP settings
+      changed_when: true
+    - name: Remove the CLI-only PHP settings of a Project without them
+      when: container_php_cli_ini_content == '' and container_php_cli_ini_read.rc == 0
+      ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_php_cli_ini_path] }}" }
       notify: Restart the running Orbit units after changed PHP settings
       changed_when: true
     # Finish the restart dispatch before any readiness check later in the phase.

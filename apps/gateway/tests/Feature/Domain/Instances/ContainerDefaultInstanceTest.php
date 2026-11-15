@@ -228,6 +228,31 @@ it('links the Project\'s php for every PATH in the container, and no version the
     expect(app(InstanceContainer::class)->intent($instance->refresh(), $runtime)['php'])->toBeNull();
 });
 
+it('gives the Project\'s PHP CLI, and only the CLI, each CLI-only extension of its static build', function (): void {
+    // A recipe whose 8.5 build is published, so the case holds while the shipped pin waits for its SHA-256 (ADR 0262).
+    $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), false, flags: JSON_THROW_ON_ERROR);
+    $recipe->instances->php->versions->{'8.5'}->sha256 = str_repeat('a', 64);
+    $home = sys_get_temp_dir().'/published-php-'.bin2hex(random_bytes(6));
+    mkdir($home.'/release/apps/gateway/resources/machine-software', 0700, true);
+    symlink('release', $home.'/orbit');
+    file_put_contents($home.'/orbit/apps/gateway/resources/machine-software/recipe.json', json_encode($recipe, JSON_THROW_ON_ERROR));
+    config(['orbit.gateway_checkout' => $home.'/orbit/apps/gateway']);
+    $node = containerDefaultNode();
+    $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');
+    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => 'default', 'checkout_path' => '/x', 'root' => 'public']);
+    $runtime = InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
+        'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
+        'power_state' => InstanceRuntimePowerState::Stopped]);
+    $node->forceFill(['instance_bridge' => '10.253.0.0/24'])->save();
+
+    expect(app(InstanceContainer::class)->intent($instance, $runtime)['php_cli_ini'])
+        ->toBe("extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n");
+
+    $project->forceFill(['php_version' => '7.4'])->save();
+
+    expect(app(InstanceContainer::class)->intent($instance->refresh(), $runtime)['php_cli_ini'])->toBeNull();
+});
+
 it('serves a container Instance\'s Route by proxying to FrankenPHP at its bridge address, with no PHP pool on the Node', function (): void {
     $node = containerDefaultNode();
     $project = containerDefaultProject(ProjectType::LaravelApp, '8.5');

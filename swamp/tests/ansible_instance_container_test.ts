@@ -138,6 +138,7 @@ function fixture() {
     units: [{ name: "orbit-frankenphp.service", content: "[Service]\nUser=orbit\n" }],
     web_config: { path: "/etc/orbit/frankenphp.Caddyfile", content: ":8080 {\n    php_server\n}\n" },
     php: "/opt/orbit-runtime/current/php/8.5/bin/php" as string | null,
+    php_cli_ini: "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n" as string | null,
     processes: [] as { id: number; name: string; content: string; environment: string | null; desired: string }[],
   };
   const ssh_execution = {
@@ -1854,6 +1855,50 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
       assertEquals(tryRestarts().length, before + 1);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "container PHP CLI reads the CLI-only php-cli.ini with the Project's PCOV, a change restarts the running units, and a Project without it has no file",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    const path = "/etc/orbit/php/php-cli.ini";
+    const file = `${f.folder}/containers/instance-7${path}`;
+    const pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n";
+    const tryRestarts = () =>
+      (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
+    try {
+      const created = f.run("container");
+      assert(created.ok, created.output);
+      assertEquals(Deno.readTextFileSync(file), pcov);
+      assertEquals(f.state().files[path], { uid: "0", gid: "0", mode: "0644" });
+      const again = f.run("start");
+      assert(again.ok, again.output);
+      assertEquals(again.changed, 0, again.output);
+
+      // A queue worker is a PHP CLI too: a repair restarts the running Orbit units.
+      let before = tryRestarts().length;
+      Deno.writeTextFileSync(file, "extension=/tmp/other.so\n");
+      const repaired = f.run("start");
+      assert(repaired.ok, repaired.output);
+      assertEquals(Deno.readTextFileSync(file), pcov);
+      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
+
+      f.container.php = null;
+      f.container.php_cli_ini = null;
+      f.write();
+      before = tryRestarts().length;
+      const removed = f.run("start");
+      assert(removed.ok, removed.output);
+      assertThrows(() => Deno.lstatSync(file));
+      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
+      const stable = f.run("start");
+      assert(stable.ok, stable.output);
+      assertEquals(stable.changed, 0, stable.output);
     } finally {
       f.cleanup();
     }
