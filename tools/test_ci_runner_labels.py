@@ -13,7 +13,7 @@ HOSTED = re.compile(r'(ubuntu|macos|windows)-[\w.]+')
 
 def shared_labels():
     """The one label set that tools/ci-runners/setup.sh gives every runner."""
-    found = re.findall(r'^LABELS=(\S+)$', (ROOT / 'tools/ci-runners/setup.sh').read_text(), re.M)
+    found = re.findall(r'^LABELS=(\S+)$', (ROOT / 'tools/ci-runners/setup.sh').read_text(), re.MULTILINE)
     assert len(found) == 1, found
     return set(found[0].split(','))
 

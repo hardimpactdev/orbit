@@ -527,7 +527,9 @@ The venv folder is `venv-<digest>`. The digest covers two things:
 - the pin files `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`
 - the Python interpreter that builds the venv: its version and its real path
 
-A venv runs only with the interpreter that built it. A venv of another interpreter can hold `.complete` and still fail, for example with `cannot load libpython3.13`. So when the interpreter changes, the name changes too, and the gate never reuses a venv of another interpreter. It builds a new one. The CI cache key of these tools covers the same interpreter version and real path beside the pin files, so CI never restores a venv of another interpreter. The task VM role playbook names its venv by the same rule.
+A venv runs only with the interpreter that built it. A venv of another interpreter can hold `.complete` and still fail, for example with `cannot load libpython3.13`.
+
+So when the interpreter changes, the name changes too, and the gate never reuses a venv of another interpreter. It builds a new one. The CI cache key of these tools covers the version and the path of the job's interpreter beside the pin files, so CI never restores a venv of another interpreter. The rule lives in one file, `swamp/ansible/shape_tool_names.py`. The gate runs it in its own interpreter. The task VM role playbook runs it on the VM with the `python3` that builds the venv there.
 
 Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups at the front of the queue: updates and ACL cases in one; host, image and runtime cases in the other. At most two Instance host playbooks run at once, leaving workers for the other checks. The updates and ACL cases measured 356 and 257 seconds on ci-shark-2, or 613 seconds together. The image/runtime group must not also carry those ACL cases.
 
