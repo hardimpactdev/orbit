@@ -5,6 +5,7 @@ permissions:
   contents: read
   actions: read
   statuses: write
+  pull-requests: write
 jobs:
   consumer:
     uses: ./.github/workflows/ci-deferred.yml

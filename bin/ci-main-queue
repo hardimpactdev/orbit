@@ -174,9 +174,13 @@ def fixture_plan(claim, output):
     return plan
 
 
-def fixture_report(claim, plan_path, results, shard_result):
+def fixture_report(claim, plan_path, results, shard_result, plan_result):
     plan = json.loads(plan_path.read_text()) if plan_path.exists() else {**claim, 'shards': [], 'units': [], 'fixtures': {}, 'planner_error': 'Plan missing'}
+    if any(plan.get(key) != value for key, value in claim.items()):
+        plan = {**claim, 'shards': [], 'units': [], 'fixtures': {}, 'planner_error': 'Fixture plan does not match the claimed SHA, range and attempt'}
     problems, warnings = full.reconcile(plan, results, shard_result)
+    if plan_result != 'success':
+        problems.append({'unit': 'fixture planner job', 'reason': 'Planner ended ' + plan_result, 'files': []})
     return {'claim': claim, 'passed': not problems, 'range_covered': True, 'problems': problems, 'warnings': warnings,
             'planned_cases': plan.get('cases_total'), 'planned_units': len(plan['units']), 'plan': plan}
 
@@ -219,6 +223,7 @@ def main():
     parser.add_argument('--results', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--shard-result', default='failure')
+    parser.add_argument('--plan-result', default='failure')
     parser.add_argument('--run-id')
     args = parser.parse_args()
     github = full.GitHub()
@@ -248,7 +253,7 @@ def main():
             output.write('has_shards=' + str(bool(plan['shards'])).lower() + '\n')
         return 0
     if args.command == 'report':
-        report = fixture_report(claim, args.plan, args.results, args.shard_result)
+        report = fixture_report(claim, args.plan, args.results, args.shard_result, args.plan_result)
         full.save(args.output, report)
         return 0  # Publication owns the job verdict, so a red report is always uploaded first.
     report = json.loads(args.output.read_text())

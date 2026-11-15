@@ -83,6 +83,20 @@ class QueueTest(unittest.TestCase):
         self.assertFalse(result['passed'])
         self.assertEqual(2, result['claim']['attempt'])
 
+    def test_old_empty_plan_cannot_green_a_new_claim_and_failed_planner_never_greens(self):
+        current = claim()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'plan.json'
+            empty = {**current, 'shards': [], 'units': [], 'fixtures': {}, 'empty_selection': True}
+            for stale in ({'sha': B}, {'attempt': 0}, {'commits': [B]}):
+                path.write_text(json.dumps({**empty, **stale}))
+                result = q.fixture_report(current, path, Path(directory), 'skipped', 'success')
+                self.assertFalse(result['passed'], stale)
+                self.assertIn('does not match', str(result['problems']))
+            path.write_text(json.dumps(empty))
+            self.assertFalse(q.fixture_report(current, path, Path(directory), 'skipped', 'failure')['passed'])
+            self.assertTrue(q.fixture_report(current, path, Path(directory), 'skipped', 'success')['passed'])
+
     def test_outside_or_unfinished_runs_are_never_settled(self):
         for run in [dict(status='in_progress', head_branch='main', event='push', path='.github/workflows/ci-deferred.yml'),
                     dict(status='completed', head_branch='branch', event='push', path='.github/workflows/ci-deferred.yml'),
@@ -159,6 +173,33 @@ class RangePlanTest(unittest.TestCase):
                 self.assertRaisesRegex(ValueError, 'historical deferred cases no longer registered: old'):
             deferred.build_range(A, B, [B])
 
+
+    def test_new_unregistered_grouped_and_dotted_tests_keep_capacity_deferrals(self):
+        deferred = q.deferred
+        api = deferred.full.api()
+        budget = {**api.configuration()[0], 'pr_shards': 1, 'shard_workers': 1}
+        kept = 'swamp/tests/kept_test.ts'
+        fixture = {'file': kept, 'cost': 144, 'slices': False, 'inputs': ['bin/ci-units'],
+                   'mandatory_cases': {'bin/ci-units': ['kept']}}
+        config = {'budget': budget, 'fixtures': {'default': [kept]}, 'fixture': [fixture]}
+        inventory = {kept: {'cases': ['kept']}}
+        for new in ('swamp/extensions/behaviors/automatic-deploy/new_test.ts', 'swamp/tests/new.test.ts',
+                    'swamp/tests/test.mts', 'swamp/extensions/behaviors/projects/new.test.js'):
+            tracked = [kept, new]
+            paths = ['bin/ci-units', new]
+            fixtures = {file: {'file': file, 'cost': budget['default_cost'], 'inputs': []} for file in api.fixture_steps(tracked)}
+            fixtures[kept] = {**fixture, **inventory[kept]}
+            actual = api.plan(paths, budget, fixtures, [kept])
+            self.assertFalse(actual.get('capacity_failure'), actual)
+            self.assertEqual([new], actual['deferred'])
+            with patch.object(deferred.full, 'git', side_effect=['\n'.join(tracked), '\n'.join(paths)]):
+                wanted, _, _ = deferred.historical_request(A, B, lambda _rev: (config, inventory))
+            self.assertEqual({new: None}, wanted, new)
+
+    def test_current_working_tree_and_git_tree_share_fixture_discovery(self):
+        api = q.deferred.full.api()
+        tracked = subprocess.check_output(['git', 'ls-files', 'swamp'], cwd=ROOT, text=True).splitlines()
+        self.assertEqual(set(api.fixture_steps()), set(api.fixture_steps(tracked)))
 
     def test_real_git_history_unions_old_and_new_deferrals_even_when_input_is_reverted(self):
         deferred = q.deferred
@@ -249,6 +290,11 @@ class WorkflowTest(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
         jobs = workflow['jobs']
         self.assertEqual('claim', jobs['plan']['needs'])
+        for name in ('claim', 'report'):
+            self.assertEqual('write', jobs[name]['permissions']['pull-requests'])
+        for name in ('ci-main-report.yml', 'ci-full-set.yml'):
+            source = yaml.safe_load((ROOT / '.github/workflows' / name).read_text())
+            self.assertEqual('write', source['permissions']['pull-requests'])
         self.assertTrue(any(step.get('with', {}).get('name') == 'main-queue-claim' for step in jobs['claim']['steps']))
         steps = jobs['report']['steps']
         upload = next(i for i, step in enumerate(steps) if step.get('with', {}).get('name') == 'main-queue-report')

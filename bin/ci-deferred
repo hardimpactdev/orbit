@@ -71,11 +71,10 @@ def historical_request(base, sha, read_revision=None):
     budget = config['budget']
     fixtures = {f['file']: {'cost': budget['default_cost'], 'inputs': [], **f, **inventory.get(f['file'], {})}
                 for f in config['fixture']}
-    # An unregistered historical test still needs a whole-file answer if it was omitted.
-    tracked = full.git('ls-tree', '-r', '--name-only', sha, '--', 'swamp/tests').splitlines()
-    for file in tracked:
-        if '/_support/' not in file and '/fixtures/' not in file and file.endswith(('_test.ts', '_test.py')):
-            fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
+    # Use Required's discovery too: grouped extension tests and every Deno test suffix can be unregistered.
+    tracked = full.git('ls-tree', '-r', '--name-only', sha, '--', 'swamp').splitlines()
+    for file in fixture_api.fixture_steps(tracked):
+        fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
     paths = full.git('diff', '--name-only', base, sha).splitlines()
     old = {f['file']: f for f in before['fixture']}
     new = {f['file']: f for f in config['fixture']}
