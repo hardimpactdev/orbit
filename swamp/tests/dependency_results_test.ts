@@ -10,6 +10,7 @@ import {
     batchEvidence,
     BatchEvidenceSchema,
 } from "../extensions/behaviors/_lib/service_detection.ts";
+import { refreshLifecycle } from "../extensions/behaviors/_lib/dependency_results.ts";
 const A = "a".repeat(40), time = "2026-10-28T01:00:00.000Z";
 const project = DependencyProjectSchema.parse({
     projectId: 20,
@@ -204,4 +205,62 @@ Deno.test("PR refresh projects real immutable batch targets into its publication
     }]);
     assertEquals(target.purpose, "security");
     assertEquals(target.advisories, ["1243066"]);
+});
+
+Deno.test("an index whose report data retention deleted is left unrefreshed instead of failing", async () => {
+    const fixture = JSON.parse(
+        await Deno.readTextFile(
+            new URL(
+                "./fixtures/dependency-results-v1/success.json",
+                import.meta.url,
+            ),
+        ),
+    );
+    const snapshot = fixture.snapshots[0];
+    const index = IndexSchema.parse(
+        JSON.parse(snapshot.index.response.payload.data.content),
+    );
+    const reports = new Map<string, unknown>();
+    for (const r of snapshot.reports) {
+        const report = ReportSchema.parse(
+            JSON.parse(r.response.payload.data.content),
+        );
+        const pointer = index.sources.find((s) =>
+            s.report?.publication_id === report.publication_id &&
+            s.path === report.path
+        )!.report!;
+        reports.set(`${pointer.dataName}@${pointer.version}`, report);
+    }
+    const store = {
+        readIndex: () => Promise.resolve(null),
+        readReport: (name: string, version: number) =>
+            Promise.resolve((reports.get(`${name}@${version}`) ?? null) as never),
+        writeIndex: () => Promise.reject(new Error("no index write")),
+        writeReport: () => Promise.reject(new Error("no report write")),
+    };
+    // A batch link to the first source's finding would rewrite both the report and the index.
+    const [first] = index.sources;
+    const report = ReportSchema.parse(
+        reports.get(`${first.report!.dataName}@${first.report!.version}`),
+    );
+    const finding = report.findings.find((f) => f.target_version);
+    const links = finding
+        ? [{
+            group_id: 1,
+            run_id: "batch-run",
+            targets: [{
+                path: first.path,
+                manager: first.ecosystem === "composer" ? "composer" : "js",
+                package: finding.package,
+                version: finding.target_version!,
+            }],
+        }]
+        : [];
+    // Retention deleted the second source's report version.
+    const second = index.sources[1].report!;
+    reports.delete(`${second.dataName}@${second.version}`);
+    assertEquals(
+        await refreshLifecycle(index, index.batch_pr, links, store, time),
+        index,
+    );
 });

@@ -18,7 +18,8 @@ import {
 
 export interface ResultStore {
     readIndex(name: string): Promise<Index | null>;
-    readReport(name: string, version: number): Promise<Report>;
+    /** Null when the report version is gone (Swamp data retention deletes it after 7 days). */
+    readReport(name: string, version: number): Promise<Report | null>;
     writeIndex(name: string, value: Index): Promise<void>;
     writeReport(
         name: string,
@@ -107,18 +108,26 @@ export async function refreshLifecycle(
     store: ResultStore,
     now: string,
 ): Promise<Index> {
+    // Every report is read before anything is written. Swamp data retention deletes a report version after 7 days,
+    // and no scan publishes a fresh one: an index that points to a deleted report is left as it is, unrefreshed. The
+    // Gateway shows its cached copy as stale; the Project's observation does not fail on it.
     const id = crypto.randomUUID(), next = structuredClone(index);
+    const stored = new Map<(typeof next.sources)[number], Report>();
+    for (const source of next.sources) {
+        if (!source.report) continue;
+        const report = await store.readReport(
+            source.report.dataName,
+            source.report.version,
+        );
+        if (report === null) return index;
+        stored.set(source, report);
+    }
     const observation = coalescePr(index.batch_pr, pr);
     let changed = canonical(index.batch_pr) !== canonical(observation);
     next.batch_pr = observation;
     for (const source of next.sources) {
         if (!source.report) continue;
-        const report = ReportSchema.parse(
-            await store.readReport(
-                source.report.dataName,
-                source.report.version,
-            ),
-        );
+        const report = ReportSchema.parse(stored.get(source)!);
         if (
             report.project_id !== index.project_id ||
             report.repository !== index.repository ||

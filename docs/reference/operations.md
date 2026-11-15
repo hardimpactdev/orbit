@@ -86,6 +86,12 @@ Thirty minutes is more than twice the longest run on Node 209 (790 s, a task VM 
 
 A key is filed once two fires at least 10 minutes apart report it. The first later fire that does not report a key resolves it. A replayed or older run changes nothing. Large auto-definition directories are the known cause of high serve CPU ([Lab #4280](https://swamp-club.com/lab/4280)).
 
+Model data is kept 7 days (`data: 7d`). The same hourly pass deletes every data version created before the cutoff, the latest version included; only Swamp's control-plane records, such as grants, groups, tokens, workers and step leases, are exempt. Every serve stall that follows a catalog rebuild grows with the number of data versions, so this bound keeps it short.
+
+Data a later run reads must be written again within the 7 days. The automatic deploy policy memory is, by its [hourly refresh](/reference/deployments#automatic-deployments). Most other Swamp records that Orbit reads are written in the run or Operation that reads it, or are caches that a later run rebuilds. Two are not. A [dependency index or report](/reference/instance-dependency-contracts) older than 7 days is gone: the Gateway shows its cached copy as stale, then as unavailable. A dependency upgrade plan is gone after 7 days, so an approval later than that fails its run.
+
+A pass deletes in batches of 100 versions, one version at a time, for at most 5 minutes across all retention kinds. Serve's writes wait for at most one batch. A backlog larger than one pass clears over the next hourly passes.
+
 ## Swamp credential expiry alerts
 
 The native schedule `swamp-credential-monitor` runs every hour at minute 7 on the swamp role's workers on Node 209 ([Schedules of the Swamp Node](#schedules-of-the-swamp-node)). It is alert only: it reads expiry metadata and changes no credential or grant. Three plain command steps run as `orbit`, with no serve token and no `sudo`, and read these sources:
