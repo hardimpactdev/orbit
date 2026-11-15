@@ -2361,6 +2361,7 @@ A refresh does only the parts whose inputs changed, as the task VM refresh did. 
 | Read the fleet files, write those that differ | The fleet files' content | The digest differs, the converge runs (it needs the egress files), or `base` is retaken (a partly stopped fleet only compares) |
 | Wait for the state mounts, check the nested Gateway's services (one read), read the fleet's devices and keys, readiness | None | Every run |
 | Renew the nested Gateway's Swamp tokens, restart its services | The names and creation times of its six tokens; the record keeps the oldest | With the Club key, when the record's oldest token is missing or older than 20 days. See [The nested Gateway's tokens](#the-nested-gateways-tokens) |
+| Install the recipe's Swamp on the nested Gateway, restart Swamp on it | None: every run reads the recipe's release and the binary that serve runs | With the Club key, when serve does not run the recipe's release, or a read fails. See [The pinned Swamp](#the-pinned-swamp) |
 | Stop the fleet, apply the rules, retake `base` | See below | Only when the fleet's disks changed |
 | Build the pinned shape tools in the outer container | The checkout's three pin files, through `bin/swamp-shape-gate`, and four packages | The tools of these pins are not complete, or a package is missing. Every run reads them. See [The pinned shape tools](#the-pinned-shape-tools) |
 
@@ -2471,6 +2472,23 @@ The refresh then restarts the nested Gateway's services, because they read the n
 
 The remint takes about 1 to 3 minutes; the record then holds the time of the remint. A refresh that reads the list but does not remint takes about 2 seconds for it. A remint writes the nested Gateway's disk, so its `base` is retaken. A failed remint fails the refresh with `instance.container_fleet_refresh_failed`, its step "Renew the inner Swamp tokens", and the run restores the old seed. No token reaches a log line or the result. Without the Club key the nested Swamp does not run, and the tokens are `skipped`.
 
+#### The pinned Swamp
+
+The fleet build installs the nested Gateway's Swamp once, from the recipe of its commit. A release that moves the Swamp pin in the recipe (`apps/gateway/resources/machine-software/recipe.json`) reaches the nested fleet through the refresh, not through a rebuild.
+
+With the Club key, every refresh reads two things in the nested Gateway: the release that the checkout's recipe pins, with its sha256, and the binary that serve runs. The fleet build installs a release at `/usr/local/lib/orbit-swamp/<sha256>/swamp`, and the part uses the same path. It is due when serve does not run the recipe's release at that path, or when a read fails. A new default built at the recipe's release therefore installs nothing. When the part is due, the `swamp-pin` play of the nested Gateway (`gateway-swamp-pin.yml`) runs:
+
+1. It installs the release beside the old one, by checksum, through the egress proxy.
+2. It stops the workers and serve, links `/usr/local/bin/swamp` to the new binary, and starts serve.
+3. It waits for `/ready`, starts the workers, and checks that serve and each of the three workers run the new binary.
+4. It removes the folders of the other releases, about 290 MB each.
+
+The part takes about 20 s, most of it the download. It writes the nested Gateway's disk, so its `base` is retaken. The result names `swamp` (`installed`, `pinned` or `skipped`), `swamp_reason` (`changed`, `unreadable`, `pinned` or `no_key`) and `swamp_version`.
+
+A play that fails, or a serve or worker that does not come back on the new binary, fails the refresh with `instance.container_fleet_refresh_failed` and its step "Install the recipe's Swamp on the nested Gateway". The play removes the old release only after its check, and the run restores the old seed, and with it the old binary and link: both live on the nested Gateway's own disk.
+
+The seed is retaken after the readiness wait, when the inner Doctor is healthy. A copy made from it starts its inner serve on the new binary, with the Club key mounted from tmpfs as before. Without the Club key the nested Gateway's Swamp does not run, and the part reads nothing: `swamp: skipped`, `swamp_reason: no_key`.
+
 #### The pinned shape tools
 
 The proof runner in a copy needs the pinned Ansible controller of `bin/swamp-shape-gate`: a venv and the Ansible collections, about 160 MB. A copy gets the default's seed, not the image, and the default is never rebuilt from a new image. So every refresh keeps the tools in the default itself, after `base` and before the seed. Each copy then holds the tools of its own commit. No copy builds them, and no copy needs `python3-venv`.
@@ -2545,6 +2563,7 @@ The Operation's result has `fleet_refresh`. It holds these fields:
 - `tokens`: `reminted`, `young` or `skipped`. `tokens_reason`: `age`, `incomplete`, `unreadable`, `young`, `recorded` or `no_key`.
 - `tools`: `present`, `built` or `failed`. `tools_reason`: see [The pinned shape tools](#the-pinned-shape-tools).
 - `shrink`: `ran`, `relinked`, `failed` or `skipped`. `shrink_reason`: `record`, `packages`, `current` or `unreadable`. See [The inner machines stay small](#the-inner-machines-stay-small).
+- `swamp`: `installed`, `pinned` or `skipped`. `swamp_reason`: `changed`, `unreadable`, `pinned` or `no_key`. `swamp_version`: the release that the refresh read in the recipe (null without a read). See [The pinned Swamp](#the-pinned-swamp).
 - `base`: `retaken` or `kept`. `base_containers`: the containers whose `base` was retaken.
 - `record`: `present`, `missing` or `unreadable`. `seconds`: the seconds of each part.
 

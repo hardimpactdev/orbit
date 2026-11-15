@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "58b79084e3e7ce8b644d812cca8be230a550ee9cdf74822769b73674fe94dff3"
+source_sha256 = "7d8f12b0120a9b7151d595d923923554846ba6adbf8b454d99f9b0ffadd12fce"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -54,6 +54,10 @@ cases = [
   "tokens older than the bound are reminted before the services restart and the converge, and only the nested Gateway's base is retaken",
   "a fleet without worker c remints at once and names it incomplete",
   "a failed remint fails the refresh with its step, takes no base, writes no record and prints no token; an unreadable list remints",
+  "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads",
+  "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record",
+  "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release",
+  "a refresh without the Club key reads no Swamp release and installs none",
   "a container without the pinned shape tools gets them after base and before the record, and the next refresh only reads them",
   "a failed tools install never fails the refresh: it writes the record and names the step, a timeout or a lost result line",
   "a refresh whose migrate applied one keeps base and the fleet running, and a reset after it migrates up to the new schema",
@@ -70,8 +74,8 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2618
-slices = 67
+cost = 2780
+slices = 71
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",
@@ -90,6 +94,10 @@ inputs = [
 # ESTIMATE: ceil(seconds * 2.1) + 1; the planner adds 6s startup.
 # Other cases retain their earlier hosted or explicitly marked local estimates.
 [case_costs]
+  "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads" = 58 # hosted run 43730633700: 45s x 1.25, rounded up, plus 1s
+  "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record" = 10 # hosted run 43730633700: 7s x 1.25, rounded up, plus 1s
+  "a refresh without the Club key reads no Swamp release and installs none" = 19 # hosted run 43730633700: 14s x 1.25, rounded up, plus 1s
+"a fleet built at the recipe's release only reads; a read that fails runs the install and names no release" = 75 # hosted run 43730633700: 59s x 1.25, rounded up, plus 1s
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing" = 40
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads" = 24
   "a start that fails names the nested container, and a readiness timeout of a resumed fleet names the check" = 40 # ESTIMATE: prior local x 3, plus 1s

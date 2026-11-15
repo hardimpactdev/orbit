@@ -290,7 +290,7 @@ describe('the result of a start', function (): void {
         $instance = Instance::query()->findOrFail(containerCreate(clubProject('trial', true), clubSwitchedOnNode())->target_id);
         $refresh = ['migrate' => 'nothing', 'restart' => 'yes', 'converge' => 'ran', 'converge_reason' => 'stale', 'converge_nodes' => ['app-prod'], 'changed' => 0, 'tokens' => 'reminted', 'tokens_reason' => 'incomplete',
             'base' => 'kept', 'base_containers' => [], 'record' => 'present', 'tools' => 'built', 'tools_reason' => 'missing',
-            'shrink' => 'ran', 'shrink_reason' => 'packages',
+            'shrink' => 'ran', 'shrink_reason' => 'packages', 'swamp' => 'installed', 'swamp_reason' => 'changed', 'swamp_version' => '20261114.210101.0-sha.537e03d1',
             'seconds' => ['gateway' => 14, 'converge' => 70, 'ready' => 3, 'base' => 1, 'tools' => 34]];
         $deploy = static function (array $file) use ($instance): Operation {
             $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
@@ -335,6 +335,13 @@ describe('the result of a start', function (): void {
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['shrink' => true])])->result)->not->toHaveKey('fleet_refresh')
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'shrink' => 'skipped', 'shrink_reason' => 'current']])->result['fleet_refresh'])
             ->toBe([...$refresh, 'shrink' => 'skipped', 'shrink_reason' => 'current'])
+            // So are what it did with the nested Gateway's Swamp, why, and the release it read; a refresh that does not say is not recorded.
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'swamp' => 'upgraded']])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'swamp_reason' => 'newer']])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'swamp_version' => 'latest']])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => array_diff_key($refresh, ['swamp_version' => true])])->result)->not->toHaveKey('fleet_refresh')
+            ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'swamp' => 'skipped', 'swamp_reason' => 'no_key', 'swamp_version' => null]])->result['fleet_refresh'])
+            ->toBe([...$refresh, 'swamp' => 'skipped', 'swamp_reason' => 'no_key', 'swamp_version' => null])
             // Unknown parts of `seconds` are dropped.
             ->and($deploy(['commit' => $commit, 'fleet_refresh' => [...$refresh, 'seconds' => ['gateway' => 2, 'secret' => 'x']]])->result['fleet_refresh']['seconds'])
             ->toBe(['gateway' => 2]);

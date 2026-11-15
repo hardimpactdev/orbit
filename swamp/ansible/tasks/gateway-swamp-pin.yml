@@ -1,0 +1,84 @@
+---
+# The recipe's Swamp on a Gateway's own control plane, applied on that machine. The refresh of a nested-fleet default runs this on its
+# nested Gateway (instance-fleet-refresh.yml, the `swamp` part) when the binary that serve runs is not the one the checkout's recipe pins:
+# the fleet build installs Swamp once, and a later pin would otherwise never reach it (docs/reference/development-containers.md#the-pinned-swamp).
+# It installs the pinned release by checksum through the egress proxy that the caller passes, at the fleet build's path: the folder named by
+# the release's sha256 (workflow-gateway-bootstrap.yaml, "Install Swamp"). Then it stops the workers and serve, links `/usr/local/bin/swamp`
+# to the new binary, starts serve, waits for `/ready`, starts the workers, and checks that serve and each of the three workers run the new
+# binary. Only then does it remove the other releases' folders: a run that fails before leaves both binaries, and the refresh's restore
+# of the old seed replaces the nested Gateway's disk as a whole. `swamp_pin_root` and `swamp_pin_link` exist for the play's own test.
+- name: Read the recipe's Swamp
+  ansible.builtin.set_fact:
+    swamp_pin: "{{ (lookup('ansible.builtin.file', (control.repository | dirname) ~ '/apps/gateway/resources/machine-software/recipe.json') | from_json).tools.swamp }}"
+- name: Name the pinned binary
+  ansible.builtin.set_fact:
+    swamp_pin_folder: "{{ swamp_pin_root | default('/usr/local/lib/orbit-swamp') }}/{{ swamp_pin.artifacts.amd64.sha256 }}"
+    swamp_pin_units: [orbit-swamp-serve.service, orbit-swamp-worker@a.service, orbit-swamp-worker@b.service, orbit-swamp-worker@c.service]
+    # The caller passes the egress proxy in the play's environment; `become` drops it, so the download names it again.
+    swamp_pin_proxy: >-
+      {%- set out = {} -%}
+      {%- for name in ['HTTP_PROXY', 'HTTPS_PROXY', 'NO_PROXY', 'http_proxy', 'https_proxy', 'no_proxy'] -%}
+      {%-   set value = lookup('ansible.builtin.env', name) -%}
+      {%-   if value -%}{%- set _ = out.update({name: value}) -%}{%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+- name: Make the folder of the pinned binary
+  ansible.builtin.file: { path: "{{ swamp_pin_folder }}", state: directory, mode: '0755' }
+- name: Install the pinned Swamp binary
+  ansible.builtin.get_url:
+    url: "{{ swamp_pin.artifacts.amd64.url }}"
+    dest: "{{ swamp_pin_folder }}/swamp"
+    checksum: "sha256:{{ swamp_pin.artifacts.amd64.sha256 }}"
+    mode: '0755'
+    timeout: 120
+  environment: "{{ swamp_pin_proxy }}"
+- name: Stop the workers and serve
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', 'stop'] + swamp_pin_units[1:] + swamp_pin_units[:1] }}"
+  changed_when: true
+- name: Link the pinned Swamp executable
+  ansible.builtin.file:
+    path: "{{ swamp_pin_link | default('/usr/local/bin/swamp') }}"
+    src: "{{ swamp_pin_folder }}/swamp"
+    state: link
+    force: true
+    follow: false
+- name: Start serve
+  ansible.builtin.command:
+    argv: [systemctl, start, orbit-swamp-serve.service]
+  changed_when: true
+- name: Wait for serve to be ready
+  ansible.builtin.command:
+    argv: [curl, -sf, -o, /dev/null, --noproxy, '*', -m, '2', --retry, '60', --retry-delay, '1', --retry-connrefused, --retry-all-errors,
+           'http://127.0.0.1:9418/ready']
+  changed_when: false
+- name: Start the workers
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', 'start'] + swamp_pin_units[1:] }}"
+  changed_when: true
+# One line per unit: a unit without a main process prints an empty line, so the check sees it.
+- name: Read the binary that serve and the workers run
+  ansible.builtin.shell:
+    cmd: >-
+      for u in {{ swamp_pin_units | join(' ') }};
+      do echo "$(readlink -f "/proc/$(systemctl show -p MainPID --value "$u")/exe")"; done
+  register: swamp_pin_running
+  changed_when: false
+- name: Check that serve and the workers run the pinned binary
+  ansible.builtin.assert:
+    that: swamp_pin_running.stdout_lines == [swamp_pin_folder ~ '/swamp'] * 4
+    fail_msg: "Swamp runs {{ swamp_pin_running.stdout_lines | join(', ') }}, not {{ swamp_pin_folder }}/swamp"
+    quiet: true
+- name: Find the other Swamp releases
+  ansible.builtin.find:
+    paths: "{{ swamp_pin_root | default('/usr/local/lib/orbit-swamp') }}"
+    patterns: [swamp]
+    recurse: true
+    depth: 2
+  register: swamp_pin_releases
+- name: Remove the other Swamp releases
+  ansible.builtin.file: { path: "{{ item }}", state: absent }
+  loop: >-
+    {{ swamp_pin_releases.files | map(attribute='path')
+       | select('match', (swamp_pin_root | default('/usr/local/lib/orbit-swamp') | regex_escape) ~ '/[^/]+/swamp$')
+       | map('dirname') | reject('equalto', swamp_pin_folder) | unique | list }}

@@ -250,6 +250,17 @@ const intentRead = "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gatew
 const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- runuser -u orbit -- env HOME=/home/orbit SWAMP_HOME=/home/orbit/.swamp " +
   "SWAMP_CONFIG_DIR=/home/orbit/.config/swamp SWAMP_API_KEY_FILE=/home/orbit/.config/swamp/api-key SWAMP_NO_UPDATE_CHECK=1 SWAMP_NO_TELEMETRY=1 " +
   "swamp access token list --json";
+/** With the Club key every refresh reads the recipe's Swamp release and sha256, and the binary that the nested Gateway's serve runs. */
+const swampReads = [
+  'incus exec nested-gateway -- python3 -c import json, sys; s = json.load(open(sys.argv[1]))["tools"]["swamp"]; print(s["version"]); ' +
+  'print(s["artifacts"]["amd64"]["sha256"]) ' +
+  "/home/orbit/orbit/apps/gateway/resources/machine-software/recipe.json",
+  'incus exec nested-gateway -- sh -c readlink -f "/proc/$(systemctl show -p MainPID --value orbit-swamp-serve.service)/exe"',
+];
+/** The swamp-pin play on the nested Gateway, with the egress proxy: it installs the recipe's release and restarts Swamp on it. */
+const swampPinPlay = (proxyArgs: string) => "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg " +
+  `ANSIBLE_DISPLAY_FAILED_STDERR=true ${proxyArgs}/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml ` +
+  "--tags swamp-pin /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml";
 /** The pinned shape tools in the Instance container: instance_shape_tools.py, named by the workspace's own gate, after base. */
 const toolsCall = "python3 -I -c <instance_shape_tools.py> /srv/workspace";
 /** The shrink of the nested root disks in the Instance container: instance_fleet_shrink.py, its mode, then these arguments. */
@@ -511,6 +522,8 @@ Deno.test({
         exec("nested-gateway", "env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_DISPLAY_FAILED_STDERR=true /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags grants /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml"),
         // The tokens are one day old: one read, no remint.
         tokenRead,
+        // The nested Gateway's serve runs the recipe's Swamp release: two reads, no install.
+        ...swampReads,
         "incus exec nested-gateway --cwd /home/orbit/orbit/apps/gateway -- runuser -u orbit -- php artisan migrate --force",
         exec("nested-gateway", `systemctl restart ${services.join(" ")}`),
         // One read of every service; with the Club key Swamp serve and its three workers too.
@@ -1166,7 +1179,8 @@ Deno.test({
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
         converge_nodes: [], changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
-        tools_reason: "current", shrink: "skipped", shrink_reason: "current", seconds: undefined });
+        tools_reason: "current", shrink: "skipped", shrink_reason: "current", swamp: "pinned", swamp_reason: "pinned",
+        swamp_version: "20261114.210101.0-sha.537e03d1", seconds: undefined });
       // Nothing changed in the nested containers' packages: one shrink check, no shrink run.
       assertEquals(calls.filter((call) => call.startsWith(shrinkCall)), [shrinkCall + "check " + shrinkArgs]);
       // The record vouches for the oldest token: no read and no remint.
@@ -1194,13 +1208,14 @@ Deno.test({
       const again = f.run("refresh");
       assert(again.ok, again.output);
       const calls = f.calls();
-      // What still runs: the Club key test, the record and digests, the mount wait, one read of the services, the converge decision, the
+      // What still runs: the Club key test, the record and digests, the mount wait, the two Swamp reads, one read of the services, the converge decision, the
       // devices and keys, the snapshots, one readiness wait, the tools read and the record (instance-fleet-refresh.yml).
       assertEquals(calls, [
         `test -s ${clubKey}`,
         ...recordReads,
         recordRemove,
         ...mountReads,
+        ...swampReads,
         serviceRead,
         intentRead,
         ...compareReads,
@@ -1781,6 +1796,111 @@ Deno.test({
       assertEquals(f.state().outer.files[record], undefined);
       assert(!tokenShaped.test(failed.output), "a token-shaped string is in the output");
       assertKeyUntouched(calls, failed.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a moved Swamp pin installs the recipe's release on the nested Gateway, retakes its base and names the release; the next refresh only reads",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The nested Gateway's serve still runs the release the fleet build installed, by its digest folder.
+      f.change((state) => state.swampRunning = "/usr/local/lib/orbit-swamp/" + "6e0fe06f".repeat(8) + "/swamp");
+      const first = f.run("refresh");
+      assert(first.ok, first.output);
+      const calls = f.calls();
+      const play = calls.filter((call) => call.includes("--tags swamp-pin"));
+      // Through the egress proxy, after the two reads and before the services are read.
+      assertEquals(play, [swampPinPlay(Object.entries(proxy).map(([key, value]) => `${key}=${value} `).join(""))]);
+      assert(calls.indexOf(swampReads[1]) < calls.indexOf(play[0]) && calls.indexOf(play[0]) < calls.indexOf(serviceRead), calls.join("\n"));
+      const result = f.refreshed()!;
+      assertEquals([result.swamp, result.swamp_reason, result.swamp_version], ["installed", "changed", "20261114.210101.0-sha.537e03d1"]);
+      // The install wrote the nested Gateway's disk: its base is retaken.
+      assert((result.base_containers as string[]).includes("nested-gateway"), JSON.stringify(result));
+      const again = f.run("refresh");
+      assert(again.ok, again.output);
+      // The calls and the result are this run's: two reads, no install.
+      const next = f.calls();
+      assertEquals([next.filter((call) => swampReads.includes(call)).length, next.filter((call) => call.includes("--tags swamp-pin")).length], [2, 0]);
+      const pinned = f.refreshed()!;
+      assertEquals([pinned.swamp, pinned.swamp_reason], ["pinned", "pinned"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a Swamp install whose serve does not come back fails the refresh with its step, takes no base and writes no record",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => {
+        // Serve runs the release the fleet build installed; the recipe pins a newer one.
+        state.swampRunning = "/usr/local/lib/orbit-swamp/0171346a3588019a73a0e9d28e64447688ad87261e6eceb49b3febf6bd603da3/swamp";
+        state.swampPin = "20261201.000000.0-sha.0123abcd";
+        state.swampSha = "0123abcd".repeat(8);
+        state.swampPinFail = true;
+      });
+      const failed = f.run("refresh");
+      assert(!failed.ok, failed.output);
+      assertStringIncludes(failed.output, "Install the recipe's Swamp on the nested Gateway");
+      const calls = f.calls();
+      assert(ran(calls, "--tags swamp-pin"));
+      assert(!calls.some((call) => call.includes("snapshot create") || call === recordWrite), calls.join("\n"));
+      assertEquals(f.state().outer.files[record], undefined);
+      assertKeyUntouched(calls, failed.output);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a fleet built at the recipe's release only reads; a read that fails runs the install and names no release",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      // The fleet build's own folder of the recipe's sha256: nothing to install.
+      const built = f.run("refresh");
+      assert(built.ok, built.output);
+      assert(!f.calls().some((call) => call.includes("--tags swamp-pin")));
+      const pinned = f.refreshed()!;
+      assertEquals([pinned.swamp, pinned.swamp_reason, pinned.swamp_version], ["pinned", "pinned", "20261114.210101.0-sha.537e03d1"]);
+      f.change((state) => state.swampUnreadable = true);
+      const run = f.run("refresh");
+      assert(run.ok, run.output);
+      assertEquals(f.calls().filter((call) => call.includes("--tags swamp-pin")).length, 1);
+      const result = f.refreshed()!;
+      assertEquals([result.swamp, result.swamp_reason, result.swamp_version], ["installed", "unreadable", null]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a refresh without the Club key reads no Swamp release and installs none",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => {
+        delete state.outer.files[clubKey];
+        state.swampRunning = "/usr/local/lib/orbit-swamp/other/swamp";
+      });
+      const run = f.run("refresh");
+      assert(run.ok, run.output);
+      const calls = f.calls();
+      assert(!calls.some((call) => swampReads.includes(call) || call.includes("--tags swamp-pin")), calls.join("\n"));
+      const result = f.refreshed()!;
+      assertEquals([result.swamp, result.swamp_reason, result.swamp_version], ["skipped", "no_key", null]);
     } finally {
       f.cleanup();
     }
