@@ -285,7 +285,9 @@ it('moves the records of a family that leaves its in-progress state at a timeout
         ->and($node->failed_step)->toBe('remove:operation');
 });
 
-it('fails the task VM of a cancel whose run ended without a readable result, with the new code', function (): void {
+// No cancel starts a run since the task VM release left (docs/reference/old-paths.md). An old cancel run that released a task VM still
+// settles; its `task_vms` row is history and keeps its state: nothing reads a `releasing` row to act on it.
+it('settles an old cancel run that released a task VM without a readable result, and leaves the VM row as it is', function (): void {
     $operation = unreadablePublish(startedMinutesAgo: 2);
     $vm = TaskVm::query()->create(['host_node_id' => $operation->node_id, 'group_id' => $operation->target_id, 'name' => 'beast-tvm-1',
         'state' => TaskVmState::Releasing, 'wireguard_ip' => '10.44.0.152', 'provider' => 'incus', 'capacity_pool' => 'task']);
@@ -294,6 +296,9 @@ it('fails the task VM of a cancel whose run ended without a readable result, wit
     app(FailUnreadableResultAction::class)->execute($operation, UNREADABLE_RUN, ['status' => 'succeeded', 'completedAt' => now()->toIso8601ZuluString()],
         'Check the end', 'skipped');
 
-    expect($vm->refresh()->state)->toBe(TaskVmState::Failed)
-        ->and($vm->error_code)->toBe('operation.result_unreadable');
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('operation.result_unreadable')
+        ->and($operation->lock_key)->toBeNull()
+        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing)
+        ->and($vm->error_code)->toBeNull();
 });
