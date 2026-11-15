@@ -34,7 +34,7 @@ uses(LazilyRefreshDatabase::class);
 
 const RUN = 'ea55ab37-bcbe-4459-81dc-cbb397e7d870';
 
-/** A tasks.script of a group that started 20 minutes ago with a 360-second budget. */
+/** A tasks.sync of a group that started 20 minutes ago with a 360-second budget. */
 function runningScript(?string $run = RUN, int $minutes = 20): Operation
 {
     $group = Task::query()->create(['title' => 'Proof', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
@@ -42,8 +42,8 @@ function runningScript(?string $run = RUN, int $minutes = 20): Operation
     $node = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'vm-'.$group->id, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'public_ssh_host' => $address, 'wireguard_ip' => $address, 'user' => 'orbit']));
 
-    return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
-        'input' => ['script' => 'scripts/dependencies', 'args' => ['routine'], 'run_budget_seconds' => 360], 'status' => OperationStatus::Running,
+    return Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id,
+        'input' => [], 'status' => OperationStatus::Running,
         'state' => $run === null ? [] : ['swamp_run_id' => $run], 'sequence' => 1, 'attempts' => 1, 'started_at' => now()->subMinutes($minutes)]);
 }
 
@@ -160,7 +160,7 @@ function cancelSocket(array $reply): WebSocketClient
 }
 
 it('asks Swamp to cancel the run with a workflow.cancel request on the run token', function (): void {
-    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancellation_requested']]]);
+    $socket = cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-sync', 'status' => 'cancellation_requested']]]);
     $operation = runningScript();
 
     app(CancelSwampRun::class)->execute($operation);
@@ -173,7 +173,7 @@ it('asks Swamp to cancel the run with a workflow.cancel request on the run token
 });
 
 it('accepts a cancel that already settled the run', function (): void {
-    cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-script', 'status' => 'cancelled']]]);
+    cancelSocket(['type' => 'workflow.cancel', 'payload' => ['data' => ['runId' => RUN, 'workflowName' => 'operation-task-sync', 'status' => 'cancelled']]]);
 
     app(CancelSwampRun::class)->execute(runningScript());
 
@@ -228,8 +228,8 @@ afterEach(fn () => app(SwampConnection::class)->release());
 /** One Swamp connection that answers a history read with the run the test names and a cancel with the frame it names. */
 function reconcileSocket(?Operation $operation, string $status, string $cancel = 'cancellation_requested', ?Closure $onCancel = null): WebSocketClient
 {
-    $history = $operation === null ? [] : ['id' => RUN, 'workflowName' => 'operation-task-script', 'status' => $status,
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
+    $history = $operation === null ? [] : ['id' => RUN, 'workflowName' => 'operation-task-sync', 'status' => $status,
+        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.sync'],
         'startedAt' => now()->subMinutes(3)->toIso8601ZuluString('millisecond'), 'completedAt' => now()->toIso8601ZuluString('millisecond'), 'jobs' => []];
     $socket = new class($history, $cancel, $onCancel) implements WebSocketClient
     {
@@ -409,7 +409,7 @@ it('does not record a confirmation for a request that was recorded again while S
 it('forwards a cancellation recorded before native start confirmation once the run binds', function (): void {
     Queue::fake();
     $operation = runningScript(run: null, minutes: 0);
-    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-task-script']], 'attempts' => 0]);
+    $operation->update(['state' => ['swamp_start' => ['key' => 'operation:'.$operation->id, 'workflow' => 'operation-task-sync']], 'attempts' => 0]);
     app(CancelOperationAction::class)->execute($operation);
     $operation->update(['state' => [...$operation->state, 'swamp_run_id' => RUN]]);
     $socket = reconcileSocket($operation, 'running');

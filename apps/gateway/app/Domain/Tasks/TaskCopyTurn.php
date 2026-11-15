@@ -6,7 +6,6 @@ namespace App\Domain\Tasks;
 
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Instances\InstanceContainer;
-use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -36,19 +35,12 @@ final readonly class TaskCopyTurn
     /** How an implementer in a copy asks: T3 has no other way to hand a question back, and Orbit ends the turn at it. */
     public const string AskRule = 'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.';
 
-    public function __construct(private TaskOperations $operations, private OperationIdempotency $idempotency, private TaskCheckedCandidate $candidates) {}
+    public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
     {
-        $start = fn (): Operation => $this->operations->start($group, OperationKinds::TasksCopyTurn, $data->toArray(), static function (Task $group): void {},
+        return $this->operations->start($group, OperationKinds::TasksCopyTurn, $data->toArray(), static function (Task $group): void {},
             $caller, $request, fn (Task $group): array => $this->capture($group, $data));
-        $key = $this->idempotency->key;
-        $fingerprint = $this->idempotency->fingerprint;
-
-        // The request carries the key of `tasks.turn`; the turn of a copy is its own kind, so the key goes with it.
-        return $this->idempotency->kind === OperationKinds::TasksTurn && $key !== null && $fingerprint !== null
-            ? $this->idempotency->under(OperationKinds::TasksCopyTurn, $key, $fingerprint, $start)
-            : $start();
     }
 
     /**
@@ -65,9 +57,6 @@ final readonly class TaskCopyTurn
         $workspace = TaskInstanceWorkspace::forGroup($group)
             ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
         $workspace->requireReady();
-        if ($data->role === 'consult' || $data->model !== null) {
-            throw new ResourceOperationException('tasks.copy_turn_unsupported', 'A turn in a task copy is an implementer or reviewer turn with its role\'s model.', 422);
-        }
         $task = $this->operations->requireCurrentSubtask($group, $data->subtask);
         $role = $data->threadRole();
         $instance = $workspace->instance;

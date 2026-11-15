@@ -30,15 +30,9 @@ final readonly class OperationKinds
 
     public const string TasksPublish = 'tasks.publish';
 
-    public const string TasksScript = 'tasks.script';
-
-    public const string TasksPackage = 'tasks.package';
-
     public const string TasksCheck = 'tasks.check';
 
     public const string TasksProvision = 'tasks.provision';
-
-    public const string TasksTurn = 'tasks.turn';
 
     /** The turn of a task that runs in a copy of its Project's default Instance (docs/cli/task/turn.mmd). */
     public const string TasksCopyTurn = 'tasks.copy_turn';

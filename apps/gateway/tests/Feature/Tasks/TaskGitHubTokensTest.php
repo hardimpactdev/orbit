@@ -148,18 +148,6 @@ it('mints the push token of a publish when its step asks, and writes it only und
         ->and(json_encode($copies))->not->toContain('push-token-value');
 })->with(['a publish' => ['tasks.publish']]);
 
-it('mints the push token of an idle save with contents write only, so a save cannot add or change a workflow', function (): void {
-    $scoped = [];
-    $socket = tokenWorld(scoped: $scoped);
-    [$operation, $names] = pushOperation('tasks.idle_save');
-
-    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'publish');
-
-    expect($copies)->toBe($names)->and(array_map(static fn (GitHubTokenGrant $grant): array => $grant->permissions, $scoped))->toBe([['contents' => 'write']])
-        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $names['github_token']['key'], 'step-token-value'],
-            ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:step-token-value')]]);
-});
-
 it('mints the clone credential of a workspace when the clone step asks, and only a read credential', function (string $kind): void {
     $socket = tokenWorld();
     [$operation, $reference] = cloneOperation($kind);
@@ -199,23 +187,22 @@ it('writes the Composer and npm configuration of the setup steps from one read t
         ]);
 })->with(['a provision' => ['tasks.provision']]);
 
-it('writes the same configuration for a package install, whose intent holds the key names itself', function (): void {
+// The idle save and the package install left with the Pi task loop (docs/reference/old-paths.md). The mint route finds no issuer for
+// their kinds; an old run that reached the issuer still gets no token for any purpose.
+it('mints no token for an old idle save or package install', function (string $kind, string $purpose): void {
     $socket = tokenWorld();
-    [$operation] = cloneOperation('tasks.package');
-    $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']];
-    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => $references]])->save();
-
-    expect(app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies'))->toEqual($references)
-        ->and(array_column(tokenPuts($socket), 1))->toBe(['task-provision-deps-composer-9', 'task-provision-deps-npm-9', 'task-provision-deps-token-9']);
-});
-
-it('refuses a package install every purpose but dependencies', function (string $purpose): void {
-    $socket = tokenWorld();
-    [$operation] = cloneOperation('tasks.package');
+    [$operation] = $kind === 'tasks.idle_save' ? pushOperation($kind) : cloneOperation($kind);
+    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'],
+        'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']]]])->save();
 
     expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, $purpose))->toThrow(ResourceOperationException::class, 'does not permit this token')
-        ->and($socket->frames)->toBe([]);
-})->with(['clone', 'publish', 'pull_request', 'dependency_merge']);
+        ->and(tokenPuts($socket))->toBe([])
+        ->and(app(DirectOperation::class)->definition($kind))->toBeNull();
+})->with([
+    'an idle save asking for its push token' => ['tasks.idle_save', 'publish'],
+    'a package install asking for its dependency files' => ['tasks.package', 'dependencies'],
+    'a package install asking for a clone' => ['tasks.package', 'clone'],
+]);
 
 it('writes an empty configuration, and records no issue, when the App cannot supply a token', function (): void {
     $socket = tokenWorld(installed: false);
@@ -368,7 +355,7 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.package', 'tasks.dependency_merge', 'tasks.pr_ready', 'tasks.pr_merge']);
+})->with(['tasks.publish', 'tasks.dependency_merge', 'tasks.pr_ready', 'tasks.pr_merge']);
 
 it('gives a sync run, a task start, a cancel and a proof run no token mint: the Gateway writes the read token of a sync, a task start reads the public repository, origin has a cancel\'s approved work, and a proof copy already holds its checkout', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');

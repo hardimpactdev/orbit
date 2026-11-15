@@ -18,11 +18,22 @@ final class StartTaskTurnRequest extends FormRequest
     {
         return [
 
-            'role' => ['required', 'string', 'in:implementer,reviewer,consult'],
+            // The consult role and `model` were options of the Pi turn on a task VM, which is removed (docs/reference/old-paths.md).
+            // A turn in a task copy takes its role's model; an older CLI that sends either gets a validation error on that field.
+            'role' => ['required', 'string', 'in:implementer,reviewer'],
             'prompt' => ['required', 'string', 'max:100000'],
             'thread' => ['sometimes', 'string', 'regex:/\A(?:new|[1-9][0-9]*)\z/D'],
-            'model' => ['sometimes', 'string', 'max:255'],
+            'model' => ['prohibited'],
             'check' => ['required_if:role,reviewer', 'prohibited_unless:role,reviewer', 'integer:strict', 'min:1'],
+        ];
+    }
+
+    /** @return array<string, string> */
+    public function messages(): array
+    {
+        return [
+            'role.in' => 'The role is implementer or reviewer. The consult role belonged to the removed task VM turn.',
+            'model.prohibited' => 'A turn takes its role\'s model. The model option belonged to the removed task VM turn.',
         ];
     }
 

@@ -69,10 +69,6 @@ Route::middleware([
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:pr-merge');
         Route::post('tasks/{task}/publish', [TaskGroupsController::class, 'publish'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:publish');
-        Route::post('tasks/{task}/package', [TaskGroupsController::class, 'package'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:package');
-        Route::post('tasks/{task}/script', [TaskGroupsController::class, 'script'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:script');
         Route::post('tasks/{task}/check', [TaskGroupsController::class, 'check'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':child')->name('task:check');
         Route::post('tasks/{task}/turn', [TaskGroupsController::class, 'turn'])

@@ -8,12 +8,12 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Task;
 
 /**
- * The prompt a task VM receives for one turn: the title, brief and deliverables of the subtask, then the prompt of the caller.
- * The admission records this text as the admitted prompt. See docs/cli/task/turn.mmd.
+ * The prompt the agent receives for one turn in a task copy: the title, brief and deliverables of the subtask, then the prompt of the
+ * caller. The admission records this text as the admitted prompt. See docs/cli/task/copy-turn.mmd.
  */
 final readonly class TaskTurnPrompt
 {
-    /** The longest prompt `operation-task-turn` accepts, in UTF-16 code units, as its schema counts them. */
+    /** The longest prompt a turn accepts, in UTF-16 code units. */
     public const int Limit = 100000;
 
     public static function compose(Task $subtask, string $prompt): string

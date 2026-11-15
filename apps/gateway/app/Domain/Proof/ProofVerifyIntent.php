@@ -45,9 +45,8 @@ final readonly class ProofVerifyIntent
 
         FleetReboot::refuseTaskWork($group);
 
-        // The caller may be the agent of a running turn, which holds the group and waits for this proof, so the turn does not count as busy.
         return $this->operations->start($group, OperationKinds::ProofVerify, [], static function (): void {}, $triggeredBy, $requestId,
-            fn (Task $group): array => $this->capture($group, $command), [OperationKinds::TasksTurn]);
+            fn (Task $group): array => $this->capture($group, $command));
     }
 
     /** @return array<string,mixed> */

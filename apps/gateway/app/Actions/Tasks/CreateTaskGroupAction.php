@@ -8,8 +8,6 @@ use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AgentDriverException;
-use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
@@ -23,7 +21,6 @@ final readonly class CreateTaskGroupAction
 {
     public function __construct(
         private RequireTasksExtensionAction $requireExtension,
-        private AgentDriverRegistry $drivers,
     ) {}
 
     public function execute(CreateTaskGroupData $data, ?Node $creator = null): Task
@@ -36,13 +33,6 @@ final readonly class CreateTaskGroupAction
                 'tasks.github_app_required',
                 'Tasks publish through the GitHub App, and this Project reads its repository through the GitHub CLI.',
             );
-        }
-
-        try {
-            $implementerDriver = $this->drivers->get($this->configuredDriver('orbit.tasks.implementer_agent_driver'))->key();
-            $reviewerDriver = $this->drivers->get($this->configuredDriver('orbit.tasks.reviewer_agent_driver'))->key();
-        } catch (AgentDriverException) {
-            throw new ResourceOperationException('tasks.agent_driver_unavailable', 'The configured agent driver is unavailable.', 409);
         }
 
         if ($data->status === TaskGroupStatus::Todo && $data->tasks === []) {
@@ -60,8 +50,6 @@ final readonly class CreateTaskGroupAction
             'pr_mode' => $data->prMode,
             'created_by_node_id' => $creator?->id,
             'project_id' => $data->projectId,
-            'implementer_agent_driver' => $implementerDriver,
-            'reviewer_agent_driver' => $reviewerDriver,
             'title' => $data->title,
             'brief' => $data->brief,
             'status' => $data->status,
@@ -87,17 +75,5 @@ final readonly class CreateTaskGroupAction
         }
 
         return $group->refresh()->load(['project', 'tasks', 'taskable']);
-    }
-
-    private function configuredDriver(string $key): string
-    {
-        $driver = config($key, 'pi');
-
-        // ADR 0192: a new task stores the pi driver only. Any other value stores no task.
-        if (! is_string($driver) || $driver !== 'pi') {
-            throw new AgentDriverException('The configured agent driver is unavailable.');
-        }
-
-        return $driver;
     }
 }

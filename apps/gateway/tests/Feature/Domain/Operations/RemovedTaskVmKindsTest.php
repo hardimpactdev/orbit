@@ -19,13 +19,16 @@ use Illuminate\Support\Sleep;
 uses(LazilyRefreshDatabase::class);
 
 /*
- * The task VM image refresh and the hub converge left the registry, and so did the prep run, its corrections, the build and the
- * review round of the Pi task loop (docs/reference/old-paths.md). Their old Operations stay in the database as history: lists and
+ * The task VM image refresh and the hub converge left the registry, and so did every kind of the Pi task loop: the prep run, its
+ * corrections, the build, the review round, the maintenance run, the package install, the repository script, the idle save and the
+ * Pi turn (docs/reference/old-paths.md). Their old Operations stay in the database as history: lists and
  * shows render them, the release's idle guard does not wait for them, and the reconcile pass ends an open one by its cancel request
  * or its budget, as for every retired kind.
  */
 const REMOVED_TASK_VM_KINDS = ['task_vm.image_refresh' => 'task_vm_host', 'task_vm.hub_converge' => 'node_firewall',
-    'tasks.prep' => 'task_group', 'tasks.prep_fix' => 'task_group', 'tasks.build' => 'task_group', 'tasks.review_round' => 'task_group'];
+    'tasks.prep' => 'task_group', 'tasks.prep_fix' => 'task_group', 'tasks.build' => 'task_group', 'tasks.review_round' => 'task_group',
+    'tasks.maintenance' => 'task_group', 'tasks.package' => 'task_group', 'tasks.script' => 'task_group', 'tasks.idle_save' => 'task_group',
+    'tasks.turn' => 'task_group'];
 
 beforeEach(function (): void {
     $this->gateway = Node::withoutEvents(static fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',

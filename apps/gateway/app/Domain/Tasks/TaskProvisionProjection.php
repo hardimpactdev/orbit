@@ -47,8 +47,6 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
             $projected = $this->record($operation, $status, ValidatedData::nullableString($data['error_code'] ?? null),
                 static fn (): Operation => app(DirectOperation::class)->project($operation, $data, $result));
 
-            app(TaskMaintenanceContinuation::class)->apply($projected);
-
             return $projected;
         });
     }

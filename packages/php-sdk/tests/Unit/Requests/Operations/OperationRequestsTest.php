@@ -92,8 +92,8 @@ describe('operation requests', function (): void {
         expect($request->headers()->get('Idempotency-Key'))->toBe('review.c1');
         expect($response)->toBeInstanceOf(OperationResponse::class);
         expect($response->result)->toBe(['receipt' => null, 'thread' => 23, 'state' => 'done']);
-        $new = new TurnTaskRequest(18, 'implementer', '', 'new', model: '');
-        expect(json_decode((string) $new->body(), true))->toBe(['role' => 'implementer', 'prompt' => '', 'thread' => 'new', 'model' => '']);
+        $new = new TurnTaskRequest(18, 'implementer', '', 'new');
+        expect(json_decode((string) $new->body(), true))->toBe(['role' => 'implementer', 'prompt' => '', 'thread' => 'new']);
         expect($new->headers()->get('Idempotency-Key'))->toBeNull();
         // No thread: a task copy continues the role's thread.
         expect(json_decode((string) (new TurnTaskRequest(18, 'implementer', 'Go on.', null))->body(), true))->toBe(['role' => 'implementer', 'prompt' => 'Go on.']);

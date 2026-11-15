@@ -85,6 +85,8 @@ describe('omitted and invalid input', function (): void {
         }
     })->with([
         'show without group' => ['task:show', [], 'task.task_required'],
+        // The consult role belonged to the removed task VM turn: the CLI refuses it before it sends anything.
+        'turn with the consult role' => ['task:turn', ['task' => '2', '--role' => 'consult', '--prompt' => 'P'], 'task.role_invalid'],
         'show with invalid group' => ['task:show', ['task' => 'abc'], 'task.task_invalid'],
         'agents without group' => ['task:agent:list', [], 'task.task_required'],
         'egress without group' => ['task:egress', [], 'task.task_required'],
@@ -1069,6 +1071,8 @@ it('registers one task family with direct selectors and no old aliases', functio
         expect(array_keys($commands[$name]->getDefinition()->getArguments()))->toBe(['task'])
             ->and($commands[$name]->getDefinition()->hasOption('subtask'))->toBeFalse();
     }
+    // `--model` belonged to the removed task VM turn: a turn takes its role's model.
+    expect($commands['task:turn']->getDefinition()->hasOption('model'))->toBeFalse();
 });
 
 describe('the pull request mode of a task group', function (): void {

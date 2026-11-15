@@ -8,6 +8,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Http\Requests\Operations\StartsOperation;
+use App\Models\AgentThread;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
@@ -123,21 +124,9 @@ it('refuses to start a group of a Project without a container default by name, a
     Queue::assertNothingPushed();
 });
 
-it('refuses every task VM command by the same name and records nothing', function (string $suffix, array $body): void {
-    SwampNodeFixture::ensure();
-    Queue::fake();
-    $this->parent->update(['status' => TaskGroupStatus::Running]);
-    $this->withHeader('Idempotency-Key', 'vm.'.trim($suffix, '/'))->postJson('/api/v1/tasks/'.$this->parent->id.$suffix, $body)
-        ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.vm_runtime_removed');
-    expect(Operation::query()->count())->toBe(0);
-    Queue::assertNothingPushed();
-})->with([
-    'package' => ['/package', ['manager' => 'composer', 'package' => 'acme/private']],
-    'script' => ['/script', ['subtask' => 1, 'script' => 'bin/test', 'args' => []]],
-]);
-
-// `task:prep` and `task:prep-fix` are removed with the Pi task loop (docs/reference/old-paths.md): no route, no MCP tool.
-it('has no prep or prep-fix route: a call answers 404 and records nothing', function (string $suffix, array $body): void {
+// `task:prep`, `task:prep-fix`, the package install and the repository script are removed with the Pi task loop
+// (docs/reference/old-paths.md): no route, no MCP tool. No CLI or SDK release ever called them.
+it('has no prep, prep-fix, package or script route: a call answers 404 and records nothing', function (string $suffix, array $body): void {
     SwampNodeFixture::ensure();
     Queue::fake();
     $this->parent->update(['status' => TaskGroupStatus::Running]);
@@ -145,11 +134,13 @@ it('has no prep or prep-fix route: a call answers 404 and records nothing', func
         ->assertNotFound();
     expect(Operation::query()->count())->toBe(0)
         ->and(collect(app('router')->getRoutes()->getRoutes())->map->getName()->filter()->values()->all())
-        ->not->toContain('task:prep')->not->toContain('task:prep-fix');
+        ->not->toContain('task:prep')->not->toContain('task:prep-fix')->not->toContain('task:package')->not->toContain('task:script');
     Queue::assertNothingPushed();
 })->with([
     'prep' => ['/prep', ['command' => 'firewall:deny']],
     'prep-fix' => ['/prep-fix', ['corrections' => 'Fix the chart.']],
+    'package' => ['/package', ['manager' => 'composer', 'package' => 'acme/private']],
+    'script' => ['/script', ['subtask' => 1, 'script' => 'bin/test', 'args' => []]],
 ]);
 
 // Groups that the Pi loop left in its stages, such as a `todo` group and a `waiting_for_review` group whose pull request merged,
@@ -159,7 +150,8 @@ function piLoopGroup(Project $project, TaskGroupStatus $status, array $fields = 
     $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Prep', 'brief' => 'Brief', 'status' => $status, ...$fields]);
     $group->tasks()->create(['position' => 1, 'title' => 'Spec', 'brief' => 'Draft the spec', 'status' => TaskStatus::Completed,
         'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
-    foreach (['tasks.prep' => 'succeeded', 'tasks.prep_fix' => 'failed', 'tasks.build' => 'cancelled', 'tasks.review_round' => 'failed'] as $kind => $state) {
+    foreach (['tasks.prep' => 'succeeded', 'tasks.prep_fix' => 'failed', 'tasks.build' => 'cancelled', 'tasks.review_round' => 'failed',
+        'tasks.turn' => 'succeeded', 'tasks.script' => 'failed', 'tasks.package' => 'cancelled', 'tasks.maintenance' => 'failed', 'tasks.idle_save' => 'succeeded'] as $kind => $state) {
         Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => null, 'status' => $state,
             'input' => ['command' => 'firewall:deny'], 'started_at' => now()->subDays(7), 'finished_at' => now()->subDays(7)]);
     }
@@ -174,6 +166,8 @@ it('reads, lists and cancels a todo group whose runs are all of the removed Pi l
     expect(array_column($this->getJson('/api/v1/tasks?project_id='.$this->project->id)->assertOk()->json('data'), 'id'))->toContain($group->id);
     $this->getJson('/api/v1/tasks/status')->assertOk();
     $this->getJson('/api/v1/operations?kind=tasks.prep')->assertOk()->assertJsonPath('data.0.kind', 'tasks.prep');
+    $this->getJson('/api/v1/operations?kind=tasks.turn')->assertOk()->assertJsonPath('data.0.kind', 'tasks.turn');
+    $this->getJson('/api/v1/tasks/'.$group->id.'/agents')->assertOk();
 
     SwampNodeFixture::ensure();
     Queue::fake();
@@ -192,6 +186,34 @@ it('completes a waiting-for-review group of the Pi loop whose pull request merge
     $this->postJson('/api/v1/tasks/'.$group->id.'/complete')->assertSuccessful();
 
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed);
+});
+
+// A group the Pi loop left with a running subtask whose implementer thread ran on a task VM, and whose pull request merged: the VM
+// and its Pi server are gone, so a completion has nothing to interrupt and ends the group.
+it('completes a group whose running subtask has a thread of the removed Pi turn', function (): void {
+    $group = piLoopGroup($this->project, TaskGroupStatus::Running, ['orchestration' => 'external', 'watched_pr_number' => 3280,
+        'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/3280', 'watched_pr_completion' => 'merged']);
+    $subtask = $group->tasks()->firstOrFail();
+    $vm = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-598', 'status' => 'active', 'platform' => 'linux',
+        'public_ssh_host' => '10.44.0.137', 'wireguard_ip' => '10.44.0.137', 'user' => 'orbit']));
+    $thread = AgentThread::query()->create(['task_group_id' => $group->id, 'task_id' => $subtask->id, 'node_id' => $vm->id, 'driver' => 'pi',
+        'runtime_key' => 'node:'.$vm->id, 'external_id' => 'session-598', 'role' => 'implementer', 'model' => 'gpt-6.1-sol']);
+    $subtask->update(['status' => TaskStatus::Running, 'implementer_agent_thread_id' => $thread->id]);
+
+    $this->getJson('/api/v1/tasks/'.$group->id.'/agents')->assertOk()->assertJsonPath('data.0.driver', 'pi');
+    $this->postJson('/api/v1/tasks/'.$group->id.'/complete')->assertSuccessful();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed);
+});
+
+// The turn route's kind is `tasks.copy_turn` since the Pi turn left; a retry keeps the fingerprint it had under `tasks.turn`.
+it('fingerprints a turn by its group and subtask, as under the old turn kind', function (): void {
+    $fingerprints = app(OperationRequestFingerprint::class);
+    $start = new StartsOperation('tasks.copy_turn');
+
+    expect($fingerprints->make(null, 'task:turn', ['task' => $this->child], '{"role":"implementer","prompt":"Go."}', $start))
+        ->toBe($fingerprints->make(null, 'tasks:turn', ['group' => $this->parent], json_encode(['role' => 'implementer', 'prompt' => 'Go.', 'subtask' => $this->child->id]), $start))
+        ->and(StartsOperation::forRoute(app('router')->getRoutes()->getByName('task:turn'))?->kind)->toBe('tasks.copy_turn');
 });
 
 it('filters children by status and rejects fields from the other create level', function (): void {

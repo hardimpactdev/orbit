@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
@@ -15,7 +16,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Records a copy turn where a task VM turn is recorded: the thread's state and error, and its transcript in the Gateway's archive,
+ * Records a copy turn: the thread's state and error, and its transcript in the Gateway's archive,
  * which outlives the copy. A turn that asked keeps its questions on the thread until the thread's next turn. The result names the
  * provider instance, the model and the effort the thread started with. T3's CLI reports no token use, so the metrics stay null.
  */
@@ -76,13 +77,27 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
                 DB::afterCommit(static fn () => app(InstanceThreadContributions::class)->recordThread($instance, $threadId, $title));
             }
         }
-        TaskTurnProjection::recordThread($operation->target_id, $thread, array_diff_key($result, ['metrics' => true]));
+        self::recordThread($operation->target_id, $thread, $result);
         // Only a turn that launched T3 on the thread replaces what it asked: one that launched nothing leaves the question open.
         if (($result['launched'] ?? null) === true) {
             $questions = $result['state'] === AgentThreadState::AskingForInput->value && is_array($result['questions'] ?? null) && $result['questions'] !== []
                 ? array_values(array_map(ValidatedData::object(...), $result['questions'])) : null;
             AgentThread::query()->where('task_group_id', $operation->target_id)->whereKey($thread)
                 ->update(['questions' => $questions === null ? null : json_encode($questions, JSON_THROW_ON_ERROR)]);
+        }
+    }
+
+    /**
+     * Records the thread's final state and error, and archives its transcript. T3 reports no token use, so no metric is recorded.
+     *
+     * @param  array<string,mixed>  $result
+     */
+    private static function recordThread(int $group, int $thread, array $result): void
+    {
+        $record = AgentThread::query()->where('task_group_id', $group)->lockForUpdate()->findOrFail($thread);
+        $record->update(['state' => $result['state'] ?? 'failed', 'error' => $result['error'] ?? null, 'observed_at' => now(), 'observation_error' => null]);
+        if (isset($result['transcript'])) {
+            app(ArchiveAgentTranscriptsAction::class)->record($record, array_map(ValidatedData::object(...), is_array($result['transcript']) ? array_values($result['transcript']) : []));
         }
     }
 }

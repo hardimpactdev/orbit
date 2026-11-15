@@ -54,7 +54,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     ) {}
 
     /**
-     * The vault keys of the dependency configuration of one task VM, named at admission by the provision and by a package install.
+     * The vault keys of the dependency configuration of one task VM, named at admission by the provision.
      *
      * @return array{composer:array{vault:string,key:string},npm:array{vault:string,key:string},token:array{vault:string,key:string}}
      */
@@ -87,44 +87,10 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         return match ($purpose) {
             'clone' => $this->clone($operation, $group, $callerNodeId, $runId),
             'dependencies' => $this->dependencies($operation, $group, $callerNodeId, $runId),
-            'publish' => $operation->kind === TaskIdleSave::Kind ? $this->idleSave($operation, $group, $callerNodeId, $runId) : $this->publish($operation, $group, $callerNodeId, $runId),
+            'publish' => $this->publish($operation, $group, $callerNodeId, $runId),
             'pull_request', 'dependency_merge' => $this->scoped($operation, $group->project, $callerNodeId, $runId, $purpose),
             default => throw $this->forbidden(),
         };
-    }
-
-    /**
-     * The push token of an idle save (docs/cli/task/idle-save.mmd): `contents: write` only. A save is unchecked agent work, so GitHub
-     * refuses a save that adds or changes a workflow instead of running it on the push.
-     *
-     * @return array<string,array{vault:string,key:string}>
-     */
-    private function idleSave(Operation $operation, Task $group, int $callerNodeId, string $runId): array
-    {
-        $name = $operation->input['repository'] ?? null;
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
-        $references = ValidatedData::object($operation->input['execution_secrets'] ?? []);
-        if (! is_string($name) || $repository === null || $repository->owner.'/'.$repository->name !== $name
-            || ! is_array($references['github_token'] ?? null) || ! is_array($references['git_authorization'] ?? null)) {
-            throw $this->forbidden();
-        }
-        $credentials = $this->store->credentials()
-            ?? throw new ResourceOperationException('github.not_configured', 'Configure the GitHub App before saving a task workspace.', 409);
-        $permissions = ['contents' => 'write'];
-        try {
-            $token = app(GitHubApi::class)->scopedRepositoryToken($credentials, GitHubTokenGrant::from(['repository' => $name, 'permissions' => $permissions]))->reveal();
-        } catch (GitHubApiException $exception) {
-            report($exception);
-            throw new ResourceOperationException('tasks.idle_save_failed', 'The Gateway could not mint the push token of the idle save.', 502);
-        }
-        $copies = [];
-        foreach (['github_token' => $token, 'git_authorization' => 'AUTHORIZATION: basic '.base64_encode('x-access-token:'.$token)] as $member => $value) {
-            $reference = ValidatedData::object($references[$member]);
-            $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
-        }
-        $this->record($operation, 'Issued the contents-only push token of an idle save.', $callerNodeId, $runId, $name, [$permissions]);
-
-        return $copies;
     }
 
     /**
@@ -186,7 +152,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     private function provisionIntent(Operation $operation): array
     {
         return match ($operation->kind) {
-            'tasks.provision', 'tasks.package' => $operation->input,
+            'tasks.provision' => $operation->input,
             default => throw $this->forbidden(),
         };
     }
@@ -207,8 +173,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     /** @return array<string,array{vault:string,key:string}> */
     private function clone(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
-        // A package install writes the dependency files and never clones.
-        $intent = $operation->kind === 'tasks.package' ? throw $this->forbidden() : $this->provisionIntent($operation);
+        $intent = $this->provisionIntent($operation);
         $repository = ValidatedData::object($intent['workspace'] ?? [])['repository'] ?? null;
         $reference = $intent['git_authorization'] ?? null;
         if (! is_string($repository) || $repository !== $group->project->repository_url || ($intent['project_id'] ?? null) !== $group->project_id || ! is_array($reference)) {

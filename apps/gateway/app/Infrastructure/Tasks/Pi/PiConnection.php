@@ -7,9 +7,8 @@ namespace App\Infrastructure\Tasks\Pi;
 use App\Domain\Tasks\AgentDriverException;
 use App\Infrastructure\Shared\StoredValue;
 use App\Models\Node;
-use App\Models\TaskVm;
 
-/** Resolves a task VM's Pi server address and token. A warm task VM has no token until a group claims it. */
+/** Resolves a task VM's Pi server address. */
 final readonly class PiConnection
 {
     public function baseUrl(Node $node): string
@@ -29,12 +28,5 @@ final readonly class PiConnection
         $port = StoredValue::integer(config('orbit.pi.port', 3774), 3774);
 
         return $port > 0 && $port <= 65535 ? $port : 3774;
-    }
-
-    public function token(Node $node): string
-    {
-        $vm = TaskVm::forNode($node) ?? throw new AgentDriverException('The Node is no task VM, so it has no Pi server.');
-
-        return $vm->pi_token ?? throw new AgentDriverException('The task VM has no Pi token, because no task group claimed it yet.');
     }
 }
