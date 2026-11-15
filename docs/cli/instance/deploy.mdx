@@ -89,7 +89,7 @@ A container default refreshes its [Project source facts at the deployed commit](
 | `deployment.vp_store_failed`, `deployment.vp_requirements_invalid` | The Vite+ store or the Project requirements failed. |
 | `env.sync_unconfirmed`, `env.sync_would_drop_keys` | The `.env` write was not confirmed, or it would drop keys Orbit does not manage. |
 | `instance.lifecycle_busy` | A setup or teardown step holds the checkout. |
-| `instance.deploy_lock_timeout` | A step waited 60 s for a Swamp behavior lock that another run held and did not run. Nothing in that step changed; deploy again. A container default's long steps lock a behavior of their own Instance, so only a stuck lock can cause it. |
+| `instance.deploy_lock_timeout` | A container default's step waited 60 s for a Swamp behavior lock that another run held and did not run. Nothing in that step changed; deploy again. Its long steps lock a behavior of their own Instance; only its short steps, of a few seconds, share a lock with other deployments on the Node. |
 | `deployment.cancelled`, `operation.timed_out` | The deploy was cancelled, or outlasted its deadline. |
 | `http.404` | The Instance is unknown. |
 | `node_access.required` | The caller has no access grant to the Instance's Node. |

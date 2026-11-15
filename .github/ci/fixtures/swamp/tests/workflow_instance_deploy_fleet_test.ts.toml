@@ -1,5 +1,5 @@
 order = 1160
-source_sha256 = "8979b4f94ada59e54fe94c44a604061807b4a246f44e885f532aed1e968026f5"
+source_sha256 = "ed4bdbd2da776f377e94d5c8857c0f093bb69ca4c568f32566858b98b6ffcd19"
 cases = [
   "a container deployment runs its phases in two steps, each one play of the phases that share their failure handling",
   "the playbook runs the phases of a merged step in order, and the handlers of one phase before the next phase",
@@ -9,6 +9,7 @@ cases = [
   "the result step waits for every step that writes the result file",
   "the deployment's one fleet check waits for no Doctor, and the refresh starts again what it stopped for base before the seed",
   "after a restore the restored fleet is started and waited for, and the first failure stays the run's result",
+  "two deployments of different defaults on one Node never share a behavior lock for a long step",
 ]
 file = "swamp/tests/workflow_instance_deploy_fleet_test.ts"
 cost = 1

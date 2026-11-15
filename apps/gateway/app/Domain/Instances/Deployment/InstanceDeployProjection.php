@@ -77,9 +77,9 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                     $this->development($locked) => DevelopmentDeployOutcome::from($data),
                     default => ProductionDeployOutcome::from($data, $locked),
                 };
-                // A step that waited 60 s for a behavior lock that another run held changed nothing in that step; the native detail is
+                // A container default's step that waited 60 s for a behavior lock that another run held changed nothing in that step; the native detail is
                 // Swamp's one lock line, read before an outcome adds the run's own words (docs/cli/instance/deploy.mdx#errors).
-                if ($status === 'failed' && SwampLockTimeout::matches(ValidatedData::object($native['failure'] ?? [])['detail'] ?? null)) {
+                if ($status === 'failed' && $variant === 'container' && SwampLockTimeout::matches(ValidatedData::object($native['failure'] ?? [])['detail'] ?? null)) {
                     $data['error_code'] = self::LockTimeoutCode;
                 }
             }
