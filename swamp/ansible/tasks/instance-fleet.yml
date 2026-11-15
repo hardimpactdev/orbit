@@ -119,7 +119,7 @@
     # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file is the fleet's own: Orbit's Node plays
     # own `90orbit-package-cache` (the task VM package cache, swamp/ansible/tasks/apt-proxy.yml) and never touch this one. It sorts
     # after that file, so its proxy wins over a cache file that an older role add left; the next role add or role converge through
-    # the nested Gateway removes that file, because the marker below makes the Gateway name no cache.
+    # the nested Gateway removes that file, because the marker above makes the Gateway name no cache.
     fleet_egress_files:
       - path: /etc/apt/apt.conf.d/95orbit-nested-egress
         content: |

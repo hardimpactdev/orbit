@@ -2174,12 +2174,13 @@ Incus restarts the bridge's dnsmasq when the key changes, so only the refresh wr
 
 The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The refresh writes both files before the converge.
 
-The fleet has the subnet of a task VM's nested fleet, but no Instance runs the task VM's package cache. Two rules keep apt on the egress proxy:
+The fleet has the subnet of a task VM's nested fleet, but no Instance runs the task VM's package cache. These rules keep apt on the egress proxy:
 
 - **Its own file.** The fleet's apt file is `95orbit-nested-egress`. The Node plays own only `90orbit-package-cache`, the [task VM package cache](/reference/node-provisioning#role-prerequisites).
 - **Its order.** The fleet's file sorts after the cache file. So its proxy wins over a cache file that the image or an older role add left.
 - **The marker.** The nested Gateway reads `/etc/orbit/instance-fleet` and gives its Nodes no `apt_proxy`.
-- **The cleanup.** A Node play without `apt_proxy` removes `90orbit-package-cache`: the role add and converge, the enrollment and the exporter.
+- **The cleanup.** A Node play without `apt_proxy` removes `90orbit-package-cache`: the role add, the role converge (`node:role:add --converge`), the enrollment and the exporter.
+- **A whole converge.** `node:converge` leaves `90orbit-package-cache` in place. The fleet's file still wins.
 - **Tool setup.** It reads the snapshot with the Node's own apt settings.
 
 A fleet seed made before these rules gains both files at the next refresh: the files' digest moved, so the refresh writes them and retakes `base`.
@@ -2644,7 +2645,7 @@ The fleet rules:
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - `boot.autostart=true` is on the three nested containers.
 - The egress proxy settings are `environment.*` keys on the three nested containers, and the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
-- The egress files are on the three nested containers: the apt proxy file `/etc/apt/apt.conf.d/90orbit-package-cache` and `/etc/environment` with the same proxy settings.
+- The egress files are on the three nested containers: the apt proxy file `/etc/apt/apt.conf.d/95orbit-nested-egress` and `/etc/environment` with the same proxy settings.
 
 The refresh writes an egress file that differs on the running fleet, before the converge of the nested Nodes. The rules then find it in place.
 
