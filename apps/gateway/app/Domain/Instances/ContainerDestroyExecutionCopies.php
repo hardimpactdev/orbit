@@ -67,6 +67,13 @@ final readonly class ContainerDestroyExecutionCopies
         foreach (Operation::query()->where('kind', 'tasks.publish')->where('input->instance_id', $destroy->target_id)->get(['id']) as $publish) {
             $keys[] = 'task-publish-environment-'.$publish->id;
         }
+        // A proof run in a task copy holds each development deploy step's command as a run-start copy (ProofCopies::input), one key per
+        // step index of the Project's list, which the key pattern bounds to 32.
+        foreach (Operation::query()->where('kind', 'proof.command')->where('input->instance_id', $destroy->target_id)->get(['id']) as $run) {
+            foreach (range(0, 31) as $step) {
+                $keys[] = 'development-deploy-operation-'.$run->id.'-step-'.$step;
+            }
+        }
         // One connection for every key: serve refuses a burst of connections from the Gateway's address.
         $this->vault->deleteSecrets('orbit-control-inputs', array_values(array_unique($keys)));
     }

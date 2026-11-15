@@ -133,7 +133,8 @@ export function runWorkflow(
     steps: Object.fromEntries(Object.entries(ran).filter(([, r]) => r.end <= now).map(([n, r]) => [n, { status: r.status, outputs: r.outputs ?? {} }])),
     run: { id: "run-1" },
   });
-  const cel = (expression: string) => environment.evaluate(swampExpression(expression), context());
+  const cel = (expression: string, self?: Record<string, unknown>) =>
+    environment.evaluate(swampExpression(expression), self === undefined ? context() : { ...context(), self });
   const ended = (step: GraphStep) => step.name in ran && ran[step.name].end <= now;
   for (const jobLevel of jobLevels) {
     const jobs = jobLevel.filter((job) => {
@@ -151,7 +152,9 @@ export function runWorkflow(
         for (const step of level) {
           if (step.name in ran) continue;
           const deps = step.dependsOn ?? [];
-          if (!deps.every((d) => holds(d.condition, ran[d.step].status)) || (step.guard !== undefined && cel(step.guard) === true)) {
+          // A forEach step's guard that reads its item (`self`) is evaluated for each item, which then runs or is skipped.
+          const itemGuard = step.forEach !== undefined && step.guard !== undefined && /\bself\b/.test(step.guard);
+          if (!deps.every((d) => holds(d.condition, ran[d.step].status)) || (step.guard !== undefined && !itemGuard && cel(step.guard) === true)) {
             ran[step.name] = { status: "skipped", start: now, end: now };
             moved = true;
             continue;
@@ -159,13 +162,15 @@ export function runWorkflow(
           if (step.forEach !== undefined) {
             // One run per item, named `<step>-<index>`; the step itself ends with its last item and fails when one item fails.
             const items = cel(step.forEach.in) as unknown[];
-            const runs = items.map((_, index) => {
-              const outcome = outcomes[`${step.name}-${index}`] ?? {};
+            const runs = items.map((value, index) => {
+              const skipped = itemGuard && cel(step.guard!, { [step.forEach!.item]: value, _index: BigInt(index) }) === true;
+              const outcome = skipped ? { status: "skipped", duration: 0 } : outcomes[`${step.name}-${index}`] ?? {};
               const item = { status: outcome.status ?? "succeeded", outputs: outcome.outputs ?? { stdout: "" }, start: now, end: now + (outcome.duration ?? 1) };
               ran[`${step.name}-${index}`] = item;
               return item;
             });
-            ran[step.name] = { status: runs.some((r) => r.status === "failed") ? "failed" : runs.length === 0 ? "skipped" : "succeeded",
+            // With no item, or every item skipped, the step reads as skipped.
+            ran[step.name] = { status: runs.some((r) => r.status === "failed") ? "failed" : runs.every((r) => r.status === "skipped") ? "skipped" : "succeeded",
               start: now, end: Math.max(now, ...runs.map((r) => r.end)) };
             moved = true;
             continue;

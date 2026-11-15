@@ -109,7 +109,8 @@ jobs:
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
   # As a deployment of the default runs them: in the copy as `orbit`, each from its own vault copy. A step with `inputs` that the
-  # checkout found unchanged is skipped; when it runs and passes, it moves its pending record to `done`. A failed step stops the rest.
+  # checkout found unchanged is skipped; when it runs and passes, it moves its pending record to `done`. A failed required step stops
+  # the rest; an optional one prints its exit code and the run goes on, as in a deployment.
   - name: Run dev deploy steps
     labels: {role: swamp}
     writes: true
@@ -142,19 +143,23 @@ jobs:
       inputs:
         hosts: name:target
         sudo: true
-        argv: '${{ ["incus", "exec", "--project", inputs.intent.checkout.container.project, "--cwd", inputs.intent.checkout.container.workspace, inputs.intent.checkout.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.checkout.container.environment + ["/bin/sh", "-c"] + (size(self.step.inputs) > 0 ? ["s=$(cat) && timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1 && { [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; }", "sh", string(self.step.timeout_seconds), inputs.intent.checkout.container.workspace + "/.git/orbit-deploy-steps", self.step.name] : ["s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1", "sh", string(self.step.timeout_seconds)]) }}'
+        argv: '${{ ["incus", "exec", "--project", inputs.intent.checkout.container.project, "--cwd", inputs.intent.checkout.container.workspace, inputs.intent.checkout.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.checkout.container.environment + ["/bin/sh", "-c"] + (size(self.step.inputs) > 0 ? [self.step.required ? "s=$(cat) && timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1 && { [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; }" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; r=$?; [ \"$r\" -ne 0 ] || [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; echo \"$r\"", "sh", string(self.step.timeout_seconds), inputs.intent.checkout.container.workspace + "/.git/orbit-deploy-steps", self.step.name] : [self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)]) }}'
         timeoutSec: ${{ self.step.timeout_seconds + 10 }}
         stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}
     forEach:
       item: step
       in: '${{ inputs.intent.checkout.deployment.steps }}'
     concurrency: 1
-  # The commit the copy's workspace holds now, read in the copy as `orbit`.
+  # The commit the copy's workspace holds now, read in the copy as `orbit`. It runs when every deploy step passed or was skipped, also
+  # when all were skipped or the Project has none, and never after a failed one.
   - name: Read the workspace commit
     labels: {role: swamp}
     dependsOn:
-    - step: Run dev deploy steps
+    - step: Bring in the commit
       condition: {type: succeeded}
+    - step: Run dev deploy steps
+      condition: {type: always}
+    guard: ${{ steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") }}
     task:
       type: behavior
       behaviorType: '@swamp/ssh'

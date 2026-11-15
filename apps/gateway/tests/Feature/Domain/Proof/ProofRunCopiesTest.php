@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GitHub\GitHubReview;
+use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
@@ -26,6 +27,7 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
+use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\RemoteCommand;
@@ -42,6 +44,7 @@ use App\Models\Route;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Tests\Support\WorkflowStartIntents;
@@ -199,8 +202,8 @@ function copyProofAdmitted(): Operation
     return $proof->refresh();
 }
 
-/** @return Illuminate\Support\Collection<int, Operation> */
-function copyProofRuns(): Illuminate\Support\Collection
+/** @return Collection<int, Operation> */
+function copyProofRuns(): Collection
 {
     return Operation::query()->where('kind', 'proof.command')->orderBy('id')->get();
 }
@@ -334,6 +337,60 @@ describe('proof:run in copies: every end removes the copy', function (): void {
         app(ProofGroup::class)->cancel($run->refresh());
 
         expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->exists())->toBeTrue();
+    });
+
+    it('admits a new destroy when the copy\'s destroy failed, so a later cancel is never a replay of the failed one', function (): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $copy = copyProofActive($run);
+        app(OperationStore::class)->change($run, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'lock_key' => null]);
+        app(ProofGroup::class)->cancel($run->refresh());
+        $first = Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->sole();
+        app(OperationStore::class)->change($first, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'lock_key' => null]);
+
+        app(ProofGroup::class)->cancel($run->refresh());
+
+        expect(Operation::query()->where('kind', 'instance.destroy')->where('target_id', $copy->id)->pluck('id')->all())->toHaveCount(2);
+    });
+
+    it('removes the deploy step copies of the copy\'s proof runs with the copy', function (): void {
+        $socket = new class implements WebSocketClient
+        {
+            /** @var list<array<string, mixed>> */
+            public array $sent = [];
+
+            public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+
+            public function send(array $message): void
+            {
+                $this->sent[] = $message;
+            }
+
+            public function receive(float $timeoutSeconds): array
+            {
+                $frame = end($this->sent);
+
+                return [['id' => is_array($frame) ? ($frame['id'] ?? null) : null, 'type' => is_array($frame) ? ($frame['type'] ?? null) : null, 'payload' => ['data' => []]]];
+            }
+
+            public function close(): void {}
+
+            public function isConnected(): bool
+            {
+                return true;
+            }
+        };
+        config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/ca.pem', 'swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token']);
+        app()->instance(WebSocketClient::class, $socket);
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $destroy = Operation::query()->create(['kind' => 'instance.destroy', 'target_type' => 'instance', 'target_id' => $run->input['instance_id'],
+            'node_id' => $run->node_id, 'input' => [], 'state' => [], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 0]);
+
+        app(ContainerDestroyExecutionCopies::class)->remove($destroy);
+
+        expect(collect($socket->sent)->where('type', 'vault.delete')->pluck('payload.key')->all())
+            ->toContain('development-deploy-operation-'.$run->id.'-step-0', 'development-deploy-operation-'.$run->id.'-step-31');
     });
 
     it('cancels the groups of a cancelled proof', function (): void {

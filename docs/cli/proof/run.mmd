@@ -56,32 +56,12 @@ sequenceDiagram
   SW->>SW: Check the workspace commit
   %%> The workspace is at the commit under proof, or the run fails with proof.workspace_commit_mismatch before any case. Each batch's reset restarts and migrates the nested Gateway on this checkout, and the runner applies its grants and collections, so the fleet runs the tested code.
   loop each assigned batch, in order
-    SW->>CP: Restore the head checkout
-    %%> A prior flagged-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
     SW->>CP: Read the command batches
     SW->>SW: Select the assigned batch
     SW->>CP: Reset the inner fleet
     SW->>CP: Run batch setup
     SW->>CP: Run selected cases
-    opt CI replay after every head case passed
-      SW->>SW: Check head verdicts
-      SW->>CP: Check out the base
-      SW->>CP: Select replay cases
-      %%> Use the runner's case-level comparison, then keep fails_on_base: true. Unchanged flags and unflagged cases never replay, even under whole-file code or tooling selection.
-      SW->>CP: Remove the base copy
-      SW->>SW: Scope replay case ids
-      %%> Keep only cases admitted to this batch.
-      SW->>CP: Switch to the base
-      SW->>CP: Read nested commit
-      SW->>SW: Check nested commit
-      SW->>CP: Take head case files
-      %%> Copy cases, batches and the spec loader. Keep base runner and step implementations.
-      SW->>CP: Restore base snapshot
-      SW->>CP: Run replay setup
-      SW->>CP: Run replay cases
-      SW->>SW: Join replay verdicts
-      %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
-    end
+    %%> A copy runs no replay of flagged cases (`fails_on_base: true`) on the merge base: the head's verdicts are the run's.
     CP-->>SW: Verdict lines
     %%> The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that ends at its run budget keeps them; only the cases of the batches that did not end are unrun.
   end

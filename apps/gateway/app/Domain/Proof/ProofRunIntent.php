@@ -181,7 +181,6 @@ final readonly class ProofRunIntent
         }
     }
 
-
     /**
      * The proof, locked, when its admission may go on; null when it already names its runs. It refuses a proof that ended, waits behind
      * the working proof and earlier proofs, and fails at the end of the two-hour budget. Call it in the admission transaction.
@@ -240,6 +239,10 @@ final readonly class ProofRunIntent
     private function admitCopies(Operation $proof, string $commit, array $intent, array $batches, Project $project, string &$waitStep): void
     {
         $waitStep = ProofCopies::WaitStep;
+        // A proof with no copy place waits without reading the default and its Node; the transaction counts the places again.
+        if (app(ProofCopies::class)->places($project) < 1) {
+            throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free copy place: a proof leaves '.ProofCopies::KeptForTasks.' copy places for task groups.');
+        }
         $read = app(TaskCopyStart::class)->read($project);
         DB::transaction(function () use ($proof, $commit, $intent, $batches, $project, $read, &$waitStep): void {
             $current = $this->openForAdmission($proof, $waitStep);
