@@ -45,31 +45,16 @@ final readonly class ProofBatchPlan
                 throw $this->invalid('Selected command '.$command['command'].' has no valid cases.');
             }
             $grouped = [];
-            $seen = [];
-            foreach ($spec['cases'] as $case) {
-                if (! is_array($case) || ! is_string($case['id'] ?? null) || preg_match('/\A[a-zA-Z0-9_-]+\z/D', $case['id']) !== 1
-                    || ! is_string($case['batch'] ?? null) || ! array_key_exists($case['batch'], $definitions)) {
-                    throw $this->invalid('Selected command '.$command['command'].' has an invalid case or batch.');
+            $population = self::population($spec);
+            foreach ($population as $id => $batch) {
+                if (! array_key_exists($batch, $definitions)) {
+                    throw $this->invalid('Selected command '.$command['command'].' has an invalid batch.');
                 }
-                $variants = $case['variants'] ?? null;
-                if ($variants !== null && (! is_array($variants) || ! array_is_list($variants) || $variants === [])) {
-                    throw $this->invalid('Case '.$case['id'].' has invalid variants.');
-                }
-                foreach ($variants ?? [null] as $variant) {
-                    if ($variants !== null && (! is_array($variant) || ! is_string($variant['name'] ?? null) || preg_match('/\A[a-zA-Z0-9_-]+\z/D', $variant['name']) !== 1)) {
-                        throw $this->invalid('Case '.$case['id'].' has an invalid variant name.');
-                    }
-                    $id = $case['id'].($variant === null ? '' : '['.$variant['name'].']');
-                    if (isset($seen[$id])) {
-                        throw $this->invalid('Selected command '.$command['command'].' repeats case '.$id.'.');
-                    }
-                    $seen[$id] = true;
-                    if (! isset($command['only']) || in_array($id, $command['only'], true)) {
-                        $grouped[$case['batch']][] = $id;
-                    }
+                if (! isset($command['only']) || in_array($id, $command['only'], true)) {
+                    $grouped[$batch][] = $id;
                 }
             }
-            if ($grouped === [] || (isset($command['only']) && array_diff($command['only'], array_keys($seen)) !== [])) {
+            if ($grouped === [] || (isset($command['only']) && array_diff($command['only'], array_keys($population)) !== [])) {
                 throw $this->invalid('Selected command has no matching case ids.');
             }
             foreach ($definitions as $name => $definition) {
@@ -88,6 +73,42 @@ final readonly class ProofBatchPlan
         }
 
         return $batches;
+    }
+
+    /**
+     * The same expanded IDs serve range projection and batch admission.
+     *
+     * @param  array<string,mixed>  $spec
+     * @return array<string,string> case ID => batch
+     */
+    public static function population(array $spec): array
+    {
+        if (! is_array($spec['cases'] ?? null) || ! array_is_list($spec['cases'])) {
+            throw new ResourceOperationException('proof.selection_invalid', 'Selected command has no valid cases.', 409);
+        }
+        $population = [];
+        foreach ($spec['cases'] as $case) {
+            if (! is_array($case) || ! is_string($case['id'] ?? null) || preg_match('/\A[a-zA-Z0-9_-]+\z/D', $case['id']) !== 1
+                || ! is_string($case['batch'] ?? null)) {
+                throw new ResourceOperationException('proof.selection_invalid', 'Selected command has an invalid case or batch.', 409);
+            }
+            $variants = $case['variants'] ?? null;
+            if ($variants !== null && (! is_array($variants) || ! array_is_list($variants) || $variants === [])) {
+                throw new ResourceOperationException('proof.selection_invalid', 'Case '.$case['id'].' has invalid variants.', 409);
+            }
+            foreach ($variants ?? [null] as $variant) {
+                if ($variants !== null && (! is_array($variant) || ! is_string($variant['name'] ?? null) || preg_match('/\A[a-zA-Z0-9_-]+\z/D', $variant['name']) !== 1)) {
+                    throw new ResourceOperationException('proof.selection_invalid', 'Case '.$case['id'].' has an invalid variant name.', 409);
+                }
+                $id = $case['id'].($variant === null ? '' : '['.$variant['name'].']');
+                if (isset($population[$id])) {
+                    throw new ResourceOperationException('proof.selection_invalid', 'Selected command repeats case '.$id.'.', 409);
+                }
+                $population[$id] = $case['batch'];
+            }
+        }
+
+        return $population;
     }
 
     /**

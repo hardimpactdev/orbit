@@ -114,8 +114,10 @@ def report(code, output, sha, key, allow_trust_skip=False):
     return outcome, lines, receipt
 
 
-def run(sha, key, orbit, all_cases=False):
-    child = subprocess.Popen([orbit, 'proof:run', sha, *(['--all'] if all_cases else []), '--json', '--idempotency-key', key],
+def run(sha, key, orbit, all_cases=False, base=None):
+    if base is not None and (not SHA.fullmatch(base) or all_cases):
+        raise ValueError("A range needs a full base SHA and cannot use --all")
+    child = subprocess.Popen([orbit, 'proof:run', sha, *(['--all'] if all_cases else []), *(['--base', base] if base is not None else []), '--json', '--idempotency-key', key],
                              stdout=subprocess.PIPE, text=True)
     # A cancelled job gets SIGINT, then SIGTERM. Orbit cancels its run on both.
     for name in (signal.SIGINT, signal.SIGTERM):
@@ -133,6 +135,9 @@ def main():
     sha = os.environ.get('PROOF_SHA', '')
     if not SHA.fullmatch(sha):
         sys.exit('PROOF_SHA must be the full lowercase commit SHA of the pull request head.')
+    base = os.environ.get('PROOF_BASE') or None
+    if base is not None and (not SHA.fullmatch(base) or os.environ.get('PROOF_ALL') == 'true'):
+        sys.exit('PROOF_BASE must be a full lowercase SHA and cannot use PROOF_ALL.')
     key = f"ci-proof.{os.environ.get('GITHUB_RUN_ID', 'local')}.{os.environ.get('GITHUB_RUN_ATTEMPT', '1')}"
     check_eligibility = os.environ.get('PROOF_CHECK_ELIGIBILITY') == 'true'
     # Re-read after the self-hosted runner queue. Errors fail, rather than becoming an ineligible result.
@@ -150,8 +155,10 @@ def main():
         orbit = shutil.which('orbit')
         if orbit is None:
             sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
-        code, output = run(sha, key, orbit, all_cases=True) if os.environ.get('PROOF_ALL') == 'true' else run(sha, key, orbit)
+        code, output = run(sha, key, orbit, base=base) if base is not None else (run(sha, key, orbit, all_cases=True) if os.environ.get('PROOF_ALL') == 'true' else run(sha, key, orbit))
         outcome, lines, receipt = report(code, output, sha, key, allow_trust_skip=check_eligibility)
+        if base is not None:
+            receipt['base'] = base
         if os.environ.get('PROOF_STORE_RESULT') == 'true':
             try:
                 receipt['result'] = find_result(json.loads(output))

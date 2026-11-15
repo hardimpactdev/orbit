@@ -34,6 +34,14 @@ interface ProofCommitSource
     /** How `$to` stands to `$from` and the files that differ between them; null when GitHub knows neither of them or one of them. */
     public function range(string $from, string $to): ?ProofCommitRange;
 
+    /**
+     * Every intervening commit's diff against its first parent; base exclusive, head inclusive.
+     * Null means the base is missing or is not an ancestor. An incomplete history throws.
+     *
+     * @return array<string,ProofChangedFiles>|null
+     */
+    public function history(string $base, string $head): ?array;
+
     /** The text of one file at the commit, or null when the commit has no such file. */
     public function file(string $sha, string $path): ?string;
 

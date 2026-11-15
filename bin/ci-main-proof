@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report-only main proof consumer; range selection awaits the typed proof:run input."""
+"""Report-only main proof consumer; union selection uses the typed proof:run base input."""
 import argparse
 import json
 import os
@@ -31,12 +31,15 @@ def report(claim, receipt, job_result='success'):
         if key in seen or case.get('verdict') != 'passed':
             problems.append({'unit': ': '.join(key), 'reason': 'Duplicate or nonpassing case: ' + str(case), 'files': [case.get('file', '')]})
         seen.add(key)
+    range_covered = claim['mode'] == 'range' and receipt.get('base') == claim['base']
+    if claim['mode'] == 'range' and not range_covered:
+        problems.append({'unit': 'proof range', 'reason': 'Missing or mismatched range base in receipt', 'files': []})
     if claim['mode'] == 'all':
         missing = KINDS - {command for command, _ in seen}
         if missing:
             problems.append({'unit': 'nightly kinds', 'reason': 'Missing ' + ', '.join(sorted(missing)), 'files': []})
-    return {'claim': claim, 'passed': not problems, 'range_covered': False,
-            'selection': 'all kinds on newest tree' if claim['mode'] == 'all' else 'newest SHA selection only; range input not live',
+    return {'claim': claim, 'passed': not problems, 'range_covered': range_covered,
+            'selection': 'all kinds on newest tree' if claim['mode'] == 'all' else 'union of per-commit selections at tested SHA',
             'not_individually_tested': claim['commits'][:-1], 'problems': problems, 'receipt': receipt}
 
 
@@ -52,6 +55,7 @@ def main():
     claim['attempt'] = int(os.environ.get('GITHUB_RUN_ATTEMPT', '1'))
     if args.command == 'run':
         env = {**os.environ, 'PROOF_SHA': claim['sha'], 'PROOF_ALL': str(claim['mode'] == 'all').lower(),
+               'PROOF_BASE': claim['base'] if claim['mode'] == 'range' else '',
                'PROOF_STORE_RESULT': 'true', 'PROOF_CHECK_ELIGIBILITY': 'true', 'PROOF_RECEIPT': str(args.output)}
         return subprocess.run([sys.executable, '-I', str(ROOT / 'bin/ci-proof-run')], env=env).returncode
     receipt = json.loads(args.receipt.read_text()) if args.receipt.exists() else {}

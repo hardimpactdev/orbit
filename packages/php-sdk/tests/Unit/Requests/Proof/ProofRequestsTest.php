@@ -34,6 +34,14 @@ function proof_send(Request $request, string $fixture): MockClient
 }
 
 describe('proof requests', function (): void {
+    it('transports the exclusive range base without changing the commit or receipt', function (): void {
+        $mock = proof_send(new RunProofRequest(PROOF_COMMIT, false, false, 'proof.range', base: str_repeat('a', 40)), 'queued');
+
+        expect(json_decode((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody(), true))->toBe([
+            'commit' => PROOF_COMMIT, 'base' => str_repeat('a', 40),
+        ]);
+    });
+
     it('starts proof.run with a JSON body request to the proof route', function (): void {
         $request = new RunProofRequest(PROOF_COMMIT, false, false, 'proof.run.c1');
 

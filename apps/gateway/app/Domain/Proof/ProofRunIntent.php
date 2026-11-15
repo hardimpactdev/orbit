@@ -65,7 +65,7 @@ final readonly class ProofRunIntent
      * the groups and VMs and the hand-over to Swamp run in the job {@see AdmitProofRun}, which a release drains with the queue workers
      * (docs/cli/proof/run.mmd). The outcome of a refused or failed admission is on the proof Operation, with its code and message.
      */
-    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false, ?Node $authenticatedCaller = null): Operation
+    public function start(string $commit, bool $all, string $caller, ?string $requestId, bool $reportOnly = false, bool $keepFailed = false, ?Node $authenticatedCaller = null, ?string $base = null): Operation
     {
         if (($existing = $this->idempotency->replay(OperationKinds::ProofRun)) !== null) {
             return $existing;
@@ -79,7 +79,7 @@ final readonly class ProofRunIntent
         }
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
         $proof = $this->store->create(OperationKinds::ProofRun, 'node', $swamp->id, $swamp->id,
-            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly,
+            ['commit' => $commit, 'all' => $all, 'report_only' => $reportOnly, ...($base === null ? [] : ['base' => $base]),
                 'caller_node_id' => $authenticatedCaller?->id,
                 'ci_pool' => $authenticatedCaller?->status === LifecycleStatus::Active && $authenticatedCaller->roles()
                     ->where('role', RoleName::CiRunner)->where('status', LifecycleStatus::Active)->exists(),
@@ -109,7 +109,9 @@ final readonly class ProofRunIntent
         $waitStep = self::WaitStep;
         try {
             $this->trust->assert($commit);
-            $selection = $this->select($commit, ($input['all'] ?? false) === true);
+            $selection = isset($input['base'])
+                ? $this->selectRange(ValidatedData::string($input['base']), $commit)
+                : $this->select($commit, ($input['all'] ?? false) === true);
             $uncovered = $selection->uncovered;
             $intent = [...$input, 'everything_because' => $selection->everythingBecause, 'cases' => $selection->cases, 'selected_commands' => array_values(array_unique(array_column($selection->cases, 'command'))), 'uncovered' => $selection->uncovered];
             // A proof that was cancelled or ended as lost while the job read GitHub stays as it is.
@@ -408,10 +410,81 @@ final readonly class ProofRunIntent
                 'The Swamp workflow operation-proof-run proves the command in its own task VM or copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
     }
 
-    private function select(string $commit, bool $all): ProofSelectionResult
+    /**
+     * @param  array{command:string,file:string,only?:list<string>,reasons?:array<string,string>}  $earlier
+     * @param  array{command:string,file:string,only?:list<string>,reasons?:array<string,string>}  $later
+     * @return array{command:string,file:string,only?:list<string>,reasons?:array<string,string>}
+     */
+    private static function unionCase(array $earlier, array $later): array
+    {
+        if (! isset($earlier['only']) || ! isset($later['only'])) {
+            return ['command' => $later['command'], 'file' => $later['file'], 'reasons' => ['*' => 'selected by an intervening commit']];
+        }
+
+        return ['command' => $later['command'], 'file' => $later['file'],
+            'only' => array_values(array_unique([...$earlier['only'], ...$later['only']])),
+            'reasons' => [...($earlier['reasons'] ?? []), ...($later['reasons'] ?? [])]];
+    }
+
+    private function selectRange(string $base, string $commit): ProofSelectionResult
     {
         try {
-            $changes = $this->source->changes($commit);
+            $history = $this->source->history($base, $commit)
+                ?? throw new ResourceOperationException('proof.base_not_ancestor', 'The proof base must be an ancestor of the tested commit.', 409);
+            $wanted = [];
+            $uncovered = [];
+            $everything = null;
+            foreach ($history as $sha => $changes) {
+                $selection = $this->select($sha, false, $changes);
+                $everything ??= $selection->everythingBecause;
+                foreach ($selection->uncovered as $row) {
+                    $uncovered[$row['path'].':'.$row['reason']] = $row;
+                }
+                foreach ($selection->cases as $case) {
+                    $file = $case['file'];
+                    $wanted[$file] = isset($wanted[$file]) ? self::unionCase($wanted[$file], $case) : $case;
+                }
+            }
+            $current = ProofSelection::casesFiles($this->source->proofPaths($commit));
+            $selected = [];
+            foreach ($wanted as $file => $case) {
+                if (! in_array($file, $current, true)) {
+                    $uncovered[$file] = ['path' => $file, 'reason' => 'gone at tested SHA'];
+
+                    continue;
+                }
+                $spec = ValidatedData::object(Yaml::parse($this->source->file($commit, $file) ?? ''));
+                $case['command'] = ValidatedData::string($spec['command'] ?? null);
+                $ids = array_keys(ProofBatchPlan::population($spec));
+                if (isset($case['only'])) {
+                    foreach (array_diff($case['only'], $ids) as $gone) {
+                        $uncovered[$file.'#'.$gone] = ['path' => $file.'#'.$gone, 'reason' => 'gone at tested SHA'];
+                    }
+                    $case['only'] = array_values(array_intersect($ids, $case['only']));
+                    $case['reasons'] = array_intersect_key($case['reasons'] ?? [], array_flip($case['only']));
+                    if ($case['only'] === []) {
+                        continue;
+                    }
+                } elseif ($ids === []) {
+                    $uncovered[$file] = ['path' => $file, 'reason' => 'gone at tested SHA'];
+
+                    continue;
+                }
+                $selected[] = $case;
+            }
+
+            return new ProofSelectionResult($selected, array_values($uncovered), $everything, $base);
+        } catch (GitHubApiException) {
+            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
+        } catch (ParseException) {
+            throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML.', 409);
+        }
+    }
+
+    private function select(string $commit, bool $all, ?ProofChangedFiles $changes = null): ProofSelectionResult
+    {
+        try {
+            $changes ??= $this->source->changes($commit);
             $list = $this->source->file($commit, ProofSelectionList::Path);
             $casesFiles = ProofSelection::casesFiles($this->source->proofPaths($commit));
         } catch (GitHubApiException) {

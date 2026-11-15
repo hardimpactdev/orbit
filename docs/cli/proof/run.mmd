@@ -17,15 +17,17 @@ sequenceDiagram
   opt --base supplied
     GW->>GH: Verify the ancestor base<br/>list every intervening commit
     %%> The base is exclusive and the tested commit is inclusive. Refuse a missing or non-ancestor base. An equal base selects nothing. Read each commit's changes against its first parent and its own selection list; never use the net diff of the range.
-    GW->>GW: Union per-commit selections<br/>on the tested tree
-    %%> A whole-file selection includes its current cases. Otherwise union selected ids and keep only ids still present at the tested commit. List removed files and ids as uncovered, gone at tested SHA. Trust remains on the newest exact SHA. Case receipts and execution are unchanged.
   end
   CLI->>CLI: Expand base and head<br/>with the runner
   %%> The runner validates and expands fixtures, list vars, variants and batch setup. Compare its canonical per-case definitions by id. Command code changes select the whole file. Runner, selection code or selection list changes disable narrowing for every selected command. Tooling alone selects no commands. Unknown fixture keys and any planning doubt select the whole file.
   CLI->>GH: Publish the selection<br/>for this base and head
   %%> CI consumes this same result and uploads proof-selection.json before proof admission. Include every considered file, even when it selects zero cases.
   GW->>GH: Read the runner selection<br/>for this base and head
-  %%> Accept only the exact version, head, merge base and cases file. Missing, expired, malformed or mismatched results select the whole file. The Gateway does not compare YAML definitions.
+  %%> For a range, read each intervening commit's exact first-parent comparison. Accept only the exact version, head, merge base and cases file. Missing, expired, malformed or mismatched results select the whole file. The Gateway does not compare YAML definitions.
+  opt --base supplied
+    GW->>GW: Union selections<br/>on the tested tree
+    %%> A whole-file selection includes its current cases. Otherwise union selected ids and keep only ids still present at the tested commit. List removed files and ids as uncovered, gone at tested SHA. Trust remains on the newest exact SHA. Case receipts and execution are unchanged.
+  end
   GW->>GW: Record case ids<br/>and reasons
   %%> Select added and changed cases and their variants, and users whose expanded dependencies changed. Deleted cases select nothing. Report changed, added, uses changed fixture, uses changed var, batch setup changed, command code changed or proof tooling changed. A verified zero-case selection succeeds without a copy.
   GW->>GW: Plan selected cases<br/>in batches

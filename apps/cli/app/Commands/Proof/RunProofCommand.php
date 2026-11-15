@@ -27,6 +27,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
     #[\Override]
     protected $signature = 'proof:run
         {commit? : Full 40 or 64 character lowercase commit SHA}
+        {--base= : Exclusive ancestor SHA; union each intervening commit selection on the tested tree}
         {--all : Run every case, not only the cases that the commit selects}
         {--report-only : Yield capacity to task and proof work}
         {--keep-failed : Keep the VM of a run that failed for 60 minutes, to read it}
@@ -66,6 +67,11 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
             );
         }
 
+        $base = $this->option('base');
+        if ($base !== null && (self::commitError($base) !== null || $this->option('all') === true)) {
+            return $this->renderGatewayFailure('proof.base_invalid', 'Name the base by its full lowercase SHA, without --all.', details: ['field' => 'base']);
+        }
+
         $profile = $this->activeGatewayProfile($repository);
 
         if ($profile === null) {
@@ -75,7 +81,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'proof.run.'.Str::uuid();
-        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key, $this->option('keep-failed') === true), OperationResponse::class);
+        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key, $this->option('keep-failed') === true, $base), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, 'Prove commit '.substr($commit, 0, 12), 'Proof')

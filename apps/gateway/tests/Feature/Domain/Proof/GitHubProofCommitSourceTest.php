@@ -228,3 +228,62 @@ it('reads only an intact runner artifact for the exact CI head and comparison', 
     expect($source->caseSelection($base, SOURCE_SHA))->toBe($failure === 'none' ? $result : null);
     Http::assertSent(static fn (Request $request): bool => ! str_contains($request->url(), 'blob.core.windows.net') || ! $request->hasHeader('Authorization'));
 })->with(['none', 'base', 'head', 'digest', 'workflow', 'expired', 'missing']);
+
+it('reads all history pages and compares every commit to its own first parent', function (): void {
+    $base = str_repeat('a', 40);
+    $head = str_repeat('b', 40);
+    $rows = [];
+    $parents = [];
+    $parent = $base;
+    for ($i = 1; $i <= 101; $i++) {
+        $sha = $i === 101 ? $head : str_pad(dechex($i), 40, '0', STR_PAD_LEFT);
+        $rows[] = ['sha' => $sha, 'parents' => [['sha' => $parent]]];
+        $parents[$sha] = $parent;
+        $parent = $sha;
+    }
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/*' => function (Request $request) use ($base, $head, $rows, $parents) {
+        if ($request['per_page'] === 100) {
+            expect($request->url())->toContain($base.'...'.$head);
+
+            return Http::response(['status' => 'ahead', 'merge_base_commit' => ['sha' => $base], 'total_commits' => 101,
+                'commits' => array_slice($rows, ($request['page'] - 1) * 100, 100), 'files' => []]);
+        }
+        $sha = explode('?', explode('...', $request->url())[1])[0];
+        expect($request->url())->toContain($parents[$sha].'...'.$sha);
+
+        return Http::response(['status' => 'ahead', 'merge_base_commit' => ['sha' => $parents[$sha]], 'files' => [['filename' => 'changed-and-reverted.py', 'status' => 'modified']]]);
+    }]);
+
+    $history = githubSource()->history($base, $head);
+
+    expect($history)->toHaveCount(101);
+    expect($history[$head]->mergeBase)->toBe($parents[$head]);
+    expect($history[$head]->paths())->toBe(['changed-and-reverted.py']);
+    Http::assertSentCount(103);
+});
+
+it('refuses incomplete or malformed history rather than dropping a merged commit', function (string $fault): void {
+    $base = str_repeat('a', 40);
+    $head = SOURCE_SHA;
+    $body = ['status' => 'ahead', 'merge_base_commit' => ['sha' => $base], 'total_commits' => 2,
+        'commits' => [['sha' => str_repeat('c', 40), 'parents' => [['sha' => $base]]], ['sha' => $head, 'parents' => [['sha' => str_repeat('c', 40)]]]]];
+    match ($fault) {
+        'truncated' => array_pop($body['commits']),
+        'duplicate' => $body['commits'][1] = $body['commits'][0],
+        'no parent' => $body['commits'][1]['parents'] = [],
+        'missing head' => $body['commits'][1]['sha'] = str_repeat('d', 40),
+        'missing count' => $body['total_commits'] = null,
+    };
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/'.$base.'...'.$head.'*' => Http::response($body)]);
+
+    expect(fn () => githubSource()->history($base, $head))->toThrow(GitHubApiException::class);
+})->with(['truncated', 'duplicate', 'no parent', 'missing head', 'missing count']);
+
+it('distinguishes an empty range from a nonancestor or missing base', function (string $status, int $http, ?array $expected): void {
+    $base = str_repeat('a', 40);
+    Http::fake(['api.github.com/repos/hardimpactdev/orbit/compare/'.$base.'...'.$base.'*' => Http::response([
+        'status' => $status, 'merge_base_commit' => ['sha' => $base], 'total_commits' => 0, 'commits' => [],
+    ], $http)]);
+
+    expect(githubSource()->history($base, $base))->toBe($expected);
+})->with([['identical', 200, []], ['diverged', 200, null], ['behind', 200, null], ['missing', 404, null]]);

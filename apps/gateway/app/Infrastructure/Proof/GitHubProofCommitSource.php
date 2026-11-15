@@ -147,6 +147,61 @@ final class GitHubProofCommitSource implements ProofCommitSource
         return new ProofCommitRange($status, new ProofChangedFiles($mergeBase, $this->changedFiles($rows), count($rows) < self::COMPARE_FILES));
     }
 
+    public function history(string $base, string $head): ?array
+    {
+        $parents = [];
+        $total = null;
+        for ($page = 1; ; $page++) {
+            $response = $this->get($this->contentsToken(), $this->path('/compare/'.$base.'...'.$head), ['per_page' => self::PAGE_SIZE, 'page' => $page]);
+            if (in_array($response->status(), [404, 422], true)) {
+                return null;
+            }
+            $this->assertOk($response);
+            $status = $response->json('status');
+            if (! in_array($status, ['ahead', 'identical', 'behind', 'diverged'], true)) {
+                throw GitHubApiException::unavailable();
+            }
+            if (! in_array($status, ['ahead', 'identical'], true) || $response->json('merge_base_commit.sha') !== $base) {
+                return null;
+            }
+            $count = $response->json('total_commits');
+            $rows = $response->json('commits');
+            if (! is_int($count) || $count < 0 || ($total !== null && $total !== $count) || ! is_array($rows) || ! array_is_list($rows)
+                || count($rows) !== min(self::PAGE_SIZE, $count - count($parents))) {
+                throw GitHubApiException::unavailable();
+            }
+            $total = $count;
+            foreach ($rows as $row) {
+                $sha = is_array($row) ? ($row['sha'] ?? null) : null;
+                $rowParents = is_array($row) ? ($row['parents'] ?? null) : null;
+                $firstParent = is_array($rowParents) ? ($rowParents[0] ?? null) : null;
+                $parent = is_array($firstParent) ? ($firstParent['sha'] ?? null) : null;
+                if (! is_string($sha) || preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D', $sha) !== 1
+                    || ! is_string($parent) || preg_match('/\A(?:[0-9a-f]{40}|[0-9a-f]{64})\z/D', $parent) !== 1
+                    || $sha === $base || isset($parents[$sha])) {
+                    throw GitHubApiException::unavailable();
+                }
+                $parents[$sha] = $parent;
+            }
+            if (count($parents) === $total) {
+                break;
+            }
+        }
+        if (($base === $head && $parents !== []) || ($base !== $head && ! isset($parents[$head]))) {
+            throw GitHubApiException::unavailable();
+        }
+        $history = [];
+        foreach ($parents as $sha => $parent) {
+            $range = $this->range($parent, $sha);
+            if ($range === null || $range->changes->mergeBase !== $parent) {
+                throw GitHubApiException::unavailable();
+            }
+            $history[$sha] = $range->changes;
+        }
+
+        return $history;
+    }
+
     public function file(string $sha, string $path): ?string
     {
         $segments = explode('/', $path);

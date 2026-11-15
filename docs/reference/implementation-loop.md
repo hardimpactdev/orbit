@@ -283,6 +283,8 @@ A clean CLI exit is insufficient: the job requires a passing result with case ve
 
 Every proof CI summary includes the [base-refresh caveat](/reference/command-development-pipeline#2-development-environment). A passing proof does not establish that refresh reconverges the nested Nodes’ OS state.
 
+The independent [main proof consumer](/reference/main-full-set#proof-consumer) passes an ancestor base with the tested SHA. It unions each intervening commit’s selection, including changes later reverted, and records the base in its CI receipt. Nightly runs use `--all` instead. Neither path gates Required checks or a release.
+
 The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. An `interrupted` outcome means inconclusive coverage and exits nonzero; [proof outcomes](/cli/proof/run#verdicts) define failure precedence. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
 
 The job holds no secret. The runner's CLI acts as its enrolled Node from its WireGuard address, with an access grant to the Gateway. Only an active authenticated `ci-runner` Node gets the CI pool. The default labels are `self-hosted, hardimpact, orbit-shard`; `ORBIT_PROOF_RUNNER` can supply a JSON list of labels. The wrapper waits up to 270 minutes, covering two hours of admission and two hours of execution with 30 minutes for setup, reporting and cancellation. Both proof jobs allow 275 minutes; an enabled blocking Required monitor uses the same limit. These exceptions do not change the fast-check ceilings or enable proof blocking.

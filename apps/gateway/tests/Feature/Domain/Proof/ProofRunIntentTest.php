@@ -12,6 +12,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Proof\ProofBatchPlan;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
 use App\Domain\Proof\ProofCommitRange;
@@ -27,6 +28,9 @@ use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
+use App\Http\Mcp\ApiDispatcher;
+use App\Http\Mcp\ApiOperationTool;
+use App\Http\Mcp\ToolManifest;
 use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Jobs\Tasks\AdmitTaskVm;
@@ -39,6 +43,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Request;
 use Illuminate\Support\Env;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
@@ -83,9 +88,14 @@ function proofSource(): object
 
         public int $reads = 0;
 
+        public array $checkedCommits = [];
+
+        public array $pathSets = [];
+
         public function commitExists(string $sha): bool
         {
             $this->reads++;
+            $this->checkedCommits[] = $sha;
 
             return $this->down ? throw GitHubApiException::unavailable() : $this->exists;
         }
@@ -130,18 +140,27 @@ function proofSource(): object
 
         public ?array $selection = null;
 
+        public array $selections = [];
+
         public function caseSelection(string $base, string $head): ?array
         {
-            return $this->selection;
+            return $this->selections[$head] ?? $this->selection;
         }
 
         public function proofPaths(string $sha): array
         {
-            return $this->paths;
+            return $this->pathSets[$sha] ?? $this->paths;
         }
 
         /** @var array<string,ProofCommitRange|null> release commit => how the merge base stands to it; an unknown commit is null */
         public array $ranges = [];
+
+        public ?array $history = null;
+
+        public function history(string $base, string $head): ?array
+        {
+            return $this->history;
+        }
 
         public function range(string $from, string $to): ?ProofCommitRange
         {
@@ -233,10 +252,10 @@ describe('which commits Orbit proves', function (): void {
 });
 
 /** The request, then the queue job: the proof as the admission left it. */
-function proofAdmitted(bool $all = false, bool $reportOnly = false, ?Node $caller = null): Operation
+function proofAdmitted(bool $all = false, bool $reportOnly = false, ?Node $caller = null, ?string $base = null): Operation
 {
     Queue::fake();
-    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, $all, 'tester', null, reportOnly: $reportOnly, authenticatedCaller: $caller);
+    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, $all, 'tester', null, reportOnly: $reportOnly, authenticatedCaller: $caller, base: $base);
     app(ProofRunIntent::class)->admit($proof->id);
 
     return $proof->refresh();
@@ -847,3 +866,104 @@ it('expires the parent admission allowance for operators as well as CI before re
         ->and($proof->status)->toBe(OperationStatus::Failed)->and($proof->started_at)->toBeNull()
         ->and(ProofRunSettlement::children($proof->id))->toBeEmpty();
 })->with([false, true]);
+
+it('unions per-commit selections despite an empty net diff and drops IDs gone at the tested SHA', function (): void {
+    config(['proof.execution' => false]);
+    $source = proofSource();
+    $source->branches = ['main'];
+    $base = str_repeat('a', 40);
+    $middle = str_repeat('c', 40);
+    $file = 'swamp/proof/firewall/allow.cases.yaml';
+    $source->history = [$middle => new ProofChangedFiles($base, [new ProofChangedFile($file, 'modified')], true),
+        PROOF_SHA => new ProofChangedFiles($middle, [new ProofChangedFile($file, 'modified')], true)];
+    foreach ([$middle => [$base, ['first', 'removed']], PROOF_SHA => [$middle, ['second[one]']]] as $sha => [$parent, $ids]) {
+        $source->selections[$sha] = ['version' => 1, 'base' => $parent, 'head' => $sha, 'files' => [
+            ['command' => 'firewall:allow', 'file' => $file, 'only' => $ids, 'reasons' => array_fill_keys($ids, 'changed')],
+        ]];
+    }
+    $source->documents[PROOF_SHA.':'.$file] = "command: firewall:allow\ncases:\n  - {id: first, batch: fresh-fleet}\n  - {id: second, batch: fresh-fleet, variants: [{name: one}, {name: two}]}\n";
+    proofWorld($source);
+
+    $proof = proofAdmitted(base: $base);
+
+    expect($proof->input['base'])->toBe($base);
+    expect($source->checkedCommits)->toBe([PROOF_SHA]);
+    expect($proof->input['cases'])->toBe([['command' => 'firewall:allow', 'file' => $file,
+        'only' => ['first', 'second[one]'], 'reasons' => ['first' => 'changed', 'second[one]' => 'changed']]]);
+    expect($proof->input['uncovered'])->toBe([['path' => $file.'#removed', 'reason' => 'gone at tested SHA']]);
+    expect($proof->error_code)->toBe('proof.execution_disabled');
+});
+
+it('uses the historical selection list and current population for a whole-file selection', function (string $state): void {
+    config(['proof.execution' => false]);
+    $source = proofSource();
+    $source->branches = ['main'];
+    $base = str_repeat('a', 40);
+    $middle = str_repeat('c', 40);
+    $file = 'swamp/proof/firewall/allow.cases.yaml';
+    $source->history = [$middle => new ProofChangedFiles($base, [new ProofChangedFile('old/input.py', 'modified')], true), PROOF_SHA => new ProofChangedFiles($middle, [], true)];
+    $source->documents[$middle.':swamp/proof/selection.txt'] = "old/input.py  firewall:allow\n";
+    $source->documents[PROOF_SHA.':'.$file] = $state === 'empty' ? "command: firewall:allow\ncases: []\n" : "command: firewall:allow\ncases:\n  - {id: newly-added, batch: fresh-fleet}\n";
+    if ($state === 'missing') {
+        $source->pathSets[PROOF_SHA] = [];
+    }
+    proofWorld($source);
+
+    $proof = proofAdmitted(base: $base);
+
+    if ($state !== 'current') {
+        expect($proof->result['outcome'])->toBe('nothing_to_prove');
+        expect($proof->input['uncovered'])->toBe([['path' => $file, 'reason' => 'gone at tested SHA']]);
+    } else {
+        expect($proof->input['cases'])->toBe([['command' => 'firewall:allow', 'file' => $file, 'reasons' => ['*' => 'command code changed']]]);
+        expect(app(ProofBatchPlan::class)->read(PROOF_SHA, $proof->input['cases'])[0]['cases'])->toBe(['newly-added']);
+    }
+})->with(['current', 'empty', 'missing']);
+
+it('refuses a nonancestor range without admitting copies', function (): void {
+    $source = proofSource();
+    $source->branches = ['main'];
+    proofWorld($source);
+
+    $proof = proofAdmitted(base: str_repeat('a', 40));
+
+    expect($proof->error_code)->toBe('proof.base_not_ancestor');
+    expect($proof->input['runs'])->toBe([]);
+});
+
+it('has nothing to prove for equal ancestor and head', function (): void {
+    $source = proofSource();
+    $source->branches = ['main'];
+    $source->history = [];
+    proofWorld($source);
+
+    $proof = proofAdmitted(base: PROOF_SHA);
+
+    expect($proof->result['outcome'])->toBe('nothing_to_prove');
+    expect($proof->input['runs'])->toBe([]);
+});
+
+it('admits the generated MCP range input through the typed request and queues that base', function (): void {
+    Queue::fake();
+    $source = proofSource();
+    proofWorld($source);
+    app(TaskExtensionState::class)->enable();
+    $node = Node::query()->where('name', 'swamp')->firstOrFail();
+    $node->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+    $node->accessibleNodes()->attach($node);
+    $definition = collect(ToolManifest::default()->definitions())->firstWhere('name', 'proof-run');
+    expect($definition->inputSchema['properties']['base']['type'])->toBe('string');
+    expect($definition->inputSchema['required'])->not->toContain('base');
+    $tool = new ApiOperationTool($definition, app(ApiDispatcher::class));
+    $caller = Request::create('/mcp', 'POST', server: ['REMOTE_ADDR' => $node->wireguard_ip]);
+    $base = str_repeat('a', 40);
+
+    $response = $tool->handle(new Laravel\Mcp\Request(['commit' => PROOF_SHA, 'base' => $base, 'Idempotency-Key' => 'proof-range']), $caller);
+    $data = json_decode((string) $response->content(), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($data)->toHaveKey('operation.id');
+    $proof = Operation::query()->findOrFail($data['operation']['id']);
+    expect($proof->input['base'])->toBe($base);
+    expect($source->reads)->toBe(0);
+    Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
+});
