@@ -89,6 +89,10 @@ The app connects to Reverb at the URL that `GET /api/v1/realtime` returns. Its p
 
 The dashboard and Nodes page group Nodes by the existing Metrics status. Tracked nodes have an exporter with `desired: true` and `actual: active`; their pane shows CPU, memory, disk and uptime. Every other Node appears under Other nodes, including task VMs without a tracked exporter. Roles, platform and managed state do not decide the group. Missing readings show `—`, and old Prometheus samples do not make an untracked Node tracked. Instance lists show whether each Instance's placement is development or production, from its Node's `app-dev` or `app-prod` role. [Concepts](/concepts) defines both terms.
 
+## CI runner view
+
+The runner view at `/runners` shows each CI Node's places, CPU pressure, memory and disk, each runner's state and current job, and the runners' jobs of the last 48 hours. It reads `GET /api/v1/ci/runners`. [CI runner view](/reference/ci-runner-view) owns its content, sources and freshness.
+
 ## Node detail pages
 
 A Node detail page has the same section menu pattern as an Instance: Overview, Tools, and Firewall where supported. Overview holds identity, roles, metrics when supported, Instances, and Node Processes. Firewall has its own page section on Linux. It reads [`firewall:list`](/cli/firewall/list) with Orbit's rules and the live comparison, `GET /api/v1/firewall-rules?node=<id>&managed=1&live=1`, in one request. The section lists the operator rules, Orbit's own rules as locked rows, and live rules that nothing explains. Rules the Node lacks come last, below a divider. macOS tool support does not enable firewall management.
