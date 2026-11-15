@@ -3,7 +3,7 @@
  * build, a rerun that changes nothing, a deployment, the refusals of a deployment and the result file each phase writes. The Node is
  * this machine: the run's connection is local and nothing becomes root.
  */
-import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
+import { assert, assertEquals, assertStringIncludes, assertThrows } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
 import { fixture as hostFixture } from "./_support/instance_host.ts";
 
@@ -91,7 +91,7 @@ function fixture() {
   for (const name of ["instance-container.yml", "tasks/address-node.yml", "tasks/instance-container-process.yml", "tasks/instance-container-handlers.yml",
     "tasks/instance-container-run-phase.yml",
     "tasks/instance-container-power.yml", "tasks/instance-container-swap.yml", "tasks/instance-private-names.yml", "tasks/instance-machine-name.yml", "instance_machine_name.py",
-    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh"]) {
+    "tasks/instance-nested-club-key.yml", "instance_nested_club_key.sh", "tasks/instance-proof-checkout.yml"]) {
     Deno.copyFileSync(new URL(name, root), `${folder}/${name}`);
   }
   Deno.copyFileSync(new URL("instance_node_runtime.py", root), `${folder}/instance_node_runtime.py`);
@@ -537,6 +537,55 @@ Deno.test({
       git(f.source, "commit", "--quiet", "-am", "moves the input");
       for (const phase of ["fetch", "checkout"]) assert(f.run(phase).ok, phase);
       assertEquals(skip(), ",,");
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
+  ignore: !hasAnsible,
+  fn() {
+    const f = fixture();
+    try {
+      for (const phase of ["container", "workspace"]) assert(f.run(phase).ok);
+      const seed = git(f.source, "rev-parse", "HEAD");
+      // The commit under proof is on no branch the copy knows: a pull request head, reachable only by its SHA.
+      git(f.source, "checkout", "--quiet", "-b", "pull-head");
+      Deno.writeTextFileSync(`${f.source}/index.php`, "<?php echo 'proof';\n");
+      git(f.source, "commit", "--quiet", "-am", "the change under proof");
+      const head = git(f.source, "rev-parse", "HEAD");
+      git(f.source, "checkout", "--quiet", "main");
+      git(f.source, "branch", "--quiet", "-D", "pull-head");
+      git(f.source, "update-ref", "refs/pull/7/head", head);
+      // The public URL leads to the fixture's repository; the phase itself allows only HTTPS, so the stand-in allows file for this one URL.
+      const repository = "https://github.com/hardimpactdev/orbit.git";
+      (f.container as Record<string, unknown>).environment = [`PATH=${Deno.env.get("PATH")}`, "GIT_CONFIG_COUNT=2",
+        `GIT_CONFIG_KEY_0=url.file://${f.source}.insteadOf`, `GIT_CONFIG_VALUE_0=${repository}`, "GIT_CONFIG_KEY_1=protocol.file.allow", "GIT_CONFIG_VALUE_1=always"];
+      const steps = [{ name: "install-root", timeout_seconds: 300, required: true, inputs: ["index.php"], command_digest: "a".repeat(64) }];
+      Object.assign(f.intent, { commit: head, repository, deployment: { steps } });
+      f.write();
+      const record = `${f.folder}/containers/instance-7/srv/workspace/.git/orbit-deploy-steps`;
+      Deno.mkdirSync(`${record}/done`, { recursive: true });
+
+      const done = f.run("proof_checkout");
+      assert(done.ok, done.output);
+      assertEquals(f.workspace("rev-parse", "HEAD"), head);
+      assertEquals(f.workspace("rev-parse", "--abbrev-ref", "HEAD"), "HEAD");
+      assertEquals(f.result().commit, head);
+      // Its input moved since the seed's deployment: the step is due, with a pending record.
+      assertEquals(Deno.readTextFileSync(`${f.folder}/run/deploy-steps-skip`), ",,");
+      assertEquals([...Deno.readDirSync(`${record}/pending`)].map((entry) => entry.name), ["install-root"]);
+      assert(seed !== head);
+
+      // A commit the repository does not have: the fetch fails, the phase names it, and the workspace stays where it was.
+      Object.assign(f.intent, { commit: "f".repeat(40) });
+      f.write();
+      const missing = f.run("proof_checkout");
+      assert(!missing.ok);
+      assertStringIncludes(JSON.stringify(f.result()), "Fetch the commit under proof");
+      assertEquals(f.workspace("rev-parse", "HEAD"), head);
     } finally {
       f.cleanup();
     }

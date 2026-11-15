@@ -111,6 +111,17 @@ final readonly class ProofChildStarts
             if ($due->isFuture()) {
                 return $due;
             }
+            // A run in a copy starts only on an active copy: it waits while the copy's create or completion runs, and a copy that failed
+            // or is gone fails the run, with its cases unrun, and cancels the group, which removes what is left of the copy.
+            $copy = app(ProofCopies::class)->state($operation);
+            if ($copy === 'pending') {
+                return now()->toImmutable()->addSeconds(self::SpacingSeconds)->ceilSecond();
+            }
+            if ($copy === 'failed') {
+                $this->failWithoutCopy($operation);
+
+                return false;
+            }
             if (self::held($operation)) {
                 $this->mark($operation, ['released_at' => now()->toISOString()]);
             }
@@ -254,6 +265,18 @@ final readonly class ProofChildStarts
         DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
 
         return true;
+    }
+
+    /** The run of a copy that will never be active fails before Swamp: proof.run_failed, every assigned case unrun. */
+    private function failWithoutCopy(Operation $child): void
+    {
+        $input = ValidatedData::object($child->input);
+        $verdicts = ProofShardVerdicts::rows(ProofBatchPlan::stored($input['assignments']), '');
+        $this->store->change($child, ['status' => OperationStatus::Failed, 'finished_at' => now(), 'error_code' => ProofCommandProjection::RunFailed,
+            'current_step' => null, 'lock_key' => null, 'result' => ['commit' => $input['commit'], 'command' => $input['command'], 'file' => $input['file'],
+                'outcome' => 'failed', 'error_code' => ProofCommandProjection::RunFailed, 'cases' => $verdicts['cases']]]);
+        DB::afterCommit(static fn () => CancelProofGroup::dispatch($child->id));
+        DB::afterCommit(static fn () => app(ProofRunSettlement::class)->settle(ValidatedData::integer($input['proof_operation_id'])));
     }
 
     /** @return array<string, mixed> */

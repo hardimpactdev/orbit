@@ -8,6 +8,8 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
+use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupEnding;
@@ -24,11 +26,11 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Hands the admitted run of one command to its Swamp parent `operation-proof-run`, and records the run once, from its terminal
- * event: the VM and workspace as provision records them, the verdict of each case, and, when the run destroyed its VM, the end
- * of the task group. No step calls the Gateway. See docs/cli/proof/run.mmd.
+ * Hands the admitted run of one command to its Swamp parent, `operation-proof-run` on a task VM or `operation-proof-run-copy` in a copy,
+ * and records the run once, from its terminal event: the VM and workspace as provision records them, the verdict of each case, and
+ * the end of the task group, which for a copy is its destroy. No step calls the Gateway. See docs/cli/proof/run.mmd.
  */
-final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout
+final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
 {
     /** The code of a run whose VM or fleet never got to run its cases. */
     public const string RunFailed = 'proof.run_failed';
@@ -41,9 +43,24 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
 
     public function __construct(private TaskProvisionProjection $provision, private TaskGroupEnding $ending, private ProofRunSettlement $settlement) {}
 
+    /** A run in a copy runs `operation-proof-run-copy`; a run on a task VM `operation-proof-run`. Admission records the choice. */
+    public function workflow(Operation $operation): string
+    {
+        return ProofCopies::isCopyRun($operation) ? 'operation-proof-run-copy' : 'operation-proof-run';
+    }
+
+    /** At the start of a run in a copy, each development deploy step's command goes to its vault key; a VM run's input is its input. */
+    public function workflowInput(Operation $operation): array
+    {
+        return ProofCopies::isCopyRun($operation) ? app(ProofCopies::class)->input($operation, true) : $this->input($operation);
+    }
+
     /** The run's inputs: the provision and the destruction as the workflows `operation-task-provision` and `operation-task-cancel` take them. */
     public function input(Operation $operation): array
     {
+        if (ProofCopies::isCopyRun($operation)) {
+            return app(ProofCopies::class)->input($operation, false);
+        }
         $input = ValidatedData::object($operation->input);
         $provision = $this->provision->input(self::provisionView($operation));
         $cancel = TaskVmProviderWorkflowInput::envelope(ValidatedData::object($input['cancel']));
@@ -93,6 +110,12 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     /** A definite start refusal has no Node effects, but its claimed identity still needs releasing. */
     public function refused(Operation $operation): void
     {
+        if (ProofCopies::isCopyRun($operation)) {
+            DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
+            DB::afterCommit(fn () => $this->settle($operation));
+
+            return;
+        }
         $this->provision->refused(self::provisionView($operation));
         DB::afterCommit(fn () => $this->settle($operation));
     }
@@ -109,13 +132,17 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
             $input = ValidatedData::object($operation->input);
             $status = ValidatedData::string($data['status']);
 
-            // The slot and the workspace of the group, as a claim records them. The run releases the slot itself, always.
+            // The slot and the workspace of the group, as a claim records them. The run releases the slot itself, always. A run in a copy
+            // claims nothing: admission started its copy.
+            $copy = ProofCopies::isCopyRun($operation);
             $claimed = is_array($native['provision'] ?? null);
-            if ($status === 'succeeded' && ! $claimed) {
+            if ($status === 'succeeded' && ! $claimed && ! $copy) {
                 throw new ResourceOperationException('operation.invalid_result', 'The proof run reports no claimed place.', 422);
             }
-            $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
-                $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
+            if (! $copy) {
+                $this->provision->record(self::provisionView($operation), $claimed ? 'succeeded' : ($status === 'cancelled' ? 'cancelled' : 'failed'),
+                    $claimed ? null : 'tasks.provision_failed', static fn (): Operation => $operation, release: false);
+            }
 
             $report = is_string($native['report'] ?? null) ? $native['report'] : '';
             if ($status === 'interrupted') {
@@ -135,7 +162,10 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
 
             // The run's own destroy step ends the group. A failed run that kept its VM (`keep_failed`) leaves the group open for 60 minutes; any other end leaves the VM to the normal cancel.
             $kept = null;
-            if (NativeRunResult::stepStatus($native, 'Release the place') === 'succeeded') {
+            if ($copy) {
+                // Every end of a run in a copy removes the copy: its group's cancel destroys it.
+                DB::afterCommit(static fn () => CancelProofGroup::dispatch($operation->id));
+            } elseif (NativeRunResult::stepStatus($native, 'Release the place') === 'succeeded') {
                 $group = Task::topLevel()->lockForUpdate()->find(ValidatedData::integer($input['group_id']));
                 if ($group instanceof Task && $group->status !== TaskGroupStatus::Cancelled) {
                     $this->ending->settle($group, ValidatedData::object($input['cancel']), 'tasks.cancel');

@@ -17,7 +17,10 @@ return [
     // The Swamp workflow `operation-proof-run` proves one command on a slot of its own: the claim, the cases through `proof-fleet-verify`
     // and the release of the slot, always. Its `Report` step joins the verdict lines; the Gateway reads it once, when the run ends. Each
     // `proof-fleet-verify` child that ends records its batch on the run as it ends (ProofBatchProjection::applyChild), for a run that reaches its budget.
-    'proof.command' => ['workflow' => 'operation-proof-run', 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true, 'github_token_issuer' => TaskGitHubTokens::class,
+    // A run in a copy runs `operation-proof-run-copy` instead: it brings the commit into the copy admission started, runs the Project's
+    // development deploy steps from their vault copies, and leaves the copy's removal to the Gateway (ProofCommandProjection).
+    'proof.command' => ['workflow' => 'operation-proof-run', 'alternate_workflows' => ['operation-proof-run-copy'], 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true, 'github_token_issuer' => TaskGitHubTokens::class,
         'terminal_result' => ['job' => 'prove', 'step' => 'Report', 'native' => true, 'captures' => ['provision' => ['job' => 'prove', 'step' => 'Claim a place'], 'report' => ['job' => 'prove', 'step' => 'Report', 'field' => 'stdout', 'artifact' => 'result']]],
-        'execution_copies' => $provision['execution_copies']],
+        'execution_copies' => [...$provision['execution_copies'],
+            ['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$']]],
 ];

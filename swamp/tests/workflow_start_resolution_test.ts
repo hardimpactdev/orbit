@@ -97,6 +97,19 @@ Deno.test("a copy sync starts: every expression of operation-task-sync-copy reso
   assertEquals(unresolved("workflow-operation-task-sync-copy.yaml", intents.sync_copy), []);
 });
 
+Deno.test("a proof run in a copy starts: every expression of operation-proof-run-copy resolves, and each batch child too", () => {
+  assertEquals(unresolved("workflow-operation-proof-run-copy.yaml", intents.proof_run_copy), []);
+  const intent = intents.proof_run_copy.intent as { verifications: Inputs[] };
+  for (const verify of intent.verifications) {
+    const child = { operation_id: intents.proof_run_copy.operation_id, node_id: verify.node_id, kind: "proof.verify", intent: verify, execution_secrets: {} };
+    assertEquals(unresolved("workflow-proof-fleet-verify.yaml", child), []);
+  }
+});
+
+Deno.test("the task VM proof run could not start for a copy, so the Gateway never starts it for one", () => {
+  assertNotEquals(unresolved("workflow-operation-proof-run.yaml", intents.proof_run_copy), []);
+});
+
 Deno.test("the task VM sync workflow could not start for a copy, so the Gateway never starts it for one", () => {
   const failed = unresolved("workflow-operation-task-sync.yaml", intents.sync_copy);
   assertNotEquals(failed, []);

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Proof;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Actions\Tasks\CreateTaskGroupAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
@@ -18,6 +19,7 @@ use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCapacityException;
+use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskWait;
@@ -41,7 +43,9 @@ use Throwable;
 
 /**
  * Admits `proof:run`: the request records the proof; the job checks that the commit is trusted, selects the cases from the diff and the
- * selection list of the commit. Operator proofs join task admission, one command per VM. The front CI proof takes every free usable CI
+ * selection list of the commit. A proof Project whose tasks run as copies proves in copies of its default: up to `proof.copies` at once,
+ * balanced by measured time, each started only after the trust check (docs/cli/proof/run.mdx#the-run). Otherwise operator proofs join
+ * task admission, one command per VM. The front CI proof takes every free usable CI
  * place up to its batch count and balances whole batches across those VMs. The Gateway reads GitHub and fetches no code; the Swamp parent `operation-proof-run` of each run does the work. See docs/cli/proof/run.mmd.
  */
 final readonly class ProofRunIntent
@@ -70,7 +74,7 @@ final readonly class ProofRunIntent
             ->where('role', RoleName::Swamp)->where('status', LifecycleStatus::Active))->first()
             ?? throw new ResourceOperationException('proof.swamp_unavailable', 'No active Swamp Node can run a proof.', 503);
         // Every executable proof needs a workspace Instance of the proof Project; a missing Project fails later, as before.
-        if (($project = Project::query()->find($this->settings->projectId())) instanceof Project) {
+        if (($project = Project::query()->find($this->settings->projectId())) instanceof Project && ! ProofCopies::runs($project)) {
             InstancePlacement::taskWorkspace($project);
         }
         // The proof the CLI follows closes once, when the last of its runs has ended. Each run is an Operation of its own on its own task group.
@@ -125,31 +129,19 @@ final readonly class ProofRunIntent
             }
             // Record all children together. Operator children can wait in task admission without a VM; CI claims roll back together on capacity.
             $batches = app(ProofBatchPlan::class)->read($commit, $selection->cases);
+            $project = Project::query()->find($this->settings->projectId());
+            if ($project instanceof Project && ProofCopies::runs($project)) {
+                // The trust check above passed: only now may a copy, which holds the nested fleet's Club key, be made.
+                $this->admitCopies($proof, $commit, $intent, $batches, $project, $waitStep);
+
+                return;
+            }
             $fresh = $this->freshHosts($selection->mergeBase);
             app(TaskVmSeedFloor::class)->during($fresh->hosts, $fresh->reasons, function () use ($proof, $commit, $selection, $intent, $batches, &$waitStep): array {
                 return DB::transaction(function () use ($proof, $commit, $selection, $intent, $batches, &$waitStep): array {
-                    // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
-                    // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
-                    $current = Operation::query()->lockForUpdate()->find($proof->id);
-                    if (! $current instanceof Operation || $current->status->terminal()) {
-                        throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
-                    }
-
-                    if ($current->input['runs'] !== []) {
+                    $current = $this->openForAdmission($proof, $waitStep);
+                    if ($current === null) {
                         return [];
-                    }
-                    if ($current->created_at?->lt(now()->subSeconds(self::WaitSeconds))) {
-                        throw new ResourceOperationException('proof.capacity_timeout', 'The two-hour admission budget expired before a proof place was claimed.', 409);
-                    }
-                    if (($working = ProofRunSettlement::workingProof()) !== null) {
-                        $waitStep = "Waiting for proof Operation {$working->id} to finish.";
-                        throw new TaskCapacityException(TaskWait::Capacity, $waitStep);
-                    }
-                    // Expired parents cannot keep the queue closed if their next retry was lost.
-                    if (Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
-                        ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)
-                        ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists()) {
-                        throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier proof.');
                     }
                     $ci = ($intent['ci_pool'] ?? false) === true;
                     $free = $ci ? app(TaskVmSlotPool::class)->freeCiPlaces() : 0;
@@ -169,10 +161,7 @@ final readonly class ProofRunIntent
                         $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'operation_id' => $run->id, 'assignments' => $assignments];
                     }
 
-                    // The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
-                    $state = $current->state ?? [];
-                    unset($state['capacity_wait_reason']);
-                    $this->store->change($proof, ['status' => OperationStatus::Running, 'input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'started_at' => now(), 'current_step' => null, 'state' => $state]);
+                    $this->recordRuns($proof, $current, $intent, $runs, $batches);
 
                     return $runs;
                 });
@@ -190,6 +179,101 @@ final readonly class ProofRunIntent
                 report($exception);
             }
         }
+    }
+
+
+    /**
+     * The proof, locked, when its admission may go on; null when it already names its runs. It refuses a proof that ended, waits behind
+     * the working proof and earlier proofs, and fails at the end of the two-hour budget. Call it in the admission transaction.
+     */
+    private function openForAdmission(Operation $proof, string &$waitStep): ?Operation
+    {
+        // The watchdog may have ended this proof as lost while the job was slow. Then nothing is admitted, so no run is orphaned.
+        // SQLite takes the write lock at BEGIN (transaction_mode IMMEDIATE), so the watchdog sees none of this admission until it commits.
+        $current = Operation::query()->lockForUpdate()->find($proof->id);
+        if (! $current instanceof Operation || $current->status->terminal()) {
+            throw new ResourceOperationException(ProofRunSettlement::AdmissionInterrupted, 'The proof was ended while it was admitted. Run it again.', 409);
+        }
+
+        if ($current->input['runs'] !== []) {
+            return null;
+        }
+        if ($current->created_at?->lt(now()->subSeconds(self::WaitSeconds))) {
+            throw new ResourceOperationException('proof.capacity_timeout', 'The two-hour admission budget expired before a proof place was claimed.', 409);
+        }
+        if (($working = ProofRunSettlement::workingProof()) !== null) {
+            $waitStep = "Waiting for proof Operation {$working->id} to finish.";
+            throw new TaskCapacityException(TaskWait::Capacity, $waitStep);
+        }
+        // Expired parents cannot keep the queue closed if their next retry was lost.
+        if (Operation::query()->where('kind', OperationKinds::ProofRun)->whereNotIn('status', OperationStatus::terminalValues())
+            ->whereNull('cancel_requested_at')->whereJsonLength('input->runs', 0)->where('id', '<', $proof->id)
+            ->where('created_at', '>=', now()->subSeconds(self::WaitSeconds))->exists()) {
+            throw new TaskCapacityException(TaskWait::Capacity, 'Waiting behind an earlier proof.');
+        }
+
+        return $current;
+    }
+
+    /**
+     * The run list commits with the groups. A job that stops after the commit leaves a proof that names its runs.
+     *
+     * @param  array<string,mixed>  $intent
+     * @param  list<array<string,mixed>>  $runs
+     * @param  list<array<string,mixed>>  $batches
+     */
+    private function recordRuns(Operation $proof, Operation $current, array $intent, array $runs, array $batches): void
+    {
+        $state = $current->state ?? [];
+        unset($state['capacity_wait_reason']);
+        $this->store->change($proof, ['status' => OperationStatus::Running, 'input' => [...$intent, 'runs' => $runs, 'batches' => $batches], 'started_at' => now(), 'current_step' => null, 'state' => $state]);
+    }
+
+    /**
+     * Admits the runs of a proof in copies, after the trust check: the copy places, the shards balanced over them, and for each shard
+     * its group, the copy start of that group and the run, which the Gateway holds until the copy is active (ProofChildStarts). The
+     * reads of the default and its Node run before the transaction.
+     *
+     * @param  array<string,mixed>  $intent
+     * @param  list<array{command:string,file:string,batch:string,cases:list<string>,seconds:float}>  $batches
+     */
+    private function admitCopies(Operation $proof, string $commit, array $intent, array $batches, Project $project, string &$waitStep): void
+    {
+        $waitStep = ProofCopies::WaitStep;
+        $read = app(TaskCopyStart::class)->read($project);
+        DB::transaction(function () use ($proof, $commit, $intent, $batches, $project, $read, &$waitStep): void {
+            $current = $this->openForAdmission($proof, $waitStep);
+            if ($current === null) {
+                return;
+            }
+            $copies = app(ProofCopies::class);
+            $places = $copies->places($project);
+            if ($places < 1) {
+                $waitStep = ProofCopies::WaitStep;
+                throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for a free copy place: a proof leaves '.ProofCopies::KeptForTasks.' copy places for task groups.');
+            }
+            $shards = ProofBatchPlan::split($batches, $places);
+            // A shard that cannot finish within the longest shard budget waits for more places while more can come.
+            if ($places < $copies->mostPlaces() && array_any($shards, ProofBatchPlan::overBudget(...))) {
+                $waitStep = ProofCopies::WaitStep;
+                throw new TaskCapacityException(TaskWait::Capacity, 'Waiting for more copy places: on '.count($shards).' copy place(s) a shard would run longer than '.ProofBatchPlan::MaxShardSeconds.' seconds.');
+            }
+            $runs = [];
+            foreach ($shards as $assignments) {
+                $case = $assignments[0];
+                $group = $this->group($commit, $case['command']);
+                $copy = Instance::query()->findOrFail(app(TaskCopyStart::class)->admitRead($group, ProofGroup::Trigger, null, $read)->target_id);
+                $stored = ProofBatchPlan::stored($assignments);
+                $run = $this->groups->admit($group, 'proof.command', fn (): Operation => app(StartOperationAction::class)->execute('proof.command', 'task_group', $group->id, $copy->node_id, [
+                    'proof_operation_id' => $proof->id, 'commit' => $commit, 'command' => $case['command'], 'file' => $case['file'], 'copy' => true,
+                    'assignments' => $stored, 'run_budget_seconds' => ProofBatchPlan::budget($stored),
+                    'caller_node_id' => $proof->input['caller_node_id'] ?? null, 'ci_pool' => ($proof->input['ci_pool'] ?? false) === true,
+                    'group_id' => $group->id, 'instance_id' => $copy->id, 'node_id' => $copy->node_id,
+                ], ProofGroup::Trigger, null));
+                $runs[] = ['command' => $case['command'], 'file' => $case['file'], 'group_id' => $group->id, 'instance_id' => $copy->id, 'operation_id' => $run->id, 'assignments' => $assignments];
+            }
+            $this->recordRuns($proof, $current, $intent, $runs, $batches);
+        });
     }
 
     /**
@@ -318,7 +402,7 @@ final readonly class ProofRunIntent
     {
         return app(CreateTaskGroupAction::class)->execute(new CreateTaskGroupData($this->settings->projectId(), 'Proof '.$command.' '.substr($commit, 0, 12),
             'Prove '.$command.' at commit '.$commit.'.', TaskGroupStatus::Todo, [new TaskInputData('Run the proof cases',
-                'The Swamp workflow operation-proof-run proves the command in its own task VM.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
+                'The Swamp workflow operation-proof-run proves the command in its own task VM or copy.', [['id' => 'verdict', 'type' => 'review', 'description' => 'Every selected case passes.']])]));
     }
 
     private function select(string $commit, bool $all): ProofSelectionResult

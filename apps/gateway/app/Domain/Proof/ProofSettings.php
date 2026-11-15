@@ -21,6 +21,12 @@ final readonly class ProofSettings
         return Config::integer('proof.project');
     }
 
+    /** The most copies one proof takes at once. */
+    public function copies(): int
+    {
+        return Config::integer('proof.copies');
+    }
+
     public function repository(): GitHubRepository
     {
         return GitHubRepository::fromOrigin('https://github.com/'.Config::string('proof.repository'))

@@ -510,6 +510,12 @@
    "Read the workspace commit": "unreviewed",
    "Report": "read-only"
   },
+  "operation-proof-run-copy": {
+   "Read the steps to skip": "read-only",
+   "Read the workspace commit": "read-only",
+   "Remove the run folder": "idempotent",
+   "Report": "read-only"
+  },
   "operation-route-caddy": {
    "Check the Caddyfile": "idempotent",
    "Check the connection": "read-only"

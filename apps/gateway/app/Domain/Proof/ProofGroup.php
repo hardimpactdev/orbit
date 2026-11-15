@@ -14,7 +14,7 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use Closure;
 
-/** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM, so a cancelled proof must cancel it. */
+/** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM or the copy, so every end of a run must cancel it. */
 final readonly class ProofGroup
 {
     /** The Activity trigger of the cancels that the proof machinery makes for the groups of its own runs. */
@@ -68,7 +68,8 @@ final readonly class ProofGroup
             return;
         }
         try {
-            $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, $trigger, null));
+            // A proof's copy holds only the commit under proof and the runner's evidence: its cancel discards them.
+            $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, $trigger, null, discard: true));
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, ['tasks.not_cancellable', 'tasks.group_closed'], true)) {
                 throw $exception;

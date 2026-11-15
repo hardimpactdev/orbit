@@ -1,0 +1,41 @@
+---
+# The phase `proof_checkout` of a proof run in a copy (docs/cli/proof/run.mmd, "Bring in the commit"): as `orbit` in the copy, fetch the
+# commit under proof by its SHA from the public repository through the copy's own egress (the environment of the deploy commands, with
+# its proxy), and check it out detached. The fetch has 60 s
+# and is not retried; a failed one fails the phase by name. No credential is used or written: the repository is public. The deploy
+# steps whose inputs changed since the seed run next, in the workflow ("Decide which deploy steps run" in instance-container-phase.yml
+# names the others). Input: instance-container-phase.yml (`in_workspace`, `as_orbit`) and the run's intent (`commit`, `repository`).
+- name: Fetch the commit under proof
+  ansible.builtin.command:
+    argv: >-
+      {{ as_orbit + ['/usr/bin/env', '-i'] + container.environment + ['GIT_TERMINAL_PROMPT=0', 'timeout', '60'] + in_workspace[in_workspace.index('git'):]
+         + ['-c', 'credential.helper=', '-c', 'protocol.allow=never', '-c', 'protocol.https.allow=always', '-c', 'http.followRedirects=false',
+            'fetch', '--quiet', '--no-tags', '--', intent.repository, intent.commit] }}
+    stdin: ''
+    stdin_add_newline: false
+  register: proof_fetch
+  changed_when: true
+  # A failure names this task and the end of git's stderr in the phase's `detail` (exit 124: the 60 s ran out).
+  failed_when: proof_fetch.rc != 0
+# The copy is disposable: tracked changes of the seed's workspace give way to the commit.
+- name: Check out the commit under proof
+  ansible.builtin.command:
+    argv: "{{ in_workspace + ['checkout', '--quiet', '--force', '--detach', intent.commit] }}"
+    stdin: ''
+    stdin_add_newline: false
+  changed_when: true
+- name: Read the checked out commit
+  ansible.builtin.command:
+    argv: "{{ in_workspace + ['rev-parse', '--verify', 'HEAD^{commit}'] }}"
+    stdin: ''
+    stdin_add_newline: false
+  register: proof_head
+  changed_when: false
+- name: Check the checked out commit
+  ansible.builtin.assert:
+    that: proof_head.stdout | trim == intent.commit
+    fail_msg: proof.workspace_commit_mismatch
+    quiet: true
+- name: Keep the checked out commit
+  ansible.builtin.set_fact:
+    container_commit: "{{ proof_head.stdout | trim }}"

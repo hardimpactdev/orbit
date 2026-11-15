@@ -8,6 +8,7 @@ use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Jobs\Proof\CancelProofGroup;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Collection;
@@ -37,6 +38,9 @@ final readonly class ProofRunWatch
 
     /** The format of the times in the record of a kept VM; it sorts as text. */
     public const string Time = 'Y-m-d\TH:i:s\Z';
+
+    /** A run in a copy that ended this long ago and still has its copy gets its group's cancel again. */
+    public const int CopyReleaseSeconds = 300;
 
     /** A keep that is still open this many hours after its time is no longer asked to cancel. */
     public const int KeptGiveUpHours = 24;
@@ -71,6 +75,7 @@ final readonly class ProofRunWatch
             }
         } finally {
             $this->expireKept();
+            $this->releaseCopies();
         }
 
         return $ended;
@@ -98,6 +103,27 @@ final readonly class ProofRunWatch
                 $this->kept->release(ValidatedData::integer($id));
             } catch (Throwable $exception) {
                 // One run that cannot be cancelled must not hold the others.
+                report($exception);
+            }
+        }
+    }
+
+    /**
+     * Asks again for the cancel of each group whose run in a copy ended more than CopyReleaseSeconds ago and whose copy still exists
+     * with no Operation on it: the cancel that the run's end queued was lost, for example in a Gateway restart, or gave up while the
+     * copy was busy. The cancel is keyed, and a group that has ended asks nothing.
+     */
+    private function releaseCopies(): void
+    {
+        $copies = Instance::query()->whereNotNull('task_workspace_owner_id')
+            ->whereNotIn('id', Operation::query()->select('target_id')->where('target_type', 'instance')->whereNotIn('status', OperationStatus::terminalValues()));
+        $runs = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereIn('status', OperationStatus::terminalValues())->where('input->copy', true)
+            ->where('finished_at', '<', now()->subSeconds(self::CopyReleaseSeconds))
+            ->whereIn('target_id', $copies->select('task_workspace_owner_id'))->pluck('id');
+        foreach ($runs as $id) {
+            try {
+                CancelProofGroup::dispatch(ValidatedData::integer($id));
+            } catch (Throwable $exception) {
                 report($exception);
             }
         }
