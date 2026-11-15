@@ -67,7 +67,7 @@ A field that is missing, unknown or out of range makes the helper refuse with `i
 
 Outcomes per command:
 
-- `prepare`: `frozen`, `already_frozen`, `stopped` or `failed`;
+- `prepare`: `frozen`, `already_frozen`, `stopped`, `missing` or `failed`;
 - `restore`: `resumed`, `already_running`, `stopped`, `missing` or `failed`;
 - `discard`: `discarded`; `capabilities`: `checked`.
 
@@ -76,9 +76,11 @@ A `failed` outcome also says whether the container is left running or frozen, th
 **The lock.** Every command except `capabilities` runs as the transient unit `orbit-instance-power-<id>.service`:
 
 ```sh
-systemd-run --unit=orbit-instance-power-<id> --wait --pipe --collect \
-  --property=… /usr/local/libexec/orbit-instance-power restore --instance <id> --operation <opid>
+systemd-run --unit=orbit-instance-power-<id> --wait --pipe --collect --quiet \
+  /usr/local/libexec/orbit-instance-power restore --instance <id> --operation <opid>
 ```
+
+The caller passes no property. The role writes them once, as the drop-in `/etc/systemd/system/orbit-instance-power-.service.d/orbit.conf`, which systemd applies to every unit whose name starts with `orbit-instance-power-`.
 
 systemd allows one loaded unit of a name, so a second start fails at once: the name is the lock. It serializes the run, the fast worker, a deploy or start, and a destroy for one Instance. Other Instances are not blocked.
 
@@ -97,7 +99,7 @@ The unit runs as root with only the capabilities the kernel requires:
 - `CAP_SYS_NICE` for `process_madvise`;
 - `CAP_DAC_OVERRIDE` for cgroup files that the container's root owns.
 
-It also has no new privileges, and a read-only system except its folders and the cgroup tree. Each call opens a new connection to the Incus Unix socket.
+It also has no new privileges, and a read-only system except its folders and the cgroup tree. Only `/var/lib/orbit/hibernation`, `/dev/shm/orbit/hibernation` and `/sys/fs/cgroup` are writable. Each call opens a new connection to the Incus Unix socket.
 
 **Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It checks them against a child process that it starts and then ends. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
 
@@ -116,6 +118,7 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 | `/var/lib/orbit/hibernation/outcomes/` | `root:caddy 0755` | Status files of the fast wake, `0644` |
 | `/dev/shm/orbit/hibernation/` | `root:caddy 0755` | Fast wake requests, as today |
 | `/var/lib/orbit/hibernation/capabilities.json` | `root 0644` | The capability manifest |
+| `/etc/systemd/system/orbit-instance-power-.service.d/orbit.conf` | `root 0644` | The properties of every helper unit |
 
 **Target descriptor.** `prepare` and a run's `restore` write it from the intent on stdin. It holds `schema_version: 1`, `instance_id`, `incus_project` and `incus_name` from the recorded runtime, `incarnation`, and `web`. `incarnation` is the container's Incus `volatile.uuid`. `web` is the container's recorded address and web port, or `null` without a web unit. The fast worker uses only this file to find its target. A missing or invalid descriptor makes it decline. It never guesses a project.
 
