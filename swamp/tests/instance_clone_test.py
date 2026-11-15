@@ -1468,6 +1468,10 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
         # The guest's own line stays the code line; the lines after it are its command's redacted stderr.
         self.assertEqual(self.invoke("instance.container_check_failed: command php exited 17\nPHP Fatal error: x\nPRIVATE-INPUT"),
                          "instance.container_check_failed: command php exited 17:\nPHP Fatal error: x\n[REDACTED]\n")
+        # The Conn Server's program is a guest command too (docs/reference/development-containers.md#container-server): its failure keeps
+        # the guest's line, not "command incus exited".
+        self.assertEqual(self.invoke("instance.container_check_failed: command conn-server exited 17"),
+                         "instance.container_check_failed: command conn-server exited 17\n")
         # A Node command names its executable and what ran, then the end of its words.
         self.assertRegex(
             # In the T3 step only the checkout runs Git on the Node, so the failure names the checkout.

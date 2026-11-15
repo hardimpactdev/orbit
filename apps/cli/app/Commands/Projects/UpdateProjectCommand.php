@@ -138,10 +138,13 @@ final class UpdateProjectCommand extends GatewayCommand
             return $this->renderGatewayFailure('project.task_pr_mode_invalid', 'The task pull request mode must be review_before_pr or pr_when_done.');
         }
 
-        $containerServer = $this->stringOption('container-server');
-
-        if ($containerServer !== null && ! in_array($containerServer, self::CONTAINER_SERVERS, true)) {
-            return $this->renderGatewayFailure('project.container_server_invalid', 'The container server must be t3 or conn.');
+        $containerServer = null;
+        // A given option must name a server: an empty value is refused, not dropped.
+        if ($this->input->hasParameterOption('--container-server')) {
+            $containerServer = $this->option('container-server');
+            if (! in_array($containerServer, self::CONTAINER_SERVERS, true)) {
+                return $this->renderGatewayFailure('project.container_server_invalid', 'The container server must be t3 or conn.');
+            }
         }
 
         if (! $taskWorkspaceRouted['valid']) {

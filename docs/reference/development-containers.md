@@ -1104,7 +1104,7 @@ The destroy deletes the launch copy with the clone copy, and the earlier stage a
 
 Once the workflow reads it, a clone runs the scripts of the Gateway release that admitted it. A release loads Swamp before its Gateway switches, so a create admitted just before a release runs the older scripts on the newer workflow. A change to the clone script's phases, its argument list, or the lines and timings that the result reads must work across that one release: the newer workflow and result reader must accept what the older scripts do and print.
 
-The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started.
+The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started. Before it starts T3, it reloads systemd, so the start reads the drop-ins the agent part wrote, the [container server's](#container-server) among them.
 
 A failed create stops its copy, and a retry writes the model environment again into a copy that is not running. Only a copy that a release before 2065 started and that still runs holds none: its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again.
 
@@ -2819,6 +2819,7 @@ The database keeps these rules:
 
 - A Node's container, bridge address and T3 port each belong to one runtime.
 - A runtime keeps its Node, container, address, port, container server and clone source; only the versions and the power state change.
+- A runtime records its container server, `t3` or `conn`, exactly when it has a T3 port.
 - A clone source is the Instance named `default` of the same Project on the same Node, and runs in a container.
 - A default with clones keeps its runtime and its name.
 - A container Instance keeps its Node, Project and name.

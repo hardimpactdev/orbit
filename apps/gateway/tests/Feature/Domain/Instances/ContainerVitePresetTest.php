@@ -56,7 +56,7 @@ function vitePresetInstance(array $config, ?int $vitePort = null): Process
         'provisioning_step' => 'active', 'first_setup_pending' => false]);
     InstanceRuntime::query()->create(['instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => 'orbit-instances',
         'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.2', 'runtime_version' => 'r', 'agent_version' => 'a',
-        't3_port' => 3800, 'power_state' => InstanceRuntimePowerState::Running]);
+        't3_port' => 3800, 'container_server' => 't3', 'power_state' => InstanceRuntimePowerState::Running]);
     $route = Route::query()->create(['kind' => 'app', 'project_id' => $project->id, 'node_id' => $node->id, 'provenance' => 'explicit',
         'publication' => 'private', 'domain' => 'clone.tool.test', 'status' => 'pending']);
     $route->targets()->create(['instance_id' => $instance->id, 'position' => 0]);

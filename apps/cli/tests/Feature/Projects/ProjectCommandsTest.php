@@ -712,12 +712,12 @@ describe('project:update', function (): void {
         expect($setClient->getLastRequest()?->body()->all())->toBe(['container_server' => 'conn']);
     });
 
-    it('refuses a container server that is no server before contacting the Gateway', function (): void {
+    it('refuses a container server that is no server, an empty one included, before contacting the Gateway', function (string $value): void {
         $refusedClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
-        $this->artisan('project:update', ['project' => '3', '--container-server' => 'conn-server', '--json' => true])
+        $this->artisan('project:update', ['project' => '3', '--container-server' => $value, '--json' => true])
             ->expectsOutputToContain('project.container_server_invalid')->assertExitCode(1);
         expect($refusedClient->getLastRequest())->toBeNull();
-    });
+    })->with(['the program name' => 'conn-server', 'empty' => '']);
 
     it('shows the Project container server', function (): void {
         MockClient::global([

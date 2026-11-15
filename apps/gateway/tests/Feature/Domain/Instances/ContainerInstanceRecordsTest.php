@@ -39,12 +39,15 @@ function recordsInstance(Project $project, Node $node, string $name): Instance
 /** @param array<string, mixed> $overrides */
 function recordsRuntime(Instance $instance, string $address, array $overrides = []): InstanceRuntime
 {
-    return InstanceRuntime::query()->create([
+    $attributes = [
         'instance_id' => $instance->id, 'node_id' => $instance->node_id, 'incus_project' => 'orbit-instances',
         'container_name' => "{$instance->project->slug}-{$instance->name}", 'bridge_address' => $address,
         't3_port' => $instance->name === 'default' ? null : 3800, 'runtime_version' => '2026.11.09', 'agent_version' => '2026.11.09',
         'power_state' => InstanceRuntimePowerState::Running, ...$overrides,
-    ]);
+    ];
+
+    // A runtime with a T3 port runs T3 unless the case names another server.
+    return InstanceRuntime::query()->create($attributes + ['container_server' => $attributes['t3_port'] === null ? null : 't3']);
 }
 
 describe('Instance bridges', function (): void {
@@ -147,6 +150,26 @@ describe('Instance runtimes', function (): void {
         'a clone of a checkout default' => fn () => recordsRuntime(recordsInstance(recordsProject('mealou'), $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => recordsInstance(Project::query()->where('slug', 'mealou')->sole(), $this->node, 'default')->id]),
         'a clone of another Project\'s default' => fn () => recordsRuntime(recordsInstance(recordsProject('mealou'), $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]),
     ]);
+
+    it('refuses a container server that does not match the T3 port, or that is no server', function (array $overrides): void {
+        // A raw insert, so the database's rule decides, not the model's cast.
+        expect(fn () => InstanceRuntime::query()->toBase()->insert([
+            'instance_id' => recordsInstance($this->project, $this->node, 'feature')->id, 'node_id' => $this->node->id, 'incus_project' => 'orbit-instances',
+            'container_name' => 'hauzer-feature', 'bridge_address' => '10.253.0.3', 'runtime_version' => 'v', 'agent_version' => 'v', 'power_state' => 'running',
+            'clone_source_instance_id' => $this->default->id, 't3_port' => 3800, 'container_server' => 't3', ...$overrides,
+        ]))->toThrow(QueryException::class, 'An Instance runtime records its container server, t3 or conn, exactly when it has a T3 port.');
+    })->with([
+        'a T3 port without a server' => [['container_server' => null]],
+        'a server without a T3 port' => [['t3_port' => null]],
+        'an unknown server' => [['container_server' => 'pi']],
+    ]);
+
+    it('keeps a runtime\'s container server once it is recorded', function (): void {
+        $runtime = recordsRuntime(recordsInstance($this->project, $this->node, 'feature'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]);
+
+        expect(fn () => InstanceRuntime::query()->whereKey($runtime->id)->update(['container_server' => 'conn']))
+            ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
+    });
 
     it('refuses a second runtime with the same container, address or port on the Node', function (array $overrides): void {
         recordsRuntime(recordsInstance($this->project, $this->node, 'first'), '10.253.0.3', ['clone_source_instance_id' => $this->default->id]);

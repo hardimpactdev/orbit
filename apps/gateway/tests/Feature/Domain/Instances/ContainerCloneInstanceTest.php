@@ -193,7 +193,7 @@ describe('a clone of the container default', function (): void {
         };
         foreach (array_diff(range(3802, 3999), [3851]) as $port) {
             $instance = $copy('fill-'.$port);
-            InstanceRuntime::query()->create([...$source->only(['node_id', 'incus_project', 'runtime_version', 'agent_version', 'clone_source_instance_id', 'power_state']),
+            InstanceRuntime::query()->create([...$source->only(['node_id', 'incus_project', 'runtime_version', 'agent_version', 'clone_source_instance_id', 'power_state', 'container_server']),
                 'instance_id' => $instance->id, 'container_name' => 'instance-'.$instance->id, 'bridge_address' => '10.253.0.'.($port - 3790), 't3_port' => $port]);
         }
         $none = $copy('none');
