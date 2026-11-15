@@ -44,10 +44,10 @@ cases = [
   "worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output",
 ]
 file = "swamp/tests/swamp_worker_renewal_test.ts"
-cost = 233
-slices = false
+cost = 1793
+slices = 41
 after_merge = true
-reason = "One renewal case costs 233 seconds and cannot be sliced."
+reason = "Renewal runs after merge in independent slices with hosted per-case costs."
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -59,3 +59,48 @@ inputs = [
   "swamp/ansible/tasks/gateway-swamp-workers.yml",
   "swamp/ansible/tasks/gateway-swamp.yml",
 ]
+
+# Hosted run 43664446092: completed cases get ceil(seconds * 1.25) + 1.
+# ESTIMATE: nine censored/unrun cases use 120 seconds until measured in a complete run.
+[case_costs]
+"worker renewal: two permanent peers accept before a drains and c stays running" = 30
+"worker renewal: b renews next while fresh a and permanent c stay connected" = 28
+"worker renewal: c renews as an equal permanent worker when it is oldest" = 28
+"worker renewal: three due workers finish sequential 75 minute drains before their session caps" = 79
+"worker renewal: two 4h45 bases renew beside fresh c without a second retirement drain" = 49
+"worker renewal: full b keeps eight accepting slots with c during a long drain and queued work succeeds" = 24
+"worker renewal: both full survivors defer without draining anyone" = 18
+"worker renewal: disconnected peer blocks all maintenance" = 13
+"worker renewal: draining peer blocks all maintenance" = 13
+"worker renewal: peer probe empty prevents any drain" = 17
+"worker renewal: peer probe at capacity prevents any drain" = 18
+"worker renewal: peer probe data plane failed prevents any drain" = 17
+"worker renewal: peer fill during probe cannot reduce the accepting pool" = 19
+"worker renewal: peer drain during probe cannot reduce the accepting pool" = 20
+"worker renewal: peer shrink during probe cannot reduce the accepting pool" = 22
+"worker renewal: failed re-enrollment leaves both survivors running and blocks the next round" = 100
+"worker renewal: failed peer during blocking drain logs detection after restart and stops" = 23
+"worker renewal: bootstrap quoted names resolve for all three units" = 23
+"worker renewal: remint ANSI names resolve for all three units" = 26
+"worker renewal: missing c receipt logs stopped renewal without drain" = 11
+"worker renewal: unreadable c receipt logs stopped renewal without drain" = 11
+"worker renewal: fresh workers stay persistent and no credential API exists at renewal time" = 13
+"worker renewal: old stop allowance prevents any drain" = 13
+"worker renewal: peer approaching eight-hour cap during probe blocks drain" = 19
+"worker renewal: same-process reconnect clears old enrolledAt lockout and renews on connection age" = 37
+"worker renewal: proof remint with missing c enrollment fails before any service stops" = 6
+"worker renewal: proof remint with missing c server fails before any service stops" = 6
+"worker renewal: proof remint with missing c empty server fails before any service stops" = 6
+"worker renewal: proof remint preflight passes a c without directory, which the remint makes after serve stops" = 6
+"worker renewal: proof remint preflight passes a c without files, which the remint makes after serve stops" = 6
+"worker renewal: proof remint preflight accepts c without exposing tokens" = 6
+"worker renewal: proof remint preflight accepts c-1794127800 without exposing tokens" = 6
+"worker renewal: recovers a failed unit past its restart limit before voluntary renewal" = 120
+"worker renewal: recovers a inactive unit past its restart limit before voluntary renewal" = 120
+"worker renewal: does not recover a down unit without two serving peers" = 120
+"worker renewal: proof remint rejects c bare enrollment before any service stops" = 120
+"worker renewal: proof remint rejects c wrong enrollment name before any service stops" = 120
+"worker renewal: proof remint rejects c bare server before any service stops" = 120
+"worker renewal: proof remint rejects c wrong server name before any service stops" = 120
+"worker renewal: proof remint rejects c empty secret before any service stops" = 120
+"worker renewal: the worker set is made whole: only a worker without token files is minted and placed, with no secret in output" = 120
