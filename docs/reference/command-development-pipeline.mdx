@@ -111,7 +111,7 @@ Task work and CI proofs use separate fixed pools on every host. Beast and Shark 
 
 The pool migration converts the existing Beast and Shark hosts to two task and two CI places each, and Sabre to zero task and two CI places. It removes the replaced host capacity keys. No manual settings change is required.
 
-A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A fix turn that needs a VM claims a task place again and restores the task branch on a fresh VM from the base. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, until the [idle release](/reference/tasks#release-an-idle-task-vm) saves the workspace to origin and takes it.
+A task waits for a task place, starts from the base, and deletes its VM after it publishes its PR. A published PR holds no VM, identity, workspace or place through review. Between two steps the VM stays for the next one, until the [idle release](/reference/tasks#release-an-idle-task-vm) saves the workspace to origin and takes it.
 
 Only one proof run works at a time. Operator and CI parents wait in Operation id order under the [proof admission policy](/cli/proof/run#the-run), with a 120-minute allowance from creation. The place stays held until the children have ended; the 60-minute stale-hold release bounds an unproven end. A proof runs in copies of the proof Project's default: at most two at once, and never the last two copy places of its Node.
 

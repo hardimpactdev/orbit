@@ -48,7 +48,7 @@ sequenceDiagram
     %%> - records the saved commit on the group, which keeps its status
     %%> - admits the release of the VM (`docs/cli/task/vm-release.mmd`) when the VM is still the group's and no Operation, such as a resume, is open on it
     %%> Later:
-    %%> - a turn claims a fresh place at the saved commit when that holds the task branch head
+    %%> - a Pi turn claimed a fresh place at the saved commit when that held the task branch head; task VMs are removed, so no claim follows today
     %%> - a task branch that holds the save restores the branch; one that moved away refuses with `tasks.idle_save_diverged`, so the next save cannot overwrite it; an unreadable comparison refuses with `tasks.idle_save_unreadable`; a deleted save branch is no save once the task branch holds its commit, and otherwise refuses with `tasks.idle_save_missing`, whose message names the commit to push back
   else a step failed
     SW--xGW: Native failed result<br/>tasks.idle_save_failed

@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - pushes the command code and the runnable proof cases to the branch of the draft PR; no second PR is opened
   %%> - the chart, page, cases, code and proof cases are now in one PR, so a reviewer can check that they match
   %%> Built:
-  %%> - the Swamp prep flow (`operation-task-prep`, stage 1) opens the draft PR as the Orbit App with `task:publish --draft`; 1 of 3 runs succeeded by 2026-11-06
+  %%> - not built: the Swamp prep flow (`operation-task-prep`, stage 1) opened the draft PR as the Orbit App; it is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
   GH->>CI: Start CI<br/>on the PR merge tree, every push
   %%> What it does:
   %%> - GitHub runs `ci.yml` for the immutable PR merge tree on every push, also while the PR is a draft; there is one CI, and the merge requires its one result
@@ -92,7 +92,7 @@ sequenceDiagram
     %%> What it does:
     %%> - a Gateway schedule runs every minute, like the release check of stage 5; it reads with read-only App tokens the open external Task groups that have a published PR, and for each its PR, its CI result on the head and its reviews
     %%> - a draft PR whose CI result is green on its head, and whose head has a passed handoff check (`task:check` handoff) of the group on exactly that commit: the Gateway admits the ready step below
-    %%> - a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`task:prep-fix`), keyed by group and review, while the group is idle (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
+    %%> - not built (removed with the Pi task loop): a draft PR of a prep group (a succeeded `tasks.prep` run) whose build has not started, where Nick's latest review requests changes on that exact head: the Gateway admits the corrections of stage 1 (`task:prep-fix`), keyed by group and review, while the group is idle (decided by the orchestrator for Nick's review, see `1-prep.mmd`)
     %%> - a PR out of draft in manual mode, where Nick's latest review approves that exact head: the Gateway admits the merge step below
     %%> - a PR out of draft in automatic mode, with no review round recorded for that head: the Gateway admits the review round below
     %%> - a PR out of draft in automatic mode, whose round on that exact head passed: the Gateway admits the merge step below

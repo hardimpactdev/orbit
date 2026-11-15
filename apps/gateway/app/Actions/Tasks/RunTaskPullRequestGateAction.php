@@ -113,15 +113,20 @@ final readonly class RunTaskPullRequestGateAction
     }
 
     /**
-     * The group goes back to manual mode: the ready step runs again, and in manual mode it asks the reviewer.
+     * The group goes back to manual mode: the ready step runs again, and in manual mode it asks the reviewer. The mode changes only
+     * with an admitted ready step, so a refused one (a red check, a busy group) is tried again by the next tick instead of a merge
+     * that waits for a review nobody asked for.
      *
      * @return Result
      */
     private function fallBack(Task $group, int $number, string $head, string $request): array
     {
-        $group->update(['review_mode' => TaskReviewMode::Manual]);
+        return $this->admit($group, $number, 'ready-manual', OperationKinds::TasksPrReady, $head, function () use ($group, $head, $request): Operation {
+            $operation = $this->steps->ready($group, $head, TaskReviewMode::Manual->value, self::Caller, $request);
+            $group->update(['review_mode' => TaskReviewMode::Manual]);
 
-        return $this->admit($group, $number, 'ready-manual', OperationKinds::TasksPrReady, $head, fn () => $this->steps->ready($group, $head, TaskReviewMode::Manual->value, self::Caller, $request));
+            return $operation;
+        });
     }
 
     /** @return Result */

@@ -256,4 +256,4 @@ Unexpected errors in retained `directOperation` actions fail the native step wit
 
 A family with admission records may implement `DirectOperationStartRefusal`. The shared start owner calls it inside the failure transaction only after a definite refusal with no bound native run. It closes those records without claiming Node effects. An uncertain submission keeps its pending record and awaits native terminal evidence.
 
-A turn of a group whose VM was released captures a fresh claim as `Claim a task place`. The child `operation-task-provision` copies the base at the published head. Publication releases the VM through the existing place release (`operation-task-vm-slot-release`); there is no task park workflow.
+The Pi-loop workflows captured an optional fresh claim as `Claim a task place`, whose child `operation-task-provision` copied the base at the published head; no kept Gateway path admits one ([old paths](/reference/old-paths#the-pi-task-loop)). Publication releases the VM through the existing place release (`operation-task-vm-slot-release`); there is no task park workflow.

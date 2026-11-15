@@ -97,8 +97,8 @@ sequenceDiagram
   %%> - pushes the branch whose first commit holds the chart, page and cases of one command and nothing else
   %%> - opens the PR as a draft; it stays a draft until stage 4
   %%> - this is the one PR of the command: code and runnable proof cases join it later, and no separate docs PR exists
-  %%> Built:
-  %%> - the run opens the PR with the child workflow of `task:publish --draft`, so the App opens the spec PR
+  %%> Not built:
+  %%> - the run opened the PR with the child workflow of `task:publish --draft`; it is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
   Note over GH: Docs checks only<br/>no VM job
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code

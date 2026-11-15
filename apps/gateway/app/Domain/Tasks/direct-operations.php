@@ -24,7 +24,7 @@ use App\Domain\Tasks\TaskTurnProjection;
 $claimCopies = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'],
     ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-(claim|token)-[1-9][0-9]*$']];
 // The vault keys that only the removed prep fix, build and review round declared (docs/reference/old-paths.md): the Pi token of a
-// resumed VM and the comment token of a round. Nothing writes them any more. The patterns stay declared, byte-equal, until the grants
+// resumed VM and the comment token of a round. No kept kind declares them. The patterns stay declared, byte-equal, until the grants
 // release after the Pi loop (S8), so the grants do not change before then.
 $retiredPiLoopCopies = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-token-[1-9][0-9]*$'],
     ['vault' => 'orbit-control-inputs', 'key_pattern' => '^pr-comment-write-[a-f0-9-]{36}$']];

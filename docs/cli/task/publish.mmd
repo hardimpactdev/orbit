@@ -127,7 +127,6 @@ sequenceDiagram
   %%> How:
   %%> - one bounded `curl` step posts the run id to the Gateway when the push is next; the run id proves the caller
   %%> - the Gateway checks the Operation, the run and the repository, mints a token for that one repository with `contents: write`, `pull_requests: write` and `workflows: write`, and writes the two vault values; the reply holds the vault descriptors only
-  %%> - a prep run passes its own run id to this step, so the token is minted minutes before the push, not when the prep run was admitted
   %%> - no step writes the token into the task VM; the VM receives no credential, in the bundle, the Git configuration or the environment
   opt a task copy
     SW->>GH: Read the base

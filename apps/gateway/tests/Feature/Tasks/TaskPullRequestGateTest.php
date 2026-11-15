@@ -217,6 +217,14 @@ it('switches a group in automatic mode to manual mode and runs the ready step ag
     'three rounds with findings' => [['findings', 'findings', 'findings']],
 ]);
 
+it('keeps automatic mode while the ready step is refused, so the next tick asks the reviewer instead of waiting at the merge', function (): void {
+    $group = gateWorld(gatePull(false), green: false, review: TaskReviewMode::Automatic);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'result' => 'skipped', 'code' => 'tasks_pr.checks_not_passed'])
+        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic)
+        ->and(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual']);
+});
+
 it('merges a group that was in automatic mode only with the reviewer\'s approval of the head, not with an old passed round', function (): void {
     config(['task_pull_requests.reviewer' => 'nick']);
     $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
