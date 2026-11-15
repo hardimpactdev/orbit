@@ -7,6 +7,7 @@ use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Actions\Operations\CancelOperationAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\ContainerDestroyExecutionCopies;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
@@ -236,20 +237,49 @@ describe('admission', function (): void {
 });
 
 describe('the run input', function (): void {
-    it('stages only the Process files in its own vault copy and names the Route it publishes', function (): void {
+    it('frames the release scripts beside the Process files in its one single-line copy, and names the Route it publishes', function (): void {
         [$instance] = clonePendingCompletion();
+        // The copy is framed at the run's start from the admitted input alone: a completion admitted by the release before starts with it.
         $operation = runningCompletion($instance);
 
         $run = app(InstanceCompleteProjection::class)->input($operation);
 
+        $swamp = base_path('../../swamp');
         $put = collect($this->completionVault->puts)->firstWhere('key', 'instance-complete-processes-'.$operation->id);
-        expect($run['execution_secrets']['process_environments'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-complete-processes-'.$operation->id])
-            ->and(array_keys(json_decode($put['value'], true)))->toBe(['processes'])
+        $value = json_decode($put['value'], true, flags: JSON_THROW_ON_ERROR);
+        // Swamp turns a vault value with a newline into one regular expression, which a 32 KB line breaks (release 2080): one line.
+        expect($put['value'])->not->toContain("\n")
+            ->and(strlen($put['value']))->toBeLessThan(CloneStage::MaxBytes)
+            // The same key as before: the grants and the workflow's input pattern stay.
+            ->and($run['execution_secrets']['process_environments'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-complete-processes-'.$operation->id])
+            ->and(array_keys($value))->toBe(['stage', 'private', 'processes'])
+            // The services part reads `private`; a workflow that stages from its input step reads the top-level `processes`.
+            ->and(json_decode($value['private'], true))->toBe(['processes' => $value['processes']])
+            ->and($value['stage'])->toBe(new CloneStage()->payload($run['intent']['container'], $run['intent']['ssh_execution']['target']['user']))
+            ->and($value['stage']['container'])->toBe($run['intent']['container'])
+            ->and($value['stage']['script'])->toBe(file_get_contents($swamp.'/scripts/instance_clone.py'))
+            ->and($run['intent']['clone_launcher'])->toBe(file_get_contents($swamp.'/scripts/instance_clone_launch.py'))
+            ->and($value['stage']['launcher'])->toBe($run['intent']['clone_launcher'])
             ->and($run['intent']['route'])->toBe($operation->input['route_create'])
             ->and($run['intent']['route_mutations'])->toHaveKeys(['artifacts', 'restore'])
             ->and($run['intent'])->toHaveKeys(['database', 'server_database', 'server_valkey', 'container', 'ssh_execution'])
             ->and($run['intent'])->not->toHaveKey('fleet');
     });
+});
+
+it('refuses a completion copy over its cap by name, and never writes a copy with a newline', function (): void {
+    $payload = new CloneStage()->payload(['instance_id' => 7], 'orbit');
+    $processes = (object) ['/etc/orbit/processes/1/a.env' => "QUEUE=one\nSECOND=two\n"];
+
+    expect(CloneStage::completion($payload, $processes))->not->toContain("\n")
+        ->and(json_decode(json_decode(CloneStage::completion($payload, $processes), true)['private'], true)['processes'])->toBe((array) $processes)
+        ->and(fn () => CloneStage::completion([...$payload, 'script' => str_repeat('x', CloneStage::MaxBytes)], $processes))
+        ->toThrow(ResourceOperationException::class, 'more than the 1048576 a completion may send');
+    try {
+        CloneStage::completion([...$payload, 'script' => str_repeat('x', CloneStage::MaxBytes)], $processes);
+    } catch (ResourceOperationException $refused) {
+        expect([$refused->errorCode, $refused->status])->toBe(['instance.complete_launch_too_large', 409]);
+    }
 });
 
 describe('the terminal projection', function (): void {

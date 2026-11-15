@@ -11,6 +11,7 @@ use LogicException;
 /**
  * The release scripts a clone's `clone-container` stages on its Node, framed at admission in the clone's one launch copy: a step's
  * stdin is one whole vault value, and the scripts are larger than one argument (docs/reference/development-containers.md#create).
+ * A clone's completion gets the same scripts in its own one copy ({@see completion()}).
  *
  * The copy is ONE line of JSON: `stage` (the public scripts, the run's container intent and the SSH account) and `private` (the clone
  * copy's text: the credential line and the model environment). Swamp registers every value a run reads with `vault.get` for
@@ -79,13 +80,45 @@ final readonly class CloneStage
      */
     public static function value(array $payload, #[\SensitiveParameter] string $private): string
     {
-        $value = json_encode(['stage' => $payload, 'private' => $private], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        return self::line(['stage' => $payload, 'private' => $private], 'instance.clone_launch_too_large', 'clone launch', 'a create');
+    }
+
+    /**
+     * The reference of a completion's one copy: the key it has always had, so the grants and the workflow's input pattern stay.
+     *
+     * @return array{vault:string,key:string}
+     */
+    public static function completionReference(Operation $operation): array
+    {
+        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-complete-processes-'.$operation->id];
+    }
+
+    /**
+     * A completion's one copy (docs/reference/development-containers.md#complete-a-clone), ONE line: the launch copy's `stage` and
+     * `private` (the Process files as `{"processes": ...}`, which the services part reads), and the same Process files at the top level
+     * as `processes`, for a workflow that stages its scripts from the `input` step and reads the copy's `processes` itself. A copy over
+     * {@see MaxBytes} refuses the completion by name before its run starts.
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    public static function completion(array $payload, #[\SensitiveParameter] object $processes): string
+    {
+        $private = json_encode(['processes' => $processes], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES);
+
+        return self::line(['stage' => $payload, 'private' => $private, 'processes' => $processes], 'instance.complete_launch_too_large',
+            'completion launch', 'a completion');
+    }
+
+    /** @param array<string,mixed> $frame */
+    private static function line(#[\SensitiveParameter] array $frame, string $code, string $copy, string $sender): string
+    {
+        $value = json_encode($frame, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
         if (strlen($value) > self::MaxBytes) {
-            throw new ResourceOperationException('instance.clone_launch_too_large',
-                'The clone launch copy holds '.strlen($value).' bytes, more than the '.self::MaxBytes.' a create may send.', 409);
+            throw new ResourceOperationException($code,
+                'The '.$copy.' copy holds '.strlen($value).' bytes, more than the '.self::MaxBytes.' '.$sender.' may send.', 409);
         }
         if (str_contains($value, "\n")) {
-            throw new LogicException('The clone launch copy must be one line.');
+            throw new LogicException('The '.$copy.' copy must be one line.');
         }
 
         return $value;
