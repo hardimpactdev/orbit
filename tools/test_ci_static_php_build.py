@@ -1,5 +1,5 @@
-"""The static PHP build id names its inputs, a stale pin fails, the craft file gets every value it needs, and the proof
-accepts only glibc, shows PCOV in the CLI only, and measures coverage."""
+"""The static PHP build id names its inputs, a stale pin fails, the craft file gets every value it needs, and main's proof
+accepts only glibc, shows the CLI-only extensions in the CLI only, and measures coverage."""
 import copy
 import importlib.machinery
 import importlib.util
@@ -120,7 +120,6 @@ class StaticPhpBuildTest(unittest.TestCase):
         self.assertIn("if: inputs.ref == ''", save.split('uses:', 1)[0])
 
 
-
 def readelf(interpreter=None, needed=('libc.so.6',), glibc=('2.2.5', '2.17')):
     """What `readelf --wide --program-headers --dynamic --version-info` prints for one x86_64 file."""
     lines = ['Program Headers:']
@@ -184,15 +183,12 @@ class StaticPhpProofTest(unittest.TestCase):
     def test_the_served_probe_asks_for_each_cli_extension(self):
         self.assertIn("array_filter([\"pcov\"], 'extension_loaded')", prove.SERVED_PROBE % json.dumps(['pcov']))
 
-    def test_the_proof_runs_the_check_before_the_cli_ini_exists_and_gives_both_binaries_the_same_config(self):
+    def test_the_proof_reads_the_cli_extensions_from_the_archive_and_gives_both_binaries_the_same_config(self):
         with tempfile.TemporaryDirectory() as scratch:
             folder, config = Path(scratch) / 'bin', Path(scratch) / 'php-config'
             folder.mkdir()
+            (Path(scratch) / 'build.json').write_text(json.dumps({'cli_extensions': ['pcov']}))
             calls = []
-
-            def check(version, path):
-                calls.append('check')
-                self.assertFalse((config / 'php-cli.ini').exists())
 
             def run(argv, **kwargs):
                 calls.append(argv)
@@ -205,21 +201,28 @@ class StaticPhpProofTest(unittest.TestCase):
                 return {'sapi': 'frankenphp', 'loaded': []}
 
             with mock.patch.object(prove, 'readelf', return_value=readelf('/lib64/ld-linux-x86-64.so.2')) as elf, \
-                    mock.patch.object(prove.build, 'check', check), mock.patch.object(prove.subprocess, 'run', run), \
-                    mock.patch.object(prove, 'serve', serve):
-                prove.prove('8.5', folder, config)
+                    mock.patch.object(prove.subprocess, 'run', run), mock.patch.object(prove, 'serve', serve):
+                prove.prove(folder, config)
             self.assertEqual([call.args[0].name for call in elf.call_args_list], ['php', 'frankenphp', 'pcov.so'])
-            self.assertEqual(calls, ['check', [str(folder / 'php'), '-m'], 'serve'])
+            self.assertEqual(calls, [[str(folder / 'php'), '-m'], 'serve'])
             self.assertEqual((config / 'php-cli.ini').read_text(), f'extension={Path(scratch) / "modules/pcov.so"}\n')
 
-    def test_the_proof_refuses_before_the_check_when_a_file_needs_more_than_glibc(self):
+    def test_the_proof_refuses_before_any_binary_runs_when_a_file_needs_more_than_glibc(self):
         with tempfile.TemporaryDirectory() as scratch, \
                 mock.patch.object(prove, 'readelf', return_value=readelf('/lib64/ld-linux-x86-64.so.2', ['libc.so.6', 'libz.so.1'])), \
-                mock.patch.object(prove.build, 'check') as check:
+                mock.patch.object(prove.subprocess, 'run') as run:
             (Path(scratch) / 'bin').mkdir()
+            (Path(scratch) / 'build.json').write_text(json.dumps({'cli_extensions': ['pcov']}))
             with self.assertRaisesRegex(prove.ProofError, r'(?s)bin/php needs libz\.so\.1.*modules/pcov\.so needs libz\.so\.1'):
-                prove.prove('8.5', Path(scratch) / 'bin', Path(scratch) / 'php-config')
-            check.assert_not_called()
+                prove.prove(Path(scratch) / 'bin', Path(scratch) / 'php-config')
+            run.assert_not_called()
+
+    def test_an_archive_without_cli_extensions_fails_with_a_clear_reason(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            (Path(scratch) / 'bin').mkdir()
+            (Path(scratch) / 'build.json').write_text(json.dumps({'extensions': ['zip']}))
+            with self.assertRaisesRegex(prove.ProofError, 'build.json names no cli_extensions list'):
+                prove.prove(Path(scratch) / 'bin', Path(scratch) / 'php-config')
 
     def test_coverage_must_cover_lines_of_the_source(self):
         clover = ('<?xml version="1.0"?><coverage><project><package name="App"><file name="/w/apps/gateway/app/X/StaticPhpBuild.php">'
@@ -240,12 +243,17 @@ class StaticPhpProofWorkflowTest(unittest.TestCase):
     def setUp(self):
         self.prove = WORKFLOW[WORKFLOW.index('\n  prove:\n'):WORKFLOW.index('\n  publish:\n')]
 
-    def test_the_prove_job_calls_the_proof_instead_of_refusing_every_interpreter(self):
+    def test_the_prove_job_runs_mains_proof_after_the_check_instead_of_refusing_every_interpreter(self):
         self.assertNotIn('INTERP', self.prove)
-        self.assertNotIn('bin/static-php-build check', self.prove)
-        self.assertIn('python3 tools/static-php/prove.py build --version "${{ matrix.build.version }}" --bin "$STATIC"'
-                      ' --config "$RUNNER_TEMP/php-config"', self.prove)
-        # The proof runs before any other step runs the binaries, and before Pest reads its php-cli.ini.
+        # The proof is the run's own commit, so a manual run of a branch cannot change its own proof.
+        checkout = self.prove[self.prove.index('- name: Check out the proof'):self.prove.index('- name: Download the build')]
+        self.assertIn('ref: ${{ github.sha }}', checkout)
+        self.assertIn('path: .proof', checkout)
+        self.assertIn('python3 .proof/tools/static-php/prove.py build --bin "$STATIC" --config "$RUNNER_TEMP/php-config"', self.prove)
+        self.assertIn('python3 ../../.proof/tools/static-php/prove.py coverage', self.prove)
+        self.assertNotIn('python3 tools/static-php/prove.py', self.prove)
+        # The check runs before php-cli.ini exists; the proof runs before any other step runs the binaries.
+        self.assertLess(self.prove.index('bin/static-php-build check'), self.prove.index('prove.py build'))
         self.assertLess(self.prove.index('prove.py build'), self.prove.index('"$STATIC/php" -v'))
 
     def test_pest_runs_once_with_the_cli_ini_and_must_measure_coverage(self):

@@ -142,6 +142,15 @@ jobs:
           ref: ${{ needs.definition.outputs.sha }}
           persist-credentials: false
 
+      # The proof is the run's own commit, main's on a manual run from main: a branch's change to its proof never proves itself.
+      - name: Check out the proof
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          path: .proof
+          sparse-checkout: tools/static-php
+          persist-credentials: false
+
       - name: Download the build
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
@@ -157,9 +166,12 @@ jobs:
           file bin/php bin/frankenphp
           echo "STATIC=$PWD/bin" >> "$GITHUB_ENV"
 
-      # Only glibc stays shared, the check passes, and with the container's php-cli.ini only the CLI loads PCOV.
+      - name: Check both binaries against the recipe
+        run: python3 bin/static-php-build check --version "${{ matrix.build.version }}" --bin "$STATIC"
+
+      # Only glibc stays shared, and with the container's php-cli.ini only the CLI loads the CLI-only extensions, such as PCOV.
       - name: Prove the build
-        run: python3 tools/static-php/prove.py build --version "${{ matrix.build.version }}" --bin "$STATIC" --config "$RUNNER_TEMP/php-config"
+        run: python3 .proof/tools/static-php/prove.py build --bin "$STATIC" --config "$RUNNER_TEMP/php-config"
 
       - name: Run the PHP command line
         run: |
@@ -197,7 +209,7 @@ jobs:
           "$STATIC/php" -c "$RUNNER_TEMP/php-config" -d memory_limit=1G vendor/bin/pest --version
           "$STATIC/php" -c "$RUNNER_TEMP/php-config" -d memory_limit=1G vendor/bin/pest \
             --coverage-clover "$RUNNER_TEMP/coverage.xml" tests/Unit/Infrastructure/MachineSoftware
-          python3 ../../tools/static-php/prove.py coverage --clover "$RUNNER_TEMP/coverage.xml" \
+          python3 ../../.proof/tools/static-php/prove.py coverage --clover "$RUNNER_TEMP/coverage.xml" \
             --source app/Infrastructure/MachineSoftware/StaticPhpBuild.php
 
       - name: Serve the Gateway with FrankenPHP

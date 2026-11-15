@@ -362,17 +362,16 @@ FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with
 
 The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
-A proof job unpacks the archive, checks its SHA-256 and runs `tools/static-php/prove.py build --version X.Y --bin DIR --config DIR`. The script is not part of the build id, so a change to the proof alone needs no new build.
+A proof job unpacks the archive, checks its SHA-256 and runs the extension check. Then `tools/static-php/prove.py` proves the build. It runs from the run's own commit, so a manual run from main uses main's copy, not the built branch's. A branch's change to its own proof is never what proves it. The branch's own code still runs in the job, so run only a reviewed ref.
 
-The script first reads each binary and each `modules/<name>.so` with `readelf`. A file may need only glibc's own libraries: `libc.so.6`, `libm.so.6`, `libpthread.so.0`, `libdl.so.2`, `librt.so.1`, `libresolv.so.2` and `libutil.so.1`. Its program interpreter, if it has one, must be `/lib64/ld-linux-x86-64.so.2`. A fully static binary needs no library, so it passes.
+The proof has four parts:
 
-No `GLIBC_` symbol version may be newer than 2.43, Ubuntu 26.04's glibc, which the containers run. The limit is a constant in the script, not the runner's `ldd --version`. So a runner with a newer glibc cannot raise it.
+- **Linkage.** `php`, `frankenphp` and each CLI-only extension in `modules/` may need only glibc's own libraries, no newer than Ubuntu 26.04's glibc. A fully static binary also passes.
+- **CLI only.** The proof writes the `php-cli.ini` that a container has. It holds one `extension=` line for each CLI-only extension in the archive's `build.json`. `php -m` with it must list each one.
+- **Not in FrankenPHP.** `frankenphp php-server` serves a page with the same configuration. The page must run under the `frankenphp` SAPI and load no CLI-only extension.
+- **Coverage.** After the Gateway install, Pest runs with that `php-cli.ini`. It runs `tests/Unit/Infrastructure/MachineSoftware` with a clover report. The report must cover lines of `StaticPhpBuild.php`.
 
-The script then runs the extension check. The check fails when a binary reads an ini file, so it runs before any `php-cli.ini` exists.
-
-Last, the script writes the `php-cli.ini` that a container has into the config folder `DIR`. The file has an `extension=` line for `modules/pcov.so`. With `PHPRC` set to that folder, `php -m` must list `pcov`. A page that `frankenphp php-server` serves from a temporary root, with the same `PHPRC`, must run under the SAPI `frankenphp` and load no `pcov`. The proof uses the served page, not `frankenphp php-cli`. That command takes the SAPI name `cli`, so it reads `php-cli.ini` too.
-
-The job then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, and runs Artisan. It runs Pest once, as `php -c DIR -d memory_limit=1G vendor/bin/pest --coverage-clover FILE`, so the CLI reads the same `php-cli.ini`. `tools/static-php/prove.py coverage --clover FILE --source PATH` then fails unless the report covers lines of a Gateway file that the tests run: Pest writes no report, or covers nothing, when PCOV is not loaded. A minimum percentage would measure the whole Gateway against a few tests. The job last serves the Gateway's `/up` with `frankenphp php-server`.
+The job also runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan, and serves the Gateway's `/up` with `frankenphp php-server`. A build whose `build.json` names no `cli_extensions`, such as a fully static musl build, fails the proof.
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 

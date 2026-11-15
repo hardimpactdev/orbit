@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
 """Prove one unpacked static PHP build on the CI runner. See docs/reference/compute-drivers.md#the-static-php-workflow.
 
-  tools/static-php/prove.py build --version X.Y --bin DIR --config DIR  # glibc-only linkage, the check, and the CLI-only extensions in the CLI only
+  tools/static-php/prove.py build --bin DIR --config DIR  # glibc-only linkage, and the CLI-only extensions in the CLI only
   tools/static-php/prove.py coverage --clover FILE --source PATH         # exit 1 unless the clover report covers lines of PATH
 
-`build` fails unless php, frankenphp and each CLI-only extension need only glibc, no newer than Ubuntu 26.04's, and the build
-passes `bin/static-php-build check`. It then writes the CLI-only php-cli.ini that a container has into the config folder DIR,
+`build` reads the CLI-only extensions from the archive's build.json. It fails unless php, frankenphp and each CLI-only extension
+need only glibc, no newer than Ubuntu 26.04's. It then writes the CLI-only php-cli.ini that a container has into the config folder DIR,
 and fails unless `php -m` with it lists each CLI-only extension and a page that `frankenphp php-server` serves with it loads none.
 `coverage` reads the clover report of a Pest run with that ini: PCOV measured only if a source file the tests run has covered lines.
 
-The proof lives outside bin/static-php-build, whose digest is part of the build id: a change to the proof alone needs no new build.
+A manual run from main runs main's copy of this file, not the built branch's, so a branch's change to its own proof is never
+what proves it. Only a reviewed ref may run, because the ref's code runs in the same job. This file reads only the unpacked archive
+and imports nothing of the ref. `bin/static-php-build check` compares the extensions with the ref's recipe. This file is not part
+of the build id.
 """
 import argparse
-import importlib.machinery
-import importlib.util
 import json
 import os
 from pathlib import Path
@@ -26,11 +27,6 @@ import time
 import xml.etree.ElementTree as ElementTree
 import urllib.error
 import urllib.request
-
-ROOT = Path(__file__).resolve().parents[2]
-_loader = importlib.machinery.SourceFileLoader('static_php_build', str(ROOT / 'bin/static-php-build'))
-build = importlib.util.module_from_spec(importlib.util.spec_from_loader(_loader.name, _loader))
-_loader.exec_module(build)
 
 # The shared libraries of glibc itself, the only ones a binary or a CLI-only extension may need: the containers have nothing else.
 GLIBC_LIBRARIES = {'libc.so.6', 'libm.so.6', 'libpthread.so.0', 'libdl.so.2', 'librt.so.1', 'libresolv.so.2', 'libutil.so.1',
@@ -119,36 +115,44 @@ def serve(frankenphp, env, cli_extensions):
                     time.sleep(1)
         finally:
             server.terminate()
-            log = server.communicate(timeout=30)[0]
+            try:
+                log = server.communicate(timeout=30)[0]
+            except subprocess.TimeoutExpired:
+                server.kill()
+                log = server.communicate()[0]
     try:
-        return json.loads(body or '')
+        answer = json.loads(body or '')
     except ValueError:
+        answer = None
+    if not isinstance(answer, dict) or not isinstance(answer.get('loaded'), list):
         raise ProofError(f'frankenphp php-server did not answer the probe: {body or "no answer"}\n{log}') from None
+    return answer
 
 
-def prove(version, folder, config):
-    """The CI proof of one unpacked build. The check runs before php-cli.ini exists: it fails when a binary reads an ini file."""
-    item = build.definitions()[version]
+def prove(folder, config):
+    """The CI proof of one unpacked build, whose `bin` folder is `folder`."""
     folder = folder.resolve()
+    cli_extensions = json.loads((folder.parent / 'build.json').read_text()).get('cli_extensions')
+    if not isinstance(cli_extensions, list):
+        raise ProofError('build.json names no cli_extensions list: the archive is not a glibc build with CLI-only extensions.')
     modules = folder.parent / 'modules'
-    files = [folder / 'php', folder / 'frankenphp', *(modules / f'{name}.so' for name in item['cli_extensions'])]
+    files = [folder / 'php', folder / 'frankenphp', *(modules / f'{name}.so' for name in cli_extensions)]
     problems = [problem for path in files for problem in linkage_problems(path.relative_to(folder.parent), readelf(path))]
     if problems:
         raise ProofError('The static PHP build needs more than glibc:\n  ' + '\n  '.join(problems))
     print('php, frankenphp and the CLI-only extensions need only glibc, no newer than Ubuntu 26.04\'s.')
-    build.check(version, folder)
 
     # As in a container, the config folder holds php-cli.ini. The CLI reads it (SAPI name cli); the FrankenPHP server
     # (SAPI name frankenphp) never does.
     config = config.resolve()
     config.mkdir(parents=True, exist_ok=True)
-    (config / 'php-cli.ini').write_text(cli_ini(modules, item['cli_extensions']))
+    (config / 'php-cli.ini').write_text(cli_ini(modules, cli_extensions))
     env = {**os.environ, 'PHPRC': str(config)}
     listed = subprocess.run([str(folder / 'php'), '-m'], check=True, capture_output=True, text=True, env=env, stdin=subprocess.DEVNULL)
-    problems = cli_problems(listed.stdout, item['cli_extensions']) + served_problems(serve(folder / 'frankenphp', env, item['cli_extensions']))
+    problems = cli_problems(listed.stdout, cli_extensions) + served_problems(serve(folder / 'frankenphp', env, cli_extensions))
     if problems:
         raise ProofError('Only the PHP CLI may load the CLI-only extensions:\n  ' + '\n  '.join(problems))
-    print(f'With {config / "php-cli.ini"}, php -m lists {", ".join(item["cli_extensions"]) or "nothing more"},'
+    print(f'With {config / "php-cli.ini"}, php -m lists {", ".join(cli_extensions) or "nothing more"},'
           ' and frankenphp php-server loads none of them.')
 
 
@@ -178,7 +182,6 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     commands = parser.add_subparsers(dest='command', required=True)
     build_command = commands.add_parser('build')
-    build_command.add_argument('--version', required=True)
     build_command.add_argument('--bin', required=True, type=Path)
     build_command.add_argument('--config', required=True, type=Path)
     coverage_command = commands.add_parser('coverage')
@@ -187,10 +190,10 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == 'build':
-            prove(args.version, args.bin, args.config)
+            prove(args.bin, args.config)
         else:
             coverage(args.clover, args.source)
-    except (ProofError, build.BuildError, build.CHECK['StaticPhpError'], subprocess.CalledProcessError) as error:
+    except (ProofError, OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
         print(f'static-php prove: {error}', file=sys.stderr)
         return 1
     return 0
