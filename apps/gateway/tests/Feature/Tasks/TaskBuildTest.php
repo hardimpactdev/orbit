@@ -2,14 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tasks\RunTaskPullRequestGateAction;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubPullRequest;
-use App\Domain\GitHub\GitHubPullRequestState;
-use App\Domain\GitHub\GitHubReview;
-use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
@@ -18,7 +13,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskBuildProjection;
-use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepPrompts;
 use App\Domain\Tasks\TaskPullRequestEvidence;
@@ -32,7 +26,6 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\StartSwampRun;
-use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -40,7 +33,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
 

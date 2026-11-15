@@ -30,7 +30,7 @@ Laravel Horizon runs seven queues on the connection with five supervisors. The `
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
-| `tasks` | 3 | The scheduled commands below, an approved commit's publish, a new container's [workspace baseline](/reference/development-containers#workspace-work-state), and the release of a task VM slot whose start did not pass. The Git mirror's lock keeps one push per Project at a time |
+| `tasks` | 3 | Scheduled commands, an approved commit's publish, a new container's [workspace baseline](/reference/development-containers#workspace-work-state), and a task VM slot release. The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
 | `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |

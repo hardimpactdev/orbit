@@ -185,7 +185,9 @@ A waiting Operation on a group, and `task:show` of its group, return `capacity_w
 
 #### Release an idle task VM
 
-This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. The idle release admits `tasks.idle_save` for such a group ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). Since task VMs are removed, no schedule runs it. The group keeps its status, subtasks and threads.
+Since task VMs are removed, no schedule runs the idle release.
+
+This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. The idle release admits `tasks.idle_save` for such a group ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). The group keeps its status, subtasks and threads.
 
 Thirty minutes is longer than the pause of a driver that is working, and short enough that a stalled driver does not starve the task queue. Group 4118 held a place for hours after its build while preps waited.
 
