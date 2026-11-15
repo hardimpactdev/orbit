@@ -1,0 +1,81 @@
+---
+title: "ADR 0259: Prove changed operations on the pull request"
+sidebarTitle: "0259 Proof on the pull request"
+description: "In progress. A check runs only when its inputs change, on the pull request. The proof of each changed operation blocks the merge and replaces the shape-gate fixtures. No tests run after merge or at night."
+---
+
+# ADR 0259: Prove changed operations on the pull request
+
+A check runs when its inputs change, and only then, on the pull request. The quick checks stay as they are. The [proof](/cli/proof/run) of every operation that a change touches runs on the same pull request and blocks the merge. It replaces the shape-gate fixtures, which test the same automation a second time against stand-ins. Main runs no tests after a merge, and nothing runs at night.
+
+## Status
+
+In progress.
+
+Decided by the owner on 2026-11-15.
+
+Principle: [One way, one name](/mission#principles): each operation has one test, its proof. It also serves [Lean](/mission#principles): Orbit deletes the after-merge consumers, the full set and the fixtures that nothing reads.
+
+Open: whether a fixture that tests pure code, with no playbook, workflow or Node behind it, stays as a quick check or is removed. Decide per file when the fixtures are retired (step 3 of the [build order](#build-order)).
+
+## Context
+
+Between 13 and 15 November 2026, Orbit's CI had three stages:
+
+- **Pull request checks** on GitHub-hosted runners: about 20 kinds of quick checks (Pest, PHPStan, builds, docs, Swamp shape and Deno tests) and up to 8 fixture shards for the changed files. The median from push to `Required checks` was 3.6 minutes.
+- **Release** on main: the same checks again, then the CLI release and the docs site.
+- **After-merge tests** on Sabre: [Main full set](/reference/main-full-set) and its deferred consumer ran the fixtures that pull requests skipped, and every fixture at night. 765 shard jobs waited a median of 54 minutes and up to 6.2 hours for a runner; 225 were cancelled before any runner took them. Nothing waited for their result, and a failure surfaced hours after the merge.
+
+The shape-gate fixtures are 177 test files under `swamp/tests/` and `swamp/bin/`, registered in `.github/ci/fixtures/`. Most run a shipped playbook or workflow on the CI runner against stand-ins: this machine as the Node, a stand-in Incus, no network. They declare about 6.6 hours of single-worker time; `ansible_instance_migrate_test.ts` alone declares 2.3 hours. The [proof](/cli/proof/run) runs the same operations end to end, through the Gateway and Swamp, against a nested fleet. The two layers test the same behavior twice.
+
+The after-merge stage exists for two reasons: 18 fixture files are too slow for the pull request budget, and an input list may miss a file, so a nightly run of everything guards against it. Both are answered better at their root: slow work is sharded over more capacity ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)), and a missing input is a bug in the input list.
+
+## Decision
+
+Orbit's CI has two stages: checks on the pull request, then the release on main. A pull request runs the checks its change selects, and the proof is the test of each changed operation.
+
+### A check runs when its inputs change
+
+Each check declares its inputs. A pull request runs exactly the checks whose inputs it changes. A check that misses an input is fixed by correcting its inputs; Orbit adds no rerun of everything to catch it.
+
+There is no test stage after a merge. Main builds and releases. There is no nightly run of all checks.
+
+### Proof is the test of an operation
+
+When a change touches an operation's code, its proof cases run on the pull request: `proof:run` selects the changed cases, groups them into batches, and balances the batches over copies, as [proof:run](/cli/proof/run) describes. The proof is part of `Required checks` and blocks the merge.
+
+The shape-gate fixtures are retired. For each fixture file, a case that a proof case does not already cover becomes a proof case of its operation when it is reasonably expected to happen in normal use. A case for a rare situation is not kept: the operation is designed so that the situation cannot occur.
+
+The Swamp shape gate's linters and validators stay quick checks. They test the source, not an operation's behavior.
+
+### Quick checks stay where they run
+
+The quick checks of a public repository run on GitHub-hosted runners, as today. Private repositories run only on Orbit's runners. A pull request from a fork never runs on Orbit's runners; its proof follows the existing outside-proof rule.
+
+### Build order
+
+1. Make the proof blocking again, with its cases selected per changed operation. This needs proof capacity on more than one Node ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)).
+2. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, the main copy proof, the answer collector, and their scripts and repository variables.
+3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration.
+4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages, and retire [Main full set](/reference/main-full-set).
+
+## Rejected alternatives
+
+- Keep fixtures and proof both: the same behavior tested twice, with two places to fix when an operation changes.
+- Keep fixtures as the main test and proof as an occasional check: a stand-in can pass while the real operation fails.
+- Move the after-merge fixtures back into the pull request: it keeps the overlap and only moves the cost.
+- Keep a nightly full run as a safety net: its result arrives after the merge, nobody reads it, and it hides input lists that are wrong.
+
+## Consequences
+
+- A merge waits for the proof of the operations it changes. Its time depends on proof capacity ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)).
+- A failing proof stops the merge, not main.
+- Orbit deletes about 177 test files, their cost files, and the after-merge workflows and scripts.
+- Rare failure paths lose their stand-in tests. Each one needs a design that makes it impossible, or a proof case if it is realistic.
+
+## Affects
+
+- Components: apps/gateway, apps/docs
+- ADRs: [0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)
+- Detail: [Implementation loop: CI](/reference/implementation-loop#ci); [proof:run](/cli/proof/run); [Main full set](/reference/main-full-set), which is retired
+- Verify: a pull request that changes one operation runs that operation's proof cases and no fixture; `Required checks` fails on a failing proof case; main runs no test workflow after a merge
