@@ -63,6 +63,8 @@ Each case ends `passed`, `failed` or `unrun`, as in [`proof:run`](/cli/proof/run
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
+A `node:converge` call in a copy may wait up to 600 seconds. Its product timing assertions still apply. If the CLI times out, that case fails and the batch starts no more cases: the Operation may still be running. The remaining cases are `unrun`; the next batch resets the fleet before it starts.
+
 ## How it works
 
 <div className="flow-at" data-chart="proof/proof"></div>

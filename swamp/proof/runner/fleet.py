@@ -34,6 +34,8 @@ PROFILE = 'nested'
 ROLES = ('gateway', 'app-dev', 'app-prod')
 SKIPPED_INTERFACES = ('lo', 'orbit', 'docker0')
 GUEST_PREFIX = 'nested-'
+CLI_SECONDS = 240
+COPY_CONVERGE_SECONDS = 600
 
 
 class FleetError(Exception):
@@ -69,6 +71,7 @@ class Fleet:
 
     def __init__(self, nodes):
         self.nodes = nodes
+        self._checkout_shift = None
 
     def sh(self, node, command, timeout=60, stdin_text=None):
         try:
@@ -77,9 +80,22 @@ class Fleet:
         except subprocess.TimeoutExpired as error:
             return subprocess.CompletedProcess(['incus', 'exec', node], 124, error.stdout or '', 'timeout')
 
-    def cli(self, args, timeout=240, form='json', node=None):
+    def checkout_shift(self):
+        if self._checkout_shift is None:
+            gateway = self.nodes['gateway']['instance']
+            shift = self.must(['incus', 'config', 'device', 'get', gateway, 'checkout', 'shift'], 'cannot read the fleet checkout mode').stdout.strip()
+            if shift not in ('true', 'false'):
+                raise FleetError(f'unknown fleet checkout shift: {shift!r}')
+            self._checkout_shift = shift
+        return self._checkout_shift
+
+    def cli_timeout(self, args):
+        return COPY_CONVERGE_SECONDS if args and args[0] == 'node:converge' and self.checkout_shift() == 'false' else CLI_SECONDS
+
+    def cli(self, args, timeout=None, form='json', node=None):
         """Run the CLI without a terminal. The human form leaves out `--json`. With `node` the call uses the prepared checkout on that
         Node, run as its managed user: the Gateway sees that Node as the caller."""
+        timeout = self.cli_timeout(args) if timeout is None else timeout
         started = time.time()
         words = list(args)
         if form == 'json':
@@ -132,10 +148,7 @@ class Fleet:
         before scheduling cases. A step that cannot be done is a `FleetError` that names it, and not the exit status 127 of a missing program.
         """
         guest = self.nodes[node]['instance']
-        gateway = self.nodes['gateway']['instance']
-        shift = self.must(['incus', 'config', 'device', 'get', gateway, 'checkout', 'shift'], f'{node}: cannot read the fleet checkout mode').stdout.strip()
-        if shift not in ('true', 'false'):
-            raise FleetError(f'{node}: unknown fleet checkout shift: {shift!r}')
+        shift = self.checkout_shift()
         mounted = subprocess.run(['incus', 'config', 'device', 'get', guest, 'checkout', 'source'], capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL)
         if mounted.returncode != 0 or mounted.stdout.strip() != str(CHECKOUT):
             # A copy holds this device and ID map in base. Changing raw.idmap here would remap a running Node.
