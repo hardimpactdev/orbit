@@ -25,7 +25,7 @@ function render(expression: string, outputs: unknown, intent: unknown): unknown 
     return cel.evaluate(expression.slice(3, -2).trim().replaceAll("vault.get(", "vaultget("), {
         run: { id: (outputs as { clone_private: string }).clone_private.split("-").slice(3).join("-") },
         steps: {}, inputs: {
-            intent: { ...(intent as object), clone_launcher: JSON.parse((outputs as { clone_payload: string }).clone_payload).launcher },
+            intent: { ...(intent as object), clone_launcher: JSON.parse((outputs as { stage_json: string }).stage_json).launcher },
             execution_secrets: { git_credential: { vault: "fixture", key: "git" }, clone_launch: { vault: "fixture", key: "stage" },
                 process_environments: { vault: "fixture", key: "stage" } },
         },
@@ -75,7 +75,7 @@ async function cloneInput(nested = false) {
     const intent = { instance_id: 7, already_active: false, container, ssh_execution: { target: { user: account } } };
     await Deno.mkdir(folder, { mode: 0o700 });
     // The run's private folder and the public part of its launch copy, as the Gateway frames them (CloneStage::payload).
-    const outputs = { clone_private: `/tmp/orbit-clone-7-${id}`, clone_payload: JSON.stringify(await stagePayload(container, account)) };
+    const outputs = { clone_private: `/tmp/orbit-clone-7-${id}`, stage_json: JSON.stringify(await stagePayload(container, account)) };
     return { folder, intent, outputs };
 }
 async function execute(argv: string[], stdin = "", env: Record<string, string> = {}) {
@@ -174,7 +174,7 @@ Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", a
             assert(sizes[name] <= 16384, `${name}: ${sizes[name]} bytes`);
         }
         // The real release files must cross stdin, never disappear from the input.
-        const payload = JSON.parse(outputs.clone_payload);
+        const payload = JSON.parse(outputs.stage_json);
         assertEquals(payload.script, await Deno.readTextFile(asset("scripts/instance_clone.py")));
         assertEquals(payload.guest, await Deno.readTextFile(asset("scripts/instance_clone_guest.py")));
         for (const [key, name] of Object.entries({ node_services: "instance_node_services", mail: "instance_mail",
@@ -183,7 +183,7 @@ Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", a
         }
         // They cross the copy step's stdin as the stage copy's first line.
         const first = cloneSteps.find((step) => step.name === "clone-container")!;
-        stageCopy = JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: "fixture-private-credential\n" });
+        stageCopy = JSON.stringify({ stage: JSON.parse(outputs.stage_json), private: "fixture-private-credential\n" });
         assertEquals(render(first.task.inputs.stdin!, outputs, intent), stageCopy);
         const manifest = parse(await Deno.readTextFile(asset("manifest.yaml"))) as { additionalFiles: string[] };
         assert(manifest.additionalFiles.includes("scripts/instance_clone_launch.py"));
@@ -212,7 +212,7 @@ Deno.test("the workflow's copy step stages the stage copy and launches the conta
         await Deno.writeTextFile(folder + "/incus",
             '#!/bin/sh\n[ "$(cat "$CLONE_PRIVATE/git-credential")" = fixture-private-credential ] || exit 8\necho "leaked fixture-private-credential" >&2\nexit 7\n',
             { mode: 0o700 });
-        const failed = await launch(JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: "fixture-private-credential\n" }));
+        const failed = await launch(JSON.stringify({ stage: JSON.parse(outputs.stage_json), private: "fixture-private-credential\n" }));
         assertEquals(failed.code, 1);
         const stderr = new TextDecoder().decode(failed.stderr);
         assert(stderr.includes("instance.container_container_failed: command incus exited 7"), stderr);
@@ -228,7 +228,7 @@ Deno.test("the workflow's copy step stages the stage copy and launches the conta
         const t3 = render(cloneSteps.find((step) => step.name === "clone-t3")!.task.inputs.argv!, outputs, intent) as string[];
         assertEquals(t3.slice(2), ["python3", outputs.clone_private + "/launch.py", outputs.clone_private, "t3"]);
         // A launch cannot silently reuse a previous run's staged release.
-        const again = await launch(JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: "fixture-private-credential\n" }));
+        const again = await launch(JSON.stringify({ stage: JSON.parse(outputs.stage_json), private: "fixture-private-credential\n" }));
         assertEquals([again.code, new TextDecoder().decode(again.stderr).trim()], [1, "instance.clone_input_failed"]);
         assertEquals((await execute(clean)).code, 0);
         await assertRejects(() => Deno.stat(outputs.clone_private), Deno.errors.NotFound);
@@ -249,8 +249,8 @@ Deno.test("the workflow's copy step stages the stage copy and launches the conta
 // the Gateway sends stages `stage` and runs the container part with only `private`, in one SSH dispatch.
 Deno.test("the shipped launcher stages a launch copy's public part and gives the container part only the private text", async () => {
     const { folder, outputs } = await cloneInput();
-    const launch = (privateText: string) => JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: privateText });
-    const launcher = JSON.parse(outputs.clone_payload).launcher as string;
+    const launch = (privateText: string) => JSON.stringify({ stage: JSON.parse(outputs.stage_json), private: privateText });
+    const launcher = JSON.parse(outputs.stage_json).launcher as string;
     const argv = ["timeout", "300", "python3", "-c", launcher, outputs.clone_private, "stage", "container"];
     const clean = ["rm", "-rf", "--", outputs.clone_private];
     try {
@@ -270,13 +270,13 @@ Deno.test("the shipped launcher stages a launch copy's public part and gives the
             assertEquals((await Deno.stat(outputs.clone_private + "/" + name)).mode! & 0o777, 0o600);
             assertEquals((await Deno.readTextFile(outputs.clone_private + "/" + name)).includes("fixture-private-credential"), false);
         }
-        assertEquals(JSON.parse(await Deno.readTextFile(outputs.clone_private + "/input.json")), JSON.parse(outputs.clone_payload));
+        assertEquals(JSON.parse(await Deno.readTextFile(outputs.clone_private + "/input.json")), JSON.parse(outputs.stage_json));
         // A later phase runs from the staged folder, as clone-t3 does.
         assertEquals((await execute(clean)).code, 0);
         // A copy that is no launch copy (the plain credential, the old two-part stage, no `stage`, a private part that is no text, no
         // object), or a second launch on a staged folder names the stage.
-        for (const stdin of ["fixture-private-credential\n", outputs.clone_payload + "\nfixture-private-credential\n", '{"private":"x"}',
-            JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: 7 }), "[]"]) {
+        for (const stdin of ["fixture-private-credential\n", outputs.stage_json + "\nfixture-private-credential\n", '{"private":"x"}',
+            JSON.stringify({ stage: JSON.parse(outputs.stage_json), private: 7 }), "[]"]) {
             const refused = await execute(argv, stdin, env);
             assertEquals(refused.code, 1);
             assertEquals(new TextDecoder().decode(refused.stderr).trim(), "instance.clone_input_failed");
@@ -300,7 +300,7 @@ Deno.test("the completion's services step stages its copy and runs the services 
     const clean = render(completeSteps.find((step) => step.name === "clone-private-cleanup")!.task.inputs.argv!, outputs, intent) as string[];
     const processes = { "/etc/orbit/processes/1/a.env": "QUEUE=fixture-private-queue\n" };
     const run = (dead: boolean) => {
-        stageCopy = JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: JSON.stringify({ processes }), processes });
+        stageCopy = JSON.stringify({ stage: JSON.parse(outputs.stage_json), private: JSON.stringify({ processes }), processes });
         const argv = render(services.task.inputs.argv!, outputs, intent) as string[];
         assertEquals(argv.slice(2, 4), ["python3", "-c"]);
         assertEquals(argv.slice(5), [outputs.clone_private, "stage", "complete"]);
