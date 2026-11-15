@@ -38,12 +38,10 @@ function provision_operation(Task $group, OperationStatus $status): Operation
         'input' => ['capacity_request' => ['commit' => str_repeat('c', 40)]], 'status' => $status]);
 }
 
+// The task VM commands (turn without a copy, script, package) answer the refusal of the removed task VMs first (TaskFamilyTest).
 $calls = [
-    'turn' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$subtask->id}/turn", ['role' => 'implementer', 'prompt' => 'Start.', 'thread' => 'new']]],
     'check' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$subtask->id}/check", ['phase' => 'baseline']]],
     'publish' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$group->id}/publish", ['check' => 1]]],
-    'script' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$group->id}/script", ['subtask' => $subtask->id, 'script' => 'bin/check', 'args' => []]]],
-    'package' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$group->id}/package", ['manager' => 'composer', 'package' => 'acme/tools']]],
     'sync' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$group->id}/sync", []]],
 ];
 
@@ -83,7 +81,7 @@ it('keeps operation.target_busy for another open Operation on the group', functi
         'input' => [], 'status' => OperationStatus::Running]);
 
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->withHeader('Idempotency-Key', 'manual-2')
-        ->postJson("/api/v1/tasks/{$this->subtask->id}/turn", ['role' => 'implementer', 'prompt' => 'Start.', 'thread' => 'new'])
+        ->postJson("/api/v1/tasks/{$this->group->id}/sync")
         ->assertStatus(409)
         ->assertJsonPath('error.code', 'operation.target_busy')
         ->assertJsonPath('error.details.operation_id', $held->id);

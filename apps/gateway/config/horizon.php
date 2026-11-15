@@ -18,7 +18,6 @@ return [
     'waits' => [
         'gateway:tasks' => 60,
         'gateway:problems' => 600,
-        'gateway:task-vms' => 600,
         'gateway:builds' => 3600,
         'gateway:operations' => 300,
         'gateway:operations-prompt' => 60,
@@ -55,21 +54,6 @@ return [
             'memory' => 256,
             'tries' => 1,
             'timeout' => 1700,
-            'nice' => 0,
-        ],
-        // One worker keeps the remaining task VM queue jobs in order. The timeout covers their longest supported work;
-        // no task-vms job may exceed it.
-        'task-vms' => [
-            'connection' => 'gateway',
-            'queue' => ['task-vms'],
-            'balance' => false,
-            'minProcesses' => 1,
-            'maxProcesses' => 1,
-            'maxTime' => 0,
-            'maxJobs' => 0,
-            'memory' => 256,
-            'tries' => 1,
-            'timeout' => 1500,
             'nice' => 0,
         ],
         'builds' => [
@@ -138,7 +122,6 @@ return [
     'environments' => [
         '*' => [
             'tasks' => [],
-            'task-vms' => [],
             'builds' => [],
             'operations' => [],
             'operation-starts' => [],

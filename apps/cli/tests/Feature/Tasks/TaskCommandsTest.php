@@ -35,6 +35,7 @@ use Orbit\Sdk\Requests\Tasks\ListTasksRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskAgentRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTaskRequest;
 use Orbit\Sdk\Requests\Tasks\ShowTasksStatusRequest;
+use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
 use Orbit\Sdk\Requests\Tasks\UpdateTaskRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
@@ -1119,4 +1120,24 @@ describe('the pull request mode of a task group', function (): void {
         expect(Artisan::call('task:status'))->toBe(0);
         expect(Artisan::output())->toContain('Waiting for release')->toContain('ORB-42')->toContain('waiting_for_release');
     });
+});
+
+// Task VMs are removed: task:start of a Project without a container default prints the Gateway's refusal as one line, with no stack trace.
+it('prints the refusal of the removed task VMs for task:start, with its code in JSON and no stack trace', function (): void {
+    $message = "Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.";
+    MockClient::global([...gateway_fixture_mock(), StartTaskRequest::class => MockResponse::make([
+        'status' => 422, 'error' => ['code' => 'tasks.vm_runtime_removed', 'message' => $message, 'details' => []], 'meta' => ['request_id' => 'req-vm'],
+    ], 422, ['Content-Type' => 'application/json'])]);
+
+    expect(Artisan::call('task:start', ['task' => '4121']))->toBe(1);
+    $human = Artisan::output();
+    // The terminal wraps the line at its width.
+    expect(str_replace("\n", '', $human))->toBe($message)->and($human)->not->toContain('Exception')->not->toContain('#0 ')->not->toContain('.php');
+
+    MockClient::destroyGlobal();
+    MockClient::global([...gateway_fixture_mock(), StartTaskRequest::class => MockResponse::make([
+        'status' => 422, 'error' => ['code' => 'tasks.vm_runtime_removed', 'message' => $message, 'details' => []], 'meta' => ['request_id' => 'req-vm'],
+    ], 422, ['Content-Type' => 'application/json'])]);
+    expect(Artisan::call('task:start', ['task' => '4121', '--json' => true]))->toBe(1)
+        ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error'])->toMatchArray(['code' => 'tasks.vm_runtime_removed', 'message' => $message]);
 });

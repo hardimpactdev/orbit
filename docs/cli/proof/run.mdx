@@ -83,7 +83,7 @@ A child waiting its turn to start stays protected while its parent is open and w
 
 A proof that waits more than 120 minutes fails `proof.capacity_timeout`. This applies to operator and CI parents, including an older parent blocking the queue. Ended or cancelled parents and proofs with nothing to prove leave the queue. Two predecessors of up to two hours each exceed the allowance: a third proof behind them fails by the wait and must be run again.
 
-Each run of a proof gets a copy of the proof Project's default Instance, the Orbit container with its inner fleet. A proof takes at most two copies at once (`proof.copies`), and it never takes the last two copy places of the default's Node, so task groups can still start: places are `min(proof.copies, orbit.tasks.copies_max - live copies - 2)`. With no place, the proof waits with the step "Wait for a free copy place" and retries every 20 seconds, within the same two-hour allowance. Operator and CI proofs follow the same rule.
+Each run of a proof gets a copy of the proof Project's default Instance, the Orbit container with its inner fleet. A proof Project without a default container Instance fails its proof with `tasks.vm_runtime_removed`: task VMs are removed ([Task runtime](/reference/tasks#task-runtime)). A proof takes at most two copies at once (`proof.copies`), and it never takes the last two copy places of the default's Node, so task groups can still start: places are `min(proof.copies, orbit.tasks.copies_max - live copies - 2)`. With no place, the proof waits with the step "Wait for a free copy place" and retries every 20 seconds, within the same two-hour allowance. Operator and CI proofs follow the same rule.
 
 Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded copy. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
 
@@ -151,6 +151,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.run_interrupted` | Native execution stopped with inconclusive coverage, without a completed failure taking precedence. |
 | `proof.base_invalid` | The range base is not a full lowercase SHA, or it is combined with `--all`. |
 | `proof.base_not_ancestor` | The base is missing from the repository or is not an ancestor of the tested commit. |
+| `tasks.vm_runtime_removed` | The proof Project has no default container Instance. Task VMs are removed, so a run has nowhere to prove. No case ran. |
 | `proof.commit_invalid` | The commit is missing or is not a full lowercase SHA, and the CLI cannot prompt. |
 | `proof.commit_not_found` | The Orbit repository has no such commit. |
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |

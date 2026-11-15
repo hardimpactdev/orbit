@@ -91,27 +91,30 @@ Without `compact`, or with `compact=false`, show returns every field and the lis
 
 Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-empty task topologies with HTTP 422 `tasks.orchestration_unsupported`; the existing Project review-and-merge setting does not block admission. Only explicit keyed operations start work. Group and subtask status updates record board state without starting an agent, check or cleanup.
 
+#### Task runtime
+
+A task runs only in a [task copy](#task-copy): a copy of its Project's default container Instance. Task VMs are removed. Every entry that would admit a task VM answers HTTP 422 `tasks.vm_runtime_removed` before it records anything:
+
+- `task:start` of a task whose Project has no default container Instance and no `nested_fleet` flag;
+- a turn of a group that owns no copy, also with the `consult` role;
+- `tasks.prep`, `tasks.prep_fix`, `tasks.package` and `tasks.script` through their routes, and the build and review round that the [gate check](#gate-check) would start;
+- a `proof:run` run of a proof Project without a container default.
+
+The message says what to do: `Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.` The CLI prints it, Conn and the API show it with the code, and the gate check records the code as the step's result. No admission waits for a task place any more.
+
 #### Release a task VM for review
 
-Publishing a task PR releases its VM, workspace, Node identity, keys and VPN peer. The group waits for review without holding a place. An [idle](#release-an-idle-task-vm) VM goes too. A build, fix turn or review round claims a task place again and restores the task branch on a fresh copy of the base. Full pools wait for up to two hours. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+Publishing a task PR released its VM, workspace, Node identity, keys and VPN peer. No new task VM starts: a build, fix turn or review round of such a group answers the [refusal](#task-runtime).
 
 #### Provision an external group
 
 `task:start <group>` starts the Gateway operation `tasks.provision` through `POST /api/v1/tasks/{task}/start`. Its target is `task_group` with the group ID. Admission locks the group row while it captures the intent. It holds no Gateway execution lease or target hold. An ended group returns HTTP 409 `tasks.group_closed`. The Gateway retries no effect for an external group; the orchestrator decides whether to try new work.
 
-Task work and operator proofs claim task places. Authenticated CI proofs claim CI places. Proofs of a refreshed base use that pool too. Each VM holds one place until deletion is confirmed. Full pools record a waiting Operation without a workspace or identity.
-
-A task VM serves only the proof Project: the base VM carries only its checkout. Work that needs a new VM for a group of another Project, such as provision, prep or a build, returns HTTP 409 `task_vm.project_unsupported` at once and records no Operation. A waiting Operation that reaches that check fails with the same code. Freed places cannot change that, so such a group never joins the wait queue, where it would hold up every later admission.
-
-A group of a Project with [`nested_fleet`](/reference/projects#nested-fleet-setting) on is refused the same way, with HTTP 503 `operation.kind_unavailable`, by the task-workspace entry of the [placement rule](/reference/projects#nested-fleet-setting). This covers every admission that needs a new task VM workspace: provision, prep, build, turn, prep fix and review round. Orbit records no place, identity, workspace, wait or Operation. A waiting Operation that reaches its claim later fails with the same code.
+A task of a Project without a default container Instance is refused by name; see [Task runtime](#task-runtime).
 
 A `proof:run` of such a Project runs in [copies](/cli/proof/run#the-run) instead. A nested-fleet Instance container gets its own Swamp Club key at each start, never the proof club key; its Operation's result says what that start did with it ([Club key of the nested Gateway](/reference/development-containers#the-club-key-of-the-nested-gateway)).
 
-Task provision, prep, build and review leave each host’s [CI/refresh reserve](/reference/compute-drivers#place-task-vms) free. Operator proofs do too. Only a command proof from an authenticated active Node with an active `ci-runner` role, or a refresh candidate proof, can use it. Orbit records CI eligibility before queueing admission; report-only mode does not grant access. Another proof cannot preempt CI.
-
 Provision requires `todo`. A backlog group returns HTTP 409 `tasks.not_todo`; a claimed group returns HTTP 409 `tasks.already_claimed`.
-
-A run that provisions its own VM as one step can pin the VM to one task VM host. The [refresh of a host's base snapshot](/reference/compute-drivers#refresh-the-base-snapshot) does: its proof start goes to that host only and copies the base snapshot the host promoted last. It takes a VM CI place, and a rebuild from stock withdraws only the host's VM base. Task container places stay out of task and proof placement until the [switch](/reference/compute-drivers#place-task-vms).
 
 Admission pins the commit the workspace starts from, so a group never starts on a red commit. Before its transaction, the Gateway walks the first-parent history of the Project's default branch from its head through the [GitHub App](/reference/github-app). It pins the newest commit whose Project `merge_check` passed on exactly that commit, by the same rule as the [review-and-merge gate](#handoff-ci): every run of that name comes from GitHub Actions and completed with `success`. It examines at most 20 commits, the bound of [automatic deploy source reads](/reference/deployments).
 
@@ -153,8 +156,6 @@ Each captured Project setup command runs in order as `env -C <checkout> … /bin
 
 Each shared task VM host keeps one Large VM place for authenticated CI proofs, shared with its refresh candidate proof. CI-only hosts admit only authenticated CI proofs and their own refresh proofs. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
 
-Full capacity, or no usable promoted image, records the `tasks.provision` Operation as `waiting` in the shared task queue. It holds no VM, workspace or identity, and the group stays `todo`. Admission retries every 20 seconds in queue order and fails the Operation with `tasks.capacity_timeout` after two hours. The waiting Operation and the group show the queue position and the groups that hold the places; see [Task places](#task-places). A host without a recorded base snapshot cannot serve a new VM. See [Image fallback](/reference/compute-drivers#image-fallback).
-
 Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Schedule definitions are production-only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)), so a workspace gets none. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
 
 `Bind the workspace keys` fills those keys from the VM step's pinned key and refuses any other Node. The run uses the child-observed SSH host key and the captured Node 209 identity; it issues no guest worker credentials. Success activates the Route and completes the Processes; a failure marks them failed. The projection reads the admitted Process members only when the receipt reports Process outcomes.
@@ -167,7 +168,7 @@ Success leaves the group `running` and its workspace `source_resolved`. The task
 
 #### Task places
 
-Task work waits for a task place in one first-come, first-served queue: the `tasks.provision`, `tasks.prep`, `tasks.build`, `tasks.prep_fix`, `tasks.turn`, `tasks.review_round` and operator `proof.command` admissions that found no free place. The queue is every `waiting` Operation on a group, in Operation ID order.
+No admission waits for a task place any more: the task VM admission and its queue are removed. The view still reads every `waiting` Operation on a group that a release before the removal recorded, in Operation ID order; nothing admits it, and it ends at its run budget. Every host shows 0 places.
 
 `task:status` returns `capacity` with two lists:
 
@@ -184,7 +185,9 @@ A waiting Operation on a group, and `task:show` of its group, return `capacity_w
 
 #### Release an idle task VM
 
-This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. Every five minutes the Gateway job `ReleaseIdleTaskVms` finds such a group and admits `tasks.idle_save` ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). The group keeps its status, subtasks and threads.
+Since task VMs are removed, no schedule runs the idle release.
+
+This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. The idle release admits `tasks.idle_save` for such a group ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). The group keeps its status, subtasks and threads.
 
 Thirty minutes is longer than the pause of a driver that is working, and short enough that a stalled driver does not starve the task queue. Group 4118 held a place for hours after its build while preps waited.
 
@@ -286,6 +289,8 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 #### Run a tracked repository script
 
+Task VMs are removed: this command answers the [refusal](#task-runtime) before it records anything. The text below describes the run as it was.
+
 `POST /api/v1/tasks/{task}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
 
 A script captures its run budget at admission: the history of the kind (see [Native run budgets](/reference/operations#native-run-budgets)). Every SSH step of the workflow ends at that budget. When the Gateway times the script out, it asks Swamp to cancel the run. Ending the group asks Swamp again for any run of the group that outlived its timeout.
@@ -310,6 +315,8 @@ Cancellation uses native Swamp cancel and official SSH session teardown. It does
 
 #### Install a private package
 
+Task VMs are removed: this command answers the [refusal](#task-runtime) before it records anything. The text below describes the run as it was.
+
 `POST /api/v1/tasks/{task}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `task-package`. There is no `orbit` command.
 
 An agent that cannot resolve a private package ends its turn `blocked` with the package as its question. That is assistance, and nothing else happens. The orchestrator decides, starts this install, and resolves the assistance.
@@ -320,7 +327,7 @@ The package manager changes the manifest and the lock file in the workspace; not
 
 #### Run an external turn
 
-`task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT [--thread=new|ID]` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Without `--thread`, a task VM turn starts a new thread and a [task copy](#task-copy) turn continues the role's thread. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+`task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT [--thread=new|ID]` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Without `--thread`, a [task copy](#task-copy) turn continues the role's thread. A group that owns no copy gets the [refusal](#task-runtime) of the removed task VMs; the rest of this section describes the task VM turn as it was. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
 
 While a group's `tasks.provision` Operation waits for a place or runs, the group is not provisioned. Every other admission on it then returns HTTP 409 `tasks.not_provisioned`. That covers a turn, a check, a publish, a script, a package install, a sync, a build, a review round, a prep fix, a maintenance run and a proof on the group's VM. `details.operation_id` names that Operation; follow it and repeat the call once it succeeds. Any other open Operation on the group still returns `operation.target_busy`.
 
@@ -433,6 +440,8 @@ The result stays `{ branch, commit, pull_request_number, pull_request_url }`, wi
 
 #### Prepare a command
 
+Task VMs are removed: this command answers the [refusal](#task-runtime) before it records anything. The text below describes the run as it was.
+
 `task:prep` starts `tasks.prep` through `POST /api/v1/tasks/{task}/prep` with `{ command, brief?, reference? }`, where `command` is `family:command` or a nested `family:part:command`. A nested command's files join its parts after the family with dashes: `node:role:list` is `docs/cli/node/role-list.mdx`.
 
 It runs [stage 1 of the command development pipeline](/reference/command-development-pipeline#1-prep) for one command. An author agent drafts the chart, the docs page and the cases in a task VM, a separate review agent checks them, and Swamp opens the draft pull request as the Orbit App with the spec as its first commit. The route requires an `Idempotency-Key`. It has no CLI command and no SDK request, like `task:pr-ready`; the MCP tool `task-prep` is the caller. Any other form, or upper case, returns `422 tasks.prep_command_invalid`.
@@ -522,6 +531,8 @@ The Gateway projects the terminal event once. A succeeded run records the thread
 The gate check also admits this run when the owner requests changes, and it detects the approval, which [starts the build](#start-the-build).
 
 #### Start the build
+
+Task VMs are removed: this command answers the [refusal](#task-runtime) before it records anything. The text below describes the run as it was.
 
 `tasks.build` is the step after the owner approves the spec of a prep group. The gate check admits it. It has no command, route or MCP tool. Before it existed, a person moved the group to `running` and added the build subtask by hand.
 
@@ -1536,6 +1547,8 @@ The Gateway scheduler runs `task:pr-gate` every minute while the Tasks extension
 - The owner's approval of its head [starts the build](#start-the-build) instead.
 - A manual group with a pull request out of draft gets the merge step. Admission requires the reviewer's latest review to approve the exact head, and the merge check to be green.
 - An automatic group with a pull request out of draft gets one review round per head.
+
+The build and the review round ran on a task VM. Since task VMs are removed, both answer the [refusal](#task-runtime) at once: the gate check records `tasks.vm_runtime_removed` as the step's result, reads no review for the build, and starts no corrections, because they answered a build that lacked the approval. A task copy's pull request is skipped before any of this ([no merge](#no-merge)).
 
 A round is one Swamp run, `tasks.review_round`, with the workflow `operation-task-review-round`. Its chart is `docs/cli/task/review-round.mmd`. The gate check admits it once for each head, with the whole intent. The intent holds the task VM identity and a fresh reviewer turn in a new thread on the head. A group without a VM claims a fresh task place at the reviewed head; a running VM is used directly. In rounds 1 and 2 it also holds the fix: the author turn, the local check and the push.
 

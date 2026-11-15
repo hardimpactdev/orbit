@@ -6,7 +6,7 @@ namespace App\Domain\Instances;
 
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskRuntime;
+use App\Domain\Tasks\TaskVmRemoved;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Project;
@@ -19,7 +19,7 @@ use LogicException;
  * the record.
  *
  * Each writer calls the entry for its kind: `assert()` where the result can be a container, `checkout()` where it is always a
- * host checkout, `taskWorkspace()` for a task workspace on a task VM, `taskRuntime()` where a task starts. A nested-fleet Project's Instances are only containers in the nested
+ * host checkout, `taskWorkspace()` for a task workspace on a task VM, `taskCopy()` where a task starts. A nested-fleet Project's Instances are only containers in the nested
  * project, made from the nested-fleet image (docs/reference/development-containers.md#the-nested-fleet-image): `assert()` refuses
  * it early on a Node whose switch is off, `place()` decides once the result is known, and the other two entries refuse it.
  */
@@ -49,14 +49,20 @@ final readonly class InstancePlacement
     }
 
     /**
-     * Where a new task of the Project starts: a copy of its default Instance for a nested-fleet Project or a Project whose default is a
-     * container, a task VM for a Project whose default is a host checkout (docs/reference/development-containers.md#tasks-in-an-instance-container).
-     * The one place that decides it for a start. Later work follows the group's own workspace: a group that owns a copy works in it.
+     * Whether a new task of the Project starts as a copy of its default Instance: a nested-fleet Project, or a Project whose default is a
+     * container (docs/reference/development-containers.md#tasks-in-an-instance-container). Later work follows the group's own workspace.
      */
-    public static function taskRuntime(Project $project): TaskRuntime
+    public static function copiesTasks(Project $project): bool
     {
-        return $project->nested_fleet || Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->whereHas('runtime')->exists()
-            ? TaskRuntime::Copy : TaskRuntime::Vm;
+        return $project->nested_fleet || Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->whereHas('runtime')->exists();
+    }
+
+    /** Where a task starts: only as a copy. A Project whose default is no container gets the refusal of the removed task VM runtime. */
+    public static function taskCopy(Project $project): void
+    {
+        if (! self::copiesTasks($project)) {
+            throw TaskVmRemoved::refusal();
+        }
     }
 
     /**

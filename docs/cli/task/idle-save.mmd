@@ -12,9 +12,9 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant VM as Task VM<br/>reached over ssh
   participant GH as GitHub<br/>save branch
-  Note over GW: Find an idle group<br/>every five minutes
+  Note over GW: Find an idle group<br/>no schedule runs it
   %%> Who calls it:
-  %%> - the Gateway job `ReleaseIdleTaskVms`, every five minutes; there is no command, route or MCP tool
+  %%> - the idle release of a task VM; since task VMs are removed (docs/reference/tasks.md#task-runtime) no schedule runs it, and there is no command, route or MCP tool
   %%> Requirements:
   %%> - an open group whose task-pool VM is `ready`, with no open Operation on the group or on the VM, and no Operation other than an earlier idle save for 30 minutes
   %%> - fewer than three failed idle saves in a row since the group's last other Operation

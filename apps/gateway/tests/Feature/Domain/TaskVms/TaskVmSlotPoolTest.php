@@ -2,15 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Actions\Operations\CancelOperationAction;
-use App\Actions\Operations\ExpireOperationAction;
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Data\Tasks\StartTaskPrepData;
 use App\Data\Tasks\StartTaskPrepFixData;
-use App\Data\Tasks\TaskTurnData;
 use App\Domain\Certificates\LeafCertificateSigner;
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
@@ -23,19 +21,14 @@ use App\Domain\GitHub\GitHubPullRequestState;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
-use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Proof\ProofBatchPlan;
 use App\Domain\Proof\ProofChangedFile;
 use App\Domain\Proof\ProofChangedFiles;
-use App\Domain\Proof\ProofChildStarts;
-use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCopies;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunSettlement;
-use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Proof\ProofSelectionList;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -62,11 +55,9 @@ use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskReviewRoundIntent;
 use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTurnIntent;
-use App\Domain\Tasks\TaskTurnProjection;
-use App\Domain\Tasks\TaskVmAdmission;
 use App\Domain\Tasks\TaskVmIdleRelease;
 use App\Domain\Tasks\TaskVmReentry;
+use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmContainers;
@@ -93,13 +84,7 @@ use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
-use App\Jobs\Operations\StartAdmittedSwampRun;
-use App\Jobs\Proof\AdmitProofRun;
-use App\Jobs\Proof\CancelProofGroup;
-use App\Jobs\Tasks\AdmitTaskVm;
-use App\Jobs\TaskVms\ReleaseIdleTaskVms;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
-use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
@@ -111,14 +96,11 @@ use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
-use App\Support\ValidatedData;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use Mockery\MockInterface;
@@ -325,99 +307,12 @@ it('fails a slot whose release start was refused, keeping its Node for the sweep
         ->and($slot->node)->toBeInstanceOf(Node::class);
 });
 
-it('has the sweep release each slot that no group holds and no Operation works on, and leaves the others', function (): void {
-    [$host, $project] = slotPoolHost(taskPlaces: 12);
-    $pool = app(TaskVmSlotPool::class);
-    $stale = $pool->take(slotPoolGroup($project));
-    $held = $pool->take(slotPoolGroup($project));
-    $busy = $pool->take(slotPoolGroup($project));
-    $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
-    $busy->update(['group_id' => null, 'state' => TaskVmState::Failed]);
-    Operation::query()->create(['kind' => TaskVmSlotPool::ReleaseKind, 'target_type' => 'task_vm', 'target_id' => $busy->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => [], 'triggered_by' => 'test']);
-    slotPoolSweepWorld();
-
-    app()->call([new SweepTaskVmHosts, 'handle']);
-
-    $releases = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('triggered_by', 'task-vm-sweep')->get();
-    expect($releases->pluck('target_id')->all())->toBe([$stale->id])
-        ->and($releases->sole()->input['intent']['hub_peer']['public_key'])->toBe(TaskVmSlotIdentity::wireguardPublicKey((string) $stale->wireguard_private_key))
-        ->and($stale->refresh()->state)->toBe(TaskVmState::Releasing)
-        ->and($held->refresh()->state)->toBe(TaskVmState::Provisioning)->and($busy->refresh()->state)->toBe(TaskVmState::Failed);
-});
-
 it('refuses a group of a Project whose checkout the base does not carry', function (): void {
     slotPoolHost();
     $other = Project::query()->create(['name' => 'bench', 'slug' => 'bench', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
 
     expect(fn () => app(TaskVmSlotPool::class)->take(slotPoolGroup($other)))->toThrow(TaskVmException::class, 'its base carries only that checkout')
         ->and(TaskVm::query()->count())->toBe(0);
-});
-
-it('refuses work of another Project at once, so it never waits in or holds up the task queue', function (): void {
-    Queue::fake();
-    [, $project] = slotPoolHost(taskPlaces: 0);
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $earlier = app(TaskProvisionIntent::class)->start(slotPoolGroup($project), 'test', null, str_repeat('a', 40));
-    $other = Project::query()->create(['name' => 'website', 'slug' => 'website', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => '13.x', 'root' => 'public']);
-    $foreign = slotPoolGroup($other);
-
-    expect($earlier->status)->toBe(OperationStatus::Waiting);
-    try {
-        app(TaskProvisionIntent::class)->start($foreign, 'test', null, str_repeat('a', 40));
-        $this->fail('A group of another Project must be refused.');
-    } catch (TaskVmException $exception) {
-        expect($exception->errorCode)->toBe('task_vm.project_unsupported')->and($exception->status)->toBe(409);
-    }
-    expect(Operation::query()->where('target_id', $foreign->id)->exists())->toBeFalse()
-        ->and($foreign->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($foreign->capacity_wait_reason)->toBeNull();
-
-    // A wait recorded before admission refused such a group fails with the refusal, even behind an earlier waiter.
-    $waiting = app(TaskVmAdmission::class)->wait('tasks.provision', 'task_group', $foreign->id, (int) $earlier->node_id, ['commit' => str_repeat('a', 40)], 'test', null);
-    app(TaskVmAdmission::class)->admit($waiting->id);
-    expect($waiting->refresh()->status)->toBe(OperationStatus::Failed)->and($waiting->error_code)->toBe('task_vm.project_unsupported')
-        ->and($foreign->refresh()->capacity_wait_reason)->toBeNull()->and($earlier->refresh()->status)->toBe(OperationStatus::Waiting);
-});
-
-it('has the sweep leave only the slot of an open refresh alone, and go on past a row whose release cannot be built', function (): void {
-    [$host, $project] = slotPoolHost(taskPlaces: 12);
-    $pool = app(TaskVmSlotPool::class);
-    $broken = $pool->take(slotPoolGroup($project));
-    $stale = $pool->take(slotPoolGroup($project));
-    $proving = $pool->take(slotPoolGroup($project));
-    // A row without its Node has no hub peer to remove, so its intent cannot be built.
-    $broken->update(['group_id' => null, 'state' => TaskVmState::Failed, 'node_id' => null]);
-    $stale->update(['group_id' => null, 'state' => TaskVmState::Failed]);
-    $proving->update(['group_id' => null]);
-    slotPoolSweepWorld();
-    $refresh = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-        'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $proving->id], 'triggered_by' => 'test']);
-
-    app()->call([new SweepTaskVmHosts, 'handle']);
-    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->pluck('target_id')->all())->toBe([$stale->id])
-        ->and($proving->refresh()->state)->toBe(TaskVmState::Provisioning)
-        ->and($broken->refresh()->state)->toBe(TaskVmState::Failed);
-});
-
-it('frees the slots that failed refreshes left while the next refresh of the host waits for a CI place', function (): void {
-    Queue::fake();
-    [$host] = slotPoolHost(taskPlaces: 0);
-    slotPoolSweepWorld();
-    $pool = app(TaskVmSlotPool::class);
-    // Two refreshes failed before their candidate proof: each slot stays failed until a release frees it, and the CI pool is full.
-    $first = $pool->take(null, $host->id);
-    $second = $pool->take(null, $host->id);
-    $first->update(['state' => TaskVmState::Failed]);
-    $second->update(['state' => TaskVmState::Failed]);
-    $waiting = app(TaskVmAdmission::class)->wait('task_vm.image_refresh', 'task_vm_host', $host->id, $host->id, ['commit' => str_repeat('a', 40), 'from_stock' => false], 'test', null);
-    expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
-
-    // The waiting refresh holds no slot, so it does not keep the sweep from the places it waits for.
-    app()->call([new SweepTaskVmHosts, 'handle']);
-
-    expect(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->orderBy('target_id')->pluck('target_id')->all())->toBe([$first->id, $second->id])
-        ->and($waiting->refresh()->status)->toBe(OperationStatus::Waiting);
 });
 
 it('leaves task VM Nodes out of the workers\' known hosts and keeps every other pinned Node', function (): void {
@@ -731,22 +626,6 @@ it('has a cancel of an old-pool group carry the release of its VM, so its end de
         ->and(app(TaskCancelIntent::class)->input($cancel)['intent']['release'])->toBe($cancel->input['release']);
 });
 
-it('has the sweep release an old-pool VM again after its release failed', function (): void {
-    [$host, $project] = slotPoolHost();
-    $vm = oldPoolVm($host, slotPoolGroup($project), state: TaskVmState::Releasing);
-    slotPoolSweepWorld();
-
-    // The failed release frees the VM from its group, so only the sweep can release it again.
-    app(TaskVmSlotReleaseProjection::class)->record($vm, false, 'task_vm.slot_release_failed');
-    expect($vm->refresh()->group_id)->toBeNull()->and($vm->state)->toBe(TaskVmState::Failed);
-
-    app()->call([new SweepTaskVmHosts, 'handle']);
-
-    $release = Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->where('triggered_by', 'task-vm-sweep')->sole();
-    expect($release->target_id)->toBe($vm->id)->and($release->input['intent']['slot']['seed_clone'])->toBe('tvm-610-topology-seed')
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Releasing);
-});
-
 it('releases only a task VM name: any other name of a slotless row refuses, whatever base or seed it names', function (string $name): void {
     [$host] = slotPoolHost();
     slotPoolSweepWorld();
@@ -790,27 +669,6 @@ it('refuses the release of a VM whose Node has no WireGuard public key, which na
 
     expect(fn () => app(TaskVmSlotRuns::class)->startRelease($vm, 'test'))->toThrow(ResourceOperationException::class, 'has no WireGuard public key')
         ->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse();
-});
-
-it('has the sweep leave a VM alone that a refresh took for its proof after the sweep selected it', function (): void {
-    [$host] = slotPoolHost();
-    slotPoolSweepWorld();
-    $vm = oldPoolVm($host, state: TaskVmState::Provisioning);
-    // The refresh commits between the sweep's selection and its release: at the locked read of the row, the second read.
-    $started = false;
-    $reads = 0;
-    TaskVm::retrieved(function () use (&$started, &$reads, $host, $vm): void {
-        if (++$reads === 2 && ! $started) {
-            $started = true;
-            Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
-                'status' => OperationStatus::Running, 'input' => ['task_vm_id' => $vm->id], 'triggered_by' => 'test']);
-        }
-    });
-
-    app()->call([new SweepTaskVmHosts, 'handle']);
-
-    expect($started)->toBeTrue()->and(Operation::query()->where('kind', TaskVmSlotPool::ReleaseKind)->exists())->toBeFalse()
-        ->and($vm->refresh()->state)->toBe(TaskVmState::Provisioning);
 });
 
 /**
@@ -1093,51 +951,6 @@ it('allows CI and base refresh on a host with zero task places', function (): vo
     expect(fn () => $pool->take(null, $host->id))->toThrow(TaskCapacityException::class);
 });
 
-it('records a full task pool as a bounded wait without allocating any identity', function (): void {
-    Queue::fake();
-    [, $project] = slotPoolHost(taskPlaces: 0);
-    slotPoolSweepWorld();
-    $group = slotPoolGroup($project);
-    $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    expect($operation->status)->toBe(OperationStatus::Waiting)->and($operation->error_code)->toBeNull()
-        ->and(TaskVm::query()->count())->toBe(0)->and($group->refresh()->taskable_id)->toBeNull();
-    Queue::assertPushed(AdmitTaskVm::class);
-    app(TaskVmAdmission::class)->admit($operation->id);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Waiting)->and(TaskVm::query()->count())->toBe(0);
-    $operation->forceFill(['created_at' => now()->subHours(2)->subSecond()])->save();
-    app(ExpireOperationAction::class)->execute($operation);
-    expect($operation->refresh()->error_code)->toBe('tasks.capacity_timeout')->and($operation->lock_key)->toBeNull();
-});
-
-it('cancels a waiting task admission without later creating a VM', function (): void {
-    Queue::fake();
-    [, $project] = slotPoolHost(taskPlaces: 0);
-    slotPoolSweepWorld();
-    $group = slotPoolGroup($project);
-    $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    app(CancelOperationAction::class)->execute($operation);
-    app(TaskVmAdmission::class)->admit($operation->id);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Cancelled)->and(TaskVm::query()->count())->toBe(0);
-});
-
-it('admits the oldest waiting task after a place is released and does not duplicate its claim', function (): void {
-    Queue::fake();
-    [, $project] = slotPoolHost(taskPlaces: 1);
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-    $group = slotPoolGroup($project);
-    $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    expect($operation->status)->toBe(OperationStatus::Waiting);
-    app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
-    app(TaskVmAdmission::class)->admit($operation->id);
-    expect($operation->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and($operation->input)->not->toHaveKey('capacity_request')
-        ->and(TaskVm::query()->live()->where('group_id', $group->id)->count())->toBe(1);
-    app(TaskVmAdmission::class)->admit($operation->id);
-    expect(TaskVm::query()->live()->where('group_id', $group->id)->count())->toBe(1);
-});
-
 /** The control services a fresh claim captures; submission is faked by slotPoolSweepWorld. */
 function slotPoolClaimServices(): void
 {
@@ -1156,7 +969,7 @@ function slotPoolClaimServices(): void
     test()->beforeApplicationDestroyed(fn () => File::deleteDirectory($home));
 }
 
-it('claims a fresh VM at the published head for a build or a fix after release', function (bool $fix, bool $releasing): void {
+it('claims a fresh VM at the published head for a build or a fix after release', function (bool $fix): void {
     Queue::fake();
     [, $project] = slotPoolHost();
     slotPoolSweepWorld();
@@ -1178,17 +991,9 @@ it('claims a fresh VM at the published head for a build or a fix after release',
             return $this->head;
         }
     });
-    $previous = $releasing ? app(TaskVmSlotPool::class)->take($group) : null;
-    $previous?->update(['state' => TaskVmState::Releasing]);
     $operation = $fix
         ? app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null)
         : app(TaskBuildIntent::class)->start($group, $head, 'test', null);
-    if ($previous !== null) {
-        expect($operation->status)->toBe(OperationStatus::Waiting);
-        app(TaskVmSlotReleaseProjection::class)->record($previous, true, null);
-        app(TaskVmAdmission::class)->admit($operation->id);
-        $operation->refresh();
-    }
     expect($operation->status)->toBe(OperationStatus::Queued)
         ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
         ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task')
@@ -1197,7 +1002,7 @@ it('claims a fresh VM at the published head for a build or a fix after release',
     $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused']);
     $projection->refused($operation);
     Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
-})->with([[false, false], [true, false], [false, true], [true, true]]);
+})->with([false, true]);
 
 it('claims a fresh VM and new author session for a review round at the published head', function (): void {
     Queue::fake();
@@ -1236,86 +1041,6 @@ it('claims a fresh VM and new author session for a review round at the published
         ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
 });
 
-it('rebuilds a normal fix turn from the published branch after deletion, waiting for a task place when needed', function (bool $wait): void {
-    Queue::fake();
-    [, $project] = slotPoolHost(taskPlaces: 1);
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $group = slotPoolGroup($project);
-    $group->update(['implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
-    $subtask = $group->tasks()->create(['title' => 'Fix the review', 'brief' => 'Apply the review.', 'position' => 1, 'status' => TaskStatus::Running,
-        'deliverables' => [['id' => 'fix', 'type' => 'review', 'description' => 'Review applied.']]]);
-    $initial = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    $initial->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
-    $old = TaskVm::forGroup($group);
-    $oldNode = $old->node_id;
-    $workspace = $group->fresh()->taskable_id;
-    $old->update(['state' => TaskVmState::Releasing]);
-    app(TaskVmSlotReleaseProjection::class)->record($old, true, null);
-    $group->refresh()->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1']);
-    expect(Instance::query()->find($workspace))->toBeNull()->and(Node::query()->find($oldNode))->toBeNull();
-    $head = str_repeat('d', 40);
-    app()->instance(RemoteBranchHeads::class, new readonly class($head, $group->id) implements RemoteBranchHeads
-    {
-        public function __construct(private string $head, private int $group) {}
-
-        public function head(Project $project, string $branch): string
-        {
-            expect($branch)->toBe('task-'.$this->group);
-
-            return $this->head;
-        }
-    });
-    $holder = $wait ? app(TaskVmSlotPool::class)->take(slotPoolGroup($project)) : null;
-    $turn = app(TaskTurnIntent::class)->start($group,
-        new TaskTurnData($subtask->id, 'implementer', 'Apply the review.', 'new'), 'test', null);
-    if ($holder !== null) {
-        expect($turn->status)->toBe(OperationStatus::Waiting)->and(TaskVm::forGroup($group))->toBeNull();
-        app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
-        app(TaskVmAdmission::class)->admit($turn->id);
-        $turn->refresh();
-    }
-    expect($turn->status)->toBe(OperationStatus::Queued)
-        ->and($turn->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
-        ->and($turn->input['new_session'])->toBeTrue()
-        ->and($turn->input['node_id'])->not->toBe($oldNode)
-        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
-    if ($wait) {
-        $turn->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused']);
-        app(TaskTurnProjection::class)->refused($turn);
-        Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
-    } else {
-        $turn->update(['state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
-        app(TaskTurnProjection::class)->apply($turn, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'status' => 'succeeded', 'result' => [
-            'steps' => ['Claim a task place' => ['status' => 'succeeded']],
-            'turn' => json_encode(['state' => 'idle', 'subtask' => $subtask->id]),
-        ]]);
-        expect(TaskVm::forGroup($group)?->state)->toBe(TaskVmState::Ready)
-            ->and($group->fresh()->taskable->starting_commit)->toBe($head);
-        Queue::assertNotPushed(ReleaseTaskVmSlot::class);
-    }
-})->with([false, true]);
-
-it('makes an operator proof join the task queue behind an earlier task even when a place has just freed', function (): void {
-    Queue::fake();
-    [, $project] = slotPoolHost(taskPlaces: 1);
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-    $task = slotPoolGroup($project);
-    $earlier = app(TaskProvisionIntent::class)->start($task, 'test', null, str_repeat('a', 40));
-    app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
-    $proof = slotPoolGroup($project);
-    $later = app(TaskProvisionIntent::class)->admit($proof, str_repeat('a', 40), 'proof.command', static fn (array $input): array => $input, 'test', null);
-
-    expect($earlier->status)->toBe(OperationStatus::Waiting)->and($later->status)->toBe(OperationStatus::Waiting)
-        ->and(TaskVm::forGroup($proof))->toBeNull();
-    app(TaskVmAdmission::class)->admit($later->id);
-    expect($later->refresh()->status)->toBe(OperationStatus::Waiting);
-    app(TaskVmAdmission::class)->admit($earlier->id);
-    expect($earlier->refresh()->status)->toBe(OperationStatus::Queued)->and(TaskVm::forGroup($task)?->capacity_pool)->toBe('task');
-});
-
 /** A trusted four-batch CI proof on the host fixture, without a real Swamp submission. */
 function slotPoolCiProofWorld(int $places, bool $casesOnly = false): Node
 {
@@ -1351,94 +1076,6 @@ function slotPoolCiProofWorld(int $places, bool $casesOnly = false): Node
 
     return $host;
 }
-
-it('keeps selected case ids when an operator proof resumes after waiting for a VM', function (): void {
-    slotPoolCiProofWorld(2, casesOnly: true);
-    $project = Project::query()->firstOrFail();
-    $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-    app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-    $intent = app(ProofRunIntent::class);
-    $proof = $intent->start(str_repeat('b', 40), false, 'test', null);
-    $intent->admit($proof->id);
-    $child = ProofRunSettlement::children($proof->id)->sole();
-    expect($child->status)->toBe(OperationStatus::Waiting);
-    app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
-
-    app(TaskVmAdmission::class)->admit($child->id);
-
-    expect($child->refresh()->status)->toBe(OperationStatus::Queued)
-        ->and($child->input['assignments'][0]['cases'] ?? null)->toBe(['a']);
-    $projected = app(ProofCommandProjection::class)->input($child);
-    expect($projected['intent']['verifications'][0]['case_ids'] ?? null)->toBe(['a']);
-});
-
-it('lets the front CI proof take every free place up to its batch count and records whole assignments once', function (int $places): void {
-    $caller = slotPoolCiProofWorld($places);
-    $intent = app(ProofRunIntent::class);
-    $proof = $intent->start(str_repeat('a', 40), false, 'test', null, keepFailed: true, authenticatedCaller: $caller);
-    $intent->admit($proof->id);
-    $intent->admit($proof->id);
-    $children = ProofRunSettlement::children($proof->id);
-    expect($proof->refresh()->error_code)->toBeNull()->and($children)->toHaveCount(min(4, $places))
-        ->and(TaskVm::query()->live()->where('capacity_pool', 'ci')->count())->toBe(min(4, $places));
-    $assignments = [];
-    foreach ($children as $child) {
-        expect($child->input['assignments'])->not->toBeEmpty()->and($child->input)->not->toHaveKey('keep_failed');
-        foreach ($child->input['assignments'] as $assignment) {
-            $assignments[] = $assignment['batch'];
-        }
-    }
-    sort($assignments);
-    expect($assignments)->toBe(['four', 'one', 'three', 'two']);
-})->with([1, 2, 6]);
-
-it('holds operator and CI parents in id order even before the front has selected cases', function (bool $firstCi, bool $secondCi): void {
-    $caller = slotPoolCiProofWorld(2);
-    $intent = app(ProofRunIntent::class);
-    $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $firstCi ? $caller : null);
-    $second = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $secondCi ? $caller : null);
-    $intent->admit($second->id);
-    expect($second->refresh()->status)->toBe(OperationStatus::Waiting)->and($second->input['runs'])->toBe([])->and($second->started_at)->toBeNull()
-        ->and($second->state['capacity_wait_reason'])->toContain('earlier proof')->and(TaskVm::query()->live()->count())->toBe(0);
-    // The younger waiting parent has no place: the front can admit despite it.
-    $intent->admit($first->id);
-    expect($first->refresh()->input['runs'])->toHaveCount($firstCi ? 2 : 1)
-        ->and($second->refresh()->input['runs'])->toBe([]);
-})->with([[false, false], [false, true], [true, false], [true, true]]);
-
-it('lets task cancellation take precedence over a capacity wait or admitted task holding the group lock', function (bool $waiting): void {
-    Queue::fake();
-    app(TaskExtensionState::class)->enable();
-    [, $project] = slotPoolHost(taskPlaces: 1);
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $holder = $waiting ? app(TaskVmSlotPool::class)->take(slotPoolGroup($project)) : null;
-    $group = slotPoolGroup($project);
-    $work = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    expect($work->refresh()->lock_key)->not->toBeNull();
-
-    $cancel = app(TaskCancelIntent::class)->start($group, 'test', null);
-
-    expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
-        ->and($work->cancel_requested_at)->not->toBeNull()
-        ->and($work->lock_key)->toBeNull();
-    // A waiting group holds no VM, so its cancel ends it at admission with no run (R1); a claimed VM needs the release run.
-    expect($cancel->kind)->toBe('tasks.cancel')
-        ->and($cancel->status)->toBe($waiting ? OperationStatus::Succeeded : OperationStatus::Queued)
-        ->and($cancel->lock_key === null)->toBe($waiting)
-        ->and($group->refresh()->status)->toBe($waiting ? TaskGroupStatus::Cancelled : TaskGroupStatus::Reserved);
-    expect($group->capacity_wait_reason)->toBeNull();
-    if ($waiting) {
-        app(TaskVmAdmission::class)->admit($work->id);
-        expect($work->refresh()->status)->toBe(OperationStatus::Cancelled)
-            ->and(TaskVm::forGroup($group))->toBeNull()
-            ->and($cancel->input['release'])->toBeNull()
-            ->and($holder?->refresh()->state)->not->toBe(TaskVmState::Destroyed);
-    } else {
-        expect(TaskVm::forGroup($group)?->state)->toBe(TaskVmState::Releasing)
-            ->and($cancel->input['release'])->not->toBeNull();
-    }
-})->with([true, false]);
 
 /**
  * The slot pool host with a container side of `$containerTask` task and `$containerCi` CI places, normal placement of
@@ -1866,12 +1503,6 @@ it('claims a fresh VM at the idle save for a fix after the idle release, and a b
         ->and(data_get($operation->input, 'provision.intent.converge.checkout'))->toMatchArray(['commit' => $saved, 'branch' => 'task-'.$group->id]);
 })->with(['a fix' => [true], 'a build' => [false]]);
 
-it('schedules the idle release every five minutes', function (): void {
-    Artisan::call('schedule:list');
-
-    expect(Artisan::output())->toMatch('/\*\/5\s+\* \* \* \*\s+'.preg_quote(ReleaseIdleTaskVms::class, '/').'/');
-});
-
 it('schedules no task VM image refresh, and offers no artisan command that starts one', function (): void {
     Artisan::call('schedule:list');
 
@@ -1879,53 +1510,20 @@ it('schedules no task VM image refresh, and offers no artisan command that start
         ->and(array_keys(Artisan::all()))->not->toContain('task-vms:refresh-images')->not->toContain('task-vms:refresh-image');
 });
 
-it('has a group cancel stop the group\'s running task start, then answer busy with it until it has ended', function (): void {
-    [, $project] = slotPoolHost();
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    app(TaskExtensionState::class)->enable();
-    $group = slotPoolGroup($project);
-    $provision = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-    $provision->update(['status' => OperationStatus::Running, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a']]);
-    expect($provision->lock_key)->not->toBeNull();
+it('schedules no task VM host sweep, idle release or parked VM observation', function (): void {
+    Artisan::call('schedule:list');
 
-    // Swamp takes the cancel of the run; the run ends later, so the provision is still open when the cancel answers.
-    app()->instance(WebSocketClient::class, new class implements WebSocketClient
-    {
-        private ?array $last = null;
+    expect(Artisan::output())->not->toContain('SweepTaskVmHosts')->not->toContain('ReleaseIdleTaskVms')->not->toContain('ObserveParkedTaskVms');
+});
 
-        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void {}
+it('runs the one remaining task VM job on the tasks queue, as no task-vms queue or supervisor is left', function (): void {
+    $job = new ReleaseTaskVmSlot(1, 2);
 
-        public function send(array $message): void
-        {
-            $this->last = $message;
-        }
-
-        public function receive(float $timeoutSeconds): array
-        {
-            return $this->last === null ? [] : [['id' => $this->last['id'], 'type' => 'workflow.cancel',
-                'payload' => ['data' => ['runId' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'workflowName' => 'operation-task-provision', 'status' => 'cancellation_requested']]]];
-        }
-
-        public function close(): void {}
-
-        public function isConnected(): bool
-        {
-            return true;
-        }
-    });
-    config(['swamp.run_token' => 'run-token', 'swamp.read_token' => 'read-token', 'swamp.address' => '10.44.0.15', 'swamp.ca_path' => __FILE__]);
-
-    try {
-        app(TaskCancelIntent::class)->start($group, 'test', null);
-        $refused = null;
-    } catch (ResourceOperationException $error) {
-        $refused = $error;
-    }
-
-    expect($refused?->errorCode)->toBe('operation.target_busy')->and($refused?->details['operation_id'] ?? null)->toBe($provision->id)
-        ->and($provision->refresh()->cancel_requested_at)->not->toBeNull()
-        ->and($refused?->getMessage())->toContain('asked to stop');
+    expect([$job->connection, $job->queue])->toBe([GatewayQueue::Connection, GatewayQueue::Tasks->value])
+        ->and(array_column(GatewayQueue::cases(), 'value'))->not->toContain('task-vms')
+        ->and(array_keys(config('horizon.defaults')))->not->toContain('task-vms')
+        ->and(array_keys(config('horizon.environments.*')))->not->toContain('task-vms')
+        ->and(array_keys(config('horizon.waits')))->not->toContain('gateway:task-vms');
 });
 
 it('reads the stored hold when a release asks again with the Node it loaded before the hold was set', function (): void {
@@ -1954,292 +1552,6 @@ it('refuses an explicit held refresh before queueing, reserving capacity or with
     expect($slot->host_node_id)->toBe($host->id);
 })->with(['refresh' => false, 'from stock' => true]);
 
-describe('one working proof at a time', function (): void {
-    beforeEach(fn () => Carbon::setTestNow(now()->startOfSecond()));
-    afterEach(fn () => Carbon::setTestNow());
-
-    it('admits exactly one working proof across successive admission transactions while VM places remain free', function (bool $reportOnly): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        foreach (['proof.verify', 'task_vm.image_refresh'] as $kind) {
-            Operation::query()->create(['kind' => $kind, 'target_type' => 'node', 'target_id' => $caller->id, 'node_id' => $caller->id,
-                'status' => OperationStatus::Running, 'input' => []]);
-        }
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, reportOnly: $reportOnly, authenticatedCaller: $caller);
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($first->id);
-        $intent->admit($second->id);
-        $reason = "Waiting for proof Operation {$first->id} to finish.";
-        expect($second->refresh()->input['runs'])->toBe([])
-            ->and($first->refresh()->input['runs'])->toHaveCount(4)
-            ->and(app(TaskVmSlotPool::class)->freeCiPlaces())->toBe(2)->and($second->current_step)->toBe($reason)
-            ->and($second->status)->toBe(OperationStatus::Waiting)->and($second->started_at)->toBeNull()
-            ->and($second->state['capacity_wait_reason'] ?? null)->toBe($reason)
-            ->and(ProofRunSettlement::children($second->id))->toBeEmpty()
-            ->and(Operation::query()->where('kind', 'proof.run')->whereJsonLength('input->runs', '>', 0)->count())->toBe(1);
-        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $second->id && $job->delay === 20);
-        foreach (ProofRunSettlement::children($first->id) as $child) {
-            $child->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
-        }
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toBe([]);
-        app(ProofRunSettlement::class)->settle($first->id);
-        expect($first->refresh()->status->terminal())->toBeTrue();
-        Carbon::setTestNow(now()->addSeconds(ProofRunIntent::RetrySeconds));
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toHaveCount(2)->and($second->status)->toBe(OperationStatus::Running)->and($second->started_at)->not->toBeNull()
-            ->and($second->current_step)->toBeNull()->and($second->state['capacity_wait_reason'] ?? null)->toBeNull();
-    })->with([false, true]);
-
-    it('recovers a lost held start and lost parent cleanup through the watchdog before admitting the next proof', function (): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null);
-        $intent->admit($first->id);
-        $child = ProofRunSettlement::children($first->id)->sole();
-        app(ProofChildStarts::class)->queue([$child]);
-        app(CancelOperationAction::class)->execute($first);
-        expect($first->refresh()->status)->toBe(OperationStatus::Cancelled)
-            ->and($child->refresh()->status)->toBe(OperationStatus::Queued)
-            ->and(ProofChildStarts::held($child))->toBeTrue();
-        Queue::fake(); // Lose the queued start and the parent's committed cleanup dispatch.
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toBe([])
-            ->and($second->current_step)->toBe("Waiting for proof Operation {$first->id} to finish.");
-
-        app(ProofRunWatch::class)->sweep();
-        expect($child->refresh()->status)->toBe(OperationStatus::Cancelled);
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $child->id && $job->trigger === 'proof-run');
-        app(ProofRunWatch::class)->sweep();
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->not->toBeEmpty();
-    });
-
-    it('holds the proof place for an unproven child timeout until settlement or the existing stale hold release', function (bool $stale): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($first->id);
-        $children = ProofRunSettlement::children($first->id);
-        $unproven = $children->firstOrFail();
-        foreach ($children->except([$unproven->id]) as $child) {
-            $child->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
-        }
-        $unproven->update(['status' => OperationStatus::Running, 'attempts' => 1, 'started_at' => now()->subSeconds(ValidatedData::integer($unproven->input['run_budget_seconds']) + 1),
-            'state' => ['swamp_run_id' => 'unproven-proof-run']]);
-        $unproven->update(['lock_key' => 'task_group:'.$unproven->target_id]);
-        app(ExpireOperationAction::class)->execute($unproven);
-        app(ProofRunSettlement::class)->settle($first->id);
-        expect($first->refresh()->status->terminal())->toBeTrue()
-            ->and(ExpireOperationAction::awaitsSettlement($unproven->refresh()))->toBeTrue();
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toBe([])
-            ->and($second->current_step)->toBe("Waiting for proof Operation {$first->id} to finish.");
-        if ($stale) {
-            Carbon::setTestNow(now()->addMinutes(ExpireOperationAction::HoldMinutes));
-            expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(0);
-            Carbon::setTestNow(now()->addSecond());
-            expect(app(ExpireOperationAction::class)->releaseStaleHolds())->toBe(1);
-        } else {
-            app(ExpireOperationAction::class)->settle($unproven, 'unproven-proof-run', 'cancelled');
-        }
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->not->toBeEmpty();
-    })->with([false, true]);
-
-    it('starts execution at admission after nearly two hours of waiting and gives every child its full budgets', function (): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $older = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
-        $proof = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($proof->id);
-        expect($proof->refresh()->input['runs'])->toBe([])->and($proof->started_at)->toBeNull();
-        Carbon::setTestNow(now()->addSeconds(ProofRunIntent::WaitSeconds - 10));
-        $older->update(['status' => OperationStatus::Cancelled]);
-        $intent->admit($proof->id);
-        expect($proof->refresh()->started_at?->equalTo(now()))->toBeTrue()
-            ->and($proof->created_at?->diffInSeconds($proof->started_at))->toBe(7190.0)->and($proof->current_step)->toBeNull();
-        $children = ProofRunSettlement::children($proof->id);
-        expect($children)->toHaveCount(4);
-        foreach ($children as $child) {
-            expect(OperationRunBudgets::deadline($child)?->equalTo(now()->addSeconds(600)))->toBeTrue()
-                ->and($child->input['run_budget_seconds'])->toBe(ProofBatchPlan::budget(ProofBatchPlan::stored($child->input['assignments'])));
-            $child->update(['started_at' => now(), 'attempts' => 1, 'state' => ['swamp_run_id' => 'child-'.$child->id]]);
-            expect(OperationRunBudgets::deadline($child)?->equalTo(now()->addSeconds(ValidatedData::integer($child->input['run_budget_seconds']))))->toBeTrue();
-        }
-    });
-
-    it('lets a younger proof proceed once the older parent has exhausted its own admission allowance', function (): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $older = $intent->start(str_repeat('a', 40), false, 'test', null);
-        Carbon::setTestNow(now()->addSeconds(30));
-        $younger = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($younger->id);
-        expect($younger->refresh()->input['runs'])->toBe([]);
-        Carbon::setTestNow(now()->addSeconds(ProofRunIntent::WaitSeconds - 29));
-        $intent->admit($younger->id);
-        expect($younger->refresh()->input['runs'])->toHaveCount(4);
-        $intent->admit($older->id);
-        expect($older->refresh()->error_code)->toBe('proof.capacity_timeout')->and(ProofRunSettlement::children($older->id))->toBeEmpty();
-    });
-
-});
-
-describe('stale proof children release the proof place', function (): void {
-    beforeEach(fn () => Carbon::setTestNow(now()->startOfSecond()));
-    afterEach(fn () => Carbon::setTestNow());
-
-    it('admits past a stale child without changing it or its parent and warns once after admission', function (string $case): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($first->id);
-        $children = ProofRunSettlement::children($first->id);
-        $child = $children->firstOrFail();
-        foreach ($children->except([$child->id]) as $ended) {
-            $ended->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
-        }
-        $seconds = $case === 'admission' ? 600 : ValidatedData::integer($child->input['run_budget_seconds']);
-        $age = $seconds + ExpireOperationAction::HoldMinutes * 60 + 1;
-        $child->forceFill(['status' => OperationStatus::Running, 'attempts' => $case === 'admission' ? 0 : 1,
-            'started_at' => now()->subSeconds($age), 'updated_at' => now()->subSeconds($age),
-            'state' => $case === 'admission' ? [] : ['swamp_run_id' => 'stale-proof-child']])->save();
-        if ($case === 'timeout' || $case === 'timeout-without-finish') {
-            $age = ExpireOperationAction::HoldMinutes * 60 + 1;
-            $child->forceFill(['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
-                'lock_key' => 'task_group:'.$child->target_id, 'updated_at' => now()->subSeconds($age),
-                'finished_at' => $case === 'timeout' ? now()->subSeconds($age) : null])->save();
-        } elseif (in_array($case, ['held', 'held-ended', 'held-missing'], true)) {
-            $age = ($case === 'held' ? ProofBatchPlan::MaxShardSeconds : 0) + ExpireOperationAction::HoldMinutes * 60 + 1;
-            $child->forceFill(['status' => OperationStatus::Queued, 'attempts' => 0, 'updated_at' => now()->subSeconds($age),
-                'state' => ['proof_child_start' => ['released_at' => null]]])->save();
-            if ($case === 'held') {
-                $first->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
-            } elseif ($case === 'held-ended') {
-                $first->update(['status' => OperationStatus::Cancelled]);
-            } else {
-                $first->delete();
-            }
-        }
-        $before = $child->getAttributes();
-        $parentBefore = Operation::query()->find($first->id)?->getAttributes();
-        $logger = Log::spy();
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($second->id);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->not->toBeEmpty()
-            ->and($child->refresh()->getAttributes())->toBe($before)
-            ->and(Operation::query()->find($first->id)?->getAttributes())->toBe($parentBefore);
-        $context = ['operation_id' => $child->id, 'proof_operation_id' => $first->id, 'age_seconds' => $age];
-        $logger->shouldHaveReceived('warning')->once()->with('A stale proof child no longer holds the proof place.', $context);
-        fwrite(STDOUT, "\n".json_encode(['message' => 'A stale proof child no longer holds the proof place.', 'context' => $context], JSON_THROW_ON_ERROR)."\n");
-    })->with(['execution', 'admission', 'timeout', 'timeout-without-finish', 'held', 'held-ended', 'held-missing']);
-
-    it('keeps a legitimate child in place until its budget or young parent allowance and stale bound have passed', function (bool $held): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($first->id);
-        $children = ProofRunSettlement::children($first->id);
-        $child = $children->firstOrFail();
-        foreach ($children->except([$child->id]) as $ended) {
-            $ended->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
-        }
-        $budget = ValidatedData::integer($child->input['run_budget_seconds']);
-        $child->forceFill(['status' => OperationStatus::Running, 'started_at' => now(), 'attempts' => 1,
-            'updated_at' => now()->subSeconds(ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1),
-            'state' => $held ? ['proof_child_start' => ['released_at' => null]] : ['swamp_run_id' => 'legitimate-proof-child']])->save();
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toBe([])
-            ->and($second->current_step)->toBe("Waiting for proof Operation {$first->id} to finish.");
-        app(CancelOperationAction::class)->execute($second);
-        Carbon::setTestNow(now()->addSeconds($held ? ProofRunIntent::WaitSeconds + 1 : $budget + ExpireOperationAction::HoldMinutes * 60 + 1));
-        $third = $intent->start(str_repeat('c', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($third->id);
-        expect($third->refresh()->input['runs'])->not->toBeEmpty();
-    })->with([false, true]);
-
-    it('does not warn when another child or capacity still prevents admission', function (): void {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($first->id);
-        $child = ProofRunSettlement::children($first->id)->firstOrFail();
-        $child->forceFill(['status' => OperationStatus::Running, 'attempts' => 1, 'state' => ['swamp_run_id' => 'stale-child'],
-            'started_at' => now()->subSeconds(ValidatedData::integer($child->input['run_budget_seconds']) + ExpireOperationAction::HoldMinutes * 60 + 1)])->save();
-        $logger = Log::spy();
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toBe([]);
-        $logger->shouldNotHaveReceived('warning');
-        foreach (ProofRunSettlement::children($first->id)->except([$child->id]) as $ended) {
-            $ended->update(['status' => OperationStatus::Succeeded, 'lock_key' => null]);
-        }
-        // Force a failure after the place check; its after-commit warning must roll back with admission.
-        $settings = app(TaskVmSettings::class);
-        app()->instance(TaskVmSettings::class, new TaskVmSettings(false, null, '', [], '/pi', '', []));
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->toBe([]);
-        $logger->shouldNotHaveReceived('warning');
-        app()->instance(TaskVmSettings::class, $settings);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->not->toBeEmpty();
-        $logger->shouldHaveReceived('warning')->once()->with('A stale proof child no longer holds the proof place.', [
-            'operation_id' => $child->id, 'proof_operation_id' => $first->id, 'age_seconds' => 0]);
-    });
-});
-
-it('never restarts stale held siblings when the watchdog resumes a proof after another proof took its place', function (): void {
-    Carbon::setTestNow(now()->startOfSecond());
-    try {
-        $caller = slotPoolCiProofWorld(6);
-        $intent = app(ProofRunIntent::class);
-        $first = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($first->id);
-        expect(ValidatedData::object($first->refresh()->state['native_failure'] ?? [])['detail'] ?? null)->toBeNull();
-        expect($first->input['runs'])->not->toBeEmpty();
-        $children = ProofRunSettlement::children($first->id);
-        app(ProofChildStarts::class)->queue($children->all());
-        $answered = $children->firstOrFail();
-        $batch = ProofBatchPlan::stored($answered->input['assignments'])[0] ?? throw new LogicException('Expected an assigned batch.');
-        $case = $batch['cases'][0] ?? throw new LogicException('Expected an assigned case.');
-        $answered->update(['status' => OperationStatus::Succeeded, 'finished_at' => now(),
-            'state' => ['swamp_run_id' => 'completed-first-child', 'proof_child_start' => [
-                'released_at' => now()->toISOString(), 'advanced_at' => now()->toISOString()]],
-            'result' => ['cases' => [['program' => $batch['file'].'#'.$case, 'command' => $batch['command'], 'case' => $case, 'verdict' => 'passed', 'seconds' => 1]]]]);
-        // The terminal was recorded, but its advance was lost. No successor has a due time.
-        foreach ($children->except([$answered->id]) as $held) {
-            expect(ValidatedData::object($held->refresh()->state['proof_child_start'] ?? []))->toMatchArray(['not_before' => null]);
-        }
-        Carbon::setTestNow(now()->addSeconds(ProofBatchPlan::MaxShardSeconds + ExpireOperationAction::HoldMinutes * 60 + 1));
-        Queue::fake();
-        $second = $intent->start(str_repeat('b', 40), false, 'test', null, authenticatedCaller: $caller);
-        $intent->admit($second->id);
-        expect($second->refresh()->input['runs'])->not->toBeEmpty();
-
-        app(ProofRunWatch::class)->sweep();
-
-        foreach ($children->except([$answered->id]) as $held) {
-            expect($held->refresh()->status)->toBe(OperationStatus::Cancelled);
-        }
-        Queue::assertNotPushed(StartAdmittedSwampRun::class);
-        Queue::assertPushed(CancelProofGroup::class, 3);
-        expect(ProofRunSettlement::children($first->id)->every(fn (Operation $child): bool => $child->status->terminal()))->toBeTrue()
-            ->and($first->refresh()->status)->toBe(OperationStatus::Failed)
-            ->and($first->error_code)->toBe('proof.cases_failed')
-            ->and($second->refresh()->status)->toBe(OperationStatus::Running)
-            ->and(ProofRunSettlement::children($second->id)->every(fn (Operation $child): bool => ! $child->status->terminal()))->toBeTrue();
-    } finally {
-        Carbon::setTestNow();
-    }
-});
-
 /*
  * The one placement rule (docs/reference/projects.md#nested-fleet-setting): task work that needs a task VM refuses a nested-fleet
  * Project before it records a place, an identity, a workspace, a wait or an Operation. Its task start takes the copy path instead.
@@ -2267,10 +1579,9 @@ describe('nested-fleet Projects', function (): void {
         $this->patchJson('/api/v1/projects/'.$project->id, ['nested_fleet' => true])->assertOk();
         $group = slotPoolGroup($project->refresh());
         $before = $rows();
-        expect(fn () => app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40)))
+        expect(fn () => app(TaskProvisionIntent::class)->start($group, 'test', null))
             ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['tasks.copy_source_unavailable', 409]));
         expect($rows())->toBe($before)->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($group->taskable_id)->toBeNull();
-        Queue::assertNotPushed(AdmitTaskVm::class);
     })->with(['free place' => [2], 'full pool' => [0]]);
 
     it('refuses a prep run before any thread, place or wait', function (int $places) use ($rows, $refused, $flag): void {
@@ -2294,7 +1605,7 @@ describe('nested-fleet Projects', function (): void {
         expect([...$rows(), 'threads' => AgentThread::query()->count()])->toBe($before);
     })->with(['free place' => [2], 'full pool' => [0]]);
 
-    it('refuses a build or a fix after release, also while the previous VM is still being deleted', function (bool $fix, bool $releasing) use ($rows, $refused, $flag): void {
+    it('refuses a build or a fix after release', function (bool $fix) use ($rows, $refused, $flag): void {
         Queue::fake();
         [, $project] = slotPoolHost();
         slotPoolSweepWorld();
@@ -2316,16 +1627,13 @@ describe('nested-fleet Projects', function (): void {
                 return $this->head;
             }
         });
-        $previous = $releasing ? app(TaskVmSlotPool::class)->take($group) : null;
-        $previous?->update(['state' => TaskVmState::Releasing]);
         $flag($project);
         $before = $rows();
         $refused(fn () => $fix
             ? app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null)
             : app(TaskBuildIntent::class)->start($group, $head, 'test', null));
         expect($rows())->toBe($before);
-        Queue::assertNotPushed(AdmitTaskVm::class);
-    })->with([[false, false], [true, false], [false, true], [true, true]]);
+    })->with([false, true]);
 
     it('refuses a direct re-entry capture before it takes a place', function () use ($rows, $refused, $flag): void {
         [, $project] = slotPoolHost();
@@ -2338,30 +1646,8 @@ describe('nested-fleet Projects', function (): void {
         expect($rows())->toBe($before);
     });
 
-    it('fails a waiting admission whose Project was flagged after it began to wait, without a place', function (bool $free, bool $behind) use ($rows, $flag): void {
-        Queue::fake();
-        [, $project] = slotPoolHost(taskPlaces: 1);
-        slotPoolSweepWorld();
-        slotPoolClaimServices();
-        $holder = app(TaskVmSlotPool::class)->take(slotPoolGroup($project));
-        $earlier = $behind ? app(TaskProvisionIntent::class)->start(slotPoolGroup($project), 'test', null, str_repeat('a', 40)) : null;
-        $group = slotPoolGroup($project);
-        $operation = app(TaskProvisionIntent::class)->start($group, 'test', null, str_repeat('a', 40));
-        expect($operation->status)->toBe(OperationStatus::Waiting);
-        if ($free) {
-            app(TaskVmSlotReleaseProjection::class)->record($holder, true, null);
-        }
-        // Only a Project without an Instance can change its flag; a waiting group has no workspace yet.
-        $flag($project);
-        $before = $rows();
-        app(TaskVmAdmission::class)->admit($operation->id);
-        expect($operation->refresh()->status)->toBe(OperationStatus::Failed)->and($operation->error_code)->toBe('operation.kind_unavailable')
-            ->and([...$rows(), 'waiting' => $before['waiting']])->toBe($before)->and($group->refresh()->capacity_wait_reason)->toBeNull()
-            ->and(TaskVm::forGroup($group))->toBeNull();
-        expect($earlier?->refresh()->status)->toBe($behind ? OperationStatus::Waiting : null);
-    })->with(['full pool' => [false, false], 'free place' => [true, false], 'behind an earlier waiter' => [false, true]]);
-
-    it('refuses a CI proof command before it claims a CI place', function () use ($rows, $refused, $flag): void {
+    // The task VM admission of a proof command is removed: it answers that refusal before it claims a place.
+    it('refuses a CI proof command before it claims a CI place', function () use ($rows, $flag): void {
         Queue::fake();
         [, $project] = slotPoolHost();
         slotPoolSweepWorld();
@@ -2369,7 +1655,8 @@ describe('nested-fleet Projects', function (): void {
         $group = slotPoolGroup($project);
         $flag($project);
         $before = $rows();
-        $refused(fn () => app(TaskProvisionIntent::class)->admit($group, str_repeat('a', 40), 'proof.command', static fn (array $input): array => $input, 'test', null, ciPool: true));
+        expect(fn () => app(TaskProvisionIntent::class)->admit($group, str_repeat('a', 40), 'proof.command', static fn (array $input): array => $input, 'test', null, ciPool: true))
+            ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe([TaskVmRemoved::Code, 422]));
         expect($rows())->toBe($before);
     });
 

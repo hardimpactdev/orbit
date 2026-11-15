@@ -6,7 +6,6 @@ namespace App\Domain\Tasks;
 
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Gateway\GatewayQueue;
-use App\Jobs\TaskVms\ObserveParkedTaskVms;
 use Illuminate\Console\Scheduling\Schedule;
 
 final readonly class TaskSchedule
@@ -16,7 +15,6 @@ final readonly class TaskSchedule
         $enabled = static fn (): bool => app(TaskExtensionState::class)->enabled();
         GatewaySchedule::command($schedule, 'gateway:swamp-reader:check', uniqueFor: 300, overlapMinutes: 10, queue: GatewayQueue::Problems)->hourly()
             ->when(static fn (): bool => config()->string('swamp.read_token') !== '');
-        GatewaySchedule::job($schedule, new ObserveParkedTaskVms)->everyMinute()->when($enabled);
         // The gate check of stage 4 only reads and admits; its bound covers the GitHub reads of one tick.
         GatewaySchedule::command($schedule, 'task:pr-gate', uniqueFor: 300, overlapMinutes: 5)->everyMinute()->when($enabled);
         // A task copy in pr_when_done publishes its done check by itself; the tick only reads records and admits the publish.

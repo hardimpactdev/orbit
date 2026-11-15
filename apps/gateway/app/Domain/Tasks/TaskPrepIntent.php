@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
+use App\Actions\Operations\StartOperationAction;
 use App\Data\Tasks\StartTaskPrepData;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
@@ -16,6 +18,7 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
@@ -27,7 +30,7 @@ final readonly class TaskPrepIntent
     /** The review rounds of the parent workflow `operation-task-prep`; its steps are written out, so this number is part of it. */
     public const int Rounds = 3;
 
-    public function __construct(private TaskProvisionIntent $provision, private OperationIdempotency $idempotency) {}
+    public function __construct(private TaskProvisionIntent $provision, private OperationIdempotency $idempotency, private StartOperationAction $start) {}
 
     public function start(Task $group, StartTaskPrepData $data, string $caller, ?string $request): Operation
     {
@@ -49,8 +52,13 @@ final readonly class TaskPrepIntent
 
         $commit = app(TaskStartCommit::class)->resolve($group->project);
 
-        return app(TaskVmAdmission::class)->start($group, 'tasks.prep', ['commit' => $commit, ...$data->toArray()],
-            fn (): array => $this->capture($group, $data, $commit), $caller, $request);
+        // Its entry answers the refusal of the removed task VMs; a direct call claims a place without waiting for one.
+        return DB::transaction(function () use ($group, $data, $commit, $caller, $request): Operation {
+            $input = $this->capture($group, $data, $commit);
+
+            return $this->start->execute('tasks.prep', 'task_group', $group->id, ValidatedData::integer($input['node_id']), $input, $caller, $request,
+                lockKey: OperationStore::lockKey('task_group', $group->id));
+        });
     }
 
     /** @return array<string,mixed> */

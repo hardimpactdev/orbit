@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Operations;
 
 use App\Data\Tasks\TaskPlaceWaitData;
-use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskPlaces;
-use App\Domain\Tasks\TaskVmAdmission;
 use App\Models\Operation;
 use DateTimeInterface;
 use Spatie\LaravelData\Attributes\MapOutputName;
@@ -78,12 +76,11 @@ final class OperationData extends Data
             || (is_string($value) && strlen($value) <= 512));
     }
 
-    /** docs/reference/operations.md#follow-an-operation-by-polling: null once terminal, 20 while waiting for a place, else 2 growing to 15. */
+    /** docs/reference/operations.md#follow-an-operation-by-polling: null once terminal, else 2 growing to 15. */
     private static function pollAfterSeconds(Operation $operation): ?int
     {
         return match (true) {
             $operation->status->terminal() => null,
-            $operation->status === OperationStatus::Waiting && isset($operation->input['capacity_request']) => TaskVmAdmission::RetrySeconds,
             $operation->started_at === null => 2,
             default => min(15, 2 + intdiv(max(0, (int) $operation->started_at->diffInSeconds(now()) - 10), 10)),
         };

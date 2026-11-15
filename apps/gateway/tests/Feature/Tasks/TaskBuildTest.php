@@ -2,14 +2,9 @@
 
 declare(strict_types=1);
 
-use App\Actions\Tasks\RunTaskPullRequestGateAction;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubPullRequest;
-use App\Domain\GitHub\GitHubPullRequestState;
-use App\Domain\GitHub\GitHubReview;
-use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
@@ -18,7 +13,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskBuildProjection;
-use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskPrepPrompts;
 use App\Domain\Tasks\TaskPullRequestEvidence;
@@ -32,7 +26,6 @@ use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Swamp\StartSwampRun;
-use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -40,7 +33,6 @@ use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Facades\Queue;
 use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
 
@@ -182,16 +174,6 @@ it('refuses a build that has no workspace of its own and leaves the group as it 
         ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
         ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1)
         ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(0);
-});
-
-it('waits for deletion before a build can claim its next VM', function (): void {
-    Queue::fake();
-    [$group] = buildWorld(vmState: TaskVmState::Releasing);
-    $operation = app(TaskBuildIntent::class)->start($group, BUILD_HEAD, 'test', null);
-    expect($operation->status)->toBe(OperationStatus::Waiting)
-        ->and($group->fresh()->status)->toBe(TaskGroupStatus::WaitingForReview)
-        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(1)
-        ->and(AgentThread::query()->count())->toBe(0);
 });
 
 it('clears the settled time of the group when the build starts', function (): void {
@@ -385,39 +367,6 @@ it('fails a sync and a build run closed when the read-token vault write fails, a
         ->and(array_column(array_column($socket->frames, 'payload'), 'key'))->toBe($kind === OperationKinds::TasksBuild ? ['task-vm-pi-token-'.$vm->id, $reference['key']] : [$reference['key']])
         ->and(array_column($socket->frames, 'type'))->not->toContain('workflow.run');
 })->with([OperationKinds::TasksSync, OperationKinds::TasksBuild]);
-
-it('starts the build from the gate on an approved head, appends the subtask once and admits nothing on the next tick', function (): void {
-    config(['task_pull_requests.reviewer' => 'nick']);
-    [$group] = buildWorld();
-    app(TaskExtensionState::class)->enable();
-    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
-    $pull = new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', BUILD_HEAD, 'main', draft: true, authorLogin: 'orbit-app[bot]');
-    $review = new GitHubReview(1, 1, 'nick', GitHubReviewState::Approved, BUILD_HEAD, new DateTimeImmutable('2026-11-06T10:00:00Z'), 'https://example.test', '');
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($pull, $review): void {
-        $github->shouldReceive('repositoryInstallation')->andReturn(7);
-        $github->shouldReceive('repositoryReviewsToken')->andReturn('reviews-token');
-        $github->shouldReceive('pullRequest')->andReturn($pull);
-        $github->shouldReceive('reviews')->andReturn([$review]);
-    }));
-    $group->project->update(['source_access' => 'github_app', 'review_and_merge' => true, 'merge_check' => 'Required checks']);
-    $group->update(['watched_pr_number' => 7, 'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/7']);
-
-    // Swamp is not there: the start is refused after the admission was recorded.
-    $first = app(RunTaskPullRequestGateAction::class)->execute();
-    $operation = Operation::query()->where('kind', OperationKinds::TasksBuild)->sole();
-
-    expect($first)->toHaveCount(1)->and($first[0])->toMatchArray(['group' => $group->id, 'step' => 'build'])
-        ->and($operation->idempotency_key)->toBe('pr-gate:build:'.$group->id.':'.BUILD_HEAD)
-        ->and($operation->input['approval'])->toMatchArray(['head' => BUILD_HEAD, 'mode' => 'manual', 'reviewer' => 'nick'])
-        ->and($group->fresh()->status)->toBe(TaskGroupStatus::Running)
-        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2);
-
-    $again = app(RunTaskPullRequestGateAction::class)->execute();
-
-    expect($again[0]['step'])->not->toBe('build')
-        ->and(Task::query()->where('parent_id', $group->id)->count())->toBe(2)
-        ->and(Operation::query()->where('kind', OperationKinds::TasksBuild)->count())->toBe(1);
-});
 
 it('lets a build retry after an expired or cancelled admission but blocks a live or succeeded build', function (OperationStatus $status, bool $waiting): void {
     [$group] = buildWorld();

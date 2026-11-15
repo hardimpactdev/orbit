@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace App\Jobs\TaskVms;
 
+use App\Domain\Gateway\GatewayQueue;
 use App\Domain\TaskVms\TaskVmSlotRuns;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\TaskVm;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Foundation\Queue\Queueable;
 
 /**
  * Releases a slot whose task start did not pass (docs/cli/task/vm-release.mmd): its VM, hub peer and Node go, so the slot
@@ -16,7 +18,7 @@ use Illuminate\Contracts\Queue\ShouldQueue;
  */
 final class ReleaseTaskVmSlot implements ShouldBeUnique, ShouldQueue
 {
-    use TaskVmJob;
+    use Queueable;
 
     public int $tries = 3;
 
@@ -26,7 +28,7 @@ final class ReleaseTaskVmSlot implements ShouldBeUnique, ShouldQueue
 
     public function __construct(public int $slotId, public int $groupId)
     {
-        $this->onTaskVmQueue();
+        $this->onConnection(GatewayQueue::Connection)->onQueue(GatewayQueue::Tasks->value);
     }
 
     public function uniqueId(): string

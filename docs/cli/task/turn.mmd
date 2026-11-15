@@ -1,6 +1,7 @@
 sequenceDiagram
   %% Target design: docs/reference/tasks.md#run-an-external-turn; flow-tighten rule 14. Official SSH and Pi operations remain separate; native assert is the end check.
   %% Orchestrator 2026-11-14: a turn of a task that owns a copy (a nested-fleet Project, or since 2026-11-14 any Project whose default is a container) runs in its copy as `tasks.copy_turn` (copy-turn.mmd); the group's own workspace decides.
+  %% Orchestrator 2026-11-15 (step 5): task VMs are removed. A turn of a group that owns no copy answers tasks.vm_runtime_removed (422) before anything is recorded; the task VM turn below stays until the Pi task loop is decided and no entry reaches it.
   %% status: migrated
   %% command: task:turn
   %% kind: tasks.turn
@@ -33,8 +34,8 @@ sequenceDiagram
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the agent in the VM sees only what the admission sends, so the subtask the Gateway holds reaches it from the Gateway, not from the driver
   opt publication deleted the workspace
-    Note over GW: Wait for a task place
-    %%> Use the shared first-come-first-served task queue, with a two-hour admission budget. Read the task branch head and admit a fresh VM from the base at that commit, or at the group's idle save when that holds the head, with a new Pi session.
+    Note over GW: Admit a fresh VM<br/>no wait for a place
+    %%> Read the task branch head and admit a fresh VM from the base at that commit, or at the group's idle save when that holds the head, with a new Pi session. Since task VMs are removed, no entry reaches this: a turn of a group without a copy answers `tasks.vm_runtime_removed` (422) first.
   end
   GW->>SW: Start one run<br/>operation-task-turn
   %%> Inputs:

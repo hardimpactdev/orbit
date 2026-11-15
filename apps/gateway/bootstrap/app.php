@@ -6,7 +6,6 @@ use App\Actions\Doctor\RunDoctorAction;
 use App\Console\Kernel as GatewayConsoleKernel;
 use App\Console\Scheduling\GatewaySchedule;
 use App\Domain\Tasks\TaskSchedule;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Http\Middleware\AnnounceDesiredCliVersion;
 use App\Http\Middleware\EnsureRequestId;
 use App\Http\Middleware\GuardBrowserOrigins;
@@ -27,8 +26,6 @@ use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\Operations\ReconcileSwampOperations;
-use App\Jobs\TaskVms\ReleaseIdleTaskVms;
-use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
 use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Contracts\Console\Kernel as ConsoleKernel;
@@ -94,12 +91,6 @@ $app = Application::configure(basePath: dirname(__DIR__))
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));
         GatewaySchedule::job($schedule, new CheckFleetRebootConfirmation)->everyFiveMinutes()
             ->when(static fn (): bool => GatewayQueueRedis::configured() && config()->boolean('fleet.reboot'));
-        // Release stale Incus task starts through task_vm.slot_release.
-        GatewaySchedule::job($schedule, new SweepTaskVmHosts)->everyThirtyMinutes()
-            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
-        // A group that runs no Operation for 30 minutes gives its task VM back to the pool.
-        GatewaySchedule::job($schedule, new ReleaseIdleTaskVms)->everyFiveMinutes()
-            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
     })
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->replace(ValidatePostSize::class, ValidateRequestBodySize::class);

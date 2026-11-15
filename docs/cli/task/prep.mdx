@@ -31,8 +31,11 @@ The run takes its mode from the review mode of the group, `manual` or `automatic
 
 ## Errors
 
+Task VMs are removed, so `task:prep` answers `tasks.vm_runtime_removed` (422) before any of the checks below, and records nothing ([Task runtime](/reference/tasks#task-runtime)). The rest of this page describes the run as it was.
+
 | Code | When |
 | --- | --- |
+| `tasks.vm_runtime_removed` (422) | always: the run needs a task VM |
 | `tasks.prep_command_invalid` | `command` is not `family:command` or `family:part:command` in lower case |
 | `tasks.not_todo`, `tasks.group_closed`, `tasks.already_claimed` | the group is not an open `todo` group with no VM |
 | `operation.kind_unavailable` | the Project has `nested_fleet` on; only `instance:create` makes Instances of such a Project, as containers, and Orbit records nothing |

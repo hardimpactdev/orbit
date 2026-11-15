@@ -10,7 +10,7 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskVmAdmission;
+use App\Domain\Tasks\TaskVmRemoved;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\TaskVms\TaskVmVolumes;
@@ -72,7 +72,7 @@ final readonly class TaskVmImageRefreshIntent
 
     /**
      * Admits the refresh of `$host` to `$commit`, or to the release the Gateway runs. A refresh that is open on the host is returned instead;
-     * no commit waits behind it. Nothing in the Gateway starts a refresh any more (the release and daily triggers are gone); the kind leaves
+     * no commit waits behind it, and a refresh that finds no place gets the refusal of the removed task VMs. Nothing in the Gateway starts a refresh any more (the release and daily triggers are gone); the kind leaves
      * with the rest of the task VM path.
      * With `$fromStock`, the run first deletes the base VM and its seed and builds the base from the stock image; it is refused while a
      * refresh is open, which was admitted without that.
@@ -110,8 +110,8 @@ final readonly class TaskVmImageRefreshIntent
                     lockKey: OperationStore::lockKey('task_vm_host', $host->id));
             });
         } catch (TaskCapacityException) {
-            return app(TaskVmAdmission::class)->wait(self::Kind, 'task_vm_host', $host->id, $host->id,
-                ['commit' => $commit, 'from_stock' => $fromStock], $caller, $request);
+            // A refresh that found no place waited in the task VM admission, which is removed.
+            throw TaskVmRemoved::refusal();
         } finally {
             $lock->release();
         }

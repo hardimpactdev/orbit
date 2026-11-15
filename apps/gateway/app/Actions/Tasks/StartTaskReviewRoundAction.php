@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace App\Actions\Tasks;
 
-use App\Domain\Tasks\TaskReviewRoundIntent;
+use App\Domain\Tasks\TaskVmRemoved;
 use App\Models\Operation;
 use App\Models\Task;
 
-/** Admits one review round of the automatic mode as one Swamp run on the exact head of the pull request. */
+/** A review round ran only on a task VM. Task VMs are removed, so it answers their refusal (docs/reference/tasks.md#task-runtime). */
 final readonly class StartTaskReviewRoundAction
 {
-    public function __construct(private RequireTasksExtensionAction $extension, private TaskReviewRoundIntent $intent) {}
+    public function __construct(private RequireTasksExtensionAction $extension) {}
 
     public function execute(Task $group, string $head, string $caller, ?string $request): Operation
     {
         $this->extension->execute();
 
-        return $this->intent->start($group, $head, $caller, $request);
+        throw TaskVmRemoved::refusal();
     }
 }

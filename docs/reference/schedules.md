@@ -26,7 +26,7 @@ An Orbit Schedule is separate from the Gateway's Laravel schedule. Swamp owns [o
 
 The shared native `automatic-production-deploy` producer schedules [automatic deployments](/reference/deployments#automatic-development-defaults) at second 30 of each minute, subject to its enabled and paused policy setting. The PHP `orbit:auto-deploy` command and schedule are removed. This producer installs no timer on an app-dev Node. Every hour at minute 41, `automatic-deploy-memory-refresh` keeps that producer's [policy memory](/reference/deployments#automatic-deployments) inside Swamp data retention, also while the producer is paused. Every five minutes Swamp also reads the Gateway endpoint that resolves the [desired fleet state](/reference/self-update#how-the-gateway-resolves-it) so the CLI release check never waits in a request.
 
-While task VMs are enabled, the Gateway queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 30 minutes. It releases stale Incus starts through `task_vm.slot_release`. Every five minutes it also queues the [idle release](/reference/tasks#release-an-idle-task-vm) of task VMs.
+The Gateway schedules no task VM job: the [host sweep](/reference/compute-drivers#sweep-task-vm-hosts), the [idle release](/reference/tasks#release-an-idle-task-vm) and the observation of parked VMs are removed with the [task VM runtime](/reference/tasks#task-runtime).
 
 No schedule starts the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the task VM hosts any more: the 03:20 daily refresh is removed.
 

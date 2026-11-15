@@ -26,8 +26,7 @@ use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskVmAdmission;
+use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -35,8 +34,6 @@ use App\Http\Mcp\ApiDispatcher;
 use App\Http\Mcp\ApiOperationTool;
 use App\Http\Mcp\ToolManifest;
 use App\Jobs\Proof\AdmitProofRun;
-use App\Jobs\Proof\CancelProofGroup;
-use App\Jobs\Tasks\AdmitTaskVm;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
@@ -491,67 +488,14 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['cases'])->toHaveCount(1);
     });
 
-    it('queues an operator proof in task admission without a VM, then times out clearly', function (bool $reportOnly): void {
+    // The task VM admission of a proof's run is removed: a proof Project without a container default fails by that name, with no VM and no wait.
+    it('fails an operator proof of a Project without a container default by the removed task VM runtime, with no VM and no waiting run', function (bool $reportOnly): void {
         proofWorldWithoutCapacity();
         $proof = proofAdmitted(reportOnly: $reportOnly);
-        expect($proof->error_code)->toBeNull()->and($proof->status)->toBe(OperationStatus::Running)
-            ->and(TaskVm::query()->count())->toBe(0);
-        $child = ProofRunSettlement::children($proof->id)->sole();
-        expect($child->status)->toBe(OperationStatus::Waiting)->and($child->current_step)->toBe('Wait for a task place');
-        Queue::assertPushed(AdmitTaskVm::class);
-        $child->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
-        app(TaskVmAdmission::class)->admit($child->id);
-        expect($child->refresh()->error_code)->toBe('tasks.capacity_timeout')
-            ->and($proof->refresh()->status)->toBe(OperationStatus::Failed);
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe(TaskVmRemoved::Code)
+            ->and(TaskVm::query()->count())->toBe(0)
+            ->and(Operation::query()->where('status', OperationStatus::Waiting)->count())->toBe(0);
     })->with([true, false]);
-
-    it('places the proof on a host only when its ready copies include every change of what the image carries up to the merge base', function (?string $copies, ?array $range, bool $skipped): void {
-        $source = proofSource();
-        $base = proofHostWithCopies($source, $copies);
-        if ($copies !== null) {
-            $source->ranges[$copies] = $range === null ? null : new ProofCommitRange(GitHubComparisonStatus::from($range[0]), new ProofChangedFiles(str_repeat('f', 40),
-                array_map(static fn (string $path): ProofChangedFile => new ProofChangedFile($path, 'modified'), $range[1]), $range[2] ?? true));
-        }
-
-        $proof = proofAdmitted();
-
-        Process::run(['rm', '-rf', $base]);
-        $child = ProofRunSettlement::children($proof->id)->first();
-        $detail = $child?->state['capacity_wait_reason'] ?? $proof->state['capacity_wait_reason'] ?? proofFailureDetail($proof) ?? '';
-        expect(str_contains($detail, 'no usable nested fleet seed are skipped: beast'))->toBe($skipped)
-            ->and(str_contains($detail, 'playbooks, pins and lock files up to the merge base'))->toBe($skipped)
-            // No release starts a refresh any more, so the text promises none.
-            ->and(str_contains($detail, 'no refresh is running, and nothing starts one: task VMs are off.'))->toBe($skipped)
-            ->and($detail)->not->toContain('starts one.');
-        if ($skipped) {
-            expect(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place');
-        }
-    })->with([
-        'main moved by documents and Gateway PHP only' => ['dddddddddddd0000000000000000000000000000', ['ahead', ['docs/a.md', 'apps/gateway/app/Domain/Proof/ProofRunIntent.php']], false],
-        'the copies are the merge base' => ['dddddddddddd0000000000000000000000000000', ['identical', []], false],
-        'the copies are after the merge base' => ['dddddddddddd0000000000000000000000000000', ['behind', []], false],
-        'main moved by a playbook' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['docs/a.md', 'swamp/ansible/task-vm-role.yml']], true],
-        'main moved by a pin' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['apps/gateway/resources/machine-software/recipe.json']], true],
-        'main moved by a lock file' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['apps/gateway/composer.lock']], true],
-        'a list of files that GitHub cut' => ['aaaaaaaaaaaa0000000000000000000000000000', ['ahead', ['docs/a.md'], false], true],
-        'a release GitHub does not know' => ['bbbbbbbbbbbb0000000000000000000000000000', null, true],
-        'no recorded provenance' => [null, null, true],
-    ]);
-
-    it('does not release a kept VM when no host has fresh enough copies, because a freed slot would not help', function (): void {
-        $source = proofSource();
-        $commit = 'aaaaaaaaaaaa0000000000000000000000000000';
-        $base = proofHostWithCopies($source, $commit);
-        $source->ranges[$commit] = new ProofCommitRange(GitHubComparisonStatus::Ahead, new ProofChangedFiles(str_repeat('f', 40), [new ProofChangedFile('swamp/ansible/task-vm-role.yml', 'modified')], true));
-        [$kept] = proofKeptRun();
-
-        $proof = proofAdmitted();
-
-        Process::run(['rm', '-rf', $base]);
-        expect($proof->status)->toBe(OperationStatus::Running)->and(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place')
-            ->and($kept->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
 
     it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
         $source = proofSource();
@@ -638,24 +582,6 @@ function proofWorldWithoutCapacity(): void
     $source = proofSource();
     $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
     proofWorld($source);
-}
-
-/**
- * A failed run of an earlier proof that kept its VM (`--keep-failed`): its group is still running.
- *
- * @return array{0: Operation, 1: Task}
- */
-function proofKeptRun(string $command = 'firewall:allow'): array
-{
-    $node = Node::query()->firstOrFail();
-    $earlier = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $node->id, 'node_id' => $node->id, 'status' => OperationStatus::Failed,
-        'input' => ['commit' => str_repeat('b', 40), 'runs' => []], 'state' => [], 'sequence' => 1, 'attempts' => 0]);
-    $group = Task::query()->create(['title' => 'Proof '.$command, 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
-    $run = Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $node->id, 'status' => OperationStatus::Failed,
-        'error_code' => 'proof.cases_failed', 'input' => ['proof_operation_id' => $earlier->id, 'group_id' => $group->id, 'keep_failed' => true], 'state' => [], 'sequence' => 1, 'attempts' => 0,
-        'result' => ['kept' => ['vm' => 'tvm-849', 'group_id' => $group->id, 'keep_until' => now()->addMinutes(30)->utc()->format('Y-m-d\TH:i:s\Z'), 'cancel_requested_at' => null]]]);
-
-    return [$run, $group];
 }
 
 describe('the intent of a run', function (): void {
@@ -890,10 +816,10 @@ it('cancels a waiting proof, and its retry job then leaves it cancelled', functi
 it('plans past the longest shard budget when every usable CI place is free, because no place can come to wait for', function (): void {
     $proof = proofOverBudget(busy: 0);
 
-    // The plan goes on to the claims; this world has no task VM guard, so the claim stops there, not at the wait.
+    // The plan goes on to the claims, and the claim answers the refusal of the removed task VMs, not the wait.
     expect($proof->current_step)->not->toBe(ProofRunIntent::WaitStep)
         ->and($proof->state['capacity_wait_reason'] ?? null)->toBeNull()
-        ->and($proof->error_code)->toBe('ai_router.disabled');
+        ->and($proof->error_code)->toBe(TaskVmRemoved::Code);
 });
 
 it('expires the parent admission allowance for operators as well as CI before recording any children', function (bool $ci): void {

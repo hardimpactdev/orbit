@@ -8,6 +8,7 @@ use App\Actions\Operations\CancelOperationAction;
 use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
+use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Data\Tasks\StartTaskCheckData;
@@ -55,10 +56,10 @@ use App\Domain\Tasks\TaskCopyTurnProjection;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
-use App\Domain\Tasks\TaskRuntime;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
 use App\Domain\Tasks\TaskTurnIntent;
+use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Processes\CommandResult;
 use App\Infrastructure\Ssh\KnownHostsStore;
@@ -67,7 +68,6 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
 use App\Jobs\Tasks\DestroyTaskCopy;
-use App\Jobs\TaskVms\AdmitTaskVm;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -276,30 +276,49 @@ function runningOperation(Operation $operation): Operation
 }
 
 describe('the decision point', function (): void {
-    it('starts a task of a nested-fleet Project as a copy and keeps a Project without a container default on its task VM', function (): void {
+    it('starts a task of a nested-fleet Project as a copy and refuses a Project without a container default by name', function (): void {
         $project = containerDefaultProject();
-        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Vm);
-        InstancePlacement::taskWorkspace($project);
+        expect(InstancePlacement::copiesTasks($project))->toBeFalse()
+            ->and(copyRefusal(fn () => InstancePlacement::taskCopy($project)))->toBe(TaskVmRemoved::Code.' 422');
         $project->update(['nested_fleet' => true]);
-        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Copy)
+        InstancePlacement::taskCopy($project);
+        expect(InstancePlacement::copiesTasks($project))->toBeTrue()
             ->and(copyRefusal(fn () => InstancePlacement::taskWorkspace($project)))->toBe('operation.kind_unavailable 503');
     });
 
-    it('starts a task of a Project whose default is a container as a copy, and a default without a container keeps the task VM', function (): void {
+    it('starts a task of a Project whose default is a container as a copy, and refuses one whose default has no container', function (): void {
         $default = copySource('app', nested: false);
         $project = $default->project;
-        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Copy);
+        InstancePlacement::taskCopy($project);
+        expect(InstancePlacement::copiesTasks($project))->toBeTrue();
         InstanceRuntime::query()->where('instance_id', $default->id)->delete();
-        expect(InstancePlacement::taskRuntime($project))->toBe(TaskRuntime::Vm);
+        expect(InstancePlacement::copiesTasks($project))->toBeFalse()
+            ->and(copyRefusal(fn () => InstancePlacement::taskCopy($project)))->toBe(TaskVmRemoved::Code.' 422');
     });
 
-    it('leaves the task VM writers and a group without a copy on the VM path when the default of a flag-off Project is a container', function (): void {
+    it('refuses the task start of a Project without a container default before it records a group change, a copy, a VM or an Operation', function (): void {
+        $default = copySource('app', nested: false);
+        InstanceRuntime::query()->where('instance_id', $default->id)->delete();
+        $group = copyGroup($default->project);
+        $instances = Instance::query()->count();
+        $operations = Operation::query()->count();
+
+        expect(copyRefusal(fn () => app(StartTaskProvisionAction::class)->execute($group, 'test', null)))->toBe(TaskVmRemoved::Code.' 422')
+            ->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)
+            ->and($group->taskable_id)->toBeNull()
+            ->and(Instance::query()->count())->toBe($instances)
+            ->and(TaskVm::query()->count())->toBe(0)
+            ->and(Operation::query()->count())->toBe($operations);
+    });
+
+    it('refuses the turn of a group without a copy by the same name, also when the default of a flag-off Project is a container', function (): void {
         $project = copySource('app', nested: false)->project;
-        InstancePlacement::taskWorkspace($project);
         $group = copyGroup($project);
         $group->update(['status' => TaskGroupStatus::Running]);
+        $operations = Operation::query()->count();
 
-        expect(copyRefusal(fn () => copyTurn($group)))->toBe('task_vm.project_unsupported 409');
+        expect(copyRefusal(fn () => copyTurn($group)))->toBe(TaskVmRemoved::Code.' 422')
+            ->and(Operation::query()->count())->toBe($operations);
     });
 });
 
@@ -323,7 +342,6 @@ describe('a task start on the copy path', function (): void {
             ->and($group->status)->toBe(TaskGroupStatus::Reserved)
             ->and($group->taskable_id)->toBe($copy->id)
             ->and(TaskVm::query()->count())->toBe(0);
-        Queue::assertNotPushed(AdmitTaskVm::class);
     });
 
     it('gives a task copy of a nested-fleet default with an inner volume its own volume, copied from the default\'s seed, and removes it with the copy', function (): void {
@@ -407,7 +425,6 @@ describe('a task start on the copy path', function (): void {
             ->and($group->refresh()->status)->toBe(TaskGroupStatus::Reserved)
             ->and($group->taskable_id)->toBe($copy->id)
             ->and(TaskVm::query()->count())->toBe(0);
-        Queue::assertNotPushed(AdmitTaskVm::class);
     });
 
     it('replays the same create for a retry with the request\'s key', function (): void {
@@ -1752,7 +1769,6 @@ describe('a turn of a group that owns a copy', function (): void {
 
         expect(copyRefusal(fn () => copyTurn($group)))->toBe('tasks.no_workspace 409')
             ->and(TaskVm::query()->count())->toBe(0)->and(Operation::query()->count())->toBe(1);
-        Queue::assertNotPushed(AdmitTaskVm::class);
     });
 
     it('records a completed turn on its thread, with T3\'s thread id and a transcript that outlives the copy', function (): void {
