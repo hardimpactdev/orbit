@@ -161,7 +161,9 @@ Its budget is 600 seconds for the shard, 180 seconds for each batch and the meas
 
 A `proof.command` that older code admitted has no captured budget, for example one admitted while a release switches. It keeps the fixed 3,600 seconds it had then (`OperationBudgetTable::UncapturedSeconds`), never the 60-second fallback of a captured kind.
 
-`proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command in the task copy of the named group, through the workflow `proof-fleet-verify`, with no provision and no destruction. Basis, measured when it still ran on task VMs: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. A maintainer should replace the fixed row after measuring successful runs.
+`proof.verify` has a provisional 3,000 seconds. It has no run yet. `orbit proof` proves one command in the task copy of the named group, through the workflow `proof-fleet-verify`, with no provision and no destruction.
+
+The basis of that budget dates from when `orbit proof` still ran on task VMs: 14 cases of about 120 seconds each come to 1,680 seconds. Add the restores before the first batch, between batches and after the last, about 16 seconds each. Add a token re-mint with its readiness check and the new `base`, about 150 seconds. The sum is about 1,900 seconds. With 1.5 times margin, rounded up to five minutes, it is 3,000. A maintainer should replace the fixed row after measuring successful runs.
 
 `database.import` has a provisional 3,900 seconds: its step's own bound of 3,600 seconds, a 2 GB dump at 1 MB/s, plus 300 seconds for the vault copy, the run start and the result. A maintainer must update the fixed row after measuring successful runs.
 
