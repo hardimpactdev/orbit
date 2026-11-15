@@ -60,6 +60,9 @@ it('accounts for every assigned case and fails missing duplicate malformed and u
     'duplicate' => ["ROW{\"id\":\"a\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"id\":\"a\",\"verdict\":\"passed\",\"secs\":1}", false],
     'malformed' => ['ROW{"id":"a","verdict":"passed"}', false],
     'unexpected' => ['ROW{"id":"extra","verdict":"passed","secs":1}', false],
+    // Proof 22900 (release 2084): a copy's batch adds its reset seconds; every case passed, and the run must pass.
+    'complete with the reset line of a copy' => ["ROW{\"id\":\"a\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"id\":\"b\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"batch\": \"fresh\", \"reset\": {\"reset_seconds\": 16.2}}", true],
+    'a reset line alone' => ['ROW{"batch": "fresh", "reset": {"reset_seconds": 16.2}}', false],
 ]);
 
 it('plans selected ids only, retains their batch setup and rejects an unknown id', function (): void {
