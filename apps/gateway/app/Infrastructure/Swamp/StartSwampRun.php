@@ -69,13 +69,17 @@ final readonly class StartSwampRun
                 throw new ResourceOperationException('operation.direct_invalid', 'A declared direct Swamp intent is required.', 422);
             }
             $endpoint = $this->endpoint();
-            $payload = [
-                'workflowIdOrName' => app(DirectOperation::class)->workflowFor($operation),
-                'inputs' => app(DirectOperation::class)->workflowInputs($operation),
-                'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
-            ];
-            $phases['inputs_ms'] = $this->milliseconds($started);
-            $response = $this->request($endpoint, $payload, $submitted, $phases, $connectFailure);
+            // The run-time execution copies and the start share one connection: one serve handshake per start.
+            $response = app(SwampDispatch::class)->shared(function () use ($operation, $endpoint, $started, &$submitted, &$phases, &$connectFailure): array {
+                $payload = [
+                    'workflowIdOrName' => app(DirectOperation::class)->workflowFor($operation),
+                    'inputs' => app(DirectOperation::class)->workflowInputs($operation),
+                    'runtimeTags' => ['orbit_start_key' => 'operation:'.$operation->id],
+                ];
+                $phases['inputs_ms'] = $this->milliseconds($started);
+
+                return $this->request($endpoint, $payload, $submitted, $phases, $connectFailure);
+            });
             $accepted = true;
             $binding = ($this->clock)();
             $this->bind($operation, $response['run_id']);

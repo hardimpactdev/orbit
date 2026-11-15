@@ -167,9 +167,9 @@ beforeEach(function (): void {
 
 it('starts every Operation released at once although serve refuses part of the burst', function (): void {
     $operations = burstCreates(4);
-    // Each create pushes its execution copies over one connection and then connects for its start: 8 connections. A limit of 7
-    // refuses the last start of the burst, as 50 refused Nick's four destroys after a removal's cleanup on 13 November.
-    $serve = new BurstLimitedServe(limit: 7);
+    // Each create pushes its execution copies and sends its start over one connection: 4 connections. A limit of 3 refuses the last
+    // start of the burst, as 50 refused four destroys after a removal's cleanup on 13 November.
+    $serve = new BurstLimitedServe(limit: 3);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
 
@@ -192,8 +192,9 @@ it('starts every Operation released at once although serve refuses part of the b
 
 it('queues a refused start again after Retry-After and sends it once when serve admits it', function (): void {
     [$operation] = burstCreates(1);
-    // The first connection carries an execution copy; the next one, before any start frame, is refused.
-    $serve = new BurstLimitedServe(limit: 1, windowSeconds: 20);
+    $this->freezeTime();
+    // Other work spent serve's window: the start's one connection, before its first execution copy, is refused.
+    $serve = new BurstLimitedServe(limit: 0, windowSeconds: 20);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
 
@@ -220,7 +221,7 @@ it('queues a refused start again after Retry-After and sends it once when serve 
 
 it('fails a start for good after its last deferral, never having sent it', function (): void {
     [$operation] = burstCreates(1);
-    $serve = new BurstLimitedServe(limit: 1, windowSeconds: 100_000);
+    $serve = new BurstLimitedServe(limit: 0, windowSeconds: 100_000);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
 
