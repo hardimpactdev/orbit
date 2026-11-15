@@ -181,7 +181,7 @@ sequenceDiagram
     %%> Result:
     %%> - the user can pair with T3 and work; the Processes, the database and a nested fleet follow in the completion
     %%> - `route_publication`: `published` (the address answers TLS), `deferred` (the Route Nodes were held at admission, or a Node refused the merge of the site: the completion publishes) or `failed` (the completion publishes again); absent without a Route
-    %%> - `route_publication_reason` beside `deferred` only: `nodes_held`, `share_cap`, `waiter_first` (at admission) or `node_refused` (in `clone-route`); the API result and `--json` carry it, no screen shows it
+    %%> - `route_publication_reason` beside `deferred` only: `nodes_held`, `share_cap`, `waiter_first` (at admission) or `node_refused` (in `clone-route`); the API result carries it; Conn and the web views show nothing new, and the CLI prints it only inside the whole result (`--json`, `operation:show`)
     %%> - "fully set up" is only the Instance's `status: active`, which a succeeded completion sets ([instance:complete](docs/cli/instance/complete.mmd))
     %%> - the result's `processes_stopped` names the Processes the completion installs but leaves stopped, as on the default
     %%> - the receipt includes when T3 answered and when its sessions passed

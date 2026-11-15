@@ -538,3 +538,43 @@ it('fails a promoted create and releases its Nodes if its admitted Route can no 
         ->and(holder(5))->toBeNull()
         ->and($started->getArrayCopy())->toBe([]);
 });
+
+it('keeps two removals of one withdrawal slot apart on a Node: the second waits in the Gateway, not on a Swamp step name', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $removal = static function (int $routeId): Operation {
+        $operation = routeWrite([5], 'instance.destroy');
+        $input = $operation->input;
+        $input['route_lifecycle']['route_mutations']['restore'] = ['routes' => [['route_id' => $routeId]]];
+        $operation->update(['input' => $input]);
+
+        return $operation->refresh();
+    };
+    // Routes 41 and 57 take slot 9 of route-withdraw-node on Node 5; Route 42 takes slot 10.
+    [$first, $same, $other] = [$removal(41), $removal(57), $removal(42)];
+    expect(RoutePublicationHolds::withdrawalSlot($first->input))->toBe(9)
+        ->and(RoutePublicationHolds::withdrawalSlot($same->input))->toBe(9)
+        ->and($holds->admit($first))->toBeTrue()
+        ->and($holds->admit($same))->toBeFalse()
+        ->and($same->fresh()->status)->toBe(OperationStatus::Waiting);
+    // A removal of another slot waits behind the older waiter, as every newer write does; once the first has withdrawn, both start,
+    // and a removal without a Route shares the Node beside them.
+    expect($holds->admit($other))->toBeFalse();
+    $holds->releaseWithdrawn($first);
+    $holds->promoteAndStart();
+    $none = routeWrite([5], 'instance.destroy');
+    expect($same->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and($other->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and($holds->admit($none))->toBeTrue()
+        ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->orderBy('operation_id')->pluck('operation_id')->all())
+        ->toBe([$same->id, $other->id, $none->id]);
+});
+
+it('takes the withdrawal slot the way route-withdraw names its Node steps', function (): void {
+    $parent = (string) file_get_contents(base_path('../../swamp/workflows/workflow-route-withdraw.yaml'));
+    $child = (string) file_get_contents(base_path('../../swamp/workflows/workflow-route-withdraw-node.yaml'));
+
+    expect($parent)->toContain('string(inputs.intent.route_mutations.restore.routes[0].route_id)')
+        ->and($child)->toContain('string(int(inputs.intent.publication.route_id) % '.RoutePublicationHolds::WithdrawalSlots.')')
+        ->and(RoutePublicationHolds::withdrawalSlot(['native_destroy' => ['route_mutations' => ['restore' => ['routes' => [['route_id' => 1150], ['route_id' => 3]]]]]]))->toBe(14)
+        ->and(RoutePublicationHolds::withdrawalSlot(['native_destroy' => ['route_mutations' => ['restore' => ['routes' => []]]]]))->toBeNull();
+});

@@ -66,6 +66,18 @@ final class RoutePublicationHolds
 
     private const int SharedRemovals = 4;
 
+    /**
+     * The withdrawal's Node steps take one of this many names per Node, by the withdrawn Route's ID (workflow-route-withdraw-node.yaml).
+     * Swamp fails a step that waits 60 s for a name another run holds, so two removals of one slot never share a Node: the second waits
+     * here, in the Gateway, until the first has withdrawn.
+     */
+    public const int WithdrawalSlots = 16;
+
+    /** A removal's own refusals: the removal cap, and another removal of the same withdrawal slot on a Node. It waits in the Gateway. */
+    private const string RemovalCap = 'removal_cap';
+
+    private const string RemovalSlot = 'removal_slot';
+
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
 
@@ -462,7 +474,7 @@ final class RoutePublicationHolds
      * All the Nodes or none, beside at most `SharedWriters - 1` other shared writers, and a removal beside at most `SharedRemovals - 1`
      * other removals: refused while a publisher holds one of them. The
      * IMMEDIATE transaction makes the check and the insert one step against a publisher's `acquire`. Null when it holds them, else
-     * why not: `nodes_held`, `share_cap` or, for a removal, `removal_cap`.
+     * why not: `nodes_held`, `share_cap` or, for a removal, `removal_cap` or `removal_slot`.
      *
      * @param  list<int>  $nodes
      */
@@ -483,7 +495,10 @@ final class RoutePublicationHolds
                 ->whereIn('route_withdrawal_holds.node_id', $nodes)->where('route_withdrawal_holds.operation_id', '!=', $operationId)
                 ->where('operations.kind', 'instance.destroy')->groupBy('route_withdrawal_holds.node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
             if ($removals) {
-                return 'removal_cap';
+                return self::RemovalCap;
+            }
+            if ($removal && self::slotTaken($operationId, $nodes)) {
+                return self::RemovalSlot;
             }
             foreach ($nodes as $node) {
                 DB::table('route_withdrawal_holds')->insertOrIgnore(['node_id' => $node, 'operation_id' => $operationId, 'created_at' => now()]);
@@ -491,6 +506,45 @@ final class RoutePublicationHolds
 
             return null;
         });
+    }
+
+    /**
+     * Another removal on one of the Nodes withdraws a Route of the same slot as this removal's.
+     *
+     * @param  list<int>  $nodes
+     */
+    private static function slotTaken(int $operationId, array $nodes): bool
+    {
+        $slot = self::withdrawalSlot(Operation::query()->findOrFail($operationId)->input);
+        if ($slot === null) {
+            return false;
+        }
+        $others = DB::table('route_withdrawal_holds')->join('operations', 'operations.id', '=', 'route_withdrawal_holds.operation_id')
+            ->whereIn('route_withdrawal_holds.node_id', $nodes)->where('route_withdrawal_holds.operation_id', '!=', $operationId)
+            ->where('operations.kind', 'instance.destroy')->distinct()->pluck('route_withdrawal_holds.operation_id')->all();
+
+        return Operation::query()->whereKey($others)->get()->contains(static fn (Operation $other): bool => self::withdrawalSlot($other->input) === $slot);
+    }
+
+    /**
+     * The slot of a removal's withdrawal steps: the first Route its restore stage lists, as route-withdraw names them. Null without one.
+     *
+     * @param  array<mixed>|null  $value
+     */
+    public static function withdrawalSlot(?array $value): ?int
+    {
+        foreach ($value ?? [] as $key => $child) {
+            if ($key === 'route_mutations' && is_array($child)) {
+                $route = data_get($child, 'restore.routes.0.route_id');
+
+                return is_int($route) ? $route % self::WithdrawalSlots : null;
+            }
+            if (is_array($child) && ($slot = self::withdrawalSlot($child)) !== null) {
+                return $slot;
+            }
+        }
+
+        return null;
     }
 
     /**

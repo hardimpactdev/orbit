@@ -1154,7 +1154,7 @@ Beside `deferred`, `route_publication_reason` says why:
 | `waiter_first` | At admission, an older Route write waited for one of the Nodes, and goes first. |
 | `node_refused` | A Node refused the merge of the site in `clone-route`. The step's log names the Node's code, such as `caddy.publish_busy`. |
 
-The admission logs one info line, `Clone create deferred its Route publication`, with the reason and the shared writers on each Route Node; a Node refusal logs the same line when the create ends. Only the API result and the CLI's `--json` carry the reason: Conn and the web views read `route_publication` alone and show nothing new.
+The admission logs one info line, `Clone create deferred its Route publication`, with the reason and the shared writers on each Route Node, after its transaction commits. A Node refusal logs the same line when the create ends. Only the API result carries the reason. Conn and the web views read `route_publication` alone and show nothing new. The CLI prints it only inside the whole result: `--json`, and the `Result` line of `operation:show`. A create that an earlier release admitted has no reason.
 
 A clone without a Route has no `route_publication`. A create that fails after `clone-route` succeeded keeps the address up; a publication that started and did not succeed is withdrawn by the create's `withdraw-route`, under the Nodes it still holds.
 

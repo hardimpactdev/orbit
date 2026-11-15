@@ -23,8 +23,9 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 # The Node steps take one of 16 names per Node, `<family>-<node>-<route id % 16>` (`-none` without a Route), as a clone's create does
-# (route-create-site): Swamp keeps every behavior definition, so names per Route grow its catalog for ever. Two withdrawals in one slot
-# on one Node run one after the other on that name's lock; each keeps its own run folder and step outputs.
+# (route-create-site): Swamp keeps every behavior definition, so names per Route grow its catalog for ever. A step waits at most 60 s
+# for a name another run holds, so the Gateway keeps two removals of one slot off one Node (RoutePublicationHolds::WithdrawalSlots).
+# Each run keeps its own run folder and step outputs.
 jobs:
 - name: withdraw
   labels: {role: swamp}

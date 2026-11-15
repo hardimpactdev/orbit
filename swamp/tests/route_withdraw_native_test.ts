@@ -101,8 +101,9 @@ Deno.test({ name: "pinned route withdraw: pooled names, no empty vpn visit, and 
         assert(done.success, text(done.stdout) + text(done.stderr));
         assertEquals(f.calls().slice(first).filter((c) => c.step === "apply").map((c) => c.name).sort(),
             ["route-withdraw-apply-1-15", "route-withdraw-apply-9-15"]);
-        // Routes 41 and 57 share slot 9 on Node 9 and withdraw at the same time: both run, each in its own run folder, and the second
-        // apply starts after the first one ended (that name's lock). Route 42 (slot 10) beside them waits for neither.
+        // Routes 41 and 57 share slot 9 on Node 9 and withdraw at the same time (the Gateway keeps two removals of one slot apart, but a
+        // failed create's restore is not): both run, each in its own run folder, and the second apply starts after the first one ended
+        // (that name's lock). Route 42 (slot 10) runs under its own name.
         const before = f.calls().length;
         const runs = await Promise.all([f.run(41, false), f.run(57, false), f.run(42, false)]);
         for (const r of runs) assert(r.success, text(r.stdout) + text(r.stderr));

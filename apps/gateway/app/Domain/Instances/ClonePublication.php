@@ -10,6 +10,7 @@ use App\Domain\Routes\RouteStatus;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 /**
@@ -89,7 +90,7 @@ final readonly class ClonePublication
         $input['participant_node_ids'] = [ValidatedData::integer($input['node_id'])];
         $input['direct_provisioning'] = [...ValidatedData::object($input['direct_provisioning']), 'route' => null];
         app(OperationStore::class)->change($operation, ['input' => $input, 'state' => [...($operation->state ?? []), self::ReasonField => $reason]]);
-        Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => $reason, 'sharers' => $sharers]);
+        DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => $reason, 'sharers' => $sharers]));
     }
 
     /**
@@ -127,7 +128,7 @@ final readonly class ClonePublication
 
             return is_string($reason) ? $reason : null;
         }
-        Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => self::NodeRefused]);
+        DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => self::NodeRefused]));
 
         return self::NodeRefused;
     }
