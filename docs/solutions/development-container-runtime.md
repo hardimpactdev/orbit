@@ -649,7 +649,7 @@ Tests: Pest for the removed admissions and settings; the task VM tests go with t
 
 ## Production Instances
 
-Step 10 of ADR 0250 moves production Instances into containers on every `app-prod` Node, after PR 16. The [container plan](/solutions/container-instances-and-releases#production-design) holds the release design that these PRs specify and build.
+Step 10 of ADR 0250 moves production Instances into containers on every `app-prod` Node, after PR 16. [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) holds the release design that these PRs build, and [Production containers](/reference/production-containers) is its planned contract.
 
 ### Production gate
 
@@ -663,7 +663,7 @@ When the gate fails, the production web server is decided again before PR 18.
 
 ### PR 18: production specification
 
-The release flow in containers: preparation container, candidate clone, activation, readiness, Route switch, drain and retained releases, with FrankenPHP and Schedules inside. The charts of `instance:clone`, `instance:deploy`, `instance:rollback` and the production migration, with their pages and cases. A release pins the runtime folder version it was built with, so a new runtime version reaches production only through a deployment. No code.
+The release flow in containers of [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers): hot as a clone of live's release snapshot, readiness, the Route switch, the handover of workers and Schedules, and rollback to old. The charts of `instance:clone`, `instance:deploy`, `instance:rollback` and the production migration, with their pages and cases. A release pins the runtime folder version it was built with, so a new runtime version reaches production only through a deployment. No code.
 
 ### PR 19: prepare an app-prod Node
 

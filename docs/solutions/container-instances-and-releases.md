@@ -124,6 +124,8 @@ PostgreSQL's `synchronous_commit=off` can avoid waiting for a local durable comm
 
 ## Production design
 
+[ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) replaces this proposal with hot, live and old release containers; [Production containers](/reference/production-containers) is the planned contract. Hot is a clone of live's release snapshot, so the separate preparation container and the candidate below go. The lessons on warm preparation, data and asset compatibility still apply.
+
 The proposed production layout keeps preparation separate from serving and durable data outside the releases.
 
 ```text

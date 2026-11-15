@@ -2862,7 +2862,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 - Production containers never sleep. Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Existing production checkouts are migrated, as development checkouts are.
 
-The release flow, with release containers, gets its own specification in the first production PR of the [plan](/solutions/development-container-runtime#production-instances).
+The release flow is planned in [Production containers](/reference/production-containers) ([ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers)): hot builds each new commit as a clone of live's release snapshot, live serves, and old stays stopped for rollback.
 
 ## Records
 
