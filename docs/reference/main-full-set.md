@@ -6,11 +6,7 @@ covers:
   - bin/ci-deferred
   - bin/ci-main-queue
   - bin/ci-proof-manual
-  - .github/workflows/ci-proof-manual.yml
-  - .github/workflows/ci-main-proof.yml
-  - .github/workflows/ci-main-report.yml
-  - .github/workflows/ci-deferred.yml
-  - .github/workflows/ci-full-set.yml
+  - .github/workflows/ci-{proof-manual,main-proof,main-report,deferred,full-set}.yml
   - .github/actionlint.yaml
 ---
 
