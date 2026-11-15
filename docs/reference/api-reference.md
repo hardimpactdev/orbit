@@ -112,7 +112,7 @@ The `task:check` description follows the [hosted handoff CI contract](/reference
 
 The `task:cancel` description follows [workspace cancellation](/reference/tasks#cancel-a-stuck-task). It describes forced Instance removal for `source_resolved` workspaces with an eligible pending or failed exclusive Route, and how a repeated cancel removes the unattached workspace the group owns. An active or shared Route still refuses removal.
 
-The `task:start` body schema is empty: task VMs run no Swamp worker, so the script declares no `worker` block and no `task:worker` route.
+The `task:start` body schema is empty, and the script declares no `worker` block and no `task:worker` route. Its description names the refusal of a Project without a container default, `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)).
 
 The `task:insights` response is `TaskInsightsData`, mapped in the script because the controller returns the data class from its action and does not name it. Its nested data classes give the [task insights](/reference/tasks#task-insights) numbers, trend, and breakdowns. The route has no SDK request and no CLI command, because only the web app reads it.
 
