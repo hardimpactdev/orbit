@@ -31,10 +31,10 @@ use Throwable;
  * Nodes are free. The terminal state releases them, except for a timed-out write whose run Swamp has not confirmed stopped.
  * The DNS Node is not held: its records are keyed.
  *
- * A removal shares its Nodes with other removals (`route_withdrawal_holds`): each withdraws its own sections in one Node-local
- * transaction under the Node lock, so two of them on one Node both land. A publisher writes whole files that the Gateway rendered,
- * so it holds its Nodes alone (`route_publication_holds`), against publishers and removals both. Each take checks the other table
- * in the same IMMEDIATE transaction.
+ * A removal, and a clone's create whose publication is Caddy only, share their Nodes (`route_withdrawal_holds`): each merges or
+ * withdraws its own sections in one Node-local transaction under the Node lock, so several of them on one Node all land. Any other
+ * publisher writes whole files that the Gateway rendered, so it holds its Nodes alone (`route_publication_holds`), against every
+ * writer. Each take checks the other table in the same IMMEDIATE transaction.
  */
 final class RoutePublicationHolds
 {
@@ -57,10 +57,11 @@ final class RoutePublicationHolds
     private const array StepKinds = ['tasks.provision', 'tasks.cancel', 'tasks.maintenance_finish', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
 
     /**
-     * How many removals share one Node at most. Their Node transactions queue on the Node lock, which each holds for a few seconds,
-     * and the lock wait is bounded at 30 s; a fifth removal waits here, in the Gateway, without a Swamp slot.
+     * How many shared writers (removals and Caddy-only clone creates) hold one Node at most. Their Node transactions queue on the Node
+     * lock, which a publication holds for about 0.25 s and a withdrawal for a few seconds, and the lock wait is bounded at 30 s. A ninth
+     * removal waits here, in the Gateway, without a Swamp slot; a ninth create leaves its address to its completion.
      */
-    private const int SharedRemovals = 4;
+    private const int SharedWriters = 8;
 
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
@@ -86,10 +87,10 @@ final class RoutePublicationHolds
         return $kind === 'instance.destroy';
     }
 
-    /** A removal withdraws only its own sections under the Node lock, so it shares its Nodes with other removals. */
-    private static function sharesNodes(string $kind): bool
+    /** A removal withdraws, and a Caddy-only clone create merges, only its own sections under the Node lock, so they share their Nodes. */
+    private static function sharesNodes(Operation $operation): bool
     {
-        return $kind === 'instance.destroy';
+        return $operation->kind === 'instance.destroy' || ClonePublication::sharesNodes($operation);
     }
 
     /** Whether the terminal state of the kind has holds to free. */
@@ -192,7 +193,7 @@ final class RoutePublicationHolds
             return true;
         }
         // A clone's create never waits for a Route Node: it leaves its publication to its completion and starts at once. The insert above
-        // is the decision, so of two creates admitted together exactly one takes the Nodes.
+        // is the decision: Caddy-only creates share the Nodes, up to the shared cap; any other create takes them alone or defers.
         if (ClonePublication::takesFreeNodesOnly($operation)) {
             app(ClonePublication::class)->defer($operation);
 
@@ -380,7 +381,9 @@ final class RoutePublicationHolds
     public function releasePublished(Operation $operation): void
     {
         // A waiting write that renders at its admission is refused at its start, because the new site changed what its Nodes serve.
-        if (DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
+        $freed = DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete()
+            + DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete();
+        if ($freed > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }
@@ -420,17 +423,17 @@ final class RoutePublicationHolds
     }
 
     /**
-     * Takes the Nodes of an admitted write: shared among removals, alone for every other Route write.
+     * Takes the Nodes of an admitted write: shared among removals and Caddy-only clone creates, alone for every other Route write.
      *
      * @param  list<int>  $nodes
      */
     private function take(Operation $operation, array $nodes): bool
     {
-        return self::sharesNodes($operation->kind) ? $this->share($operation->id, $nodes) : $this->acquire($operation->id, $nodes);
+        return self::sharesNodes($operation) ? $this->share($operation->id, $nodes) : $this->acquire($operation->id, $nodes);
     }
 
     /**
-     * All the Nodes or none, beside at most `SharedRemovals - 1` other removals: refused while a publisher holds one of them. The
+     * All the Nodes or none, beside at most `SharedWriters - 1` other shared writers: refused while a publisher holds one of them. The
      * IMMEDIATE transaction makes the check and the insert one step against a publisher's `acquire`.
      *
      * @param  list<int>  $nodes
@@ -444,7 +447,7 @@ final class RoutePublicationHolds
                 return false;
             }
             $full = DB::table('route_withdrawal_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)
-                ->groupBy('node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
+                ->groupBy('node_id')->havingRaw('count(*) >= ?', [self::SharedWriters])->exists();
             if ($full) {
                 return false;
             }

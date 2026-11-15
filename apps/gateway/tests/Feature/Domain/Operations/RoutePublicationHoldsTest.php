@@ -124,16 +124,16 @@ it('starts two removals on one Node side by side, while a publisher waits for bo
         ->and(DB::table('route_withdrawal_holds')->pluck('operation_id')->all())->toBe([$third->id]);
 });
 
-it('lets at most four removals share one Node and starts the fifth when one of them has withdrawn', function (): void {
+it('lets at most eight shared writers hold one Node and starts the ninth removal when one of them has withdrawn', function (): void {
     $holds = app(RoutePublicationHolds::class);
-    $removals = array_map(static fn (): Operation => routeWrite([5], 'instance.destroy'), range(1, 5));
-    expect(array_map(static fn (Operation $removal): bool => $holds->admit($removal), $removals))->toBe([true, true, true, true, false])
-        ->and($removals[4]->fresh()->status)->toBe(OperationStatus::Waiting);
+    $removals = array_map(static fn (): Operation => routeWrite([5], 'instance.destroy'), range(1, 9));
+    expect(array_map(static fn (Operation $removal): bool => $holds->admit($removal), $removals))->toBe([...array_fill(0, 8, true), false])
+        ->and($removals[8]->fresh()->status)->toBe(OperationStatus::Waiting);
 
     $holds->releaseWithdrawn($removals[0]);
     runPromotion();
-    expect($removals[4]->fresh()->status)->toBe(OperationStatus::Queued)
-        ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->count())->toBe(4);
+    expect($removals[8]->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->count())->toBe(8);
 });
 
 it('makes a removal wait while a publisher holds its Node, and a create defer its publication while a removal holds it', function (): void {

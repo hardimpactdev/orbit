@@ -7,6 +7,7 @@ use App\Actions\Instances\StartInstanceCompleteAction;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\GatewayReleases\GatewayReleaseLayout;
+use App\Domain\Instances\ClonePublication;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -382,34 +383,68 @@ function handoverPublished(Operation $operation, string $publication): array
     return $data;
 }
 
-it('lets exactly one of two clone creates admitted together take the free Route Nodes; the other never waits and leaves its address to its completion', function (): void {
+it('lets clone creates admitted together share the free Route Nodes: each publishes in its create, under the Node lock', function (): void {
     $node = containerDefaultNode();
     $default = handoverDefault($node);
 
-    $first = containerCreate($default->project, $node, 'first');
-    $second = containerCreate($default->project, $node, 'second');
+    $creates = array_map(fn (int $index): Operation => containerCreate($default->project, $node, 'clone'.$index), range(1, 7));
 
-    // The hold table's key is the Node: the first insert takes it, the second finds it held and drops its publication.
-    $holders = DB::table('route_publication_holds')->pluck('operation_id', 'node_id')->all();
-    expect($holders)->toBe([$node->id => $first->id])
-        ->and([$first->refresh()->status, $second->refresh()->status])->not->toContain(OperationStatus::Waiting)
-        ->and($first->input)->toHaveKeys(['route_create', 'route_lifecycle'])
-        ->and(RoutePublicationHolds::nodes($first))->toBe([$node->id])
-        ->and($second->input['route_id'])->not->toBeNull()
-        ->and($second->input)->not->toHaveKeys(['route_create', 'route_lifecycle', 'certificates', 'execution_secrets'])
-        ->and($second->input['direct_provisioning']['route'])->toBeNull()
-        ->and($second->state)->not->toHaveKey('hold_nodes')
-        ->and(RoutePublicationHolds::nodes($second))->toBe([]);
+    // Seven Caddy-only creates hold the Node side by side in the shared table; none takes it alone, none waits, none defers.
+    expect(DB::table('route_publication_holds')->count())->toBe(0)
+        ->and(DB::table('route_withdrawal_holds')->where('node_id', $node->id)->orderBy('operation_id')->pluck('operation_id')->all())
+        ->toBe(array_map(static fn (Operation $create): int => $create->id, $creates));
+    foreach ($creates as $create) {
+        $create->refresh();
+        expect($create->status)->not->toBe(OperationStatus::Waiting)
+            ->and($create->input)->toHaveKeys(['route_create', 'route_lifecycle'])
+            ->and(ClonePublication::sharesNodes($create))->toBeTrue()
+            ->and(RoutePublicationHolds::nodes($create))->toBe([$node->id]);
+        $run = app(NativeDevelopmentInstanceInput::class)->create($create);
+        expect($run['intent']['route'])->toBe($create->input['route_create'])
+            ->and($run['intent']['route_mutations'])->not->toBeNull();
+    }
+    expect([$creates[0]->input['route_create']['php_files'], $creates[0]->input['route_create']['dns'], $creates[0]->input['route_create']['ingress'],
+        $creates[0]->input['route_create']['lan']])->toBe([[], [], [], []]);
 
-    $run = app(NativeDevelopmentInstanceInput::class)->create($first);
-    $deferred = app(NativeDevelopmentInstanceInput::class)->create($second);
-    expect($run['intent']['route'])->toBe($first->input['route_create'])
-        ->and($run['intent']['route_mutations'])->not->toBeNull()
-        ->and($deferred['intent']['route'])->toBeNull()
-        ->and($deferred['intent']['route_mutations'])->toBeNull()
-        ->and([$run['intent']['database'], $run['intent']['server_database'], $run['intent']['server_valkey']])->toBe([null, null, null])
-        ->and($run['intent'])->not->toHaveKey('fleet')
-        ->and(collect($this->vault->frames)->pluck('key')->filter(fn (string $key): bool => str_starts_with($key, 'database-create-'))->all())->toBe([]);
+    // The ninth shared writer on the Node leaves its address to its completion, as when the Node is held.
+    $eighth = containerCreate($default->project, $node, 'clone8');
+    $ninth = containerCreate($default->project, $node, 'clone9');
+    expect($eighth->refresh()->input)->toHaveKey('route_create')
+        ->and($ninth->refresh()->input)->not->toHaveKeys(['route_create', 'route_lifecycle'])
+        ->and($ninth->input['direct_provisioning']['route'])->toBeNull()
+        ->and(RoutePublicationHolds::nodes($ninth))->toBe([]);
+});
+
+it('keeps a clone create whose publication writes more than the Caddyfile on the exclusive hold', function (string $list): void {
+    $node = containerDefaultNode();
+    $create = handoverCreate(handoverDefault($node));
+    $input = $create->input;
+    $input['route_create'][$list] = [['node_id' => $node->id]];
+    $create->forceFill(['input' => $input])->save();
+
+    expect(ClonePublication::sharesNodes($create->refresh()))->toBeFalse();
+})->with(['php_files', 'dns', 'ingress', 'lan']);
+
+it('defers a clone create while a whole-file writer holds the Node, and makes a whole-file writer wait while a create shares it', function (): void {
+    $node = containerDefaultNode();
+    $default = handoverDefault($node);
+    $create = containerCreate($default->project, $node, 'shared');
+    expect(DB::table('route_withdrawal_holds')->pluck('operation_id')->all())->toBe([$create->id]);
+
+    // A whole-file Route write waits behind the shared create: it never writes beside a merge.
+    $writer = handoverRouteWrite($node, 'route.update');
+    expect($writer->status)->toBe(OperationStatus::Waiting);
+    // A newer create defers behind the older waiting writer, so the writer is not starved.
+    $later = containerCreate($default->project, $node, 'later');
+    expect($later->refresh()->input)->not->toHaveKey('route_create');
+
+    // Once the shared create published, its row goes and the writer starts.
+    $create->refresh()->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'run-1']])->save();
+    handoverStep($create, 'publication', 'clone-route', 'step_completed', 1);
+    app(RoutePublicationHolds::class)->promoteAndStart();
+    // It rendered before the clone's site was published, so it is refused at its start rather than dropping that site.
+    expect(DB::table('route_withdrawal_holds')->count())->toBe(0)
+        ->and([$writer->refresh()->status, $writer->error_code])->toBe([OperationStatus::Failed, 'route.publication_stale']);
 });
 
 it('frees the Route Nodes when clone-route succeeds, with the Route active in that transaction, so the next create renders its site', function (): void {
@@ -418,24 +453,24 @@ it('frees the Route Nodes when clone-route succeeds, with the Route active in th
     $default = handoverDefault($node);
     $create = handoverCreate($default, 'first');
     $route = Route::query()->findOrFail($create->input['route_id']);
-    expect(DB::table('route_publication_holds')->pluck('operation_id')->all())->toBe([$create->id]);
+    expect(DB::table('route_withdrawal_holds')->pluck('operation_id')->all())->toBe([$create->id]);
 
     // A step of the clone job or the CSR frees nothing; only clone-route's success does.
     handoverStep($create, 'publication', 'clone-route-csr', 'step_completed', 1);
     handoverStep($create, 'clone', 'clone-container', 'step_completed', 2);
     handoverStep($create, 'publication', 'clone-route', 'step_started', 3);
-    expect(DB::table('route_publication_holds')->count())->toBe(1)
+    expect(DB::table('route_withdrawal_holds')->count())->toBe(1)
         ->and($route->refresh()->sites_published)->toBeFalse();
     $released = null;
     DB::listen(function ($query) use (&$released): void {
-        if (str_contains($query->sql, 'delete from "route_publication_holds"')) {
+        if (str_contains($query->sql, 'delete from "route_withdrawal_holds"')) {
             $released = DB::transactionLevel();
         }
     });
     handoverStep($create, 'publication', 'clone-route', 'step_completed', 4);
 
     expect([$route->refresh()->status->value, $route->sites_published])->toBe(['active', true])
-        ->and(DB::table('route_publication_holds')->count())->toBe(0)
+        ->and(DB::table('route_withdrawal_holds')->count())->toBe(0)
         ->and($released)->toBeGreaterThan(0)
         ->and($create->refresh()->status->terminal())->toBeFalse();
     Queue::assertPushed(PromoteRouteWrites::class);
@@ -586,7 +621,7 @@ it('keeps a create whose publication failed: the Route records it, the completio
     $create = handoverCreate(handoverDefault($node));
     handoverStep($create, 'publication', 'clone-route', 'step_failed', 1);
     // A failed clone-route frees nothing early; the create's terminal state does.
-    expect(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeTrue();
+    expect(DB::table('route_withdrawal_holds')->where('operation_id', $create->id)->exists())->toBeTrue();
 
     $failed = handoverPublished($create, 'failed');
     $failed['result']['warnings'] = [['code' => 'instance.create_route_failed', 'step' => 'route']];
