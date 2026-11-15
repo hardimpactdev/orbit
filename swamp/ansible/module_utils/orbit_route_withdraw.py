@@ -417,42 +417,14 @@ def _transaction(plan, run, at, previous, caddy_gid):
                 stream.write(composed["caddy"].encode())
             _ok(run, ["timeout", "60", "runuser", "-u", "caddy", "--", "caddy", "validate", "--config", str(candidate),
                       "--adapter", "caddyfile"], "caddy.validation_failed", [])
-        for version, text in pool_changes.items():
-            pools[version].stage(text or None)
-            staged.append(pools[version])
-        for version in pool_changes:
-            _ok(run, ["timeout", "30", f"/usr/sbin/php-fpm{version}", "-t"], "php.test_failed", staged)
-        if plan.get("dns"):
-            # Read last, right before the write: some publishers write these files whole without the lock.
-            dns = [_File(at("/etc/dnsmasq.d/orbit-records.conf"), previous / "orbit-records.conf"),
-                   _File(at("/var/lib/orbit/private-dns/catalog.json"), previous / "catalog.json")]
-            if dns[0].old is None or dns[1].old is None:
-                for file in staged:
-                    file.restore()
-                raise WithdrawFailure("dns.current_config_missing", "The private DNS records or catalog are missing.")
-            records = {"caddy": None, "php": None, "dns": plan["dns"]}
-            dns_live = {"caddy": "", "pools": {}, "dns": {"records": dns[0].text(), "catalog": dns[1].text()}}
-            try:
-                dns_composed = compose(records, dns_live)
-                check_untouched(records, dns_live, dns_composed)
-            except (WithdrawFailure, ValueError) as error:
-                for file in staged:
-                    file.restore()
-                if isinstance(error, WithdrawFailure):
-                    raise
-                raise WithdrawFailure("dns.catalog_invalid", str(error)) from error
-            dns_changed = (dns_composed["dns"]["records"].encode() != dns[0].old
-                           or dns_composed["dns"]["catalog"].encode() != dns[1].old)
-            if dns_changed:
-                dns[0].stage(dns_composed["dns"]["records"])
-                dns[1].stage(dns_composed["dns"]["catalog"])
-                staged += dns
-                _ok(run, ["timeout", "30", "dnsmasq", "--test"], "dns.test_failed", staged)
-        kept = []
-        for file, changed in [(caddy, caddy_changed), *((pools[v], True) for v in pool_changes), *((f, dns_changed) for f in dns)]:
-            if file is not None and changed and file.old is not None:
-                file.keep_previous()
-                kept.append(str(file.previous_path))
+        try:
+            kept = _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_changes, staged, dns)
+        except BaseException:
+            # Any failure before the commit, named or not, leaves every written file as it was read.
+            for file in staged:
+                file.restore()
+            raise
+        dns_changed = bool(dns) and dns[0] in staged
 
         # Commit: pools, then Caddy, then DNS, as before. A failed reload puts that file's previous generation back and reloads again.
         pending = list(staged)
@@ -489,3 +461,39 @@ def _transaction(plan, run, at, previous, caddy_gid):
             candidate.unlink(missing_ok=True)
     return {"changed": caddy_changed or bool(pool_changes) or dns_changed, "caddy": caddy_changed,
             "pools": sorted(pool_changes), "dns": dns_changed, "previous": kept}
+
+
+def _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_changes, staged, dns):
+    """Writes the pools and the DNS files and tests them, then keeps the previous generations once every test passed. Each file is in
+    `staged` before it is written, so the caller puts it back on any failure. Fills `dns` in place; returns the kept copies."""
+    for version, text in pool_changes.items():
+        staged.append(pools[version])
+        pools[version].stage(text or None)
+    for version in pool_changes:
+        _ok(run, ["timeout", "30", f"/usr/sbin/php-fpm{version}", "-t"], "php.test_failed", staged)
+    dns_changed = False
+    if plan.get("dns"):
+        # Read last, right before the write: some publishers write these files whole without the lock.
+        dns[:] = [_File(at("/etc/dnsmasq.d/orbit-records.conf"), previous / "orbit-records.conf"),
+                  _File(at("/var/lib/orbit/private-dns/catalog.json"), previous / "catalog.json")]
+        if dns[0].old is None or dns[1].old is None:
+            raise WithdrawFailure("dns.current_config_missing", "The private DNS records or catalog are missing.")
+        only = {"caddy": None, "php": None, "dns": plan["dns"]}
+        try:
+            live = {"caddy": "", "pools": {}, "dns": {"records": dns[0].text(), "catalog": dns[1].text()}}
+            composed = compose(only, live)
+            check_untouched(only, live, composed)
+        except ValueError as error:
+            raise WithdrawFailure("dns.catalog_invalid", str(error)) from error
+        dns_changed = composed["dns"]["records"].encode() != dns[0].old or composed["dns"]["catalog"].encode() != dns[1].old
+        if dns_changed:
+            staged += dns
+            dns[0].stage(composed["dns"]["records"])
+            dns[1].stage(composed["dns"]["catalog"])
+            _ok(run, ["timeout", "30", "dnsmasq", "--test"], "dns.test_failed", staged)
+    kept = []
+    for file, changed in [(caddy, caddy_changed), *((pools[v], True) for v in pool_changes), *((f, dns_changed) for f in dns)]:
+        if file is not None and changed and file.old is not None:
+            file.keep_previous()
+            kept.append(str(file.previous_path))
+    return kept

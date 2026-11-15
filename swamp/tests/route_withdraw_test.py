@@ -192,6 +192,47 @@ class RouteWithdrawTest(unittest.TestCase):
         self.assertEqual(refused.exception.code, "dns.current_config_missing")
         self.assertEqual(self.pool.read_text(), resolved)
 
+    def resolved_pool(self, *ids):
+        text = "".join(pool(i).replace("__ORBIT_NODE_GROUP__", "1000").replace("/__ORBIT_NODE_HOME__", "/home/orbit") for i in ids)
+        self.pool.write_text(text)
+        return text
+
+    def test_a_failed_dns_test_puts_back_the_pools_and_the_dns_files(self):
+        pools = self.resolved_pool(7, 9)
+        self.records.write_text(records("i7.test", "shop.example"))
+        self.catalog.write_text(catalog("i7.test", "shop.example"))
+        tools = Tools(fail=["dnsmasq --test"])
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, caddy=False, php=True, dns=True), tools)
+        self.assertEqual(refused.exception.code, "dns.test_failed")
+        self.assertEqual((self.pool.read_text(), self.records.read_text()), (pools, records("i7.test", "shop.example")))
+        self.assertFalse(any("reload" in " ".join(argv) or "restart" in " ".join(argv) for argv in tools.calls))
+
+    def test_a_dns_refusal_after_the_pools_were_written_puts_them_back(self):
+        pools = self.resolved_pool(7)
+        self.records.write_text(records("i7.test").replace("10.44.0.7", "10.44.0.99"))
+        self.catalog.write_text(catalog("i7.test"))
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, caddy=False, php=True, dns=True))
+        self.assertEqual(refused.exception.code, "dns.owned_revision_conflict")
+        self.assertEqual(self.pool.read_text(), pools)
+
+    def test_an_unexpected_error_before_the_commit_puts_every_written_file_back(self):
+        pools = self.resolved_pool(7, 9)
+        with patch.object(WITHDRAW._File, "keep_previous", side_effect=OSError("No space left on device")), self.assertRaises(OSError):
+            self.withdraw(plan(7, php=True))
+        self.assertEqual(self.pool.read_text(), pools)
+        self.assertEqual(self.caddy.read_text(), caddyfile(site(7), PRODUCTION, site(8)))
+
+    def test_a_failed_php_reload_puts_back_the_pools_and_the_dns_files(self):
+        pools = self.resolved_pool(7, 9)
+        self.records.write_text(records("i7.test", "shop.example"))
+        self.catalog.write_text(catalog("i7.test", "shop.example"))
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, caddy=False, php=True, dns=True), Tools(fail=["try-reload-or-restart php8.4-fpm"]))
+        self.assertEqual(refused.exception.code, "php.reload_failed")
+        self.assertEqual((self.pool.read_text(), self.records.read_text()), (pools, records("i7.test", "shop.example")))
+
     def test_a_pool_keeps_the_other_scopes_and_an_emptied_pool_goes(self):
         resolved = lambda i: pool(i).replace("__ORBIT_NODE_GROUP__", "1000").replace("/__ORBIT_NODE_HOME__", "/home/orbit")
         self.pool.write_text(resolved(7) + resolved(9))

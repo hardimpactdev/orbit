@@ -56,6 +56,12 @@ final class RoutePublicationHolds
      */
     private const array StepKinds = ['tasks.provision', 'tasks.cancel', 'tasks.maintenance_finish', 'instance.register', 'cluster.router_set', 'cluster.router_unset'];
 
+    /**
+     * How many removals share one Node at most. Their Node transactions queue on the Node lock, which each holds for a few seconds,
+     * and the lock wait is bounded at 30 s; a fifth removal waits here, in the Gateway, without a Swamp slot.
+     */
+    private const int SharedRemovals = 4;
+
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
 
@@ -424,8 +430,8 @@ final class RoutePublicationHolds
     }
 
     /**
-     * All the Nodes or none, beside other removals: refused while a publisher holds one of them. The IMMEDIATE transaction makes the
-     * check and the insert one step against a publisher's `acquire`.
+     * All the Nodes or none, beside at most `SharedRemovals - 1` other removals: refused while a publisher holds one of them. The
+     * IMMEDIATE transaction makes the check and the insert one step against a publisher's `acquire`.
      *
      * @param  list<int>  $nodes
      */
@@ -435,6 +441,11 @@ final class RoutePublicationHolds
 
         return DB::transaction(static function () use ($operationId, $nodes): bool {
             if (DB::table('route_publication_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)->exists()) {
+                return false;
+            }
+            $full = DB::table('route_withdrawal_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)
+                ->groupBy('node_id')->havingRaw('count(*) >= ?', [self::SharedRemovals])->exists();
+            if ($full) {
                 return false;
             }
             foreach ($nodes as $node) {
