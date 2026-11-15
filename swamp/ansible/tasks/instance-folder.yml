@@ -91,13 +91,16 @@
         quiet: true
       loop: "{{ folder_programs.results }}"
       loop_control: { label: "{{ item.item }}" }
-    # A static PHP build's CLI and FrankenPHP must load exactly its recipe extensions (docs/reference/compute-drivers.md#static-php-build).
+    # A static PHP build's CLI and FrankenPHP must load exactly its static extensions, and the CLI, given its modules, its
+    # CLI-only extensions too (docs/reference/compute-drivers.md#static-php-build). The Node has no /etc/orbit/php to read.
     - name: Check each static PHP build against its extensions
       orbit_static_php:
         php: "{{ folder_parts }}/{{ item.name }}/bin/php"
         frankenphp: "{{ folder_parts }}/{{ item.name }}/bin/frankenphp"
         php_version: "{{ item.static_php.php_version }}"
         extensions: "{{ item.static_php.extensions }}"
+        modules: "{{ folder_parts }}/{{ item.name }}/modules"
+        cli_extensions: "{{ item.static_php.cli_extensions }}"
       loop: "{{ folder.parts | selectattr('static_php', 'defined') | list }}"
       loop_control: { label: "{{ item.name }}" }
     # The runtime folder's `vp` runs from the Vite+ home, which every version of the folder links as `vite-plus-home`.
