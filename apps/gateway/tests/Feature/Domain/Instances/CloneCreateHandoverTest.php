@@ -613,6 +613,23 @@ it('keeps a create whose publication failed: the Route records it, the completio
         ->and(RoutePublicationHolds::nodes($retry))->toBe([$node->id]);
 });
 
+it('takes a merge that a Node refused as deferred: the Route is not marked failed, and the completion publishes it', function (): void {
+    $node = containerDefaultNode();
+    $create = handoverCreate(handoverDefault($node));
+    // The site step failed after its refusal; the run's result names the address deferred (route-create-site.yml, create_result).
+    handoverStep($create, 'publication', 'clone-route', 'step_failed', 1);
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), handoverPublished($create, 'deferred'));
+
+    $route = Route::query()->findOrFail($create->input['route_id']);
+    $completion = handoverCompletion($create);
+    expect($create->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($create->result['route_publication'])->toBe('deferred')
+        ->and([$route->status->value, $route->sites_published, $route->failed_step, $route->error_code])->toBe(['pending', false, null, null])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
+        ->and($completion->input)->toHaveKey('route_create')
+        ->and(RoutePublicationHolds::nodes($completion))->toBe([$node->id]);
+});
+
 it('frees the Nodes of a create cancelled before clone-route ended and leaves its Route unpublished', function (): void {
     $node = containerDefaultNode();
     $create = handoverCreate(handoverDefault($node));

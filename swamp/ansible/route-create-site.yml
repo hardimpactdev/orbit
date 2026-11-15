@@ -48,6 +48,7 @@
     account_gid: "{{ getent_passwd[node.account][2] }}"
     account_home: "{{ getent_passwd[node.account][4] }}"
     signed: "{{ lookup('ansible.builtin.env', 'ORBIT_SIGNED').split('|||') }}"
+    merge: "{{ lookup('ansible.builtin.env', 'ORBIT_ROUTE_MERGE') == '1' }}"
   tasks:
     # The account passwd line: its gid and home (play variables) go into the pools and the certificate copy.
     - name: Read the account
@@ -99,12 +100,32 @@
       loop: "{{ intent.php_reloads | default([]) | selectattr('node_id', 'in', node_ids) | list }}"
       loop_control:
         label: "{{ item.unit }}"
-    # One Node call keeps private keys local, then validates and reloads in the existing order.
+    # One Node call keeps private keys local, then validates and reloads in the existing order. In merge mode (a clone's create) the
+    # Caddyfile is not written whole: the Route's own groups go into what the Node holds, under the Node lock (routes.md#coordinate-publication).
     - name: Converge certificate links trust and Caddy files
       orbit_route_site:
         intent: "{{ intent }}"
         node_id: "{{ node_id }}"
         signed: "{{ signed }}"
+        mutations: "{{ (route_input.route_mutations | default({}, true)) if merge else omit }}"
+      register: published
+    # A named refusal of the merge changed no file. The mark in the create's run folder makes its result `deferred`: the completion
+    # publishes the address. The step fails, so no probe runs and the Gateway does not take the Route as published.
+    - name: Mark the publication deferred
+      when: published.deferred | default(none) is not none
+      ansible.builtin.copy:
+        content: "{{ {'node_id': node_id | int, 'code': published.deferred} | to_json }}"
+        dest: "{{ lookup('ansible.builtin.env', 'ORBIT_INTENT_PATH') | dirname }}/route-deferred-{{ node_id }}.json"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      vars:
+        ansible_connection: local
+        ansible_python_interpreter: "{{ ansible_playbook_python }}"
+    - name: Leave the address to the completion
+      when: published.deferred | default(none) is not none
+      ansible.builtin.fail:
+        msg: "route.publication_deferred: {{ published.deferred }}"
     # The last task: a success leaves no run folder, so the workflow cleans up only after a failure.
     - name: Remove the run folder
       ansible.builtin.file:

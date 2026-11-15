@@ -1,4 +1,5 @@
-"""One Node's Route withdrawal as one Node-local transaction (docs/reference/routes.md#coordinate-publication).
+"""One Node's Route withdrawal, and a development Route's Caddy publication, each as one Node-local transaction
+(docs/reference/routes.md#coordinate-publication).
 
 Under the Node's publication lock it reads the Caddyfile, the shared PHP-FPM pools and the private DNS files, merges the captured
 states of the withdrawn Route into what the Node holds, proves that nothing outside the Route changed, keeps the previous
@@ -536,3 +537,116 @@ def _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_c
             file.keep_previous()
             kept.append(str(file.previous_path))
     return kept
+
+
+# The publication: the other direction of the same transaction (docs/reference/routes.md#coordinate-publication).
+
+# The Caddy source of a development Route's site groups (RouteCaddySiteSource): `<scope>`, `<scope>-bridge`, `<scope>-dev`, `<scope>-dev-bridge`.
+PUBLISHED_SOURCE = "app-dev"
+
+
+def publication_plan(mutations, node_id):
+    """One Node's Caddy states of the captured Route publication, or None when the Node serves no change of the Route.
+
+    The create's intent carries the publication as `route_mutations.restore` (the reverse of a publication is its withdrawal, and
+    withdraw-route reads the same stage). Its states are sparse: only the Route's own groups."""
+    rows = [row for row in (mutations or {}).get("restore", {}).get("publications", [])
+            if str(row.get("node_id")) == str(node_id) and row.get("serves_routes") is True]
+    if not rows:
+        return None
+    artifacts = mutations["artifacts"]["caddy"]
+    states = [rows[0][name]["caddy"] for name in ("before", "prepared", "withdrawn", "after")]
+    if any(index is None for index in states):
+        return None
+    chain = [artifacts[index] for index in states]
+    return {"chain": [state["content"] for state in chain], "had_served_groups": chain[0].get("had_served_groups", False)}
+
+
+def _changed(states):
+    """The keys the captured states disagree about: the published Route's own groups."""
+    keys = dict.fromkeys(key for state in states for key in state)
+    return [key for key in keys if any(not _same(state.get(key, MISSING), states[0].get(key, MISSING)) for state in states)]
+
+
+def compose_publication(plan, current):
+    """The Route's own groups put into what the Node holds: each own group becomes its last captured state (added, replaced, or removed
+    when the last state lacks it). Every other group, its order and the global options stay as the Node holds them."""
+    states = [caddy_sections(state) for state in plan["chain"]]
+    owned = _changed([groups for _, groups in states])
+    foreign = [key for key in owned if key.split("\0", 1)[0] != PUBLISHED_SOURCE]
+    if foreign:
+        raise WithdrawFailure("route.publish_foreign_change", "Caddy site " + foreign[0].replace("\0", " ") + " is not a development site")
+    if not current:
+        if plan["had_served_groups"]:
+            raise WithdrawFailure("caddy.current_config_missing")
+        current = states[-1][0]
+    header, groups = caddy_sections(current)
+    result, last = dict(groups), states[-1][1]
+    for key in owned:
+        if key in last:
+            result[key] = last[key]
+        else:
+            result.pop(key, None)
+    blocks = [block for value in result.values() for block in value]
+    return header + ("\n" + "\n".join(blocks) if blocks else ""), owned
+
+
+def check_published(current, composed, owned):
+    """Refuses with route.publish_foreign_change when a group outside the Route's own, their order or the global options would change.
+    Independent of the composition above."""
+    read = caddy_sections(current) if current else (None, {})
+    result = caddy_sections(composed)
+    for key in set(read[1]) | set(result[1]):
+        if key not in owned and read[1].get(key) != result[1].get(key):
+            raise WithdrawFailure("route.publish_foreign_change", "Caddy site " + key.replace("\0", " "))
+    if read[0] is not None and read[0] != result[0]:
+        raise WithdrawFailure("route.publish_foreign_change", "Caddy global options")
+    if [key for key in read[1] if key not in owned] != [key for key in result[1] if key not in owned]:
+        raise WithdrawFailure("route.publish_foreign_change", "Caddy site order")
+
+
+def publish(plan, run, *, root="/", wait=30, caddy_gid=None):
+    """One Node's Caddy publication of one Route under the Node lock: read, put in the Route's own groups, compare every other group,
+    validate, keep the previous generation, check the live file once more, rename, reload. Caddy reloads even when the file is unchanged,
+    as a publication always did: a new certificate of the Route needs it. A refusal leaves the file as it was read."""
+    base = Path(root)
+
+    def at(path):
+        return base / path.lstrip("/")
+
+    previous = at("/var/lib/orbit/route-previous")
+    previous.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(previous, 0o700)
+    with _Lock(at("/etc/caddy/.orbit-publish.lock"), run, wait, "caddy.publish_busy"):
+        caddy = _File(at("/etc/caddy/Caddyfile"), previous / "Caddyfile", (os.geteuid(), caddy_gid or os.getegid()), 0o640)
+        current = caddy.text()
+        composed, owned = compose_publication(plan, current)
+        check_published(current, composed, owned)
+        changed = composed.encode() != caddy.old
+        kept = []
+        if changed:
+            descriptor, name = tempfile.mkstemp(prefix=".orbit-candidate-", dir=caddy.path.parent)
+            candidate = Path(name)
+            try:
+                with os.fdopen(descriptor, "wb") as stream:
+                    os.fchown(stream.fileno(), *caddy.owner)
+                    os.fchmod(stream.fileno(), caddy.mode)
+                    stream.write(composed.encode())
+                _ok(run, ["timeout", "30", "runuser", "-u", "caddy", "--", "caddy", "validate", "--config", str(candidate),
+                          "--adapter", "caddyfile"], "caddy.validation_failed", [])
+                caddy.still_as_read()
+                if caddy.old is not None:
+                    caddy.keep_previous()
+                    kept.append(str(caddy.previous_path))
+                caddy.still_as_read()
+                os.replace(candidate, caddy.path)
+                caddy.staged = True
+            finally:
+                candidate.unlink(missing_ok=True)
+        rc, _, stderr = run(["timeout", "30", "systemctl", "reload", "caddy"])
+        if rc != 0:
+            if changed:
+                caddy.restore()
+                run(["timeout", "30", "systemctl", "reload", "caddy"])
+            raise WithdrawFailure("caddy.reload_failed", stderr.strip()[-2000:])
+    return {"changed": changed, "caddy": changed, "previous": kept, "owned": [key.replace("\0", " ") for key in owned]}

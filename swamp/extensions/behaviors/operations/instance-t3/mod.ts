@@ -1,5 +1,5 @@
 import { z } from "npm:zod@4.4.3";
-import { CreateArgs, createResult, removeRun } from "../instance-dev-command/result.ts";
+import { CreateArgs, createResult, removeRun, routeDeferred } from "../instance-dev-command/result.ts";
 
 /**
  * The registration step of a container clone (docs/reference/development-containers.md#t3-registration-and-pairing).
@@ -115,7 +115,9 @@ export async function createRegister(raw: z.input<typeof CreateArgs>, ctx: Conte
     const instanceId = z.number().int().positive().parse(args.intent.instance_id);
     const { handles, server } = await stored(z.string().parse(args.t3_file), instanceId, ctx, true);
     const container = args.container === null ? null : { ...args.container, register: "succeeded", server: JSON.stringify(server) };
-    const value = createResult(args.intent, { ...args, container, club_key_file: null, t3_part: null });
+    // A merge that a Node refused left its mark in the run folder, which goes below on a ready result: read it first.
+    const route_deferred = await routeDeferred(args.intent, args.route, args.folder);
+    const value = createResult(args.intent, { ...args, container, club_key_file: null, t3_part: null, route_deferred });
     // The copy again: a failed unlink above leaves `removed` false, so the cleanup step runs.
     const removed = value.ready ? await removeRun(args.folder, args.t3_file) : false;
     handles.push(await ctx.writeResource("terminal", "terminal", { stdout: value.stdout, ready: value.ready, removed }));

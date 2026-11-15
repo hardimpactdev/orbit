@@ -38,6 +38,23 @@ export const CreateArgs = z.object({
  * Removes a create's run folder and the copied `t3.json` beside it (either may hold a clone's checked T3 sessions); true when both
  * are gone, also when one never existed. Any other failure leaves them to the cleanup step.
  */
+/**
+ * Whether a site step of a clone's publication refused its merge on a Node and left its mark (route-create-site.yml) in the run folder.
+ * Both result builders, `finish` and a ready clone's `clone-register`, read it before the run folder goes.
+ */
+export async function routeDeferred(intent: Record<string, unknown>, route: string, folder: string): Promise<boolean> {
+    if (route !== "failed" || (intent.container as {clone?: unknown} | null | undefined)?.clone == null) return false;
+    try {
+        for await (const entry of Deno.readDir(folder)) {
+            if (entry.isFile && /^route-deferred-[0-9]+\.json$/.test(entry.name)) return true;
+        }
+    } catch (error) {
+        if (error instanceof Deno.errors.NotFound) return false;
+        throw error;
+    }
+    return false;
+}
+
 export async function removeRun(folder: string, t3File?: string): Promise<boolean> {
     let gone = true;
     for (const path of [folder, ...(t3File === undefined ? [] : [t3File])]) {
@@ -121,6 +138,8 @@ type Phases = {
     club_key_file?: unknown;
     /** The part of a clone's T3 step that ran when it failed or timed out, from the step's `t3.json` in the run folder. */
     t3_part?: "agent" | "t3" | "checkout" | "sessions" | null;
+    /** A clone's merge of its Caddy groups refused on a Node and changed nothing: the site step left its mark in the run folder. */
+    route_deferred?: boolean;
 };
 type Container = {
     mail?: Phase;
@@ -293,9 +312,11 @@ export function createResult(intent: Record<string, unknown>, phases: Phases) {
     }) : null;
     // A clone's Route publication never decides its create: the create ends at the registration, and a Route that is not published
     // gets its completion's publication (docs/reference/development-containers.md#the-address-during-the-create). The Gateway reads
-    // a clone create without `route` and with a Route as `deferred`.
+    // a clone create without `route` and with a Route as `deferred`. A merge that a Node refused changed nothing there: the address is
+    // deferred to the completion as when the Nodes were held (docs/reference/routes.md#coordinate-publication).
     const publication = (intent.container as {clone?: unknown} | null)?.clone != null && intent.route != null
-        ? (phases.route === "succeeded" && certificates.every((status) => status === "succeeded") ? "published" : "failed")
+        ? (phases.route === "succeeded" && certificates.every((status) => status === "succeeded") ? "published"
+            : phases.route === "failed" && phases.route_deferred === true ? "deferred" : "failed")
         : null;
     const warnings = [
         ...(mail?.status === "failed" ? [{code: "instance.mail_update_failed", step: "mail"}] : []),

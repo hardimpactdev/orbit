@@ -19,7 +19,7 @@ use App\Support\ValidatedData;
  */
 final readonly class ClonePublication
 {
-    /** The create's result field: `published`, `deferred` or `failed`; absent without a Route. */
+    /** The create's result field: `published`, `deferred` (Nodes held at admission, or a Node refused the merge) or `failed`; absent without a Route. */
     public const string Field = 'route_publication';
 
     /** A clone's create that captured its Route publication: it takes the Route Nodes only when they are free. */
@@ -65,7 +65,12 @@ final readonly class ClonePublication
             return 'deferred';
         }
 
-        return ($result[self::Field] ?? null) === 'published' ? 'published' : 'failed';
+        // A merge that a Node refused changed nothing there: the run says `deferred`, and the completion publishes as for held Nodes.
+        return match ($result[self::Field] ?? null) {
+            'published' => 'published',
+            'deferred' => 'deferred',
+            default => 'failed',
+        };
     }
 
     /**
