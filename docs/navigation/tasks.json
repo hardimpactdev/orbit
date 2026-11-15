@@ -39,8 +39,6 @@
             "cli/task/publish",
             "cli/task/pr-ready",
             "cli/task/pr-merge",
-                        "cli/task/prep",
-            "cli/task/prep-fix",
             "cli/task/sync"
           ]
         }

@@ -526,7 +526,7 @@ Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, becaus
 
 Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied places, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free places. Hosts with equal capacity use their configuration order.
 
-Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision, prep, build, fix turns and review rounds use the task pool. Base-refresh proofs use the CI pool. A [`proof:run`](/cli/proof/run#the-run) takes no VM place: it runs in copies of the proof Project's default, and its shards, budgets and verdicts are described there.
+Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision and fix turns use the task pool. Base-refresh proofs use the CI pool. A [`proof:run`](/cli/proof/run#the-run) takes no VM place: it runs in copies of the proof Project's default, and its shards, budgets and verdicts are described there.
 
 The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings.
 
@@ -656,7 +656,7 @@ A failed phase leaves finished work in place. A rerun skips each phase whose dig
 
 ### Park and resume
 
-Park, resume and release share one task VM name rule: a task VM is `<host>-tvm-<n>` for place n, using the host name it had when created; an old-pool VM without a place number is `tvm-<id>`. Any other name is refused before provider work. Prep corrections, builds and review rounds resume only a parked VM; they use a ready VM directly.
+Park, resume and release share one task VM name rule: a task VM is `<host>-tvm-<n>` for place n, using the host name it had when created; an old-pool VM without a place number is `tvm-<id>`. Any other name is refused before provider work.
 
 New task work never parks a VM for review. Publication deletes it. A stored parked VM from earlier work may still resume or be released; it holds its admitted place until deletion is confirmed.
 

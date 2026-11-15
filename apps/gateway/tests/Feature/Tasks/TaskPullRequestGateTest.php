@@ -23,9 +23,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskRemoteBranch;
 use App\Domain\Tasks\TaskReviewMode;
-use App\Domain\Tasks\TaskReviewRoundVerdict;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
@@ -34,10 +32,10 @@ use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskReviewRound;
 use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
@@ -168,99 +166,22 @@ it('registers the gate check on the Gateway schedule every minute', function ():
     expect(Artisan::output())->toMatch('/\*\s+\*\s+\*\s+\*\s+\*\s+php artisan task:pr-gate/');
 });
 
-function gateRound(Task $group, int $round, ?TaskReviewRoundVerdict $verdict, string $head = GATE_HEAD, ?string $pushed = null): TaskReviewRound
+/** A review round as the removed review round step recorded it; the table stays as history (docs/reference/old-paths.md). */
+function gateOldRound(Task $group, int $round, string $verdict, string $head = GATE_HEAD): void
 {
-    return TaskReviewRound::query()->create(['task_group_id' => $group->id, 'head_sha' => $head, 'round' => $round, 'verdict' => $verdict, 'pushed_commit' => $pushed]);
+    DB::table('task_review_rounds')->insert(['task_group_id' => $group->id, 'head_sha' => $head, 'round' => $round, 'verdict' => $verdict, 'created_at' => now(), 'updated_at' => now()]);
 }
-
-it('waits for a round that runs and leaves the comment, the fix and the push to its one run', function (): void {
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    $round = gateRound($group, 1, null);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'review', 'result' => 'skipped', 'code' => 'tasks_pr.round_running']);
-
-    $round->update(['verdict' => TaskReviewRoundVerdict::Findings, 'pushed_commit' => str_repeat('c', 40)]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'review', 'result' => 'skipped', 'code' => 'tasks_pr.fix_pushed'])
-        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Automatic)
-        ->and(Operation::query()->count())->toBe(0);
-});
-
-it('tries the merge step once the round on the exact head passed', function (): void {
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    gateRound($group, 1, TaskReviewRoundVerdict::Pass);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge', 'result' => 'admitted', 'code' => null]);
-});
-
-it('refuses the automatic merge when no round passed the head', function (): void {
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    gateRound($group, 1, TaskReviewRoundVerdict::Findings);
-    gateRound($group, 2, TaskReviewRoundVerdict::Pass, str_repeat('b', 40));
-
-    expect(fn () => app(StartTaskPullRequestStepAction::class)->merge($group, GATE_HEAD, 'test', (string) Str::uuid()))
-        ->toThrow(ResourceOperationException::class, 'No review round passed this head.');
-});
-
-it('falls back to manual mode for findings that no push followed, as after round 3, and runs the ready step again', function (): void {
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    gateRound($group, 1, TaskReviewRoundVerdict::Findings, str_repeat('1', 40), str_repeat('2', 40));
-    gateRound($group, 2, TaskReviewRoundVerdict::Findings, str_repeat('2', 40), str_repeat('3', 40));
-    gateRound($group, 3, TaskReviewRoundVerdict::Findings);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'result' => 'admitted', 'code' => null])
-        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
-});
-
-it('falls back to manual mode when a round failed', function (): void {
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    gateRound($group, 1, TaskReviewRoundVerdict::Failed);
-
-    app(RunTaskPullRequestGateAction::class)->execute();
-
-    expect($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
-});
-
-it('falls back to manual mode when a new head finds the three rounds used', function (): void {
-    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
-    foreach ([1, 2, 3] as $round) {
-        gateRound($group, $round, TaskReviewRoundVerdict::Findings, str_repeat((string) $round, 40));
-    }
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual'])
-        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual);
-});
 
 /** What a prep run leaves: its completed spec subtask and its succeeded run. */
 function gateSpecDone(Task $group): void
 {
     Task::query()->create(['parent_id' => $group->id, 'position' => 1, 'title' => 'Spec', 'brief' => 'Draft the spec', 'status' => TaskStatus::Completed]);
-    Operation::query()->create(['kind' => OperationKinds::TasksPrep, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
+    Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
         'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny']]);
 }
 
-function gateReview(string $commit, GitHubReviewState $state = GitHubReviewState::Approved): GitHubReview
-{
-    return new GitHubReview(1, 1, 'nick', $state, $commit, new DateTimeImmutable('2026-11-06T10:00:00Z'), 'https://example.test', '');
-}
-
-it('leaves a draft alone when its group has a succeeded build', function (): void {
-    $running = gateWorld(gatePull(true));
-    gateSpecDone($running);
-    Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $running->id, 'node_id' => null, 'status' => OperationStatus::Succeeded, 'input' => []]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head']);
-});
-
-it('never builds from a pull request that is out of draft', function (): void {
-    $group = gateWorld(gatePull(false));
-    gateSpecDone($group);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge']);
-});
-
-/** The spec a prep run leaves, and the task VM that it parked (or left in another state). */
-function gatePrepped(Task $group, TaskVmState $state = TaskVmState::Parked): void
+/** The spec a prep run leaves, and the task VM that it parked. */
+function gatePrepped(Task $group): void
 {
     $node = static fn (string $name, string $address): Node => Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => $address, 'public_ssh_port' => 22,
@@ -269,53 +190,59 @@ function gatePrepped(Task $group, TaskVmState $state = TaskVmState::Parked): voi
     $host = $node('gate-host', '10.44.0.21');
     $guest = $node('gate-vm', '10.44.0.22');
     TaskVm::query()->create(['host_node_id' => $host->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'gate-vm',
-        'state' => $state, 'address' => '10.251.78.34', 'wireguard_ip' => '10.44.0.22', 'size' => TaskVmSize::Normal, 'image_fingerprint' => 'fingerprint', 'recipe_identity' => 'recipe']);
+        'state' => TaskVmState::Parked, 'address' => '10.251.78.34', 'wireguard_ip' => '10.44.0.22', 'size' => TaskVmSize::Normal, 'image_fingerprint' => 'fingerprint', 'recipe_identity' => 'recipe']);
 
     gateSpecDone($group);
 }
 
-function gateOwnerReview(int $id, GitHubReviewState $state, string $head = GATE_HEAD, string $body = 'Fix the chart.', string $login = 'nick', int $minutes = 0): GitHubReview
+function gateOwnerReview(int $id, GitHubReviewState $state, string $head = GATE_HEAD): GitHubReview
 {
-    return new GitHubReview($id, 1, $login, $state, $head, new DateTimeImmutable('2026-11-06 10:00:00')->modify("+{$minutes} minutes"), 'https://github.com/hardimpactdev/orbit/pull/7#pullrequestreview-'.$id, $body);
+    return new GitHubReview($id, 1, 'nick', $state, $head, new DateTimeImmutable('2026-11-06T10:00:00Z'), 'https://github.com/hardimpactdev/orbit/pull/7#pullrequestreview-'.$id, 'Fix the chart.');
 }
 
-it('starts no corrections for a group without a prep run', function (): void {
-    config(['task_pull_requests.reviewer' => 'nick']);
-    $group = gateWorld(gatePull(true), reviews: [gateOwnerReview(31, GitHubReviewState::ChangesRequested)]);
+// The review rounds, the build and the corrections of a prep group are removed with the Pi task loop (docs/reference/old-paths.md).
+it('switches a group in automatic mode to manual mode and runs the ready step again, whatever old rounds it has', function (array $rounds): void {
+    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
+    // Each old round is on its own head; the last one is on the head of the pull request.
+    foreach ($rounds as $number => $verdict) {
+        gateOldRound($group, $number + 1, $verdict, $number === count($rounds) - 1 ? GATE_HEAD : str_repeat((string) ($number + 1), 40));
+    }
 
-    expect(app(RunTaskPullRequestGateAction::class)->execute())
-        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.no_checked_head', 'operation' => null]]);
-});
-
-it('starts no corrections for a group whose build started: its later change request is for the code', function (): void {
-    config(['task_pull_requests.reviewer' => 'nick']);
-    $group = gateWorld(gatePull(true), reviews: [gateOwnerReview(31, GitHubReviewState::ChangesRequested)]);
-    gatePrepped($group);
-    Operation::query()->create(['kind' => OperationKinds::TasksBuild, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null, 'status' => OperationStatus::Succeeded, 'input' => []]);
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready', 'code' => 'tasks_pr.no_checked_head'])
-        ->and(Operation::query()->where('kind', OperationKinds::TasksPrepFix)->count())->toBe(0);
-});
-
-it('records the refusal of the removed task VMs where it would start a review round or a build', function (string $case, string $step): void {
-    config(['task_pull_requests.reviewer' => 'nick']);
-    $group = match ($case) {
-        'automatic round' => gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic),
-        'approved spec' => gateWorld(gatePull(true), reviews: [gateReview(GATE_HEAD)]),
-        // The corrections were the answer to a build that lacked the approval; the build is refused first, so no corrections start.
-        'spec with a change request' => gateWorld(gatePull(true), reviews: [gateOwnerReview(31, GitHubReviewState::ChangesRequested)]),
-    };
-    match ($case) {
-        'automatic round' => null,
-        'approved spec' => gateSpecDone($group),
-        'spec with a change request' => gatePrepped($group),
-    };
-
-    expect(app(RunTaskPullRequestGateAction::class)->execute())
-        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => $step, 'result' => 'skipped', 'code' => TaskVmRemoved::Code, 'operation' => null]])
-        ->and(Operation::query()->whereIn('kind', [OperationKinds::TasksReviewRound, OperationKinds::TasksBuild, OperationKinds::TasksPrepFix])->count())->toBe(0);
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'ready-manual', 'result' => 'admitted', 'code' => null])
+        ->and($group->fresh()->review_mode)->toBe(TaskReviewMode::Manual)
+        ->and(Operation::query()->where('kind', 'tasks.review_round')->count())->toBe(0);
 })->with([
-    'automatic round' => ['automatic round', 'review'],
-    'approved spec' => ['approved spec', 'build'],
-    'spec with a change request' => ['spec with a change request', 'build'],
+    'no round' => [[]],
+    'a passed round on the head' => [['pass']],
+    'three rounds with findings' => [['findings', 'findings', 'findings']],
 ]);
+
+it('merges a group that was in automatic mode only with the reviewer\'s approval of the head, not with an old passed round', function (): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    $group = gateWorld(gatePull(false), green: true, review: TaskReviewMode::Automatic);
+    gateOldRound($group, 1, 'pass');
+
+    expect(fn () => app(StartTaskPullRequestStepAction::class)->merge($group, GATE_HEAD, 'test', (string) Str::uuid()))
+        ->toThrow(ResourceOperationException::class, 'The reviewer has not approved this head.');
+});
+
+it('leaves the draft of an old prep group alone: no build and no corrections, whatever the owner\'s review', function (GitHubReviewState $state): void {
+    config(['task_pull_requests.reviewer' => 'nick']);
+    $group = gateWorld(gatePull(true), reviews: [gateOwnerReview(31, $state)]);
+    gatePrepped($group);
+    $before = Operation::query()->count();
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute())
+        ->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => 'ready', 'result' => 'skipped', 'code' => 'tasks_pr.no_checked_head', 'operation' => null]])
+        ->and(Operation::query()->count())->toBe($before);
+})->with([
+    'approved spec' => [GitHubReviewState::Approved],
+    'spec with a change request' => [GitHubReviewState::ChangesRequested],
+]);
+
+it('merges the out-of-draft pull request of an old prep group as any other: it never builds', function (): void {
+    $group = gateWorld(gatePull(false));
+    gateSpecDone($group);
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute()[0])->toMatchArray(['step' => 'merge']);
+});

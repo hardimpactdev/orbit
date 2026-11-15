@@ -28,19 +28,6 @@ final readonly class PullRequestGate
         };
     }
 
-    /**
-     * The request for corrections on a draft spec: the reviewer's latest decision requests changes on exactly this head. A
-     * request on an older head was answered by the push that moved it.
-     *
-     * @param  list<GitHubReview>  $reviews
-     */
-    public static function changesRequested(array $reviews, string $head, string $reviewer): ?GitHubReview
-    {
-        $latest = self::latest($reviews, $reviewer);
-
-        return $latest?->state === GitHubReviewState::ChangesRequested && $latest->commitId === $head ? $latest : null;
-    }
-
     /** @param list<GitHubReview> $reviews */
     private static function latest(array $reviews, string $reviewer): ?GitHubReview
     {

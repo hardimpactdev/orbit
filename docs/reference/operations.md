@@ -332,8 +332,6 @@ Use the kind and target type to start or find the work of a command.
 | `instance:rollback` | `instance.rollback` | `instance` | Instance Node |
 | `orbit:peer-dns-reconcile` | `fleet.peer_dns` | `peer_dns` | Peer Node |
 | `task:start` | `tasks.provision` | `task_group` | Gateway |
-| `POST tasks/{group}/prep` | `tasks.prep` | `task_group` | Gateway |
-| `POST tasks/{group}/prep-fix` | `tasks.prep_fix` | `task_group` | Gateway |
 | `POST tasks/{group}/sync` | `tasks.sync` | `task_group` | Gateway |
 | `task:check` | `tasks.check` | `task_group` | Gateway |
 | `POST tasks/{group}/script` | `tasks.script` | `task_group` | Gateway |
@@ -344,8 +342,6 @@ Use the kind and target type to start or find the work of a command.
 | `POST tasks/{group}/pr-ready` | `tasks.pr_ready` | `task_group` | Gateway |
 | `POST tasks/{group}/pr-merge` | `tasks.pr_merge` | `task_group` | Gateway |
 | `POST projects/{project}/pr-merge` | `project.pr_merge` | `project` | Gateway |
-| the gate check `task:pr-gate` (no route) | `tasks.review_round` | `task_group` | Gateway |
-| the gate check `task:pr-gate` (no route) | `tasks.build` | `task_group` | Gateway |
 
 Every task operation holds the group, so different kinds cannot overlap on it. A task VM Node exists only while the group runs, so the Gateway serves the group's operations and their reads. Provision returns `{ instance_id, node_id, starting_commit }` on success. A turn returns its receipt, thread state, workspace evidence, and token metrics; [Run an external turn](/reference/tasks#run-an-external-turn) defines the result and refusals.
 
@@ -357,7 +353,7 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them.
 
-The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds), so it does not wait for an old task VM row. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way.
+The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds), so it does not wait for an old task VM row. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way, and so did the [Pi task loop](/reference/old-paths#the-pi-task-loop) kinds `tasks.prep`, `tasks.prep_fix`, `tasks.build` and `tasks.review_round`.
 
 ## Start an operation
 

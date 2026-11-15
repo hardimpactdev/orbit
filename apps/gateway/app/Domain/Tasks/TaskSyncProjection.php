@@ -57,7 +57,7 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
     {
         $native = ValidatedData::object($data['result'] ?? []);
         $failed = in_array($data['status'] ?? null, ['failed', 'interrupted'], true);
-        $step = $failed ? TaskPrepResults::failedStep($native, $data) : null;
+        $step = $failed ? self::failedStep($native, $data) : null;
         $copy = isset(ValidatedData::object($operation->input)['copy']);
         $result = $failed ? ['error_code' => 'tasks.sync_failed', 'failed_step' => $step]
             : ($copy ? self::base($native['base'] ?? null) : self::refs($operation, $native['refs'] ?? null));
@@ -65,6 +65,21 @@ final readonly class TaskSyncProjection implements DirectOperationProjection, Di
         $data['error_code'] = $failed ? 'tasks.sync_failed' : null;
 
         return app(DirectOperation::class)->project($operation, $data, $result);
+    }
+
+    /**
+     * The step that ended a failed run: the one the failure names, else the first failed step of the summary.
+     *
+     * @param  array<string,mixed>  $native
+     * @param  array<string,mixed>  $data
+     */
+    private static function failedStep(array $native, array $data): ?string
+    {
+        $failure = ValidatedData::object($data['failure'] ?? []);
+        $steps = ValidatedData::object($native['summary'] ?? [])['failed_steps'] ?? [];
+        $step = $failure['failed_step'] ?? (is_array($steps) ? ($steps[0] ?? null) : null);
+
+        return is_string($step) ? $step : null;
     }
 
     /**

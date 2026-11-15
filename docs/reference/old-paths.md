@@ -35,6 +35,20 @@ The task VM proof run is removed: the workflow `operation-proof-run`, the task V
 - the batch restore of `proof-fleet-verify-batch`;
 - the workflows `proof-fleet-restore`, `task-nested-apply` and `task-nested-ready`.
 
+## The Pi task loop
+
+The Pi task loop ran on task VMs with the Pi agent server. It is removed with the VMs; a function that is wanted again comes back as its own change on task copies. Its Gateway side is removed in parts.
+
+`task:prep`, `task:prep-fix`, the build and the review round (`tasks.prep`, `tasks.prep_fix`, `tasks.build`, `tasks.review_round`) are removed. Their routes and MCP tools are gone, and the [gate check](/reference/tasks#gate-check) starts none of them. Old Operations of these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry). The rows of `task_review_rounds` stay, and nothing reads them.
+
+These parts are still in the code:
+
+- `tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save` and the Pi turn (`tasks.turn`), each refused at every entry with `tasks.vm_runtime_removed`;
+- the task VM resume and slot release, and the slot pool;
+- the Pi agent server `apps/pi-server`.
+
+The Swamp workflows `operation-task-prep`, `operation-task-prep-fix`, `operation-task-build` and `operation-task-review-round` stay one release longer, because a rollback by one release still names them. Nothing starts them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$` and `^pr-comment-write-[a-f0-9-]{36}$` stay declared on `tasks.turn` until the grants release after the Pi loop.
+
 ## Off in the live fleet
 
 This section describes the live Orbit fleet, not the code. On 13 November 2026 these parts stay in the code but do not run:

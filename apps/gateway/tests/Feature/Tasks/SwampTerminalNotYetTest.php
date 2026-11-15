@@ -18,10 +18,10 @@ afterEach(fn () => app(SwampConnection::class)->release());
 
 it('reads again when the run history is not terminal yet', function (): void {
     $run = '986bc349-54dc-4dea-9f22-76e3353d1ca0';
-    $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
+    $operation = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run], 'input' => []]);
     $direct = app(DirectOperation::class);
-    $definition = $direct->definition('tasks.prep');
+    $definition = $direct->definition('tasks.copy_turn');
     $socket = new class($operation->id, $definition['workflow']) implements WebSocketClient
     {
         private ?array $frame = null;
@@ -47,7 +47,7 @@ it('reads again when the run history is not terminal yet', function (): void {
 
             return $frame === null ? [] : [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => [
                 'id' => $frame['payload']['workflowIdOrName'], 'workflowName' => $this->workflow, 'status' => 'running',
-                'inputs' => ['operation_id' => $this->operationId, 'node_id' => null, 'kind' => 'tasks.prep'],
+                'inputs' => ['operation_id' => $this->operationId, 'node_id' => null, 'kind' => 'tasks.copy_turn'],
             ]]]];
         }
 

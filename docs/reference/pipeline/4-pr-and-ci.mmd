@@ -105,8 +105,9 @@ sequenceDiagram
     %%> - a draft PR with no passed handoff check on its head stays a draft, because the code and the runnable cases are not there yet: the PR that `task:prep` opens for a spec is such a PR, and an approval never merges it
     %%> - only a Project with review and merge enabled takes part
     %%> Built:
-    %%> - the check for both modes, as the scheduled command `task:pr-gate`; the review round of the first automatic-mode rule, the merge after a passed round, and the fix after findings
-    %%> - the admission of the corrections of a prep spec, for an idle prep group whose owner requested changes on the current head
+    %%> - the check for manual mode, as the scheduled command `task:pr-gate`; it admits no corrections of a prep spec, because they are removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
+    %%> Not built:
+    %%> - the automatic-mode rules: the review rounds ran on task VMs and are removed with the Pi task loop; the gate check switches an automatic group to manual mode when its PR leaves draft
     GW->>SW: Admit the ready step<br/>token key name
     %%> What it does:
     %%> - authorizes the step and names the vault key of its token; the step mints the token when it runs
@@ -138,16 +139,15 @@ sequenceDiagram
       %%> - the mode is set per Task group when it is created (`task:create --review=automatic`); the default is manual
       %%> Built:
       %%> - the mode of the group, set at creation and shown by `task:show` as `review`
-      %%> - the admission, keyed by group and head, with the round number recorded on the group; it needs a green merge check and a passed handoff candidate on the head
-      %%> - the fall back to manual mode after round 3 with findings, or when a round fails
-      %%> - the one Swamp run per round, `tasks.review_round`, as the chart in docs/cli/task/review-round.mmd shows it: the reviewer turn, the comment, and the fix with its check and push are steps of that run, and the gate check admits nothing else for a round
+      %%> Not built:
+      %%> - the review round: the Pi run `tasks.review_round` is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop); until it comes back on task copies, the gate check switches the group to manual mode
       SW->>AG: Review the PR head<br/>fresh reviewer turn
       %%> What it does:
       %%> - a child run of the existing turn workflow with the role `reviewer`, in a new thread: an agent that took no part in the spec, the code or earlier rounds
       %%> - it runs in the task VM, which the run claims afresh if the previous VM was released; it reads the PR head, the chart, the page, the cases and the CI result, and judges them against the same review rules as Nick
       %%> - the verdict is pass, or findings with file and reason; it is posted as a PR comment by the App so Nick can read it
-      %%> Built:
-      %%> - the comment, as steps of the round run: it mints its own token when it runs, and a comment that GitHub refuses does not fail the run
+      %%> Not built:
+      %%> - the comment: it was a step of the removed round run
       %%> Why:
       %%> - the App opened the PR, and GitHub does not let an author approve its own PR, so the pass is recorded by the Gateway, not as a GitHub approval
       AG-->>SW: Pass<br/>or findings
@@ -156,8 +156,8 @@ sequenceDiagram
         %%> What it does:
         %%> - a child run of the turn workflow with the role `implementer`, in the author's thread, with the findings as its prompt
         %%> - then the handoff check and a push to the same branch, as the publish step does; the new head gets a new CI run, and the gate check admits the next round once it is green
-        %%> Built:
-        %%> - the three steps, as child runs of the round run (the turn, check and publish workflows); a step that fails or ends without a pass leaves findings without a pushed commit, and the gate check sends the group back to manual mode
+        %%> Not built:
+        %%> - the three steps: they were child runs of the removed round run
       end
       SW-->>GW: Round result<br/>terminal event
       %%> Result:
@@ -176,7 +176,6 @@ sequenceDiagram
     %%> - no merge queue and no GitHub auto-merge (Nick, 2026-11-05): the queue only reran the 2-minute fast checks, because the proof is not run twice
     %%> Built:
     %%> - the operation `task:pr-merge`, with its chart, called by the gate check
-    %%> - the call in automatic mode, after a passed round on the head
     %%> - a PR that no Task group watches merges through `project:pr-merge` (`docs/cli/project/pr-merge.mmd`): the same Swamp step, admitted by the Gateway for the Project, with the green merge check on the exact head as the gate
     %%> Decided by the orchestrator, for Nick's review:
     %%> - for a PR outside a Task group the authorized caller is the reviewer, so no review is read; the gate is the green merge check on the exact head, a PR that a Task group watches is refused (`task:pr-merge` owns it), and so is a PR that does not target the default branch or that comes from a fork (a fork can define its own workflow that reports a passing merge check; open for Nick: how to trust a fork)

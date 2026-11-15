@@ -72,10 +72,10 @@ function endedRunSocket(string $workflow, string $status, bool $child = false): 
 it('queues the prompt projection of that Operation when its root run ends, and projects nothing itself', function (): void {
     Queue::fake();
     $run = '986bc349-54dc-4dea-9f22-76e3353d1ca1';
-    $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
+    $operation = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run], 'input' => []]);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.run_token' => 'run-token']);
-    $subscriber = new SwampRunSubscriber(endedRunSocket(app(DirectOperation::class)->definition('tasks.prep')['workflow'], 'succeeded'), new NullLogger);
+    $subscriber = new SwampRunSubscriber(endedRunSocket(app(DirectOperation::class)->definition('tasks.copy_turn')['workflow'], 'succeeded'), new NullLogger);
 
     $subscriber->follow($operation->id);
     $subscriber->pass();
@@ -92,7 +92,7 @@ it('queues the prompt projection of that Operation when its root run ends, and p
 it('requests child evidence reconciliation and keeps following the parent root', function (): void {
     Queue::fake();
     $run = '986bc349-54dc-4dea-9f22-76e3353d1cf1';
-    $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
+    $operation = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => $run], 'input' => []]);
     config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.run_token' => 'run-token']);
     $socket = endedRunSocket('operation-task-turn', 'succeeded', true);

@@ -74,5 +74,5 @@ sequenceDiagram
     %%> - HTTP 422 `tasks.vm_runtime_removed`: task VMs are removed, and a task runs only in a copy of its Project's default container Instance
     %%> - the message says what to do: move a checkout default into a container with instance:migrate, or create a container default with instance:create, then start the task and work in its copy
     %%> - nothing is recorded: the task stays `todo` with no workspace, and no Operation, VM, identity or wait exists
-    %%> - every task VM command answers the same refusal first: a turn of a group without a copy, prep, prep-fix, build, review round, package and script
+    %%> - every task VM command answers the same refusal first: a turn of a group without a copy, package and script; prep, prep-fix, build and review round are removed (docs/reference/old-paths.md#the-pi-task-loop)
   end

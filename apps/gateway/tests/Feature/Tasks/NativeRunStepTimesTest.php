@@ -146,7 +146,7 @@ it('matches a looped step, named with its index, to the history step name', func
 it('records the times of the root and nested steps when a run ends', function (): void {
     $root = '986bc349-54dc-4dea-9f22-76e3353d1cb0';
     $child = '986bc349-54dc-4dea-9f22-76e3353d1cb1';
-    $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
+    $operation = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Failed, 'input' => [], 'state' => ['swamp_run_id' => $root, 'native_progress' => ['run' => $root, 'seq' => 4, 'active' => [], 'steps' => [
             'k1' => eventStep('provision', 'Create and prepare the VM'), 'k2' => eventStep('provider', 'seed-plan'),
         ]]]]);
@@ -169,7 +169,7 @@ it('reads the step times again after the serve window when serve refused the fir
     Queue::fake();
     $root = '986bc349-54dc-4dea-9f22-76e3353d1cb0';
     $child = '986bc349-54dc-4dea-9f22-76e3353d1cb1';
-    $operation = Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
+    $operation = Operation::query()->create(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'target_id' => 1, 'node_id' => null,
         'status' => OperationStatus::Failed, 'input' => [], 'state' => ['swamp_run_id' => $root, 'native_progress' => ['run' => $root, 'seq' => 4, 'active' => [], 'steps' => [
             'k1' => eventStep('provision', 'Create and prepare the VM'), 'k2' => eventStep('provider', 'seed-plan'),
         ]]]]);
