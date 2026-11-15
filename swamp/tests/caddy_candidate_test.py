@@ -1,7 +1,6 @@
 """Unprivileged invalid/valid candidate proof for every changed Caddy writer."""
 
 import grp
-import hashlib
 import json
 import os
 import pwd
@@ -245,7 +244,7 @@ class CaddyCandidateTest(unittest.TestCase):
             return value.replace("/etc/caddy", str(self.config))
         return value
 
-    def ansible(self, source, task_name, context, interrupt=False):
+    def ansible(self, source, task_name, context):
         if not shutil.which("ansible-playbook"):
             self.skipTest("pinned Ansible required")
         original = find_named(self.source(source), task_name)
@@ -264,27 +263,6 @@ class CaddyCandidateTest(unittest.TestCase):
         self.assertEqual(
             publish["ansible.builtin.command"]["argv"][:3], ["mv", "-Tf", "--"]
         )
-        is_guarded = "orbit_caddy_publish" in task
-        if is_guarded:
-            library = self.folder / "library"
-            library.mkdir()
-            utils = self.folder / "module_utils"
-            utils.mkdir()
-            module = (ROOT / "swamp/ansible/library/orbit_caddy_publish.py").read_text()
-            module = module.replace('gid=grp.getgrnam("caddy").gr_gid',
-                                    "gid=" + str(self.publish_group))
-            (library / "orbit_caddy_publish.py").write_text(module)
-            code = (ROOT / "swamp/ansible/module_utils/orbit_caddy_publish.py").read_text()
-            code = code.replace('live=Path("/etc/caddy/Caddyfile")',
-                                "live=Path(" + repr(str(self.live)) + ")")
-            code = code.replace("uid=0, gid=0", "uid=" + str(os.getuid()) + ", gid=0")
-            code = code.replace("os.replace(candidate, live)", "os.replace(candidate, live)\n"
-                                "                if (live.parent.parent.parent / 'interrupt-after-rename').exists():\n"
-                                "                    import json\n"
-                                "                    current = live.stat()\n"
-                                "                    (live.parent.parent.parent / 'published.json').write_text(json.dumps([current.st_ino, current.st_uid, current.st_gid, current.st_mode & 0o777]))\n"
-                                "                    raise OSError('fixture interruption after rename')")
-            (utils / "orbit_caddy_publish.py").write_text(code)
         is_site = "orbit_route_site" in task
         if is_site:
             library = self.folder / "library"
@@ -333,7 +311,7 @@ class CaddyCandidateTest(unittest.TestCase):
             "ANSIBLE_LIBRARY": str(self.folder / "library"),
             "ANSIBLE_MODULE_UTILS": str(self.folder / "module_utils"),
         }
-        for invalid in [False] if interrupt else [True, False]:
+        for invalid in [True, False]:
             with self.subTest(invalid=invalid):
                 value = (
                     "http://127.0.0.1:22999 {\n INVALID_DIRECTIVE\n}\n"
@@ -344,8 +322,6 @@ class CaddyCandidateTest(unittest.TestCase):
                     "nodes": {"9": {"account": pwd.getpwuid(os.getuid()).pw_name}},
                     "caddy": [{"node_id": 9, "content": value}],
                 }
-                play["vars"]["plan"] = {"caddy": {"content": value},
-                                         "expect": {str(self.live): hashlib.sha256(self.old).hexdigest()}}
                 play["vars"]["front_certificate"] = {
                     "stdout": json.dumps(
                         {
@@ -373,26 +349,7 @@ class CaddyCandidateTest(unittest.TestCase):
                     text=True,
                     timeout=25,
                 )
-                if interrupt:
-                    self.assertNotEqual(done.returncode, 0, done.stdout)
-                    self.assertFalse(self.calls.exists())
-                    validated = json.loads((self.folder / "validated.json").read_text())
-                    published = json.loads((self.folder / "published.json").read_text())
-                    metadata = self.live.stat()
-                    self.assertEqual(published, validated)
-                    self.assertEqual(
-                        published,
-                        [
-                            metadata.st_ino,
-                            metadata.st_uid,
-                            metadata.st_gid,
-                            metadata.st_mode & 0o777,
-                        ],
-                    )
-                    self.assertEqual(metadata.st_gid, self.publish_group)
-                    self.assertEqual(metadata.st_mode & 0o777, 0o640)
-                    self.assertNotEqual(self.live.read_bytes(), self.old)
-                elif invalid:
+                if invalid:
                     self.assertNotEqual(done.returncode, 0, done.stdout)
                     self.assertIn(
                         "Route certificate or site publication failed."
@@ -427,28 +384,12 @@ class CaddyCandidateTest(unittest.TestCase):
                 self.assertEqual(list(self.config.glob(".orbit-candidate-*")), [])
                 self.assertFalse(self.live.is_symlink())
 
-    def test_validated_inode_has_final_metadata_at_interrupted_rename(self):
-        groups = [gid for gid in os.getgroups() if gid != os.getgid()]
-        if not groups:
-            self.skipTest("supplementary group required to distinguish the Caddy group")
-        self.publish_group = groups[0]
-        (self.folder / "interrupt-after-rename").touch()
-        self.ansible(
-            "swamp/ansible/route-withdraw.yml",
-            "Publish the Caddyfile",
-            {},
-            interrupt=True,
-        )
-
     def test_ansible_route_site(self):
         self.ansible(
             "swamp/ansible/route-create-site.yml",
             "Converge certificate links trust and Caddy files",
             {"node_id": 9, "signed": []},
         )
-
-    def test_ansible_route_withdrawal(self):
-        self.ansible("swamp/ansible/route-withdraw.yml", "Publish the Caddyfile", {})
 
     def test_ansible_bootstrap_swamp_front(self):
         self.ansible("swamp/ansible/tasks/gateway-swamp.yml", "Write the front", {})

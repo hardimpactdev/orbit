@@ -329,7 +329,7 @@ Each of these is a review BLOCK. Most come from past flow reviews.
 | Anti-pattern | Why it fails | Do this instead |
 | --- | --- | --- |
 | A machine action as a native step of its own (`@swamp/ssh exec`, `cfgmgmt`) where an Ansible phase would do it | Each action is one dispatch (about 1.1 s) and one connection; a read, a plan and a check around it multiply the steps | Put it in the phase's playbook. A read-then-act-then-check is tasks, not steps. |
-| A read, a TypeScript plan or compose step, and an apply step around one Node change | The plan cannot see what the apply sees, and every step is a dispatch (`route-withdraw-node`: 5 steps for one Node) | Plan inside the playbook. A decision becomes a Jinja template with unit cases. |
+| A read, a TypeScript plan or compose step, and an apply step around one Node change | The plan cannot see what the apply sees, and every step is a dispatch (`route-withdraw-node` had 5 steps; its read and merge now run in one Node module) | Plan inside the playbook. A decision becomes a Jinja template with unit cases. |
 | A shipped script, a Python helper or a custom Ansible module of ours | The code that runs is not a reviewed module; Orbit owns Python it should not | Use the module that owns the state, or take the gap to the orchestrator with evidence. |
 | `target` and `labels` in one effective placement, or a step on the effect Node | Selectors can disagree, the top audit finding | `labels: {role: swamp}` on every step |
 | `forEach` items or concurrent runs sharing one `behaviorName` | The model lock serializes them and later items time out | `behaviorName` unique per run and item |

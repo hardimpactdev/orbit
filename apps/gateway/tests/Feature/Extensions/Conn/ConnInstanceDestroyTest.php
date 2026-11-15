@@ -805,8 +805,8 @@ describe('a removal while the clone\'s completion runs', function (): void {
         expect(array_map(fn (Operation $removal): string => $removal->refresh()->status->value, $removals))->toBe(['waiting', 'queued', 'waiting']);
         connCompletionEnds($pairs[0][1]);
         connCompletionEnds($pairs[2][1], 'failed');
-        // The three clones' Routes share the Node's publication: the started removal holds it, the others follow it oldest first.
-        expect(array_map(fn (Operation $removal): string => $removal->refresh()->status->value, $removals))->toBe(['waiting', 'queued', 'waiting']);
+        // The three clones' Routes share the Node's publication, and removals share its hold: all three start, none waits for another.
+        expect(array_map(fn (Operation $removal): string => $removal->refresh()->status->value, $removals))->toBe(['queued', 'queued', 'queued']);
         foreach ([1, 0, 2] as $index) {
             expect($removals[$index]->refresh()->status)->toBe(OperationStatus::Queued);
             connRemovalSucceed($removals[$index]);

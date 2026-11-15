@@ -2548,10 +2548,6 @@ non_command_output:
   task: Require the candidate observer digest
   field: ansible.builtin.assert.that
   reason: Validates the candidate digest passed to the proof.
-- file: route-withdraw.yml
-  task: Read the pool files
-  field: loop
-  reason: Filters paths returned by the find module, not command output.
 - file: tasks/firewall.yml
   task: Find misplaced service isolation rules
   field: vars.node_comments

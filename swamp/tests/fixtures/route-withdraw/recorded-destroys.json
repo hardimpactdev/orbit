@@ -1,0 +1,740 @@
+[
+ {
+  "operation_id": 22443,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {
+   "before": {
+    "configurations": [],
+    "account_user": "orbit"
+   },
+   "after": {
+    "configurations": [],
+    "account_user": "orbit"
+   }
+  },
+  "caddy": {
+   "before": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-3009\nhttps://conntweak1.ihj-proof-h42.test {\n    bind 10.44.0.7 192.168.6.20\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3009/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3009/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3009.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3009.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3009\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.82:5173\n}\nhandle {\n    reverse_proxy 10.253.0.82:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3009-dev\nhttps://conntweak1.ihj-proof-h42.test:444 {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3009/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3009/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.82:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n\n# orbit: app-dev app-instance-3009-bridge\nhttps://conntweak1.ihj-proof-h42.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.82/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3009/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3009/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3009.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3009.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3009\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.82:5173\n}\nhandle {\n    reverse_proxy 10.253.0.82:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3009-dev-bridge\nhttps://conntweak1.ihj-proof-h42.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.82/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3009/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3009/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.82:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n",
+    "version": "3d058ac815c3b2aabd9b10e589496240",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": false,
+    "had_served_groups": true
+   },
+   "prepared": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "withdrawn": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "after": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   }
+  },
+  "dns": {},
+  "cleanup": [
+   {
+    "scope": "route-1150-router",
+    "user": "orbit"
+   },
+   {
+    "scope": "route-1150-router-hostname-change",
+    "user": "orbit"
+   },
+   {
+    "scope": "app-instance-3009",
+    "user": "orbit"
+   }
+  ]
+ },
+ {
+  "operation_id": 22445,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=conntweak3.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"conntweak3.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"conntweak3.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"conntweak3.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"conntweak3.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "eb6cd86cfe23a62f7b70d15c015e7cd071407c272d78807c5d68b25e946b0295"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22473,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {
+   "before": {
+    "configurations": [],
+    "account_user": "orbit"
+   },
+   "after": {
+    "configurations": [],
+    "account_user": "orbit"
+   }
+  },
+  "caddy": {
+   "before": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-3016\nhttps://conntweak1.ihj-proof-h42.test {\n    bind 10.44.0.7 192.168.6.20\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3016/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3016/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3016.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3016.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3016\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.89:5173\n}\nhandle {\n    reverse_proxy 10.253.0.89:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3016-dev\nhttps://conntweak1.ihj-proof-h42.test:444 {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3016/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3016/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.89:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n\n# orbit: app-dev app-instance-3016-bridge\nhttps://conntweak1.ihj-proof-h42.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.89/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3016/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3016/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3016.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3016.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3016\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.89:5173\n}\nhandle {\n    reverse_proxy 10.253.0.89:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3016-dev-bridge\nhttps://conntweak1.ihj-proof-h42.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.89/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3016/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3016/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.89:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n",
+    "version": "321920d646de21861ec5ce910c8fc65c",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": false,
+    "had_served_groups": true
+   },
+   "prepared": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "withdrawn": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "after": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   }
+  },
+  "dns": {},
+  "cleanup": [
+   {
+    "scope": "route-1155-router",
+    "user": "orbit"
+   },
+   {
+    "scope": "route-1155-router-hostname-change",
+    "user": "orbit"
+   },
+   {
+    "scope": "app-instance-3016",
+    "user": "orbit"
+   }
+  ]
+ },
+ {
+  "operation_id": 22475,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {
+   "before": {
+    "configurations": [],
+    "account_user": "orbit"
+   },
+   "after": {
+    "configurations": [],
+    "account_user": "orbit"
+   }
+  },
+  "caddy": {
+   "before": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-3017\nhttps://c2074.ihj-proof-h42.test {\n    bind 10.44.0.7 192.168.6.20\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3017/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3017/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3017.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3017.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3017\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.91:5173\n}\nhandle {\n    reverse_proxy 10.253.0.91:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3017-dev\nhttps://c2074.ihj-proof-h42.test:444 {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3017/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3017/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.91:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n\n# orbit: app-dev app-instance-3017-bridge\nhttps://c2074.ihj-proof-h42.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.91/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3017/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3017/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3017.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3017.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3017\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.91:5173\n}\nhandle {\n    reverse_proxy 10.253.0.91:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3017-dev-bridge\nhttps://c2074.ihj-proof-h42.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.91/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3017/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3017/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.91:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n",
+    "version": "0bf15f92a4f58d3de95e0d6eac5f375d",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": false,
+    "had_served_groups": true
+   },
+   "prepared": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "withdrawn": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "after": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   }
+  },
+  "dns": {},
+  "cleanup": [
+   {
+    "scope": "route-1156-router",
+    "user": "orbit"
+   },
+   {
+    "scope": "route-1156-router-hostname-change",
+    "user": "orbit"
+   },
+   {
+    "scope": "app-instance-3017",
+    "user": "orbit"
+   }
+  ]
+ },
+ {
+  "operation_id": 22476,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=h2074.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"h2074.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"h2074.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"h2074.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"h2074.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "85647af2704a0a9a601f78a1f1710ed56585be9f81aff179efbf7e95627f4c9f"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22478,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=d2074.destroy-guard-proof.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"d2074.destroy-guard-proof.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"d2074.destroy-guard-proof.test\":\"192.168.6.20\"},\"node:12\":{\"d2074.destroy-guard-proof.test\":\"192.168.6.20\"},\"node:13\":{\"d2074.destroy-guard-proof.test\":\"192.168.6.20\"}}}\n",
+    "digest": "7dd9eb646adb5c5266e9984bc26cb3fef7fe2211f7aae1e4619eac66bb34e747"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22488,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=conntweak2.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"conntweak2.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"conntweak2.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"conntweak2.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"conntweak2.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "a2c1d898c11872a935e14d57b746ae42f1774f8a0fadd6563d5224ca9b27a152"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22525,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=cs7569.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"cs7569.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"cs7569.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"cs7569.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"cs7569.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "0baf695f4153106f304dd95eace1b3866cd53b0ba43c0338bf72dd310deca4fa"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22542,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=d2075.destroy-guard-proof.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"d2075.destroy-guard-proof.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"d2075.destroy-guard-proof.test\":\"192.168.6.20\"},\"node:12\":{\"d2075.destroy-guard-proof.test\":\"192.168.6.20\"},\"node:13\":{\"d2075.destroy-guard-proof.test\":\"192.168.6.20\"}}}\n",
+    "digest": "2b37b4c1097092e75dc40c2aeffee4b483dfad04ceb0010f3796b18de3a690bb"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22543,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=h2075.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"h2075.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"h2075.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"h2075.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"h2075.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "2f9a610f8c2dc2abed6bbfd0b30b38473413d466686d1ee263e3dc28d3fab436"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22544,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=c2075.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"c2075.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"c2075.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"c2075.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"c2075.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "629c98c093815938101b37e2ea6296d24320330dd8d9edaa28108d050bbbf491"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ },
+ {
+  "operation_id": 22545,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {
+   "before": {
+    "configurations": [],
+    "account_user": "orbit"
+   },
+   "after": {
+    "configurations": [],
+    "account_user": "orbit"
+   }
+  },
+  "caddy": {
+   "before": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-3031\nhttps://f2075.ihj-proof-h42.test {\n    bind 10.44.0.7 192.168.6.20\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3031/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3031/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3031.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3031.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3031\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.96:5173\n}\nhandle {\n    reverse_proxy 10.253.0.96:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3031-dev\nhttps://f2075.ihj-proof-h42.test:444 {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3031/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3031/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.96:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n\n# orbit: app-dev app-instance-3031-bridge\nhttps://f2075.ihj-proof-h42.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.96/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3031/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3031/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3031.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3031.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3031\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.96:5173\n}\nhandle {\n    reverse_proxy 10.253.0.96:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3031-dev-bridge\nhttps://f2075.ihj-proof-h42.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.96/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3031/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3031/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.96:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n",
+    "version": "cfb62b2712521bc4a4db1af171913874",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": false,
+    "had_served_groups": true
+   },
+   "prepared": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "withdrawn": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "after": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   }
+  },
+  "dns": {},
+  "cleanup": [
+   {
+    "scope": "route-1163-router",
+    "user": "orbit"
+   },
+   {
+    "scope": "route-1163-router-hostname-change",
+    "user": "orbit"
+   },
+   {
+    "scope": "app-instance-3031",
+    "user": "orbit"
+   }
+  ]
+ },
+ {
+  "operation_id": 22548,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {
+   "before": {
+    "configurations": [],
+    "account_user": "orbit"
+   },
+   "after": {
+    "configurations": [],
+    "account_user": "orbit"
+   }
+  },
+  "caddy": {
+   "before": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-3032\nhttps://cs7576.destroy-guard-proof.test {\n    bind 10.44.0.7 192.168.6.20\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3032/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3032/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3032.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3032.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3032\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    reverse_proxy 10.253.0.91:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n\n# orbit: app-dev app-instance-3032-dev\nhttps://cs7576.destroy-guard-proof.test:444 {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3032/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3032/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.91:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n\n# orbit: app-dev app-instance-3032-bridge\nhttps://cs7576.destroy-guard-proof.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.91/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3032/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3032/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3032.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3032.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3032\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    reverse_proxy 10.253.0.91:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n\n# orbit: app-dev app-instance-3032-dev-bridge\nhttps://cs7576.destroy-guard-proof.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.91/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3032/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3032/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.91:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n",
+    "version": "73bcce880e621f90ea019afc53b820e0",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": false,
+    "had_served_groups": true
+   },
+   "prepared": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "withdrawn": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "after": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   }
+  },
+  "dns": {},
+  "cleanup": [
+   {
+    "scope": "route-1164-router",
+    "user": "orbit"
+   },
+   {
+    "scope": "route-1164-router-hostname-change",
+    "user": "orbit"
+   },
+   {
+    "scope": "app-instance-3032",
+    "user": "orbit"
+   }
+  ]
+ },
+ {
+  "operation_id": 22562,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {
+   "before": {
+    "configurations": [],
+    "account_user": "orbit"
+   },
+   "after": {
+    "configurations": [],
+    "account_user": "orbit"
+   }
+  },
+  "caddy": {
+   "before": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n\n# orbit: app-dev app-instance-3026\nhttps://drvs-a.ihj-proof-h42.test {\n    bind 10.44.0.7 192.168.6.20\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3026/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3026/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3026.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3026.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3026\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.92:5173\n}\nhandle {\n    reverse_proxy 10.253.0.92:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3026-dev\nhttps://drvs-a.ihj-proof-h42.test:444 {\n    bind 10.44.0.7\n    @orbit_outside not remote_ip 10.44.0.0/24\n    abort @orbit_outside\n    @orbit_task_vms remote_ip 10.44.0.128/25\n    abort @orbit_task_vms\n    tls /etc/caddy/orbit-certificates/app-instance-3026/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3026/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.92:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n\n# orbit: app-dev app-instance-3026-bridge\nhttps://drvs-a.ihj-proof-h42.test {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.92/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3026/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3026/current/key.pem\n    @orbit_probe header X-Orbit-Probe 1\nlog_skip @orbit_probe\nlog_skip @orbit_asleep\nlog {\n    output file /data/caddy/orbit/hibernation/app-instance-3026.log {\n        roll_size 1MiB\n        roll_keep 1\n    }\n}\n@orbit_asleep {\n    not header X-Orbit-Probe 1\n    file {\n        root /data/caddy/orbit/hibernation\n        try_files /app-instance-3026.asleep\n    }\n}\nhandle @orbit_asleep {\n    forward_auth https://gateway.orbit {\n        uri /api/v1/runtime-activations/app-instance/3026\n        header_up Host gateway.orbit\n        transport http {\n            tls_trusted_ca_certs /usr/local/share/ca-certificates/orbit-managed-root-ca.crt\n            tls_server_name gateway.orbit\n        }\n    }\n}\n    @orbit_vite {\n    path /__orbit/vite /__orbit/vite/*\n}\nhandle @orbit_vite {\n    reverse_proxy 10.253.0.92:5173\n}\nhandle {\n    reverse_proxy 10.253.0.92:8080 {\n    flush_interval -1\n    transport http {\n        read_timeout 1h\n        response_header_timeout 1h\n    }\n}\n}\n}\n\n# orbit: app-dev app-instance-3026-dev-bridge\nhttps://drvs-a.ihj-proof-h42.test:444 {\n    bind 10.253.0.1\n    @orbit_outside not remote_ip 10.253.0.92/32\n    abort @orbit_outside\n    tls /etc/caddy/orbit-certificates/app-instance-3026/current/cert.pem /etc/caddy/orbit-certificates/app-instance-3026/current/key.pem\n    @orbit_dev_port expression `string({http.request.port}).matches('^[0-9]+$') && int({http.request.port}) >= 1024 && int({http.request.port}) <= 65535`\n    handle @orbit_dev_port {\n        reverse_proxy 10.253.0.92:{http.request.port} {\n            flush_interval -1\n            transport http {\n                read_timeout 1h\n            }\n        }\n    }\n    respond \"Orbit development port refused\" 404\n}\n",
+    "version": "2aa3539c6acf8ee9280e2dab4395dae2",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": false,
+    "had_served_groups": true
+   },
+   "prepared": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "withdrawn": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   },
+   "after": {
+    "content": "# Managed by Orbit: Node Caddy build\n{\n    auto_https disable_certs\n    order abort first\n    metrics {\n        per_host\n    }\n}\n",
+    "version": "d4215c441ac4ea6fc12d5f8f798e948e",
+    "listen_addresses": [
+     "10.44.0.7",
+     "192.168.6.20"
+    ],
+    "unserved": true,
+    "had_served_groups": true
+   }
+  },
+  "dns": {},
+  "cleanup": [
+   {
+    "scope": "route-1160-router",
+    "user": "orbit"
+   },
+   {
+    "scope": "route-1160-router-hostname-change",
+    "user": "orbit"
+   },
+   {
+    "scope": "app-instance-3026",
+    "user": "orbit"
+   }
+  ]
+ },
+ {
+  "operation_id": 22563,
+  "node_id": 9,
+  "user": "orbit",
+  "php": {},
+  "caddy": {},
+  "dns": {
+   "before": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\nhost-record=drvs-b.ihj-proof-h42.test,10.44.0.7\n",
+    "catalog": "{\"records\":{\"drvs-b.ihj-proof-h42.test\":\"10.44.0.7\"},\"overrides\":{\"node:9\":{\"drvs-b.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:12\":{\"drvs-b.ihj-proof-h42.test\":\"192.168.6.20\"},\"node:13\":{\"drvs-b.ihj-proof-h42.test\":\"192.168.6.20\"}}}\n",
+    "digest": "237b2d4c2842a3f44f4f5c190529bec89567c5f97d3f772fd440addc923d7b19"
+   },
+   "prepared": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "withdrawn": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   },
+   "after": {
+    "node_id": 1,
+    "records": "# Managed by Orbit.\n\n",
+    "catalog": "{\"records\":{},\"overrides\":{\"node:9\":{},\"node:12\":{},\"node:13\":{}}}\n",
+    "digest": "edea3eba2eaccf476fa474cb2afc6dd9829873783f6a58efe5ee7799834f2a33"
+   }
+  },
+  "cleanup": []
+ }
+]

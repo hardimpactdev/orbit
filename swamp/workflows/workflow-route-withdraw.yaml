@@ -2,7 +2,7 @@ id: 7d3c1e52-84a1-4f6b-9b0e-2c5a6f1d9e47
 name: route-withdraw
 queueTimeout: 30
 labels: {role: swamp}
-description: "instance.destroy: withdraw a Route from every Node it touches, one Ansible read, one composition and one Ansible apply per Node, and prove every contribution."
+description: "instance.destroy: withdraw a Route from every Node it touches, one plan and one Node-local transaction per Node, and prove every contribution."
 inputs:
   type: object
   properties:
@@ -101,6 +101,9 @@ jobs:
             connection: ${{ self.part.connection }}
             host_keys: ${{ self.part.host_keys }}
             serves_routes: ${{ self.part.serves_routes }}
+            # The withdrawn Route names the Node steps, so removals of different Routes on one Node do not share a model lock. The restore
+            # stage lists the Routes the Node served before: the withdrawn ones of a destroy, the prior one of a failed create.
+            route_id: '${{ ("restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore && size(inputs.intent.route_mutations.restore.routes) > 0 ? string(inputs.intent.route_mutations.restore.routes[0].route_id) : "none") }}'
           php: '${{ self.part.serves_routes ? {"before": inputs.intent.route_mutations.artifacts.php[inputs.side == "restore" ? self.part.after.php : self.part.before.php], "after": inputs.intent.route_mutations.artifacts.php[inputs.side == "restore" ? self.part.before.php : self.part.after.php]} : {} }}'
           caddy: '${{ self.part.serves_routes ? {"before": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.after.caddy : self.part.before.caddy], "prepared": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.withdrawn.caddy : self.part.prepared.caddy], "withdrawn": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.prepared.caddy : self.part.withdrawn.caddy], "after": inputs.intent.route_mutations.artifacts.caddy[inputs.side == "restore" ? self.part.before.caddy : self.part.after.caddy]} : {} }}'
           dns: '${{ self.part.prepared.dns != null ? {"before": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns) : self.part.before.dns], "prepared": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? (self.part.withdrawn.dns != null ? self.part.withdrawn.dns : self.part.prepared.dns) : self.part.prepared.dns], "withdrawn": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.prepared.dns : (self.part.withdrawn.dns != null ? self.part.withdrawn.dns : self.part.prepared.dns)], "after": inputs.intent.route_mutations.artifacts.dns[inputs.side == "restore" ? self.part.before.dns : (self.part.after.dns != null ? self.part.after.dns : self.part.prepared.dns)]} : {} }}'
@@ -169,7 +172,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "forward-result-" + string(self._index) }}'
+      behaviorName: '${{ ("forward-result-" + string(self._index) + "-" + ("restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore && size(inputs.intent.route_mutations.restore.routes) > 0 ? string(inputs.intent.route_mutations.restore.routes[0].route_id) : "none")).split(".").join("-") }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}
