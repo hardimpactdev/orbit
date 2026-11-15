@@ -307,6 +307,7 @@ class ProofScopeTest(unittest.TestCase):
             result = p.report(claim('proof', 'range'), {**self.receipt(), 'base': base})
             self.assertFalse(result['passed'])
             self.assertFalse(result['range_covered'])
+            self.assertEqual('range not covered', result['selection'])
 
     def test_run_passes_range_base_and_clears_it_for_nightly(self):
         with tempfile.TemporaryDirectory() as folder:

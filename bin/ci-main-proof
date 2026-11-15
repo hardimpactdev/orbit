@@ -39,7 +39,7 @@ def report(claim, receipt, job_result='success'):
         if missing:
             problems.append({'unit': 'nightly kinds', 'reason': 'Missing ' + ', '.join(sorted(missing)), 'files': []})
     return {'claim': claim, 'passed': not problems, 'range_covered': range_covered,
-            'selection': 'all kinds on newest tree' if claim['mode'] == 'all' else 'union of per-commit selections at tested SHA',
+            'selection': 'all kinds on newest tree' if claim['mode'] == 'all' else ('union of per-commit selections at tested SHA' if range_covered else 'range not covered'),
             'not_individually_tested': claim['commits'][:-1], 'problems': problems, 'receipt': receipt}
 
 
