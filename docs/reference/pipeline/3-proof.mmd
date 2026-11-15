@@ -93,7 +93,7 @@ sequenceDiagram
   %%> - waits at most 120 s for a healthy Doctor, then reads the nodes and checks their agents, the operator and Doctor through the nested Gateway API
   %%> - the mounted checkout serves the candidate immediately, while a restore returns the database to the base schema; an API read before migration can fail on a required candidate column
   %%> - apply needs running containers, settled systemd boot and active state mounts; it needs no API readiness check
-  %%> - the same order applies to every batch, replay and final restore; a failed migration or readiness check stops the cases
+  %%> - the same order applies to every batch and replay restore; a failed migration or readiness check stops the cases
   loop each batch, in the order of swamp/proof/batches.yaml
     SW->>NT: Restore base<br/>a reboot · 5–16 s
     %%> What it does:
