@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Models;
 
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Projects\ProjectCode;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
@@ -37,6 +38,7 @@ use SensitiveParameter;
  * @property string|null $task_reviewer_effort
  * @property bool $nested_fleet
  * @property bool $default_auto_deploy
+ * @property ContainerServer $container_server
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
  * @property TaskPrMode|null $task_pr_mode
@@ -56,6 +58,7 @@ final class Project extends Model
     protected $attributes = [
         'nested_fleet' => false,
         'default_auto_deploy' => true,
+        'container_server' => 't3',
         'type' => 'laravel-app',
         'source_access' => 'github_app',
         'review_and_merge' => false,
@@ -64,7 +67,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'default_auto_deploy', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'default_auto_deploy', 'container_server', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
@@ -176,6 +179,7 @@ final class Project extends Model
             'task_workspace_routed' => 'boolean',
             'nested_fleet' => 'boolean',
             'default_auto_deploy' => 'boolean',
+            'container_server' => ContainerServer::class,
             'review_and_merge' => 'boolean',
             'task_pr_mode' => TaskPrMode::class,
             'maintenance' => 'boolean',

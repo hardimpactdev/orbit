@@ -76,14 +76,14 @@ final readonly class InstanceContainer
      */
     public const string T3BootDropIn = '/etc/systemd/system/t3.service.d/10-orbit-boot.conf';
 
+    /** The drop-in that sets T3's unit's `ExecStart` to the runtime's recorded server (ContainerServer::dropIn). */
+    public const string ServerDropIn = '/etc/systemd/system/t3.service.d/20-orbit-server.conf';
+
     /**
      * The line after a clone's credential line on `clone-container`'s stdin; the model environment follows it. The copy's first boot then
      * starts T3 (docs/reference/development-containers.md#t3-starts-with-the-copy). Git's credential store skips the line and the rest.
      */
     public const string ModelEnvironmentFrame = '#orbit-model-environment';
-
-    /** T3's command in a container, from the agent release its image holds. */
-    public const string T3 = InstanceHostIntent::AgentFolder.'/current/agent/bin/t3';
 
     /** The runtime's Node.js in a container, which runs Orbit's T3 RPC helper of a task copy's turn. */
     public const string Node = InstanceHostIntent::RuntimeFolder.'/current/bin/node';
@@ -160,7 +160,8 @@ final readonly class InstanceContainer
     /**
      * Reserves the container's runtime row: the lowest free guest address of the Node's bridge (the bridge keeps the first usable
      * address and the image build the last) and the shared folder versions the Node installs now. A clone also gets the next free
-     * T3 port ({@see self::nextT3Port()}) and names the default it copies; the default gets no T3 port.
+     * T3 port ({@see self::nextT3Port()}) and its Project's container server, and names the default it copies; the default gets
+     * neither. A server whose program the recipe does not pin is refused before any record.
      */
     public function reserve(Instance $instance, Node $node, ?Instance $source = null): InstanceRuntime
     {
@@ -169,7 +170,8 @@ final readonly class InstanceContainer
             return $existing;
         }
         // The one placement decision, recorded once; a clone lives in the project its default's runtime records.
-        $placed = InstancePlacement::place($instance->project()->firstOrFail(), $node, true);
+        $project = $instance->project()->firstOrFail();
+        $placed = InstancePlacement::place($project, $node, true);
         $sourceRuntime = $source?->runtime()->firstOrFail();
         $incusProject = $sourceRuntime->incus_project ?? $placed;
         $folders = $this->folders();
@@ -190,15 +192,18 @@ final readonly class InstanceContainer
             throw new ResourceOperationException('instance.host_unavailable', 'The Node\'s Instance bridge has no free address.', 409);
         }
         $port = null;
-        // Every Instance but the default runs T3: a clone, and a checkout Instance that moved into a container.
+        $server = null;
+        // Every Instance but the default runs a server: a clone, and a checkout Instance that moved into a container.
         if ($instance->name !== 'default') {
+            $server = $project->container_server;
+            $server->assertPinned($folders);
             $port = self::nextT3Port($node);
         }
         $plan = InstanceFolderPlan::for($folders);
 
         return InstanceRuntime::query()->create([
             'instance_id' => $instance->id, 'node_id' => $node->id, 'incus_project' => $incusProject,
-            'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port,
+            'container_name' => self::name($instance), 'bridge_address' => $address, 't3_port' => $port, 'container_server' => $server,
             'runtime_version' => $plan['runtime']['version'], 'agent_version' => $plan['agent']['version'],
             'clone_source_instance_id' => $source?->id, 'power_state' => InstanceRuntimePowerState::Stopped,
             // A new nested-fleet default gets an inner volume, and a copy of a default with one gets its own copy of it; every other
@@ -444,7 +449,7 @@ final readonly class InstanceContainer
                 'title' => $project->name ?: $project->slug,
                 'unit' => self::T3Unit, 'internal_port' => InstanceHostIntent::T3Port, 'ready_seconds' => 30,
                 'url' => 'http://'.$node->wireguard_ip.':'.$runtime->t3_port, 'label' => $project->slug.' / '.$instance->name,
-                't3' => self::T3, 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
+                't3' => $runtime->server()->program(), 'project_mark' => '/home/agent/.config/orbit/t3-project', 'condition' => self::InstanceFile],
             'model_environment' => ['path' => self::ModelEnvironment, 'uid' => $agent, 'gid' => $agent, 'mode' => '0600', 'frame' => self::ModelEnvironmentFrame],
             // The value the clone script writes into the copy's proxy drop-ins before its first start (instance_node_services.py
             // `proxy-files`): the composed one, with the copy's private names and a nested fleet's inner fleet. A copy of a default with a
@@ -471,6 +476,8 @@ final readonly class InstanceContainer
                 // No default dependencies: T3 waits for nftables, the local file systems, the journal and sysctl, not for `sysinit.target`.
                 ['path' => self::T3BootDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                     'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"],
+                // The unit starts the runtime's recorded server (docs/reference/development-containers.md#container-server).
+                ['path' => self::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $runtime->server()->dropIn()],
             ],
             // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
             'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
@@ -887,7 +894,8 @@ final readonly class InstanceContainer
         return $php.InstanceHostIntent::RuntimeFolder.'/current/bin:/usr/local/bin:/usr/bin:/bin';
     }
 
-    private function folders(): InstanceFolders
+    /** The recipe's shared folders; a Project update checks its container server against them too. */
+    public function folders(): InstanceFolders
     {
         return $this->recipes->currentRecipe()->instances
             ?? throw new ResourceOperationException('instance.host_unavailable', 'The recipe holds no shared Instance folders.', 409);

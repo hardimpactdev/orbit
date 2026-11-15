@@ -327,7 +327,8 @@ final readonly class InstanceImage
     {
         $agentBin = InstanceHostIntent::AgentFolder.'/current/agent/bin';
         $runtimeBin = InstanceHostIntent::RuntimeFolder.'/current/bin';
-        $t3 = InstanceHostIntent::T3Port;
+        // A container's drop-in names its own server (ContainerServer::dropIn); the image's unit starts T3.
+        $serve = ContainerServer::T3->serve();
 
         return <<<UNIT
             # Managed by Orbit.
@@ -347,7 +348,7 @@ final readonly class InstanceImage
             Environment=PATH={$agentBin}:{$runtimeBin}:/usr/local/bin:/usr/bin:/bin
             Environment=DISABLE_AUTOUPDATER=1
             EnvironmentFile=/home/agent/.config/orbit/model.env
-            ExecStart={$agentBin}/t3 serve --host=0.0.0.0 --port={$t3} --no-browser
+            ExecStart={$serve}
             Restart=always
             RestartSec=2
 

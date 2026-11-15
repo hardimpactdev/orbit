@@ -13,6 +13,7 @@ use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\ContainerInstanceDestroy;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
 use App\Domain\Instances\Environment\InstanceEnvironmentRenderer;
@@ -49,12 +50,14 @@ use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
 use App\Models\ProcessDefinition;
+use App\Models\Project;
 use App\Models\ProjectDevelopmentDeployStep;
 use App\Models\Route;
 use App\Models\WebSocketApp;
 use App\Models\WebSocketAppTarget;
 use App\Support\ValidatedData;
 use Dotenv\Dotenv;
+use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -244,7 +247,7 @@ describe('a clone of the container default', function (): void {
             ->and(collect($clone['files'])->firstWhere('path', '/home/agent/.t3/userdata/settings.json')['json'])->toBe(['linkedEnvironmentsEnabled' => true])
             ->and($clone['t3'])->toMatchArray(['port' => 3800, 'listen' => '10.44.0.7', 'device' => 't3', 'internal_port' => 3773,
                 'url' => 'http://10.44.0.7:3800', 'label' => 'tool / feature', 'title' => 'tool'])
-            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json', '/etc/systemd/system/t3.service.d/10-orbit-boot.conf'])
+            ->and(collect($clone['files'])->pluck('path')->all())->toBe(['/etc/orbit/instance', '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json', '/etc/systemd/system/t3.service.d/10-orbit-boot.conf', '/etc/systemd/system/t3.service.d/20-orbit-server.conf'])
             // A seed taken before the browser files lacks them: the copy gets them, and an empty linker cache that the stock
             // `ldconfig.service` rebuilds at its first start, before that start.
             ->and($clone['boot_files'])->toBe([
@@ -275,6 +278,10 @@ describe('a clone of the container default', function (): void {
             // T3 starts without default dependencies: `sysinit.target` held each boot's start about 0.6 s.
             ->and($clone['files'][4])->toBe(['path' => '/etc/systemd/system/t3.service.d/10-orbit-boot.conf', 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                 'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"])
+            // The unit starts the server the runtime recorded from the Project: T3 by default.
+            ->and($clone['files'][5])->toBe(['path' => '/etc/systemd/system/t3.service.d/20-orbit-server.conf', 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
+                'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"])
+            ->and($clone['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/opt/orbit-agent/current/notes/package.md'])
             // WireGuard peers reach T3, the task VM range first refused.
@@ -422,7 +429,7 @@ it('frames the model environment after the credential line on the copy step stdi
         ->and($run['intent']['container']['clone']['model_environment']['frame'])->toBe(InstanceContainer::ModelEnvironmentFrame)
         ->and($run['intent']['container']['clone']['t3']['condition'])->toBe(InstanceContainer::InstanceFile)
         ->and(collect($run['intent']['container']['clone']['files'])->where('before_start', true)->pluck('path')->all())
-        ->toBe([InstanceContainer::InstanceFile, '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json', InstanceContainer::T3BootDropIn])
+        ->toBe([InstanceContainer::InstanceFile, '/home/agent/.codex/config.toml', '/home/agent/.claude.json', '/home/agent/.t3/userdata/settings.json', InstanceContainer::T3BootDropIn, InstanceContainer::ServerDropIn])
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         // The clone's run reads only the framed copy: no second copy of the credential line.
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-git-credential-'.$operation->id);
@@ -1812,5 +1819,63 @@ describe('a Process that is stopped on the default', function (): void {
         expect($operation->refresh()->result['processes_stopped'])->toBe([])
             ->and(Process::query()->where('owner_id', $operation->target_id)->pluck('name')->all())->toBe(['queue'])
             ->and(array_column(containerIntentOf($operation)['processes'], 'desired'))->toBe(['running']);
+    });
+});
+
+// The container server a clone records (docs/reference/development-containers.md#container-server).
+describe('the server a container records', function (): void {
+    it('records the Project\'s server on a clone and none on the default, and the clone runs T3 by default', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+
+        $clone = containerCreate($default->project, $node, 'feature');
+
+        $intent = containerIntentOf($clone);
+        expect(InstanceRuntime::query()->where('instance_id', $default->id)->value('container_server'))->toBeNull()
+            ->and(InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3)
+            ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
+            ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
+            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n");
+    });
+
+    it('runs the Conn Server in a clone of a Project that chose it, and keeps it after the Project changes back', function (): void {
+        containerServerConnPinned();
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $default->project->update(['container_server' => ContainerServer::Conn]);
+
+        $clone = containerCreate($default->project, $node, 'feature');
+        $default->project->update(['container_server' => ContainerServer::T3]);
+        $later = containerCreate($default->project, $node, 'later');
+
+        $runtime = InstanceRuntime::query()->where('instance_id', $clone->target_id)->firstOrFail();
+        $intent = app(InstanceContainer::class)->intent(Instance::query()->findOrFail($clone->target_id), $runtime);
+        expect($runtime->container_server)->toBe(ContainerServer::Conn)
+            ->and(containerIntentOf($clone)['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
+            // An intent built after the Project changed back still names the container's own server.
+            ->and($intent['clone']['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server')
+            ->and(collect($intent['clone']['files'])->firstWhere('path', InstanceContainer::ServerDropIn)['content'])
+            ->toBe("# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/conn-server serve --host=0.0.0.0 --port=3773 --no-browser\n")
+            ->and(InstanceRuntime::query()->where('instance_id', $later->target_id)->firstOrFail()->container_server)->toBe(ContainerServer::T3);
+    });
+
+    it('refuses the create of a clone whose server the recipe does not pin, before any record', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        // A Project that chose the Conn Server while a recipe pinned it, after a recipe that pins none.
+        Project::query()->whereKey($default->project_id)->update(['container_server' => 'conn']);
+        $before = ['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'last_port' => $node->refresh()->t3_port_last];
+
+        expect(containerRefusal(fn () => containerCreate($default->project->refresh(), $node, 'feature')))->toBe('project.container_server_unavailable')
+            ->and(['instances' => Instance::query()->count(), 'runtimes' => InstanceRuntime::query()->count(), 'last_port' => $node->refresh()->t3_port_last])->toBe($before);
+    });
+
+    it('keeps a runtime\'s server: no update changes it', function (): void {
+        $node = containerDefaultNode();
+        $default = seededDefault($node);
+        $clone = containerCreate($default->project, $node, 'feature');
+
+        expect(fn () => InstanceRuntime::query()->where('instance_id', $clone->target_id)->update(['container_server' => 'conn']))
+            ->toThrow(QueryException::class, 'An Instance runtime keeps its container server.');
     });
 });

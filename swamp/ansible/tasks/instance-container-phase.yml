@@ -1423,6 +1423,11 @@
   vars:
     t3_project_mark: "{{ container.clone.t3.project_mark }}"
   block:
+    # The agent part wrote T3's drop-ins, the container server's among them, into a running container; systemd reads them only after
+    # a reload (docs/reference/development-containers.md#container-server).
+    - name: Read the drop-ins of the T3 unit
+      ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'daemon-reload'] }}" }
+      changed_when: false
     - name: Start the T3 unit
       ansible.builtin.command: { argv: "{{ as_root + ['systemctl', 'start', '--', container.clone.t3.unit] }}" }
       changed_when: false

@@ -37,7 +37,7 @@ final readonly class DevelopmentDeploySteps
     public function copies(Operation $operation, Project $project, mixed $captured): array
     {
         if (! is_array($captured) || ! array_is_list($captured)
-            || array_map(static fn (mixed $step): array => ValidatedData::object($step), $captured) !== $this->capture($project)) {
+            || array_map(ValidatedData::object(...), $captured) !== $this->capture($project)) {
             throw $this->changed();
         }
         $copies = [];

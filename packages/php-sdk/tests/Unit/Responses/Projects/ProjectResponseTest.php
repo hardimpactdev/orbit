@@ -62,4 +62,9 @@ describe(ProjectResponse::class, function (): void {
             ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->defaultAutoDeploy)->toBeNull()
             ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('default_auto_deploy');
     });
+    it('maps container_server, and leaves it out when the Gateway sends none', function (): void {
+        expect(ProjectResponse::fromGatewayData(['id' => 3, 'container_server' => 'conn'], 'request-id')->containerServer)->toBe('conn')
+            ->and(ProjectResponse::fromGatewayData(['id' => 3, 'container_server' => 't3'], 'request-id')->toArray())->toMatchArray(['container_server' => 't3'])
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('container_server');
+    });
 });

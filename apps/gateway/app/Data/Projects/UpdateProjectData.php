@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Tasks\TaskPrMode;
@@ -43,6 +44,8 @@ final readonly class UpdateProjectData
         /** Whether each new commit of the default branch deploys the container default (docs/reference/deployments.md#automatic-development-defaults). */
         public bool $defaultAutoDeployProvided = false,
         public bool $defaultAutoDeploy = true,
+        /** The server of the Project's containers that Orbit reserves after the change; null leaves it. */
+        public ?ContainerServer $containerServer = null,
     ) {}
 
     public function hasChanges(): bool
@@ -58,7 +61,8 @@ final readonly class UpdateProjectData
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
             || $this->reviewAndMergeProvided
-            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided;
+            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided
+            || $this->containerServer !== null;
     }
 
     /** The nested-fleet flag travels alone, so its refusal has no other write to undo. */
@@ -66,14 +70,16 @@ final readonly class UpdateProjectData
     {
         return $this->code !== null || $this->name !== null || $this->typeProvided || $this->sourceAccessProvided
             || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->reviewAndMergeProvided || $this->mergeCheckProvided
-            || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided || $this->hasReconcilableChanges();
+            || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided || $this->hasReconcilableChanges()
+            || $this->containerServer !== null;
     }
 
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {
         return $this->name !== null || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided
-            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided;
+            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided
+            || $this->containerServer !== null;
     }
 
     public function hasReconcilableChanges(): bool
@@ -102,6 +108,7 @@ final readonly class UpdateProjectData
             'nested_fleet' => $this->nestedFleetProvided ? $this->nestedFleet : null,
             'default_auto_deploy' => $this->defaultAutoDeployProvided ? $this->defaultAutoDeploy : null,
             'task_agents' => $this->taskAgents,
+            'container_server' => $this->containerServer?->value,
             'provided' => [
                 $this->typeProvided,
                 $this->slugProvided,

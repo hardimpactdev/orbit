@@ -17,6 +17,7 @@ use App\Data\Tasks\StartTaskPublishData;
 use App\Data\Tasks\TaskTurnData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\DevelopmentInstanceDestroyProjection;
 use App\Domain\Instances\InstanceCompleteProjection;
@@ -1396,6 +1397,21 @@ function copyCandidate(Task $group): TaskCheck
 }
 
 describe('a turn of a group that owns a copy', function (): void {
+    it('runs the turn\'s commands with the server its copy recorded: the Conn Server of a Project that chose it', function (): void {
+        containerServerConnPinned();
+        $source = copySource();
+        $source->project->update(['container_server' => ContainerServer::Conn]);
+        $group = copyGroup($source->project);
+        $copy = finishedCopy($group, startCopy($group));
+        // A later change of the Project's setting does not reach the copy.
+        $source->project->update(['container_server' => ContainerServer::T3]);
+
+        $turn = copyTurn($group);
+
+        expect($copy->runtime->container_server)->toBe(ContainerServer::Conn)
+            ->and($turn->input['turn']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server');
+    });
+
     it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));

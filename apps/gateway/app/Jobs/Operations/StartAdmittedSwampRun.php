@@ -51,7 +51,7 @@ final class StartAdmittedSwampRun implements ShouldQueue
             }
             $release = $children->release($operation);
             if ($release instanceof CarbonImmutable) {
-                Bus::dispatch((new self($operation->id))->delay($release));
+                Bus::dispatch(new self($operation->id)->delay($release));
 
                 return;
             }

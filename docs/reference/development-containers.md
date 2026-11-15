@@ -320,7 +320,7 @@ The OS packages of the image change rarely. The Node's patch run of ADR 0250 upg
 
 ## Container server
 
-A Project chooses the server that runs in its containers, in its [`container_server`](/reference/projects#container-server) field: `t3`, the T3 server and the default, or `conn`, the [Conn Server](https://github.com/hardimpactdev/conn-server). The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Only the program differs. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
+A Project chooses the server that runs in its containers, in its [`container_server`](/reference/projects#container-server) field: `t3`, the T3 server and the default, or `conn`, the [Conn Server](https://github.com/nckrtl/conn). The Conn Server serves the same client contract: `/mcp`, `/.well-known/t3/environment`, the HTTP and WebSocket API, and the `t3` CLI subcommands that Orbit calls. Only the program differs. Credentials stay the same: `model.env` and Codex's `config.toml` ([Model access](#model-access)). ADR 0258 records the decision.
 
 | Choice | Program in the agent folder |
 | --- | --- |
@@ -333,7 +333,7 @@ The record names the program that every call inside the container runs: the crea
 
 The image and its unit do not change. The unit keeps its name, `t3.service`, and its `PATH`, which holds the runtime folder's `bin`: the Conn Server's SDK host runs on that folder's `node`, Node 24.10 or later. An agent folder update restarts either server with `systemctl try-restart t3.service`. Orbit's other names for the container's server, such as the T3 port and [T3 registration](#t3-registration-and-pairing), cover both.
 
-The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins no Conn Server release yet, so `conn` is refused. Once it pins one as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, every agent folder holds both programs. The new folder version only adds files, so no running server restarts.
+The recipe pins each program in the agent folder. A choice whose program the recipe does not pin is refused with `project.container_server_unavailable` (409): `project:update` refuses it, and so does each reservation of a container with a server, before any record. The recipe pins no Conn Server release yet, so `conn` is refused. The releases come from `nckrtl/conn`: the tag `conn-server-v<version>` holds the asset `conn-server-<version>-linux-x64.tar.gz` and its `.sha256`. The tarball holds the folder `conn-server-<version>-linux-x64/` with the static `conn-server` and its SDK host. Once the recipe pins a release as the part `conn-server`, with `bin` `{"conn-server": "conn-server-<version>-linux-x64/conn-server"}`, every agent folder holds both programs. The new folder version only adds files, so no running server restarts.
 
 ## Workspace volumes (draft)
 

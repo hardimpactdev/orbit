@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Data\Projects;
 
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Projects\ProjectSourceAccess;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Tasks\TaskPrMode;
@@ -41,6 +42,7 @@ final class ProjectData extends Data
         public ?string $taskReviewerEffort = null,
         public ?TaskPrMode $taskPrMode = null,
         public bool $defaultAutoDeploy = true,
+        public ContainerServer $containerServer = ContainerServer::T3,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -71,6 +73,7 @@ final class ProjectData extends Data
             taskReviewerEffort: $project->task_reviewer_effort,
             taskPrMode: $project->task_pr_mode,
             defaultAutoDeploy: $project->default_auto_deploy,
+            containerServer: $project->container_server,
         );
     }
 }

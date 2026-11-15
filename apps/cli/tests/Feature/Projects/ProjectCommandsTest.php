@@ -706,6 +706,29 @@ describe('project:update', function (): void {
         expect(Artisan::output())->toContain('Default auto-deploy');
     });
 
+    it('chooses the Project container server through the SDK request', function (): void {
+        $setClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--container-server' => 'conn'])->assertExitCode(0);
+        expect($setClient->getLastRequest()?->body()->all())->toBe(['container_server' => 'conn']);
+    });
+
+    it('refuses a container server that is no server before contacting the Gateway', function (): void {
+        $refusedClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--container-server' => 'conn-server', '--json' => true])
+            ->expectsOutputToContain('project.container_server_invalid')->assertExitCode(1);
+        expect($refusedClient->getLastRequest())->toBeNull();
+    });
+
+    it('shows the Project container server', function (): void {
+        MockClient::global([
+            ShowProjectRequest::class => MockResponse::make(['data' => [...app_payload(), 'container_server' => 'conn'], 'meta' => ['request_id' => app_request_id()]]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('Container server')->toContain('conn');
+    });
+
     it('sets and clears the Project copy turn agent defaults through the SDK request', function (): void {
         $setClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
         $this->artisan('project:update', ['project' => '3', '--task-implementer-model' => 'claude-sonnet-5-5', '--task-reviewer-effort' => 'max'])->assertExitCode(0);

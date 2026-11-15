@@ -56,13 +56,8 @@ final readonly class ClonePublication
             return false;
         }
         $plan = ValidatedData::object($operation->input['route_create']);
-        foreach (['php_files', 'dns', 'ingress', 'lan'] as $list) {
-            if (($plan[$list] ?? []) !== []) {
-                return false;
-            }
-        }
 
-        return true;
+        return array_all(['php_files', 'dns', 'ingress', 'lan'], fn ($list) => ! (($plan[$list] ?? []) !== []));
     }
 
     /**
