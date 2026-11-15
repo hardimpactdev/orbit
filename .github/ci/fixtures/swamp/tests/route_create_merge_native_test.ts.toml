@@ -1,7 +1,7 @@
 order = 861
-source_sha256 = "0a1658c17cf2654719f3429bd87b3ebc66a344e02d22253c9fe61bac7c2c6db7"
+source_sha256 = "bc6eed4ee682331f2ae1b1f6a0dba1e32659b4f8aee001bbae71c24018063ee3"
 cases = [
-  "pinned route create: a clone's site merges, and two Routes' Node steps on one Node carry their own names",
+  "pinned route create: a clone's site merges under a pooled name per Node, and other callers keep their per-Node names",
 ]
 file = "swamp/tests/route_create_merge_native_test.ts"
 cost = 10

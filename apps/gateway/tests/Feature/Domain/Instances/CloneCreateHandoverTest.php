@@ -129,6 +129,8 @@ function handoverCompletion(Operation $create): Operation
 }
 
 it('ends a clone\'s create at its thread: one transaction records T3 and the baseline, keeps it source_resolved and admits instance.complete', function (): void {
+    // The run's end is recorded to the second and the baseline time is read later: one frozen second keeps them comparable under load.
+    $this->freezeSecond();
     $node = containerDefaultNode();
     $operation = handoverCreate(handoverDefault($node));
     $base = DB::transactionLevel();

@@ -61,7 +61,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-site-" + (("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(inputs.node_id))).split(".").join("-") }}'
+      behaviorName: '${{ ("route-site-" + string(inputs.node_id) + (has(inputs.merge) && inputs.merge ? "-" + string(int(inputs.intent.route_id) % 16) : "")).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags site "$ORBIT_ANSIBLE/route-create-site.yml"
@@ -87,7 +87,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/group'
-      behaviorName: '${{ ("route-env-group-" + (("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(inputs.node_id))).split(".").join("-") }}'
+      behaviorName: '${{ ("route-env-group-" + string(inputs.node_id)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {groupname: orbit-env, ensure: present, system: true, become: true,
         nodeHost: '${{ inputs.intent.nodes[string(inputs.node_id)].host }}', nodeUser: '${{ inputs.intent.nodes[string(inputs.node_id)].user }}', nodePort: '${{ inputs.intent.nodes[string(inputs.node_id)].port }}',
@@ -105,7 +105,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: '${{ ("route-env-" + (("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(inputs.node_id)) + "-" + string(self._index)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-env-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}'
       methodName: apply
       globalArgs: {path: '${{ self.env.path }}', content: '${{ vault.get(inputs.execution_secrets[self.env.secret_field].vault, inputs.execution_secrets[self.env.secret_field].key) }}', owner: '${{ self.env.owner }}',
         group: orbit-env, mode: '0640', ensure: present,
@@ -125,7 +125,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-site-cleanup-" + (("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(inputs.node_id))).split(".").join("-") }}'
+      behaviorName: '${{ ("route-site-cleanup-" + string(inputs.node_id) + (has(inputs.merge) && inputs.merge ? "-" + string(int(inputs.intent.route_id) % 16) : "")).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

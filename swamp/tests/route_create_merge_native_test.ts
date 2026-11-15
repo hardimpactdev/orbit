@@ -1,7 +1,7 @@
 /**
  * Runs the real `operation-route-create` and `route-create-site` workflows on the release-pinned Swamp binary, as a clone's `clone-route`
- * calls them. Every behavior is a local shell stub that records the behavior name and the merge switch the engine evaluated: the Node steps
- * of two Routes on one Node never share a name (a shell behavior locks per name), and only `merge: true` turns the site's merge on.
+ * calls them. Every behavior is a local shell stub that records the behavior name and the merge switch the engine evaluated: a clone's Node
+ * steps take one of 16 names per Node (route id modulo 16), every other caller keeps its per-Node name, and only `merge: true` turns the merge on.
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
@@ -66,18 +66,19 @@ async function fixture() {
     return { folder, run, calls, cleanup: () => Deno.removeSync(folder, { recursive: true }) };
 }
 
-Deno.test({ name: "pinned route create: a clone's site merges, and two Routes' Node steps on one Node carry their own names", ignore: !binary, async fn() {
+Deno.test({ name: "pinned route create: a clone's site merges under a pooled name per Node, and other callers keep their per-Node names", ignore: !binary, async fn() {
     const f = await fixture();
     try {
-        for (const [route, merge] of [[41, true], [42, true], [43, null]] as const) {
+        // Routes 41 and 42 take slots 9 and 10 on Node 9; 57 shares slot 9 with 41 and runs after it; 43 is not a clone's create.
+        for (const [route, merge] of [[41, true], [42, true], [57, true], [43, null]] as const) {
             const done = await f.run(route, merge);
             assert(done.success, text(done.stdout) + text(done.stderr));
         }
         const calls = f.calls();
-        assertEquals(calls.filter((line) => line.startsWith("site ")), ["site route-site-41-9 1", "site route-site-42-9 1", "site route-site-43-9 "]);
-        const probes = calls.filter((line) => line.includes("route-probe-209-"));
-        assertEquals(probes, ["Probe the site over TLS route-probe-209-41-9 -", "Probe the site over TLS route-probe-209-42-9 -",
-            "Probe the site over TLS route-probe-209-43-9 -"]);
+        assertEquals(calls.filter((line) => line.startsWith("site ")),
+            ["site route-site-9-9 1", "site route-site-9-10 1", "site route-site-9-9 1", "site route-site-9 "]);
+        assertEquals(calls.filter((line) => line.includes("route-probe-209-")), ["Probe the site over TLS route-probe-209-9-9 -",
+            "Probe the site over TLS route-probe-209-9-10 -", "Probe the site over TLS route-probe-209-9-9 -", "Probe the site over TLS route-probe-209-9 -"]);
     } finally {
         f.cleanup();
     }

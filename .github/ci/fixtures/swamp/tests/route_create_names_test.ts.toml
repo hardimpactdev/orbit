@@ -1,0 +1,11 @@
+order = 862
+source_sha256 = "67a84f2b07d1d76755cf4824618e036b9638d58afc20f92bf59737e4531cf30f"
+cases = [
+  "a thousand clone creates make at most 16 names per family on each Node; other callers make one",
+]
+file = "swamp/tests/route_create_names_test.ts"
+inputs = [
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/workflows/workflow-operation-route-create.yaml",
+  "swamp/workflows/workflow-route-create-site.yaml",
+]
