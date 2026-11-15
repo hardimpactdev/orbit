@@ -43,7 +43,7 @@ The separate `dependency-upgrade` workflow takes its scratch checkout and branch
 
 ### Project index
 
-Publish one persistent JSON index per Orbit Project and source ref. It identifies immutable, versioned source reports and the open batch update PR. Publish reports before switching the index so one read cannot combine different generations.
+Publish one JSON index per Orbit Project and source ref. It identifies immutable, versioned source reports and the open batch update PR. Publish reports before switching the index so one read cannot combine different generations.
 
 | Field | Required meaning |
 | --- | --- |
@@ -80,7 +80,7 @@ The Instance view compares the report commit with its recorded checkout or deplo
 
 Bounds are 64 KiB per project index, 64 source entries, and 1 MiB per selected source report, with at most 5,000 package resolutions and 500 findings. The Gateway fetches selected sources on demand rather than all sources on every page read. Text and links have fixed limits; raw command output, environment values, absolute paths, registry credentials, and local repository URLs are excluded.
 
-A producer that exceeds a bound publishes an explicit source failure and keeps the last successful report. It does not silently truncate an inventory or findings list. Gateway endpoints paginate rendered rows within the bounded report. The index is persistent. Keep v1 reports indefinitely. The Gateway refresh cache lasts at most 60 seconds; the cache retains the last valid result longer only to show stale evidence. Use the shared success, running/partial, failed, blocked, and PR-unknown fixtures for producer and consumer checks.
+A producer that exceeds a bound publishes an explicit source failure and keeps the last successful report. It does not silently truncate an inventory or findings list. Gateway endpoints paginate rendered rows within the bounded report. Swamp keeps the index and its reports for [7 days](/reference/operations#swamp-datastore-watch). The Gateway refresh cache lasts at most 60 seconds; the cache retains the last valid result longer only to show stale evidence. Use the shared success, running/partial, failed, blocked, and PR-unknown fixtures for producer and consumer checks.
 
 
 ## Native lookup
@@ -89,7 +89,7 @@ Read `modelIdOrName: orbit-gateway` and index `dataName: dependencies-v1-project
 
 Reports have write-once names `dependencies-v1-report-<publication_uuid>-<source_sha256>`. The source digest hashes compact UTF-8 JSON `[path, ecosystem, package_manager]` without a trailing newline. Each pointer carries native `modelIdOrName`, `dataName`, and `version`, plus the expected source identity and commit. Read the exact version. Never replace it with latest.
 
-The producer publishes reports before switching the index. Every index and report uses infinite lifetime and version retention for v1. The Gateway validates the selected report against its pointer and the index before exposing it.
+The producer publishes reports before switching the index. Swamp [data retention](/reference/operations#swamp-datastore-watch) deletes an index or report version 7 days after it was written. The Gateway then shows its cached copy as stale, and as unavailable once that 7-day cache expires; a refresh leaves an index whose report is gone unrefreshed instead of failing. The Gateway validates the selected report against its pointer and the index before exposing it.
 
 ## Gateway reads
 

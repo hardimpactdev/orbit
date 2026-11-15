@@ -53,7 +53,8 @@ export function resultStore(ctx: DependencyContext): ResultStore {
             if (!ctx.readResource) {
                 throw new Error("native_resource_reader_unavailable");
             }
-            return ReportSchema.parse(await ctx.readResource(name, version));
+            const stored = await ctx.readResource(name, version);
+            return stored === null ? null : ReportSchema.parse(stored);
         },
         writeIndex: async (name, value) => {
             await ctx.writeResource(

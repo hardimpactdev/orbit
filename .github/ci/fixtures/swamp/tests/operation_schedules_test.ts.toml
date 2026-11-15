@@ -1,9 +1,9 @@
 order = 960
-source_sha256 = "cb1b4e38e516000985ad98d6501fa7ce6d7d7d3f3eb14a230d31a66fac7ae466"
+source_sha256 = "a93b38118308555b1d7a2bf1d4fba0bdb87639447be8a214a5040cc691ab252d"
 cases = [
   "operation workflows never schedule Gateway claims",
   "Gateway discovery and slot models cannot claim work",
-  "native retention keeps history and current data",
+  "native retention keeps history, and keeps model data seven days",
 ]
 file = "swamp/tests/operation_schedules_test.ts"
 cost = 3

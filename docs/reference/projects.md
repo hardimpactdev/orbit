@@ -282,6 +282,8 @@ orbit project:update 3 --repository=https://github.com/acme/site.git
 
 Three Swamp workflows on Node 209 keep a Project's dependencies current. [`project:maintenance:inspect`](/cli/project/maintenance-inspect) (kind `project.detect`) reads the manifests and lockfiles of the default branch through the GitHub App without a clone and compares them with the registries, `project.routine` selects this week's routine group, and `project.observe` reads the pull requests that maintenance groups watch.
 
+`project.observe` then refreshes the Project's [dependency findings index](/reference/instance-dependency-contracts). If Swamp [data retention](/reference/operations#swamp-datastore-watch) has deleted a report that the index points to (after 7 days), it leaves the index as it is and does not fail.
+
 The Gateway admits each maintenance step under its own key, such as `maintenance:<group>:<operation>:<kind>`, `maintenance-finish:<group>:<publish operation>` or `native-maintenance:<key>`, with `OperationIdempotency::under`. A repeated pass replays the recorded step and starts nothing.
 
 "Node 209" here is the Swamp Node of the production fleet: the Node that holds the `swamp` role. The Gateway finds it by that role and never by an id, so a Gateway that bootstraps its own machine has the same Swamp Node ([Gateway bootstrap prerequisites](/reference/node-provisioning#gateway-bootstrap-prerequisites)).
