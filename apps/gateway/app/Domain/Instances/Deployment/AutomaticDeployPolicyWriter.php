@@ -37,10 +37,17 @@ enum AutomaticDeployPolicyWriter: string
     public function eligibilityRefusal(Instance $instance): ?string
     {
         if ($instance->placedOnAppDev()) {
-            return $instance->name === 'default' && $instance->status === InstanceState::Active
+            // Only a container default follows its branch: a checkout default and a nested-fleet default (its release refresh) never do.
+            $instance->loadMissing(['project', 'runtime']);
+
+            if (! ($instance->name === 'default' && $instance->status === InstanceState::Active
                 && $instance->source_layout === InstanceSourceLayout::Checkout->value
-                && $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active)
-                    ? null : self::InactiveRole;
+                && $instance->runtime !== null && ! $instance->project->nested_fleet
+                && $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppDev && $role->status === LifecycleStatus::Active))) {
+                return self::InactiveRole;
+            }
+
+            return $instance->project->default_auto_deploy ? null : AutomaticDeployHistory::Paused;
         }
         $instance->loadMissing('node.roles');
         if (! $instance->node->roles->contains(static fn (NodeRole $role): bool => $role->role === RoleName::AppProd && $role->status === LifecycleStatus::Active)) {

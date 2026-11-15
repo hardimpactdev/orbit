@@ -40,6 +40,9 @@ final readonly class UpdateProjectData
         public bool $taskPrModeProvided = false,
         /** The mode of the Project's task copy groups that set none; null clears it, so the Gateway's default applies. */
         public ?TaskPrMode $taskPrMode = null,
+        /** Whether each new commit of the default branch deploys the container default (docs/reference/deployments.md#automatic-development-defaults). */
+        public bool $defaultAutoDeployProvided = false,
+        public bool $defaultAutoDeploy = true,
     ) {}
 
     public function hasChanges(): bool
@@ -55,7 +58,7 @@ final readonly class UpdateProjectData
             || $this->sourceAccessProvided
             || $this->taskWorkspaceRoutedProvided
             || $this->reviewAndMergeProvided
-            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided;
+            || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided;
     }
 
     /** The nested-fleet flag travels alone, so its refusal has no other write to undo. */
@@ -63,14 +66,14 @@ final readonly class UpdateProjectData
     {
         return $this->code !== null || $this->name !== null || $this->typeProvided || $this->sourceAccessProvided
             || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided || $this->reviewAndMergeProvided || $this->mergeCheckProvided
-            || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->hasReconcilableChanges();
+            || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided || $this->hasReconcilableChanges();
     }
 
     /** Settings that change only the Project row, under the Instance operation lock. */
     public function hasTaskSettings(): bool
     {
         return $this->name !== null || $this->taskCheckProvided || $this->taskWorkspaceRoutedProvided
-            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided;
+            || $this->reviewAndMergeProvided || $this->mergeCheckProvided || $this->nestedFleetProvided || $this->taskAgents !== [] || $this->taskPrModeProvided || $this->defaultAutoDeployProvided;
     }
 
     public function hasReconcilableChanges(): bool
@@ -97,6 +100,7 @@ final readonly class UpdateProjectData
             'review_and_merge' => $this->reviewAndMergeProvided ? $this->reviewAndMerge : null,
             'merge_check' => $this->mergeCheckProvided ? $this->mergeCheck : null,
             'nested_fleet' => $this->nestedFleetProvided ? $this->nestedFleet : null,
+            'default_auto_deploy' => $this->defaultAutoDeployProvided ? $this->defaultAutoDeploy : null,
             'task_agents' => $this->taskAgents,
             'provided' => [
                 $this->typeProvided,

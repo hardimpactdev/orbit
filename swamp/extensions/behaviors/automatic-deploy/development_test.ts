@@ -334,15 +334,25 @@ Deno.test("a definite start failure releases pending intent for the next schedul
 });
 
 Deno.test("credential failures stay terminal without repeated admissions", async () => {
-    for (const code of ["source.github_app_denied", "source.github_unavailable"]) {
+    for (
+        const code of ["source.github_app_denied", "source.github_unavailable"]
+    ) {
         const f = fixture();
         await f.run();
-        Object.assign(f.operation, { status: "failed", attempts: 0, error_code: code,
-            result: {error: {code, message: "Source credential refused."}} });
+        Object.assign(f.operation, {
+            status: "failed",
+            attempts: 0,
+            error_code: code,
+            result: { error: { code, message: "Source credential refused." } },
+        });
         await f.run();
         await f.run();
         assertEquals(f.starts.length, 1);
-        assertEquals((f.memory.get("development-7")?.pending as {operation_id: number}).operation_id, 100);
+        assertEquals(
+            (f.memory.get("development-7")?.pending as { operation_id: number })
+                .operation_id,
+            100,
+        );
     }
 });
 
@@ -540,4 +550,49 @@ Deno.test("canonical Gateway refusal skips ambiguous app-dev plus app-prod place
     await f.run();
     assertEquals(f.starts, []);
     assertEquals(f.memory.size, 0);
+});
+function passed(id: number): Row {
+    return {
+        id,
+        kind: "deploy",
+        status: "succeeded",
+        commit: B,
+        triggered_by: "swamp:auto-deploy",
+        failed_step: null,
+        error_code: null,
+        started_at: now,
+        finished_at: now,
+    };
+}
+Deno.test("a passed deploy settles and the same run deploys the newer head once", async () => {
+    const f = fixture();
+    await f.run();
+    assertEquals(f.starts.length, 1);
+    // Two more commits landed while B deployed; they coalesce into one deploy of the newest head.
+    const C = "c".repeat(40);
+    Object.assign(f.operation, {
+        status: "succeeded",
+        result: { deployment_id: 1 },
+    });
+    f.history.push(passed(1));
+    f.instance.seed_commit = B;
+    f.source.head = C;
+    await f.run();
+    assertEquals(f.starts.length, 2);
+    assertEquals(f.starts[1].endsWith(C), true);
+    assertEquals(f.memory.get("development-7")?.result, "started");
+});
+Deno.test("a passed deploy whose seed the run did not see yet starts nothing", async () => {
+    const f = fixture();
+    await f.run();
+    Object.assign(f.operation, {
+        status: "succeeded",
+        result: { deployment_id: 1 },
+    });
+    f.history.push(passed(1));
+    // The run read the Instance before the deploy's projection recorded seed B.
+    await f.run();
+    assertEquals(f.starts.length, 1);
+    assertEquals(f.memory.get("development-7")?.pending, null);
+    assertEquals(f.memory.get("development-7")?.result, "up_to_date");
 });

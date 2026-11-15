@@ -1,5 +1,5 @@
 order = 200
-source_sha256 = "98ac09953d5f25c5c63511031ff848792b2028f02b6e42c21123af9f43c736be"
+source_sha256 = "0801b8409e7bc6051f8c160afebb18fdf9fe117ff3f9b92b00d7ceb5da5f3e6e"
 cases = [
   "automatic origin accepts Gateway callers and both stored labels while excluding rollbacks",
   "E05 a restarted tick follows its recorded receipt without a new start",
@@ -36,6 +36,7 @@ cases = [
   "503 queue_unavailable is a refusal and the next tick can admit",
   "503 dispatch_failed follows its operation then applies the terminal no-history rule",
   "uncontracted server failures cannot be classified as a safe refusal",
+  "development and production entry points never discover each other's targets",
 ]
 file = "swamp/extensions/behaviors/automatic-deploy/mod_test.ts"
 cost = 6

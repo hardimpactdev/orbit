@@ -232,6 +232,9 @@ final readonly class UpdateProjectAction
         if ($data->taskPrModeProvided) {
             $changes['task_pr_mode'] = $data->taskPrMode;
         }
+        if ($data->defaultAutoDeployProvided) {
+            $changes['default_auto_deploy'] = $data->defaultAutoDeploy;
+        }
         $changes = [...$changes, ...$data->taskAgents];
         if ($changes === []) {
             return $project;

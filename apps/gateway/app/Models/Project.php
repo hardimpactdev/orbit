@@ -36,6 +36,7 @@ use SensitiveParameter;
  * @property string|null $task_reviewer_model
  * @property string|null $task_reviewer_effort
  * @property bool $nested_fleet
+ * @property bool $default_auto_deploy
  * @property bool $task_workspace_routed
  * @property bool $review_and_merge
  * @property TaskPrMode|null $task_pr_mode
@@ -54,6 +55,7 @@ final class Project extends Model
     #[\Override]
     protected $attributes = [
         'nested_fleet' => false,
+        'default_auto_deploy' => true,
         'type' => 'laravel-app',
         'source_access' => 'github_app',
         'review_and_merge' => false,
@@ -62,7 +64,7 @@ final class Project extends Model
 
     /** @var list<string> */
     #[\Override]
-    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
+    protected $fillable = ['name', 'code', 'slug', 'type', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_implementer_provider', 'task_implementer_model', 'task_implementer_effort', 'task_reviewer_provider', 'task_reviewer_model', 'task_reviewer_effort', 'task_workspace_routed', 'nested_fleet', 'default_auto_deploy', 'review_and_merge', 'task_pr_mode', 'merge_check', 'maintenance', 'php_version', 'is_laravel', 'source_profile_error', 'source_facts_captured_at'];
 
     /** @var list<string> */
     #[\Override]
@@ -173,6 +175,7 @@ final class Project extends Model
             'source_access' => ProjectSourceAccess::class,
             'task_workspace_routed' => 'boolean',
             'nested_fleet' => 'boolean',
+            'default_auto_deploy' => 'boolean',
             'review_and_merge' => 'boolean',
             'task_pr_mode' => TaskPrMode::class,
             'maintenance' => 'boolean',

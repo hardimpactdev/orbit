@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Power;
 
 use App\Domain\Hibernation\RuntimeHibernation;
+use App\Domain\Instances\Deployment\AutomaticDeployHistory;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
@@ -171,7 +172,9 @@ final readonly class ContainerIdleSweep
         // A wake of a nested-fleet clone that no sleep froze is its start (InstanceStart): its end counts as a wake's.
         $wake = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])->where('target_type', 'instance')->where('target_id', $instance->id)
             ->whereNotNull('finished_at')->max('finished_at');
+        // An automatic deploy of a default is no activity: a new commit alone keeps no default awake.
         $deploy = Operation::query()->where('kind', OperationKinds::InstanceDeploy)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->where(static fn ($query) => $query->whereNull('triggered_by')->orWhereNotIn('triggered_by', AutomaticDeployHistory::Triggers))
             ->whereNotNull('finished_at')->max('finished_at');
         // An Instance without a T3 server, such as a default, has nothing to read: the T3 rows do not apply to it.
         $server = $runtime->t3_port !== null;

@@ -22,7 +22,7 @@ final readonly class ListInstancesAction
     public function handle(Node $consumer, bool $automaticDeploy = false): Collection
     {
         return Instance::query()
-            ->with(['project', 'node.roles', 'routes.targets', ...InstanceAttachedTargets::Relations])
+            ->with(['project', 'node.roles', 'routes.targets', 'runtime', ...InstanceAttachedTargets::Relations])
             ->when(
                 ! $this->access->hasGatewayAuthority($consumer),
                 fn ($query) => $query->whereIn('node_id', $this->access->accessibleNodeIds($consumer)),

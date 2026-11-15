@@ -259,12 +259,21 @@ export async function tickDevelopment(
                 }
                 state.pending = null;
                 await save();
-                // Observe again before another decision; interrupted attempts may lack history.
-                await publish(
-                    operation.status === "succeeded" ? "up_to_date" : "failed",
-                    operation.id,
-                );
-                continue;
+                if (
+                    operation.status !== "succeeded" ||
+                    instance.seed_commit !== intent.commit
+                ) {
+                    // Observe again before another decision; interrupted attempts may lack history,
+                    // and a deploy that ended after this run read the Instance has a seed this run did not see.
+                    await publish(
+                        operation.status === "succeeded"
+                            ? "up_to_date"
+                            : "failed",
+                        operation.id,
+                    );
+                    continue;
+                }
+                // The seed this run read is the passed deploy's commit, so the same run goes on to the newest head.
             }
             let holder: Operation | undefined;
             for (const status of ["queued", "running", "waiting"]) {

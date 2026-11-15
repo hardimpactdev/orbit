@@ -30,6 +30,8 @@ final readonly class ProjectResponse
         public ?string $taskPrMode = null,
         /** Whether the Gateway sent `task_pr_mode`, so a null mode is told from an older Gateway that sends none. */
         public bool $hasTaskPrMode = false,
+        /** Whether each new commit of the default branch deploys the container default; null from a Gateway that sends none. */
+        public ?bool $defaultAutoDeploy = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -61,6 +63,7 @@ final readonly class ProjectResponse
             taskAgents: self::taskAgents($data),
             taskPrMode: is_string($data['task_pr_mode'] ?? null) ? $data['task_pr_mode'] : null,
             hasTaskPrMode: array_key_exists('task_pr_mode', $data),
+            defaultAutoDeploy: is_bool($data['default_auto_deploy'] ?? null) ? $data['default_auto_deploy'] : null,
         );
     }
 
@@ -82,6 +85,7 @@ final readonly class ProjectResponse
             ...($this->maintenance === null ? [] : ['maintenance' => $this->maintenance]),
             ...array_combine(array_map(static fn (string $key): string => 'task_'.$key, array_keys($this->taskAgents)), $this->taskAgents),
             ...($this->hasTaskPrMode ? ['task_pr_mode' => $this->taskPrMode] : []),
+            ...($this->defaultAutoDeploy === null ? [] : ['default_auto_deploy' => $this->defaultAutoDeploy]),
             'request_id' => $this->requestId,
         ];
     }

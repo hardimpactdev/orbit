@@ -57,4 +57,9 @@ describe(ProjectResponse::class, function (): void {
             ->and(ProjectResponse::fromGatewayData(['id' => 3, 'task_pr_mode' => null], 'request-id')->toArray())->toMatchArray(['task_pr_mode' => null])
             ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('task_pr_mode');
     });
+    it('maps default_auto_deploy and leaves it out when the Gateway sends none', function (): void {
+        expect(ProjectResponse::fromGatewayData(['id' => 3, 'default_auto_deploy' => false], 'request-id')->toArray())->toMatchArray(['default_auto_deploy' => false])
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->defaultAutoDeploy)->toBeNull()
+            ->and(ProjectResponse::fromGatewayData(['id' => 3], 'request-id')->toArray())->not->toHaveKey('default_auto_deploy');
+    });
 });

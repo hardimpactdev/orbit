@@ -92,7 +92,10 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $text = static fn (mixed $value, int $limit): ?string => $value === null ? null : mb_strcut(ValidatedData::string($value), 0, $limit, 'UTF-8');
             $facts = ['deployment_id' => $historyId, 'release' => $text(ValidatedData::object($payload['release'] ?? [])['name'] ?? null, 128),
                 'selected_release' => $text(ValidatedData::object($payload['selected_release'] ?? [])['name'] ?? null, 128),
-                'commit' => $text($payload['commit'] ?? null, 64), 'failed_step' => $text($payload['failed_step'] ?? null, 255)];
+                // A failed container deploy records the commit it was admitted for, so automatic policy counts its failures per commit.
+                'commit' => $text($payload['commit'] ?? ($status !== 'succeeded' && $status !== 'running'
+                    && ValidatedData::object($locked->input['deployment'])['variant'] === 'container' ? InstanceDeploymentIntent::commit($locked) : null), 64),
+                'failed_step' => $text($payload['failed_step'] ?? null, 255)];
             if (isset($payload['warnings'])) {
                 $facts['warnings'] = ValidatedData::integer($payload['warnings']);
             }
@@ -141,6 +144,14 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
                 $instance->update(['seed_path' => $admitted['home'], 'seed_repository' => $admitted['home'], 'seed_commit' => $facts['commit']]);
             } elseif (! InstanceDeploymentIntent::development($variant) && $facts['selected_release'] !== null && ($payload['selection_confirmed'] ?? false) === true) {
                 $instance->update(['checkout_path' => ValidatedData::string($admitted['home']).'/releases/'.$facts['selected_release']]);
+            }
+            if (InstanceDeploymentIntent::development($variant) && $status === 'succeeded'
+                && in_array($locked->triggered_by, AutomaticDeployHistory::Triggers, true)
+                && ($instance->auto_deploy_state['head'] ?? null) === $facts['commit']) {
+                $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []),
+                    'result' => AutomaticDeployResult::UpToDate->value, 'commit' => $facts['commit'],
+                    'since' => now()->toIso8601String(), 'error_code' => null, 'message' => null];
+                $instance->save();
             }
             if (is_array($payload['php_identity'] ?? null)) {
                 $instance->forceFill(ValidatedData::object($payload['php_identity']))->saveOrFail();

@@ -74,6 +74,6 @@ This section describes the live Orbit fleet, not the code. On 13 November 2026 t
 | Part | Comes back as |
 | --- | --- |
 | Task VMs (0 task places on every host) and their image refresh (held on every host, and nothing starts it) | Tasks that start from the Orbit container's snapshot |
-| Automatic deploys of development Instances | One deploy per new commit, for container defaults only |
+| Automatic deploys of development checkouts, and the development part of the shared `automatic-production-deploy` producer | [One deploy per new commit, for container defaults only](/reference/deployments#automatic-development-defaults): built, and on once the release that ships it is live |
 | The nightly fleet reboot (`ORBIT_FLEET_REBOOT=false`) | The same pass, after one safe test |
 | Automatic Gateway releases (disabled; a manual deploy also pauses them) | The same tick, when the container path is stable |
