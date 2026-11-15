@@ -1,7 +1,6 @@
 import {
     assertEquals,
     assertRejects,
-    assertThrows,
 } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
 import {
@@ -12,8 +11,7 @@ import {
     behavior,
     composeCaddy,
     composePhp,
-    composeWithdrawal as compose,
-    parseRead,
+    planWithdrawal,
 } from "./assets.ts";
 import { mergeDns } from "../mutation-command/dns.ts";
 
@@ -54,12 +52,61 @@ const placement = {
         become: true,
     },
 };
-const readPath =
-    "/tmp/orbit-ansible-00000000-0000-0000-0000-000000000000/read.json";
-/** The read text stands in for the file the phase writes; the rest are the step arguments. */
-function composeWithdrawal(args: Record<string, unknown> & { read: string }) {
-    const { read, ...rest } = args;
-    return compose({ ...rest, read_path: readPath }, read);
+/**
+ * The withdrawal as it now runs: the Swamp plan, then the Node merge of ansible/module_utils/orbit_route_withdraw.py against what the
+ * read text says the Node holds, with its byte-compare check. The result keeps the shape of the former Swamp composition.
+ */
+async function composeWithdrawal(args: Record<string, unknown> & { read: string }) {
+    const { read: text, ...rest } = args;
+    const plan = await planWithdrawal(rest);
+    const read = JSON.parse(text) as { account: string; pools: Record<string, string>; caddy: string; records: string; catalog: string };
+    const decode = (value: string) => new TextDecoder().decode(Uint8Array.from(atob(value), (c) => c.charCodeAt(0)));
+    const pools = Object.fromEntries(
+        Object.entries(read.pools).flatMap(([path, content]) => {
+            const version = /^\/etc\/php\/([1-9][0-9]*\.[0-9]+)\/fpm\/pool\.d\/orbit-scopes\.conf$/.exec(path)?.[1];
+            return version ? [[version, decode(content)]] : [];
+        }),
+    );
+    const fields = read.account.split(":");
+    const live = {
+        caddy: decode(read.caddy),
+        pools,
+        dns: plan.dns ? { records: decode(read.records), catalog: decode(read.catalog) } : null,
+    };
+    const script = `
+import importlib.util, json, sys, types
+spec = importlib.util.spec_from_file_location("w", sys.argv[1]); w = importlib.util.module_from_spec(spec); spec.loader.exec_module(w)
+data = json.load(sys.stdin); account = types.SimpleNamespace(**data["account"])
+try:
+    out = w.compose(data["plan"], data["live"], account); w.check_untouched(data["plan"], data["live"], out, account)
+except w.WithdrawFailure as error:
+    out = {"error": str(error)}
+print(json.dumps(out))`;
+    const child = new Deno.Command("python3", {
+        args: ["-I", "-c", script, `${ROOT}/ansible/module_utils/orbit_route_withdraw.py`],
+        stdin: "piped",
+        stdout: "piped",
+    }).spawn();
+    const writer = child.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(JSON.stringify({
+        plan,
+        live,
+        account: { pw_gid: Number(fields[3] ?? 0), pw_dir: fields[5] ?? "/" },
+    })));
+    await writer.close();
+    const out = JSON.parse(new TextDecoder().decode((await child.output()).stdout));
+    if (out.error) throw new Error(out.error);
+    return {
+        pools: Object.entries(out.pools as Record<string, string>).map(([version, content]) => ({
+            version,
+            path: `/etc/php/${version}/fpm/pool.d/orbit-scopes.conf`,
+            content,
+            ensure: content ? "present" as const : "absent" as const,
+        })),
+        caddy: out.caddy === null ? null : { content: out.caddy as string },
+        dns: out.dns as { records: string; catalog: string } | null,
+        cleanup: plan.cleanup,
+    };
 }
 const planPath =
     "/tmp/orbit-ansible-00000000-0000-0000-0000-000000000000/plan.json";
@@ -111,20 +158,6 @@ const dnsState = async (names: string[]) => {
         digest: await sha(records + catalog),
     };
 };
-
-Deno.test("the read line decodes accounts, pools by version, and files", () => {
-    const parsed = parseRead(
-        read({
-            account,
-            pools: { [poolPath]: pool(1, 5), "/etc/php/x/other": "no" },
-            caddy: config(),
-        }),
-    );
-    assertEquals(parsed.account, account);
-    assertEquals(parsed.pools, { "8.4": pool(1, 5) });
-    assertEquals(parsed.caddy, config());
-    assertThrows(() => parseRead("{}"));
-});
 
 Deno.test("a destroy withdrawal equals the Route deltas it replaces, and keeps unrelated live changes", async () => {
     const before = await section(
@@ -297,11 +330,23 @@ Deno.test("four distinct Caddy states apply in order against the live file", asy
     const a = await section(config(block("one", "a")), true);
     const b = await section(config(block("one", "a"), block("two", "a")), true);
     const c = await section(config(block("two", "a")), true);
-    const d = await section(
-        config(block("two", "a"), block("three", "a")),
-        true,
-    );
+    const d = await section(config(), false);
     const live = config(block("one", "a"), block("extra", "z"));
+    // A withdrawal only removes: a last state that adds or edits a section is refused on the Node, before any file changes.
+    const adds = await section(config(block("two", "a"), block("three", "a")), true);
+    await assertRejects(
+        () => composeWithdrawal({
+            ...placement,
+            plan_path: planPath,
+            read: read({ caddy: live }),
+            php: {},
+            caddy: { before: a, prepared: b, withdrawn: c, after: adds },
+            dns: {},
+            cleanup: [],
+        }),
+        Error,
+        "route.withdraw_foreign_change",
+    );
     const plan = await composeWithdrawal({
         ...placement,
         plan_path: planPath,
@@ -325,18 +370,29 @@ Deno.test("four distinct Caddy states apply in order against the live file", asy
         })).caddy.content;
     }
     assertEquals(plan.caddy?.content, content);
-    for (const name of ["two", "three", "extra"]) {
-        assertEquals(content.includes(`${name}.test`), true, name);
-    }
-    assertEquals(content.includes("one.test"), false);
+    assertEquals(content, config(block("extra", "z")));
 });
 
 Deno.test("four distinct DNS states apply in order, and a step that changes only the records is not skipped", async () => {
     const a = await dnsState(["x.test"]);
     const b = await dnsState(["x.test", "y.test"]);
     const c = { ...(await dnsState(["y.test"])), catalog: b.catalog };
-    const d = await dnsState(["y.test", "z.test"]);
+    const d = await dnsState([]);
     const live = await dnsState(["x.test", "extra.test"]);
+    const adds = await dnsState(["y.test", "z.test"]);
+    await assertRejects(
+        () => composeWithdrawal({
+            ...placement,
+            plan_path: planPath,
+            read: read({ records: live.records, catalog: live.catalog }),
+            php: {},
+            caddy: {},
+            dns: { before: a, prepared: b, withdrawn: c, after: adds },
+            cleanup: [],
+        }),
+        Error,
+        "route.withdraw_foreign_change",
+    );
     const plan = await composeWithdrawal({
         ...placement,
         plan_path: planPath,
@@ -356,62 +412,50 @@ Deno.test("four distinct DNS states apply in order, and a step that changes only
     assertEquals(plan.dns?.records.includes("x.test"), false);
 });
 
-Deno.test("the plan records what was read, so the phase can refuse a file that changed since", async () => {
+Deno.test("the plan carries the captured states and runs each distinct Caddy and DNS step once", async () => {
     const before = await section(config(block("gone", "a")), true);
     const after = await section(config(), false);
     const dns = await dnsState(["gone.test"]);
-    const plan = await composeWithdrawal({
+    const plan = await planWithdrawal({
         ...placement,
         plan_path: planPath,
-        read: read({
-            account,
-            pools: { [poolPath]: resolved(pool(1, 5)) },
-            caddy: before.content,
-            records: dns.records,
-            catalog: dns.catalog,
-        }),
         php: {
-            before: {
-                account_user: "orbit",
-                configurations: { "8.4": pool(1, 5) },
-            },
+            before: { account_user: "orbit", configurations: { "8.4": pool(1, 5) } },
             after: { account_user: "orbit", configurations: [] },
         },
         caddy: { before, prepared: after, withdrawn: after, after },
         dns: { before: dns, prepared: dns, withdrawn: dns, after: dns },
         cleanup: [],
     });
-    assertEquals(
-        Object.keys(plan.expect).sort(),
-        [
-            "/etc/caddy/Caddyfile",
-            "/etc/dnsmasq.d/orbit-records.conf",
-            poolPath,
-            "/var/lib/orbit/private-dns/catalog.json",
-        ].sort(),
+    assertEquals(plan.caddy?.steps, [{ from: 0, to: 1, had_served_groups: true }]);
+    assertEquals(plan.caddy?.chain, [before.content, after.content, after.content, after.content]);
+    assertEquals(plan.dns?.steps, [0]);
+    assertEquals(plan.php, { versions: ["8.4"], before: { "8.4": pool(1, 5) }, after: {} });
+    // A captured state that is not a Node Caddy build, or whose version is not its digest, is refused before any Node is touched.
+    await assertRejects(
+        () => planWithdrawal({
+            ...placement,
+            plan_path: planPath,
+            php: {},
+            caddy: { before: { ...before, version: "0".repeat(32) }, prepared: after, withdrawn: after, after },
+            dns: {},
+            cleanup: [],
+        }),
+        Error,
+        "caddy.input_invalid",
     );
-    assertEquals(
-        plan.expect["/etc/caddy/Caddyfile"],
-        await sha(before.content),
-    );
-    assertEquals(plan.expect[poolPath], await sha(resolved(pool(1, 5))));
 });
 
-Deno.test("the withdraw method reads read.json, writes plan.json and records a summary", async () => {
+Deno.test("the withdraw method writes plan.json and records a summary", async () => {
     const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
     await Deno.mkdir(folder, { mode: 0o700 });
     try {
         const before = await section(config(block("gone", "a")), true);
         const after = await section(config(), false);
-        await Deno.writeTextFile(
-            `${folder}/read.json`,
-            read({ caddy: before.content }),
-        );
         const written: unknown[][] = [];
         await behavior.methods.withdraw.execute({
             ...placement,
             plan_path: `${folder}/plan.json`,
-            read_path: `${folder}/read.json`,
             php: {},
             caddy: { before, prepared: after, withdrawn: after, after },
             dns: {},
@@ -423,7 +467,7 @@ Deno.test("the withdraw method reads read.json, writes plan.json and records a s
             },
         });
         const plan = JSON.parse(await Deno.readTextFile(`${folder}/plan.json`));
-        assertEquals(plan.caddy.content, after.content);
+        assertEquals(plan.caddy.chain, [before.content, after.content, after.content, after.content]);
         assertEquals(plan.cleanup, [{
             scope: "route-1-router",
             user: "orbit",
@@ -483,7 +527,6 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
     );
     assertEquals(node.map((step) => step.name), [
         "input",
-        "read",
         "compose",
         "apply",
         "cleanup",

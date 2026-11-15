@@ -97,6 +97,49 @@ it('starts the first write on a Node, makes the second wait, and lets another No
         ->and(holder(6))->toBe($other->id);
 });
 
+it('starts two removals on one Node side by side, while a publisher waits for both and a newer removal waits behind it', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$first, $second] = [routeWrite([5, 6], 'instance.destroy'), routeWrite([5], 'instance.destroy')];
+
+    // Each removal withdraws only its own sections under the Node lock: they share the Node.
+    expect($holds->admit($first))->toBeTrue()->and($holds->admit($second))->toBeTrue()
+        ->and(DB::table('route_withdrawal_holds')->where('node_id', 5)->pluck('operation_id')->all())->toBe([$first->id, $second->id]);
+
+    // A publisher writes a whole rendered file: it waits for every removal on its Node, and a newer removal waits behind it.
+    $publisher = routeWrite([5]);
+    $third = routeWrite([5], 'instance.destroy');
+    expect($holds->admit($publisher))->toBeFalse()->and($holds->admit($third))->toBeFalse()
+        ->and($publisher->fresh()->status)->toBe(OperationStatus::Waiting)->and($third->fresh()->status)->toBe(OperationStatus::Waiting);
+
+    $holds->releaseWithdrawn($first);
+    runPromotion();
+    expect($publisher->fresh()->status)->toBe(OperationStatus::Waiting);
+    finish($second);
+    runPromotion();
+    expect($publisher->fresh()->status)->toBe(OperationStatus::Queued)->and(holder(5))->toBe($publisher->id)
+        ->and($third->fresh()->status)->toBe(OperationStatus::Waiting);
+    finish($publisher);
+    runPromotion();
+    expect($third->fresh()->status)->toBe(OperationStatus::Queued)
+        ->and(DB::table('route_withdrawal_holds')->pluck('operation_id')->all())->toBe([$third->id]);
+});
+
+it('makes a removal wait while a publisher holds its Node, and a create defer its publication while a removal holds it', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $publisher = routeWrite([5]);
+    $removal = routeWrite([5], 'instance.destroy');
+    expect($holds->admit($publisher))->toBeTrue()->and($holds->admit($removal))->toBeFalse();
+    finish($publisher);
+    runPromotion();
+    expect($removal->fresh()->status)->toBe(OperationStatus::Queued);
+
+    // A step hold of a provision is a publisher too: it is not granted beside the removal.
+    $provision = routeWrite([5], 'tasks.provision');
+    expect($holds->holdStep($provision, 0))->toBeNull();
+    finish($removal);
+    expect($holds->holdStep($provision, 0))->toBe([5]);
+});
+
 it('starts the waiting writes oldest first when the holder finishes', function (): void {
     $started = startedOperations();
     $holds = app(RoutePublicationHolds::class);

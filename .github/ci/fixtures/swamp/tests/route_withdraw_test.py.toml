@@ -1,0 +1,19 @@
+order = 1390
+source_sha256 = ""
+cases = [
+  "test_a_withdrawal_removes_only_its_own_site_and_keeps_the_previous_generation",
+  "test_two_withdrawals_of_different_sites_both_land_in_either_order",
+  "test_two_concurrent_withdrawals_on_one_node_both_land",
+  "test_the_same_route_withdrawn_twice_changes_nothing_the_second_time",
+  "test_a_merge_that_would_change_a_production_block_is_refused_and_touches_nothing",
+  "test_a_production_site_edited_on_the_node_is_kept_byte_for_byte",
+  "test_an_edited_own_site_is_a_revision_conflict",
+  "test_a_failed_validation_leaves_every_file",
+  "test_a_failed_php_test_puts_the_pool_back_before_any_reload",
+  "test_a_pool_keeps_the_other_scopes_and_an_emptied_pool_goes",
+  "test_a_failed_caddy_reload_puts_the_previous_caddyfile_back_and_reloads_again",
+  "test_dns_keeps_other_records_and_catalog_entries",
+  "test_a_held_lock_times_out_with_publish_busy",
+]
+file = "swamp/tests/route_withdraw_test.py"
+inputs = ["swamp/ansible/library/orbit_route_withdraw.py", "swamp/ansible/module_utils/orbit_route_withdraw.py"]

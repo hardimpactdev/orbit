@@ -1,6 +1,6 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
 import { parse, stringify } from "jsr:@std/yaml@1.0.12";
-import { composeWithdrawal as compose } from "../extensions/behaviors/operations/routes/publication-command/assets.ts";
+import { planWithdrawal } from "../extensions/behaviors/operations/routes/publication-command/assets.ts";
 const ROOT = new URL("../", import.meta.url).pathname.replace(/\/$/, "");
 const planPath =
     "/tmp/orbit-ansible-00000000-0000-0000-0000-000000000000/plan.json";
@@ -39,22 +39,6 @@ const section = async (content: string, served: boolean) => ({
     unserved: !served,
     had_served_groups: served,
 });
-function read(
-    fields: {
-        account: string;
-        caddy: string;
-        records: string;
-        catalog: string;
-    },
-) {
-    return JSON.stringify({
-        account: fields.account,
-        pools: {},
-        caddy: btoa(fields.caddy),
-        records: btoa(fields.records),
-        catalog: btoa(fields.catalog),
-    });
-}
 const dnsState = async (names: string[]) => {
     const records = "# Managed by Orbit.\n" +
         names.map((n) => `host-record=${n},10.44.0.7\n`).join("");
@@ -68,22 +52,14 @@ const dnsState = async (names: string[]) => {
         digest: await sha(records + catalog),
     };
 };
-function composeWithdrawal(args: Record<string, unknown> & { read: string }) {
-    const { read, ...rest } = args;
-    return compose({
-        ...rest,
-        read_path:
-            "/tmp/orbit-ansible-00000000-0000-0000-0000-000000000000/read.json",
-    }, read);
-}
 for (
     const [scenario, name] of Object.entries({
         published:
             "withdrawal removes a published site and its CSR residue with real Ansible",
         partial:
             "withdrawal accepts an absent site and removes CSR residue with real Ansible",
-        stale:
-            "withdrawal refuses an old writer between composition and apply with real Ansible",
+        concurrent:
+            "withdrawal keeps the site of another writer that published after its plan with real Ansible",
     })
 ) {
     Deno.test({
@@ -159,35 +135,26 @@ for (
                     await Deno.readTextFile(
                         `${ROOT}/ansible/route-withdraw.yml`,
                     ),
-                ) as Record<string, unknown>[])[2];
+                ) as Record<string, unknown>[])[1];
                 apply.hosts = "localhost";
                 apply.connection = "local";
                 apply.become = false;
                 (apply.vars as Record<string, unknown>)
                     .ansible_python_interpreter = "/usr/bin/python3";
-                (apply.vars as Record<string, unknown>).caddy_group = gid;
                 await Deno.mkdir(root + "/library");
                 await Deno.mkdir(root + "/module_utils");
                 await Deno.writeTextFile(
-                    root + "/library/orbit_caddy_publish.py",
+                    root + "/library/orbit_route_withdraw.py",
                     (await Deno.readTextFile(
-                        ROOT + "/ansible/library/orbit_caddy_publish.py",
-                    ))
-                        .replace(
-                            'gid=grp.getgrnam("caddy").gr_gid',
-                            "gid=" + gid,
-                        ),
+                        ROOT + "/ansible/library/orbit_route_withdraw.py",
+                    )).replace(
+                        'caddy_gid=grp.getgrnam("caddy").gr_gid if plan.get("caddy") else None',
+                        `caddy_gid=${gid}, root="${root}"`,
+                    ),
                 );
-                await Deno.writeTextFile(
-                    root + "/module_utils/orbit_caddy_publish.py",
-                    (await Deno.readTextFile(
-                        ROOT + "/ansible/module_utils/orbit_caddy_publish.py",
-                    ))
-                        .replace(
-                            'live=Path("/etc/caddy/Caddyfile")',
-                            'live=Path("' + root + '/etc/caddy/Caddyfile")',
-                        )
-                        .replace("uid=0, gid=0", "uid=" + uid + ", gid=0"),
+                await Deno.copyFile(
+                    ROOT + "/ansible/module_utils/orbit_route_withdraw.py",
+                    root + "/module_utils/orbit_route_withdraw.py",
                 );
                 await Deno.writeTextFile(
                     `${root}/apply.yml`,
@@ -203,15 +170,9 @@ for (
                 const siteSucceeded = scenario !== "partial";
                 const live = siteSucceeded ? possible.content : without.content;
                 // DNS may have finished independently even when access failed before site publication.
-                const plan = await composeWithdrawal({
+                const plan = await planWithdrawal({
                     ...placement,
                     plan_path: planPath,
-                    read: read({
-                        account: `orbit:x:${uid}:${gid}::${root}/home:/bin/sh`,
-                        caddy: live,
-                        records: dnsPossible.records,
-                        catalog: dnsPossible.catalog,
-                    }),
                     php: {},
                     caddy: {
                         before: possible,
@@ -248,13 +209,13 @@ for (
                         "fixture residue",
                     );
                 }
-                const stale = scenario === "stale";
+                const concurrent = scenario === "concurrent";
                 const caddyPath = root + "/etc/caddy/Caddyfile";
-                if (stale) {
-                    // An old writer publishes after the read/composition and before apply.
+                if (concurrent) {
+                    // Another withdrawal or an old writer changed the file after this plan was made: the Node merges against it.
                     await Deno.writeTextFile(
                         caddyPath,
-                        config(block("kept", "a"), block("other-writer", "b")),
+                        config(block("kept", "a"), block("made", "a"), block("other-writer", "b")),
                     );
                 }
                 const before = await Deno.readTextFile(caddyPath);
@@ -277,31 +238,6 @@ for (
                     },
                 });
                 const result = await command.output();
-                if (stale) {
-                    assertEquals(result.success, false);
-                    const diagnostic = new TextDecoder().decode(result.stdout) +
-                        new TextDecoder().decode(result.stderr);
-                    assertEquals(
-                        diagnostic.includes(
-                            "caddy.composed_from_live_mismatch",
-                        ),
-                        true,
-                        diagnostic,
-                    );
-                    assertEquals(
-                        diagnostic.includes("composed_from_sha256"),
-                        true,
-                        diagnostic,
-                    );
-                    assertEquals(
-                        diagnostic.includes("live_sha256"),
-                        true,
-                        diagnostic,
-                    );
-                    assertEquals(await Deno.readTextFile(caddyPath), before);
-                    assertEquals(before.includes("other-writer.test"), true);
-                    return;
-                }
                 assertEquals(
                     result.success,
                     true,
@@ -341,10 +277,25 @@ for (
                     assertEquals(present, false);
                 }
                 assertEquals(
+                    (await Deno.readTextFile(caddyPath)).includes("other-writer.test"),
+                    concurrent,
+                );
+                // The previous generation stays beside the others, root only.
+                if (siteSucceeded) {
+                    assertEquals(
+                        await Deno.readTextFile(root + "/var/lib/orbit/route-previous/Caddyfile"),
+                        before,
+                    );
+                }
+                assertEquals(
+                    await Deno.readTextFile(root + "/var/lib/orbit/route-previous/orbit-records.conf"),
+                    dnsPossible.records,
+                );
+                assertEquals(
                     (await Deno.readTextFile(root + "/service-calls")).includes(
                         "reload caddy",
                     ),
-                    true,
+                    siteSucceeded,
                 );
             } finally {
                 await Deno.remove(root, { recursive: true });

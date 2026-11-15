@@ -74,9 +74,11 @@ beforeEach(function (): void {
             'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String()]);
 });
 
+/** The Operation that holds the Node: a publisher alone, or the oldest of the removals that share it. */
 function heldBy(int $node): ?int
 {
-    return DB::table('route_publication_holds')->where('node_id', $node)->value('operation_id');
+    return DB::table('route_publication_holds')->where('node_id', $node)->value('operation_id')
+        ?? DB::table('route_withdrawal_holds')->where('node_id', $node)->min('operation_id');
 }
 
 it('lets the next Route write on the Node start once the removal has withdrawn its Route, not at the end of the removal', function (): void {

@@ -30,6 +30,11 @@ use Throwable;
  * of the write at once or none; a write that finds one held waits with status `waiting` and starts, oldest first, when the
  * Nodes are free. The terminal state releases them, except for a timed-out write whose run Swamp has not confirmed stopped.
  * The DNS Node is not held: its records are keyed.
+ *
+ * A removal shares its Nodes with other removals (`route_withdrawal_holds`): each withdraws its own sections in one Node-local
+ * transaction under the Node lock, so two of them on one Node both land. A publisher writes whole files that the Gateway rendered,
+ * so it holds its Nodes alone (`route_publication_holds`), against publishers and removals both. Each take checks the other table
+ * in the same IMMEDIATE transaction.
  */
 final class RoutePublicationHolds
 {
@@ -71,6 +76,12 @@ final class RoutePublicationHolds
      * after its withdraw step succeeded, and the later steps write only files of the removed Instance.
      */
     public static function releasesAfterWithdraw(string $kind): bool
+    {
+        return $kind === 'instance.destroy';
+    }
+
+    /** A removal withdraws only its own sections under the Node lock, so it shares its Nodes with other removals. */
+    private static function sharesNodes(string $kind): bool
     {
         return $kind === 'instance.destroy';
     }
@@ -171,7 +182,7 @@ final class RoutePublicationHolds
         if ($nodes === [] && ! $after) {
             return true;
         }
-        if (! $after && ! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->acquire($operation->id, $nodes)) {
+        if (! $after && ! $this->olderWaiterOverlaps($operation->id, $nodes) && $this->take($operation, $nodes)) {
             return true;
         }
         // A clone's create never waits for a Route Node: it leaves its publication to its completion and starts at once. The insert above
@@ -223,7 +234,8 @@ final class RoutePublicationHolds
     /** Frees the Nodes of a finished Operation, then asks for the waiting ones to start, after the caller's transaction. */
     public function release(int $operationId, bool $wasWaiting = false): void
     {
-        $freed = DB::table('route_publication_holds')->where('operation_id', $operationId)->delete();
+        $freed = DB::table('route_publication_holds')->where('operation_id', $operationId)->delete()
+            + DB::table('route_withdrawal_holds')->where('operation_id', $operationId)->delete();
         // A write that starts after this Operation may start now, even when this one held no Node.
         $follower = Operation::query()->whereIn('kind', self::Kinds)->where('status', OperationStatus::Waiting)
             ->where('input->after_operation_id', $operationId)->exists();
@@ -239,10 +251,13 @@ final class RoutePublicationHolds
     public function sweep(): int
     {
         $freed = DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->delete();
-        foreach (DB::table('route_publication_holds')->distinct()->pluck('operation_id') as $id) {
+        $ids = DB::table('route_publication_holds')->distinct()->pluck('operation_id')
+            ->merge(DB::table('route_withdrawal_holds')->distinct()->pluck('operation_id'))->unique();
+        foreach ($ids as $id) {
             $operation = Operation::query()->whereKey($id)->first();
             if ($operation === null || ($operation->status->terminal() && ! self::keepsNodes($operation))) {
-                $freed += DB::table('route_publication_holds')->where('operation_id', $id)->delete();
+                $freed += DB::table('route_publication_holds')->where('operation_id', $id)->delete()
+                    + DB::table('route_withdrawal_holds')->where('operation_id', $id)->delete();
             }
         }
         $this->promoteAndStart();
@@ -271,7 +286,7 @@ final class RoutePublicationHolds
                 continue;
             }
             $nodes = self::waitingNodes($waiter);
-            if (array_intersect($nodes, $blocked) !== [] || ! $this->acquire($waiter->id, $nodes)) {
+            if (array_intersect($nodes, $blocked) !== [] || ! $this->take($waiter, $nodes)) {
                 $blocked = [...$blocked, ...$nodes];
 
                 continue;
@@ -374,8 +389,10 @@ final class RoutePublicationHolds
     /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
     public function releaseWithdrawn(Operation $operation): void
     {
+        // A removal that an earlier release admitted holds its Nodes alone; it gives them back the same way.
         if (self::releasesAfterWithdraw($operation->kind)
-            && DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
+            && DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete()
+            + DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }
@@ -399,7 +416,40 @@ final class RoutePublicationHolds
     }
 
     /**
-     * All the Nodes or none: the primary key refuses a Node that another Operation holds. A hold with a lease that has run out is free.
+     * Takes the Nodes of an admitted write: shared among removals, alone for every other Route write.
+     *
+     * @param  list<int>  $nodes
+     */
+    private function take(Operation $operation, array $nodes): bool
+    {
+        return self::sharesNodes($operation->kind) ? $this->share($operation->id, $nodes) : $this->acquire($operation->id, $nodes);
+    }
+
+    /**
+     * All the Nodes or none, beside other removals: refused while a publisher holds one of them. The IMMEDIATE transaction makes the
+     * check and the insert one step against a publisher's `acquire`.
+     *
+     * @param  list<int>  $nodes
+     */
+    private function share(int $operationId, array $nodes): bool
+    {
+        DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->whereIn('node_id', $nodes)->delete();
+
+        return DB::transaction(static function () use ($operationId, $nodes): bool {
+            if (DB::table('route_publication_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)->exists()) {
+                return false;
+            }
+            foreach ($nodes as $node) {
+                DB::table('route_withdrawal_holds')->insertOrIgnore(['node_id' => $node, 'operation_id' => $operationId, 'created_at' => now()]);
+            }
+
+            return true;
+        });
+    }
+
+    /**
+     * All the Nodes or none: the primary key refuses a Node that another Operation holds, and a removal's shared hold refuses it too.
+     * A hold with a lease that has run out is free.
      *
      * @param  list<int>  $nodes
      */
@@ -407,13 +457,16 @@ final class RoutePublicationHolds
     {
         DB::table('route_publication_holds')->whereNotNull('lease_until')->where('lease_until', '<', now())->whereIn('node_id', $nodes)->delete();
         try {
-            DB::transaction(static function () use ($operationId, $nodes, $lease): void {
+            return DB::transaction(static function () use ($operationId, $nodes, $lease): bool {
+                if (DB::table('route_withdrawal_holds')->whereIn('node_id', $nodes)->where('operation_id', '!=', $operationId)->exists()) {
+                    return false;
+                }
                 foreach ($nodes as $node) {
                     DB::table('route_publication_holds')->insert(['node_id' => $node, 'operation_id' => $operationId, 'created_at' => now(), 'lease_until' => $lease]);
                 }
-            });
 
-            return true;
+                return true;
+            });
         } catch (UniqueConstraintViolationException) {
             // A promotion, or a repeated call of the same step, that already took them is not a conflict.
             $held = DB::table('route_publication_holds')->where('operation_id', $operationId)->whereIn('node_id', $nodes);
@@ -436,6 +489,7 @@ final class RoutePublicationHolds
             if ($current->status !== OperationStatus::Waiting) {
                 if ($current->status->terminal() && ! self::keepsNodes($current)) {
                     DB::table('route_publication_holds')->where('operation_id', $current->id)->delete();
+                    DB::table('route_withdrawal_holds')->where('operation_id', $current->id)->delete();
                 }
 
                 return false;
