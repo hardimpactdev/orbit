@@ -1325,12 +1325,10 @@ it('matches the installed-client no-branch intent steps result and resume snapsh
     $failedResult = $operation->refresh()->result;
     $resume = threadCreate($this->phone, $default->project, 'fix-login');
     $workflow = Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-instance-create.yaml'));
-    // The clone steps that Conn's card reads, in run order: the clone job, then the registration at the start of the create job.
     $steps = [];
     foreach ($workflow['jobs'] as $job) {
-        if (in_array($job['name'], ['clone', 'create'], true)) {
-            $steps = [...$steps, ...array_values(array_filter(array_column($job['steps'], 'name'),
-                static fn (string $name): bool => $job['name'] === 'clone' || $name === 'clone-register'))];
+        if ($job['name'] === 'clone') {
+            $steps = array_column($job['steps'], 'name');
         }
     }
     $snapshot = json_encode(['input' => $initial, 'clone_steps' => $steps, 'failed_result' => $failedResult,

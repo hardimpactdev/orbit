@@ -1,12 +1,12 @@
 order = 1410
-source_sha256 = "7f32ab6a48c44e54ba00a635c710acd6a19cce15db3b059581064253f95e8ec9"
+source_sha256 = "ef0aa23954211a04d4f19350d5ec480f540b25cf4acedc9b74e373901f82c514"
 cases = [
   "the full intent reaches a private file beyond the environment size limit",
   "an intent write refuses paths outside its run folder",
   "the fleet reboot finalizer publishes only its redacted public evidence",
   "the fleet reboot finalizer reports a fixed error when private callback inputs cannot be parsed",
   "real clone commands stay below 32 KiB with a large Gateway intent",
-  "the workflow's copy step stages the stage copy and launches the container part; cleanup works after an early failure",
+  "real clone launch preserves stdin and cleanup works after an early container failure",
   "the shipped launcher stages a stage copy's first line and gives the container part only the private text",
   "workflow command and inline script templates keep 16 KiB of budget headroom",
   "nested clone input ships the composed pre-start policy and keeps the normal program unchanged",
