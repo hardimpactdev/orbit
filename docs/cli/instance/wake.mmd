@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0259, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): read a sleeping development container's recorded pages back while it is still frozen, then resume it, or start one that was stopped. Defaults and nested-fleet Instances wake under the same rule as clones (owner decision 2026-11-14); a stopped nested-fleet Instance is never booted here. A request to its Route admits the same kind through the runtime activation endpoint of docs/reference/app-dev-runtime-hibernation.md#wake.
   %% status: draft
   %% command: instance:wake
   %% kind: instance.wake
@@ -46,7 +46,7 @@ sequenceDiagram
     %%> - a command caller waits for these calls; Caddy's activation call does not: the Gateway answers the progress page first and makes the calls after the answer went
     %%> - the frozen agent's `hibernation.marker` writes `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`; only root writes in that folder; the name carries the Operation, so no earlier wake's outcome can answer this one
     %%> When:
-    %%> - the Node has `/usr/local/libexec/orbit-instance-power`; the first read asks for it, and a Node without it skips this path for 10 minutes
+    %%> - the Node has the worker template `/etc/systemd/system/orbit-instance-wake@.service`, which only the role's convergence installs; the first read asks for it, and a Node without it skips this path for 10 minutes
     %%> - not for a nested-fleet Instance: its prepared fast path waits for a nested-fleet proof
     %%> Why:
     %%> - measured on a frozen clone: the run's start-up and playbook took 8-13 s of the 9-19 s a visitor waited
@@ -81,7 +81,7 @@ sequenceDiagram
   GW-->>CL: 202 Accepted<br/>Operation ID
   SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
-  %%> - Frozen: `orbit-instance-power restore` as the Instance's lock unit, a busy lock retried 0.25 s apart, 40 times, else `instance.power_helper_busy`: with a valid plan it reads the recorded pages back within 2 s while still frozen; then one `incus resume`, and `memory.swap.max` back to 0 on each cgroup of `limits.json` that still exists (a short-lived unit's cgroup may be gone; that never fails the wake); FrankenPHP gets 10 tries 1 s apart from the Node to its address; nothing boots and nothing converges, `wake: resumed`
+  %%> - Frozen: `orbit-instance-power restore` as the Instance's lock unit, a busy lock (systemd's `UnitExists` refusal) retried 0.25 s apart, 40 times, else `instance.power_helper_busy`; a helper crash fails with `instance.power_helper_failed`: with a valid plan it reads the recorded pages back within 2 s while still frozen; then one `incus resume`, and `memory.swap.max` back to 0 on each cgroup of `limits.json` that still exists (a short-lived unit's cgroup may be gone; that never fails the wake); FrankenPHP gets 10 tries 1 s apart from the Node to its address; nothing boots and nothing converges, `wake: resumed`
   %%> - a missing, stale or invalid plan makes no memory call; the resume is ordinary
   %%> - a run that follows the fast path finds the state the Node reached: a container that already runs is not resumed again, and the run reads this Operation's outcome files for their facts
   %%> - a nested-fleet Instance resumes with its inner fleet, `wg-nested` and the Club key in /run: a freeze keeps them, so the wake starts and checks no fleet

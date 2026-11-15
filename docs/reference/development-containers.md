@@ -1420,7 +1420,7 @@ One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this wor
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
-So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to each recorded path that still exists, then removes the record.
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record. A resume reads no other record.
 
 A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them. A sleep that fails while the container still runs closes what it opened. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
 
@@ -1459,7 +1459,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
 | The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
 | A visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
-| The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0259](/decisions/0259-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
+| The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
@@ -1521,7 +1521,7 @@ A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker wri
 
 The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it, it is not a nested-fleet Instance, and its Node has the power helper, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request named after the Instance and the Operation, `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
+**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it, it is not a nested-fleet Instance, and its Node's role installed the fast wake's worker template `orbit-instance-wake@.service`, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request named after the Instance and the Operation, `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
 
 The `app-dev` role installs the Node's part: the power helper, a path unit that watches the request folder, and the worker template `orbit-instance-wake@<id>-<opid>.service`.
 
@@ -1533,7 +1533,7 @@ The `instance:wake` command waits for this, and a command that joins the wake wa
 
 A request that arrives while the resume runs joins the wake and gets the waiting page at once. A wake cancelled before the Gateway writes the request gets no request.
 
-Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node without the helper, a worker that declined or failed, a failed agent call, and the bound. The Gateway then removes a request still there.
+Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node whose role has not installed the worker template (the first read asks for it, and such a Node is skipped for 10 minutes), a worker that declined or failed, a failed agent call, and the bound. The Gateway then removes a request still there.
 
 The worker ignores a request older than one second, so a request left behind never wakes the Instance later.
 

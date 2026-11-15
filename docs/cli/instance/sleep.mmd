@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, ADR 0259, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
+  %% Container runtime (ADR 0250 step 8, ADR 0261, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
@@ -42,10 +42,11 @@ sequenceDiagram
   %%> - one phase: checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`; an Instance without a published Route has no site and nothing to check; the intent's `route` says which
   %%> - writes the asleep marker, so each request from now on gets the wake page
   %%> - installs the power helper from this commit when it differs, then runs `orbit-instance-power prepare` as the unit `orbit-instance-power-<id>`, the Instance's lock; a busy lock is retried 0.25 s apart, 40 times
-  %%> - prepare: removes the earlier plan; reads the state from Incus; writes `max` to `memory.swap.max` of every cgroup of the subtree that holds 0 and records them in `limits.json` before the pause; `incus pause`
+  %%> - prepare reads the state from Incus first; running: removes the earlier plan and `sleep.json`, writes `max` to `memory.swap.max` of every cgroup of the subtree that holds 0 and records them in `limits.json` before the pause; `incus pause`
   %%> - prepare, frozen: lists `cgroup.procs` of the whole subtree, every process alike, and records each one's identity and the resident pages of its readable mappings; publishes the plan atomically; one `memory.reclaim`
   %%> - then reads `memory.stat` until anonymous and file memory are 0, 20 reads 0.1 s apart; the last read is what stays in RAM
-  %%> - a frozen container stays as it is and reports its earlier sleep; a stopped one stays stopped, `not_applicable`
+  %%> - a frozen container stays as it is, keeps its plan for the next wake and reports the earlier sleep's result from `sleep.json`; a stopped one stays stopped, its old plan is discarded, `not_applicable`
+  %%> - a busy lock is only systemd's `UnitExists` refusal; a helper crash fails the phase with `instance.power_helper_failed`, never retried
   %%> - a nested-fleet Instance gets no plan: `skipped`, `placement_unproven`
   %%> Why:
   %%> - one phase: each Ansible start costs about 4 s
@@ -59,18 +60,18 @@ sequenceDiagram
   %%> - a failed swap write or pause closes each limit it opened and removes the marker, `instance.container_freeze_failed`; the container serves as before
   opt more than 32 MiB anonymous stays in RAM, same phase
     alt a nested-fleet Instance
-      Note over N: Resume, never stop<br/>helper restore, close swap
+      Note over N: Resume, never stop<br/>drop plan, restore, close swap
       %%> Why:
       %%> - a stop loses the Club key in /run and the tunnel `wg-nested`; only a deployment or a start gives them back
       %%> Result:
       %%> - the container runs again, swap closes on each cgroup the freeze opened, the marker goes; the run fails `instance.container_freeze_failed`
       %%> - the Instance serves as before; free swap and run the command again
     else any other Instance
-      Note over N: Stop the container<br/>helper restore, incus stop
+      Note over N: Stop the container<br/>drop plan, restore, incus stop
       %%> Why:
       %%> - swap is full; a frozen container would hold RAM, which a sleep exists to free
       %%> Result:
-      %%> - `sleep: stopped`; the restore consumed the plan, `skipped`, `stopped`; the next wake boots it behind the same marker
+      %%> - `sleep: stopped`; `discard --plan-only` dropped the plan before the resume, so no prefetch ran while swap is full; `skipped`, `stopped`; the next wake boots it behind the same marker
       %%> On failure:
       %%> - the resumed container runs: swap closes again, the marker goes, `instance.container_freeze_failed`
     end

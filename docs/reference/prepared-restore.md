@@ -1,13 +1,13 @@
 ---
 title: "Prepared restore"
-description: "How a sleeping development container gets its memory back before it resumes: the power helper on the Node, its plan, its bounds, the wake's state table, the fast wake's files and the result fields. ADR 0259, in progress."
+description: "How a sleeping development container gets its memory back before it resumes: the power helper on the Node, its plan, its bounds, the wake's state table, the fast wake's files and the result fields. ADR 0261, in progress."
 ---
 
 # Prepared restore
 
 A sleeping development container keeps its memory in swap ([Sleep and wake](/reference/development-containers#sleep-and-wake)). Without help, each page comes back on first use, one fault at a time, so the first request after a wake is slow. Prepared restore fixes this. At each sleep, while the container is frozen, Orbit records which readable pages of every process were resident. At the wake, while the container is still frozen, Orbit reads those pages back from swap in parallel, and then it unfreezes the container once.
 
-This page is the contract for [ADR 0259](/decisions/0259-restore-a-sleeping-containers-memory-before-it-resumes), which is in progress. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) charts show the steps.
+This page is the contract for [ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes), which is in progress. The [sleep](/cli/instance/sleep) and [wake](/cli/instance/wake) charts show the steps.
 
 | Rule | Meaning |
 | --- | --- |
@@ -27,16 +27,51 @@ The plan brings back what was resident before the freeze. It does not warm a rou
 
 ## The power helper
 
-The `app-dev` role installs the helper at `/usr/local/libexec/orbit-instance-power`. It is one Python 3 program that calls the kernel through ctypes. The sleep and wake phases install it with the same shared task, so a run never depends on when the role last converged.
+The `app-dev` role installs the helper at `/usr/local/libexec/orbit-instance-power`. It is one Python 3 program that calls the kernel through ctypes. The sleep and wake phases install the helper alone with the same shared task, so a run never depends on when the role last converged. Only the role's convergence installs the fast wake's units ([Eligibility](#the-fast-wake)).
 
 | Command | Does |
 | --- | --- |
 | `capabilities` | Probes the kernel and writes the capability manifest. Takes no lock. |
 | `prepare --instance <id> --operation <opid>` | Sleeps the container: opens swap, pauses, records the plan, reclaims. Reads the Instance's intent on stdin. |
 | `restore --instance <id> --operation <opid>` | Wakes the container: validates the plan, restores pages, unfreezes, closes swap. Reads the intent on stdin when a run calls it; the fast worker sends none. |
-| `discard --instance <id>` | Removes the Instance's plan, its limits record, its target descriptor, and its request and outcome files. |
+| `discard --instance <id>` | Removes all of the Instance's helper files: plan, sleep result, limits record, target descriptor, receipts, and its request and outcome files. |
+| `discard --instance <id> --plan-only` | Removes only the plan. The stop path of a sleep uses it. |
 
-`<id>` and `<opid>` are strictly positive decimal numbers. They are the only arguments that change. The helper takes no PID, cgroup path, memory range, executable or path from a caller. stdout is one JSON object of at most 64 KiB, and the exit code is 0 for every outcome the helper handled. Nonzero with no JSON means the helper did not run.
+`<id>` and `<opid>` are strictly positive decimal numbers. They are the only arguments that change; `--plan-only` is a fixed flag. The helper takes no PID, cgroup path, memory range, executable or path from a caller. A deadline is a thread join with a timeout and a check before each batch; the helper has no sleep or polling loop.
+
+**Input.** `prepare`, and `restore` when a run calls it, read one JSON object on stdin, at most 16 KiB. The run builds it from the Gateway's intent. It holds no secret.
+
+| Field | Value |
+| --- | --- |
+| `schema_version` | `1` |
+| `instance_id`, `operation_id` | Positive integers; each must equal its argument |
+| `incus_project` | `orbit-instances` or `orbit-instances-nested`, from the recorded runtime |
+| `incus_name` | `instance-<id>` from the recorded runtime |
+| `web` | `{address, port}`: the container's recorded address and web port; `null` without a web unit |
+
+A field that is missing, unknown or out of range makes the helper refuse with `instance.power_helper_failed` before it touches anything.
+
+**Output.** Every command prints one JSON object of at most 64 KiB on stdout and exits 0 for each outcome it handled. Any other end, such as an exception or a signal, is a crash. The helper's top-level handler turns an exception into `outcome: failed` with `error_code: instance.power_helper_failed` and exit code 70. The caller treats a crash as a failure of its phase and never retries it.
+
+| Field | Commands | Value |
+| --- | --- | --- |
+| `schema_version` | all | `1` |
+| `command`, `instance_id`, `operation_id` | all | Echo of the call; `operation_id` is `null` for `discard` and `capabilities` |
+| `outcome` | all | One closed value per command; see the list below the table |
+| `error_code` | all | `null`, or `instance.container_freeze_failed` (`prepare`), `instance.container_start_failed` (`restore` could not resume) or `instance.power_helper_failed`. A missing container or another incarnation is `outcome: missing`, which the caller maps to its existing error |
+| `state_before`, `state_after` | `prepare`, `restore` | `running`, `frozen`, `stopped` or `missing`, as Incus reported them |
+| `swap_subtree` | `prepare`, `restore` | Inner cgroups that this sleep opened, or that this resume closed |
+| `prepared_restore` | `prepare`, `restore` | The [result object](#results), without the residual fields, which the sleep phase adds from its counter read |
+| `seconds` | `prepare`, `restore` | `{pause, capture, publish, reclaim}` or `{load, restore, resume, close}`, each in seconds; a step that did not run is absent |
+| `capabilities` | `capabilities` | Each primitive and whether it works |
+
+Outcomes per command:
+
+- `prepare`: `frozen`, `already_frozen`, `stopped` or `failed`;
+- `restore`: `resumed`, `already_running`, `stopped`, `missing` or `failed`;
+- `discard`: `discarded`; `capabilities`: `checked`.
+
+A `failed` outcome also says whether the container is left running or frozen, through `state_after`. A crash leaves no such fact, so the caller keeps the asleep marker.
 
 **The lock.** Every command except `capabilities` runs as the transient unit `orbit-instance-power-<id>.service`:
 
@@ -45,14 +80,16 @@ systemd-run --unit=orbit-instance-power-<id> --wait --pipe --collect \
   --property=… /usr/local/libexec/orbit-instance-power restore --instance <id> --operation <opid>
 ```
 
-systemd allows one loaded unit of a name, so a second start fails at once: the name is the lock. It serializes the run, the fast worker, a deploy or start, and a destroy for one Instance. Other Instances are not blocked. The helper reads its own unit from `/proc/self/cgroup` and refuses to run outside it. When the helper exits, the lock is free. A helper stuck in uninterruptible I/O keeps the unit active, so no second worker touches that memory.
+systemd allows one loaded unit of a name, so a second start fails at once: the name is the lock. It serializes the run, the fast worker, a deploy or start, and a destroy for one Instance. Other Instances are not blocked.
 
-A caller that finds the lock busy acts as follows:
+The helper reads its own unit from `/proc/self/cgroup` and refuses to run outside it. When the helper exits and systemd collects the unit, the lock is free. A helper stuck in uninterruptible I/O keeps the unit active, so no second worker touches that memory. The lock follows the helper, not its caller: a caller whose SSH connection drops leaves the helper to finish.
+
+**Busy.** The lock is busy only when `systemd-run` exits nonzero, prints nothing on stdout, and its stderr carries systemd's `UnitExists` refusal: `Unit orbit-instance-power-<id>.service was already loaded or has a fragment file.` That covers a helper still at work and a unit that systemd has not yet collected. Any other nonzero end is a crash, as above. A caller that finds the lock busy acts as follows:
 
 | Caller | Busy lock |
 | --- | --- |
 | An Ansible phase | Waits with `until` and `retries`, 0.25 s apart, at most 40 tries (10 s); then fails with `instance.power_helper_busy`. The asleep marker stays. |
-| The fast worker | Declines with `.failed`. The Operation continues in its run. |
+| The fast worker | Declines with `.failed` and makes no second try. The Operation continues in its run. |
 
 The unit runs as root with only the capabilities the kernel requires:
 
@@ -62,7 +99,7 @@ The unit runs as root with only the capabilities the kernel requires:
 
 It also has no new privileges, and a read-only system except its folders and the cgroup tree. Each call opens a new connection to the Incus Unix socket.
 
-**Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It checks them against a child process that it starts and then ends. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the helper exists.
+**Capabilities.** `capabilities` checks root access to cgroup v2, `/proc/<pid>/maps` and `pagemap`, `pidfd_open`, `process_madvise` and `process_vm_readv`. It checks them against a child process that it starts and then ends. It writes `/var/lib/orbit/hibernation/capabilities.json` (root, `0644`): the helper's version, the plan schema version, the result of each primitive, and the helper's SHA-256. The shared install task runs it when the helper changed or the manifest is missing. Missing capability means `prepare` records no plan (`unsupported`); swap, pause and resume work as before. The convergence output lists each probe's result. The Gateway learns nothing new from the agent: the fast wake checks only that the role installed its units.
 
 ## Files on the Node
 
@@ -73,6 +110,7 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 | `/var/lib/orbit/hibernation/instances/<id>/` | `root:root 0700` | One Instance's private state |
 | `…/<id>/target.json` | `0600` | The target descriptor |
 | `…/<id>/limits.json` | `0600` | The swap limits this sleep opened |
+| `…/<id>/sleep.json` | `0600` | The public result of the sleep that froze the container: `sleep_operation_id`, `swap_subtree` and `prepared_restore` |
 | `…/<id>/plan/manifest.json`, `…/<id>/plan/ranges.bin` | `0600` | The one committed plan |
 | `…/<id>/receipts/op-<opid>.json` | `0600` | Detailed metrics of one Operation; the newest 16 stay |
 | `/var/lib/orbit/hibernation/outcomes/` | `root:caddy 0755` | Status files of the fast wake, `0644` |
@@ -81,7 +119,11 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 
 **Target descriptor.** `prepare` and a run's `restore` write it from the intent on stdin. It holds `schema_version: 1`, `instance_id`, `incus_project` and `incus_name` from the recorded runtime, `incarnation`, and `web`. `incarnation` is the container's Incus `volatile.uuid`. `web` is the container's recorded address and web port, or `null` without a web unit. The fast worker uses only this file to find its target. A missing or invalid descriptor makes it decline. It never guesses a project.
 
-**Limits record.** `prepare` opens swap with `max` on each cgroup of the container's subtree whose `memory.swap.max` holds `0`. Before the pause, it writes what it opened to `limits.json`: `host_boot_id`, the container's `cgroup_inode`, and `opened: [{relative_cgroup_path, previous_value: "0"}]`. A cgroup with its own limit, such as 32 MiB, stays as it is. A cgroup that vanishes or refuses the write is not opened. Every resume closes exactly these paths with `0`, skips a path that has gone, and then removes the record. This record is the only one; the plan does not repeat it.
+**Limits record.** `prepare` opens swap with `max` on each cgroup of the container's subtree whose `memory.swap.max` holds `0`. Before the pause, it writes what it opened to `limits.json`: `host_boot_id`, the container's `cgroup_inode`, and `opened: [{relative_cgroup_path, previous_value: "0"}]`. A cgroup with its own limit, such as 32 MiB, stays as it is. A cgroup that vanishes or refuses the write is not opened.
+
+Every resume writes `0` to the container's own cgroup, the value Incus keeps for every running container, and to each inner path of the record that still exists. Then it removes the record. A resume learns inner paths only from `limits.json`; it reads no other record. A nested-fleet Instance frozen before this release has its inner paths only in the old `/dev/shm` record, so the release wakes each such Instance before it deploys.
+
+This record is the only one; the plan does not repeat it.
 
 ## The plan
 
@@ -119,9 +161,11 @@ The table holds the resident pages of readable mappings, merged into runs. It ho
 | File | Its size is not `32 + 24 × record_count` or `ranges_file_bytes`, or its SHA-256 is not `ranges_sha256` |
 | Counts | `record_count` is not `range_count`, or the processes' `first_range` and `range_count` do not tile the table in order |
 | Record | `process_index` is outside the process list, or a reserved field is not 0 |
-| Range | `start` or `length` is zero, not page aligned, or runs past the user address space |
+| Range | `start` or `length` is zero or not page aligned, or `start + length` overflows or passes 2^56 |
 | Order | A process's ranges are not sorted, or they overlap |
 | Totals | `resident_pages` or `resident_mapping_bytes` differ from the sum of the lengths |
+
+The limit 2^56 is the user address limit of 5-level paging. On a 4-level host the limit is 2^47, and a range above it fails at the kernel and counts as `partial`.
 
 **Capture.** While the container is frozen, the helper reads `cgroup.procs` in every cgroup of the subtree, recursively, and deduplicates host PIDs. Threads that share an address space count once.
 
@@ -145,7 +189,11 @@ These are global safety bounds, not settings per app. Hitting one abandons the h
 | iovec per syscall | `min(512, IOV_MAX)` |
 | Counter settle after the reclaim | 20 reads, 0.1 s apart (Ansible) |
 | Fast wake request age | 1 s |
+| `incus resume` in `restore` | 1 s |
+| Fast worker's readiness request | 1.5 s |
 | Gateway observation of the fast wake | every 25 ms, at most 6 s |
+
+The 6 s observation covers the fast wake's whole path: the request may wait up to 1 s, Python start-up and the plan load take a fraction of a second, then the 2 s restore, the 1 s resume and the 1.5 s readiness request.
 
 The 2 s bound limits the work the helper submits and how long it waits. Linux cannot cancel uninterruptible disk I/O. When a worker does not return, the helper keeps the container frozen and the asleep marker in place. It reports `timed_out` only after every worker has stopped. Otherwise the unit stays active and the run fails with `instance.power_helper_busy`. The helper never starts a second worker against the same memory.
 
@@ -153,13 +201,15 @@ The 2 s bound limits the work the helper submits and how long it waits. Linux ca
 
 `prepare` runs in the sleep's one Ansible phase, after the Route check and the asleep marker. It works in this order:
 
-1. It removes the earlier plan.
-2. It reads the container's state from Incus. A frozen container returns the earlier sleep's result unchanged. A stopped container returns `not_applicable`.
-3. It writes `limits.json`, opens swap and pauses the container.
-4. It captures and publishes the plan.
-5. It writes `memory.reclaim` once; `EAGAIN` is normal.
+1. It reads the container's state from Incus, before it changes anything.
+2. Frozen: it changes nothing and keeps the plan for the next wake. It returns `already_frozen` with the earlier result from `sleep.json`.
+3. Frozen without `sleep.json`: it returns `already_frozen`, `skipped`, reason `no_plan`.
+4. Stopped: it discards a plan left from before and returns `stopped`, `not_applicable`.
+5. Running: it removes the earlier plan and `sleep.json`, writes `limits.json`, opens swap and pauses the container.
+6. It captures and publishes the plan.
+7. It writes `memory.reclaim` once; `EAGAIN` is normal. Then it writes `sleep.json` and returns `frozen`.
 
-Ansible then reads `memory.stat` until anonymous and file memory are both 0, at most 20 times. The last read is the residual memory. The existing policy decides on more than 32 MiB of anonymous memory. A nested-fleet Instance resumes, through `restore`, and fails. Any other Instance resumes through `restore`, which consumes the plan, and stops.
+Ansible then reads `memory.stat` until anonymous and file memory are both 0, at most 20 times. The last read is the residual memory. The existing policy decides on more than 32 MiB of anonymous memory. Swap is full at that point, so no prefetch would help: the phase runs `discard --plan-only` first, and then `restore` finds no plan, resumes without a memory syscall and closes `limits.json`. When the Instance is a nested-fleet one, the sleep then fails, as before. Any other Instance stops, and its result says `skipped`, reason `stopped`.
 
 A capture that is unsupported, too large or too slow leaves no plan. The sleep continues: freeze and reclaim are the same as without a plan. A failed pause or reclaim takes the existing failure path, and `prepare` closes every limit it opened before it returns. A failure that leaves the container frozen keeps the marker and `limits.json`, so a later `restore` can recover it.
 
@@ -170,7 +220,7 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 | Found | Action | `prepared_restore.status` |
 | --- | --- | --- |
 | Frozen, valid plan | Restores the pages, still frozen; then rechecks the incarnation, unfreezes once and closes the recorded limits | `complete`, `partial` or `timed_out` |
-| Frozen; plan missing, invalid, stale or unsupported | No memory syscall; unfreezes and closes the limits | `skipped` with a reason |
+| Frozen; plan missing (also after `discard --plan-only`), invalid, stale or unsupported | No memory syscall; unfreezes and closes the limits | `skipped` with a reason |
 | Running | No restore and no resume; closes any recorded limits | `not_applicable` |
 | Stopped | Discards the plan and the limits record; the caller's existing start path and nested-fleet rule decide | `not_applicable` |
 | Missing, or a different incarnation | Touches nothing; the existing not-found or lifecycle error | none |
@@ -232,7 +282,7 @@ On `.failed`, or after 6 s, the Gateway removes a request that is still there, a
 
 After the projection commits, the Gateway removes the Operation's request and outcome files with `hibernation.marker`'s remove, off the visitor's path. Until then the files stay, whatever their age. A crash before the cleanup changes nothing, and `ready_at` keeps its first value.
 
-**Eligibility.** The Gateway tries the fast wake when the Instance's last sleep froze it, the Instance is not a nested-fleet Instance, and the Node has `/usr/local/libexec/orbit-instance-power`. Any `swap_subtree` qualifies, because `restore` closes every limit that the sleep opened. Otherwise the wake takes its run at once.
+**Eligibility.** The Gateway tries the fast wake when the Instance's last sleep froze it, the Instance is not a nested-fleet Instance, and the Node has `/etc/systemd/system/orbit-instance-wake@.service`. Only the role's convergence writes that worker template, together with the path unit and the dispatcher, so a Node whose role predates this release takes the run at once. The first read also asks for this file; a Node without it skips the fast wake for 10 minutes. Any `swap_subtree` qualifies, because `restore` closes every limit that the sleep opened. Otherwise the wake takes its run at once.
 
 ## Results
 
@@ -272,7 +322,7 @@ Other lifecycle work meets the helper's state through the same lock.
 | --- | --- |
 | Destroy | `discard` waits for a helper still at work, then removes all of the Instance's helper files. A late worker finds no descriptor and declines. |
 | Deploy, start, fleet refresh | Their resume of a sleeping container calls `restore`. It consumes the plan before any app change, and it closes the recorded limits. A stopped container's plan is discarded before the boot. |
-| Stop path of a sleep | `restore`, then `incus stop`; the result says `skipped`, reason `stopped`. |
+| Stop path of a sleep | `discard --plan-only`, then `restore` without a plan, then `incus stop`; the sleep's result says `skipped`, reason `stopped`. |
 | Host reboot | The boot id differs, so every plan and limits record is stale. The asleep marker and the Incus state decide the wake. |
 | Helper restart | The helper keeps nothing in memory. It reloads the committed plan from disk at each call. |
 | Two callers | One Operation, one physical restore; the lock makes the other wait or decline. Different Instances wake at the same time within the Node's capacity. |
@@ -289,7 +339,7 @@ The proof runs the installed helper on a Node that the `app-dev` role converged.
 - helper restart, 30-minute and overnight idle, and 2 and 4 concurrent wakes;
 - missing capability, missing plan and an exhausted bound.
 
-It reports median, p95, min, max, sample count and failures, and it keeps every failure. Before each timed wake it checks that anonymous and file memory are 0. The proof publishes two timing sets: the Node's restore, resume and real app response; and the full HTTPS path through Caddy, Gateway, Operation, Node and the progress page.
+It reports median, p95, min, max, sample count and failures, and it keeps every failure. Before each timed wake it checks that anonymous and file memory are 0. The proof publishes two timing sets: the Node's restore, resume and real app response; and the full HTTPS path through Caddy, Gateway, Operation, Node and the progress page. It names which part of the remaining delay belongs to activation delivery: the progress page, its 250 ms poll and the Gateway's trigger and observation calls.
 
 The release gates apply to a reference fixture like the spike's: 18 processes and 300–500 MiB recorded.
 
@@ -300,19 +350,20 @@ The release gates apply to a reference fixture like the spike's: 18 processes an
 | Improvement over an ordinary wake, same route, host and load | median at least 40% |
 | Safety | no app request failure from preparation or restore; no unsafe identity access, unclosed swap limit, false `ready` or missing Operation history |
 
-These gates measure the Python engine. If one misses and the helper's own time causes it, the next step is a native engine built in CI and shipped as a release asset, behind the same commands and plan format ([ADR 0259](/decisions/0259-restore-a-sleeping-containers-memory-before-it-resumes)).
+These gates measure the Python engine. If one misses and the helper's own time causes it, the next step is a native engine built in CI and shipped as a release asset, behind the same commands and plan format ([ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes)).
 
 ## Errors
 
-The helper adds one error code to the sleep and the wake.
+The helper adds two error codes to the sleep and the wake.
 
 | Code | Meaning |
 | --- | --- |
 | `instance.power_helper_busy` | Another helper call of this Instance stayed active past the run's wait, for example a restore stuck in disk I/O. Nothing changed; the asleep marker stays. |
+| `instance.power_helper_failed` | The helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. |
 
 ## Why it works this way
 
-[ADR 0259](/decisions/0259-restore-a-sleeping-containers-memory-before-it-resumes) has the measurements and the rejected alternatives.
+[ADR 0261](/decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes) has the measurements and the rejected alternatives.
 
 ### The plan comes from the kernel
 
@@ -324,7 +375,7 @@ An app that runs changes its mappings. A frozen app cannot, so the plan stays ex
 
 ### A systemd unit name is the lock
 
-systemd starts one unit per name. It frees the name when the process exits, so no lock file can go stale. The shape policy allows `flock` only on fixed paths.
+The shape policy allows `fcntl.flock` only on a fixed list of host lock paths, and a lock per Instance has no fixed path. systemd starts one unit per name and frees the name when the helper exits, so the host's own service manager gives the exclusion. The lock also spans the helper's work, not its caller's connection.
 
 ### One helper for every caller
 

@@ -3,9 +3,9 @@
     {
       "tab": "Decisions",
       "group": "Records",
-      "order": 259,
+      "order": 261,
       "pages": [
-        "decisions/0259-restore-a-sleeping-containers-memory-before-it-resumes"
+        "decisions/0261-restore-a-sleeping-containers-memory-before-it-resumes"
       ]
     }
   ]
