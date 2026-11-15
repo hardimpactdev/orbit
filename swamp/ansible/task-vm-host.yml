@@ -1,6 +1,6 @@
 ---
 # The Incus work of a task VM host, one tagged part per Swamp phase. The host keeps one stopped base VM that never gets an identity;
-# its ZFS snapshot is the base a task start copies. Since the image refresh is gone (docs/reference/old-paths.md), nothing runs the parts
+# its ZFS snapshot is the base a task start copies. Since the image refresh is gone (docs/reference/compute-drivers.md#refresh-the-base-snapshot), nothing runs the parts
 # `host-prepare` and `base-*`: they stay only while kept tests load them as fixtures of shared files, and go with the Pi task loop.
 # - `base-start`: start the base VM; a host without one gets it once, from the stock Ubuntu VM image and an empty seed volume. A rebuild
 #   (`--from-stock`) first deletes the base VM and its seed, with their snapshots, so the run builds the base from stock.

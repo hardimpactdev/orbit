@@ -40,7 +40,7 @@ The Gateway installs the observer only on active managed Linux Nodes with a Wire
 
 A macOS Node has no observer, agent secret or LaunchAgent. Native enrollment reads its platform and existing tunnel address through pinned SSH. It installs no agent binary. Tool operations keep the enrolled account and its existing package-manager scopes.
 
-Task VM host preparation runs through the shared Ansible phase of a [base refresh](/reference/compute-drivers#prepare-an-incus-host). The agent observes Incus state; host preparation uses the pool and network intent of the refresh.
+Task VM host preparation belonged to the removed base refresh; nothing runs it now ([prepare an Incus host](/reference/compute-drivers#prepare-an-incus-host)). The agent observes Incus state.
 
 In disposable proof fleets, each batch installs the tested checkout's frozen pin with checksum verification before cases start. After installation, it stops all three observers, clears their old presence versions and host receipts, starts them, and waits for each expected version with its binary digest and a new host fact. An installed checksum alone does not prove that a reporter reached the Gateway. See [proof preparation](/reference/verification-cases).
 

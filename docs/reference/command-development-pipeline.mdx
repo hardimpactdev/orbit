@@ -97,7 +97,7 @@ The checkout is already mounted when the containers boot, but the restored datab
 
 When `ORBIT_INSTANCES_NESTED_FLEET_REFRESH` is on, after each verified Gateway release Orbit deploys each nested-fleet default Instance on a Node with the nested-fleet switch to the release commit. The run refreshes the inner fleet, retakes `base` and takes the seed snapshot that a task or a new Instance of the Project clones. A default with an [inner volume](/reference/development-containers#the-seed-pair) has a seed of two snapshots of one name, the container's and the volume's, and each copy clones both. [Refresh after a release](/reference/development-containers#refresh-after-a-release) owns the rules.
 
-Until the last proof runs in containers, the task VM refresh stays in the code, but nothing starts it: its release step, daily schedule and artisan commands are removed. Per host it converged the base VM, snapshotted it and proved the snapshot with one task start. Every host also holds it ([Off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). [Old paths](/reference/old-paths) says when it goes.
+The task VM refresh is removed ([Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)). Per host it converged the base VM, snapshotted it and proved the snapshot with one task start.
 
 <div className="flow-at" data-chart="reference/pipeline/6-task-image-seed-refresh"></div>
 
