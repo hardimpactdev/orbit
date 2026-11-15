@@ -1,6 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
-description: 'Development Instance create: checkout/default Ansible phases, or the direct clone phases up to the session copy in their own job, with the clone''s Route beside them, and the T3 registration with the create''s result first in the create job when its admission took the Route Nodes (the completion does its database, fleet, Processes, and a Route this run did not publish). Native progress records each phase.'
+description: 'Development Instance create: checkout/default Ansible phases, or the direct clone phases up to the T3 registration in their own job, with the clone''s Route beside them when its admission took the Route Nodes (the completion does its database, fleet, Processes, and a Route this run did not publish). Native progress records each phase.'
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -18,7 +18,7 @@ inputs:
     # then the clone's placeholder model key and model origin), and process_environments for
     # a default's Process environment files or a clone's private workspace JSON (environment and processes), and club_key for
     # a nested-fleet container's Club key, which only its start step reads. clone_stage names a clone's
-    # instance-create-stage-<operation>: one public JSON line of release scripts, then the clone copy's text (clone-container's stdin).
+    # instance-create-stage-<operation>: one public JSON line of release scripts, then the clone copy's text (no step reads it yet).
     execution_secrets:
       type: object
       additionalProperties:
@@ -31,15 +31,14 @@ inputs:
   required: [operation_id, node_id, kind, intent, execution_secrets]
   additionalProperties: false
 jobs:
-  # One input predecessor; a clone skips it: its first step stages the release scripts from its stage copy. Swamp runs jobs in levels
-  # too: legacy, clone and publication share one level, each with its own step levels; the create job starts when all have ended
-  # (swamp/docs/swamp-shape.md). A clone's job ends at the session copy; the create job registers it.
+  # One input predecessor. Swamp runs jobs in levels too: legacy, clone and publication share one level, each with its own step levels;
+  # the create job starts when all have ended (swamp/docs/swamp-shape.md). A clone's job ends at the T3 registration.
   - name: input
     steps:
       - name: input
         labels: {role: swamp}
         writes: true
-        guard: '${{ inputs.intent.already_active || (inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        guard: '${{ inputs.intent.already_active }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
@@ -369,21 +368,16 @@ jobs:
             env: &container_phase
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_RUN_ID: '${{ run.id }}'
-              # The create's input, or for a failed clone the stop's own (stop-input): a clone has no input step.
-              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : ("stop-input" in steps && steps["stop-input"].status == "succeeded" ? steps["stop-input"].outputs.assets : "") }}'
-              ANSIBLE_CONFIG: '${{ ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : ("stop-input" in steps && steps["stop-input"].status == "succeeded" ? steps["stop-input"].outputs.assets : "")) + "/ansible.cfg" }}'
+              ORBIT_ANSIBLE: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "" }}'
+              ANSIBLE_CONFIG: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets + "/ansible.cfg" : "" }}'
               ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
               ANSIBLE_FORCE_COLOR: '0'
               ANSIBLE_DISPLAY_FAILED_STDERR: '1'
   # Four fixed SSH behavior slots bound inventory and separate concurrent creates.
   - name: clone
-    dependsOn: [{job: input, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+    dependsOn: [{job: input, condition: {type: succeeded}}]
     steps:
-      # One dispatch stages and copies (docs/cli/instance/container/create.mmd): the Gateway's launcher stages the stage copy's public
-      # line (the release scripts) into the private folder, then runs the container part with only the copy's private text on stdin.
-      # A create that is no clone skips the step; serve resolves its expressions all the same, so stdin names a key every create has
-      # (`has()`: serve refuses a container comparison in a vault expression), and argv reads the launcher only for a clone.
-      - name: clone-container
+      - name: clone-input
         labels: {role: swamp}
         writes: true
         dependsOn: []
@@ -396,8 +390,35 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ ["timeout", "300", "python3", "-c", inputs.intent.container != null && inputs.intent.container.clone != null ? inputs.intent.clone_launcher : "", "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id, "stage", "container"] }}'
-            stdin: '${{ vault.get(inputs.execution_secrets.git_credential.vault, has(inputs.execution_secrets.clone_stage) ? inputs.execution_secrets.clone_stage.key : inputs.execution_secrets.git_credential.key) }}'
+            argv: '${{ ["timeout", "20"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_stage_argv : []) + ["stage"] }}'
+            stdin: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_payload : "" }}'
+            timeoutSec: 30
+          globalArgs:
+            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
+            transport:
+              kind: ssh
+              user: ${{ inputs.intent.ssh_execution.target.user }}
+              port: ${{ inputs.intent.ssh_execution.target.port }}
+              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
+              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
+            hosts:
+              - name: target
+                address: ${{ inputs.intent.ssh_execution.target.host }}
+      - name: clone-container
+        labels: {role: swamp}
+        writes: true
+        dependsOn: [{step: clone-input, condition: {type: succeeded}}]
+        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
+        task:
+          type: behavior
+          behaviorType: '@swamp/ssh'
+          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
+          methodName: exec
+          inputs:
+            hosts: name:target
+            sudo: true
+            argv: '${{ ["timeout", "300"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["container"] }}'
+            stdin: ${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.execution_secrets.git_credential.key) }}
             timeoutSec: 310
           globalArgs:
             name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
@@ -426,7 +447,7 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ ["timeout", "60", "python3", "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id + "/launch.py", "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id, "club-key"] }}'
+            argv: '${{ ["timeout", "60"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["club-key"] }}'
             stdin: '${{ vault.get(inputs.execution_secrets.git_credential.vault, inputs.intent.container != null && inputs.intent.container.project == "orbit-instances-nested" && inputs.intent.container.club_key.available ? inputs.execution_secrets.club_key.key : inputs.execution_secrets.git_credential.key) }}'
             timeoutSec: 70
           globalArgs:
@@ -457,7 +478,7 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ ["timeout", "240", "python3", "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id + "/launch.py", "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id, "t3"] }}'
+            argv: '${{ ["timeout", "240"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["t3"] }}'
             stdin: '${{ vault.get(inputs.execution_secrets.environment.vault, (inputs.intent.container == null ? inputs.execution_secrets.environment.key : inputs.execution_secrets.process_environments.key)) }}'
             timeoutSec: 250
           globalArgs:
@@ -471,8 +492,7 @@ jobs:
             hosts:
               - name: target
                 address: ${{ inputs.intent.ssh_execution.target.host }}
-      # It brings clone-t3's t3.json beside the run folder: the checked sessions, or after a failure the part that ran, so the create
-      # result keeps that part's code. clone-register or finish removes the copy; the cleanup step after a failure.
+      # It brings clone-t3's t3.json: the checked sessions, or after a failure the part that ran, so the create result keeps that part's code.
       - name: clone-session-copy
         labels: {role: swamp}
         writes: true
@@ -496,34 +516,31 @@ jobs:
                 address: ${{ inputs.intent.ssh_execution.target.host }}
           inputs:
             hosts: name:target
-            src: '${{ "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id + "/t3.json" }}'
-            dst: ${{ "/tmp/orbit-ansible-" + run.id + "-t3.json" }}
+            src: '${{ ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_private : "/tmp/orbit-clone-skipped") + "/t3.json" }}'
+            dst: ${{ "/tmp/orbit-ansible-" + run.id + "/t3.json" }}
             direction: from
             captureOutput: false
             timeoutSec: 20
+      - name: clone-register
+        labels: {role: swamp}
+        dependsOn: [{step: clone-session-copy, condition: {type: succeeded}}]
+        guard: ${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || !("clone-t3" in steps && steps["clone-t3"].status == "succeeded") }}
+        task:
+          type: behavior
+          behaviorType: '@nckrtl/instance-t3'
+          behaviorName: ${{ "ic-t3-register" }}
+          methodName: register
+          inputs:
+            instance_id: ${{ inputs.intent.instance_id }}
+            folder: ${{ "/tmp/orbit-ansible-" + run.id }}
   # A clone's Route, beside its copy (docs/cli/instance/container/create.mmd). Only a clone whose admission took the free Route Nodes
   # carries `route`; with a Node held the admission drops it and the completion publishes. No step reads the container: the CSR and the
   # site are host files, the site skips the Route access and APP_URL (`prepared`), and the TLS probe is a handshake with the Node's Caddy.
   # A failure here never stops a clone step and never fails the run (`allowFailure`): the completion publishes again. The Gateway frees the Route
   # Nodes and activates the Route when it sees `clone-route` succeed (NativeRunProgress), so the steps keep their names.
   - name: publication
-    dependsOn: [{job: input, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+    dependsOn: [{job: input, condition: {type: succeeded}}]
     steps:
-      # The run folder and the shipped playbooks that the Route's site child reads, beside the CSR: a clone skips the create's input.
-      - name: clone-route-input
-        labels: {role: swamp}
-        writes: true
-        allowFailure: true
-        dependsOn: []
-        guard: '${{ inputs.intent.already_active || inputs.intent.route == null || !(inputs.intent.container != null && inputs.intent.container.clone != null) }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ${{ "ansible-input" }}
-          methodName: write
-          inputs:
-            intent: '${{ inputs.intent }}'
-            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       - name: clone-route-csr
         labels: {role: swamp}
         writes: true
@@ -543,7 +560,7 @@ jobs:
         labels: {role: swamp}
         writes: true
         allowFailure: true
-        dependsOn: [{step: clone-route-csr, condition: {type: always}}, {step: clone-route-input, condition: {type: always}}]
+        dependsOn: [{step: clone-route-csr, condition: {type: always}}]
         guard: '${{ inputs.intent.already_active || inputs.intent.route == null || !(inputs.intent.container != null && inputs.intent.container.clone != null) || steps.exists(k, k.startsWith("clone-route") && steps[k].status == "failed") }}'
         task:
           type: workflow
@@ -557,26 +574,21 @@ jobs:
             execution_secrets: '${{ inputs.intent.route_secrets }}'
             signed: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("clone-route-csr-" + string(i)) in steps && steps["clone-route-csr-" + string(i)].status == "succeeded" ? steps["clone-route-csr-" + string(i)].outputs.sign.stdout : "") }}'
             prepared: '${{ string(inputs.node_id) }}'
-            admitted: '${{ {"path": "clone-route-input" in steps && steps["clone-route-input"].status == "succeeded" ? steps["clone-route-input"].outputs.path : "", "assets": "clone-route-input" in steps && steps["clone-route-input"].status == "succeeded" ? steps["clone-route-input"].outputs.assets : "", "field": "route"} }}'
+            admitted: '${{ {"path": "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.path : "", "assets": "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.assets : "", "field": "route"} }}'
   # Compensation waits for all writers. A clone's create creates no database: its completion does.
   - name: create
     dependsOn: [{job: input, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: legacy, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: clone, condition: {type: or, conditions: [type: completed, type: skipped]}}, {job: publication, condition: {type: or, conditions: [type: completed, type: skipped]}}]
     steps:
-      # The create's result. A ready clone's `clone-register` builds it from the same map (`create_inputs`), so `finish` runs only when
-      # that registration did not end ready: a create that is no clone, or a clone whose step failed (docs/cli/instance/container/create.mmd).
       - name: finish
         labels: {role: swamp}
-        dependsOn: [{step: clone-register, condition: {type: always}}]
-        guard: '${{ "clone-register" in steps && steps["clone-register"].status == "succeeded" && steps["clone-register"].outputs.ready == true }}'
+        dependsOn: []
         task:
           type: behavior
           behaviorType: '@nckrtl/instance-dev-command'
           behaviorName: '${{ "ic-finish" }}'
           methodName: create_result
-          inputs: &create_inputs
+          inputs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
-            # Where clone-session-copy put a clone's t3.json.
-            t3_file: '${{ "/tmp/orbit-ansible-" + run.id + "-t3.json" }}'
             intent: '${{ inputs.intent }}'
             checkout: '${{ "checkout" in steps ? steps.checkout : null }}'
             database: '${{ inputs.intent.server_database == null ? ("database-install" in steps ? steps["database-install"].status : "skipped") : (inputs.intent.server_database.fill != null ? ("server-database-fill" in steps ? steps["server-database-fill"].status : "skipped") : ("server-database-check" in steps ? steps["server-database-check"].status : "skipped")) }}'
@@ -586,23 +598,9 @@ jobs:
             route: '${{ (inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route" : "route") in steps ? steps[inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route" : "route"].status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ((inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)) in steps ? steps[(inputs.intent.container != null && inputs.intent.container.clone != null ? "clone-route-csr-" : "route-csr-") + string(i)].status : "skipped") }}'
             container: '${{ inputs.intent.container == null ? dyn(null) : {"mail": (inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"] : null) : ("container" in steps ? steps.container : null)), "launch": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-container" in steps ? steps["clone-container"].status : "skipped") : ("container" in steps ? steps.container.status : "skipped")), "workspace": (inputs.intent.container != null && inputs.intent.container.clone != null ? ("clone-t3" in steps ? steps["clone-t3"] : null) : ("workspace" in steps ? steps.workspace : null)), "deploy": steps.filter(k, k.startsWith("deploy-")).map(k, steps[k].status), "processes": "container-processes" in steps ? steps["container-processes"].status : "skipped", "seed": "seed" in steps ? steps.seed.status : "skipped", "t3": "clone-t3" in steps ? steps["clone-t3"].status
-              : "skipped", "register": "clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped"), "server": dyn(null), "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null)} }}'
+              : "skipped", "register": "clone-session-copy" in steps && steps["clone-session-copy"].status == "failed" ? "failed" : ("clone-register" in steps ? steps["clone-register"].status : "skipped"), "server": "clone-register" in steps && steps["clone-register"].status == "succeeded" ? steps["clone-register"].outputs.stdout : null, "club_key": "clone-club-key" in steps && steps["clone-club-key"].status == "succeeded" ? {"status": "succeeded", "outputs": {"stdout": steps["clone-club-key"].outputs.stdout} } : dyn(null)} }}'
             t3_observation: '${{ "clone-t3" in steps && steps["clone-t3"].status == "succeeded" ? steps["clone-t3"].outputs.stdout : "" }}'
             route_observation: '${{ "route" in steps && steps.route.status == "succeeded" ? steps.route.outputs : ("clone-route" in steps && steps["clone-route"].status == "succeeded" ? steps["clone-route"].outputs : {}) }}'
-      # The checks of POST /conn/environments, then both sessions as native sensitive fields, then the create's result with only their
-      # vault keys. It removes the copied t3.json on every path. It waits for the publication, as finish does, so the result names the Route.
-      # It removes the copied t3.json and the run folder on 209, and cannot run twice: a lost dispatch fails the step.
-      - name: clone-register
-        labels: {role: swamp}
-        writes: true
-        dependsOn: []
-        guard: ${{ inputs.intent.already_active || inputs.intent.container == null || inputs.intent.container.clone == null || !("clone-t3" in steps && steps["clone-t3"].status == "succeeded") || !("clone-session-copy" in steps && steps["clone-session-copy"].status == "succeeded") }}
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/instance-t3'
-          behaviorName: ${{ "ic-t3-register" }}
-          methodName: create_register
-          inputs: *create_inputs
       # A failed create takes back a Route it started and did not finish publishing, under the Nodes it still holds. A clone's Route that
       # `clone-route` published is active and its Nodes are free: it stays until a retry or a removal (development-containers.md#create).
       - name: withdraw-route
@@ -620,24 +618,10 @@ jobs:
             side: restore
             intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
             execution_secrets: {}
-      # A clone skips the create's input, so a clone that failed after its copy writes the stop's run folder and playbooks here.
-      - name: stop-input
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: finish, condition: {type: succeeded}}]
-        guard: '${{ inputs.intent.already_active || !(inputs.intent.container != null && inputs.intent.container.clone != null) || steps.finish.outputs.ready == true || !("clone-container" in steps && steps["clone-container"].status != "skipped") }}'
-        task:
-          type: behavior
-          behaviorType: '@nckrtl/ansible-input'
-          behaviorName: ${{ "ansible-input" }}
-          methodName: write
-          inputs:
-            intent: '${{ inputs.intent }}'
-            path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
       - name: stop-container
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: finish, condition: {type: succeeded}}, {step: stop-input, condition: {type: always}}]
+        dependsOn: [{step: finish, condition: {type: succeeded}}]
         guard: '${{ inputs.intent.already_active || inputs.intent.container == null || steps.finish.outputs.ready == true || !(("clone-container" in steps && steps["clone-container"].status != "skipped") || ("container" in steps && steps.container.status != "skipped")) }}'
         task:
           type: behavior
@@ -647,8 +631,8 @@ jobs:
           inputs:
             run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags stop "$ORBIT_ANSIBLE/instance-container.yml"
             env: *container_phase
-      # The clone's private folder (it holds T3 session tokens) goes beside clone-register and finish, which read only the run
-      # folder and the copied t3.json; stop-container reads only the run folder too.
+      # The clone's private folder (it holds T3 session tokens) goes beside finish, which reads only the run folder; stop-container
+      # reads only the run folder too.
       - name: clone-private-cleanup
         labels: {role: swamp}
         writes: true
@@ -678,20 +662,19 @@ jobs:
             timeoutSec: 30
       - name: accepted
         labels: {role: swamp}
-        dependsOn: [{step: finish, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: clone-register, condition: {type: always}}, {step: withdraw-route, condition: {type: always}}, {step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
-        task: {type: assert, expr: '("finish" in steps && steps.finish.status == "succeeded" && steps.finish.outputs.ready == true) || ("clone-register" in steps && steps["clone-register"].status == "succeeded" && steps["clone-register"].outputs.ready == true)', severity: high, message: The development Instance create did not complete.}
-      # A ready create's `finish` or `clone-register` removed the run folder and the copied t3.json itself (`removed`), so this step runs
-      # only after a failure or a failed removal.
+        dependsOn: [{step: finish, condition: {type: succeeded}}, {step: withdraw-route, condition: {type: always}}, {step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
+        task: {type: assert, expr: 'steps.finish.outputs.ready == true', severity: high, message: The development Instance create did not complete.}
+      # A ready create's `finish` removed the run folder itself (`removed`), so this step runs only after a failure or a failed removal.
       - name: cleanup
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}, {step: clone-register, condition: {type: always}}, {step: finish, condition: {type: always}}]
-        guard: '${{ inputs.intent.already_active || ("finish" in steps && steps.finish.status == "succeeded" && steps.finish.outputs.removed == true) || (!("finish" in steps && steps.finish.status != "skipped") && "clone-register" in steps && steps["clone-register"].status == "succeeded" && steps["clone-register"].outputs.removed == true) }}'
+        dependsOn: [{step: stop-container, condition: {type: always}}, {step: clone-private-cleanup, condition: {type: always}}]
+        guard: '${{ inputs.intent.already_active || ("finish" in steps && steps.finish.status == "succeeded" && steps.finish.outputs.removed == true) }}'
         task:
           type: behavior
           behaviorType: command/shell
           behaviorName: '${{ "ic-cleanup-" + string(inputs.node_id) }}'
           methodName: execute
           inputs:
-            run: timeout 30 rm -rf -- "$ORBIT_RUN" "$ORBIT_RUN-t3.json"
+            run: timeout 30 rm -rf -- "$ORBIT_RUN"
             env: {ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'}

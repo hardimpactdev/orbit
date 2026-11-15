@@ -1,5 +1,5 @@
 order = 1400
-source_sha256 = "e09002288001cc243463473ec8b9c48d9bf22d29dd800756cdd91b69eef0c607"
+source_sha256 = "c451b68d91ffc70a8aaf510c1cdfdf8a1d94192c76589adf8545184262985f90"
 cases = [
   "Route update workflows place every step on the swamp role and keep mutation parents small",
   "restore keeps the observed candidate serving, then withdraws it after DNS grace",
@@ -31,3 +31,6 @@ inputs = ["swamp/workflows/**", "swamp/tests/fixtures/route-forward-intents.json
 "a failed first publication still fails completeness and guards later work" = 1
 "DNS grace and withdrawal order remain independent of omitting the final publication" = 1
 "either a records-only or catalog-only final difference retains the final DNS child" = 1
+
+# The shape gate lists no command for this file, so it runs only through this entry. No `slices` key: a Deno file
+# with `slices = false` would start under python3 (docs/reference/implementation-loop.md).

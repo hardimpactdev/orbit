@@ -10,12 +10,9 @@ const flow = parse(Deno.readTextFileSync(asset("workflows/workflow-operation-ins
     jobs: { steps: CloneStep[] }[];
 };
 const cloneSteps = flow.jobs.flatMap((job) => job.steps).filter((step) =>
-    ["clone-container", "clone-club-key", "clone-t3", "clone-private-cleanup"].includes(step.name));
-// The Gateway's stage copy (CloneStage) for the stage key, the plain credential copy for any other key.
-let stageCopy = "";
+    ["clone-input", "clone-container", "clone-t3", "clone-private-cleanup"].includes(step.name));
 const cel = new Environment({ unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
-    .registerFunction("vaultget(dyn, dyn): string", (_vault: unknown, key: unknown) =>
-        key === "stage" ? stageCopy : "fixture-private-credential");
+    .registerFunction("vaultget(dyn, dyn): string", () => "fixture-private-credential");
 const bytes = (text: string) => new TextEncoder().encode(text).length;
 // Quote every argument, including sudo, as a conservative SSH remote-command bound.
 const remote = (argv: string[]) => ["sudo", "-n", "--", ...argv]
@@ -23,9 +20,8 @@ const remote = (argv: string[]) => ["sudo", "-n", "--", ...argv]
 function render(expression: string, outputs: unknown, intent: unknown): unknown {
     return cel.evaluate(expression.slice(3, -2).trim().replaceAll("vault.get(", "vaultget("), {
         run: { id: (outputs as { clone_private: string }).clone_private.split("-").slice(3).join("-") },
-        steps: {}, inputs: {
-            intent: { ...(intent as object), clone_launcher: JSON.parse((outputs as { clone_payload: string }).clone_payload).launcher },
-            execution_secrets: { git_credential: { vault: "fixture", key: "git" }, clone_stage: { vault: "fixture", key: "stage" } },
+        steps: { input: { status: "succeeded", outputs } }, inputs: {
+            intent, execution_secrets: { git_credential: { vault: "fixture", key: "git" } },
         },
     });
 }
@@ -177,10 +173,8 @@ Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", a
             bridge: "instance_bridge", node: "instance_node_runtime", machine_name: "instance_machine_name" })) {
             assertEquals(payload.bundle[key], await Deno.readTextFile(asset(`ansible/${name}.py`)));
         }
-        // They cross the copy step's stdin as the stage copy's first line.
-        const first = cloneSteps.find((step) => step.name === "clone-container")!;
-        stageCopy = outputs.clone_payload + "\nfixture-private-credential\n";
-        assertEquals(render(first.task.inputs.stdin!, outputs, intent), stageCopy);
+        const first = cloneSteps.find((step) => step.name === "clone-input")!;
+        assertEquals(render(first.task.inputs.stdin!, outputs, intent), outputs.clone_payload);
         const manifest = parse(await Deno.readTextFile(asset("manifest.yaml"))) as { additionalFiles: string[] };
         assert(manifest.additionalFiles.includes("scripts/instance_clone_launch.py"));
         const legacy = ["timeout", "300", "python3", "-c", payload.script, JSON.stringify(payload.container),
@@ -191,24 +185,23 @@ Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", a
     } finally { await Deno.remove(folder, { recursive: true }); }
 });
 
-Deno.test("the workflow's copy step stages the stage copy and launches the container part; cleanup works after an early failure", async () => {
+Deno.test("real clone launch preserves stdin and cleanup works after an early container failure", async () => {
     const { folder, intent, outputs } = await cloneInput();
+    const stage = cloneSteps.find((step) => step.name === "clone-input")!;
     const first = cloneSteps.find((step) => step.name === "clone-container")!;
     const cleanup = cloneSteps.find((step) => step.name === "clone-private-cleanup")!;
     const clean = render(cleanup.task.inputs.argv!, outputs, intent) as string[];
-    // The copy step is the clone job's first step: no input step stages before it.
-    assertEquals(first.dependsOn, []);
-    const launch = (copy: string) => {
-        stageCopy = copy;
-        return execute(render(first.task.inputs.argv!, outputs, intent) as string[], render(first.task.inputs.stdin!, outputs, intent) as string,
-            { PATH: folder + ":" + Deno.env.get("PATH"), CLONE_PRIVATE: outputs.clone_private });
-    };
     try {
         // No Node tool is contacted. The real clone entry point meets a failed fake Incus.
         await Deno.writeTextFile(folder + "/incus",
             '#!/bin/sh\n[ "$(cat "$CLONE_PRIVATE/git-credential")" = fixture-private-credential ] || exit 8\nexit 7\n',
             { mode: 0o700 });
-        const failed = await launch(outputs.clone_payload + "\nfixture-private-credential\n");
+        const staged = await execute(render(stage.task.inputs.argv!, outputs, intent) as string[],
+            render(stage.task.inputs.stdin!, outputs, intent) as string);
+        assertEquals(staged.code, 0);
+        const failed = await execute(render(first.task.inputs.argv!, outputs, intent) as string[],
+            render(first.task.inputs.stdin!, outputs, intent) as string,
+            { PATH: folder + ":" + Deno.env.get("PATH"), CLONE_PRIVATE: outputs.clone_private });
         assertEquals(failed.code, 1);
         assert(new TextDecoder().decode(failed.stderr).includes("instance.container_container_failed: command incus exited 7"));
         assertEquals((await Deno.stat(outputs.clone_private)).mode! & 0o777, 0o700);
@@ -217,20 +210,26 @@ Deno.test("the workflow's copy step stages the stage copy and launches the conta
             assertEquals((await Deno.readTextFile(outputs.clone_private + "/" + name)).includes("fixture-private-credential"), false);
         }
         await assertRejects(() => Deno.stat(outputs.clone_private + "/git-credential"), Deno.errors.NotFound);
-        // The later steps run the staged launcher in the same private folder.
-        const t3 = render(cloneSteps.find((step) => step.name === "clone-t3")!.task.inputs.argv!, outputs, intent) as string[];
-        assertEquals(t3.slice(2), ["python3", outputs.clone_private + "/launch.py", outputs.clone_private, "t3"]);
-        // A launch cannot silently reuse a previous run's staged release.
-        const again = await launch(outputs.clone_payload + "\nfixture-private-credential\n");
-        assertEquals([again.code, new TextDecoder().decode(again.stderr).trim()], [1, "instance.clone_input_failed"]);
+        // The first launch cannot silently reuse a previous run's staged release.
+        assertEquals((await execute(render(stage.task.inputs.argv!, outputs, intent) as string[],
+            render(stage.task.inputs.stdin!, outputs, intent) as string)).code, 1);
         assertEquals((await execute(clean)).code, 0);
         await assertRejects(() => Deno.stat(outputs.clone_private), Deno.errors.NotFound);
-        // A truncated copy names the stage and leaves no launcher; cleanup still succeeds.
-        const invalid = await launch("invalid");
+        // A failed SSH spawn or truncated payload created no launcher; cleanup still succeeds.
+        const invalid = await execute(render(stage.task.inputs.argv!, outputs, intent) as string[], "invalid");
         assertEquals(invalid.code, 1);
+        assertEquals((await execute(clean)).code, 0);
+        const partial = await execute(render(stage.task.inputs.argv!, outputs, intent) as string[], "{}");
+        assertEquals(partial.code, 1);
         await assertRejects(() => Deno.stat(outputs.clone_private + "/launch.py"), Deno.errors.NotFound);
         assertEquals((await execute(clean)).code, 0);
-        // The private folder goes beside the registration and finish: neither reads it.
+        const noInput = cel.evaluate(cleanup.task.inputs.argv!.slice(3, -2).trim(), {
+            inputs: { intent }, steps: { input: { status: "failed" } },
+            run: { id: folder.slice("/tmp/orbit-ansible-".length) },
+        });
+        assertEquals(noInput, clean);
+        assertEquals((await execute(clean)).code, 0);
+        // The private folder goes beside finish: neither finish nor the container stop reads it.
         assertEquals(cleanup.dependsOn, []);
     } finally {
         await execute(clean);

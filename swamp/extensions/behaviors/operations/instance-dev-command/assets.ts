@@ -1,19 +1,29 @@
 import { z } from "npm:zod@4.4.3";
 import { CompletePhases, completeResult } from "./complete_result.ts";
 import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
-import { containerFailure, CreateArgs, createResult, removeRun, Step } from "./result.ts";
+import { containerFailure, createResult, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
 };
-/** The part a failed clone T3 step was running, from the copied `t3.json`, or null when the step left none. */
-async function t3Part(path: string): Promise<"agent" | "t3" | "checkout" | "sessions" | null> {
+/** The part a failed clone T3 step was running, from the run folder's `t3.json`, or null when the step left none. */
+async function t3Part(folder: string): Promise<"agent" | "t3" | "checkout" | "sessions" | null> {
     try {
-        const parsed = z.object({t3_part: z.enum(["agent", "t3", "checkout", "sessions"])}).safeParse(JSON.parse(await Deno.readTextFile(path)));
+        const parsed = z.object({t3_part: z.enum(["agent", "t3", "checkout", "sessions"])}).safeParse(JSON.parse(await Deno.readTextFile(folder + "/t3.json")));
         return parsed.success ? parsed.data.t3_part : null;
     } catch (error) {
         if (error instanceof Deno.errors.NotFound || error instanceof SyntaxError) return null;
         throw error;
+    }
+}
+
+/** Removes the run folder (it may hold a clone's checked T3 sessions); true when it is gone. Any failure leaves it to the cleanup step. */
+async function removeFolder(folder: string): Promise<boolean> {
+    try {
+        await Deno.remove(folder, { recursive: true });
+        return true;
+    } catch (error) {
+        return error instanceof Deno.errors.NotFound;
     }
 }
 
@@ -29,7 +39,7 @@ async function resultFile(folder: string): Promise<unknown> {
 
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.15.1",
+    version: "2026.11.14.3",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -37,14 +47,62 @@ export const behavior = {
         create_result: {
             description:
                 "Map the create phase steps to one public terminal receipt",
-            arguments: CreateArgs,
-            // Swamp validates `arguments` before it calls the method.
-            execute: async (args: z.input<typeof CreateArgs>, ctx: Context) => {
+            arguments: z.object({
+                intent: ObjectValue,
+                folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
+                checkout: Step.nullable(),
+                database: z.string(),
+                setup: z.string(),
+                processes: z.array(z.string()),
+                route: z.string(),
+                certificates: z.array(z.string()).default([]),
+                t3_observation: z.string().default(""),
+                route_observation: ObjectValue.default({}),
+                container: z.object({
+                    mail: Step.nullable().default(null),
+                    launch: z.string(),
+                    workspace: Step.nullable(),
+                    deploy: z.array(z.string()),
+                    processes: z.string(),
+                    seed: z.string(),
+                    t3: z.string().default("skipped"),
+                    register: z.string().default("skipped"),
+                    server: z.string().nullable().default(null),
+                    club_key: Step.nullable().default(null),
+                }).nullable().default(null),
+            }),
+            execute: async (
+                args: {
+                    intent: Record<string, unknown>;
+                    folder: string;
+                    checkout: z.infer<typeof Step> | null;
+                    database: string;
+                    setup: string;
+                    processes: string[];
+                    route: string;
+                    certificates?: string[];
+                    t3_observation?: string;
+                    route_observation?: Record<string, unknown>;
+                    container?: {
+                        mail?: z.infer<typeof Step> | null;
+                        launch: string;
+                        workspace: z.infer<typeof Step> | null;
+                        deploy: string[];
+                        processes: string;
+                        seed: string;
+                        t3?: string;
+                        register?: string;
+                        server?: string | null;
+                        club_key?: z.infer<typeof Step> | null;
+                    } | null;
+                },
+                ctx: Context,
+            ) => {
                 const container = args.intent.container as {clone?: unknown; club_key?: unknown} | null | undefined;
                 // A nested-fleet default's container phases leave in the result file what its start did with the Club key.
                 const file = container?.club_key != null && container.clone == null ? await resultFile(args.folder) : null;
-                // A failed clone T3 step leaves the part it was running in t3.json, which clone-session-copy brings to `t3_file`.
-                const t3_part = args.container?.t3 === "failed" ? await t3Part(args.t3_file ?? args.folder + "/t3.json") : null;
+                // A failed clone T3 step leaves the part it was running in t3.json, which clone-session-copy brings to the run folder.
+                const t3_part = args.container?.t3 === "failed" ? await t3Part(args.folder) : null;
                 const value = createResult(args.intent, {...args, club_key_file: file, t3_part});
                 const result = JSON.parse(value.stdout);
                 if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
@@ -55,7 +113,7 @@ export const behavior = {
                 // A ready create's run folder goes here, so no cleanup step runs after the result (docs/cli/instance/container/create.mmd).
                 // The step's outputs are the stored receipt, so `removed` is known before it is stored. A failed create keeps the folder:
                 // stop-container reads it, and the cleanup step removes it after.
-                const removed = value.ready ? await removeRun(args.folder, args.t3_file) : false;
+                const removed = value.ready ? await removeFolder(args.folder) : false;
                 const done = {...value, removed};
                 await ctx.writeResource("result", "create", done);
                 return done;
