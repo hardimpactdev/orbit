@@ -280,18 +280,18 @@ function syncVmWorld(): array
     return [$group->refresh(), $vm];
 }
 
-it('starts operation-task-sync-copy for a task copy and operation-task-sync for a task VM', function (): void {
+// The task VM sync is removed with the task VMs (docs/reference/old-paths.md): a group whose workspace sat on a task VM has no task copy.
+it('starts operation-task-sync-copy for a task copy and refuses a group whose workspace is on a task VM by name', function (): void {
     [$copyGroup] = syncCopyWorld();
     $copy = app(StartTaskSyncAction::class)->execute($copyGroup, 'test', null);
     [$vmGroup] = syncVmWorld();
-    $vm = app(StartTaskSyncAction::class)->execute($vmGroup, 'test', null);
 
     expect(app(DirectOperation::class)->workflowFor($copy))->toBe('operation-task-sync-copy')
         ->and($copy->state['swamp_start']['workflow'])->toBe('operation-task-sync-copy')
-        ->and(app(DirectOperation::class)->workflowFor($vm))->toBe('operation-task-sync')
-        ->and($vm->state['swamp_start']['workflow'])->toBe('operation-task-sync')
-        ->and($vm->input)->toHaveKey('checkout_path')
-        ->and($copy->input)->not->toHaveKey('checkout_path');
+        ->and($copy->input)->not->toHaveKey('checkout_path')
+        ->and(fn () => app(StartTaskSyncAction::class)->execute($vmGroup, 'test', null))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect([$refusal->errorCode, $refusal->getMessage()])->toBe(['tasks.no_workspace', 'The group requires its task copy.']))
+        ->and(Operation::query()->where('kind', 'tasks.sync')->where('target_id', $vmGroup->id)->exists())->toBeFalse();
 });
 
 it('keeps the workflow that admission recorded, so a copy sync an older Gateway admitted is still searched and settled', function (): void {
@@ -339,12 +339,9 @@ it('keeps the workflow that admission recorded, so a copy sync an older Gateway 
         ->and($socket->sent[0]['payload']['tags'])->toBe(['orbit_start_key' => 'operation:'.$operation->id]);
 });
 
-it('keeps the Swamp start fixture equal to the inputs a copy sync and a task VM sync start with', function (): void {
+it('keeps the Swamp start fixture equal to the inputs a copy sync starts with', function (): void {
     app()->instance(WebSocketClient::class, WorkflowStartIntents::vault());
     [$copyGroup] = syncCopyWorld();
     $copy = app(StartTaskSyncAction::class)->execute($copyGroup, 'test', null);
     WorkflowStartIntents::match('sync_copy', app(DirectOperation::class)->workflowInputs($copy));
-    [$vmGroup] = syncVmWorld();
-    $vm = app(StartTaskSyncAction::class)->execute($vmGroup, 'test', null);
-    WorkflowStartIntents::match('sync_vm', app(DirectOperation::class)->workflowInputs($vm));
 });

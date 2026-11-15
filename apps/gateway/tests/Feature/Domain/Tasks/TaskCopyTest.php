@@ -282,8 +282,7 @@ describe('the decision point', function (): void {
             ->and(copyRefusal(fn () => InstancePlacement::taskCopy($project)))->toBe(TaskVmRemoved::Code.' 422');
         $project->update(['nested_fleet' => true]);
         InstancePlacement::taskCopy($project);
-        expect(InstancePlacement::copiesTasks($project))->toBeTrue()
-            ->and(copyRefusal(fn () => InstancePlacement::taskWorkspace($project)))->toBe('operation.kind_unavailable 503');
+        expect(InstancePlacement::copiesTasks($project))->toBeTrue();
     });
 
     it('starts a task of a Project whose default is a container as a copy, and refuses one whose default has no container', function (): void {

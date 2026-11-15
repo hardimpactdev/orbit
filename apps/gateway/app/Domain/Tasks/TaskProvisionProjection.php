@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
@@ -18,7 +17,10 @@ use App\Support\ValidatedData;
 use Closure;
 use Illuminate\Support\Facades\DB;
 
-/** State projection only: the claim of a slot (docs/cli/task/start.mmd). Swamp owns the start, the fetch, the containers and readiness. */
+/**
+ * State projection only: the end of an old claim of a task VM slot. The kind stays the request kind of `task:start`, which starts a task
+ * copy (docs/cli/task/start.mmd); no Operation of this kind starts any more.
+ */
 final readonly class TaskProvisionProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
     /** The end check of a task start: what a task needs, the agent, Pi, the tunnel and the three containers running. */
@@ -51,21 +53,20 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         });
     }
 
-    /** A start the Gateway refused never ran: the group fails and its slot is released, as after a failed run. */
+    /** A start the Gateway refused never ran: the group fails, as after a failed run. */
     public function refused(Operation $operation): void
     {
         $this->record($operation, 'failed', $operation->error_code, static fn (): Operation => $operation);
     }
 
     /**
-     * Records the slot, the workspace Instance and the group from the end of a claim. `$record` writes the Operation between the lookups
-     * and the writes. A kind that claims as one step of a larger run passes its own closure; `$operation` then holds the provision intent
-     * as its input. A claim that did not pass releases its slot, so the slot is free again for the next claim; a run that releases the
-     * slot itself passes `$release` false.
+     * Records the slot, the workspace Instance and the group from the end of an old claim. `$record` writes the Operation between the
+     * lookups and the writes. No claim starts any more, and nothing releases a slot: the task VMs and their release are removed
+     * (docs/reference/old-paths.md). An Operation of this kind that is still open ends here and leaves its slot row as it is.
      *
      * @param  Closure(): Operation  $record
      */
-    public function record(Operation $operation, string $status, ?string $errorCode, Closure $record, bool $release = true): Operation
+    public function record(Operation $operation, string $status, ?string $errorCode, Closure $record): Operation
     {
         $slot = TaskVm::query()->lockForUpdate()->findOrFail(ValidatedData::integer($operation->input['task_vm_id']));
         $group = Task::topLevel()->lockForUpdate()->findOrFail($operation->target_id);
@@ -85,9 +86,6 @@ final readonly class TaskProvisionProjection implements DirectOperationProjectio
         } else {
             $instance->update(['failed_step' => 'provision', 'error_code' => $errorCode ?? 'tasks.provision_failed']);
             $group->update(['status' => TaskGroupStatus::Failed, 'settled_at' => now(), 'reserved_at' => null, 'capacity_wait_reason' => null]);
-        }
-        if ($release) {
-            ReleaseTaskVmSlot::dispatch($slot->id, $group->id)->afterCommit();
         }
 
         return $projected;

@@ -8,7 +8,7 @@ use App\Models\TaskVm;
 
 /**
  * The size of a task VM, the cast of {@see TaskVm::$size}. Medium and large VMs take two and three slots,
- * only run on an Incus host, and have free page reporting on. The slot pool takes a large VM ({@see TaskVmSlotPool::take()}).
+ * only run on an Incus host, and have free page reporting on. The removed slot pool took a large VM; old rows keep their size.
  */
 enum TaskVmSize: string
 {

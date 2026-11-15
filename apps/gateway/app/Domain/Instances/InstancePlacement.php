@@ -19,9 +19,9 @@ use LogicException;
  * the record.
  *
  * Each writer calls the entry for its kind: `assert()` where the result can be a container, `checkout()` where it is always a
- * host checkout, `taskWorkspace()` for a task workspace on a task VM, `taskCopy()` where a task starts. A nested-fleet Project's Instances are only containers in the nested
+ * host checkout, `taskCopy()` where a task starts. A nested-fleet Project's Instances are only containers in the nested
  * project, made from the nested-fleet image (docs/reference/development-containers.md#the-nested-fleet-image): `assert()` refuses
- * it early on a Node whose switch is off, `place()` decides once the result is known, and the other two entries refuse it.
+ * it early on a Node whose switch is off, `place()` decides once the result is known, and `checkout()` refuses it.
  */
 final readonly class InstancePlacement
 {
@@ -62,17 +62,6 @@ final readonly class InstancePlacement
     {
         if (! self::copiesTasks($project)) {
             throw TaskVmRemoved::refusal();
-        }
-    }
-
-    /**
-     * A writer of a task workspace on a task VM: task provision and admission, and a proof's workspace. No task VM can hold a nested-fleet
-     * Project's work. Every other Project keeps its VM path here, whatever its default is.
-     */
-    public static function taskWorkspace(Project $project): void
-    {
-        if ($project->nested_fleet) {
-            throw self::unavailable();
         }
     }
 

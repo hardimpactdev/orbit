@@ -6,10 +6,7 @@ namespace App\Actions\Tasks;
 
 use App\Actions\Instances\StartInstanceDestroyAction;
 use App\Domain\Instances\InstanceDestroyKind;
-use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Projects\LifecyclePhase;
-use App\Domain\Projects\ProjectLifecycleRunner;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
@@ -20,13 +17,10 @@ use App\Domain\Tasks\TaskPullRequestPublisher;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmError;
 use App\Domain\TaskVms\TaskVmException;
-use App\Domain\TaskVms\TaskVmSlotRuns;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Config;
 use Throwable;
@@ -38,9 +32,8 @@ use Throwable;
  * every path that ends a group finds its workspace through that owner, attached or not. An Instance without that
  * owner is never a task workspace, whatever its name or branch.
  *
- * A workspace on a task VM goes with its VM: the slot release deletes both. A task copy goes through its
- * `instance.destroy`. Any other workspace is refused with `operation.kind_unavailable` and stays, named by its record;
- * the caller records assistance and returns the error.
+ * A task copy goes through its `instance.destroy`. Any other workspace, such as one on a removed task VM, is refused with
+ * `operation.kind_unavailable` and stays, named by its record; the caller records assistance and returns the error.
  */
 final readonly class RemoveTaskWorkspaceAction
 {
@@ -75,9 +68,9 @@ final readonly class RemoveTaskWorkspaceAction
     /**
      * Returns null when the group owns no workspace. An owned workspace stays until its native removal can complete.
      *
-     * The workspace goes with its task VM, through the slot release. The source and row stay when removal refuses. A parked task VM goes
-     * as it is: the release deletes a stopped VM as well, and nothing on it is worth a start. The caller has proved that origin has the
-     * approved work ({@see TaskFinalReview::assertOnOrigin()}).
+     * A task copy goes through its destroy. The source and row stay when removal refuses. A task VM workspace has no removal any more:
+     * the task VMs and their release are removed (docs/reference/old-paths.md). The caller has proved that origin has the approved work
+     * ({@see TaskFinalReview::assertOnOrigin()}).
      */
     public function remove(Task $group): null
     {
@@ -90,34 +83,12 @@ final readonly class RemoveTaskWorkspaceAction
 
     private function removeWorkspace(Instance $instance): never
     {
-        $vm = TaskVm::query()->live()->where('node_id', $instance->node_id)->first();
-        if ($vm instanceof TaskVm) {
-            $this->removeWithTaskVm($instance, $vm);
-        }
         if ($instance->runtime()->exists()) {
             $this->removeCopy($instance);
         }
 
-        throw new ResourceOperationException('operation.kind_unavailable', 'Task workspace removal requires its native ending DAG.', 503);
-    }
-
-    /**
-     * A task VM holds one group's workspace, and its checkout may live on a workspace volume that goes with the VM.
-     * So the VM goes instead of the checkout: the Project's teardown runs in the guest while it is ready, unless an
-     * earlier removal attempt ran it. The turn results already hold the transcripts. The release of the slot
-     * (`task_vm.slot_release`) deletes the VM, its seed clone and its hub peer. The release projection deletes the
-     * workspace Instance and the Node and unbinds the group, so this call only admits the release and then waits for it.
-     * A VM of the old pool, which has no slot number, goes the same way, by its name.
-     */
-    private function removeWithTaskVm(Instance $instance, TaskVm $vm): never
-    {
-        $started = ! in_array($instance->status, [InstanceState::Reserved, InstanceState::CheckoutPrepared], true);
-        if ($vm->state === TaskVmState::Ready && $started && ! $instance->removalMember()->exists()) {
-            app(ProjectLifecycleRunner::class)->run($instance, LifecyclePhase::Teardown);
-        }
-        app(TaskVmSlotRuns::class)->startRelease($vm, 'tasks-complete');
-
-        throw new TaskWorkspaceWaiting("The release of task VM [{$vm->name}] removes the workspace of Instance [{$instance->name}] when it ends.");
+        // A workspace that is no task copy sat on a task VM; the VMs and their release are removed (docs/reference/old-paths.md).
+        throw new ResourceOperationException('operation.kind_unavailable', 'This workspace is no task copy. Task VMs and their release are removed, so Orbit cannot remove it.', 503);
     }
 
     /**

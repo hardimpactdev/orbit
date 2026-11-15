@@ -14,18 +14,16 @@ Check this page before you build on something. Each row is code that still runs,
 | Item | Replaced by | Removed at |
 | --- | --- | --- |
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` key prefixes in the create's declared copies, the Gateway grants, the create workflow's input pattern and `ContainerDestroyExecutionCopies` | The one-line launch copy `instance-create-launch-<operation>`; the bare copies are not written | When no Instance created on release 2079 or 2084 is left (the destroy deletes their copies) |
-| The `<name>-topology-seed` clone name in `TaskVmSlotRuns::seedClone` for VMs without a place number | Every start's VM has a place and a `<name>-seed` clone | When no VM of the old pool (`tvm-610`, `tvm-663`) is live |
 | The merge-base replay pieces of the [task VM proof run](#the-task-vm-proof-run) | [`proof:run` in copies](/cli/proof/run#the-run), once it replays flagged cases | When the replay is ported to copies |
 | `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
-| The `certificate`, `pi_port`, `control_ip` and `gateway_ip` of a task start identity: the CA files and the three `identity.env` lines (`ORBIT_PI_PORT`, `ORBIT_CONTROL_IP`, `ORBIT_GATEWAY_IP`) a task start still writes | The boot phase of the base converge (`boot.trust`) bakes the CA and the firewall into the base; the `orbit-identity` unit mounts its own share | When both hosts' bases are refreshed after the boot phase merged |
 | [`instance:migrate`](/cli/instance/migrate), its kind `instance.migrate`, the workflow `operation-instance-migrate` and the playbook `instance-migrate.yml`; and checkout Instances on an `app-dev` Node, with their PHP-FPM pools | Every new Instance is a [container](/reference/development-containers); the command moves each checkout Instance into one | When the last checkout Instance has moved, with the switch of every `app-dev` Node ([PR 16](/solutions/development-container-runtime#pr-16-switch-every-app-dev-node)) |
 | `bin/e2e-topology`, its harness `apps/e2e` and the per-issue topology it composes, with its virtiofs share of the worktree | The nested fleet ([stage 2](/reference/command-development-pipeline#2-development-environment)) | When its harness is removed: no subtask can [declare a topology](/reference/compute-drivers#declare-a-topology) |
 
-The admission of `task:start` mints no GitHub token. The provision clone, the setup steps, a package install and the publish step mint their own when they run ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). Admission holds no token for them.
+The admission of `task:start` mints no GitHub token. The publish step mints its own when it runs ([GitHub App](/reference/github-app#how-orbit-publishes-a-task-pull-request)). Admission holds no token for them.
 
 `apps/agent/**` is being stripped to an observer: commands that nothing calls leave in small pull requests, and the rest leave with their Swamp ports.
 
-The capacity model replaces the shared CI reserve, `task_max_vms`, resource-unit admission and the `task:park` command. Hosts expose separate task and CI place counts. Publication deletes task VMs; later work claims a fresh VM. See [capacity](/reference/command-development-pipeline#capacity-ideal-state).
+The capacity model replaced the shared CI reserve, `task_max_vms`, resource-unit admission and the `task:park` command. Hosts still expose separate task and CI place counts, which nothing takes. See [capacity](/reference/command-development-pipeline#capacity-ideal-state).
 
 ## The task VM proof run
 
@@ -43,12 +41,23 @@ The Pi task loop ran on task VMs with the Pi agent server. It is removed with th
 
 The maintenance run, the package install, the repository script, the idle save and the Pi turn (`tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save`, `tasks.turn`) are removed too. The routes `package` and `script` and their MCP tools are gone. `task:turn` runs only the [copy turn](/cli/task/turn#in-a-task-copy); its role `consult` and its `--model` option are gone. The Gateway registers no `pi` agent driver. Project maintenance still admits its groups and their copies, but no maintenance run follows. The columns `idle_saved_commit` and `idle_saved_at` stay, and nothing reads them.
 
+### The task VM lifecycle
+
+The lifecycle that only the Pi loop used is removed as well:
+
+- the resume and the slot release of a task VM (`task_vm.resume`, `task_vm.slot_release`);
+- the slot pool, its claim and the Artisan command `task-vms:resume`;
+- the task VM branches of `task:start`, `task:sync`, `task:check`, `task:publish`, `task:cancel` and `task:complete`.
+
+A task without a [task copy](/reference/tasks#task-copy) has no workspace that Orbit can use or remove. Its sync, check and publish answer `tasks.no_workspace`. Its cancel ends it at admission and starts no run. When it still holds a task VM workspace, its complete asks for removal assistance.
+
+`tasks.provision` stays registered as the request kind of `task:start`, with its vault patterns. No Operation of it starts. The rows of `task_vms` stay, and nothing changes them.
+
+### What stays
+
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
 
-These parts are still in the code:
-
-- the task VM resume and slot release, and the slot pool;
-- the Pi agent server `apps/pi-server`.
+The Pi agent server `apps/pi-server` is still in the code.
 
 The Swamp workflows of the removed kinds stay one release longer, because a rollback by one release still names them. Nothing starts them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
 

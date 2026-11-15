@@ -198,7 +198,7 @@ The run follows its chart: `Build every argv`, `Run setup in order`, `Run the Pr
 
 A failed step stops the chain, but `Push the candidate` still runs: it shapes the result, which is then `tasks.repository_execution_unknown`, and removes the scratch files. A failed step keeps no stdout, so on a failed run the Gateway reads the result from the push step and keeps its error code. A pending handoff record is kept under one name per group, so the scheduled CI observation replaces it when it settles.
 
-A workspace is required (`409 tasks.no_workspace`). A group that owns a container Instance workspace takes the [container check path](/reference/task-instance-workspace#check-phases) instead of the steps below. A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
+A task copy is required: a group without one returns `409 tasks.no_workspace` ("The group requires its task copy."), because task VM workspaces are removed. The check takes the [container check path](/reference/task-instance-workspace#check-phases); the task VM steps below stay in the workflow only until it is cut. A subtask outside the group returns `404`. Another open subtask returns `409 tasks.subtask_not_current`. A baseline after an implementer has started anywhere in the group returns `409 tasks.baseline_done`. Every step runs on Node 209. Official SSH reaches the admitted VM over WireGuard with the existing identity and stored host key. Plain task VMs need no Swamp binary or worker.
 
 Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM. TypeScript on Node 209 builds each argv from the intent and shapes every output. It refuses a deliverable directory that is absolute or has a `..` segment, an overlay path that is not a canonical repository-relative file, and a `fails_on_base` command without a base commit, as `tasks.deliverable_invalid`, before any command runs.
 
@@ -254,7 +254,7 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 The role `consult` and the field `model` were options of the Pi turn on a task VM, which is removed with the Pi task loop. A request with either answers HTTP 422 `validation.failed` on that field and records nothing. The route's Operation kind for an `Idempotency-Key` is `tasks.copy_turn`; a retry keeps the fingerprint it had before.
 
-While a group's `tasks.provision` Operation waits for a place or runs, the group is not provisioned. Every other admission on it then returns HTTP 409 `tasks.not_provisioned`. `details.operation_id` names that Operation; follow it and repeat the call once it succeeds. Any other open Operation on the group still returns `operation.target_busy`.
+No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
 A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
 
@@ -436,7 +436,6 @@ The task and subtask operations return these errors.
 | `tasks.deliverables_locked` | 409 | A deliverables update on a subtask that has started |
 | `tasks.deliverable_base_unavailable` | 422 | The repository base or its complete file tree could not be read for path validation |
 | `tasks.already_claimed` | 409 | An attempted move after workspace reservation |
-| `tasks.not_provisioned` | 409 | Other work on a group while its `tasks.provision` Operation waits or runs. `details.operation_id` names it |
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
@@ -877,7 +876,7 @@ The source is the Project's repository, for every Project. The trial Project's r
 | Check or publish | The group lock refuses the sync with `operation.target_busy` while either runs |
 | Container | Refused with `tasks.instance_not_running` when the copy's container does not run |
 | Credential | Minted per run; it is the environment of the Node's one fetch and is never written, so a killed run leaves none |
-| Workflow | The Gateway starts `operation-task-sync-copy` for a copy and `operation-task-sync` for a task VM. Swamp resolves every step's inputs at run start, so each reads only its intent's keys |
+| Workflow | The Gateway starts `operation-task-sync-copy`. `operation-task-sync` served the removed task VMs; the Gateway starts it no more. Swamp resolves every step's inputs at run start, so each reads only its intent's keys |
 
 A task VM keeps its own path, which fetches both branches on 209 and copies one bundle over SSH. Task VMs get no new work.
 
@@ -1047,13 +1046,7 @@ Use the comment API, CLI or MCP to post a resolution. This changes assistance on
 
 ### Bring the workspace up to date
 
-`task:sync` starts `tasks.sync` through `POST /api/v1/tasks/{task}/sync` with a required `Idempotency-Key` and no body. A task VM holds no GitHub credential, so the workspace cannot fetch. When origin moved, because the default branch was merged into the pull request branch or the owner pushed a correction, the push of the author would fail with `tasks.not_fast_forward`. The sync brings the commits in; the author merges or rebases them.
-
-The admission checks an open external group with its own task VM workspace and wakes a parked VM, as the other work admissions do. It captures the repository, the default branch, the branch `task-<group>`, the workspace path and the SSH target, and names the vault key of a read token. As it starts the run, the Gateway mints that token with `contents: read` and writes it to the key. No step of the run calls the Gateway.
-
-On Node 209 the run makes a bare clone of the default branch, fetches the task branch and writes one bundle of both. It copies the bundle to a private directory on the VM with official SSH, runs `git fetch` of the bundle into `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-<group>`, and reads the two commits. HEAD, the working tree and the local branches stay as they are. A clean up step removes both scratch directories on success and on failure. The result holds the two commits.
-
-A group whose workspace is a task copy runs `operation-task-sync-copy` instead: [bring main into a copy](#bring-main-into-a-copy).
+`task:sync` starts `tasks.sync` through `POST /api/v1/tasks/{task}/sync` with a required `Idempotency-Key` and no body. It brings the Project's default branch into the group's task copy: [bring main into a copy](#bring-main-into-a-copy). A group without a task copy returns HTTP 409 `tasks.no_workspace`: the task VM sync (`operation-task-sync`) is removed with the task VMs, and the Gateway starts it no more.
 
 ## Project check
 
@@ -1454,9 +1447,9 @@ A stored T3 thread keeps its metrics. Its transcript returns HTTP 409 `tasks.age
 
 Cancel is admitted under the group execution lock. A busy group returns HTTP 409 with error code `tasks.workspace_waiting` and leaves the group and subtask statuses unchanged. The caller retries.
 
-An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. The run releases the task's VM and its place (`task_vm.slot_release`): it deletes the VM, its seed clone and its identity volume, and removes the hub peer. When the run passes, the Gateway deletes the workspace Instance and the Node, and marks the task and its open subtasks `cancelled`. Cancel runs no Project teardown: the workspace lives on the VM's disk and goes with it. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations.
+An admitted cancel answers HTTP 202 with its `tasks.cancel` Operation. A task with a [task copy](#task-copy) ends through the copy's destroy, as [Task copy cleanup](#task-copy-cleanup) describes. Subtasks, comments, and thread links stay as history. Cancel does not stop the agent conversations.
 
-A task that holds no VM and no workspace, such as one in `todo` or one that waits for a place, has nothing to release. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. The same holds for `tasks.maintenance_finish` on a task whose VM publication already released.
+A task without a task copy holds nothing to release: the task VMs and their release are removed. Admission marks it and its open subtasks `cancelled` and records the Operation as succeeded at once, with no run (R1). So the 202 already carries a succeeded Operation, and `task:show` reads `cancelled` from then on. An old `task_vms` row of the task stays as it is. The same holds for `tasks.maintenance_finish`. A task that still holds a workspace that is no task copy (a task VM workspace) refuses with HTTP 409 `tasks.workspace_ownership_refused`; complete it instead.
 
 Cancel asks a running group Operation to stop. If it is still running, the call returns HTTP 409 `operation.target_busy` with its id and confirms the stop request. Run `task:cancel` again once that Operation has ended. A timed-out Operation whose run nothing has proven ended still holds the group, for up to an hour; the cancel then returns the same 409 before it admits the destroy of the task's copy.
 
@@ -1464,26 +1457,24 @@ Cancel asks a running group Operation to stop. If it is still running, the call 
 - **Published commits.** A succeeded `task:publish` put its commit and that commit's history on origin. They do not count.
 - **Unread task copy.** A cancel refuses a copy it cannot read: HTTP 409 `tasks.copy_workspace_unknown`, with the reason.
 - **Discard.** `discard: true` (CLI `--discard`) lets the cancel destroy that work; `--yes` never does. Complete needs no discard, because origin has the approved work.
-- **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first; it resumes a parked VM.
-- **Parked VM.** Neither cancel nor complete starts a parked VM. The release deletes it as it is.
-- **Refused admission.** `tasks.not_cancellable`, `task_vm.release_refused` and a busy VM Operation change nothing.
-- **Failed run.** A cancel run that fails, or whose start Swamp refuses, keeps the task and marks its VM `failed`. Cancel again to release it.
+- **Approved work not on origin.** Cancel and complete refuse with HTTP 409 `tasks.approved_work_unpublished` and change nothing. Run `task:publish` first.
+- **Refused admission.** `tasks.not_cancellable` and `tasks.workspace_ownership_refused` change nothing.
 
-Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or a task VM. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
+Cancel and complete keep approved work by a precondition, never by a push of their own. The precondition applies while the task holds a workspace or has an approval. Origin's task branch must reach the latest approved commit. That commit is the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval.
 
 Only when GitHub answers that the branch does not exist and the task's pull request merged does that pull request's head stand in for the branch. Commits and refs are read with a `contents: read` token. An earlier approved commit that merged does not cover a later one. The refusal names the commit and the branch. Every other outcome refuses the same way, such as a failed GitHub read or a branch that is gone without a merged pull request.
 
-A cancel also refuses while an Operation is open on the task VM, such as a resume. Every refusal comes before the cancel stops running work. An admitted cancel marks the VM `releasing`, so no later resume starts it. When Swamp refuses the cancel's start, the cancel fails and the VM is marked `failed`, so another cancel can reserve it again. Uncommitted changes and work that no review approved go with the VM.
+Every refusal comes before the cancel stops running work.
 
 When cancel marks the task `cancelled`, it follows the [ending rule](#assistance-and-resolution): only a removal failure may keep asking for assistance. It clears the open subtasks' requests and keeps their last reasons.
 
 ## Complete and cleanup
 
-Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries. The host cleanup job releases failed, unclaimed Incus task starts through `task_vm.slot_release`; it does not orchestrate task groups.
+Swamp requests group completion or cancellation through the API. The Gateway stops admitted work and performs the requested workspace removal. A failed remote stop or removal preserves the owned workspace and error evidence for retry. Swamp schedules retries.
 
 `task:complete` accepts a settling or waiting-for-review group. It can also complete a running or reviewing group when its watched PR has ended. Repeating completion on a completed group retries its attached workspace removal. An explicit cancellation or completion remains available even though automatic orchestration is removed.
 
-Teardown steps run before the workspace and task VM are destroyed, and only while the provider reports the VM running. Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
+Origin must already have the approved work, as [Cancel a stuck task](#cancel-a-stuck-task) describes. Cleanup does not choose new task work or merge a PR.
 
 ### Task copy cleanup
 
@@ -1493,11 +1484,9 @@ A cancel of a copy records the `tasks.cancel` Operation under the group's lock k
 
 A copy turn runs on the `t3` driver, which the driver registry does not hold. Its turn is its `tasks.copy_turn` Operation, which complete stops as it stops every running group Operation, so the subtask stop interrupts no `t3` thread.
 
-### Task VM cleanup
+### A task VM workspace
 
-Task VM cleanup is the release `task_vm.slot_release`. `task:cancel` runs it as the last step of its own run. `task:complete` runs the Project teardown while the VM is `ready` and retains recorded agent transcripts, admits the release, marks the task `completed`, and answers HTTP 200 with the task. The release then deletes the VM, the Node and the workspace Instance in its own run.
-
-Release admission locks and re-reads the VM. It reuses an open release, and any other open Operation on the VM, such as a resume, refuses it with `operation.target_busy`. A refused release still completes the task, requests `removal_failure` assistance and keeps the Instance attached; completing again retries the release. A release that passes ends that request when it deletes the workspace. A VM of the old pool, without a place number, is released the same way, by its name ([release a task VM](/reference/compute-drivers#release-a-task-vm)).
+The task VMs and their release (`task_vm.slot_release`) are removed ([old paths](/reference/old-paths)). A task of that era that still holds its workspace Instance has no task copy. `task:complete` marks it `completed`, answers HTTP 200 and asks for `removal_failure` assistance: "This workspace is no task copy. Task VMs and their release are removed, so Orbit cannot remove it." The Instance record stays attached. `task:cancel` refuses such a task with `tasks.workspace_ownership_refused`.
 
 ## Configuration
 

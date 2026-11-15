@@ -38,11 +38,6 @@ final readonly class CachedGitHubApi implements GitHubApi
         return $this->tokens->token($credentials->appId, $installationId, $repository, 'contents', fn (): string => ($deadline === null ? $this->github->repositoryReadToken($credentials, $installationId, $repository) : $this->github->repositoryReadToken($credentials, $installationId, $repository, $deadline)));
     }
 
-    public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string
-    {
-        return $this->github->installationReadToken($credentials, $installationId);
-    }
-
     public function repositoryMetadataToken(GitHubAppCredentials $credentials, int $installationId, GitHubRepository $repository): string
     {
         return $this->github->repositoryMetadataToken($credentials, $installationId, $repository);

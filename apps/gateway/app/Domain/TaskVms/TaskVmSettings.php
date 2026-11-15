@@ -21,7 +21,7 @@ use InvalidArgumentException;
  * Every value is validated whenever it is set, also while task VMs are off, so an operator can
  * prepare hosts and the hub before enabling claims. An unset value stays absent: no hosts, a null
  * Cluster. `enabled` gates behaviour only, and requires the Cluster and at least one host. `containerPlacement` lets
- * normal placement take the container places of a host ({@see TaskVmSlotPool}); it is off until a host switches. The model
+ * normal placement take the container places of a host; no placement runs since the task VM lifecycle is removed. The model
  * route is not a setting: the ai-router guard supplies it ({@see TaskVmModelRoute}).
  *
  * The reserved WireGuard range is always a private network. As soon as task VMs are enabled or the

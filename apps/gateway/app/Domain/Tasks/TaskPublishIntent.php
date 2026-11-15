@@ -13,12 +13,10 @@ use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\GitBranchName;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
-use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use App\Models\TaskCheck;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -37,10 +35,6 @@ final readonly class TaskPublishIntent
         if (($existing = $this->idempotency->replay('tasks.publish')) !== null) {
             return $existing;
         }
-        // A task copy has no task VM to wake.
-        if (TaskInstanceWorkspace::forGroup($group) === null) {
-            TaskVmAwake::require($group);
-        }
 
         return app(TaskExecutionLock::class)->synchronized($group->id, fn (): Operation => $this->admit($group, $input, $caller, $request, $doneCheck, $byItself));
     }
@@ -51,22 +45,17 @@ final readonly class TaskPublishIntent
             return $existing;
         }
         $group->refresh()->load('taskable', 'project');
-        TaskProvisionPending::refuse($group);
         $this->assertIdle($group);
         if (in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
             throw new ResourceOperationException('tasks.group_closed', 'This task group has ended.', 409);
         }
-        $copy = TaskInstanceWorkspace::forGroup($group);
-        $instance = $group->taskable;
-        if (! $instance instanceof Instance || ($copy === null && ($instance->task_workspace_owner_id !== $group->id || $instance->project_id !== $group->project_id
-            || TaskVm::forGroup($group)?->node_id !== $instance->node_id || $instance->checkout_path === ''))) {
-            throw new ResourceOperationException('tasks.no_workspace', 'The group requires its owned task VM workspace.', 409);
-        }
-        if ($copy !== null) {
-            self::refuseHeld($group->project);
-            TaskCopyTurn::refuseUnended($group);
-        }
-        $workspace = $copy?->publication();
+        // A publish runs only from the group's task copy; task VM workspaces are removed (docs/reference/old-paths.md).
+        $copy = TaskInstanceWorkspace::forGroup($group)
+            ?? throw new ResourceOperationException('tasks.no_workspace', 'The group requires its task copy.', 409);
+        $instance = $copy->instance;
+        self::refuseHeld($group->project);
+        TaskCopyTurn::refuseUnended($group);
+        $workspace = $copy->publication();
         $check = TaskCheck::query()->whereKey($input->check)->whereHas('task', fn ($tasks) => $tasks->where('parent_id', $group->id))->first();
         if (! $check instanceof TaskCheck || ! $this->candidates->eligible($group, $check)) {
             throw new ResourceOperationException('tasks.commit_not_checked', 'Publish requires this group\'s passed handoff candidate and required CI.', 422);
@@ -95,14 +84,14 @@ final readonly class TaskPublishIntent
             $tree = ValidatedData::string($check->tree_after);
             $operation = $this->start->execute('tasks.publish', 'task_group', $group->id, $instance->node_id, [
                 ...$input->toArray(), 'group_id' => $group->id, 'instance_id' => $instance->id, 'node_id' => $instance->node_id,
-                'checkout_path' => $workspace === null ? $instance->checkout_path : TaskInstanceWorkspace::Root, 'commit' => $commit, 'tree' => $tree,
+                'checkout_path' => TaskInstanceWorkspace::Root, 'commit' => $commit, 'tree' => $tree,
                 'repository' => $repository->owner.'/'.$repository->name, 'base' => $base, 'branch' => $branch,
                 'remote' => 'https://github.com/'.$repository->owner.'/'.$repository->name.'.git',
                 'refspec' => $commit.':refs/heads/'.$branch,
                 'object_format' => strlen($commit) === 64 ? 'sha256' : 'sha1',
                 'pull_head' => $repository->owner.':'.$branch, 'ssh_execution' => app(SwampSshExecutionInput::class)->forNode($instance->node),
                 'execution_secrets' => ['github_token' => $token, 'git_authorization' => $authorization],
-                ...($workspace === null ? [] : ['workspace' => $workspace]),
+                'workspace' => $workspace,
             ], $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
             // A publish that is admitted ends a refused automatic publish (docs/reference/tasks.md#a-refused-automatic-publish).
             Task::topLevel()->whereKey($group->id)->whereNotNull('publish_refusal')->update(['publish_refusal' => null]);

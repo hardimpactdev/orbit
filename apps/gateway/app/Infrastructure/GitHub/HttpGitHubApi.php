@@ -203,11 +203,6 @@ final readonly class HttpGitHubApi implements GitHubApi
         return $this->repositoryToken($credentials, $installationId, $repository, ['contents' => 'read'], $deadline);
     }
 
-    public function installationReadToken(GitHubAppCredentials $credentials, int $installationId): string
-    {
-        return $this->repositoryToken($credentials, $installationId, null, ['contents' => 'read']);
-    }
-
     public function repositoryMetadataToken(
         GitHubAppCredentials $credentials,
         int $installationId,

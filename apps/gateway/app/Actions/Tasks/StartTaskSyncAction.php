@@ -10,7 +10,6 @@ use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskSyncIntent;
-use App\Domain\Tasks\TaskVmAwake;
 use App\Models\Operation;
 use App\Models\Task;
 
@@ -24,11 +23,9 @@ final readonly class StartTaskSyncAction
         if (($existing = $this->idempotency->replay(OperationKinds::TasksSync)) !== null) {
             return $existing;
         }
-        // A task copy has no task VM to wake; a copy turn that may still run holds it (docs/reference/tasks.md#bring-main-into-a-copy).
+        // A copy turn that may still run holds the copy (docs/reference/tasks.md#bring-main-into-a-copy). A group without a copy gets
+        // `tasks.no_workspace` from the capture.
         $copy = TaskInstanceWorkspace::forGroup($group) !== null;
-        if (! $copy) {
-            TaskVmAwake::require($group);
-        }
         $validate = $copy ? static function (Task $group): void {
             TaskCopyTurn::refuseUnended($group);
         } : static function (): void {};

@@ -13,7 +13,7 @@ curl -X POST "$GATEWAY/api/v1/tasks/42/sync" \
   -H "Idempotency-Key: sync-42-1"
 ```
 
-The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. It takes no body. The reply is `202` with the operation. Follow it with `operation:show` until it ends. A parked VM is woken by the admission, which answers `409 tasks.vm_resuming`; repeat the call once the VM runs.
+The route needs a Node with an access grant to the Gateway and a required `Idempotency-Key`. It takes no body. The reply is `202` with the operation. Follow it with `operation:show` until it ends.
 
 In a task VM, the fetch writes `refs/remotes/origin/<default branch>` and `refs/remotes/origin/task-42` in the workspace. It does not touch HEAD, the working tree or the local branches.
 
@@ -35,8 +35,7 @@ The sync refuses a copy while a copy turn of the group may still run. While a ch
 
 | Code | When |
 | --- | --- |
-| `tasks.group_closed`, `tasks.no_workspace`, `operation.target_busy` | the group has ended, has no workspace, or another operation runs on it |
-| `tasks.vm_resuming` | the task VM was parked; its resume is admitted |
+| `tasks.group_closed`, `tasks.no_workspace`, `operation.target_busy` | the group has ended, has no task copy, or another operation runs on it |
 | `tasks.instance_not_running` | the task copy's container does not run |
 | `tasks.copy_turn_unended` | a copy turn of the group may still run |
 | `tasks.sync_failed` | a step of the run failed, such as the clone of a branch that does not exist on origin; for a task copy also at once (422) when the Project has no GitHub repository or valid default branch |

@@ -11,20 +11,15 @@ use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmSlotRuns;
-use App\Domain\TaskVms\TaskVmState;
-use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
 /** Admission of the owning native ending DAG. Records are retained until complete cleanup. */
 final readonly class TaskCancelIntent
 {
     public function __construct(private StartOperationAction $start, private OperationIdempotency $keys,
-        private TaskExecutionLock $execution, private TaskOperations $operations, private TaskVmSlotRuns $slots, private TaskFinalReview $review) {}
+        private TaskExecutionLock $execution, private TaskOperations $operations, private TaskFinalReview $review) {}
 
     public function finishMaintenance(Task $group): Operation
     {
@@ -45,7 +40,7 @@ final readonly class TaskCancelIntent
         }
         // A group that owns a task copy ends through the copy's destroy (TaskCopyEnd); the read of its workspace runs before any lock.
         // The copy and its read travel as one pair, so no check on the read can be skipped while the destroy still runs.
-        $workspace = $kind === 'tasks.cancel' && ! TaskVm::forGroup($group) instanceof TaskVm ? TaskInstanceWorkspace::forGroup($group) : null;
+        $workspace = $kind === 'tasks.cancel' ? TaskInstanceWorkspace::forGroup($group) : null;
         $copy = $workspace === null ? null : ['instance' => $workspace->instance, 'read' => app(TaskCopyEnd::class)->workspace($group, $workspace->instance)];
 
         return $this->execution->synchronized($group->id, function () use ($group, $caller, $request, $kind, $copy, $discard): Operation {
@@ -60,18 +55,16 @@ final readonly class TaskCancelIntent
                 ->whereNotIn('status', OperationStatus::terminalValues())->exists()) {
                 throw new ResourceOperationException('operation.target_busy', 'Task cancellation already owns this group.', 409);
             }
-            // Every refusal comes before the cancel changes anything. An Operation still open on the group's VM, such as a release after a
-            // failed start or a resume, refuses it; approved work that origin does not have refuses it too: task:publish comes first.
-            $slot = TaskVm::forGroup($group);
-            if ($slot instanceof TaskVm) {
-                TaskVmSlotRuns::assertReleasable($slot);
-            }
+            // Every refusal comes before the cancel changes anything. Approved work that origin does not have refuses it: task:publish
+            // comes first.
             if ($kind === 'tasks.cancel') {
                 self::eligible($group->refresh(), $kind);
                 $this->review->assertOnOrigin($group);
                 if ($copy !== null) {
                     TaskCopyEnd::assertFree($copy['instance']);
                     TaskCopyEnd::assertDiscardable($copy['read'], $discard);
+                } else {
+                    self::refuseWorkspace($group);
                 }
                 $this->operations->cancelOpen($group);
                 // An ended Operation can still hold the group: a timed-out one whose run nothing has proven ended. The cancel refuses
@@ -88,44 +81,43 @@ final readonly class TaskCancelIntent
                 throw new ResourceOperationException('operation.target_busy', 'The current Task root must settle before maintenance cleanup.', 409);
             }
 
+            // A group without a task copy holds no workspace: nothing is left to release, so the group ends here and the Operation
+            // succeeds with no run (R1). The task VMs and their release are removed (docs/reference/old-paths.md).
             return DB::transaction(function () use ($group, $caller, $request, $kind): Operation {
                 $input = $this->capture($group, $kind);
-                // No VM and no workspace: nothing to release, so the group ends here and the Operation succeeds with no run (R1).
-                if ($input['task_vm_id'] === null && $input['instance_id'] === null) {
-                    $operation = $this->start->record($kind, 'task_group', $group->id, SwampNode::id(), $input,
-                        ['group_id' => $group->id, 'instance_id' => null, 'released' => true], $caller, $request, OperationStore::lockKey('task_group', $group->id));
-                    if ($operation->wasRecentlyCreated) {
-                        app(TaskGroupEnding::class)->settle(Task::topLevel()->lockForUpdate()->findOrFail($group->id), $input, $kind);
-                    }
-
-                    return $operation;
+                $operation = $this->start->record($kind, 'task_group', $group->id, SwampNode::id(), $input,
+                    ['group_id' => $group->id, 'instance_id' => null, 'released' => true], $caller, $request, OperationStore::lockKey('task_group', $group->id));
+                if ($operation->wasRecentlyCreated) {
+                    app(TaskGroupEnding::class)->settle(Task::topLevel()->lockForUpdate()->findOrFail($group->id), $kind);
                 }
 
-                return $this->start->execute($kind, 'task_group', $group->id, isset($input['node_id']) ? ValidatedData::integer($input['node_id']) : SwampNode::id(), $input, $caller, $request, lockKey: OperationStore::lockKey('task_group', $group->id));
+                return $operation;
             });
         }, wait: false);
     }
 
     /**
-     * The release of the group's slot. Nothing else ends: the claim ran no setup and published no Route, origin already has the approved
-     * work, and the delete of the task VM removes the task's files. An admitted cancel reserves the VM as a release does.
+     * The input of a cancel of a group without a task copy. Such a group must hold no workspace: a task copy ends through its destroy,
+     * and a task VM workspace has no release any more.
      *
-     * @return array<string,mixed>
+     * @return array{group_id: int, project_id: int, instance_id: null}
      */
     private function capture(Task $group, string $kind): array
     {
-        $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
+        $group = Task::topLevel()->lockForUpdate()->findOrFail($group->id);
         self::eligible($group, $kind);
-        $workspace = $group->taskable;
-        $slot = TaskVm::forGroup($group);
-        if ($workspace !== null && (! $workspace instanceof Instance || ! $slot instanceof TaskVm
-            || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
-            throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact workspace that the task VM holds.', 409);
-        }
-        $release = $slot instanceof TaskVm ? $this->slots->reserveRelease($slot) : null;
+        self::refuseWorkspace($group);
 
-        return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
-            ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'release' => $release];
+        return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => null];
+    }
+
+    /** A group without a task copy must hold no workspace: nothing releases a task VM workspace any more. */
+    private static function refuseWorkspace(Task $group): void
+    {
+        if ($group->taskable_id !== null) {
+            throw new ResourceOperationException('tasks.workspace_ownership_refused',
+                'This cancel cannot end the group\'s workspace: a task copy ends with task:cancel, and task VM workspaces are removed.', 409);
+        }
     }
 
     public static function eligible(Task $group, string $kind = 'tasks.cancel'): void
@@ -143,8 +135,8 @@ final readonly class TaskCancelIntent
                     ->where('status', 'succeeded')->where('result->outcome', 'passed')->exists()) {
                 throw new ResourceOperationException('tasks.not_settling', 'Native maintenance cleanup requires its passed no-change work or ended published PR.', 409);
             }
-        } elseif (($group->status === TaskGroupStatus::Completed && $group->taskable_id === null
-            && ! TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists()) || (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $group->pr_url)) {
+        } elseif (($group->status === TaskGroupStatus::Completed && $group->taskable_id === null)
+            || (in_array($group->status, TaskGroupStatus::awaitingCompletion(), true) && $group->pr_url)) {
             throw new ResourceOperationException('tasks.not_cancellable', 'A completed group or a settling group with a PR cannot be cancelled.', 409);
         }
     }

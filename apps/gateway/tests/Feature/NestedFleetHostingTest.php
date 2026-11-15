@@ -113,12 +113,12 @@ describe('the one placement rule', function (): void {
             ->and(InstancePlacement::place($nested, $listed, true))->toBe('orbit-instances-nested');
     });
 
-    it('refuses a nested-fleet Project at the checkout and task-workspace entries and passes a normal Project', function (string $entry): void {
+    it('refuses a nested-fleet Project at the checkout entry and passes a normal Project', function (string $entry): void {
         $project = containerDefaultProject();
         InstancePlacement::{$entry}($project);
         $project->update(['nested_fleet' => true]);
         expect(placementRefusal(fn () => InstancePlacement::{$entry}($project)))->toBe('operation.kind_unavailable 503');
-    })->with(['checkout', 'taskWorkspace']);
+    })->with(['checkout']);
 
     it('checks the switch early for a writer that can make a container, before it writes anything', function (): void {
         $off = containerDefaultNode();

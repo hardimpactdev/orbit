@@ -10,7 +10,6 @@ use App\Domain\Tasks\TaskProvisionProjection;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
@@ -23,7 +22,8 @@ use Illuminate\Support\Facades\Queue;
 uses(LazilyRefreshDatabase::class);
 
 /**
- * A claim as the Gateway admitted it: its group reserved, its slot `provisioning` with the group, and the slot's workspace bound to it.
+ * An old claim as the Gateway admitted it before the task VMs were removed: its group reserved, its slot `provisioning` with the group,
+ * and the slot's workspace bound to it. No claim starts any more; an open one still ends through the projection.
  *
  * @return array{Operation, Task, TaskVm, Instance}
  */
@@ -58,29 +58,21 @@ it('runs the group on its slot after a claim that passed', function (): void {
 
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Running)->and($slot->refresh()->state)->toBe(TaskVmState::Ready)
         ->and($instance->refresh()->status)->toBe(InstanceState::SourceResolved)->and($instance->starting_commit)->toBe(str_repeat('a', 40));
-    Queue::assertNotPushed(ReleaseTaskVmSlot::class);
+    Queue::assertNothingPushed();
 });
 
-it('releases the slot of a claim that ended cancelled or failed, so the slot is free again', function (string $status, TaskGroupStatus $ended): void {
+it('ends the group of a claim that ended cancelled or failed and starts no release, as no task VM release is left', function (string $status, TaskGroupStatus $ended): void {
     Queue::fake();
     [$operation, $group, $slot] = claimedProvision();
 
     app(TaskProvisionProjection::class)->record($operation, $status, $status === 'failed' ? 'tasks.provision_failed' : null, fn (): Operation => $operation);
 
-    expect($group->refresh()->status)->toBe($ended);
-    Queue::assertPushed(ReleaseTaskVmSlot::class, fn (ReleaseTaskVmSlot $job): bool => $job->slotId === $slot->id && $job->groupId === $group->id);
+    expect($group->refresh()->status)->toBe($ended)->and($slot->refresh()->state)->toBe(TaskVmState::Provisioning)
+        ->and(Operation::query()->whereKeyNot($operation->id)->exists())->toBeFalse();
+    Queue::assertNothingPushed();
 })->with([['cancelled', TaskGroupStatus::Cancelled], ['failed', TaskGroupStatus::Failed]]);
 
-it('leaves the release to a run that releases its slot itself, as a proof run does', function (): void {
-    Queue::fake();
-    [$operation] = claimedProvision();
-
-    app(TaskProvisionProjection::class)->record($operation, 'failed', 'tasks.provision_failed', fn (): Operation => $operation, release: false);
-
-    Queue::assertNotPushed(ReleaseTaskVmSlot::class);
-});
-
-it('fails the group and releases its slot when the Gateway refused the start, so the group does not stay reserved', function (): void {
+it('fails the group when the Gateway refused the start, so the group does not stay reserved', function (): void {
     Queue::fake();
     [$operation, $group, $slot, $instance] = claimedProvision();
     $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'operation.execution_secrets_invalid']);
@@ -88,6 +80,6 @@ it('fails the group and releases its slot when the Gateway refused the start, so
     app(TaskProvisionProjection::class)->refused($operation);
 
     expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed)
-        ->and($instance->refresh()->error_code)->toBe('operation.execution_secrets_invalid');
-    Queue::assertPushed(ReleaseTaskVmSlot::class, fn (ReleaseTaskVmSlot $job): bool => $job->slotId === $slot->id && $job->groupId === $group->id);
+        ->and($instance->refresh()->error_code)->toBe('operation.execution_secrets_invalid')->and($slot->refresh()->state)->toBe(TaskVmState::Provisioning);
+    Queue::assertNothingPushed();
 });

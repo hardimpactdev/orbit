@@ -185,14 +185,13 @@ Tasks publish only through the App. Creating a task for a `gh_cli` Project fails
 
 ## How Orbit publishes a task pull request
 
-A task VM never holds a GitHub credential, neither a token nor a deploy key, except the setup token files below. The App serves every step that needs GitHub. Each step gets its own token when it runs.
+A task copy never holds a GitHub credential, neither a token nor a deploy key. The App serves every step that needs GitHub. Each step gets its own token when it runs.
 
-- **Clone.** A step on Node 209 asks the Gateway for a read credential (`purpose: clone`). It clones with full history.
-- **Nothing stays on the VM.** The VM receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
+- **Nothing stays in the copy.** The copy receives a bundle with a plain `origin`. `.git/config`, a credential helper and the environment files hold no credential.
 - **Publish and pull request.** These steps run on Node 209. Each step asks the Gateway for a fresh token at its start (`operation:direct:github-token`).
-- **No admission token.** Admission mints no token for a later step. An installation token lives one hour. A prep run needs 43 to 90 minutes to reach its publish step.
-- **Private dependencies.** The setup steps install them. A step mints a read token for the setup steps only.
-- **Token removal.** A step deletes the token files after the last setup step.
+- **No admission token.** Admission mints no token for a later step. An installation token lives one hour.
+
+The clone credential (`purpose: clone`) and the setup's dependency token of a task VM start are removed with the task VMs ([old paths](/reference/old-paths#the-pi-task-loop)): an old `tasks.provision` run gets no token.
 
 The publish token has `contents: write`, `pull_requests: write` and `workflows: write` for the Project repository. Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
 

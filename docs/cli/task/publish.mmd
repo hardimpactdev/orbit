@@ -29,12 +29,10 @@ sequenceDiagram
   Note over GW: Check the candidate<br/>task #5165 · record the key names
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
-  %%> - group 42 is an open external group with its own task VM workspace, or with its own task copy whose container runs (`tasks.instance_not_running`) and has a start commit
+  %%> - group 42 is an open external group with its own task copy whose container runs (`tasks.instance_not_running`) and has a start commit; a group without a task copy gets `tasks.no_workspace`: task VM workspaces are removed
   %%> - a task copy's Project is released for publishing: a nested-fleet trial Project, or listed in the Gateway's `ORBIT_TASKS_COPY_PUBLISH_PROJECTS`; otherwise HTTP 409 `tasks.copy_publish_held`, and the checked commit stays in the copy
   %%> - a task copy has no earlier turn that may still run (`tasks.copy_turn_unended`)
   %%> - a task copy's last completion did not fail (`tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`), and the copy is `active` (`tasks.copy_not_ready`)
-  %%> - group 42 is provisioned: while its `tasks.provision` Operation waits or runs, the publish answers `tasks.not_provisioned` (409) with that Operation's ID in `details.operation_id`
-  %%> - a task VM runs; a parked VM is woken by the admission, which records its resume, creates no Operation of this kind and answers `tasks.vm_resuming`; repeat the call once the VM runs
   %%> - check 17 passed for group 42, and required hosted CI passed on its commit, else `tasks.commit_not_checked`
   %%> - without `--check`: the group's work is done, else `tasks.not_done`; the done check is the check, and the request is the same from here on (docs/reference/tasks.md#when-the-work-is-done)
   %%> - no other task runs on group 42; the Gateway holds one lock per group
@@ -196,16 +194,10 @@ sequenceDiagram
     %%> - its shared run reader sees the terminal event; Swamp never calls the Gateway
     Note over GW: Record the publication<br/>branch · commit · task done
     %%> Result:
-    %%> - a PR receipt makes the group watch its PR and release its VM; a branch-only push keeps its workspace
+    %%> - a PR receipt makes the group watch its PR; a branch-only push keeps its workspace
     %%> - a task copy stays until `task:cancel` or the group's end; its group keeps its status
     %%> - Orbit merges no pull request that a task copy's publish opened (`tasks.copy_pr_no_merge`); a person merges it on GitHub
     %%> - task #5165 succeeds
-    opt PR receipt
-      GW->>SW: Delete the task VM
-      %%> The VM is marked releasing with the publication record. Its deletion removes the workspace, Node, keys and peer; the group holds no task place afterwards.
-      SW-->>GW: Confirm deletion
-      %%> A later fix turn waits for a task place and starts from the base plus the published task branch.
-    end
   else a step fails
     GH--xSW: refused or no reply
     %%> When:

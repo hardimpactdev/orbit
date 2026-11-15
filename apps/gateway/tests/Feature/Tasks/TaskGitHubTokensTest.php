@@ -22,15 +22,11 @@ use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
-use App\Infrastructure\GitHub\HttpGitHubApi;
 use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Http\Client\Request;
-use Illuminate\Support\Facades\Http;
 use Mockery\MockInterface;
 use Tests\Support\SwampNodeFixture;
 
@@ -47,7 +43,6 @@ function tokenWorld(bool $installed = true, ?array &$scoped = []): object
         $github->shouldReceive('repositoryInstallation')->andReturn($installed ? 7 : null);
         $github->shouldReceive('repositoryPullRequestToken')->andReturn('push-token-value');
         $github->shouldReceive('repositoryReadToken')->andReturn('read-token-value');
-        $github->shouldReceive('installationReadToken')->andReturn('deps-token-value');
         $github->shouldReceive('scopedRepositoryToken')->andReturnUsing(function ($credentials, GitHubTokenGrant $grant) use (&$scoped): GitHubAccessToken {
             $scoped[] = $grant;
 
@@ -121,7 +116,7 @@ function pushOperation(string $kind, array $input = [], OperationStatus $status 
     return [$operation, $names];
 }
 
-/** @return array{0:Operation,1:array{vault:string,key:string}} a provision, which holds the intent itself */
+/** @return array{0:Operation,1:array{vault:string,key:string}} a run that holds its clone intent itself */
 function cloneOperation(string $kind, array $overrides = [], string $source = 'github_app'): array
 {
     $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
@@ -148,16 +143,6 @@ it('mints the push token of a publish when its step asks, and writes it only und
         ->and(json_encode($copies))->not->toContain('push-token-value');
 })->with(['a publish' => ['tasks.publish']]);
 
-it('mints the clone credential of a workspace when the clone step asks, and only a read credential', function (string $kind): void {
-    $socket = tokenWorld();
-    [$operation, $reference] = cloneOperation($kind);
-
-    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone');
-
-    expect($copies)->toBe(['git_authorization' => $reference])
-        ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]]);
-})->with(['a provision' => ['tasks.provision']]);
-
 it('writes the clone header of a sync run as the Gateway starts it, and refuses a step that asks for it', function (): void {
     $socket = tokenWorld();
     [$operation, $reference] = cloneOperation('tasks.sync');
@@ -168,24 +153,6 @@ it('writes the clone header of a sync run as the Gateway starts it, and refuses 
         ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]])
         ->and(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone'))->toThrow(ResourceOperationException::class, 'does not permit this token');
 });
-
-it('writes the Composer and npm configuration of the setup steps from one read token, and nothing else', function (string $kind): void {
-    $socket = tokenWorld();
-    [$operation] = cloneOperation($kind);
-    $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-7'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-7'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-7']];
-    $input = $operation->input;
-    $input['dependency_auth'] = $references;
-    $operation->forceFill(['input' => $input])->save();
-
-    $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies');
-
-    expect($copies)->toEqual($references)
-        ->and(tokenPuts($socket))->toBe([
-            ['orbit-control-inputs', 'task-provision-deps-composer-7', '{"http-basic":{"github.com":{"username":"x-access-token","password":"deps-token-value"}}}'],
-            ['orbit-control-inputs', 'task-provision-deps-npm-7', "//npm.pkg.github.com/:_authToken=deps-token-value\n"],
-            ['orbit-control-inputs', 'task-provision-deps-token-7', 'deps-token-value'],
-        ]);
-})->with(['a provision' => ['tasks.provision']]);
 
 // The idle save and the package install left with the Pi task loop (docs/reference/old-paths.md). The mint route finds no issuer for
 // their kinds; an old run that reached the issuer still gets no token for any purpose.
@@ -204,60 +171,27 @@ it('mints no token for an old idle save or package install', function (string $k
     'a package install asking for a clone' => ['tasks.package', 'clone'],
 ]);
 
-it('writes an empty configuration, and records no issue, when the App cannot supply a token', function (): void {
+it('writes an empty clone header for a repository the App does not cover, so the sync reads it anonymously', function (): void {
     $socket = tokenWorld(installed: false);
-    [$operation] = cloneOperation('tasks.provision');
-    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => [
-        'composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-8'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-8'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-8']]]])->save();
+    [$operation, $reference] = cloneOperation('tasks.sync');
 
-    app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies');
-
-    expect(array_column(tokenPuts($socket), 2))->toBe(['{}', "# no private access\n", 'no-token-minted'])
-        ->and(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
-});
-
-it('revokes the setup token when a vault copy fails, because the workflow revoke step does not run after a failed mint', function (): void {
-    $socket = tokenWorld();
-    $socket->failAfter = 2;
-    app(GitHubApi::class)->shouldReceive('revokeInstallationToken')->once()
-        ->withArgs(fn (GitHubAccessToken $credential): bool => $credential->reveal() === 'deps-token-value')->andReturn(true);
-    [$operation] = cloneOperation('tasks.provision');
-    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => [
-        'composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']]]])->save();
-
-    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies'))->toThrow('The Swamp execution copy could not be stored.')
-        ->and(Activity::query()->where('command', 'operation:github:mint')->count())->toBe(0);
-});
-
-it('asks GitHub for an installation read token without a repository filter', function (): void {
-    openssl_pkey_export(openssl_pkey_new(['private_key_bits' => 2048]), $pem);
-    Http::fake(['api.github.com/app/installations/7/access_tokens' => Http::response(['token' => 'ghs_installationtoken'], 201)]);
-
-    $token = app(HttpGitHubApi::class)->installationReadToken(new GitHubAppCredentials(4242, 'deps', 'deps', 'hardimpactdev', 'organization', 'https://github.com/apps/deps', $pem), 7);
-
-    expect($token)->toBe('ghs_installationtoken');
-    Http::assertSent(fn (Request $request): bool => $request->data() === ['permissions' => ['contents' => 'read']]);
-});
-
-it('refuses the dependencies purpose for a kind that runs no setup, and for an intent without both files', function (): void {
-    $socket = tokenWorld();
-    [$publish] = pushOperation('tasks.publish');
-    [$provision] = cloneOperation('tasks.provision');
-    $issue = fn (Operation $subject) => fn () => app(TaskGitHubTokens::class)->issue($subject, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies');
-
-    expect($issue($publish))->toThrow(ResourceOperationException::class, 'does not permit this token')
-        ->and($issue($provision))->toThrow(ResourceOperationException::class, 'does not permit this token')
-        ->and($socket->frames)->toBe([]);
-});
-
-it('writes an empty clone credential for a repository the App does not cover, so the clone reads it anonymously', function (): void {
-    $socket = tokenWorld(installed: false);
-    [$operation, $reference] = cloneOperation('tasks.provision');
-
-    app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'clone');
+    app(DirectOperation::class)->workflowInputs($operation);
 
     expect(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], '']]);
 });
+
+// A task start makes a task copy; its old VM claim (`tasks.provision`) cloned the repository and wrote the setup's dependency files on the
+// VM. That claim and its two token arms are removed with the task VMs (docs/reference/old-paths.md): an old claim gets no token.
+it('mints no clone credential and no dependency files for an old task start claim', function (string $purpose): void {
+    $socket = tokenWorld();
+    [$operation] = cloneOperation('tasks.provision');
+    $operation->forceFill(['input' => [...$operation->input, 'dependency_auth' => ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-9'],
+        'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-9'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-9']]]])->save();
+
+    expect(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, $purpose))->toThrow(ResourceOperationException::class, 'does not permit this token')
+        ->and(tokenPuts($socket))->toBe([])
+        ->and(app(DirectOperation::class)->definition('tasks.provision'))->not->toHaveKey('github_token_issuer');
+})->with(['clone', 'dependencies']);
 
 it('mints the write token of a pull request step when the step asks, with the permissions of its kind', function (string $kind, array $permissions): void {
     $grants = [];

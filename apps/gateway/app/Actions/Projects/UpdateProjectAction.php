@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Actions\Projects;
 
-use App\Actions\TaskVms\WakeTaskVmAction;
 use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
@@ -511,37 +510,8 @@ final readonly class UpdateProjectAction
     }
 
     /**
-     * A restore on a parked task VM would fail over SSH. The rollback resumes it and stays open until a retry.
-     *
-     * @param  list<array{instance_id?: int, path: string, previous_url: string, current_url: string, mutated: bool, attempted?: bool}>  $origins
-     */
-    private function wakeRestoredTaskVms(array $origins): void
-    {
-        $ids = array_values(array_filter(array_map(static fn (array $row): ?int => $row['instance_id'] ?? null, $origins)));
-        $this->refuseParkedTaskVms(array_filter(Instance::query()->whereKey($ids)->get()
-            ->map(static fn (Instance $instance): ?TaskVm => TaskVm::forNode($instance->node_id))->all()));
-    }
-
-    /**
-     * Starts every parked task VM resuming, then refuses once, so a single retry can run.
-     *
-     * @param  array<TaskVm>  $vms
-     */
-    private function refuseParkedTaskVms(array $vms): void
-    {
-        $parked = array_values(array_filter($vms, static fn (TaskVm $vm): bool => ! app(WakeTaskVmAction::class)->forVm($vm)));
-        if ($parked !== []) {
-            throw new ResourceOperationException(
-                errorCode: 'project.task_vm_parked',
-                message: 'Task VM ['.implode(', ', array_map(static fn (TaskVm $vm): string => $vm->name, $parked)).'] is parked. Orbit is resuming it. Retry the update when it is ready.',
-                status: 409,
-            );
-        }
-    }
-
-    /**
      * A task workspace's preflight cannot read the proposed repository, because a task VM gets no token. The
-     * Gateway checks the default branch there once instead. A parked task VM cannot run the preflight: Orbit resumes it and refuses.
+     * Gateway checks the default branch there once instead. No task VM resumes any more (docs/reference/old-paths.md).
      *
      * @param  list<Instance>  $checkouts
      */
@@ -551,7 +521,6 @@ final readonly class UpdateProjectAction
         if ($vms === []) {
             return;
         }
-        $this->refuseParkedTaskVms($vms);
         // A requested default branch is already verified there.
         if ($requestedDefaultBranch === null) {
             $this->branches->verify($repositoryUrl, (string) $project->default_branch, $project->source_access);
@@ -837,7 +806,6 @@ final readonly class UpdateProjectAction
 
         if (is_array($evidence['origins'] ?? null)) {
             $origins = $this->originMutations($evidence['origins']);
-            $this->wakeRestoredTaskVms($origins);
             $this->sources->restoreOrigins($origins);
         }
 

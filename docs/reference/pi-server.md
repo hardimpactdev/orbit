@@ -3,7 +3,6 @@ title: "Pi server"
 description: "How the Pi server runs Pi agent sessions on a task VM for the Gateway's pi driver: configuration, the task VM install, agent tools, API, thread states, and restart behavior."
 covers:
   - apps/pi-server/**
-  - apps/gateway/app/Infrastructure/Tasks/Pi/{PiConnection,PiModel}.php
 ---
 
 # Pi server
