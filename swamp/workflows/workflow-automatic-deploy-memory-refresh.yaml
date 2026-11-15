@@ -1,0 +1,20 @@
+id: bcec502c-3772-4787-8655-c18a9b1d0b5c
+name: automatic-deploy-memory-refresh
+labels: {role: swamp}
+queueTimeout: 30
+description: Write again, unchanged, automatic deploy policy memory older than a day, so data retention keeps it while the policy tick is paused.
+trigger:
+  schedule: 0 41 * * * *
+reports:
+  skip: ["@swamp/workflow-summary"]
+jobs:
+  - name: refresh
+    steps:
+      - name: refresh
+        writes: true
+        task:
+          type: model_method
+          modelType: "@nckrtl/automatic-deploy"
+          modelName: ${{ "automatic-production-deploy" }}
+          methodName: refresh
+          inputs: {}

@@ -1,5 +1,5 @@
 order = 190
-source_sha256 = "b4643019d66d98fb60268b5c6e58340215272bf3c9d63a66967bb74b04b73a07"
+source_sha256 = "83b6635c83d5ff45d000158ba11d1ec9c3602e4b82b7b9617dea6dd2379ca364"
 cases = [
   "native policy returns only the final production checkpoint handle",
   "live default discovers production, guards ownership, saves intent, admits and publishes exact Gateway shapes",
@@ -54,6 +54,10 @@ cases = [
   "structured caller with a changed display label: rollbacks and manual deploys still pause and alert",
   "native failure Operations with PHP empty-array results remain readable",
   "nonempty array results cannot invent a deployment receipt",
+  "refresh writes policy memory older than a day again unchanged, for every Instance",
+  "refresh never creates, revives or rolls back a record the catalog still lists",
+  "refresh fails on a policy memory row without a readable creation time",
+  "refresh fails when it cannot query, and the tick never queries",
 ]
 file = "swamp/extensions/behaviors/automatic-deploy/gateway_test.ts"
 cost = 5
