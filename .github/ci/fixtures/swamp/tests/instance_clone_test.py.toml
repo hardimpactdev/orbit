@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "03a54e658d2f5f71cf0b391fecfa94769ebddc625af53eed10256c46600d7722"
+source_sha256 = "cb6ba2de808f0842d44e6e0bd49ee1883875b27923a049de6581cf4ed7a87c8e"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -68,6 +68,7 @@ cases = [
   "test_guest_and_node_command_names_stay_in_sync",
   "test_preserves_only_the_guest_command_and_exit_code",
   "test_a_failed_command_names_what_ran_and_keeps_only_public_stderr",
+  "test_the_bare_token_and_model_key_never_reach_a_failure_detail",
   "test_the_phase_is_one_guest_exec_and_a_failure_names_its_command_and_the_end_of_its_stderr",
   "test_the_detail_holds_no_private_value_and_the_end_of_a_long_stderr",
   "test_admits_exactly_the_keys_with_incus_own_and_empty_values",
@@ -98,7 +99,7 @@ cases = [
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing",
 ]
 file = "swamp/tests/instance_clone_test.py"
-cost = 149
+cost = 150
 inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -206,6 +207,7 @@ inputs = [
 "test_t3_files_refuse_a_linked_folder_or_settings_by_their_own_code_before_the_start" = 1
 "test_an_older_gateways_bare_line_or_a_running_copy_gets_no_t3_files" = 1
 "test_a_failed_command_names_what_ran_and_keeps_only_public_stderr" = 1 # added 2026-11-14 (clone-services); local under 0.1 s
+"test_the_bare_token_and_model_key_never_reach_a_failure_detail" = 1 # added 2026-11-15 (create-structural); local under 0.01 s
 "test_the_phase_is_one_guest_exec_and_a_failure_names_its_command_and_the_end_of_its_stderr" = 1 # added 2026-11-14 (clone-services); local under 0.1 s
 "test_the_detail_holds_no_private_value_and_the_end_of_a_long_stderr" = 1 # added 2026-11-14 (clone-services); local under 0.1 s
 "test_runs_the_checkout_beside_the_agent_and_t3_then_checks_the_sessions" = 1 # added 2026-11-14 (create-baked-2); local under 1 s

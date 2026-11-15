@@ -1,8 +1,10 @@
 order = 860
-source_sha256 = "6832c76248e7478e327de76e2e09cdcccca77d8d10c78ec2e9d4fadd6f7c0ce3"
+source_sha256 = "26d32e888a8357d708fe69639c0ee6906b88742127170e98f7e4a46e5a70df95"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
+  "pinned create: release 2080's two-part stage copy fails the copy step with Regular expression too large; one line passes",
   "pinned create: a failed checkout in the T3 step registers nothing, stops the container and removes the private folder",
+  "pinned create: a refused registration runs finish, names the registration, stops the container and keeps no session",
   "pinned create: a clone with a Route publishes it beside the copy and still ends at its registration",
   "pinned create: a failed publication (route-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
   "pinned create: a failed publication (route-csr-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
@@ -10,10 +12,13 @@ cases = [
   "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container",
 ]
 file = "swamp/tests/instance_create_native_test.ts"
-cost = 30
+cost = 45 # 9 cases in 63-74 s locally on a loaded Beast; each case puts the real-size launch copy into a local vault
 after_merge = true
 reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
+  "swamp/scripts/instance_clone_launch.py",
+  "swamp/scripts/instance_clone_guest.py",
+  "swamp/scripts/instance_clone.py",
   "swamp/tests/_support/native_auth.ts",
   "swamp/extensions/behaviors/node-worker/config.ts",
   "swamp/workflows/workflow-operation-instance-create.yaml",
@@ -21,5 +26,6 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/extensions/behaviors/operations/instance-t3/mod.ts",
   "swamp/tests/fixtures/instance-create-16210-t3-register.json",
 ]

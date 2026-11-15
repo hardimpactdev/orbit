@@ -428,7 +428,7 @@ it('frames the model environment after the credential line on the copy step stdi
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-git-credential-'.$operation->id);
 });
 
-it('frames the release scripts in one single-line launch copy beside the clone copy\'s private text, and the bare token and model key', function (): void {
+it('frames the release scripts in one single-line launch copy beside the clone copy\'s private text, and writes no bare secret copy', function (): void {
     $node = containerDefaultNode();
     $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
     $vault = vaultReadingSocket([]);
@@ -441,24 +441,21 @@ it('frames the release scripts in one single-line launch copy beside the clone c
     $launch = $put('instance-create-launch-');
     $value = json_decode($launch['value'], true, flags: JSON_THROW_ON_ERROR);
     $payload = $value['stage'];
-    $credential = strtok($framed['value'], "\n");
     $reference = static fn (string $prefix): array => ['vault' => 'orbit-control-inputs', 'key' => $prefix.$operation->id];
     // Swamp turns a vault value with a newline into one regular expression, which a 32 KB line breaks (release 2080): one line.
     expect($launch['value'])->not->toContain("\n")
         ->and(strlen($launch['value']))->toBeLessThan(CloneStage::MaxBytes)
         ->and($run['execution_secrets']['clone_launch'])->toBe($reference('instance-create-launch-'))
-        ->and($run['execution_secrets']['clone_redact_token'])->toBe($reference('instance-create-redact-token-'))
-        ->and($run['execution_secrets']['clone_redact_model'])->toBe($reference('instance-create-redact-model-'))
         // The multi-line stage copy of release 2079 is gone; every key that workflow reads stays.
         ->and($put('instance-create-stage-'))->toBeNull()
         ->and($run['execution_secrets'])->not->toHaveKey('clone_stage')
         ->and($run['execution_secrets']['git_credential'])->toBe($reference('instance-create-clone-'))
         ->and($value['private'])->toBe($framed['value'])
         ->and(json_encode($payload))->not->toContain('placeholder-model-key')
-        // Swamp masks a value only as a whole: the bare token and the bare model key are values of their own.
-        ->and($put('instance-create-redact-model-')['value'])->toBe('placeholder-model-key')
-        ->and($put('instance-create-redact-token-')['value'])->toBe($credential === 'https://x-access-token:' ? CloneStage::NoToken
-            : (preg_match('~^https://x-access-token:(.+)@github\.com$~', (string) $credential, $token) === 1 ? $token[1] : CloneStage::NoToken))
+        // No step reads a bare token or model key: an unused extra copy of a secret is not written (release 2084 wrote them).
+        ->and($put('instance-create-redact-model-'))->toBeNull()
+        ->and($put('instance-create-redact-token-'))->toBeNull()
+        ->and(array_intersect(array_keys($run['execution_secrets']), ['clone_redact_token', 'clone_redact_model']))->toBe([])
         ->and($run['intent']['clone_launcher'])->toBe(file_get_contents($swamp.'/scripts/instance_clone_launch.py'))
         ->and($payload['launcher'])->toBe($run['intent']['clone_launcher'])
         ->and($payload['script'])->toBe(file_get_contents($swamp.'/scripts/instance_clone.py'))
@@ -1280,7 +1277,6 @@ it('names retained create resources and proves the advertised recovery paths', f
     expect(containerRefusal(fn () => app(ContainerInstanceDestroy::class)->assertAvailable($instance->fresh(), true)))
         ->toBe($clone ? 'admitted' : 'operation.kind_unavailable');
 })->with([
-    'clone-input' => [true, 'clone', false, 'failed'],
     'clone-container' => [true, 'clone', false, 'failed'],
     'clone-t3, its checkout' => [true, 'workspace', false, 'failed'],
     'clone-t3, its T3 part' => [true, 't3', true, 'failed'],

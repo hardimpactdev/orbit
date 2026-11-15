@@ -101,9 +101,8 @@ final readonly class NativeDevelopmentInstanceInput
                 ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
                     ValidatedData::string($processEnvironments))]),
                 'git_credential' => $clone ? InstanceGitHubReadTokens::cloneReference($operation) : InstanceGitHubReadTokens::credentialReference($operation),
-                // The launch copy, and the bare token and model key that the create reads only so Swamp masks them alone.
-                ...($clone ? ['clone_launch' => CloneStage::reference($operation), 'clone_redact_token' => CloneStage::tokenReference($operation),
-                    'clone_redact_model' => $vault->executionCopy(CloneStage::modelReference($operation)['vault'], CloneStage::modelReference($operation)['key'], app(TaskVmModelRoute::class)->key())] : []),
+                // The one-line launch copy that clone-container reads on stdin.
+                ...($clone ? ['clone_launch' => CloneStage::reference($operation)] : []),
                 // A nested-fleet container's Club key, delivered into its /run at its start.
                 ...$club['copies'],
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),

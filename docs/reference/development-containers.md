@@ -1075,15 +1075,17 @@ The model environment reaches only the copy step, on its one SSH stdin. The T3 s
 
 The Gateway also writes a clone's launch copy, `instance-create-launch-<operation>`, and sends the launcher `swamp/scripts/instance_clone_launch.py` as the intent's `clone_launcher`. The launch copy is ONE line of JSON. Its `stage` holds the public part: the launcher, the clone script and its helpers from the Gateway release's `swamp/` folder, the run's container intent and the SSH account. Its `private` holds the clone copy's text.
 
-The scripts take about 187 KB, more than one command argument may hold, so they cross the copy step's one SSH stdin, framed in one vault value. Its reference is `clone_launch`. The workflow reads it from the release after the one whose Gateway first writes it; until then the `input` and `clone-input` steps stage the scripts.
+The scripts take about 187 KB, more than one command argument may hold, so they cross the copy step's one SSH stdin, framed in one vault value. Its reference is `clone_launch`. The copy step runs `python3 -c <clone_launcher> <private folder> stage container`: the launcher writes `stage` into the private folder and runs the container part with only `private` on its stdin. A clone runs no `input` and no `clone-input` step.
 
 Why one line: Swamp registers every value that a run reads with `vault.get` for redaction. It turns a value that holds a newline into one regular expression, and V8 refuses that expression when one line is about 32 KB or longer. Release 2080 read an earlier stage copy (the public JSON line, a newline, the private text): every clone create failed at `clone-container` with `Regular expression too large`, and the release was rolled back.
 
 A one-line value is matched as a plain string; a whole create's redaction then costs a few milliseconds. The launch copy may hold at most `CloneStage::MaxBytes` (1 MiB); a larger one refuses the create before its run with `instance.clone_launch_too_large`.
 
-Swamp masks a registered value only as a whole, never a part of it. So the Gateway also writes the bare GitHub read token (`instance-create-redact-token-<operation>`, or the word `orbit-no-github-token` for a repository it fetches without one) and the bare model key (`instance-create-redact-model-<operation>`). The create reads both only so that either one is masked wherever it appears alone. The destroy deletes all three copies with the clone copy, and the earlier stage copies of release 2079.
+Swamp masks a registered value only as a whole, never a part of it: a token or model key inside the launch copy is not masked when it appears alone, as with the clone copy before it. The clone script's own redaction keeps them out of every failure detail: each line and each `KEY=VALUE` value of its stdin, and credentials by shape (URLs, `Authorization`, GitHub tokens, 64-hex keys). Its stdout carries only its own JSON receipt. Release 2084 also wrote the bare token and model key as copies of their own (`instance-create-redact-token-<operation>`, `instance-create-redact-model-<operation>`); no step read them, and the Gateway writes them no more.
 
-Once the workflow reads it, a clone runs the scripts of the Gateway release that admitted it. A release loads Swamp before its Gateway switches, so a create admitted just before a release runs the older scripts on the newer workflow. A change to the clone script's phases, its argument list, or the lines and timings that `finish` reads must work across that one release: the newer workflow and result reader must accept what the older scripts do and print.
+The destroy deletes the launch copy with the clone copy, and the earlier stage and bare copies of releases 2079 and 2084.
+
+Once the workflow reads it, a clone runs the scripts of the Gateway release that admitted it. A release loads Swamp before its Gateway switches, so a create admitted just before a release runs the older scripts on the newer workflow. A change to the clone script's phases, its argument list, or the lines and timings that the result reads must work across that one release: the newer workflow and result reader must accept what the older scripts do and print.
 
 The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started.
 
@@ -1093,21 +1095,23 @@ A T3 that failed at boot is started once more, after `systemctl reset-failed`, a
 
 Swamp starts a level of steps only when the whole level before it has ended ([Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md)). The T3 step is in the level after the copy and the Club key, so it starts when the Club key step ends or skips.
 
-The sessions check waits for both parts, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. A failed part writes its name into the step's private `t3.json`, and the result names the phase: `workspace` for the checkout, `t3` for the agent part or T3, `register` for the sessions check. Last, Orbit registers the T3 server ([T3 registration](#t3-registration-and-pairing)). The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
+The sessions check waits for both parts, because it checks the branch and the checkout mark. It checks no Process unit: the units start in the completion. A failed part writes its name into the step's private `t3.json`, and the result names the phase: `workspace` for the checkout, `t3` for the agent part or T3, `register` for the sessions check. `clone-session-copy` brings the file to `<run folder>-t3.json` on the Swamp Node. Last, `clone-register` registers the T3 server ([T3 registration](#t3-registration-and-pairing)) and builds the create's result. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) has the steps.
 
-The levels and their measured seconds, with about 1.2 s of dispatch in each step:
+Each Swamp behavior step costs about 0.9 s of dispatch, also a local one; an assert costs none. A ready clone runs four behavior steps one after the other. The levels and their seconds, from the step times of release 2071:
 
 | Job | Steps by level | Seconds |
 | --- | --- | --- |
-| (start) | Gateway admission, Swamp start | 3.8 |
-| `input` | the intent | 1.3 |
-| `clone` | `clone-input` · `clone-container` · `clone-club-key` (skipped unless nested) · `clone-t3` (the checkout beside T3, then the sessions check) · `clone-session-copy` · `clone-register` | 2.0 · 5.3 · 0 · 4.4 · 1.4 · 1.3 |
-| `publication` | `clone-route-csr-<i>` · `clone-route` (with its TLS probe), beside the `clone` job | 3 to 4 · 5 to 7 |
-| `create` | `finish` beside `clone-private-cleanup` · `stop-container` on failure · `accepted`, and the run-folder cleanup after a failure | 1.3 · 0 · 0 |
+| (start) | Gateway admission, Swamp start | 1.7 to 2.2 |
+| `input` | skipped for a clone | 0 |
+| `clone` | `clone-container` (the stage, then the copy) · `clone-club-key` (skipped unless nested) · `clone-t3` (the checkout beside T3, then the sessions check) · `clone-session-copy` | 5.4 · 0 · 4.4 · 1.4 |
+| `publication` | `clone-route-input` beside `clone-route-csr-<i>` · `clone-route` (with its TLS probe), beside the `clone` job | 3 to 4 · 5 to 7 |
+| `create` | `clone-register` beside `clone-private-cleanup` · `finish` · `stop-input` and `withdraw-route` · `stop-container` · `accepted` and the cleanup | 1.3 · 0 · 0 · 0 · 0 |
 
-A ready create's `finish` removes the run folder itself, which can hold the clone's checked T3 sessions. The cleanup step then skips, and the run ends with `accepted`, without the cleanup's own 0.8-0.9 s (release 2071). A failed create keeps the folder for the container stop; the cleanup step removes it after. If `finish` cannot remove it, its `removed` output is false and the cleanup step runs.
+On a ready clone, `clone-register` builds the create's result from the same inputs as `finish` (one YAML anchor, `create_inputs`), removes the copied `t3.json` and the run folder, and returns `ready` and `removed`. `finish`, `stop-input`, `stop-container`, `withdraw-route` and the cleanup step then skip at no cost, and the run ends with the `accepted` assert. The Gateway reads the result from `clone-register` when `finish` skipped (the terminal `fallback`, [Swamp command steps](/reference/swamp-command-steps#terminal-outputs)).
 
-A plain clone's create succeeds about 22 seconds after the click, by these older step times. The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
+After a failure, `finish` builds the failed result, as before. A clone has no input step, so `stop-input` writes the run folder and playbooks that `stop-container` reads. The cleanup step then removes the run folder and the copied `t3.json`. These steps run only after a failure, so they cost the ready create nothing.
+
+A plain clone's create succeeds about 15 seconds after the click by these step times, against 19 to 21 seconds measured with the earlier seven dispatches (release 2071). The baseline read and the admission of the completion add about 0.5 seconds in the Gateway.
 
 When the run succeeds, the Gateway reads the [workspace baseline](#workspace-work-state) over SSH, before its transaction. Then, in one transaction, it records the T3 server, writes the baseline and turns the create `succeeded`. The clone stays `source_resolved` with its `starting_commit`, and its runtime is `running`. In the same transaction, after the create row is terminal, the Gateway admits `instance.complete` with the Instance lock. The create's result names it in `completion_operation_id`. The completion's vault copy and its Swamp start run after the commit.
 
@@ -1129,7 +1133,7 @@ Both publication steps allow their failure (`allowFailure`), so a failed publica
 
 No publication step needs the running app. The site step skips the Route access and `APP_URL`, because the copy's root disk does not exist yet; `.env` comes with the checkout. Caddy proxies to the bridge address that the admission reserved. The TLS probe is a handshake with the Node's Caddy and sends no request. So when the create succeeds, the address answers TLS, but the app answers 502 until the completion's `clone-services` starts the units, about 10 to 20 seconds later.
 
-`finish` waits for both jobs. At the measured times the publication ends first: 8 to 13 seconds against 14 to 18 seconds from `clone-input` to `clone-register`. The create's result says what happened in `route_publication`:
+`clone-register` and `finish` wait for both jobs. At the measured times the publication ends at about the same time as the clone steps: 8 to 13 seconds against 9 to 16 seconds from the copy to `clone-session-copy`. A Route clone's site child reads the run folder that `clone-route-input` writes beside the CSR, not the create's input. The create's result says what happened in `route_publication`:
 
 | Value | Meaning |
 | --- | --- |

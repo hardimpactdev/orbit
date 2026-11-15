@@ -1477,6 +1477,36 @@ console.log(JSON.stringify(JSON.parse(result.stdout)));
         )
 
 
+class CopyStepRedactionTest(unittest.TestCase):
+    """The copy step's stdin is the launch copy's private text (CloneStage): the credential line, the model frame and the model
+    environment. Swamp masks a vault value only as a whole, so a bare token or model key in a command's output is kept out of the
+    Operation by the script's own redaction: every failure detail goes through `private_values` over the stdin and `public_text`."""
+
+    @staticmethod
+    def functions():
+        import ast
+        tree = ast.parse(SCRIPT.read_text())
+        keep = [node for node in tree.body if isinstance(node, (ast.Import, ast.ImportFrom))
+                or (isinstance(node, ast.FunctionDef) and node.name in {"private_values", "public_text"})
+                or (isinstance(node, ast.Assign) and any(getattr(target, "id", "") == "SHORTEST_VALUE" for target in node.targets))]
+        scope = {}
+        exec(compile(ast.Module(body=keep, type_ignores=[]), str(SCRIPT), "exec"), scope)
+        return scope["private_values"], scope["public_text"]
+
+    def test_the_bare_token_and_model_key_never_reach_a_failure_detail(self):
+        private_values, public_text = self.functions()
+        token, key = "ghs_" + "T" * 36, "orbit-model-" + "m" * 52
+        stdin = (f"https://x-access-token:{token}@github.com\n#orbit-model-environment\nANTHROPIC_BASE_URL=http://10.253.0.1:8319\n"
+                 f"ANTHROPIC_AUTH_TOKEN={key}\nORBIT_MODEL_KEY={key}\nDISABLE_TELEMETRY=1\n")
+        stderr = "\n".join([f"fatal: could not read from https://x-access-token:{token}@github.com/o/r.git", f"bare {token} here",
+                            f"model {key}", f"a piece {key[10:30]}", "Error: the last public line"])
+        detail = public_text(stderr, private_values(stdin), 4096)
+        for secret in [token, key, key[10:30], token[4:20]]:
+            self.assertNotIn(secret, detail)
+        self.assertIn("Error: the last public line", detail)
+        self.assertIn("bare [REDACTED] here", detail)
+
+
 class ServicesPhaseFailureTest(unittest.TestCase):
     """The services phase (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command): one guest exec and no
     Incus file call, and a failure names what ran and the redacted end of its stderr."""

@@ -17,16 +17,13 @@ use LogicException;
  * redaction, and turns a value with a newline into one regular expression; V8 refuses one built from a line of about 32 KB
  * (release 2080). A single line is matched as a plain string. The launcher stages `stage` and gives the clone script only `private`.
  *
- * Swamp masks a registered value only as a whole, so the bare GitHub token and the bare model key get their own copies, which the
- * create reads so that either one is masked wherever it appears alone.
+ * Swamp masks a registered value only as a whole, never a part of it: a token inside this copy is not masked when it appears alone.
+ * The clone script's own redaction keeps it out of a failed part's detail (instance_clone.py `private_values`, `public_text`).
  */
 final readonly class CloneStage
 {
     /** The largest launch copy: about five times today's 195 KB, far below what a vault value and a step's stdin carry. */
     public const int MaxBytes = 1_048_576;
-
-    /** The token copy of a repository the Gateway fetches without a token: a word no output needs, which the redactor masks. */
-    public const string NoToken = 'orbit-no-github-token';
 
     public function __construct(private ?string $swamp = null) {}
 
@@ -34,26 +31,6 @@ final readonly class CloneStage
     public static function reference(Operation $operation): array
     {
         return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-launch-'.$operation->id];
-    }
-
-    /**
-     * The bare GitHub read token of the run, or {@see NoToken}.
-     *
-     * @return array{vault:string,key:string}
-     */
-    public static function tokenReference(Operation $operation): array
-    {
-        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-redact-token-'.$operation->id];
-    }
-
-    /**
-     * The bare model key of the run.
-     *
-     * @return array{vault:string,key:string}
-     */
-    public static function modelReference(Operation $operation): array
-    {
-        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-redact-model-'.$operation->id];
     }
 
     /** The public launcher, the program text of the step's `python3 -c`. */
