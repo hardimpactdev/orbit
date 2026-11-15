@@ -265,7 +265,7 @@ It writes the result in the node exporter's text format to `/var/lib/prometheus/
 | `orbit_ci_runners_observed_timestamp_seconds` | none | The Unix time of the read |
 | `orbit_ci_runners_read_ok` | none | `0` when Incus did not answer, else `1` |
 
-The service runs as root, because the Incus socket belongs to root; membership of `incus-admin` would give the same power. It has no new privileges and a read-only file system except the output folder. Each run has a 10-second limit.
+The service runs as root, because the Incus socket belongs to root; membership of `incus-admin` would give the same power. It has no new privileges and a read-only file system, except the output folder and a runtime folder for the Incus client's configuration. Each run has a 10-second limit. Each Incus call has its own shorter limit, and the script starts no call after 8 seconds.
 
 The [Metrics role](/reference/metrics#exporter-selection)'s node exporter reads the folder with its textfile collector. Without a selected exporter on the Node, or without a Metrics role, the script still runs, and the view reports `ci_runner.state_unavailable` for the Node.
 

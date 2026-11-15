@@ -35,6 +35,10 @@ final readonly class NativeNodeRoleRuntimeInput
             'swamp' => $assignment->role === RoleName::Swamp ? $snapshot['runtime'] : null,
             'ci_host' => $assignment->role === RoleName::CiRunner];
         $copies = [];
+        if ($assignment->role === RoleName::CiRunner) {
+            $runtime['files'] = CiRunnerStateFiles::files();
+            $runtime['units'] = CiRunnerStateFiles::units();
+        }
         if ($assignment->role === RoleName::Gateway) {
             $gateway = app(GatewayRuntimeFiles::class)->render($node);
             $runtime['gateway'] = ['pool' => GatewayRuntimeFiles::Pool, 'release_units' => GatewayRuntimeFiles::ReleaseUnits, 'account' => $node->user,
