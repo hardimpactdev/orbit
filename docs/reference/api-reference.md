@@ -128,6 +128,8 @@ The `task:agent:show` description names the cursor and the saved transcript, as 
 
 The agent routes `agent:watch` and `agent:facts` are internal: only `orbit-agent` calls them with its agent secret, so they have no SDK request, CLI command or MCP tool. Their summaries, bodies and responses are written in the script, because the controller validates the fact body by kind. The script lists each fact kind, such as `ufw`, and the `subject` that `checkout` and `packages` facts need; a new kind changes that list in the same change. It also writes the `agent:watch` response, including `applications`, a map whose empty form is `{}`.
 
+The task copy routes `copy:whoami` and `copy:pull-request` are internal too: only a task copy calls them, through its Node's forwarder and with its own copy key, so they have no SDK request or CLI command. [The reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text) defines them.
+
 `instance:register` lists two success answers: 201 with the Instance when the Gateway registers at once, and 202 with the Operation of the run that protects `.env`. The [Node agent](/reference/node-agent#facts) page owns their meaning.
 
 Project Process definition updates use `PUT /api/v1/projects/{project}/process-definitions/{name}`. The body requires `name`, `environments` and a `spec` object; fields inside `spec` are optional. An absent specification key keeps its stored value. A different runtime replaces the runtime specification and requires its command and other required fields.

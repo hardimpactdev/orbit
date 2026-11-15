@@ -1231,7 +1231,9 @@ Orbit records the text on that check, with the reviewer turn's Operation, and an
 
 A second call in the same turn replaces the text. Orbit opens nothing at this point. A turn cannot publish its own work: while it runs, the group is busy. The reviewer sends the text only when it approves the commit. Its turn prompt says so.
 
-When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines. There is no fallback text. A group whose done check has no text waits in `waiting_for_pr_text` until a reviewer turn sends one.
+When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines.
+
+There is no fallback text. A group whose done check has no text waits in `waiting_for_pr_text` until a reviewer turn sends one. A task copy made before the copy key existed cannot send text: a person publishes its group with `task:publish <group> --check=<id> --title=<text> --body=<text>`.
 
 #### Closes the issue
 
