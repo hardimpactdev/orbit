@@ -89,7 +89,7 @@ Without `compact`, or with `compact=false`, show returns every field and the lis
 
 ### External orchestration
 
-Every task group is external. Swamp owns its lifecycle. The Gateway rejects non-empty task topologies with HTTP 422 `tasks.orchestration_unsupported`; the existing Project review-and-merge setting does not block admission. Only explicit keyed operations start work. Group and subtask status updates record board state without starting an agent, check or cleanup.
+Every task group is external. Swamp owns its lifecycle. The Gateway refuses a subtask's nonempty `topology` list with HTTP 422 `tasks.orchestration_unsupported` and ignores an empty one; the existing Project review-and-merge setting does not block admission. Only explicit keyed operations start work. Group and subtask status updates record board state without starting an agent, check or cleanup.
 
 #### Task runtime
 
@@ -642,7 +642,7 @@ The task and subtask operations return these errors.
 
 | Error | HTTP | When |
 | --- | --- | --- |
-| `tasks.orchestration_unsupported` | 422 | A group would declare a topology |
+| `tasks.orchestration_unsupported` | 422 | A subtask would declare a topology |
 | `tasks.status_move_refused` | 422 | An external group or subtask status update attempts a move outside the allowed transitions |
 | `tasks.no_subtasks` | 422 | A move to `todo` for a task without subtasks |
 | `tasks.subtask_deliverables_missing` | 422 | A move to `todo` while a subtask has no deliverables, and then `details` names each subtask. Also a subtask without deliverables outside `backlog` |

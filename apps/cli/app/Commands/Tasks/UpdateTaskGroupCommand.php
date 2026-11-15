@@ -26,7 +26,6 @@ final class UpdateTaskGroupCommand extends TaskCommand
         {--no-preview : Allow the parent sandbox to park during review}
         {--position= : Child position, starting at 1}
         {--deliverables= : JSON file replacing the child deliverables}
-        {--topology= : JSON array of required workload nodes}
         {--implementer-provider= : Implementer provider in a task copy, such as claude}
         {--implementer-model= : Implementer model in a task copy, such as claude-opus-5-5}
         {--implementer-effort= : Implementer effort in a task copy: low, medium, high, xhigh, or max}
@@ -49,10 +48,9 @@ final class UpdateTaskGroupCommand extends TaskCommand
         $status = $this->option('status');
         $position = $this->option('position') === null ? null : $this->idOption('position', 'Position', 'position');
         $deliverables = $this->deliverablesFile();
-        $topology = $this->topologyOption($this->option('topology'));
         $agents = $this->taskAgentsOption('', 'task', clearable: true);
         $prMode = $this->prModeOption('pr-mode');
-        if (in_array(false, [$taskId, $title, $brief, $position, $deliverables, $topology, $agents, $prMode], true)) {
+        if (in_array(false, [$taskId, $title, $brief, $position, $deliverables, $agents, $prMode], true)) {
             return self::FAILURE;
         }
         if ($status !== null && ! in_array($status, self::GROUP_STATUSES, true)) {
@@ -62,7 +60,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
             return $this->renderGatewayFailure('task.preview_conflict', 'Use either --preview or --no-preview.');
         }
         $preview = $this->option('preview') ? true : ($this->option('no-preview') ? false : null);
-        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null || $position !== null || $deliverables !== null || $topology !== null || $agents !== null || $prMode !== null;
+        $changed = $title !== null || $brief !== null || $status !== null || $preview !== null || $position !== null || $deliverables !== null || $agents !== null || $prMode !== null;
         if (! $changed && ! $this->consoleMode()->mayPrompt) {
             return $this->renderGatewayFailure('task.update_required', 'Provide at least one task update.');
         }
@@ -75,7 +73,7 @@ final class UpdateTaskGroupCommand extends TaskCommand
             $title = $this->promptText('Title', self::TITLE_MAX);
         }
         $task = $this->sendWithProgress($connector, new UpdateTaskRequest(
-            $taskId, $title, $brief, is_string($status) ? $status : null, $preview, $position, $deliverables, $topology, $agents, $prMode,
+            $taskId, $title, $brief, is_string($status) ? $status : null, $preview, $position, $deliverables, $agents, $prMode,
         ), TaskRecordResponse::class, ['Update task', 'Updating task', 'Updated task']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : ($task instanceof TaskGroupResponse ? $this->renderGroup($task) : self::FAILURE);

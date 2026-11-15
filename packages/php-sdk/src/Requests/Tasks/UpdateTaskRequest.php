@@ -21,7 +21,6 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
 
     /**
      * @param  list<array<string, mixed>>|null  $deliverables
-     * @param  list<string>|null  $topology
      */
     public function __construct(
         private readonly int $groupId,
@@ -31,7 +30,6 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
         private readonly ?bool $preview = null,
         private readonly ?int $position = null,
         private readonly ?array $deliverables = null,
-        private readonly ?array $topology = null,
         private readonly ?TaskAgentsInput $agents = null,
         private readonly ?string $prMode = null,
     ) {}
@@ -67,7 +65,6 @@ final class UpdateTaskRequest extends GatewayRequest implements HasBody
                 'pr_mode' => $this->prMode,
                 'position' => $this->position,
                 'deliverables' => $this->deliverables,
-                'topology' => $this->topology,
             ],
             static fn (mixed $value): bool => $value !== null,
         ) + ($this->agents?->toArray() ?? []);

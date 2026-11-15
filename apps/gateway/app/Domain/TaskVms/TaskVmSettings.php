@@ -36,7 +36,6 @@ final readonly class TaskVmSettings
      * @param  list<string>  $piModels
      * @param  list<int>  $mediumProjectIds
      * @param  list<int>  $largeProjectIds
-     * @param  array<int, list<string>>  $topologyPaths  Project id => path patterns that need a declared topology
      */
     public function __construct(
         public bool $enabled,
@@ -48,7 +47,6 @@ final readonly class TaskVmSettings
         public array $piModels,
         public array $mediumProjectIds = [],
         public array $largeProjectIds = [],
-        public array $topologyPaths = [],
         public ?string $swampHost = null,
         public bool $containerPlacement = false,
     ) {}
@@ -76,20 +74,13 @@ final readonly class TaskVmSettings
         $artifactSha256 = TaskVmConfig::filled($pi['artifact_sha256'] ?? null);
         $values = [
             'pi' => ['artifact_path' => $artifactPath, 'artifact_sha256' => $artifactSha256, 'models' => $pi['models'] ?? null],
-            'topology_paths' => $config['topology_paths'] ?? null,
         ];
         $together = 'pi.artifact_path and pi.artifact_sha256 must be set together.';
-        $topologyPaths = 'topology_paths must be a JSON object from Project id to a list of path patterns.';
         $valid = TaskVmConfig::validate($values, [
             'pi.artifact_path' => $artifactPath === null ? ['required_with:pi.artifact_sha256'] : ['required', 'string', 'starts_with:/', 'not_regex:/\x00/'],
             'pi.artifact_sha256' => $artifactSha256 === null ? ['required_with:pi.artifact_path'] : ['required', 'string', 'regex:/\A[a-f0-9]{64}\z/D'],
             'pi.models' => ['present', 'list'],
             'pi.models.*' => ['required', 'string', 'regex:/\A[A-Za-z0-9][A-Za-z0-9._:\/-]{0,127}\z/D'],
-            'topology_paths' => ['present', static function (string $attribute, mixed $value, Closure $fail) use ($topologyPaths): void {
-                if (! self::validTopologyPaths($value)) {
-                    $fail($topologyPaths);
-                }
-            }],
         ], [
             'pi.artifact_path.required_with' => $together,
             'pi.artifact_sha256.required_with' => $together,
@@ -97,12 +88,7 @@ final readonly class TaskVmSettings
             'pi.artifact_sha256' => 'pi.artifact_sha256 must be a lowercase SHA-256 digest.',
             'pi.models' => 'pi.models must be a JSON list of model names.',
             'pi.models.*' => 'pi.models must contain only model names.',
-            'topology_paths' => $topologyPaths,
         ]);
-        $topology = [];
-        foreach (is_array($values['topology_paths']) ? $values['topology_paths'] : [] as $projectId => $patterns) {
-            $topology[(int) $projectId] = array_values(array_unique(TaskVmConfig::strings($patterns)));
-        }
 
         return new self(
             enabled: $enabled,
@@ -114,7 +100,6 @@ final readonly class TaskVmSettings
             piModels: array_values(array_unique(TaskVmConfig::strings($values['pi']['models']))),
             mediumProjectIds: self::projectIds($config, 'medium_projects'),
             largeProjectIds: self::projectIds($config, 'large_projects'),
-            topologyPaths: $topology,
             swampHost: $swampHost,
             containerPlacement: ($config['container_placement'] ?? null) === true,
         );
@@ -294,20 +279,5 @@ final readonly class TaskVmSettings
         }
 
         return array_values($hosts);
-    }
-
-    /**
-     * A JSON object from Project id to a list of path patterns, in the syntax of file deliverables. A key is a JSON
-     * string, so `{"46": [...]}`; PHP decodes a numeric key to an integer.
-     */
-    private static function validTopologyPaths(mixed $value): bool
-    {
-        if (! is_array($value) || ($value !== [] && array_is_list($value))) {
-            return false;
-        }
-
-        return array_all($value, static fn (mixed $patterns, int|string $projectId): bool => is_int($projectId) && $projectId >= 1
-            && is_array($patterns) && array_is_list($patterns)
-            && array_all($patterns, static fn (mixed $pattern): bool => is_string($pattern) && trim($pattern) !== '' && ! str_starts_with($pattern, '/')));
     }
 }

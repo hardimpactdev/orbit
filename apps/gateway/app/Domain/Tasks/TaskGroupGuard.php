@@ -15,10 +15,15 @@ final class TaskGroupGuard
     /** Every assistance reason from the deliverable path gate before implementer start begins with this. */
     public const string DeliverableGatePrefix = 'Deliverable path validation ';
 
-    /** @param list<TaskTopology> $topologies */
-    public static function supportOrchestration(TaskOrchestration $mode, bool $reviewAndMerge, array $topologies): void
+    /**
+     * A subtask declares no topology: Orbit composes none. An empty list, which an older client may still send, means
+     * no topology and is ignored. Any other list is refused by name.
+     *
+     * @param  array<mixed>  $topology  the validated `topology` list of one subtask
+     */
+    public static function noTopology(array $topology): void
     {
-        if (array_any($topologies, static fn (TaskTopology $topology): bool => ! $topology->isEmpty())) {
+        if ($topology !== []) {
             throw new ResourceOperationException('tasks.orchestration_unsupported', 'Task groups cannot declare a topology.', 422);
         }
     }

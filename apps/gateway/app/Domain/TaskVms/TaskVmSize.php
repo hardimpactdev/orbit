@@ -4,17 +4,11 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
-use App\Domain\Tasks\TaskTopology;
-use App\Models\Task;
+use App\Models\TaskVm;
 
 /**
- * The size of a task VM, decided once at the claim from the group's declared topology and its Project. A group whose
- * subtasks declare no `topology` gets a normal VM with the host's size, which takes one slot, or
- * a medium or large VM when its Project is listed in `task_vms.medium_projects` or `task_vms.large_projects`.
- * Large takes precedence when the Project is in both lists. A topology gets the smallest size whose
- * `testNodes` holds its test nodes: a medium VM, which takes two slots, holds one, and a large VM, which takes three,
- * holds two. Medium and large VMs are always new, only run on an Incus host, and have free page reporting on. The size
- * never changes while the VM exists. A bigger size is one more case: {@see TaskTopology::maxNodes()} follows it.
+ * The size of a task VM, the cast of {@see TaskVm::$size}. Medium and large VMs take two and three slots,
+ * only run on an Incus host, and have free page reporting on. The slot pool takes a large VM ({@see TaskVmSlotPool::take()}).
  */
 enum TaskVmSize: string
 {
@@ -32,7 +26,6 @@ enum TaskVmSize: string
      * What a VM of this size takes and holds: the one place that sizes are defined.
      * A medium VM holds the test Gateway, one test node, and the operator (about 2.7 GiB in the spike) beside the
      * group's checks. In the spike, a 12 GiB large VM was full with two test nodes, so a third needs a bigger size.
-     * Cases are in ascending order: the first that holds a topology is the smallest.
      */
     public function resources(): TaskVmResources
     {
@@ -41,45 +34,5 @@ enum TaskVmSize: string
             self::Medium => new TaskVmResources(cpus: 4, memory: '8GiB', disk: '40GiB', qemuConfig: self::FreePageReporting, testNodes: 1),
             self::Large => new TaskVmResources(cpus: 6, memory: '12GiB', disk: '60GiB', qemuConfig: self::FreePageReporting, testNodes: 2),
         };
-    }
-
-    /**
-     * The size of the group's VM: by the test nodes of its declared topology, else large when the group's Project is
-     * one of `$largeProjectIds`, else medium for `$mediumProjectIds`, else normal.
-     *
-     * @param  list<int>  $mediumProjectIds
-     * @param  list<int>  $largeProjectIds
-     */
-    public static function forGroup(Task $group, array $mediumProjectIds = [], array $largeProjectIds = []): self
-    {
-        $topology = TaskTopology::forGroup($group);
-
-        return match (true) {
-            ! $topology->isEmpty() => self::forTopology($topology),
-            in_array((int) $group->project_id, $largeProjectIds, true) => self::Large,
-            in_array((int) $group->project_id, $mediumProjectIds, true) => self::Medium,
-            default => self::Normal,
-        };
-    }
-
-    /**
-     * The smallest size that holds a topology, or the largest when none does. The test Gateway and the operator run
-     * in every topology and do not count.
-     */
-    public static function forTopology(TaskTopology $topology): self
-    {
-        foreach (self::cases() as $size) {
-            if ($size->holds($topology)) {
-                return $size;
-            }
-        }
-
-        return array_last(self::cases());
-    }
-
-    /** Whether a VM of this size can hold a topology. */
-    public function holds(TaskTopology $topology): bool
-    {
-        return $topology->count() <= $this->resources()->testNodes;
     }
 }

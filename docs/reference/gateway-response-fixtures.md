@@ -49,7 +49,7 @@ Node key fixtures under `nodes/node-wireguard-key` record an updated Node, a Gat
 
 Task fixtures include a GitHub feedback fixup with `fixup_problem: review:{reviewer_id}` and an immutable findings packet in `brief`. Record that response from the Gateway fixture test with example identities and findings. Its `review-findings` deliverable uses the existing response schema. Replaying the fixture must preserve source provenance without interpreting review text as an action. The [Tasks contract](/reference/tasks#execution-ownership) owns the meaning of those fields.
 
-Task response fixtures include a `topology` array on each subtask. Default cases record `[]`; the declared case records `app-dev`. Re-record all responses that contain subtasks when this field changes, regenerate OpenAPI and the web API types, and update the matching CLI expectations. Human subtask details show `Topology` only for a nonempty declaration; JSON keeps the array in both cases. [Compute drivers](/reference/compute-drivers) defines the accepted workload roles and readiness gate.
+Task response fixtures carry no `topology` field: a subtask [declares no topology](/reference/compute-drivers#declare-a-topology).
 
 Task group fixtures include the `current_recipe` boolean and the `review` mode. Default cases record `false` and `manual`. When this field changes, re-record every response that contains a task group, regenerate OpenAPI and the web API types, and update the matching CLI JSON expectations. [Image fallback](/reference/compute-drivers#image-fallback) owns its meaning.
 

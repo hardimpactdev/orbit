@@ -79,7 +79,6 @@ function group(id: number, status: TaskGroup["status"]): TaskGroup {
                 title: "First step",
                 brief: "Acceptance details",
                 deliverables: [],
-                topology: [],
                 status: "todo",
                 implementer_agent_thread_id: null,
                 tokens: null,

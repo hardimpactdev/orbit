@@ -84,7 +84,6 @@
                         "title": "Persist groups",
                         "brief": "Store groups.",
                         "deliverables": [],
-                        "topology": [],
                         "status": "completed",
                         "implementer_agent_thread_id": null,
                         "tokens": null,

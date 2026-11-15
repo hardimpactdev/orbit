@@ -114,7 +114,6 @@ describe('omitted and invalid input', function (): void {
         'question close with a long reason' => ['task:question:close', ['question' => '98', '--status' => 'superseded', '--reason' => str_repeat('x', 2001)], 'task.reason_invalid'],
         'create without project' => ['task:create', ['title' => 'T', '--brief' => 'B'], 'task.project_required'],
         'parent with child deliverables' => ['task:create', ['--project' => '1', '--deliverables' => '/unused'], 'task.option_invalid'],
-        'parent with child topology' => ['task:create', ['--project' => '1', '--topology' => '[]'], 'task.option_invalid'],
         'child with parent status' => ['task:create', ['--parent' => '1', '--status' => 'todo'], 'task.option_invalid'],
         'child with parent orchestration' => ['task:create', ['--parent' => '1', '--orchestration' => 'external'], 'task.option_invalid'],
         'child with parent subtasks' => ['task:create', ['--parent' => '1', '--subtasks' => '/unused'], 'task.option_invalid'],
@@ -1010,26 +1009,22 @@ describe('the copy turn agent of a task group', function (): void {
     });
 });
 
-describe('declared topology', function (): void {
-    it('sends a declaration and an explicit empty update', function (): void {
-        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/child-created'));
-        expect(Artisan::call('task:create', ['--parent' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => '["app-dev","app-prod+ingress"]', '--json' => true]))->toBe(0);
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
-            && json_decode((string) $request->body(), true)['topology'] === ['app-dev', 'app-prod+ingress']);
-        MockClient::destroyGlobal();
-        $fixture = json_decode((string) file_get_contents(base_path('../../packages/php-sdk/fixtures/tasks/task-create/child-created.json')), true, flags: JSON_THROW_ON_ERROR);
-        $mock = MockClient::global([UpdateTaskRequest::class => MockResponse::make($fixture['body'])]);
-        expect(Artisan::call('task:update', ['task' => '57', '--topology' => '[]', '--json' => true]))->toBe(0);
-        $mock->assertSent(static fn (Request $request): bool => $request instanceof UpdateTaskRequest
-            && json_decode((string) $request->body(), true) === ['topology' => []]);
-    });
+describe('no topology', function (): void {
+    it('has no topology option', function (string $command): void {
+        expect(Artisan::all()[$command]->getDefinition()->hasOption('topology'))->toBeFalse();
+    })->with(['task:create', 'task:update']);
 
-    it('rejects invalid declarations before sending a request', function (string $value): void {
-        $mock = MockClient::global([]);
-        expect(Artisan::call('task:create', ['--parent' => '13', 'title' => 'Step', '--brief' => 'Work', '--topology' => $value, '--json' => true]))->toBe(1);
-        expect(json_decode(Artisan::output(), true)['error']['code'])->toBe('task.invalid_topology');
-        $mock->assertNothingSent();
-    })->with(['[""]', '["app-dev","app-dev"]', '[1]', '{}', 'null', 'app-dev']);
+    it('sends no topology from a subtasks file that still names one', function (): void {
+        $path = tempnam(sys_get_temp_dir(), 'orbit-subtasks-');
+        file_put_contents($path, '[{"title": "One", "brief": "First.", "topology": []}, {"title": "Two", "brief": "Second.", "topology": ["app-dev"]}]');
+        $mock = MockClient::global(gateway_fixture_mock('tasks/task-create/created'));
+
+        expect(Artisan::call('task:create', ['title' => 'Add the tasks CLI', '--project' => '1', '--brief' => 'Brief', '--subtasks' => $path, '--json' => true]))->toBe(0);
+        unlink($path);
+
+        $mock->assertSent(static fn (Request $request): bool => $request instanceof CreateTaskRequest
+            && (string) $request->body() === '{"project_id":1,"title":"Add the tasks CLI","brief":"Brief","subtasks":[{"title":"One","brief":"First."},{"title":"Two","brief":"Second."}]}');
+    });
 });
 
 it('sends the requested orchestration mode when creating a group', function (string $mode): void {

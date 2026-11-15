@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Domain\Tasks;
 
 use App\Domain\Projects\LifecyclePhase;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\ProjectLifecycleStep;
@@ -72,52 +71,6 @@ final readonly class TaskCheckEvidence
         $data['commands'] = $commands;
 
         return json_encode($data, JSON_THROW_ON_ERROR);
-    }
-
-    /**
-     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>, topology?: bool}|null
-     */
-    public function handoffCheck(Task $task): ?array
-    {
-        $check = $this->deliverableCheck($task);
-        $group = $task->parent;
-
-        $patterns = app(TaskVmSettings::class)->topologyPaths[(int) $group->project_id] ?? [];
-        if ($patterns !== [] && TaskTopology::forGroup($group)->isEmpty()) {
-            $check = [...($check ?? ['start' => null, 'commands' => []]), 'topology' => true];
-        }
-
-        return $check;
-    }
-
-    /**
-     * ADR 0133: what the handoff check needs to record deliverable evidence, or null for a subtask without deliverables.
-     * ADR 0163: a command with fails_on_base true also runs against the start commit with its paths overlaid.
-     *
-     * @return array{start: string|null, commands: list<array{id: string, command: string, directory: string, fails_on_base?: bool, paths?: list<string>}>}|null
-     */
-    private function deliverableCheck(Task $task): ?array
-    {
-        $deliverables = $task->deliverableList();
-        if ($deliverables === []) {
-            return null;
-        }
-        $commands = [];
-        foreach ($deliverables as $deliverable) {
-            if ($deliverable->type !== TaskDeliverableType::Command) {
-                continue;
-            }
-            $command = ['id' => $deliverable->id, 'command' => $deliverable->command, 'directory' => TaskDeliverable::relative($deliverable->directory) ?: '.'];
-            if ($deliverable->fails_on_base) {
-                $command['fails_on_base'] = true;
-                $command['paths'] = $deliverable->paths;
-            }
-            $commands[] = $command;
-        }
-
-        $start = TaskReviewBase::commit($task);
-
-        return ['start' => $start !== '' ? $start : null, 'commands' => $commands];
     }
 
     public function groupImplementerStarted(Task $group): bool

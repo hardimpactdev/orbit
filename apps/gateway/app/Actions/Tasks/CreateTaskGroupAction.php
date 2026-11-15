@@ -15,7 +15,6 @@ use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskTopology;
 use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
@@ -55,9 +54,6 @@ final readonly class CreateTaskGroupAction
             throw TaskGroupGuard::deliverablesMissing(array_map(static fn (int $index): string => 'position '.($index + 1).' "'.$data->tasks[$index]->title.'"', $missing));
         }
 
-        TaskGroupGuard::supportOrchestration($data->orchestration, Project::query()->findOrFail($data->projectId)->reviewsAndMerges(), array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
-        TaskTopology::assertFits(array_map(static fn (TaskInputData $task): TaskTopology => $task->topology, $data->tasks));
-
         $group = Task::topLevel()->make([
             'orchestration' => $data->orchestration,
             'review_mode' => $data->review,
@@ -86,7 +82,6 @@ final readonly class CreateTaskGroupAction
                 'title' => $task->title,
                 'brief' => $task->brief,
                 'deliverables' => $task->deliverables,
-                'topology' => $task->topology,
                 'status' => TaskStatus::Todo,
             ]);
         }

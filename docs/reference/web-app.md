@@ -143,7 +143,7 @@ The generated schema includes the separate [group assistance comment](/reference
 
 The generated task schema keeps `watched_pr_url`, `watched_pr_number`, and `watched_pr_state` apart from `pr_url`. The watched fields describe the pull request found on the task branch while subtasks are open; `pr_url` still identifies the reviewed pull request Orbit opened. The [branch watch](/reference/tasks#watch-the-branch-while-subtasks-are-open) owns that distinction. Regenerate the web schema after these response fields change, and keep typed test fixtures current. A task with no watched pull request has null watched fields; do not copy `pr_url` into them.
 
-The generated subtask schema includes `topology`, a workload-role array, and the create and update inputs accept the same declaration. Response fixtures retain `[]` for subtasks without a declaration. Regenerate these types together with OpenAPI after a topology contract change. The [compute driver](/reference/compute-drivers) validates declarations and gates dispatch on native readiness. These API types add no topology controls to the task board.
+The generated subtask schema has no `topology` field: a subtask [declares no topology](/reference/compute-drivers#declare-a-topology).
 
 The generated task group schema includes the `current_recipe` boolean, so typed test fixtures for a task group must set it once; the task board test builds its groups with `current_recipe: false`. The task board shows no control for it; groups set it at creation, and [Image fallback](/reference/compute-drivers#image-fallback) owns its meaning.
 
