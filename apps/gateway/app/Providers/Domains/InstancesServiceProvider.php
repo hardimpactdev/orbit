@@ -8,6 +8,7 @@ use App\Actions\Instances\SynchronizeInstanceEnvironmentAction;
 use App\Console\Commands\InstallNestedFleetClubKeyCommand;
 use App\Console\Commands\InstanceIdMapSizeCommand;
 use App\Console\Commands\InstanceInnerVolumeCommand;
+use App\Console\Commands\PruneInstanceDeployCopiesCommand;
 use App\Console\Commands\RefreshNestedFleetsCommand;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Deployment\AutomaticDeployPolicyWriter;
@@ -57,7 +58,7 @@ final class InstancesServiceProvider extends ServiceProvider
     {
         Operation::updated(static fn (Operation $operation) => app(InstanceOperationAlerts::class)->changed($operation));
         if ($this->app->runningInConsole()) {
-            $this->commands([InstallNestedFleetClubKeyCommand::class, InstanceIdMapSizeCommand::class, InstanceInnerVolumeCommand::class, RefreshNestedFleetsCommand::class]);
+            $this->commands([InstallNestedFleetClubKeyCommand::class, InstanceIdMapSizeCommand::class, InstanceInnerVolumeCommand::class, PruneInstanceDeployCopiesCommand::class, RefreshNestedFleetsCommand::class]);
         }
     }
 

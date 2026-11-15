@@ -6,6 +6,7 @@ namespace App\Domain\Operations;
 
 use App\Domain\InstanceMigration\InstanceMigrateProjection;
 use App\Domain\InstanceMigration\InstanceMigration;
+use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
 use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyLifecycle;
@@ -132,6 +133,18 @@ final readonly class OperationStore
             // expired budget. A task's copy moves its group on when it is active or failed; an Instance that no task owns changes nothing.
             if (in_array($operation->kind, ['instance.create', 'instance.complete'], true) && ! $current->status->terminal() && $operation->status->terminal()) {
                 app(TaskCopyLifecycle::class)->createEnded($operation);
+            }
+            // Every end of a deploy reaches here too: a run's report, a refused start, a cancel before the run, an unreadable result, and
+            // the settlement of a timed-out run. Its copies then leave the vault; a default is never destroyed, so nothing else removes them.
+            if (InstanceDeployExecutionCopies::ended($operation) && ! InstanceDeployExecutionCopies::ended($current)) {
+                DB::afterCommit(static function () use ($operation): void {
+                    try {
+                        app(InstanceDeployExecutionCopies::class)->remove($operation);
+                    } catch (Throwable $exception) {
+                        // The deploy's end stands; `orbit:instance-deploy-copies-prune` deletes what is left.
+                        Log::warning('Deploy execution copies could not be deleted', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
+                    }
+                });
             }
         });
         $this->broadcaster->changed($operation, $before !== $operation->status || $cancelRequested);
