@@ -273,6 +273,24 @@ class RouteWithdrawTest(unittest.TestCase):
         self.assertEqual(json.loads(self.catalog.read_text()), {"records": {"shop.example": "10.44.0.7"}})
         self.assertEqual((self.previous / "orbit-records.conf").read_text(), records("i7.test", "shop.example"))
 
+    def test_equal_dns_states_write_nothing_so_the_workflow_skips_that_visit(self):
+        # An in-TLD Route captures four equal DNS states (no line of its own; NativeRoutePublicationArtifacts::scope). Applied, they
+        # change no byte and restart nothing, also when the live file still holds a line an older render wrote for the Route
+        # (a Route published before release 2091 on a Node that no whole write has rewritten): a withdrawal only takes back lines its
+        # states change. So route-withdraw does not visit the Node for them, and that changes nothing on it.
+        empty = {"records": records(), "catalog": catalog()}
+        equal = {**plan(7, caddy=False), "dns": {"chain": [empty] * 4, "steps": [0]}}
+        for live in (("shop.example",), ("i7.test", "shop.example")):
+            self.records.write_text(records(*live))
+            self.catalog.write_text(catalog(*live))
+            tools = Tools()
+            result = self.withdraw(equal, tools)
+            self.assertEqual(self.records.read_text(), records(*live))
+            self.assertEqual(self.catalog.read_text(), catalog(*live))
+            self.assertFalse(result["dns"])
+            self.assertFalse([argv for argv in tools.calls if "dnsmasq" in argv or "restart" in argv])
+        self.assertFalse((self.previous / "orbit-records.conf").exists())
+
     def test_a_failed_flock_refuses_by_name_and_touches_nothing(self):
         live = self.caddy.read_text()
 

@@ -80,6 +80,9 @@ sequenceDiagram
     opt clone has a Route
       %% path: routed
       SW->>N: Withdraw the Route<br/>child route-withdraw
+      %%> Which Nodes:
+      %%> - each Node that serves the Route or holds a withdrawn certificate scope; the private DNS Node only when its captured DNS states differ, so an in-TLD clone makes no call to it
+      %%> - the Node steps take one of 16 names per Node (`route-withdraw-apply-<node>-<route id % 16>`); a removal whose slot another removal holds on a Node waits in the Gateway until that one has withdrawn
       %%> Caddy publication:
       %%> - one Node-local transaction under the Node lock: read, merge the captured states, compare every other site, scope and record byte for byte, keep the previous generation, test, then commit and reload
       %%> - a change outside the Route refuses with `route.withdraw_foreign_change`, a failed test with its code, locks busy for 30 s with `caddy.publish_busy` or `dns.publish_busy`; every file stays as it was and the normal failure path runs

@@ -10,6 +10,8 @@ use App\Domain\Routes\RouteStatus;
 use App\Models\Operation;
 use App\Models\Route;
 use App\Support\ValidatedData;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 /**
  * A container clone's address during its create (docs/reference/development-containers.md#the-address-during-the-create). The create
@@ -21,6 +23,21 @@ final readonly class ClonePublication
 {
     /** The create's result field: `published`, `deferred` (Nodes held at admission, or a Node refused the merge) or `failed`; absent without a Route. */
     public const string Field = 'route_publication';
+
+    /** Beside a `deferred` outcome: why the create left its address to its completion. Only the API result carries it. */
+    public const string ReasonField = 'route_publication_reason';
+
+    /** A writer that writes whole files holds a Route Node, or, for a create that holds its Nodes alone, any writer holds one. */
+    public const string NodesHeld = 'nodes_held';
+
+    /** Eight shared writers hold a Route Node. */
+    public const string ShareCap = 'share_cap';
+
+    /** An older Route write waits for one of the Nodes, and goes first. */
+    public const string WaiterFirst = 'waiter_first';
+
+    /** A Node refused the merge of the site in `clone-route`; the step's log names the Node's code. */
+    public const string NodeRefused = 'node_refused';
 
     /** A clone's create that captured its Route publication: it takes the Route Nodes only when they are free. */
     public static function takesFreeNodesOnly(Operation $operation): bool
@@ -61,14 +78,19 @@ final readonly class ClonePublication
 
     /**
      * A Route Node is held, or a waiting Route write needs one: the create drops its publication and starts at once. Its Route stays
-     * reserved and unpublished, so its completion captures the Route and publishes it (StartInstanceCompleteAction).
+     * reserved and unpublished, so its completion captures the Route and publishes it (StartInstanceCompleteAction). The reason
+     * stays in the Operation's state for its result.
+     *
+     * @param  string  $reason  `nodes_held`, `share_cap` or `waiter_first`.
+     * @param  array<int, int>  $sharers  The shared writers on each Route Node at the decision.
      */
-    public function defer(Operation $operation): void
+    public function defer(Operation $operation, string $reason, array $sharers): void
     {
         $input = array_diff_key($operation->input, ['route_create' => true, 'route_lifecycle' => true, 'certificates' => true, 'execution_secrets' => true, 'mode' => true]);
         $input['participant_node_ids'] = [ValidatedData::integer($input['node_id'])];
         $input['direct_provisioning'] = [...ValidatedData::object($input['direct_provisioning']), 'route' => null];
-        app(OperationStore::class)->change($operation, ['input' => $input]);
+        app(OperationStore::class)->change($operation, ['input' => $input, 'state' => [...($operation->state ?? []), self::ReasonField => $reason]]);
+        DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => $reason, 'sharers' => $sharers]));
     }
 
     /**
@@ -91,6 +113,24 @@ final readonly class ClonePublication
             'deferred' => 'deferred',
             default => 'failed',
         };
+    }
+
+    /**
+     * Why a `deferred` outcome was deferred: the admission's reason, or a Node's refusal in the run. Null for any other outcome.
+     */
+    public static function reason(Operation $operation, ?string $outcome): ?string
+    {
+        if ($outcome !== 'deferred') {
+            return null;
+        }
+        if (! isset($operation->input['route_create'])) {
+            $reason = $operation->state[self::ReasonField] ?? null;
+
+            return is_string($reason) ? $reason : null;
+        }
+        DB::afterCommit(static fn () => Log::info('Clone create deferred its Route publication', ['operation_id' => $operation->id, 'reason' => self::NodeRefused]));
+
+        return self::NodeRefused;
     }
 
     /**
