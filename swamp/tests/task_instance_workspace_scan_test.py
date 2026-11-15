@@ -70,4 +70,4 @@ class TaskInstanceWorkspaceScanTest(SUPPORT["WorkspaceHarness"]):
         shutil.rmtree(self.root / 'copy-root' / 'var')
         (self.checkout / 'docs.md').write_text('one line\n')
 
-        self.assertEqual(self.read(self.scan()), {'refused': 'tasks.publish_secret_unchecked'})
+        self.assertEqual(self.read(self.scan()), {'refused': 'tasks.publish_secret_unchecked: the nested copy shows no inner machine'})

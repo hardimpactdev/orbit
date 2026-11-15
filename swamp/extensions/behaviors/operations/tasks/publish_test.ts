@@ -456,6 +456,14 @@ Deno.test("the copy check refuses a secret value, then a workflow change, and na
     );
     // An error of the check, a value-shaped extra field or another phase is never a pass.
     assertEquals(copyCheck({ phase: "scan", evidence: { error_code: "tasks.publish_secret_unchecked" } }).error_code, "tasks.publish_secret_unchecked");
+    assertEquals(
+        copyCheck({ phase: "scan", evidence: { error_code: "tasks.publish_secret_unchecked", reason: "the nested copy shows no inner machine" } }).error_code,
+        "tasks.publish_secret_unchecked: the nested copy shows no inner machine",
+    );
+    assertEquals(
+        copyCheck({ phase: "scan", evidence: { error_code: "tasks.publish_secret_unchecked", reason: "a value: x=y" } }).error_code,
+        "tasks.publish_secret_unchecked",
+    );
     const extra = scan();
     (extra.evidence.scan as Record<string, unknown>).value = "made-up";
     assertEquals(copyCheck(extra).error_code, "tasks.publish_secret_unchecked");

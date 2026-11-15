@@ -42,12 +42,31 @@ final class TaskCopyPullRequest
         return self::publishers($project, $number, self::copyPublishes()) !== [];
     }
 
-    /** Whether the head branch `task-<id>` belongs to a group on this Project's repository that is or was a task copy group. */
+    /**
+     * Whether the head branch `task-<id>` belongs to a task copy group on this Project's repository: a group of a Project that names it,
+     * or a copy publish of any status that pushed that branch to it, also after its Project's repository changed.
+     */
     public static function branch(Project $project, ?string $ref): bool
     {
         $group = self::branchGroup($project, $ref);
+        if ($group instanceof Task && self::group($group)) {
+            return true;
+        }
+        $repository = self::repository($project);
+        if ($ref === null || $repository === null) {
+            return false;
+        }
 
-        return $group instanceof Task && self::group($group);
+        return self::copyPublishes()->where('input->branch', $ref)->pluck('input')
+            ->contains(static fn (mixed $input): bool => is_array($input) && is_string($input['repository'] ?? null) && strcasecmp($input['repository'], $repository) === 0);
+    }
+
+    /** Whether Orbit must not merge this group's pull request: the group is a copy group, or a copy publish opened its watched one. */
+    public static function copy(Task $group): bool
+    {
+        $group->loadMissing('project');
+
+        return self::group($group) || (is_int($group->watched_pr_number) && self::published($group->project, $group->watched_pr_number));
     }
 
     public static function refuseBranch(Project $project, ?string $ref): void
@@ -60,8 +79,7 @@ final class TaskCopyPullRequest
     /** The task-path check: the group's own copy state, and its watched pull request as any Project's copy publish on its repository. */
     public static function refuseGroup(Task $group): void
     {
-        $group->loadMissing('project');
-        if (self::group($group) || (is_int($group->watched_pr_number) && self::published($group->project, $group->watched_pr_number))) {
+        if (self::copy($group)) {
             throw self::refusal();
         }
     }

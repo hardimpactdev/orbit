@@ -160,6 +160,37 @@ class CopyScanTest(unittest.TestCase):
             self.run_check(head, nested=True)
         self.assertEqual(self.run_check(head, nested=False)['secrets'], [])
 
+    def test_a_rewritten_object_file_of_the_agent_reads_as_an_error_never_as_other_content(self):
+        import zlib
+        head = commit(self.work, {'notes/leak.txt': INNER_VALUE + '\n'})
+        blob = git(self.work, 'rev-parse', head + ':notes/leak.txt')
+        loose = Path(self.work, '.git/objects', blob[:2], blob[2:])
+        loose.chmod(0o644)
+        clean = b'clean\n'
+        loose.write_bytes(zlib.compress(b'blob ' + str(len(clean)).encode() + b'\0' + clean))
+
+        with self.assertRaises(scan.Unchecked):
+            self.run_check(head)
+
+    def test_a_private_key_in_a_commit_message_and_odd_path_names_are_read(self):
+        real = '-----BEGIN PRIVATE KEY-----\n' + KEY_BODY + '\n-----END PRIVATE KEY-----\n'
+        head = commit(self.work, {'d\u00e9j\u00e0 vu/a\rb.txt': CLUB + '\n', '.github/workflows/caf\u00e9.yml': 'on: push\n'}, 'message\n\n' + real)
+        result = self.run_check(head)
+
+        self.assertEqual(sorted((hit['path'], hit['secret']) for hit in result['secrets']), [
+            ('commit ' + head, 'private-key-block'), ('d\u00e9j\u00e0 vu/a\rb.txt', 'club-key:/run/orbit-club/swamp-club-api-key')])
+        self.assertEqual(result['workflows'], ['.github/workflows/caf\u00e9.yml'])
+
+    def test_a_link_in_place_of_a_source_is_not_followed(self):
+        target = Path(str(self.root) + '/etc/wireguard/wg-nested.conf')
+        moved = Path(self.temporary.name, 'elsewhere.conf')
+        target.rename(moved)
+        target.symlink_to(moved)
+        result = self.run_check(commit(self.work, {'wg.txt': WIREGUARD + '\n'}))
+
+        self.assertEqual(result['secrets'], [])
+        self.assertNotIn('operator-wireguard', result['sources'])
+
     def test_an_error_prints_only_the_code_and_a_fixed_reason(self):
         out = subprocess.run(['python3', '-I', str(SCRIPT), json.dumps({'head': 'z', 'start': 'z'})], capture_output=True, text=True)
 

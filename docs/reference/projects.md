@@ -61,7 +61,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `source_access` | `github_app` or `gh_cli`. How Orbit reads a private `github.com` repository. See [Source access](#source-access). |
 | `default_branch` | Branch of the `default` Instance and the base for new branches. |
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
-| `nested_fleet` | Boolean, default false. While on, the Project's Instances are containers in the nested Incus project, which only `instance:create` makes. It is for the Orbit Project, whose container holds an inner fleet. See [Nested fleet setting](#nested-fleet-setting). |
+| `nested_fleet` | Boolean, default false. It is for the Orbit Project: its Instances are containers with an inner fleet, which only `instance:create` makes. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |

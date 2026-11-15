@@ -1,8 +1,9 @@
 """The publish check that runs IN a task copy, as root, before any token exists (docs/reference/tasks.md#the-copy-check).
 
 It reads the secret values that live in the copy, compares the objects the publish would push against them, and prints one JSON
-line. The line names a path, a line number and the NAME of a secret, never a value: no value leaves this process. Git runs as the
-`agent` user, so root reads only Orbit's own files; the publish compares the object set it read against the bundle it pushes.
+line. The line names a path, a line number and the NAME of a secret, never a value: no value leaves this process, not even to Git.
+Git runs as the `agent` user and only lists and reads objects; this process checks each object's hash, so it reads what the bundle
+pushes, and the publish compares the object set it read against the bundle.
 
 Usage: python3 -I -c <this file> <request JSON>. The request holds `head`, `start`, `branch`, `nested` and `proposed_body_path`.
 """
@@ -13,8 +14,10 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
+import threading
 import time
 
 # Values shorter than this match by chance; they are skipped and counted.
@@ -78,7 +81,11 @@ def env_values(raw):
 def read_values(name, path, kind):
     """(name, value) pairs of one source file, with the KEY in the name of an env value."""
     try:
-        with open(path, 'rb') as stream:
+        # A link is not followed: a source is a regular file where Orbit put it.
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        with os.fdopen(descriptor, 'rb') as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                return None
             raw = stream.read(1 << 20)
     except OSError:
         return None
@@ -96,7 +103,7 @@ def collect(root='/', nested=False):
 
     def take(name, pattern, kind, base):
         for path in sorted(glob.glob(base.rstrip('/') + pattern, recursive=True)):
-            if not os.path.isfile(path):
+            if os.path.islink(path) or not os.path.isfile(path):
                 continue
             pairs = read_values(name + ':' + path[len(base.rstrip('/')):], path, kind)
             if pairs is None:
@@ -139,40 +146,64 @@ class Git:
         return done.stdout
 
 
-def unpublished(git, start, values):
-    """The values the start tree does not hold. A value the repository already shows, such as a path or a public key, is no secret
-    of the copy. The patterns reach Git on its stdin only: no argument, file or environment holds them."""
+def batch(git, ids):
+    """(id, type, bytes) of each object, streamed from one cat-file batch as agent. Each object's hash is checked here, so a changed
+    object file of the agent's repository reads as an error, never as other content under the same id."""
+    process = subprocess.Popen(git.argv + ['cat-file', '--batch'], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                               env=git.env)
+
+    def feed():
+        try:
+            for object_id in ids:
+                process.stdin.write(object_id.encode() + b'\n')
+            process.stdin.close()
+        except OSError:
+            pass
+
+    writer = threading.Thread(target=feed, daemon=True)
+    writer.start()
+    try:
+        for object_id in ids:
+            header = process.stdout.readline().rstrip(b'\n').split(b' ')
+            if len(header) != 3 or header[0].decode() != object_id or not header[2].isdigit():
+                raise Unchecked('cat-file returned another object')
+            kind, size = header[1].decode(), int(header[2])
+            data = process.stdout.read(size)
+            if len(data) != size or process.stdout.read(1) != b'\n':
+                raise Unchecked('cat-file returned a short object')
+            algorithm = 'sha256' if len(object_id) == 64 else 'sha1'
+            if hashlib.new(algorithm, kind.encode() + b' ' + str(size).encode() + b'\0' + data).hexdigest() != object_id:
+                raise Unchecked('an object does not match its id')
+            yield object_id, kind, data
+    finally:
+        process.kill()
+        process.wait()
+        writer.join(5)
+
+
+def public(git, start, values):
+    """Of these values, the ones that a file of the start tree holds: such a value is public already, no secret of the copy. The start
+    tree is read here, so the values reach no other process."""
     if not values:
-        return values
-    done = subprocess.run(git.argv + ['grep', '-h', '-o', '-a', '-F', '-f', '-', start, '--'], input=b''.join(value + b'\n' for value in values),
-                          capture_output=True, env=git.env, timeout=120)
-    if done.returncode not in (0, 1):
-        raise Unchecked('git grep failed')
-    public = set(done.stdout.splitlines())
-    return {value: name for value, name in values.items() if value not in public}
+        return set()
+    listed = git.run('ls-tree', '-r', '-z', start, '--')
+    ids = [entry.split(b'\t', 1)[0].split(b' ')[2].decode() for entry in listed.split(b'\0') if entry and entry.split(b' ')[1] == b'blob']
+    found = set()
+    for _, _, data in batch(git, ids):
+        found.update(value for value in values if value not in found and value in data)
+        if len(found) == len(values):
+            break
+    return found
 
 
 def objects(git, start, head):
     """Every object new in start..head with its path, as the publish's own range reads it, in rev-list order."""
     rows = []
-    for line in git.run('rev-list', '--objects', head, '--not', start, '--').decode('utf-8', 'surrogateescape').splitlines():
-        object_id, _, path = line.partition(' ')
-        rows.append((object_id, path))
+    for line in git.run('rev-list', '--objects', head, '--not', start, '--').split(b'\n'):
+        if line:
+            object_id, _, path = line.partition(b' ')
+            rows.append((object_id.decode(), path.decode('utf-8', 'surrogateescape')))
     return rows
-
-
-def contents(git, rows):
-    """(id, type, bytes) of each row, from one cat-file batch."""
-    data = git.run('cat-file', '--batch', data=''.join(object_id + '\n' for object_id, _ in rows).encode())
-    position = 0
-    for object_id, _ in rows:
-        end = data.index(b'\n', position)
-        header = data[position:end].split(b' ')
-        if len(header) != 3 or header[0].decode() != object_id:
-            raise Unchecked('cat-file returned another object')
-        size = int(header[2])
-        yield object_id, header[1].decode(), data[end + 1:end + 1 + size]
-        position = end + 1 + size + 1
 
 
 def named(path, values):
@@ -182,31 +213,34 @@ def named(path, values):
 
 
 def scan(git, start, head, values, body=None):
-    """The hits in the range and the proposed body, the sorted object digest and the object count."""
+    """The hits in the range and the proposed body, the sorted object digest and the object count. A value hit counts only when the
+    start tree does not hold the value; that read runs only for the values that hit."""
     rows = objects(git, start, head)
-    hits = []
-    for (object_id, path), (_, kind, data) in zip(rows, contents(git, rows)):
+    found = []
+    for (object_id, path), (_, kind, data) in zip(rows, batch(git, [object_id for object_id, _ in rows])):
         where = named(path, values)
         for value, name in values.items():
             index = data.find(value)
             if index < 0:
                 continue
             if kind == 'commit':
-                hits.append({'path': 'commit ' + object_id, 'secret': name})
+                found.append((value, {'path': 'commit ' + object_id, 'secret': name}))
             elif kind == 'tree':
-                hits.append({'path': 'a file name in ' + (where or '.'), 'secret': name})
+                found.append((value, {'path': 'a file name in ' + (where or '.'), 'secret': name}))
             else:
-                hits.append({'path': where, 'line': data.count(b'\n', 0, index) + 1, 'secret': name})
+                found.append((value, {'path': where, 'line': data.count(b'\n', 0, index) + 1, 'secret': name}))
         if kind in ('blob', 'commit'):
             for block in PRIVATE_KEY.finditer(data):
                 if len(re.sub(rb'\s', b'', block.group(2))) >= PRIVATE_KEY_BODY:
-                    hits.append({'path': where if kind == 'blob' else 'commit ' + object_id, 'line': data.count(b'\n', 0, block.start()) + 1,
-                                 'secret': 'private-key-block'})
+                    found.append((None, {'path': where if kind == 'blob' else 'commit ' + object_id, 'line': data.count(b'\n', 0, block.start()) + 1,
+                                         'secret': 'private-key-block'}))
     if body is not None:
         for value, name in values.items():
             index = body.find(value)
             if index >= 0:
-                hits.append({'path': 'the proposed pull request body', 'line': body.count(b'\n', 0, index) + 1, 'secret': name})
+                found.append((value, {'path': 'the proposed pull request body', 'line': body.count(b'\n', 0, index) + 1, 'secret': name}))
+    shown = public(git, start, {value for value, _ in found if value is not None})
+    hits = [hit for value, hit in found if value is None or value not in shown]
     ids = sorted({object_id for object_id, _ in rows})
     digest = hashlib.sha256(''.join(object_id + '\n' for object_id in ids).encode()).hexdigest()
     return hits, digest, len(ids)
@@ -221,8 +255,8 @@ def workflow_changes(git, start, head):
     commits = git.run('rev-list', head, '--not', start, '--remotes', '--').decode().split()
     paths = set()
     for commit in commits:
-        listed = git.run('diff-tree', '-r', '-c', '--root', '--no-commit-id', '--name-only', commit, '--', WORKFLOWS)
-        paths.update(line for line in listed.decode('utf-8', 'surrogateescape').splitlines() if fnmatch.fnmatch(line, WORKFLOWS + '*'))
+        listed = git.run('diff-tree', '-z', '-r', '-c', '--root', '--no-commit-id', '--name-only', commit, '--', WORKFLOWS)
+        paths.update(path for path in listed.decode('utf-8', 'surrogateescape').split('\0') if fnmatch.fnmatch(path, WORKFLOWS + '*'))
     return sorted(paths)
 
 
@@ -240,7 +274,6 @@ def check(request, root='/', prefix=None, workspace=WORKSPACE):
     prefix = ['/usr/sbin/runuser', '-u', 'agent', '--'] if prefix is None else prefix
     git = Git(prefix, workspace)
     values, read, short = collect(root, bool(request.get('nested')))
-    values = unpublished(git, request['start'], values)
     hits, digest, count = scan(git, request['start'], request['head'], values, proposed_body(prefix, request.get('proposed_body_path'), workspace))
     workflows = workflow_changes(git, request['start'], request['head'])
     return {'scan': {

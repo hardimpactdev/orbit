@@ -73,7 +73,7 @@ final readonly class RunTaskPullRequestGateAction
     {
         $number = $group->watched_pr_number;
         // A task copy's pull request gets no ready step and no merge (docs/reference/tasks.md#no-merge).
-        if (TaskCopyPullRequest::group($group)) {
+        if (TaskCopyPullRequest::copy($group)) {
             return $this->result($group, $number, null, 'skipped', TaskCopyPullRequest::Code);
         }
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);

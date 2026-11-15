@@ -41,7 +41,11 @@ const Snapshot = z.object({
     changed: z.literal(false),
 });
 const Evidence = z.union([
-    z.object({ error_code: z.string().regex(/^tasks\.[a-z_]+$/) }),
+    // The copy check adds a fixed reason to its refusal; it names no value.
+    z.object({
+        error_code: z.string().regex(/^tasks\.[a-z_]+$/),
+        reason: z.string().regex(/^[A-Za-z0-9 ._-]{1,100}$/).optional(),
+    }),
     Snapshot,
     z.object({
         checkout_fingerprint: Identity,

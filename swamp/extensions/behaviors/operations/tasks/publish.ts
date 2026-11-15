@@ -400,7 +400,12 @@ function refusal(prefix: string, items: string[], extra: number) {
 export function copyCheck(raw: unknown) {
     const evidence = z.object({ phase: z.literal("scan"), evidence: z.unknown() }).parse(raw).evidence;
     const parsed = z.object({ scan: CopyScan, changed: z.literal(false) }).strict().safeParse(evidence);
-    if (!parsed.success) return { checked: false, error_code: "tasks.publish_secret_unchecked" };
+    if (!parsed.success) {
+        // The program's own refusal keeps its fixed reason, such as "the nested copy shows no inner machine".
+        const refused = z.object({ error_code: z.literal("tasks.publish_secret_unchecked"), reason: z.string().regex(/^[A-Za-z0-9 ._-]{1,100}$/) })
+            .safeParse(evidence);
+        return { checked: false, error_code: "tasks.publish_secret_unchecked" + (refused.success ? ": " + refused.data.reason : "") };
+    }
     const scan = parsed.data.scan;
     if (scan.secrets.length > 0) {
         return {
