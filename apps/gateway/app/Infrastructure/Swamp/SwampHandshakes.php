@@ -36,6 +36,7 @@ final class SwampHandshakes
     /** Serve's window of 60 s plus one second for clock and transit drift. */
     public const int WindowSeconds = 61;
 
+    /** The longest a connect waits for the ledger lock before it goes ahead uncounted. */
     public const int LockMilliseconds = 50;
 
     private const int MaxFileBytes = 8_192;
@@ -50,7 +51,7 @@ final class SwampHandshakes
 
     private ?int $lastRetryAfter = null;
 
-    public function __construct(private readonly string $path) {}
+    public function __construct(private readonly string $path, private readonly int $lockMilliseconds = self::LockMilliseconds) {}
 
     public static function path(string $orbitHome): string
     {
@@ -168,7 +169,7 @@ final class SwampHandshakes
             if ($handle === false) {
                 throw new \RuntimeException('The ledger could not be opened.');
             }
-            $deadline = microtime(true) + self::LockMilliseconds / 1000;
+            $deadline = microtime(true) + $this->lockMilliseconds / 1000;
             while (! ($locked = flock($handle, LOCK_EX | LOCK_NB))) {
                 if (microtime(true) >= $deadline) {
                     throw new \RuntimeException('The ledger lock was not free.');
