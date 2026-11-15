@@ -61,7 +61,7 @@ const unit = (guest: string, name: string) => ({
   name,
   content: "[Mount]\nType=none\nOptions=bind\n",
 });
-// The shape of the converge intent's fleet (TaskVmConvergeInput, TaskVmNestedFleet).
+// The shape of the converge intent's fleet (TaskVmNestedFleet).
 const intent = {
   nested: { subnet: "10.232.2.0/24", interface: "oe-nested" },
   checkout: {

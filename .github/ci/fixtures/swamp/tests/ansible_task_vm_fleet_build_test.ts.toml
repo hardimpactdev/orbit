@@ -1,5 +1,5 @@
 order = 540
-source_sha256 = "5849b616aa352cec579e249341e7363b18bdfef7ce87af5640d5bec83b7a8f16"
+source_sha256 = "1d16a04558a178e9815e19faede10845f402fa66312988e168d00df353829cf8"
 cases = [
   "a blank seed gets the network, then the containers, the Gateway bootstrap and the nested Orbit steps in order, then the operator join",
   "a half-made fleet starts from nothing: its containers go first",

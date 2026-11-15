@@ -65,7 +65,7 @@ The machine recipe still pins the Pi build as the tool `pi` of the task VM profi
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
 
-The Swamp workflows that only the Pi loop ran are deleted, with the extensions, playbook and tests that only they used: the Pi turn, the script, the package install with its dependency auth children, the idle save, the maintenance run with its path and workspace children, the prep, the prep fix, the build, the review round and the VM resume. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
+The Swamp workflows that only the Pi loop ran are deleted. They are the Pi turn, the script, the package install, the idle save, the maintenance run, the prep, the prep fix, the build, the review round and the VM resume. Their child workflows, extensions, playbook and tests go with them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
 
 ## Off in the live fleet
 
