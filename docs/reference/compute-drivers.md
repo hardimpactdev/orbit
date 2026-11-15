@@ -332,7 +332,7 @@ The recipe's `instances.php` section defines the builds:
 | `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
 | `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the extension list, `tools/static-php/craft.yml` and `bin/static-php-build` |
 | `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
-| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until main has published the build |
+| `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until the build is published |
 
 static-php-cli resolves the sources of the libraries and PECL extensions when it builds, so two builds of one id can differ. The archive's `sources.json`, static-php-cli's download record, names each source's version and hash. The published SHA-256 is what fixes the bytes a Node installs.
 
@@ -359,12 +359,18 @@ A proof job unpacks the archive, checks its SHA-256, refuses a binary that is no
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
+A manual run from main takes an optional `ref`: a branch of this repository or a full commit SHA. The run resolves it to one commit, then builds, proves and publishes that commit's definition, and the release targets that commit. The workflow file is always main's. Without `ref` the run builds its own commit.
+
+So a pull request that changes a build records the published SHA-256 before it merges, and the new build id and its SHA-256 reach main together. After the merge, main's push run finds the release and builds nothing. Its code publishes from main, so run only a ref you have reviewed. Only main's own commits fill the cache.
+
 #### Change a static build
 
+A build whose `sha256` is `null` is not in the runtime folder. A release of a new build id without its SHA-256 would remove that PHP version from every container. So one pull request records both:
+
 1. Change the definition: the `instances.php` section, the PHP build's extensions, `tools/static-php/craft.yml` or `bin/static-php-build`.
-2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, and set its `sha256` to `null`.
-3. The pull request's workflow validates the pins. After merge, main builds, proves and publishes the definition.
-4. A second pull request records the published SHA-256 from the release's `SHA256SUMS`. Only then can a Node install the build.
+2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, set its `sha256` to `null`, and push the branch. The pull request's workflow validates the pins.
+3. Run the workflow from main with the branch as `ref`: `gh workflow run static-php.yml --ref main -f ref=<branch>`. It builds, proves and publishes the new definition.
+4. Record the published SHA-256 from the release's `SHA256SUMS` in the same pull request. Every `sha256` must be set before the merge.
 
 ### Recipe identity
 

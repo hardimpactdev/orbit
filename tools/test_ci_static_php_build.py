@@ -82,6 +82,20 @@ class StaticPhpBuildTest(unittest.TestCase):
         self.assertNotIn('release/', publish)
         self.assertEqual(set(re.findall(r'sha256sum --check --strict \S+', WORKFLOW)), {'sha256sum --check --strict SHA256SUMS'})
 
+    def test_a_manual_run_builds_and_publishes_one_resolved_commit_of_its_ref(self):
+        # A pull request records its SHA-256 before it merges: main's workflow builds the given ref and publishes that commit.
+        self.assertIn("ref: ${{ inputs.ref || github.sha }}", WORKFLOW)
+        self.assertIn('echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"', WORKFLOW)
+        self.assertEqual(WORKFLOW.count('ref: ${{ needs.definition.outputs.sha }}'), 2)
+        publish = WORKFLOW[WORKFLOW.index('  publish:'):]
+        self.assertIn("github.ref == 'refs/heads/main'", publish)
+        self.assertIn('--target "$SOURCE"', publish)
+        self.assertNotIn('GITHUB_SHA', publish)
+        self.assertIn('Published builds are never replaced.', publish)
+        self.assertIn('group: static-php-${{ github.ref }}-${{ inputs.ref }}', WORKFLOW)
+        save = WORKFLOW[WORKFLOW.index('- name: Keep the proven build under its build id'):]
+        self.assertIn("if: inputs.ref == ''", save.split('uses:', 1)[0])
+
 
 if __name__ == '__main__':
     unittest.main()
