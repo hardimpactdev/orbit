@@ -500,7 +500,7 @@ A clone's `instance.create` takes its Nodes only when they are all free at admis
 
 The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `instance.clone`, `instance.transfer`, `instance.migrate`, `instance.restore`, `route.create`, `route.update`, `route.destroy` and `route.target_set`. A second write for a held Node is admitted with status `waiting` and a `hold_nodes` value in its state. It starts no run and gets no `409`.
 
-`instance.destroy` gives its Nodes back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
+`instance.destroy` shares its Nodes with other removals ([coordinate publication](/reference/routes#coordinate-publication)) and gives them back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
 
 The later steps change only what belongs to the removed Instance: its Process units, teardown steps in its checkout, hibernation files, source, databases, container, ACL, UFW rules by comment, mail state, asleep marker and repository mirror. None writes a Caddyfile, a PHP pool file or a DNS record. The Route is `retiring` with `sites_published` false since admission, so a create or clone that renders after the release leaves out its site and PHP pool.
 

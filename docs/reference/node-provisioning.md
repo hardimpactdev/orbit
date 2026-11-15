@@ -103,7 +103,7 @@ Unused Gateway-local bootstrap and standalone PHP-package writer scaffolds are r
 
 `node:add` inspects the Mac tunnel inside its own enrollment workflow on 209, using the admitted SSH host keys and an execution-copy bootstrap key. It checks no agent, account, package or runtime ownership on the Mac.
 
-Route withdrawal ships a Node helper that checks its composed-from Caddyfile checksum under a local file lock. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
+Route withdrawal ships a Node module that reads, merges, tests and applies the Route files under a local file lock, and keeps the previous generation of each in `/var/lib/orbit/route-previous/`. The [publication rule](/reference/routes#coordinate-publication) defines its scope, wait bound and failure behavior.
 
 ## Add a Node
 
@@ -1048,9 +1048,9 @@ The development create playbook has no builder: it reads the intent file by look
 
 For a web-serving Project, its `checkout` phase also gives Caddy its access to the checkout and sets `APP_URL` in the `.env`, before the setup commands write into the tree. The Route playbook `route-create-site.yml` then skips both on that Node, and removes its own run folder as its last task, so a success needs no cleanup step. It updates the trust store only when it wrote a new Orbit root.
 
-The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one command checks every file it will replace, and one removes every certificate folder.
+The withdrawal playbook `route-withdraw.yml` keeps its remote tasks few, because each costs about 0.4 s: one module call replaces every Route file, and one command removes every certificate folder.
 
-The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. Route access rows distinguish optional Laravel storage paths from required web roots. The site phase stats optional paths and grants only those present; it never creates checkout folders. The withdrawal has two phases, `read` and `apply`: between them Swamp composes the result and writes `read.json` and `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value.
+The Route playbooks `route-create-site.yml` and `route-withdraw.yml` work the same way. Route access rows distinguish optional Laravel storage paths from required web roots. The site phase stats optional paths and grants only those present; it never creates checkout folders. The withdrawal has one phase, `apply`: before it Swamp writes `plan.json` into the run folder, because a Caddyfile is too large for a step output or an environment value. The merge runs on the Node, under its lock.
 
 Task VM host preparation belongs to the [base refresh](/reference/compute-drivers#prepare-an-incus-host). Its shared Ansible phase prepares both native-ZFS and loop-backed pools; loop hosts receive a 2 GiB ARC cap to retain memory for their own services. Before the first guest boot, it opens catalog-owned DHCP input on the task bridge and DNS input to the bridge address, as well as forwarding. Settings removal and reachable Node removal withdraw the three input rules through the same Ansible phase. This lets a guest obtain its address and resolve package servers on a host with default-deny input.
 
