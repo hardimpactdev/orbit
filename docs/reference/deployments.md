@@ -247,7 +247,7 @@ One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps o
 
 A development default runs its own steps in the same workflow; [Native development deployment](#native-development-deployment) lists them.
 
-When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. A failed deploy step is named `before_activation.<step>` or `after_activation.<step>`. A production result also counts the failed cleanups in `warnings`.
+When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. A failed deploy step is named `before_activation.<step>` or `after_activation.<step>`. A step that waited 60 seconds for a Swamp behavior lock that another run held, and so never ran, fails with `instance.deploy_lock_timeout` whatever its step; deploy again. A container default's long steps lock a behavior of their own Instance, so deployments of two defaults on one Node never wait for each other. A production result also counts the failed cleanups in `warnings`.
 
 ### The rollback operation
 

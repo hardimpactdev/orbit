@@ -1789,7 +1789,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-prepare-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-container-prepare-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" -e fleet_room_check=true -e fleet_deploy_allow_missing_build=true "$ORBIT_ANSIBLE/instance-container.yml"
@@ -1820,7 +1820,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-checkout-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-container-checkout-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags checkout "$ORBIT_ANSIBLE/instance-container.yml"
@@ -1870,10 +1870,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("instance-deploy-container-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
+      behaviorName: ${{ ("instance-deploy-container-step-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id) + "-" + string(self._index)).split(".").join("-") }}
       methodName: exec
       globalArgs:
-        name: ${{ ("instance-deploy-container-" + string(inputs.node_id) + "-" + string(self._index)).split(".").join("-") }}
+        name: ${{ ("instance-deploy-container-step-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id) + "-" + string(self._index)).split(".").join("-") }}
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -1913,7 +1913,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-finish-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-container-finish-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: timeout "$ORBIT_PHASE_SECONDS" /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags "$ORBIT_PHASES" -e "phases=$ORBIT_PHASES" "$ORBIT_ANSIBLE/instance-container.yml"
@@ -1953,7 +1953,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fleet-restore-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-container-fleet-restore-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: 'k="$ORBIT_RUN/failed.json"; cp -- "$ORBIT_RUN/result.json" "$k" 2>/dev/null; timeout 150 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_restore "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ -e "$k" ]; then cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
@@ -1970,7 +1970,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fleet-restart-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-container-fleet-restart-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: 'k="$ORBIT_RUN/failed.json"; timeout 120 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags start "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ -e "$k" ]; then cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
@@ -1998,7 +1998,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: ${{ "instance-deploy-container-fleet-restored-" + string(inputs.node_id) }}
+      behaviorName: ${{ ("instance-deploy-container-fleet-restored-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id)).split(".").join("-") }}
       methodName: execute
       inputs:
         run: 'k="$ORBIT_RUN/passed.json"; cp -- "$ORBIT_RUN/result.json" "$k" 2>/dev/null; timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume -e fleet_deploy_allow_missing_build=true "$ORBIT_ANSIBLE/instance-container.yml"; s=$?; if [ "$s" -eq 0 ] && [ -e "$k" ]; then cp -- "$k" "$ORBIT_RUN/result.json"; fi; exit $s'
