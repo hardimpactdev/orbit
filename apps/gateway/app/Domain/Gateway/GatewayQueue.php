@@ -18,9 +18,6 @@ enum GatewayQueue: string
     /** Bounded problem collection, below tasks in the same supervisor. */
     case Problems = 'problems';
 
-    /** Task VM provision to destroy, the pool refill, and the host sweep, one at a time and in order. */
-    case TaskVms = 'task-vms';
-
     /** Required base image jobs. */
     case Builds = 'builds';
 

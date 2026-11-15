@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
-use App\Domain\Operations\OperationIdempotency;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\TaskVms\TaskVmSlotPool;
 use App\Domain\TaskVms\TaskVmSlotRuns;
@@ -18,59 +16,33 @@ use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
 use Closure;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 /**
- * One Tasks admission takes a slot and mints its identity (docs/cli/task/start.mmd), then records the intent of its task start: a copy
- * of the host's base VM snapshot with that identity, the hub peer, the converge and the task branch. No child Operations.
+ * Where a task starts (docs/cli/task/start.mmd): a copy of its Project's default Instance. A Project whose default is no container
+ * gets the refusal of the removed task VM runtime. The VM claim below stays only for the task VM kinds that still read it.
  */
 final readonly class TaskProvisionIntent
 {
-    public function __construct(private StartOperationAction $start, private OperationIdempotency $idempotency,
-        private TaskStartCommit $startCommit, private TaskVmSlotPool $slots,
-        private TaskVmSlotRuns $runs) {}
+    public function __construct(private TaskVmSlotPool $slots, private TaskVmSlotRuns $runs) {}
 
-    /** A proof starts its group at the commit it proves; any other group starts at the newest green commit of the default branch. */
-    public function start(Task $group, string $caller, ?string $request, ?string $commit = null): Operation
+    /** A task starts only as a copy of its Project's default Instance. */
+    public function start(Task $group, string $caller, ?string $request): Operation
     {
-        // A task of a nested-fleet Project, or of a Project whose default is a container, starts as a copy of that default (docs/cli/task/start.mmd).
-        if (InstancePlacement::taskRuntime($group->project()->firstOrFail()) === TaskRuntime::Copy) {
-            return app(TaskCopyStart::class)->start($group, $caller, $request);
-        }
+        InstancePlacement::taskCopy($group->project()->firstOrFail());
 
-        return $this->admit($group, $commit, 'tasks.provision', static fn (array $input): array => $input, $caller, $request);
+        return app(TaskCopyStart::class)->start($group, $caller, $request);
     }
 
     /**
-     * Claims a slot in one admission transaction and records the intent as the Operation of `$kind`. A kind that runs the claim as one step
-     * of a larger run, such as `tasks.prep`, adds its own intent through `$extend`, which receives the provision intent, the group, its
-     * workspace Instance and its slot, and returns the whole input of the Operation; the node of the Operation stays the slot's host.
-     * Only `proof.command` with persisted authenticated CI eligibility uses the CI pool; task work uses the task pool.
+     * The task VM admission is removed: the proof VM branch that still calls it gets the refusal of the removed runtime.
      *
      * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
      * @param  array<string,mixed>  $capacityRequest
      */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciPool = false, array $capacityRequest = []): Operation
+    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciPool = false, array $capacityRequest = []): never
     {
-        if (($replay = $this->idempotency->replay($kind)) !== null) {
-            return $replay;
-        }
-        $this->assertProvisionable($group);
-        $startCommit = $commit ?? $this->startCommit->resolve($group->project()->firstOrFail());
-        $capture = function () use ($group, $startCommit, $extend, $kind, $ciPool): array {
-            $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
-            $this->assertProvisionable($group);
-            $input = $this->capture($group, $startCommit, $kind === 'proof.command' && $ciPool);
-
-            return $extend($input, $group, Instance::query()->findOrFail(ValidatedData::integer($input['instance_id'])), TaskVm::query()->findOrFail(ValidatedData::integer($input['task_vm_id'])));
-        };
-        if ($kind === 'proof.command' && $ciPool) {
-            return DB::transaction(fn (): Operation => $this->start->execute($kind, 'task_group', $group->id,
-                ValidatedData::integer(($input = $capture())['node_id']), $input, $caller, $request));
-        }
-
-        return app(TaskVmAdmission::class)->start($group, $kind, ['commit' => $startCommit, ...$capacityRequest], $capture, $caller, $request);
+        throw TaskVmRemoved::refusal();
     }
 
     /** Claims a fresh workspace. Re-entry uses the published branch after the VM was deleted. Call in the admission transaction.

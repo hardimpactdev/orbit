@@ -6,7 +6,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationRequestFingerprint;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskStatus;
 use App\Http\Requests\Operations\StartsOperation;
 use App\Models\Node;
@@ -110,34 +109,34 @@ it('removes the old endpoint and command namespaces', function (): void {
     expect(collect(app('router')->getRoutes())->filter(fn ($route): bool => str_starts_with($route->getName() ?? '', 'tasks:')))->toBeEmpty();
 });
 
-it('records a full task pool as waiting and leaves todo admission unchanged', function (): void {
-    app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
-    {
-        public function resolve(Project $project): string
-        {
-            return str_repeat('a', 40);
-        }
-    });
+it('refuses to start a group of a Project without a container default by name, and records nothing', function (): void {
     SwampNodeFixture::ensure();
     Queue::fake();
-    config(['proof.project' => $this->project->id]);
     $this->parent->update(['status' => TaskGroupStatus::Todo]);
     $this->postJson('/api/v1/tasks/'.$this->parent->id.'/start')
-        ->assertAccepted()->assertJsonPath('data.status', 'waiting');
+        ->assertUnprocessable()
+        ->assertJsonPath('error.code', 'tasks.vm_runtime_removed')
+        ->assertJsonPath('error.message', "Task VMs are removed. A task runs only in a copy of its Project's default container Instance: give the Project a container default, then use task:start, task:turn, task:check and task:publish.");
     expect($this->parent->fresh()->status)->toBe(TaskGroupStatus::Todo)
-        ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(1);
+        ->and($this->parent->fresh()->taskable_id)->toBeNull()
+        ->and(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
 });
 
-it('refuses to start a group of a Project that no task VM serves, without recording a wait', function (): void {
+it('refuses every task VM command by the same name and records nothing', function (string $suffix, array $body): void {
     SwampNodeFixture::ensure();
     Queue::fake();
-    config(['proof.project' => $this->project->id + 100]);
-    $this->parent->update(['status' => TaskGroupStatus::Todo]);
-    $this->postJson('/api/v1/tasks/'.$this->parent->id.'/start')
-        ->assertConflict()->assertJsonPath('error.code', 'task_vm.project_unsupported');
-    expect($this->parent->fresh()->status)->toBe(TaskGroupStatus::Todo)
-        ->and(Operation::query()->where('kind', 'tasks.provision')->count())->toBe(0);
-});
+    $this->parent->update(['status' => TaskGroupStatus::Running]);
+    $this->withHeader('Idempotency-Key', 'vm.'.trim($suffix, '/'))->postJson('/api/v1/tasks/'.$this->parent->id.$suffix, $body)
+        ->assertUnprocessable()->assertJsonPath('error.code', 'tasks.vm_runtime_removed');
+    expect(Operation::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+})->with([
+    'prep' => ['/prep', ['command' => 'firewall:deny']],
+    'prep-fix' => ['/prep-fix', ['corrections' => 'Fix the chart.']],
+    'package' => ['/package', ['manager' => 'composer', 'package' => 'acme/private']],
+    'script' => ['/script', ['subtask' => 1, 'script' => 'bin/test', 'args' => []]],
+]);
 
 it('filters children by status and rejects fields from the other create level', function (): void {
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=completed')->assertOk()->assertJsonCount(0, 'data');

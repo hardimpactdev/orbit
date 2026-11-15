@@ -15,6 +15,7 @@ use App\Domain\TaskVms\TaskVmRuntime;
 use App\Models\Operation;
 use App\Models\Task;
 use DateTimeInterface;
+use Illuminate\Database\Eloquent\Builder;
 
 /**
  * What a caller sees of task capacity (docs/reference/tasks.md#task-places): the places of each host, the VMs that hold them with the
@@ -50,7 +51,7 @@ final readonly class TaskPlaces
             return null;
         }
 
-        return new TaskPlaceWaitData($operation->id, TaskVmAdmission::queue()->where('id', '<=', $operation->id)->count(), $this->taskHolders());
+        return new TaskPlaceWaitData($operation->id, self::waiting()->where('id', '<=', $operation->id)->count(), $this->taskHolders());
     }
 
     /**
@@ -66,7 +67,7 @@ final readonly class TaskPlaces
         }
         $waits = [];
         $holders = null;
-        foreach (TaskVmAdmission::queue()->get(['id', 'target_id'])->values() as $index => $operation) {
+        foreach (self::waiting()->get(['id', 'target_id'])->values() as $index => $operation) {
             if (in_array($operation->target_id, $groups, true) && ! isset($waits[$operation->target_id])) {
                 $waits[$operation->target_id] = new TaskPlaceWaitData($operation->id, $index + 1, $holders ??= $this->taskHolders());
             }
@@ -84,10 +85,21 @@ final readonly class TaskPlaces
             static fn (TaskPlaceHolderData $holder): bool => $holder->pool === 'task'));
     }
 
+    /**
+     * The admissions on a group that wait for a task place, front first. The removed task VM admission made them; none is made any more.
+     *
+     * @return Builder<Operation>
+     */
+    private static function waiting(): Builder
+    {
+        return Operation::query()->where('status', OperationStatus::Waiting)->where('target_type', 'task_group')
+            ->whereNotNull('input->capacity_request')->orderBy('id');
+    }
+
     /** @return list<TaskPlaceQueueData> */
     private function queue(): array
     {
-        $waiting = TaskVmAdmission::queue()->get();
+        $waiting = self::waiting()->get();
         $groups = Task::topLevel()->whereKey($waiting->pluck('target_id')->all())->get(['id', 'title'])->keyBy('id');
 
         return array_values($waiting->values()->map(static fn (Operation $operation, int $index): TaskPlaceQueueData => new TaskPlaceQueueData(

@@ -24,21 +24,17 @@ use Illuminate\Support\Str;
 /** Admitted task and session metadata. Swamp owns every execution decision. */
 final readonly class TaskTurnIntent
 {
-    public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
+    public function __construct(private TaskCheckedCandidate $candidates) {}
 
     public function start(Task $group, TaskTurnData $data, string $caller, ?string $request): Operation
     {
-        // A group that owns a task copy turns in it (docs/cli/task/turn.mmd). A nested-fleet group has no task VM, so it refuses on the copy
-        // path without one. Every other group keeps its task VM path.
+        // A group that owns a task copy turns in it (docs/cli/task/turn.mmd). A nested-fleet group without a copy refuses on the copy path.
+        // Any other group would turn on a task VM, which is removed.
         if (TaskInstanceWorkspace::forGroup($group) !== null || $group->project()->firstOrFail()->nested_fleet) {
             return app(TaskCopyTurn::class)->start($group, $data, $caller, $request);
         }
-        TaskVmAwake::require($group);
-        // A task VM turn without a thread starts a new one.
-        $data = $data->thread === null ? new TaskTurnData($data->subtask, $data->role, $data->prompt, 'new', $data->model, $data->check) : $data;
 
-        return $this->operations->start($group, 'tasks.turn', $data->toArray(), static function (Task $group): void {},
-            $caller, $request, fn (Task $group): array => $this->captureTurn($group, $data));
+        throw TaskVmRemoved::refusal();
     }
 
     /** The standalone turn may need a new VM and session after publication deleted the old ones.

@@ -13,7 +13,6 @@ use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInstanceWorkspace;
-use App\Domain\Tasks\TaskRuntime;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Project;
@@ -39,7 +38,7 @@ final readonly class ProofCopies
     /** Whether proofs of this Project run in copies: its tasks run as copies of its default. */
     public static function runs(Project $project): bool
     {
-        return InstancePlacement::taskRuntime($project) === TaskRuntime::Copy;
+        return InstancePlacement::copiesTasks($project);
     }
 
     /** The copy places a proof may take now: at most `proof.copies`, and never the last two copy places of the default's Node. */

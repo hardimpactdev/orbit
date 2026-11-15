@@ -180,13 +180,14 @@ describe('task:show', function () use ($holders): void {
 });
 
 describe('operation:show', function (): void {
-    it('keeps the waiting request as input, polls at the retry interval, and gives the queue position', function (): void {
+    // No admission retries a wait any more (the task VM admission is removed), so a leftover wait polls like any Operation that has not started.
+    it('keeps the waiting request as input, polls it as not started, and gives the queue position', function (): void {
         $first = manual_read($this->gateway, "/api/v1/operations/{$this->wait->id}")->assertOk()->json('data');
         $second = manual_read($this->gateway, "/api/v1/operations/{$this->wait->id}")->assertOk()->json('data');
 
         expect($first['input'])->toBe(['capacity_request' => ['commit' => str_repeat('c', 40)]])
             ->and($second['input'])->toBe($first['input'])
-            ->and($first['poll_after_seconds'])->toBe(20)
+            ->and($first['poll_after_seconds'])->toBe(2)
             ->and($first['capacity_wait']['position'])->toBe(1)
             ->and($first['capacity_wait']['holders'])->toHaveCount(2);
     });
