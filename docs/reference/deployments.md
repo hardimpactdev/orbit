@@ -358,14 +358,20 @@ orbit project:update <project> --default-auto-deploy=false
 - It is the Project's `default` Instance, active, on an active `app-dev` placement.
 - It runs in a [container](/reference/development-containers#the-default-instance). A default checkout on a Node never deploys automatically.
 - Its Project has `default_auto_deploy` on.
-- Its Project has no [nested fleet](/reference/development-containers#nested-fleet). The default of a nested-fleet Project, such as Orbit's own, deploys only through its [refresh after a release](/reference/development-containers#refresh-after-a-release): a commit on its repository does not deploy it.
+- Its Project has no [nested fleet](/reference/development-containers#nested-fleet).
+
+The default of a nested-fleet Project, such as Orbit's own, deploys only through its [refresh after a release](/reference/development-containers#refresh-after-a-release). A commit on its repository does not deploy it.
 
 This is the shared eligibility rule. Discovery, admission and the deploy worker all use it, so a default that stops being eligible stops between two runs. A production Instance never takes this path.
 
 Every minute, a Gateway scheduler job reads each eligible Project's default branch once and compares the head with the default's `seed_commit`, the commit of its newest seed. A default whose seed matches starts no Swamp run. A default whose last policy result is `commit_failed` for this head starts none either: a failed commit does not loop. Only the defaults behind their branch enter one on-demand Swamp run, `automatic-development-deploy`, with their Instance ids. That run applies the development policy:
 
-- One deploy at a time per default. A running deploy makes the run report `deploying`; any other open Operation on the default reports `busy`. When it ends, the next run reads the newest head, so commits that arrived meanwhile coalesce into one deploy.
-- A failed deploy backs off: 10 minutes after the first failure and 20 after the second. After three failures, the commit is `commit_failed` and deploys no more. A newer commit deploys at once. A manual [`instance:deploy`](/cli/instance/deploy) resets the count.
+- One deploy runs at a time per default. The run reports `deploying` for its own open deploy.
+- Any other open Operation on the default makes the run report `busy`.
+- When the deploy ends, the next run reads the newest head. Commits that arrived meanwhile coalesce into one deploy.
+- A failed deploy backs off: 10 minutes after the first failure and 20 after the second.
+- After three failures, the commit is `commit_failed`, and the policy does not deploy it again. A newer commit deploys at once.
+- A manual [`instance:deploy`](/cli/instance/deploy) resets the count.
 - A passed deploy records `up_to_date` and the new `seed_commit`. The run that settles it goes on to the newest head in the same run.
 
 A commit is seen within one minute and deploys when its Operation starts. A clone or task copy that starts during the deploy copies the old seed. If the deploy replaces that seed before the copy, the copy refuses with [`instance.default_seed_moved`](/reference/development-containers#what-a-clone-has-at-its-first-start); the same command then takes the new seed.

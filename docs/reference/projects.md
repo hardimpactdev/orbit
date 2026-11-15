@@ -166,7 +166,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its display name, type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, the automatic deploy of its container default, review and merge, or the task agent defaults. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed` and `default_auto_deploy`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` to change an existing Project's display name, type, slug, repository access URL, source access, default branch, web root, task check, or task workspace routing. It also changes the automatic deploy of its container default, review and merge, and the task agent defaults. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed` and `default_auto_deploy`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -186,7 +186,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
-| `default_auto_deploy` and `--default-auto-deploy=true\|false` | Applies from the next minute's check. Off: a new commit no longer deploys the container default; a deploy that runs keeps running. On: the next check deploys the head when the seed is behind. |
+| `default_auto_deploy` and `--default-auto-deploy=true\|false` | Applies from the next minute's check. See [Automatic development defaults](/reference/deployments#automatic-development-defaults). |
 | `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges, and on each handoff commit. Send null or `--clear-merge-check` to clear it. |
 | `task_implementer_*` and `--task-implementer-*` | Set the implementer defaults of the Project's [copy turn agents](/reference/tasks#copy-turn-agents). Send null or `--clear-task-implementer-agent` to clear them. |
 | `task_reviewer_*` and `--task-reviewer-*` | The same for the reviewer. |
