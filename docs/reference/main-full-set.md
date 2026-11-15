@@ -4,6 +4,9 @@ description: "After-merge fixture coverage, bounded execution, and reports to po
 covers:
   - bin/ci-full-set
   - bin/ci-deferred
+  - bin/ci-main-queue
+  - .github/workflows/ci-main-proof.yml
+  - .github/workflows/ci-main-report.yml
   - .github/workflows/ci-deferred.yml
   - .github/workflows/ci-full-set.yml
   - .github/actionlint.yaml
@@ -11,7 +14,7 @@ covers:
 
 # Main full set
 
-`Main full set` runs every shape-gate fixture after a push to main. It is independent of Required checks and releases. Its shards use only `[self-hosted, orbit-shard, sabre]`, with at most five executing shards and two workers per shard. With four workers, 20 fixture processes ran at once on Sabre and most failures were timeouts, not failing tests. More work creates more queued shards, rather than dropping files. A complete run is expected to take about 80 minutes. Manual dispatch accepts main only.
+`Main full set` runs every shape-gate fixture when the deferred queue is empty. It is independent of Required checks and releases. Its shards use only `[self-hosted, orbit-shard, sabre]`, with at most five executing shards and two workers per shard. With four workers, 20 fixture processes ran at once on Sabre and most failures were timeouts, not failing tests. More work creates more queued shards, rather than dropping files. A complete run is expected to take about 80 minutes. Manual dispatch accepts main only.
 
 The plan installs pinned PyYAML before checking its workflow policy, then loads the same per-fixture registry as PR planning through `bin/ci-registry`. Each metadata file supplies its fixture’s costs, input rules and saved population; shared budgets stay in `.github/ci/checks.toml`. It collects current Deno registrations without running bodies, then includes every case, including PR exclusions and after-merge-only files.
 
@@ -23,20 +26,18 @@ Migration phase fixtures copy the shipped private-name renderer beside their pla
 
 Each unit has a 540-second ceiling. Long Deno files are sliced by their current registrations. Shards target 300 declared seconds per worker; oversized indivisible units still run with the ceiling. Every unit starts as `NOT RUN` in the timing report. A shard stops at 35 minutes, before its 50-minute job limit. Missing shards, missing results, ignored cases, failures and timeouts make the result red. Artifacts retain exact unit and case names, declared costs, actual times and warnings above 80% of the ceiling.
 
-One workflow runs at a time with `cancel-in-progress: false`. GitHub can replace a waiting run. Each plan covers commits after the last completed run that published a report, through the tested main SHA. The first run starts at the parent of the commit that introduced this workflow; a root introduction includes the root commit. Cancelled runs and runs without a published report do not advance this range.
+## Durable main consumers
 
-A separate hosted report job sets the non-required `Main full set` commit status. Only this job has `pull-requests: write` and `statuses: write`. It finds merged PRs through commits in the covered range and maps their changed paths to failed units using the shared input table. Comments name candidate PRs, the exact failure and the run link. A path match is evidence of possible cause, not proof of blame. If no path matches, the report names every merged PR in that range as uncertain candidates. It never comments on PRs outside the range. Report API errors fail the report job. No release or merge waits for this result.
+Main history is the durable queue. New pushes append commits; replacing a waiting GitHub workflow does not remove them. One fixture consumer holds the existing five Sabre runners. At admission it reads the newest main SHA and the last published answer, then runs the union of deferred requests from every first-parent commit in that interval on the newest tree. Selection reads each commit's registry data, including changes later reverted. It does not execute historical scripts. A removed or renamed requested case is a red planning answer, never silently omitted.
 
-## Deferred cases on each main push
+The claim and report name `covers <oldest>..<newest>`, the exclusive base and the exact tested SHA. Each commit points at the same report. This proves the union on that tree, not every historical tree. Missing results, setup failure and timeout are red answers and advance the queue after publication. A failed report API write does not advance it. A collector settles ended runs whose normal report was lost, using their saved claim; a run cancelled before claiming work leaves the range waiting. Published commit-status checkpoints survive artifact expiry. A ten-minute schedule retries work if a push wakeup is lost.
 
-`Main deferred fixtures` runs the cases that the bounded fixture plan leaves out for each main push: capacity deferrals, after-merge files and named after-merge cases. It uses the same input selection and per-fixture registry as the required plan. Each run checks out its push SHA and records the changed commit range. Runs have no shared concurrency group, so a later push cannot replace a pending run.
+The newest push waits for at most the running batch plus dispatch and runner availability; there is no wall-clock guarantee during a runner outage. The full set starts only when the deferred queue is empty, on the nightly schedule or a manual full-set request. A push does not cancel an executing sweep. The existing 540-second unit, 35-minute shard and five-runner limits stay unchanged. No fixture body occupies GitHub's hosted runner pool. Required and releases never depend on either consumer.
 
-Manual dispatch can supply an older base to check deferred work from an earlier range on current main. Each dispatch has its own status context, separate from the push result. An invalid base leaves a failed plan and a red status.
+Manual deferred backfill supplies an ancestor base. It uses a separate status and does not advance normal coverage. The full-set workflow is a manual entry into the same serialized consumer, so it cannot compete for Sabre slots.
 
-### Queue and coverage
+### Proof consumer
 
-All deferred shards use the existing managed Sabre pool, with two workers per shard and at most five executing shards per run. The pool has five runners shared with the exhaustive sweep, so overlapping pushes add queued work without taking hosted slots from Required. During sustained merge traffic this queue can grow; runs retain their exact SHA instead of replacing pending coverage.
+A separate serialized hosted caller uses the existing enrolled proof runner and Gateway `proof:run`. Swamp runs the cases in copies; the Gateway's proof place permits one proof Operation and at most two proof copies. The main consumer never runs on a pull request or a fork. Existing exact-head trust and outside-PR approval remain Gateway requirements. The main consumer has its own enable switch, `ORBIT_MAIN_PROOF_ENABLED`, so enabling it does not enable the older PR proof jobs.
 
-Unit and shard deadlines are the full set's existing limits. There is no eight-shard admission limit in this receiver: every selected deferred case must appear once in its plan and in its results. A missing registration, result, or prerequisite fails its own report. A wholly deferred file runs its whole live population, including new cases missing from its saved inventory. Receiver changes add explicit after-merge populations without changing the required plan. An empty selection is reported explicitly. Neither this report nor the exhaustive full set gates a merge or release.
-
-The exhaustive sweep remains serialized on Sabre. Its commit range identifies possible causes; it does not prove every intermediate tree. GitHub preserves the running sweep and may replace its one pending successor. A workflow can also say queued while some of its matrix jobs are already running. Read its job states to distinguish waiting for workflow concurrency from waiting for one of the five Sabre runners.
+Until the typed range input is live, an after-merge proof checks only the newest SHA's own selection. Its receipt explicitly says `range_covered: false`, names the waiting interval and lists the commits not selected individually. Its checkpoint means an answer was published, not that the interval passed. The nightly `--all` run checks every available kind at one pinned main SHA when this consumer is idle. Both receipts retain every returned case verdict and the exact tested SHA. They are independent of Required and releases. The later range input will request the union over the waiting interval; the consumer does not infer that coverage from today's single-commit API.
