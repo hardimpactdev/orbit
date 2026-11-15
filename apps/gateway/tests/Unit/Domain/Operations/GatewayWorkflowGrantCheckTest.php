@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\GatewayWorkflowGrantCheck;
+use Symfony\Component\Yaml\Yaml;
 
 describe('Gateway workflow grant intent', function (): void {
     beforeEach(function (): void {
@@ -21,10 +22,14 @@ describe('Gateway workflow grant intent', function (): void {
         $declared = app(DirectOperation::class)->definition('instance.create')['execution_copies'] ?? [];
         $matches = static fn (array $copies): bool => array_any($copies, static fn (array $copy): bool => preg_match('~'.$copy['key_pattern'].'~D', $key) === 1);
 
+        // The create workflow's input pattern accepts it too: a key it refuses fails every create at its start.
+        $workflow = Yaml::parseFile(base_path('../../swamp/workflows/workflow-operation-instance-create.yaml'));
+        $pattern = $workflow['inputs']['properties']['execution_secrets']['additionalProperties']['properties']['key']['pattern'];
         expect($matches($declared))->toBeTrue()
-            ->and($matches($this->policy['vaults']))->toBeTrue();
+            ->and($matches($this->policy['vaults']))->toBeTrue()
+            ->and(str_starts_with($key, 'nckrtl-instance-t3-') || preg_match('~'.$pattern.'~D', $key) === 1)->toBeTrue();
     })->with([
-        'instance-create-environment-input-12', 'instance-create-processes-12', 'instance-create-model-12', 'instance-create-clone-12', 'instance-create-stage-12',
+        'instance-create-environment-input-12', 'instance-create-processes-12', 'instance-create-model-12', 'instance-create-clone-12', 'instance-create-stage-12', 'instance-create-launch-12', 'instance-create-redact-token-12', 'instance-create-redact-model-12',
         'nckrtl-instance-t3-00000000-0000-4000-8000-000000000001-register-session-gateway-1831-token',
         'nckrtl-instance-t3-00000000-0000-4000-8000-000000000001-register-session-swamp-1831-token',
     ]);

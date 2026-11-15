@@ -237,10 +237,11 @@ Deno.test("real clone launch preserves stdin and cleanup works after an early co
     }
 });
 
-// The Gateway's stage copy (CloneStage): one public JSON line, then the clone copy's private text. The launcher the Gateway sends
-// stages the line and runs the container part with only the private text, in one SSH dispatch.
-Deno.test("the shipped launcher stages a stage copy's first line and gives the container part only the private text", async () => {
+// The Gateway's launch copy (CloneStage::value): ONE JSON line, `stage` the public part, `private` the clone copy's text. The launcher
+// the Gateway sends stages `stage` and runs the container part with only `private`, in one SSH dispatch.
+Deno.test("the shipped launcher stages a launch copy's public part and gives the container part only the private text", async () => {
     const { folder, outputs } = await cloneInput();
+    const launch = (privateText: string) => JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: privateText });
     const launcher = JSON.parse(outputs.clone_payload).launcher as string;
     const argv = ["timeout", "300", "python3", "-c", launcher, outputs.clone_private, "stage", "container"];
     const clean = ["rm", "-rf", "--", outputs.clone_private];
@@ -250,7 +251,9 @@ Deno.test("the shipped launcher stages a stage copy's first line and gives the c
             '#!/bin/sh\n[ "$(cat "$CLONE_PRIVATE/git-credential")" = fixture-private-credential ] || exit 8\nexit 7\n',
             { mode: 0o700 });
         const env = { PATH: folder + ":" + Deno.env.get("PATH"), CLONE_PRIVATE: outputs.clone_private };
-        const failed = await execute(argv, outputs.clone_payload + "\nfixture-private-credential\n", env);
+        const value = launch("fixture-private-credential\n");
+        assertEquals(value.includes("\n"), false);
+        const failed = await execute(argv, value, env);
         // The fake Incus saw the credential line alone: exit 7, not 8.
         assertEquals(failed.code, 1);
         assert(new TextDecoder().decode(failed.stderr).includes("instance.container_container_failed: command incus exited 7"));
@@ -262,15 +265,17 @@ Deno.test("the shipped launcher stages a stage copy's first line and gives the c
         assertEquals(JSON.parse(await Deno.readTextFile(outputs.clone_private + "/input.json")), JSON.parse(outputs.clone_payload));
         // A later phase runs from the staged folder, as clone-t3 does.
         assertEquals((await execute(clean)).code, 0);
-        // A copy without its JSON line, with a line that is no stage, or a second launch on a staged folder names the stage.
-        for (const stdin of ["fixture-private-credential\n", "{}\nfixture-private-credential\n", "[]\nfixture-private-credential\n"]) {
+        // A copy that is no launch copy (the plain credential, the old two-part stage, no `stage`, a private part that is no text, no
+        // object), or a second launch on a staged folder names the stage.
+        for (const stdin of ["fixture-private-credential\n", outputs.clone_payload + "\nfixture-private-credential\n", '{"private":"x"}',
+            JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: 7 }), "[]"]) {
             const refused = await execute(argv, stdin, env);
             assertEquals(refused.code, 1);
             assertEquals(new TextDecoder().decode(refused.stderr).trim(), "instance.clone_input_failed");
             await execute(clean);
         }
-        await execute(argv, outputs.clone_payload + "\nfixture-private-credential\n", env);
-        const again = await execute(argv, outputs.clone_payload + "\nfixture-private-credential\n", env);
+        await execute(argv, value, env);
+        const again = await execute(argv, value, env);
         assertEquals(new TextDecoder().decode(again.stderr).trim(), "instance.clone_input_failed");
     } finally {
         await execute(clean);

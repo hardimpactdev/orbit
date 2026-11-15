@@ -17,15 +17,16 @@ inputs:
     # deploy step of a container default (a clone's git_credential names instance-create-clone-<operation>: the credential line,
     # then the clone's placeholder model key and model origin), and process_environments for
     # a default's Process environment files or a clone's private workspace JSON (environment and processes), and club_key for
-    # a nested-fleet container's Club key, which only its start step reads. clone_stage names a clone's
-    # instance-create-stage-<operation>: one public JSON line of release scripts, then the clone copy's text (no step reads it yet).
+    # a nested-fleet container's Club key, which only its start step reads. clone_launch names a clone's instance-create-launch-<operation>:
+    # ONE JSON line, the public release scripts (`stage`) beside the clone copy's text (`private`); clone_redact_token and
+    # clone_redact_model name the bare token and model key, read only so Swamp masks them alone. No step reads them yet.
     execution_secrets:
       type: object
       additionalProperties:
         type: object
         properties:
           vault: {type: string, enum: [orbit-control-inputs]}
-          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-|create-processes-|create-clone-|create-stage-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])|nested-fleet-club-api-key)$'}
+          key: {type: string, pattern: '^(?:instance-(?:git-(?:operation|credential)-|create-environment-(?:input|testing)-|create-model-|create-processes-|create-clone-|create-stage-|create-launch-|create-redact-token-|create-redact-model-)[1-9][0-9]*|process-instance-operation-[1-9][0-9]*-member-[1-9][0-9]*|database-create-(?:intent|owner)-[1-9][0-9]*|development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])|nested-fleet-club-api-key)$'}
         required: [vault, key]
         additionalProperties: false
   required: [operation_id, node_id, kind, intent, execution_secrets]

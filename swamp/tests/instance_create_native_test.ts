@@ -91,8 +91,9 @@ async function fixture(mode: Mode) {
     const valid = await call("workflow", "validate", created.name);
     assert(valid.ok, valid.stderr + valid.stdout);
     const input = JSON.stringify({
-        // The stage copy and its launcher, as the Gateway sends them for every clone (CloneStage); the input must accept them.
-        operation_id: 1, node_id: 3, kind: "instance.create", execution_secrets: { clone_stage: { vault: "orbit-control-inputs", key: "instance-create-stage-1" } },
+        // The copies and the launcher, as the Gateway sends them for every clone (CloneStage, InstanceGitHubReadTokens::cloneReference).
+        operation_id: 1, node_id: 3, kind: "instance.create", execution_secrets: Object.fromEntries([["git_credential", "clone"], ["clone_launch", "launch"],
+            ["clone_redact_token", "redact-token"], ["clone_redact_model", "redact-model"]].map(([name, prefix]) => [name, { vault: "orbit-control-inputs", key: `instance-create-${prefix}-1` }])),
         // A normal clone as NativeDevelopmentInstanceInput hands it over: no database, Route or fleet in its create.
         intent: { instance_id: 8, already_active: false, name_converted_from: null, clone_launcher: "print('launcher')",
             container: { clone: { source: "instance-7" }, project: "orbit-instances", mail: null, steps: [], processes: [] },

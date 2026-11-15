@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
+use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\InstanceGitHubReadTokens;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
@@ -116,4 +118,49 @@ it('copies only a repository-scoped Contents read credential when the App has ac
     expect($this->sourceSocket->frames[0]['payload']['value'])->toBe("https://x-access-token:fixture_token@github.com\n");
     Http::assertSent(fn ($request): bool => str_ends_with($request->url(), '/access_tokens')
         && $request->data() === ['repositories' => ['servauto-app'], 'permissions' => ['contents' => 'read']]);
+});
+
+/** A clone's mint (copy) with its public stage, for a private repository the App covers. */
+function cloneMint(array $stage): array
+{
+    Http::fake([
+        'api.github.com/repos/Platform11/servauto-app/installation' => Http::response(['id' => 7]),
+        'api.github.com/app/installations/7/access_tokens' => Http::response(['token' => 'fixture_token',
+            'expires_at' => now()->addHour()->format('Y-m-d\TH:i:s\Z'), 'permissions' => ['contents' => 'read']], 201),
+        'api.github.com/installation/repositories*' => Http::response(['total_count' => 1, 'repositories' => [['full_name' => 'Platform11/servauto-app']]]),
+        'api.github.com/installation/token' => Http::response(null, 204),
+    ]);
+    $operation = new Operation;
+    $operation->forceFill(['id' => 31]);
+    $copy = new ReflectionMethod(InstanceGitHubReadTokens::class, 'copy');
+
+    return [$copy, $operation, fn () => $copy->invoke(app(InstanceGitHubReadTokens::class), $operation, 'https://github.com/Platform11/servauto-app.git',
+        fn (): bool => true, "#orbit-model-environment\nORBIT_MODEL_KEY=placeholder\n", $stage)];
+}
+
+it('writes a private repository\'s bare token as its own copy beside the one-line launch copy', function (): void {
+    [, , $mint] = cloneMint(['script' => 'print(1)']);
+
+    $mint();
+
+    $puts = collect($this->sourceSocket->frames)->mapWithKeys(fn (array $frame): array => [$frame['payload']['key'] => $frame['payload']['value']]);
+    $launch = json_decode($puts['instance-create-launch-31'], true, flags: JSON_THROW_ON_ERROR);
+    expect($puts['instance-create-redact-token-31'])->toBe('fixture_token')
+        ->and($puts['instance-create-launch-31'])->not->toContain("\n")
+        ->and($launch)->toBe(['stage' => ['script' => 'print(1)'],
+            'private' => "https://x-access-token:fixture_token@github.com\n#orbit-model-environment\nORBIT_MODEL_KEY=placeholder\n"])
+        ->and($puts['instance-create-clone-31'])->toBe($launch['private']);
+});
+
+it('refuses a launch copy over its cap by name and revokes the token it minted', function (): void {
+    [, , $mint] = cloneMint(['script' => str_repeat('x', CloneStage::MaxBytes)]);
+
+    try {
+        $mint();
+        $this->fail('An oversize launch copy passed.');
+    } catch (ResourceOperationException $refused) {
+        expect([$refused->errorCode, $refused->status])->toBe(['instance.clone_launch_too_large', 409])
+            ->and(collect($this->sourceSocket->frames)->pluck('payload.key')->all())->not->toContain('instance-create-launch-31');
+        Http::assertSent(fn ($request): bool => $request->method() === 'DELETE' && str_ends_with($request->url(), '/installation/token'));
+    }
 });

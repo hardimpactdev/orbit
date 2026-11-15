@@ -67,9 +67,10 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
      * Development create and a normal removal mint when their run starts, as the legacy Gateway did before its source call.
      * An already active create runs no source phase and gets no credential.
      *
+     * @param  array<string,mixed>|null  $stage
      * @return array{vault:string,key:string}
      */
-    public function start(Operation $operation, string $beside = '', string $stage = ''): array
+    public function start(Operation $operation, string $beside = '', ?array $stage = null): array
     {
         if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
             $reference = self::reference($operation);
@@ -144,12 +145,14 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
 
     /**
      * `$beside`, when given, is the private text of a clone's `clone-container` stdin, which its one credential copy holds after the line.
-     * `$stage`, when given, is a clone's public stage line (CloneStage): its stage copy holds that line, then the clone copy's text.
+     * `$stage`, when given, is a clone's public stage (CloneStage::payload): its one-line launch copy holds it beside the clone copy's
+     * text, and the bare token gets its own copy, so Swamp masks the token wherever it appears alone.
      *
      * @param  \Closure(): bool  $unchanged
+     * @param  array<string,mixed>|null  $stage
      * @return array{vault:string,key:string}
      */
-    private function copy(Operation $operation, string $origin, \Closure $unchanged, string $beside = '', string $stage = ''): array
+    private function copy(Operation $operation, string $origin, \Closure $unchanged, string $beside = '', ?array $stage = null): array
     {
         $credential = $this->mint($origin);
         try {
@@ -164,9 +167,11 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
             $framed = $beside === '' ? $line : self::cloneReference($operation);
             $private = ($token === null ? '' : 'https://x-access-token:'.$token."@github.com\n").$beside;
             $this->step->executionCopy($framed['vault'], $framed['key'], $private);
-            if ($stage !== '') {
-                $staged = CloneStage::reference($operation);
-                $this->step->executionCopy($staged['vault'], $staged['key'], $stage."\n".$private);
+            if ($stage !== null) {
+                $launch = CloneStage::reference($operation);
+                $this->step->executionCopy($launch['vault'], $launch['key'], CloneStage::value($stage, $private));
+                $bare = CloneStage::tokenReference($operation);
+                $this->step->executionCopy($bare['vault'], $bare['key'], $token ?? CloneStage::NoToken);
             }
 
             return $copy;

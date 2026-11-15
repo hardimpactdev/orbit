@@ -260,7 +260,7 @@ it('deletes the clone stdin and stage copies of a create, also a failed or cance
 
     $deleted = collect($this->socket->messages)->where('type', 'vault.delete')->pluck('payload.key')->all();
     expect($clone->fresh())->toBeNull()
-        ->and($deleted)->toContain('instance-create-clone-'.$create->id, 'instance-create-stage-'.$create->id, 'instance-git-credential-'.$create->id, 'instance-create-model-'.$create->id);
+        ->and($deleted)->toContain('instance-create-clone-'.$create->id, 'instance-create-stage-'.$create->id, 'instance-create-launch-'.$create->id, 'instance-create-redact-token-'.$create->id, 'instance-create-redact-model-'.$create->id, 'instance-git-credential-'.$create->id, 'instance-create-model-'.$create->id);
 })->with(['failed', 'cancelled', 'succeeded']);
 
 it('keeps retained Git findable in the destroy result after deleting a migrated Instance', function (): void {

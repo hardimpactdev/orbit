@@ -1,0 +1,25 @@
+order = 1510
+source_sha256 = "d4089dc68660a4c9dab7a20306f14581eb46628a375f167c5a949e5ed54cee87"
+cases = [
+  "the launch copy is one line under its cap, and Swamp's redactor registers and masks it as a plain string",
+  "release 2079's two-part stage copy is what broke 2080: its first redact throws Regular expression too large",
+  "the bare token and model key are masked alone only because the create reads them as values of their own",
+]
+file = "swamp/tests/clone_launch_redactor_test.ts"
+cost = 3 # ESTIMATE: 3 cases in 0.02 s locally after the pinned module download; one second per case
+inputs = [
+  "apps/gateway/app/Domain/Instances/CloneStage.php",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+  "swamp/scripts/instance_clone_launch.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/instance_machine_name.py",
+  "swamp/ansible/instance_mail.py",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_node_runtime.py",
+]
+[case_costs]
+"the launch copy is one line under its cap, and Swamp's redactor registers and masks it as a plain string" = 1
+"release 2079's two-part stage copy is what broke 2080: its first redact throws Regular expression too large" = 1
+"the bare token and model key are masked alone only because the create reads them as values of their own" = 1

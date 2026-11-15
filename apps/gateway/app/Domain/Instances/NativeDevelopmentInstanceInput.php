@@ -74,16 +74,16 @@ final readonly class NativeDevelopmentInstanceInput
         // start and T3 starts with the copy (docs/reference/development-containers.md#t3-starts-with-the-copy).
         $model = $clone ? app(InstanceContainer::class)->modelEnvironment($instance->runtime()->firstOrFail(), app(TaskVmModelRoute::class)->key()) : null;
         $club = NestedFleetClubKey::forRun($container === null ? null : ValidatedData::object($container));
-        // A clone's stage copy: the release scripts and this run's container intent, then the private text of its clone copy.
+        // A clone's one-line launch copy: the release scripts and this run's container intent beside the private text of its clone copy.
         $stage = $clone ? new CloneStage : null;
         app(InstanceGitHubReadTokens::class)->start($operation, $model === null ? '' : InstanceContainer::ModelEnvironmentFrame."\n".$model,
-            $stage === null ? '' : $stage->payload(ValidatedData::object($club['container']),
+            $stage === null ? null : $stage->payload(ValidatedData::object($club['container']),
                 ValidatedData::string(ValidatedData::object(ValidatedData::object($input['ssh_execution'])['target'])['user'])));
 
         return ['intent' => [...$plan, 'container' => $club['container'], 'ssh_execution' => $input['ssh_execution'],
             ...($clone ? ['database' => null] : []),
             'instance_name' => $instance->name, 'name_converted_from' => $input['name_converted_from'] ?? null,
-            // The program a clone's first step runs: it stages the stage copy's public line, then runs the container part.
+            // The program a clone's first step runs: it stages the launch copy's public part, then runs the container part.
             ...($stage === null ? [] : ['clone_launcher' => $stage->launcher()]),
             'processes' => $processes, 'setup_steps' => $steps, 'environment_directory' => $environment->directory($instance),
             'server_database' => $server === null ? null : array_diff_key($server, ['secrets' => true]),
@@ -101,7 +101,9 @@ final readonly class NativeDevelopmentInstanceInput
                 ...($container === null ? [] : ['process_environments' => $vault->executionCopy('orbit-control-inputs', 'instance-create-processes-'.$operation->id,
                     ValidatedData::string($processEnvironments))]),
                 'git_credential' => $clone ? InstanceGitHubReadTokens::cloneReference($operation) : InstanceGitHubReadTokens::credentialReference($operation),
-                ...($clone ? ['clone_stage' => CloneStage::reference($operation)] : []),
+                // The launch copy, and the bare token and model key that the create reads only so Swamp masks them alone.
+                ...($clone ? ['clone_launch' => CloneStage::reference($operation), 'clone_redact_token' => CloneStage::tokenReference($operation),
+                    'clone_redact_model' => $vault->executionCopy(CloneStage::modelReference($operation)['vault'], CloneStage::modelReference($operation)['key'], app(TaskVmModelRoute::class)->key())] : []),
                 // A nested-fleet container's Club key, delivered into its /run at its start.
                 ...$club['copies'],
                 'environment' => $vault->executionCopy('orbit-control-inputs', 'instance-create-environment-input-'.$operation->id, $environment->content($instance)),
