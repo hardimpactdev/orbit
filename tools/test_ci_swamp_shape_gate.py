@@ -45,7 +45,7 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
         self.assertIn('uses: ./.github/workflows/ci-deferred.yml', receiver)
         import yaml
         consumer = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
-        self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], consumer['jobs']['fixtures']['runs-on'])
+        self.assertEqual(['self-hosted', 'orbit-shard'], consumer['jobs']['fixtures']['runs-on'])
         required = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:', 1)[1]
         self.assertNotIn('Main full set', required)
 
