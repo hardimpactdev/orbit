@@ -42,6 +42,8 @@ sequenceDiagram
     %%> What it does:
     %%> - the batch start state, then each case with its own resources and no undo
     %%> - CLI callers use the checkout device saved in the copy fleet’s `base`; nested commands run as `orbit` with its groups
+    %%> - each noninteractive node:converge call in a copy may wait 600 seconds; that wait is separate from the case budget for other work
+    %%> - a converge CLI timeout fails that case and stops admission of later cases in the batch; they are unrun with cause infrastructure, because the inner Operation may still hold its locks
     %%> - the reset duration is evidence in the batch result, never a verdict
   end
   Note over SW: Join the verdicts<br/>report step
