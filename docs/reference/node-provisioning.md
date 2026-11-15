@@ -30,6 +30,8 @@ A deployment of a nested-fleet default compares its inner fleet with the [fleet 
 
 In the nested-fleet project the clone probe also passes the [nested start guard](/reference/development-containers#the-container), an allowlist of its config and devices. The profile's root disk names no size, so the guard admits only a probe root without a size ([The root disk](/reference/development-containers#the-root-disk)). The guard also reads the probe's root volume and refuses it when it is delegated to the container. The converge itself makes no volume: an [inner volume](/reference/development-containers#the-inner-volume) belongs to one Instance and its create.
 
+On a ZFS pool the converge of a Node with nested-fleet hosting sets `volmode=dev` on the pool's `custom` dataset once, so the copy of an inner volume gets its device in dev mode ([The inner volume](/reference/development-containers#the-inner-volume)).
+
 Migration retirement protects the Node's remaining checkouts: an owner with dependents other than the moving worktree or a checkout with registered descendants refuses before downtime; a linked checkout keeps independent Git recovery data and removes only its own registration. See [retirement and recovery](/cli/instance/migrate#retained-git-data).
 
 Migration carries [local Git state](/cli/instance/migrate#local-git-state), including branches, complete stash history, staging and tracked edits. It hashes every carried file, including untracked and ignored bytes, and verifies the copied state before cutover and rechecks the read-only source snapshot before retention; owner dependencies, submodule changes, active clean/smudge filters and intent-to-add still refuse.

@@ -2065,9 +2065,15 @@ A new nested-fleet default gets its own volume for the inner fleet, as the task 
 | Device | the disk `inner-pool` at `/srv/inner-pool` |
 | Inner pool | `inner`, driver `btrfs`, `source=/srv/inner-pool/pool` |
 
-On the host this is one volume and one device on one container: no pool, profile or project key, no kernel module setting and no host package. Incus formats the volume with the host's `mkfs.btrfs`. The container does not see the block device; it reaches the host's btrfs code only through file operations and the subvolume calls of its own file system, and the volume's size caps its space.
+On the host this is one volume and one device on one container: no pool, profile or project key, no kernel module setting and no host package. The one host change is a ZFS property, set once by the [host branch](/reference/compute-drivers#prepare-an-instance-container-host) of a switched-on Node on a ZFS pool: `volmode=dev` on the pool's `custom` dataset (see the copy below). Incus formats the volume with the host's `mkfs.btrfs`. The container does not see the block device; it reaches the host's btrfs code only through file operations and the subvolume calls of its own file system, and the volume's size caps its space.
 
 A failed create keeps the volume with the container for the retry, which reuses it. [Destroy](#destroy) deletes it with its snapshots.
+
+A copy of such a default copies the volume's seed snapshot with `incus storage volume copy`, a ZFS clone. Incus 7.0.2 makes that clone without a `volmode`, so it inherits the value of the pool's `custom` dataset. Then Incus sets `volmode=dev` to give the copy a new btrfs UUID.
+
+When the clone inherited `default`, the kernel made its device in `geom` mode. The change to `dev` makes ZFS remove the device and make a new one in the background. Incus can find the old `/dev/zdNN` and run `btrfs rescue zero-log` or `btrfstune` on it while it goes away. The copy then fails with `cannot open /dev/zdNN`, or reads another volume's device. Copies at the same time, and any other zvol device change on the Node, make this likely: on Beast on 15 November 2026, 30 of 75 copies failed three at a time.
+
+So the host branch sets `volmode=dev` on the `custom` dataset. The clone inherits `dev`, its device is made once, and Incus changes nothing. Volumes that Incus creates or clones by other paths set their own `volmode`. A zvol that Incus receives, imports or copies in full into this subtree now inherits `dev` too: its device appears in dev mode until its first unmount, and Orbit's inner volumes use none of those paths.
 
 On this volume a [reset](#reset) of a copy's fleet, which a proof runs before each batch, takes about 16 seconds.
 

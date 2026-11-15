@@ -1,0 +1,18 @@
+order = 281
+source_sha256 = "e2cef76b8c7a6f987959389216a0f4874a9beac4a69c369e5478ac3842dd75bd"
+cases = [
+  "test_a_nested_zfs_host_sets_dev_on_the_pools_custom_volumes_once",
+  "test_a_host_already_in_dev_mode_changes_nothing",
+  "test_a_host_without_nested_fleets_or_on_a_directory_pool_touches_no_dataset",
+]
+file = "swamp/tests/ansible_instance_volmode_test.py"
+# Local run on Beast: 2.7 s for five real ansible-playbook runs.
+cost = 6
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/instance-host.yml",
+]
