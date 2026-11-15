@@ -377,11 +377,11 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
 
 it('lets a publish and a prep run ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.review_round', 'proof.command']);
+})->with(['tasks.publish', 'tasks.prep', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.review_round']);
 
-it('gives a sync run, a build run, a task start and a cancel no token mint: the Gateway writes the read tokens of the first two, a task start reads the public repository, and origin has a cancel\'s approved work', function (string $kind): void {
+it('gives a sync run, a build run, a task start, a cancel and a proof run no token mint: the Gateway writes the read tokens of the first two, a task start reads the public repository, origin has a cancel\'s approved work, and a proof copy already holds its checkout', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');
-})->with(['tasks.sync', 'tasks.build', 'tasks.provision', 'tasks.cancel']);
+})->with(['tasks.sync', 'tasks.build', 'tasks.provision', 'tasks.cancel', 'proof.command']);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();

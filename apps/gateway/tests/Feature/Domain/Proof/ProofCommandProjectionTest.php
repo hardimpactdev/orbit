@@ -6,6 +6,7 @@ use App\Actions\Operations\ExpireOperationAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofBatchProjection;
 use App\Domain\Proof\ProofCommandProjection;
@@ -582,4 +583,19 @@ it('keeps the verdicts of a cancelled orbit proof', function (): void {
 
     expect($verify->refresh()->status)->toBe(OperationStatus::Cancelled)
         ->and(array_column($verify->result['cases'], 'verdict'))->toBe(['passed', 'failed']);
+});
+
+it('declares the copy workflow as the only workflow of a proof run, and keeps the workflow an older Gateway recorded at admission', function (): void {
+    $definition = app(DirectOperation::class)->definition('proof.command');
+    [, [[$run]]] = proofRuns(['firewall:allow']);
+
+    expect($definition['workflow'])->toBe('operation-proof-run-copy')
+        ->and($definition)->not->toHaveKey('alternate_workflows')
+        ->and($definition)->not->toHaveKey('github_token_issuer')
+        ->and(app(ProofCommandProjection::class))->not->toBeInstanceOf(DirectOperationWorkflowChoice::class)
+        ->and(app(DirectOperation::class)->workflowFor($run))->toBe('operation-proof-run-copy');
+
+    // A run admitted before the copy path recorded its workflow; its reads keep that name, and no start of it is made again.
+    $run->update(['state' => [...$run->state, 'swamp_start' => ['key' => 'operation:'.$run->id, 'workflow' => 'operation-proof-run']]]);
+    expect(app(DirectOperation::class)->workflowFor($run->refresh()))->toBe('operation-proof-run');
 });

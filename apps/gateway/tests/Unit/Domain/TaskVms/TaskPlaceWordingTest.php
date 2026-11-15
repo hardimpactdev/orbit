@@ -22,11 +22,10 @@ it('names no workflow job or step after a slot', function (): void {
     expect($named)->toBe([]);
 });
 
-it('names the place in the cancel, prep and proof steps that claim or release one', function (): void {
+it('names the place in the cancel and prep steps that claim or release one', function (): void {
     $steps = static fn (string $workflow): array => collect(Yaml::parseFile(dirname(base_path(), 2)."/swamp/workflows/{$workflow}.yaml")['jobs'])
         ->flatMap(static fn (array $job): array => array_column($job['steps'], 'name'))->all();
 
     expect($steps('workflow-operation-task-cancel'))->toContain('Release the place')
-        ->and($steps('workflow-operation-task-prep'))->toContain('Claim a task place')
-        ->and($steps('workflow-operation-proof-run'))->toContain('Claim a place', 'Release the place');
+        ->and($steps('workflow-operation-task-prep'))->toContain('Claim a task place');
 });

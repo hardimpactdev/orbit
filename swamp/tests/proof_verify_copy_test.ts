@@ -37,19 +37,14 @@ function run(intent: Record<string, unknown>) {
     return runWorkflow("workflow-proof-fleet-verify.yaml", "proof.verify", intent, {
         "Read the runner plan": { outputs: { stdout: plan } },
         plan: { outputs: { stdout: plan } },
-        "Read the token age": { outputs: { stdout: "" } },
     }, () => ({}));
 }
 
-Deno.test("a copy reads its plan and token age as agent in the copy, through root on its Node", () => {
+Deno.test("a copy reads its plan as agent in the copy, through root on its Node", () => {
     const context = { inputs: parentInputs(copyIntent) };
     assertEquals(sshOf(step(parent, "Read the runner plan"), context), {
         sudo: true,
         argv: [...prefix, "python3", "/srv/workspace/swamp/proof/runner/runner.py", "plan", "--lines", "--file", "/srv/workspace/swamp/proof/firewall/allow.cases.yaml"],
-    });
-    assertEquals(sshOf(step(parent, "Read the token age"), context), {
-        sudo: true,
-        argv: [...prefix, "timeout", "60", "incus", "exec", "nested-gateway", "--", "find", "/home/orbit/.config/swamp/serve-driver-token", "-mmin", "+28800"],
     });
 });
 
@@ -73,8 +68,6 @@ Deno.test("a task VM keeps its argv and runs them as the SSH user", () => {
         sudo: false,
         argv: ["python3", `${checkout}/swamp/proof/runner/runner.py`, "plan", "--lines", "--file", `${checkout}/swamp/proof/firewall/allow.cases.yaml`],
     });
-    assertEquals(sshOf(step(parent, "Read the token age"), context).argv,
-        ["timeout", "60", "incus", "exec", "nested-gateway", "--", "find", "/home/orbit/.config/swamp/serve-driver-token", "-mmin", "+28800"]);
 });
 
 // The keys of the reset the batch gets: the copy's container, fleet and Node, from the Gateway's intent.
@@ -87,16 +80,13 @@ const batchInputs = (intent: Record<string, unknown>, index: number) => {
     return { restore: cel(inputs.restore, context), reset: cel(inputs.reset, context) };
 };
 
-Deno.test("a copy runs no VM restore, no re-mint and no last restore, even with stale tokens, and starts every batch with the copy prefix", () => {
-    const ran = runWorkflow("workflow-proof-fleet-verify.yaml", "proof.verify", copyIntent, {
-        "Read the runner plan": { outputs: { stdout: plan } },
-        plan: { outputs: { stdout: plan } },
-        "Read the token age": { outputs: { stdout: "/home/orbit/.config/swamp/serve-driver-token\n" } },
-    }, () => ({}));
-    for (const name of ["Restore the base snapshot", "Re-mint the Swamp tokens", "Check readiness", "Take base again", "Restore the clean fleet"]) {
-        assertEquals(ran[name].status, "skipped", name);
+Deno.test("a copy runs no VM restore, no re-mint and no last restore, and starts every batch with the copy prefix", () => {
+    const ran = run(copyIntent);
+    // The task VM's first restore, token re-mint and last restore are gone from the workflow.
+    assertEquals(parent.jobs.map((job) => job.name), ["plan", "batches", "can-fail", "can-fail-batches", "report"]);
+    for (const name of ["Read the token age", "Re-mint the Swamp tokens", "Check readiness", "Take base again", "Restore the clean fleet"]) {
+        assertEquals(ran[name], undefined, name);
     }
-    assertEquals(ran["Read the token age"].status, "succeeded");
     // The plan holds two batches; the forEach runs one child for each.
     assertEquals([0, 1].map((i) => ran[`batch-${"${{ self._index }}"}-${i}`]?.status), ["succeeded", "succeeded"]);
     const batches = step(parent, "batch-${{ self._index }}");
@@ -121,13 +111,6 @@ Deno.test("a copy run that an older Gateway admitted reads no key of the reset, 
     assertEquals([guard("restore", later), guard("reset", later), guard("setup", later)], [true, true, true]);
 });
 
-Deno.test("a task VM still restores first and last and passes no prefix", () => {
-    const ran = run(vmIntent);
-    assertEquals(ran["Restore the base snapshot"].status, "succeeded");
-    assertEquals(ran["Restore the clean fleet"].status, "succeeded");
-    assertEquals(cel(step(parent, "batch-${{ self._index }}").task.inputs!.runner_prefix, { inputs: parentInputs(vmIntent) }), []);
-});
-
 // Swamp locks a behavior by name for the whole step; a second run waits 60 s and then fails. A batch holds its lock for its setup and
 // its cases. On a task VM every step acts on the host's one fleet, so the Node's name keeps two proofs apart there. In a task copy the
 // steps act only inside that copy, so the copy's name keeps two proofs of one copy apart and lets two copies on one Node prove at once.
@@ -135,16 +118,15 @@ Deno.test("in a copy the steps that run there lock on the copy; on a task VM the
     const names = (intent: Record<string, unknown>) => {
         const context = { inputs: parentInputs(intent) };
         const plan = step(parent, "Read the runner plan").task;
-        const token = step(parent, "Read the token age").task;
         const batch = cel(step(parent, "batch-${{ self._index }}").task.inputs!.ssh_name, context);
         // The behavior and its SSH model carry the same name, and the flagged-case replay passes the same one as the batches.
         assertEquals(cel(plan.behaviorName, context), cel((plan as { globalArgs?: { name: string } }).globalArgs!.name, context));
         assertEquals(step(parent, "fail-batch-${{ self._index }}").task.inputs!.ssh_name, step(parent, "batch-${{ self._index }}").task.inputs!.ssh_name);
-        return { plan: cel(plan.behaviorName, context), token: cel(token.behaviorName, context), batch };
+        return { plan: cel(plan.behaviorName, context), batch };
     };
-    assertEquals(names(copyIntent), { plan: "proof-verify-ssh-9-2747", token: "proof-verify-9-read-the-token-age-2747", batch: "proof-verify-ssh-9-2747" });
+    assertEquals(names(copyIntent), { plan: "proof-verify-ssh-9-2747", batch: "proof-verify-ssh-9-2747" });
     assertEquals(names({ ...copyIntent, instance_id: 2748, copy: { project: "orbit-instances-nested", name: "instance-2748" } }).batch, "proof-verify-ssh-9-2748");
-    assertEquals(names(vmIntent), { plan: "proof-verify-ssh-9", token: "proof-verify-9-read-the-token-age", batch: "proof-verify-ssh-9" });
+    assertEquals(names(vmIntent), { plan: "proof-verify-ssh-9", batch: "proof-verify-ssh-9" });
     for (const name of ["setup", "batch"]) {
         const task = step(child, name).task as Step["task"] & { behaviorName: string; globalArgs: { name: string } };
         for (const sshName of ["proof-verify-ssh-9-2747", "proof-verify-ssh-9"]) {

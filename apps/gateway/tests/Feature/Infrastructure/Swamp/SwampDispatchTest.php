@@ -239,7 +239,7 @@ it('queues only the first proof child after all copies while unrelated Operation
     $children = collect([42, 43, 44])->map(fn (int $id): Operation => Operation::query()->create([
         'kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $id, 'node_id' => $node->id,
         'input' => ['proof_operation_id' => $proof->id], 'status' => OperationStatus::Queued,
-        'state' => ['swamp_start' => ['key' => 'operation:'.$id, 'workflow' => 'operation-proof-run']],
+        'state' => ['swamp_start' => ['key' => 'operation:'.$id, 'workflow' => 'operation-proof-run-copy']],
     ]));
     $other = Operation::query()->create(['kind' => 'proof.verify', 'target_type' => 'task_group', 'target_id' => 45,
         'node_id' => $node->id, 'input' => ['proof_operation_id' => $proof->id], 'status' => OperationStatus::Queued]);

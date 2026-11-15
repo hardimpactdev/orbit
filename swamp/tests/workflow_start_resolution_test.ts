@@ -106,10 +106,6 @@ Deno.test("a proof run in a copy starts: every expression of operation-proof-run
   }
 });
 
-Deno.test("the task VM proof run could not start for a copy, so the Gateway never starts it for one", () => {
-  assertNotEquals(unresolved("workflow-operation-proof-run.yaml", intents.proof_run_copy), []);
-});
-
 Deno.test("the task VM sync workflow could not start for a copy, so the Gateway never starts it for one", () => {
   const failed = unresolved("workflow-operation-task-sync.yaml", intents.sync_copy);
   assertNotEquals(failed, []);

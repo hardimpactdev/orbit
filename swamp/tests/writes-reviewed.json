@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 209,
+ "maxUnreviewed": 208,
  "nativeDataMethods": {
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
@@ -506,10 +506,6 @@
    "environment": "idempotent",
    "suspend": "unreviewed"
   },
-  "operation-proof-run": {
-   "Read the workspace commit": "unreviewed",
-   "Report": "read-only"
-  },
   "operation-proof-run-copy": {
    "Read the steps to skip": "read-only",
    "Read the workspace commit": "read-only",
@@ -686,7 +682,6 @@
    "Read runner capabilities": "read-only",
    "Read the nested checkout": "read-only",
    "Read the runner plan": "read-only",
-   "Read the token age": "read-only",
    "Select replay cases": "read-only",
    "plan": "unreviewed",
    "report": "read-only"
