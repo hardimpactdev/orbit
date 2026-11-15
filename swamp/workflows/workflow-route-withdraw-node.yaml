@@ -70,6 +70,8 @@ jobs:
         cleanup: '${{ inputs.intent.cleanup }}'
     # Apply: under the Node lock, the files read, merged, checked to change nothing outside the Route, kept as the previous generation,
     # tested, then committed and reloaded; the withdrawn certificate folders removed. The phase removes the run folder when it ends.
+    # The module's own bounds (30 s for the locks, 30 s per validate, reload and restart, 10 s per test, a reload again after a failed
+    # one) add up to 250 s with two PHP versions, inside this phase's 300 s.
   - name: 'apply'
     labels: {role: swamp}
     dependsOn:
@@ -81,7 +83,7 @@ jobs:
       behaviorName: '${{ ("route-withdraw-apply-" + (inputs.intent.publication.route_id + "-" + string(inputs.intent.publication.node_id))).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/route-withdraw.yml"
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags apply "$ORBIT_ANSIBLE/route-withdraw.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
           ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'

@@ -303,9 +303,9 @@ class _Lock:
         self.stream = os.fdopen(descriptor, "rb")
         identity = os.fstat(self.stream.fileno())
         if (not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1
-                or identity.st_uid != os.geteuid() or stat.S_IMODE(identity.st_mode) != 0o600):
+                or identity.st_uid != os.geteuid() or identity.st_mode & 0o022):
             self.stream.close()
-            raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a private regular file owned by the publisher.")
+            raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a regular file of the publisher that no group or other may write.")
         rc, _, stderr = self.run(["flock", "--exclusive", "--timeout", f"{max(self.seconds, 0.1):.1f}", "--conflict-exit-code", "75",
                                   str(self.stream.fileno())], pass_fds=(self.stream.fileno(),))
         if rc != 0:
@@ -333,7 +333,10 @@ class _File:
         self.owner, self.mode, self.staged = owner, mode, False
 
     def text(self):
-        return "" if self.old is None else self.old.decode()
+        try:
+            return "" if self.old is None else self.old.decode()
+        except UnicodeDecodeError:
+            raise WithdrawFailure("route.file_not_utf8", f"{self.path} is not UTF-8 text.") from None
 
     def keep_previous(self):
         """The previous generation in the previous folder, root only, with the live file's mode."""
@@ -391,7 +394,9 @@ def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
         locks.append((at("/etc/caddy/.orbit-publish.lock"), "caddy.publish_busy"))
     if plan.get("dns"):
         at("/var/lib/orbit/private-dns").mkdir(parents=True, exist_ok=True)
-        locks.append((at("/var/lib/orbit/private-dns/.orbit-publish.lock"), "dns.publish_busy"))
+        # The lock every private DNS writer of the Node takes: publish-dns.py and DnsmasqPrivateDnsManager.
+        at("/run/lock").mkdir(parents=True, exist_ok=True)
+        locks.append((at("/run/lock/orbit-dnsmasq.lock"), "dns.publish_busy"))
     previous.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(previous, 0o700)
     deadline = time.monotonic() + wait
@@ -406,7 +411,10 @@ def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
 
 
 def _transaction(plan, run, at, previous, caddy_gid):
-    account = pwd.getpwnam(plan["user"]) if plan.get("php") else None
+    try:
+        account = pwd.getpwnam(plan["user"]) if plan.get("php") else None
+    except KeyError:
+        raise WithdrawFailure("php.account_missing", f"The account {plan['user']} does not exist on this Node.") from None
     caddy = _File(at("/etc/caddy/Caddyfile"), previous / "Caddyfile", (os.geteuid(), caddy_gid or os.getegid()), 0o640) if plan.get("caddy") else None
     pools = {version: _File(at(f"/etc/php/{version}/fpm/pool.d/orbit-scopes.conf"), previous / f"php-{version}-orbit-scopes.conf")
              for version in (plan["php"]["versions"] if plan.get("php") else [])}
@@ -428,7 +436,7 @@ def _transaction(plan, run, at, previous, caddy_gid):
                 os.fchown(stream.fileno(), *caddy.owner)
                 os.fchmod(stream.fileno(), caddy.mode)
                 stream.write(composed["caddy"].encode())
-            _ok(run, ["timeout", "60", "runuser", "-u", "caddy", "--", "caddy", "validate", "--config", str(candidate),
+            _ok(run, ["timeout", "30", "runuser", "-u", "caddy", "--", "caddy", "validate", "--config", str(candidate),
                       "--adapter", "caddyfile"], "caddy.validation_failed", [])
         try:
             kept = _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_changes, staged, dns)
@@ -454,21 +462,21 @@ def _transaction(plan, run, at, previous, caddy_gid):
             os.replace(candidate, caddy.path)
             candidate = None
             caddy.staged = True
-            rc, _, stderr = run(["timeout", "60", "systemctl", "reload", "caddy"])
+            rc, _, stderr = run(["timeout", "30", "systemctl", "reload", "caddy"])
             if rc != 0:
                 caddy.restore()
-                run(["timeout", "60", "systemctl", "reload", "caddy"])
+                run(["timeout", "30", "systemctl", "reload", "caddy"])
                 for file in pending:
                     file.restore()
                 raise WithdrawFailure("caddy.reload_failed", stderr.strip()[-2000:], changed=bool(pool_changes))
         if dns_changed:
-            rc, _, stderr = run(["timeout", "60", "systemctl", "restart", "dnsmasq"])
+            rc, _, stderr = run(["timeout", "30", "systemctl", "restart", "dnsmasq"])
             if rc != 0:
                 for file in dns:
                     file.restore()
-                run(["timeout", "60", "systemctl", "restart", "dnsmasq"])
+                run(["timeout", "30", "systemctl", "restart", "dnsmasq"])
                 raise WithdrawFailure("dns.restart_failed", stderr.strip()[-2000:], changed=caddy_changed or bool(pool_changes))
-            _ok(run, ["timeout", "30", "systemctl", "enable", "--now", "orbit-private-dns.socket"], "dns.restart_failed", [], changed=True)
+            _ok(run, ["timeout", "10", "systemctl", "enable", "--now", "orbit-private-dns.socket"], "dns.restart_failed", [], changed=True)
     finally:
         if candidate is not None:
             candidate.unlink(missing_ok=True)
@@ -483,7 +491,7 @@ def _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_c
         staged.append(pools[version])
         pools[version].stage(text or None)
     for version in pool_changes:
-        _ok(run, ["timeout", "30", f"/usr/sbin/php-fpm{version}", "-t"], "php.test_failed", staged)
+        _ok(run, ["timeout", "10", f"/usr/sbin/php-fpm{version}", "-t"], "php.test_failed", staged)
     dns_changed = False
     if plan.get("dns"):
         # Read last, right before the write: some publishers write these files whole without the lock.
@@ -503,7 +511,7 @@ def _stage_and_test(run, at, previous, plan, caddy, caddy_changed, pools, pool_c
             staged += dns
             dns[0].stage(composed["dns"]["records"])
             dns[1].stage(composed["dns"]["catalog"])
-            _ok(run, ["timeout", "30", "dnsmasq", "--test"], "dns.test_failed", staged)
+            _ok(run, ["timeout", "10", "dnsmasq", "--test"], "dns.test_failed", staged)
     kept = []
     for file, changed in [(caddy, caddy_changed), *((pools[v], True) for v in pool_changes), *((f, dns_changed) for f in dns)]:
         if file is not None and changed and file.old is not None:
