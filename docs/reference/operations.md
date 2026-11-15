@@ -137,7 +137,7 @@ That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. I
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a copy place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 
-An open Operation of a kind that left the registry, such as the removed `task_vm.image_refresh` and `task_vm.hub_converge`, gets the history budget of its kind: it ends at that budget or on a cancel request ([retired kinds](#retired-kinds)).
+An open Operation of a kind that left the registry, such as the removed `task_vm.image_refresh` and `task_vm.hub_converge`, gets the history budget of its kind: it ends at that budget or on a cancel request ([kinds that left the registry](#kinds-that-left-the-registry)).
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. A maintainer must update the provisional row once repository installs have native history.
 
@@ -353,9 +353,9 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 `head` is the pre-commit check snapshot; `commit` is the candidate HEAD. Baseline/no-policy has `ci: null`. A required-CI handoff adds persisted handoff-push and hosted-CI-read steps after the existing commit step. Before push, state pins the branch and required check name; it retains CI evidence while waiting, so recovery cannot reinterpret a later Project edit. The terminal result carries that evidence. A failed code/workflow check ends `succeeded` with `outcome: failed`, not an operation failure. Consumers need `outcome: passed` and the shared checked-candidate eligibility rule, not just `status: succeeded` or a locally passed check.
 
-### Retired kinds
+### Kinds that left the registry
 
-A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them. The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard does not wait for one. Retired task VM kinds: `task_vm.image_refresh` and `task_vm.hub_converge`.
+A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them. The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard does not wait for one. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way.
 
 ## Start an operation
 

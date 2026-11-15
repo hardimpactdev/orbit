@@ -678,7 +678,7 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-Doctor no longer reports strays on a task VM host. Its host audit had no caller after the task VM runtime was removed, and it is deleted. The codes `node.task_vm_stray_instance`, `node.task_vm_stray_volume`, `node.task_vm_stray_record` and `node.task_vm_stray_node` are never reported; the operator lists a host with `incus list --all-projects` instead.
+Doctor reports no strays on a task VM host. Its host audit had no caller after the task VM runtime was removed, and it is deleted. The codes `node.task_vm_stray_instance`, `node.task_vm_stray_volume`, `node.task_vm_stray_record` and `node.task_vm_stray_node` are never reported; the operator lists a host with `incus list --all-projects` instead.
 
 ### States
 
@@ -1184,9 +1184,9 @@ The `Log egress` step runs before the base VM is touched. A failed safety check 
 
 #### Refresh the base snapshot
 
-No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. The [refresh after a release](/reference/development-containers#refresh-after-a-release) of each nested-fleet default Instance replaces it. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
+No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
 
-The workflow `operation-task-vm-image-refresh` and its children stay in Swamp one release longer, and nothing starts them ([old paths](/reference/old-paths)). Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([retired kinds](/reference/operations#retired-kinds)).
+The workflow `operation-task-vm-image-refresh` and its children stay in Swamp one release longer, and nothing starts them ([old paths](/reference/old-paths)). Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
 
