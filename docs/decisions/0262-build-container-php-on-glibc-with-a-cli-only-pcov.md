@@ -62,4 +62,4 @@ The reasons for glibc:
 - Components: apps/gateway, apps/docs
 - ADRs: [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers)
 - Detail: [Static PHP build](/reference/compute-drivers#static-php-build), [PCOV in the CLI only](/reference/php-runtime#pcov-in-the-cli-only), [PHP in a container](/reference/development-containers#php), [Shared folders](/reference/development-containers#shared-folders)
-- Verify: the `Static PHP build` workflow's proof on main; Python tests of `bin/static-php-build` and the Swamp module `orbit_static_php`; Ansible fixture tests of the `php/<version>` part and the CLI ini; Pest tests of the recipe field and the folder part
+- Verify: the `Static PHP build` workflow's proof on main; Python tests of `bin/static-php-build`, the proof script `tools/static-php/prove.py` and the Swamp module `orbit_static_php`; Ansible fixture tests of the `php/<version>` part and the CLI ini; Pest tests of the recipe field and the folder part
