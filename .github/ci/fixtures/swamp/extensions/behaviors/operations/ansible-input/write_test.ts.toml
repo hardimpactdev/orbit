@@ -1,5 +1,5 @@
 order = 1410
-source_sha256 = "73863c5a3d3a56a8cca9601f34fad9be6730f057f0e69bed1509cfffe3b3f7f9"
+source_sha256 = "4fa30a97a853e9308f4fe9db5a1f823225527fb6499e63f9a6cea73c0ee3a6ab"
 cases = [
   "the full intent reaches a private file beyond the environment size limit",
   "an intent write refuses paths outside its run folder",
@@ -8,17 +8,14 @@ cases = [
   "real clone commands stay below 32 KiB with a large Gateway intent",
   "the workflow's copy step stages the stage copy and launches the container part; cleanup works after an early failure",
   "the shipped launcher stages a launch copy's public part and gives the container part only the private text",
+  "the completion's services step stages its copy and runs the services and the check in one dispatch",
   "workflow command and inline script templates keep 16 KiB of budget headroom",
-  "nested clone input ships the composed pre-start policy and keeps the normal program unchanged",
-  "a plain clone gets the same clone part bytes as before the move",
-  "a nested-fleet clone gets the same clone part bytes as before the move",
-  "an intent without a clone container gets the empty clone part",
+  "the input write gives a clone intent only its run folder and assets: a clone stages from the Gateway's copy",
 ]
 file = "swamp/extensions/behaviors/operations/ansible-input/write_test.ts"
 cost = 12 # ESTIMATE: twelve command-boundary cases completed in 0.6 s locally; one second per case
 inputs = [
   "swamp/extensions/behaviors/operations/ansible-input/write.ts",
-  "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts",
   "swamp/ansible/instance_node_services.py",
   "swamp/ansible/instance_machine_name.py",
   "swamp/ansible/instance_mail.py",
@@ -31,4 +28,6 @@ inputs = [
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
   "swamp/scripts/instance_clone_launch.py",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/workflows/workflow-operation-instance-complete.yaml",
 ]

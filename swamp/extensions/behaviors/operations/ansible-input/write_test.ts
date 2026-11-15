@@ -6,12 +6,13 @@ import { Environment } from "npm:@marcbachmann/cel-js@7.6.1";
 const asset = (name: string) => new URL(`../../../../${name}`, import.meta.url).pathname;
 type CloneStep = { name: string; dependsOn?: unknown; task: { behaviorType?: string; methodName?: string;
     inputs: { argv?: string; stdin?: string } } };
-const flow = parse(Deno.readTextFileSync(asset("workflows/workflow-operation-instance-create.yaml"))) as {
-    jobs: { steps: CloneStep[] }[];
-};
-const cloneSteps = flow.jobs.flatMap((job) => job.steps).filter((step) =>
+const steps = (name: string) => (parse(Deno.readTextFileSync(asset(`workflows/${name}`))) as { jobs: { steps: CloneStep[] }[] }).jobs
+    .flatMap((job) => job.steps);
+const cloneSteps = steps("workflow-operation-instance-create.yaml").filter((step) =>
     ["clone-container", "clone-club-key", "clone-t3", "clone-private-cleanup"].includes(step.name));
-// The Gateway's stage copy (CloneStage) for the stage key, the plain credential copy for any other key.
+// The completion's one Node step and its private-folder cleanup (docs/cli/instance/complete.mmd).
+const completeSteps = steps("workflow-operation-instance-complete.yaml").filter((step) => ["clone-services", "clone-private-cleanup"].includes(step.name));
+// The Gateway's launch copy (CloneStage) for the stage key, the plain credential copy for any other key.
 let stageCopy = "";
 const cel = new Environment({ unlistedVariablesAreDyn: true, homogeneousAggregateLiterals: false })
     .registerFunction("vaultget(dyn, dyn): string", (_vault: unknown, key: unknown) =>
@@ -25,7 +26,8 @@ function render(expression: string, outputs: unknown, intent: unknown): unknown 
         run: { id: (outputs as { clone_private: string }).clone_private.split("-").slice(3).join("-") },
         steps: {}, inputs: {
             intent: { ...(intent as object), clone_launcher: JSON.parse((outputs as { clone_payload: string }).clone_payload).launcher },
-            execution_secrets: { git_credential: { vault: "fixture", key: "git" }, clone_launch: { vault: "fixture", key: "stage" } },
+            execution_secrets: { git_credential: { vault: "fixture", key: "git" }, clone_launch: { vault: "fixture", key: "stage" },
+                process_environments: { vault: "fixture", key: "stage" } },
         },
     });
 }
@@ -71,9 +73,9 @@ async function cloneInput(nested = false) {
         protocol: "tcp", state: "enabled",
     })) as never[];
     const intent = { instance_id: 7, already_active: false, container, ssh_execution: { target: { user: account } } };
-    const outputs = await behavior.methods.write.execute({ intent, path: folder + "/intent.json" }, {
-        extensionFile: asset, writeResource: () => Promise.resolve(null),
-    });
+    await Deno.mkdir(folder, { mode: 0o700 });
+    // The run's private folder and the public part of its launch copy, as the Gateway frames them (CloneStage::payload).
+    const outputs = { clone_private: `/tmp/orbit-clone-7-${id}`, clone_payload: JSON.stringify(await stagePayload(container, account)) };
     return { folder, intent, outputs };
 }
 async function execute(argv: string[], stdin = "", env: Record<string, string> = {}) {
@@ -163,11 +165,13 @@ Deno.test("real clone commands stay below 32 KiB with a large Gateway intent", a
     try {
         assert(cloneSteps.length >= 4);
         const sizes: Record<string, number> = {};
-        for (const step of cloneSteps) {
+        assert(completeSteps.length === 2);
+        for (const step of [...cloneSteps, ...completeSteps]) {
             const argv = render(step.task.inputs.argv!, outputs, intent) as string[];
             assert(argv.every((arg) => typeof arg === "string" && bytes(arg) <= 16384), step.name);
-            sizes[step.name] = bytes(remote(argv));
-            assert(sizes[step.name] <= 16384, `${step.name}: ${sizes[step.name]} bytes`);
+            const name = (completeSteps.includes(step) ? "complete:" : "") + step.name;
+            sizes[name] = bytes(remote(argv));
+            assert(sizes[name] <= 16384, `${name}: ${sizes[name]} bytes`);
         }
         // The real release files must cross stdin, never disappear from the input.
         const payload = JSON.parse(outputs.clone_payload);
@@ -288,6 +292,46 @@ Deno.test("the shipped launcher stages a launch copy's public part and gives the
 });
 
 
+// The completion's one copy (CloneStage::completion) through the completion's one Node step, as the workflow renders it: the shipped
+// launcher stages the scripts and runs the `complete` phase, which gives the services part only the Process files, then checks.
+Deno.test("the completion's services step stages its copy and runs the services and the check in one dispatch", async () => {
+    const { folder, intent, outputs } = await cloneInput();
+    const services = completeSteps.find((step) => step.name === "clone-services")!;
+    const clean = render(completeSteps.find((step) => step.name === "clone-private-cleanup")!.task.inputs.argv!, outputs, intent) as string[];
+    const processes = { "/etc/orbit/processes/1/a.env": "QUEUE=fixture-private-queue\n" };
+    const run = (dead: boolean) => {
+        stageCopy = JSON.stringify({ stage: JSON.parse(outputs.clone_payload), private: JSON.stringify({ processes }), processes });
+        const argv = render(services.task.inputs.argv!, outputs, intent) as string[];
+        assertEquals(argv.slice(2, 4), ["python3", "-c"]);
+        assertEquals(argv.slice(5), [outputs.clone_private, "stage", "complete"]);
+        return execute(argv, render(services.task.inputs.stdin!, outputs, intent) as string, { PATH: folder + ":" + Deno.env.get("PATH"), DEAD: dead ? "1" : "" });
+    };
+    try {
+        // A fake Incus: the services part must get the Process files on stdin; a dead unit fails the check with its receipt.
+        await Deno.writeTextFile(folder + "/incus", `#!/bin/sh
+input=$(cat)
+case "$*" in
+  *" services {"*) [ "$input" = '{"processes": {"/etc/orbit/processes/1/a.env": "QUEUE=fixture-private-queue\\n"}}' ] || exit 9; echo '{"phase": "services", "changes": []}';;
+  *" check {"*) if [ -n "$DEAD" ]; then echo '{"error_code": "instance.container_process_inactive", "process_failure": {"unit": "u"}}'; exit 1; fi; echo '{"phase": "check", "changes": []}';;
+  *) exit 8;;
+esac
+`, { mode: 0o700 });
+        const passed = await run(false);
+        assertEquals([passed.code, new TextDecoder().decode(passed.stderr)], [0, ""]);
+        assertEquals(new TextDecoder().decode(passed.stdout).trim().split("\n").map((line) => JSON.parse(line).phase), ["services", "check"]);
+        for (const name of ["input.json", "launch.py", "clone.py"]) {
+            assertEquals((await Deno.readTextFile(outputs.clone_private + "/" + name)).includes("fixture-private-queue"), false);
+        }
+        assertEquals((await execute(clean)).code, 0);
+        const dead = await run(true);
+        assertEquals(dead.code, 0);
+        assertEquals(JSON.parse(new TextDecoder().decode(dead.stdout).trim().split("\n")[1]).error_code, "instance.container_process_inactive");
+    } finally {
+        await execute(clean);
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
 Deno.test("workflow command and inline script templates keep 16 KiB of budget headroom", async () => {
     let largest = { path: "", bytes: 0 };
     const inspect = (value: unknown, path: string): void => {
@@ -308,72 +352,30 @@ Deno.test("workflow command and inline script templates keep 16 KiB of budget he
     console.log(JSON.stringify(largest));
 });
 
-Deno.test("nested clone input ships the composed pre-start policy and keeps the normal program unchanged", async () => {
-    for (const nested of [false, true]) {
-        const {folder, outputs} = await cloneInput(nested);
-        try {
-            const payload = JSON.parse(outputs.clone_payload);
-            const normal = await Deno.readTextFile(asset("ansible/instance_network.py"));
-            if (nested) {
-                assertEquals(payload.network, normal.split('if __name__ == "__main__":')[0] + await Deno.readTextFile(asset("ansible/instance_nested.py")));
-                const manifest = parse(await Deno.readTextFile(asset("manifest.yaml"))) as {additionalFiles: string[]};
-                assert(manifest.additionalFiles.includes("ansible/instance_nested.py"));
-                // The Club key script crosses the same staged input; the key itself never does.
-                assertEquals(payload.bundle.club_key, await Deno.readTextFile(asset("ansible/instance_nested_club_key.sh")));
-                assert(manifest.additionalFiles.includes("ansible/instance_nested_club_key.sh"));
-            } else {
-                assertEquals(payload.network, normal);
-                assertEquals(Object.keys(payload.bundle).sort(), ["bridge", "machine_name", "mail", "node", "node_services"]);
-            }
-        } finally { await Deno.remove(folder, {recursive: true}); }
-    }
-});
-
-// The clone part moved to clone_payload.ts as pure code motion: these are the bytes the inline code of write.ts built before.
-async function inlineClonePart(intent: { container: Record<string, unknown>; ssh_execution: { target: { user: string } } }, privatePath: string) {
+/** The public part of a clone's launch copy, as the Gateway's CloneStage::payload frames it from the same release files. */
+async function stagePayload(container: Record<string, unknown>, account: string) {
     const read = (name: string) => Deno.readTextFile(asset(name));
-    const container = intent.container;
-    const launcher = await read("scripts/instance_clone_launch.py");
     const network = await read("ansible/instance_network.py");
-    const cloneNetwork = container.allowed_devices
-        ? network.split('if __name__ == "__main__":')[0] + await read("ansible/instance_nested.py") : network;
     return {
-        clone_argv: ["python3", privatePath + "/launch.py", privatePath],
-        clone_stage_argv: ["python3", "-c", launcher, privatePath],
-        clone_payload: JSON.stringify({
-            launcher, script: await read("scripts/instance_clone.py"), container, guest: await read("scripts/instance_clone_guest.py"),
-            network: cloneNetwork, account: intent.ssh_execution.target.user,
-            bundle: {
-                node_services: await read("ansible/instance_node_services.py"), machine_name: await read("ansible/instance_machine_name.py"),
-                mail: await read("ansible/instance_mail.py"), bridge: await read("ansible/instance_bridge.py"),
-                node: await read("ansible/instance_node_runtime.py"),
-                ...(container.club_key ? { club_key: await read("ansible/instance_nested_club_key.sh") } : {}),
-            },
-        }),
+        launcher: await read("scripts/instance_clone_launch.py"), script: await read("scripts/instance_clone.py"), container,
+        guest: await read("scripts/instance_clone_guest.py"),
+        network: container.allowed_devices ? network.split('if __name__ == "__main__":')[0] + await read("ansible/instance_nested.py") : network,
+        account,
+        bundle: {
+            node_services: await read("ansible/instance_node_services.py"), machine_name: await read("ansible/instance_machine_name.py"),
+            mail: await read("ansible/instance_mail.py"), bridge: await read("ansible/instance_bridge.py"),
+            node: await read("ansible/instance_node_runtime.py"),
+            ...(container.club_key ? { club_key: await read("ansible/instance_nested_club_key.sh") } : {}),
+        },
     };
 }
 
-for (const nested of [false, true]) {
-    Deno.test(`a ${nested ? "nested-fleet" : "plain"} clone gets the same clone part bytes as before the move`, async () => {
-        const { folder, intent, outputs } = await cloneInput(nested);
-        try {
-            const expected = await inlineClonePart(intent as never, outputs.clone_private);
-            assertEquals(outputs.clone_payload, expected.clone_payload);
-            assertEquals(outputs.clone_argv, expected.clone_argv);
-            assertEquals(outputs.clone_stage_argv, expected.clone_stage_argv);
-            assertEquals(Object.keys(outputs), ["path", "assets", "requirements", "collections", "clone_argv", "clone_private",
-                "clone_stage_argv", "clone_payload"]);
-        } finally { await Deno.remove(folder, { recursive: true }); }
-    });
-}
-
-Deno.test("an intent without a clone container gets the empty clone part", async () => {
+Deno.test("the input write gives a clone intent only its run folder and assets: a clone stages from the Gateway's copy", async () => {
     const folder = `/tmp/orbit-ansible-${crypto.randomUUID()}`;
     try {
-        const outputs = await behavior.methods.write.execute({ intent: { node_id: 3 }, path: folder + "/intent.json" }, {
+        const outputs = await behavior.methods.write.execute({ intent: { instance_id: 7, container: { instance_id: 7, clone: {} } }, path: folder + "/intent.json" }, {
             extensionFile: asset, writeResource: () => Promise.resolve(null),
         });
-        assertEquals([outputs.clone_argv, outputs.clone_stage_argv, outputs.clone_payload, outputs.clone_private],
-            [[], [], "", folder.replace("/tmp/orbit-ansible-", "/tmp/orbit-clone-0-")]);
+        assertEquals(Object.keys(outputs), ["path", "assets", "requirements", "collections"]);
     } finally { await Deno.remove(folder, { recursive: true }); }
 });

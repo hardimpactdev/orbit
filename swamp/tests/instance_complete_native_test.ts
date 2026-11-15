@@ -2,9 +2,10 @@
  * Runs the real `operation-instance-complete` workflow on the release-pinned Swamp binary. Every machine step is a local shell stub that
  * records its name; the Route and its withdrawal are stub child workflows; `finish` is the real `complete_result` behavior, and
  * `accepted` the real assert. It proves the guards, the levels and the result expressions as the engine evaluates them for a normal
- * clone, and that a dead unit, a failed Route and a cancel withdraw the Route. `clone-services` keeps its real stdin expression: the engine
- * reads the completion's one copy (CloneStage::completion) in its real size and shape through vault.get and registers it with the run's
- * redactor, as on a Node; a two-part copy fails there, as release 2080's did.
+ * clone, and that a dead unit, a failed Route and a cancel withdraw the Route. `clone-services`, the one Node step, keeps its real argv
+ * and stdin expressions: the engine renders the launcher's argv and reads the completion's one copy (CloneStage::completion) in its real
+ * size and shape through vault.get and registers it with the run's redactor, as on a Node; a two-part copy fails there, as release
+ * 2080's did.
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
@@ -34,21 +35,26 @@ const stage = { launcher: read("scripts/instance_clone_launch.py"), script: read
     guest: read("scripts/instance_clone_guest.py"), network: read("ansible/instance_network.py"), account: "orbit",
     bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"),
         mail: read("ansible/instance_mail.py"), bridge: read("ansible/instance_bridge.py"), node: read("ansible/instance_node_runtime.py") } };
-const copy = JSON.stringify({ stage, private: JSON.stringify({ processes }), processes });
-// What the services step's stand-in receives: the value the engine resolved through vault.get, as the SSH stdin would. It reads the
-// copy as the services part of each workflow does: the top-level `processes` (staged from the input step) and `stage` with `private`.
+const frame = (files: Record<string, string>) => JSON.stringify({ stage, private: JSON.stringify({ processes: files }), processes: files });
+const copy = frame(processes);
+const receipt = '{"error_code":"instance.container_process_inactive","process_failure":{"process_id":41,"unit":"orbit-process-41-worker.service","state":"failed"}}';
+// What the Node step's stand-in receives: the argv and the value the engine resolved through vault.get, as SSH would carry them. It
+// reads them as the shipped launcher does (`stage complete`: `stage` staged, `private` to the phase) and prints what the phase prints:
+// the services line, then the check's line, or a dead unit's receipt when the Process files name one.
 const sink = `import { z } from "npm:zod@4.4.3";
-export const behavior = { type: "@orbit-test/complete-sink", version: "2026.11.15.1",
-    resources: { terminal: { schema: z.object({ stdout: z.string() }), lifetime: "infinite", garbageCollection: 10 } },
-    methods: { take: { description: "Take the completion copy", arguments: z.object({ copy: z.string() }),
-        execute: async (args: { copy: string }, ctx: { writeResource(s: string, n: string, d: unknown): Promise<unknown> }) => {
+export const behavior = { type: "@orbit-test/complete-sink", version: "2026.11.15.2",
+    resources: { terminal: { schema: z.object({ stdout: z.string(), exitCode: z.number() }), lifetime: "infinite", garbageCollection: 10 } },
+    methods: { take: { description: "Take the completion copy", arguments: z.object({ copy: z.string(), argv: z.array(z.string()) }),
+        execute: async (args: { copy: string; argv: string[] }, ctx: { writeResource(s: string, n: string, d: unknown): Promise<unknown> }) => {
             const value = JSON.parse(args.copy);
-            if (typeof value.processes !== "object" || typeof value.stage?.script !== "string" || typeof value.private !== "string"
-                || JSON.stringify(JSON.parse(value.private).processes) !== JSON.stringify(value.processes)) throw new Error("not a completion copy");
-            return { dataHandles: [await ctx.writeResource("terminal", "terminal", { stdout: JSON.stringify({ phase: "services", changes: [] }) })] };
+            if (args.argv[4] !== "print('launcher')" || args.argv.slice(-2).join(" ") !== "stage complete" || !args.argv[5].startsWith("/tmp/orbit-clone-8-"))
+                throw new Error("not the launcher's argv");
+            if (typeof value.stage?.script !== "string" || typeof value.private !== "string") throw new Error("not a completion copy");
+            const processes = JSON.parse(value.private).processes;
+            const check = processes.dead ? ${JSON.stringify(receipt)} : JSON.stringify({ phase: "check", changes: [] });
+            return { dataHandles: [await ctx.writeResource("terminal", "terminal", { stdout: JSON.stringify({ phase: "services", changes: [] }) + "\\n" + check, exitCode: 0 })] };
         } } } };
 `;
-const receipt = '{"error_code":"instance.container_process_inactive","process_failure":{"process_id":41,"unit":"orbit-process-41-worker.service","state":"failed"}}';
 
 async function fixture(mode: Mode, slow: Long = "clone-services") {
     const folder = Deno.makeTempDirSync({ dir: "/tmp", prefix: "orbit-ansible-" });
@@ -64,7 +70,9 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
     const vault = await call("vault", "create", "local_encryption", "orbit-control-inputs");
     assert(vault.ok, vault.stderr + vault.stdout);
     // The Gateway's copy, put through stdin as its frame does. two-part: a copy with newlines, which one RegExp breaks (release 2080).
-    const value = mode === "two-part" ? JSON.stringify(stage) + "\n" + JSON.stringify({ processes }) : copy;
+    // dead-unit: the stand-in reads a dead unit from the Process files it was given, as the guest's check would find one.
+    const value = mode === "two-part" ? JSON.stringify(stage) + "\n" + JSON.stringify({ processes })
+        : mode === "dead-unit" ? frame({ ...processes, dead: "1" }) : copy;
     const writer = new Deno.Command(binary!, { args: ["vault", "put", "orbit-control-inputs", "instance-complete-processes-1", "--json"], cwd: folder,
         ...auth, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
     const stream = writer.stdin.getWriter();
@@ -109,14 +117,11 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
             if (name === "clone-services" && mode !== "cancel") {
                 const real = (step.task as RecordValue).inputs as RecordValue;
                 step.task = { type: "behavior", behaviorType: "@orbit-test/complete-sink", behaviorName: "complete-clone-services", methodName: "take",
-                    inputs: { copy: real.stdin } };
+                    inputs: { copy: real.stdin, argv: real.argv } };
                 continue;
             }
             let run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
             if (name === slow && mode === "cancel") run += "; sleep 30";
-            // The real step accepts every exit code (`okExitCodes: any`), so a refusal ends `succeeded` with its output; a shell stub
-            // has no such option, so it prints the receipt and ends 0, as that step records it.
-            if (name === "clone-check") run += mode === "dead-unit" ? `; printf '%s\\n' '${receipt}'` : `; printf '%s\\n' '{"phase":"check","changes":[]}'`;
             step.task = { type: "behavior", behaviorType: "command/shell", behaviorName: `complete-${name}`, methodName: "execute",
                 inputs: { run } };
         }
@@ -127,7 +132,7 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
     const input = JSON.stringify({
         operation_id: 1, node_id: 3, kind: "instance.complete",
         execution_secrets: { process_environments: { vault: "orbit-control-inputs", key: "instance-complete-processes-1" } },
-        intent: { instance_id: 8, container: { clone: { source: "instance-7" }, project: "orbit-instances" }, database: null,
+        intent: { instance_id: 8, clone_launcher: "print('launcher')", container: { clone: { source: "instance-7" }, project: "orbit-instances" }, database: null,
             server_database: slow === "server-database-fill" ? { node_id: 5, fill: ["true"],
                 intent: { ssh_execution: { target: { host: "127.0.0.1", user: "orbit", port: 22, host_keys: [] }, identity_file: "/none" }, owner_client: ["true"] } } : null,
             ...(slow === "clone-fleet" ? { fleet: { seed: "e".repeat(40) } } : {}),
@@ -196,7 +201,8 @@ Deno.test({ name: "pinned complete: a normal clone with a Route runs every step 
         const done = await execute(f, false);
         assert(done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        for (const name of ["input", "clone-input", "clone-services", "clone-check", "route-csr-0", "route", "finish", "clone-private-cleanup", "cleanup", "accepted"]) {
+        // A Route the create did not publish needs the run folder: input runs, and cleanup removes it.
+        for (const name of ["input", "clone-services", "route-csr-0", "route", "finish", "clone-private-cleanup", "cleanup", "accepted"]) {
             assertEquals(stub(steps, name), "succeeded", name);
         }
         for (const name of ["database-snapshot", "server-database", "server-valkey", "clone-fleet", "withdraw-route"]) assertEquals(stub(steps, name), "skipped", name);
@@ -214,7 +220,8 @@ Deno.test({ name: "pinned complete: a dead unit fails the check with its receipt
         assert(!done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
         // The check step accepts the phase's exit, so its output reaches finish.
-        assertEquals([stub(steps, "clone-check"), stub(steps, "finish"), stub(steps, "withdraw-route"), stub(steps, "accepted")], ["succeeded", "succeeded", "succeeded", "failed"]);
+        // The Node step ends 0 with the receipt as its output, so it reaches finish.
+        assertEquals([stub(steps, "clone-services"), stub(steps, "finish"), stub(steps, "withdraw-route"), stub(steps, "accepted")], ["succeeded", "succeeded", "succeeded", "failed"]);
         const value = result(steps);
         assertEquals([value.ready, value.failed_step, value.error_code, value.process_failure.process_id], [false, "check", "instance.container_process_inactive", 41]);
         assert(exists(`${f.folder}/withdraw-route`));
@@ -231,7 +238,7 @@ Deno.test({ name: "pinned complete: a failed Route names the Route and is withdr
         const steps = await f.steps();
         assertEquals([stub(steps, "route"), stub(steps, "withdraw-route"), stub(steps, "clone-private-cleanup")], ["failed", "succeeded", "succeeded"]);
         // The Route job never stops the container steps.
-        assertEquals([stub(steps, "clone-services"), stub(steps, "clone-check")], ["succeeded", "succeeded"]);
+        assertEquals(stub(steps, "clone-services"), "succeeded");
         assertEquals([result(steps).failed_step, result(steps).error_code], ["route", "instance.create_route_failed"]);
     } finally {
         f.cleanup();
@@ -247,7 +254,6 @@ for (const [slow, step] of [["clone-services", "workspace"], ["server-database-f
             // The step sleeps 30 s; the cancel ends it and the whole result job well inside the bound the removal waits on.
             assert(done.stopSeconds < 10, `${slow} took ${done.stopSeconds} s to stop`);
             const steps = await f.steps();
-            assertEquals(stub(steps, "clone-check"), "skipped");
             assertEquals([stub(steps, "withdraw-route"), stub(steps, "clone-private-cleanup")], ["succeeded", "succeeded"], JSON.stringify(Object.keys(steps)));
             assertEquals([result(steps).ready, result(steps).failed_step], [false, step]);
             assert(exists(`${f.folder}/withdraw-route`));
@@ -263,7 +269,9 @@ Deno.test({ name: "pinned complete: a clone whose create published its address r
         const done = await execute(f, false);
         assert(done.success, text(done.stdout) + text(done.stderr));
         const steps = await f.steps();
-        for (const name of ["clone-input", "clone-services", "clone-check", "finish", "accepted"]) assertEquals(stub(steps, name), "succeeded", name);
+        for (const name of ["clone-services", "finish", "accepted"]) assertEquals(stub(steps, name), "succeeded", name);
+        // A plain clone writes no run folder: the input step and its cleanup skip.
+        assertEquals([stub(steps, "input"), stub(steps, "cleanup")], ["skipped", "skipped"]);
         assertEquals([stub(steps, "route"), stub(steps, "withdraw-route"), "route-csr-0" in steps], ["skipped", "skipped", false]);
         assertEquals(result(steps).ready, true);
     } finally {
@@ -282,7 +290,7 @@ Deno.test({ name: "pinned complete: the services step reads the real-size one-li
         assertEquals(stub(steps, "clone-services"), "failed");
         assert(JSON.stringify(steps["clone-services"]).includes("Regular expression too large"), JSON.stringify(steps["clone-services"]).slice(0, 400));
         // As in release 2080, the broken redactor fails every later step of the run too: nothing ends the completion ready.
-        assertEquals([stub(steps, "clone-check"), stub(steps, "finish"), stub(steps, "accepted")], ["skipped", "failed", "skipped"]);
+        assertEquals([stub(steps, "finish"), stub(steps, "accepted")], ["failed", "skipped"]);
     } finally {
         f.cleanup();
     }

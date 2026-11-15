@@ -5,7 +5,6 @@ import { roleAddPlans } from "./role_add_plans.ts";
 import { convergeResult, ReportInput } from "./converge_result.ts";
 import { fleetRebootResult, FleetRebootResultInput } from "./fleet_reboot_result.ts";
 import { convergeInput } from "./converge_input.ts";
-import { clonePart } from "./clone_payload.ts";
 
 const Path = z.string().regex(
     /^\/tmp\/orbit-ansible-[0-9a-f-]{36}\/intent\.json$/,
@@ -19,10 +18,6 @@ const Output = z.object({
     assets: z.string().startsWith("/"),
     requirements: z.string(),
     collections: z.string(),
-    clone_argv: z.array(z.string()),
-    clone_private: z.string(),
-    clone_stage_argv: z.array(z.string()),
-    clone_payload: z.string(),
 });
 type Context = {
     extensionFile(path: string): string;
@@ -153,16 +148,8 @@ export const behavior = {
                 const collections = await Deno.readTextFile(
                     ctx.extensionFile("ansible/requirements.yml"),
                 );
-                const container = args.intent.container as { clone?: unknown; instance_id: number; allowed_devices?: unknown; club_key?: unknown } | null | undefined;
-                const privatePath = `/tmp/orbit-clone-${container?.instance_id ?? 0}-${folder.split("/").at(-1)?.slice("orbit-ansible-".length)}`;
-                // Only a clone intent has a clone part (clone_payload.ts).
-                const clone = container?.clone ? await clonePart(container, args.intent, privatePath, ctx)
-                    : { clone_argv: [], clone_stage_argv: [], clone_payload: "" };
+                // A clone's create and completion stage their release scripts from the Gateway's one-line copy (CloneStage), not from here.
                 const value = Output.parse({
-                    clone_argv: clone.clone_argv,
-                    clone_stage_argv: clone.clone_stage_argv,
-                    clone_payload: clone.clone_payload,
-                    clone_private: privatePath,
                     path: args.path,
                     assets,
                     requirements,

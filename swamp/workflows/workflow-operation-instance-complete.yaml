@@ -1,6 +1,6 @@
 id: d44e77ae-a9c8-430d-965d-e9d06039d145
 name: operation-instance-complete
-description: 'Container clone completion (docs/cli/instance/complete.mmd): the database, a nested fleet, the services part of the workspace and the check in the complete job; the Route in its own job; a failed or cancelled run withdraws the Route it published.'
+description: 'Container clone completion (docs/cli/instance/complete.mmd): the database, a nested fleet, and one Node step for the services part of the workspace and the check in the complete job; the Route in its own job; a failed or cancelled run withdraws the Route it published.'
 vaults: [orbit-control-inputs]
 queueTimeout: 10
 labels: {role: swamp}
@@ -29,11 +29,14 @@ jobs:
   # Swamp runs jobs and steps in levels (swamp/docs/swamp-shape.md): complete and publication share one level, so the Route starts
   # with the container steps; result starts when both have ended. The steps below are the create's clone steps, with the same
   # native SSH reason (docs/reference/development-containers.md#create).
+  # The run folder and the Ansible assets: only the Route child (a Route its create did not publish) and the fleet start read them. A
+  # plain clone skips it; its one Node step stages the release scripts from the completion's one copy.
   - name: input
     steps:
       - name: input
         labels: {role: swamp}
         writes: true
+        guard: '${{ inputs.intent.route == null && !("fleet" in inputs.intent) }}'
         task:
           type: behavior
           behaviorType: '@nckrtl/ansible-input'
@@ -45,33 +48,6 @@ jobs:
   - name: complete
     dependsOn: [{job: input, condition: {type: succeeded}}]
     steps:
-      # This run's own private folder; the create's folder, which holds T3 session tokens, is never read.
-      - name: clone-input
-        labels: {role: swamp}
-        writes: true
-        dependsOn: []
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
-          methodName: exec
-          inputs:
-            hosts: name:target
-            sudo: true
-            argv: '${{ ["timeout", "20"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_stage_argv : []) + ["stage"] }}'
-            stdin: '${{ "input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_payload : "" }}'
-            timeoutSec: 30
-          globalArgs:
-            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
-            transport:
-              kind: ssh
-              user: ${{ inputs.intent.ssh_execution.target.user }}
-              port: ${{ inputs.intent.ssh_execution.target.port }}
-              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-            hosts:
-              - name: target
-                address: ${{ inputs.intent.ssh_execution.target.host }}
       - name: database-snapshot
         labels: {role: swamp}
         dependsOn: []
@@ -114,7 +90,7 @@ jobs:
             execution_secrets: '${{ inputs.intent.server_valkey == null ? {} : {"create": inputs.execution_secrets.server_valkey_create, "check": inputs.execution_secrets.server_valkey_check} }}'
       - name: database-install
         labels: {role: swamp}
-        dependsOn: [{step: database-snapshot, condition: {type: succeeded}}, {step: clone-input, condition: {type: succeeded}}]
+        dependsOn: [{step: database-snapshot, condition: {type: succeeded}}]
         guard: '${{ inputs.intent.database == null }}'
         task:
           type: workflow
@@ -179,7 +155,7 @@ jobs:
       - name: clone-fleet
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-input, condition: {type: succeeded}}]
+        dependsOn: []
         guard: '${{ !("fleet" in inputs.intent) }}'
         task:
           type: behavior
@@ -234,13 +210,18 @@ jobs:
             argv: '${{ ["timeout", "600"] + (inputs.intent.server_database == null || inputs.intent.server_database.fill == null ? [] : inputs.intent.server_database.fill) }}'
             stdin: '${{ vault.get(inputs.execution_secrets.process_environments.vault, inputs.intent.server_database == null ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.server_database_create.key) }}'
             timeoutSec: 610
-      # The services part of the workspace phase: PHP settings, file rights, Process files, web config, the Node store, then the units.
-      # It waits for the database and the fleet, because the units read the database that .env names. It refuses when the checkout mark
-      # names another Instance, and it writes no tracked file. A failed step of this job skips it; the Route job's steps never do.
+      # The completion's one Node step (docs/cli/instance/complete.mmd): it stages the release scripts from the completion's one copy into
+      # this run's own private folder (the create's folder, which holds T3 session tokens, is never read), then runs the services part
+      # of the workspace phase (PHP settings, file rights, Process files, web config, the Node store, then the units) and the check (the
+      # checkout mark, the agent's Git identity, PHP and every running unit). It waits for the database and the fleet, because the units
+      # read the database that .env names. It refuses when the checkout mark names another Instance, and it writes no tracked file. A
+      # services failure fails the step. The check's outcome is the step's output, which `finish` reads: the check's own line, a dead
+      # unit's public receipt, or no line; the phase then ends 0, because a failed step keeps no output. A failed step of this job skips
+      # it; the Route job's steps never do.
       - name: clone-services
         labels: {role: swamp}
         writes: true
-        dependsOn: [{step: clone-input, condition: {type: succeeded}}, {step: clone-fleet, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: server-valkey-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
+        dependsOn: [{step: clone-fleet, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: database-install, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: server-database-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: server-database-fill, condition: {type: or, conditions: [type: succeeded, type: skipped]}}, {step: server-valkey-check, condition: {type: or, conditions: [type: succeeded, type: skipped]}}]
         guard: '${{ steps.exists(k, steps[k].status == "failed" && !k.startsWith("route")) }}'
         task:
           type: behavior
@@ -250,39 +231,9 @@ jobs:
           inputs:
             hosts: name:target
             sudo: true
-            argv: '${{ ["timeout", "120"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["services"] }}'
+            argv: '${{ ["timeout", "185", "python3", "-c", inputs.intent.clone_launcher, "/tmp/orbit-clone-" + string(inputs.intent.instance_id) + "-" + run.id, "stage", "complete"] }}'
             stdin: '${{ vault.get(inputs.execution_secrets.process_environments.vault, inputs.execution_secrets.process_environments.key) }}'
-            timeoutSec: 130
-          globalArgs:
-            name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
-            transport:
-              kind: ssh
-              user: ${{ inputs.intent.ssh_execution.target.user }}
-              port: ${{ inputs.intent.ssh_execution.target.port }}
-              identityFile: ${{ inputs.intent.ssh_execution.identity_file }}
-              hostKeys: ${{ inputs.intent.ssh_execution.target.host_keys }}
-            hosts:
-              - name: target
-                address: ${{ inputs.intent.ssh_execution.target.host }}
-      # The check phase: this Instance's checkout mark, the agent's Git identity, PHP and every running unit. A dead unit prints its
-      # public receipt and exits nonzero. A failed step keeps no output, so the step accepts every exit code and `finish` reads the
-      # outcome from its output: the phase's own line on success, the receipt on a dead unit, nothing on any other failure.
-      - name: clone-check
-        labels: {role: swamp}
-        writes: true
-        dependsOn: [{step: clone-services, condition: {type: succeeded}}]
-        task:
-          type: behavior
-          behaviorType: '@swamp/ssh'
-          behaviorName: '${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}'
-          methodName: exec
-          inputs:
-            hosts: name:target
-            sudo: true
-            argv: '${{ ["timeout", "60"] + ("input" in steps && steps.input.status == "succeeded" ? steps.input.outputs.clone_argv : []) + ["check"] }}'
-            stdin: ''
-            timeoutSec: 70
-            okExitCodes: any
+            timeoutSec: 195
           globalArgs:
             name: ${{ ("ic-clone-" + string(inputs.node_id) + "-" + string(inputs.intent.instance_id % 4)).split(".").join("-") }}
             transport:
@@ -345,11 +296,11 @@ jobs:
           inputs:
             folder: '${{ "/tmp/orbit-ansible-" + run.id }}'
             intent: '${{ inputs.intent }}'
-            stage: '${{ "clone-input" in steps ? steps["clone-input"].status : "skipped" }}'
+            stage: '${{ "clone-services" in steps ? steps["clone-services"].status : "skipped" }}'
             database: '${{ (inputs.intent.database == null || ("database-install" in steps && steps["database-install"].status == "succeeded")) && (inputs.intent.server_database == null || ("server-database-check" in steps && steps["server-database-check"].status == "succeeded" && (inputs.intent.server_database.fill == null || ("server-database-fill" in steps && steps["server-database-fill"].status == "succeeded")))) && (inputs.intent.server_valkey == null || ("server-valkey-check" in steps && steps["server-valkey-check"].status == "succeeded")) ? "succeeded" : (steps.exists(k, (k.startsWith("database-") || k.startsWith("server-")) && steps[k].status == "failed") ? "failed" : "skipped") }}'
             fleet: '${{ "clone-fleet" in steps ? steps["clone-fleet"].status : "skipped" }}'
             services: '${{ "clone-services" in steps ? steps["clone-services"].status : "skipped" }}'
-            check: '${{ "clone-check" in steps ? steps["clone-check"] : null }}'
+            check: '${{ "clone-services" in steps ? steps["clone-services"] : null }}'
             route: '${{ "route" in steps ? steps.route.status : "skipped" }}'
             certificates: '${{ inputs.intent.route == null ? [] : inputs.intent.route.leaf_indexes.map(i, ("route-csr-" + string(i)) in steps ? steps["route-csr-" + string(i)].status : "skipped") }}'
             route_observation: '${{ "route" in steps && steps.route.status == "succeeded" ? steps.route.outputs : {} }}'
@@ -396,10 +347,12 @@ jobs:
             side: restore
             intent: '${{ {"route_mutations": inputs.intent.route_mutations} }}'
             execution_secrets: {}
+      # The run folder on the Swamp Node exists only when `input` ran; the pinned engine lists no skipped step in `steps`.
       - name: cleanup
         labels: {role: swamp}
         writes: true
         dependsOn: [{step: clone-private-cleanup, condition: {type: always}}]
+        guard: '${{ !("input" in steps) || steps.input.status == "skipped" }}'
         task:
           type: behavior
           behaviorType: command/shell
