@@ -28,8 +28,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-# python3-venv builds the venv; the fixture units run zip, unzip and jq; the inner Incus's btrfs pool needs btrfs-progs.
-PACKAGES = ('python3-venv', 'zip', 'unzip', 'jq', 'btrfs-progs')
+# python3-venv builds the venv; the fixture units run zip, unzip and jq; the inner Incus's btrfs pool needs btrfs-progs, and the
+# refresh's dedupe of the nested root disks (instance_fleet_shrink.py) needs duperemove.
+PACKAGES = ('python3-venv', 'zip', 'unzip', 'jq', 'btrfs-progs', 'duperemove')
 
 
 def names(workspace):

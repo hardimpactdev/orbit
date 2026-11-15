@@ -339,13 +339,34 @@
   loop: "{{ fleet_names }}"
   register: fleet_snapshots
   changed_when: false
+# The nested containers' root disks stay small (docs/reference/development-containers.md#the-inner-machines-stay-small): the relink and
+# the dedupe of instance_fleet_shrink.py run in the `base` window below when a package of a nested container changed since their last
+# run, or no run is recorded. The check reads three dpkg status files: well under a second. A check that cannot read is not due.
+- name: Read whether the nested root disks need shrinking
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_outer + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_fleet_shrink.py'),
+          'check', fleet_shrink_record, fleet_inner_pools] + fleet_names }}
+  register: fleet_shrink_read
+  changed_when: false
+  failed_when: false
+- name: Read what the shrink check found
+  vars:
+    fleet_shrink_line: "{{ fleet_shrink_read.stdout_lines | default([]) | last | default('') }}"
+  ansible.builtin.set_fact:
+    fleet_shrink_check: >-
+      {{ (fleet_shrink_line | from_json)
+         if fleet_shrink_read.rc == 0 and fleet_shrink_line is match('^\{"due": ?(true|false), ?"reason": ?"(record|packages|current|unreadable)"\}$')
+         else {'due': false, 'reason': 'unreadable'} }}
+
 # `base` is retaken only for the containers whose disk changed. A reset restores `base` of all three, so the set must stay consistent:
 # - a step that writes a nested container's own disk and reported a change (`fleet_disk_writers`: the grants and a remint of the
 #   nested Gateway): that container's `base`. A migration is no such writer: a reset migrates after its restore
 #   (instance-fleet-migrate.yml), so `base` need not hold each schema;
 # - a converge that changed a Node: that Node's `base` and the nested Gateway's, whose database records the converge;
 # - a missing `base`: that container's;
-# - a missing or unreadable record, or a fleet rule or file that differed: all three, with the rules applied on a stopped fleet.
+# - a missing or unreadable record, or a fleet rule or file that differed: all three, with the rules applied on a stopped fleet;
+# - a shrink that is due: all three, so the dedupe shares blocks across the three and every `base` holds the small form.
 # The other containers keep running. Their agents lose the nested Gateway while it stops and connect again after its start, as after
 # the restart above; the start after `base` starts what stopped and waits for readiness.
 - name: Work out which base is due
@@ -366,7 +387,7 @@
          + (['gateway'] if fleet_converge_changed_roles | length > 0 else []) }}
   ansible.builtin.set_fact:
     fleet_base_targets: >-
-      {{ fleet_names if fleet_record_state != 'present' or fleet_drift_found | length > 0
+      {{ fleet_names if fleet_record_state != 'present' or fleet_drift_found | length > 0 or fleet_shrink_check.due
          else fleet_names | select('in', fleet_base_missing + (fleet_changed_roles | map('extract', intent.fleet.guests) | list)) | list }}
 
 # A retake of `base` needs the fleet files compared, because a partly stopped fleet only compares its rules. A run that did not read the
@@ -438,11 +459,34 @@
       loop: "{{ fleet_snapshots.results }}"
       loop_control: { label: "{{ item.item }}" }
       changed_when: true
+    # With the three stopped and no `base` holding the old blocks: the relink, then the dedupe over the three root disks (36 s on a
+    # copy of the first nested fleet: 11.8 GiB to 3.7 GiB of the inner pool). It never fails the refresh: a failed or partial run
+    # writes no shrink record, so the next refresh runs it again.
+    - name: Shrink the nested root disks
+      when: fleet_shrink_check.due
+      ansible.builtin.command:
+        argv: >-
+          {{ ['timeout', '600'] + fleet_outer + ['python3', '-I', '-c', lookup('ansible.builtin.file', playbook_dir ~ '/instance_fleet_shrink.py'),
+              'run', fleet_shrink_record, fleet_inner_pools] + fleet_names }}
+      register: fleet_shrink_run
+      changed_when: fleet_shrink_run.rc == 0
+      failed_when: false
     - name: Take base
       ansible.builtin.command: { argv: "{{ ['timeout', '180'] + fleet_incus + ['snapshot', 'create', item, 'base'] }}" }
       loop: "{{ fleet_base_targets }}"
       changed_when: true
     - { name: Start the fleet again and wait for readiness, ansible.builtin.include_tasks: instance-fleet-resume.yml }
+
+- name: Read what the shrink did
+  vars:
+    fleet_shrink_line: "{{ fleet_shrink_run.stdout_lines | default([]) | last | default('') }}"
+  ansible.builtin.set_fact:
+    fleet_shrink: >-
+      {{ 'skipped' if fleet_shrink_run is skipped
+         else (fleet_shrink_line | from_json).shrink
+           if fleet_shrink_run.rc == 0
+              and fleet_shrink_line is match('^\{"shrink": ?"(ran|relinked|failed)", ?"relinked": ?[0-9]+, ?"dedupe": ?"(ran|missing|not_btrfs|failed)"\}$')
+         else 'failed' }}
 
 # The pinned shape tools in the Instance container itself, so the seed that the phase after this one takes holds them for every copy
 # (docs/reference/development-containers.md#the-pinned-shape-tools). instance_shape_tools.py names them with the workspace's own
@@ -500,6 +544,9 @@
       # Why: `current` (present), `missing` (built), or the step that failed: `names`, `package`, `venv`, `collections`, `cleanup`,
       # `timeout` (600 s), `unreadable` (no result line).
       tools_reason: "{{ fleet_tools.reason }}"
+      # `ran` (relink and dedupe), `relinked` (no duperemove yet: due again), `failed` (due again), `skipped` (not due).
+      shrink: "{{ fleet_shrink }}"
+      shrink_reason: "{{ fleet_shrink_check.reason }}"
       seconds:
         gateway: "{{ ((fleet_gateway_at | float) - (fleet_started_at | float)) | round | int }}"
         converge: "{{ ((fleet_converge_at | float) - (fleet_gateway_at | float)) | round | int }}"

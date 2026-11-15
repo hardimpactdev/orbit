@@ -271,7 +271,7 @@ class InstanceShapeToolsTest(unittest.TestCase):
         self.assertEqual(result['tools'], 'built')
         apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
         self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update',
-                               '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv zip unzip jq btrfs-progs'])
+                               '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- python3-venv zip unzip jq btrfs-progs duperemove'])
 
     def test_host_programs_missing_beside_ready_tools_are_installed_once_then_only_read(self):
         self.keep()
@@ -288,6 +288,16 @@ class InstanceShapeToolsTest(unittest.TestCase):
         result, calls = self.keep(STUB_VENV_FAIL='1')
         self.assertEqual((result['tools'], result['reason']), ('present', 'current'))
         self.assertFalse([call for call in calls if 'apt-get' in call])
+
+    def test_a_default_without_duperemove_gets_it_once_beside_ready_tools(self):
+        # Every default made before the refresh's shrink of the nested root disks (instance_fleet_shrink.py) lacks duperemove.
+        self.keep()
+        self.stub('dpkg-query', 'case "${@: -1}" in duperemove) exit 1;; esac\nprintf \'install ok installed\'\n')
+        self.log.write_text('')
+        result, calls = self.keep(STUB_VENV_FAIL='1')
+        self.assertEqual((result['tools'], result['reason']), ('built', 'missing'))
+        apt = [call.split(' ', 1)[1] for call in calls if call.startswith(f'{self.bin}/apt-get')]
+        self.assertEqual(apt, ['-o DPkg::Lock::Timeout=120 update', '-o DPkg::Lock::Timeout=120 install --yes --no-install-recommends -- duperemove'])
 
     def test_a_default_made_before_the_image_carried_btrfs_progs_gets_it_once_beside_ready_tools(self):
         # Instance 2454's shape: its image had no btrfs-progs, so the inner Incus cannot make its btrfs pool on the inner volume
