@@ -257,20 +257,38 @@ class TaskCopyPublishTest(unittest.TestCase):
         for name in [step, read]:
             self.assertFalse(self.cel(name, 'guard', self.copy, {}), name)
             self.assertTrue(self.cel(name, 'guard', self.vm, {}), name)
-        mint = 'Mint the push token'
+        mint, scan = 'Mint the push token', 'Read the copy check'
+        passed = {scan: {'status': 'succeeded'}}
         # The check step succeeds also on a refusal (it keeps its exit code); only the typed read decides.
-        self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}}))
-        self.assertFalse(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}}))
+        self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, **passed}))
+        self.assertFalse(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}, **passed}))
         for status in ['skipped', 'failed']:
-            self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': status}}), status)
+            self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': status}, **passed}), status)
+            # The copy check must have passed as well: a skip or a refusal of it is never a pass.
+            self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}, scan: {'status': status}}), status)
+        self.assertTrue(self.cel(mint, 'guard', self.copy, {step: {'status': 'succeeded'}, read: {'status': 'succeeded'}}))
         self.assertTrue(self.cel(mint, 'guard', self.copy, {}))
         self.assertFalse(self.cel(mint, 'guard', self.vm, {step: {'status': 'skipped'}, read: {'status': 'skipped'}}))
         steps = {item['name']: item for job in yaml.safe_load(PUBLISH.read_text())['jobs'] for item in job['steps']}
-        for name in [step, read]:
+        for name in [step, read, scan]:
             self.assertIn({'step': name, 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}},
                           steps[mint]['dependsOn'])
         self.assertEqual(steps[step]['dependsOn'], [{'step': 'Check the environment file', 'condition': {'type': 'succeeded'}},
+                                                    {'step': 'Read the copy check', 'condition': {'type': 'succeeded'}},
                                                     {'step': 'Add the waiver lines', 'condition': {'type': 'or', 'conditions': [{'type': 'succeeded'}, {'type': 'skipped'}]}}])
+        # The copy check runs after the export, in the copy; its typed read decides; the content check reads its object digest.
+        self.assertEqual(steps['Check the copy']['dependsOn'], [{'step': 'Export the copy', 'condition': {'type': 'succeeded'}}])
+        self.assertEqual((steps[scan]['task']['behaviorType'], steps[scan]['task']['methodName']), ('@nckrtl/task-publication-data', 'scan'))
+        self.assertEqual(steps['Check the copy']['task']['inputs']['phase'], 'scan')
+        # The check's intent names the copy's start, whether it holds an inner fleet, and the task branch's proposed body.
+        copy = {**self.copy, 'group_id': 1, 'branch': 'task-1', 'ssh_execution': {'target': {}}}
+        for workspace, nested in [({}, False), ({'club_key': True}, True), ({'club_key': False}, False)]:
+            intent = self.cel('Check the copy', 'intent', {**copy, 'workspace': {**copy['workspace'], **workspace}}, {})
+            self.assertEqual((intent['start'], intent['nested'], intent['head'], intent['proposed_body_path']),
+                             ('a' * 40, nested, 'b' * 40, '.git/orbit/proposed-pr-bodies/task-1.md'))
+        checked = {scan: {'status': 'succeeded'}, 'Check the copy': {'status': 'succeeded', 'outputs': {'evidence': {'phase': 'scan', 'evidence': {'scan': {'objects_sha256': 'e' * 64}}}}}}
+        self.assertEqual(self.cel(step, 'env.ORBIT_SCANNED', self.copy, checked), 'e' * 64)
+        self.assertEqual(self.cel(step, 'env.ORBIT_SCANNED', self.copy, {}), '')
         # The waiver lines join the body after the import and before the content check; only a copy with a pull request runs the step.
         waivers = steps['Add the waiver lines']
         self.assertEqual((waivers['task']['behaviorType'], waivers['task']['methodName']), ('@nckrtl/task-publication-data', 'waivers'))
@@ -291,8 +309,18 @@ class TaskCopyPublishTest(unittest.TestCase):
 
     ENV = 'APP_NAME=Orbit\nAPP_DEBUG=true\nDB_PORT=8080\nexport APP_KEY="base64:c2VjcmV0LWtleS1ub3QtcmVhbA=="\r\nDB_PASSWORD=\'pa55-w0rd-xyz\'\nPEM="line-one-abcdefgh\\nline-two-ijklmnop"\n# old token-in-a-comment-123\n'
 
-    def content_check(self, repository, start, copy=None, rendered='', pull_request=None, club=None, directory=None):
-        """The step's own script. `club` is a nested-fleet copy's Club key; without it the step's vault read gets the render again."""
+    def scanned(self, repository, start):
+        """The object digest the copy check reports for this range, or '' when the range does not resolve."""
+        listed = subprocess.run(['git', '-C', str(repository), 'rev-list', '--objects', start + '..refs/heads/candidate', '--'],
+                                capture_output=True, text=True, check=False)
+        if listed.returncode != 0:
+            return ''
+        ids = sorted({line.split(' ')[0] for line in listed.stdout.splitlines()})
+        return hashlib.sha256(''.join(i + '\n' for i in ids).encode()).hexdigest()
+
+    def content_check(self, repository, start, copy=None, rendered='', pull_request=None, club=None, directory=None, scanned=None):
+        """The step's own script. `club` is a nested-fleet copy's Club key; without it the step's vault read gets the render again.
+        `scanned` is the copy check's object digest; by default the one of this range, as a copy check of the same branch reports it."""
         directory = directory or Path(tempfile.mkdtemp(prefix='orbit-task-publish-', dir=self.root))
         (directory / 'environment').write_text(self.ENV if copy is None else copy)
         # "Add the waiver lines" writes the text the PR gets; the check reads those files, never the intent's text.
@@ -309,7 +337,8 @@ class TaskCopyPublishTest(unittest.TestCase):
                               env={'PATH': os.environ['PATH'], 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_NOSYSTEM': '1',
                                    'ORBIT_REPOSITORY': str(repository), 'ORBIT_DIRECTORY': str(directory),
                                    'ORBIT_FILE': str(directory / 'environment'), 'ORBIT_START': start, 'ORBIT_ENVIRONMENT': rendered,
-                                   'ORBIT_CLUB': rendered if club is None else club, **names})
+                                   'ORBIT_CLUB': rendered if club is None else club,
+                                   'ORBIT_SCANNED': self.scanned(repository, start) if scanned is None else scanned, **names})
         done.directory = directory
         return done
 
@@ -507,6 +536,16 @@ class TaskCopyPublishTest(unittest.TestCase):
                                  text=True, check=False, timeout=60, env={'PATH': os.environ['PATH'], **env})
         self.assertEqual(cleanup.returncode, 0, cleanup.stderr)
         self.assertFalse(directory.exists())
+
+    def test_a_copy_check_of_another_range_refuses_as_unchecked(self):
+        work, start = self.copy_repository()
+        self.commit(work, 'agent work', {'app.txt': 'changed\n'})
+        repository = self.candidate(work)
+        self.assertEqual(self.content_check(repository, start).returncode, 0)
+        for scanned in ['', 'e' * 64]:
+            done = self.content_check(repository, start, scanned=scanned)
+            self.assertEqual(done.returncode, 1)
+            self.assertTrue(done.stderr.startswith('tasks.publish_secret_unchecked: the copy check read another range'), done.stderr)
 
     def test_an_error_in_the_content_check_refuses_without_the_content_code(self):
         work, start = self.copy_repository()

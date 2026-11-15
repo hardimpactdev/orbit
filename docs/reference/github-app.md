@@ -193,7 +193,7 @@ A task copy never holds a GitHub credential, neither a token nor a deploy key. T
 
 The clone credential (`purpose: clone`) and the setup's dependency token of a task VM start are removed with the task VMs ([old paths](/reference/old-paths#the-pi-task-loop)): an old `tasks.provision` run gets no token.
 
-The publish token has `contents: write`, `pull_requests: write` and `workflows: write` for the Project repository. Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
+The publish token has `contents: write` and `pull_requests: write` for the Project repository, and no `workflows` permission: GitHub refuses its push of a change under `.github/workflows/`, and the publish refuses such a change first ([the copy check](/reference/tasks#the-copy-check)). Swamp pushes the checked commit as `<commit_sha>:refs/heads/task-{id}`, never using `HEAD`. See [Publish from the VM](/reference/compute-drivers#publish-from-the-vm).
 
 A [handoff CI](/reference/tasks#handoff-ci) pushes the handoff commit the same way, always to `task-{id}-handoff`, with `--force-with-lease` over the tip it just fetched. It opens and reads no pull request. When the task's workspace is removed, the Gateway deletes that branch with `DELETE /repos/{owner}/{repo}/git/refs/heads/task-{id}-handoff` and the same token. A 404 or a 422 for a missing reference counts as deleted. Any other failure asks for assistance once and never holds the workspace removal.
 

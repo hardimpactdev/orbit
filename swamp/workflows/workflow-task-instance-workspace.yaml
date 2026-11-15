@@ -9,7 +9,7 @@ inputs:
     node_id: {type: integer, minimum: 1}
     # The task group: its long phase locks a behavior of its own, so another group's copy on this Node never waits for it.
     group_id: {type: integer, minimum: 1}
-    phase: {type: string, enum: [preflight, before, after, receipt, export, discard]}
+    phase: {type: string, enum: [preflight, before, after, receipt, export, discard, scan]}
     intent:
       type: object
       properties:
@@ -49,6 +49,9 @@ inputs:
         # The copy's proposed pull request body, if it holds one for the task branch: data whose waiver lines the PR body gets.
         proposed_body_path: {type: string, pattern: '^\.git/orbit/proposed-pr-bodies/task-[1-9][0-9]*\.md$'}
         worker_proposed_body: {type: string, pattern: '^/tmp/orbit-task-publish-[A-Za-z0-9]+/proposed-body$'}
+        # The copy check of a publication: the copy's recorded start, and whether the copy holds an inner fleet.
+        start: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+        nested: {type: boolean}
         # The shared address-node tasks own the pinned SSH descriptor contract.
         ssh_execution: {type: object}
       required: [runtime, branch, head, snapshot_id, ssh_execution]

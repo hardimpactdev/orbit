@@ -366,3 +366,60 @@ export function withWaivers(body: string, proposed: string | null): string {
 
     return result;
 }
+
+const CopyHit = z.object({
+    path: z.string(),
+    line: z.number().int().min(1).optional(),
+    secret: z.string().min(1),
+}).strict();
+const CopyScan = z.object({
+    secrets: z.array(CopyHit),
+    secrets_more: z.number().int().min(0),
+    workflows: z.array(z.string()),
+    workflows_more: z.number().int().min(0),
+    sources: z.array(z.string()),
+    values: z.number().int().min(0),
+    short_skipped: z.record(z.string(), z.number().int().min(0)),
+    objects: z.number().int().min(0),
+    objects_sha256: z.string().regex(/^[0-9a-f]{64}$/),
+    seconds: z.number().min(0),
+}).strict();
+
+/** One refusal line: its code, then the quoted items that fit BASE_BYTES, then how many more there were. */
+function refusal(prefix: string, items: string[], extra: number) {
+    const total = items.length + extra;
+    const { shown, more } = bounded(items, BASE_BYTES - bytes(prefix) - bytes(` and ${total} more`));
+    return prefix + shown.map((item) => JSON.stringify(item)).join(", ") + (more + extra > 0 ? ` and ${more + extra} more` : "");
+}
+
+/**
+ * The copy check of a publication (docs/reference/tasks.md#the-copy-check), as its workspace phase recorded it. A secret of the copy in
+ * the range refuses with its paths, lines and secret names; then a workflow change refuses with its paths; an error of the check refuses
+ * as unchecked. A pass keeps the public facts: what was read, what was skipped, and the digest of the objects the check read.
+ */
+export function copyCheck(raw: unknown) {
+    const evidence = z.object({ phase: z.literal("scan"), evidence: z.unknown() }).parse(raw).evidence;
+    const parsed = z.object({ scan: CopyScan, changed: z.literal(false) }).strict().safeParse(evidence);
+    if (!parsed.success) {
+        // The program's own refusal keeps its fixed reason, such as "the nested copy shows no inner machine".
+        const refused = z.object({ error_code: z.literal("tasks.publish_secret_unchecked"), reason: z.string().regex(/^[A-Za-z0-9 ._-]{1,100}$/) })
+            .safeParse(evidence);
+        return { checked: false, error_code: "tasks.publish_secret_unchecked" + (refused.success ? ": " + refused.data.reason : "") };
+    }
+    const scan = parsed.data.scan;
+    if (scan.secrets.length > 0) {
+        return {
+            checked: false,
+            error_code: refusal(
+                "tasks.publish_secret_value: ",
+                scan.secrets.map((hit) => `${hit.path}${hit.line === undefined ? "" : ":" + hit.line} ${hit.secret}`),
+                scan.secrets_more,
+            ),
+        };
+    }
+    if (scan.workflows.length > 0) {
+        return { checked: false, error_code: refusal("tasks.publish_workflow_change: ", scan.workflows, scan.workflows_more) };
+    }
+    const { secrets: _s, secrets_more: _m, workflows: _w, workflows_more: _x, ...facts } = scan;
+    return { checked: true, error_code: "", ...facts };
+}

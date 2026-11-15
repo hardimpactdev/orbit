@@ -39,7 +39,8 @@ Deno.test("a publish names its group only for the content check, the import and 
 
 Deno.test("the publish passes its group to every workspace phase", () => {
   const calls = steps("workflow-operation-task-publish.yaml").filter((step) => step.task.workflowIdOrName === "task-instance-workspace");
-  assertEquals(calls.length, 3);
+  // Preflight, export, the copy check (`scan`) and the discard.
+  assertEquals(calls.map((call) => call.task.inputs?.phase), ["preflight", "export", "scan", "discard"]);
   for (const call of calls) {
     const group = call.task.inputs?.group_id;
     assertEquals(typeof group, "string", `${call.name} passes no group_id`);

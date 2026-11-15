@@ -45,6 +45,8 @@ final readonly class StartProjectPullRequestMergeAction
         $target = $this->evidence->outside($project, $number, $head);
         // A copy publish that ended before it recorded the number still pushed `task-<id>`.
         TaskCopyPullRequest::refuseBranch($project, $target->pull->headRef);
+        // Two Projects can name one repository: a pull request of another Project's task group is not this Project's to merge.
+        TaskCopyPullRequest::refuseOtherProject($project, $number, $target->pull->headRef);
         // Only the vault key name is admitted. The step mints its token when it runs ({@see TaskGitHubTokens}).
         $secrets = ['write_token' => ['vault' => 'orbit-control-inputs', 'key' => 'pr-merge-write-'.Str::uuid()]];
 

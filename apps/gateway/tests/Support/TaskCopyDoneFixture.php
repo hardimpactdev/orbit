@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\Support;
 
+use App\Domain\GitHub\GitHubRepository;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
@@ -78,9 +79,12 @@ final class TaskCopyDoneFixture
     /** A succeeded publish from a task copy that opened pull request `$number`: the record that outlives the copy. */
     public static function copyPublish(Task $group, int $number): Operation
     {
+        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
+        $name = $repository === null ? 'example/trial' : $repository->owner.'/'.$repository->name;
+
         return Operation::query()->create(['kind' => OperationKinds::TasksPublish, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $group->id, 'node_id' => null,
-            'input' => ['check' => 1, 'commit' => self::Commit, 'workspace' => ['branch' => 'task-'.$group->id]], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
-            'result' => ['branch' => 'task-'.$group->id, 'commit' => self::Commit, 'pull_request_number' => $number, 'pull_request_url' => 'https://github.com/example/trial/pull/'.$number]]);
+            'input' => ['check' => 1, 'commit' => self::Commit, 'repository' => $name, 'workspace' => ['branch' => 'task-'.$group->id]], 'status' => OperationStatus::Succeeded, 'sequence' => 1, 'attempts' => 1,
+            'result' => ['branch' => 'task-'.$group->id, 'commit' => self::Commit, 'pull_request_number' => $number, 'pull_request_url' => 'https://github.com/'.$name.'/pull/'.$number]]);
     }
 
     /** A finished copy turn of the reviewer thread on the candidate. */

@@ -176,7 +176,7 @@ An installed Gateway caches its configuration, so an edit takes effect only afte
 | `ORBIT_WEBSOCKET_REPOSITORY`, `ORBIT_WEBSOCKET_INSTALL_PATH`, `ORBIT_WEBSOCKET_PORT` | Defaults for the `websocket` Node role, with repository `https://github.com/hardimpactdev/orbit-reverb.git`. See [Realtime events with Reverb](/solutions/realtime-reverb). Each Gateway release pins a server commit for the [live registry](/reference/websocket-apps#the-reverb-server). |
 | `TYPESAFE_API_KEY` | Key for the Jev classifier in [Tasks](/reference/tasks). |
 | `ORBIT_TASKS_COPIES_MAX` | How many nested-fleet [task copies](/reference/tasks#task-copy) one Node holds at once; default 1, minimum 0. `task:start` counts at admission. A copy of any other Project does not count. |
-| `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` | A JSON list of Project ids whose [task copies](/reference/tasks#task-copy) may publish, besides nested-fleet trial Projects; default `[]`. Any other copy publish fails with `tasks.copy_publish_held`. Malformed JSON or an object holds every Project. |
+| `ORBIT_TASKS_COPY_PUBLISH_PROJECTS` | A JSON list of Project ids whose [task copies](/reference/tasks#task-copy) may publish, besides nested-fleet Projects; default `[]`. Any other copy publish fails with `tasks.copy_publish_held`. Malformed JSON or an object holds every Project. |
 | `ORBIT_TASKS_PR_MODE` | The [mode](/reference/tasks#task-group-modes) of a task copy's group whose group and Project set none: `review_before_pr` (default) or `pr_when_done`. Any other value fails with `tasks.pr_mode_setting_invalid`. |
 | `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_REVIEWER_PROVIDER` | The provider of a new implementer or reviewer thread in a [task copy](/reference/tasks#copy-turn-agents) when neither the task nor its Project names one; default `claude`. |
 | `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_REVIEWER_MODEL` | The same for the model; default `claude-opus-5-5`. A value that is no model name refuses each new copy thread that falls back to it with `tasks.copy_turn_model_invalid`. |
@@ -203,7 +203,7 @@ The fleet-owned `instances.mailpit` configuration names the main Docker Node Pro
 
 `ORBIT_INSTANCES_CONTAINER_NODES` is the build list of [Instance containers](/reference/development-containers#the-build-list): a JSON list of the Node ids that run container Instances. It is empty by default.
 
-`ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set trial allow list, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. Only list disposable trial Projects; do not enable the flag on a real Project.
+`ORBIT_INSTANCES_NESTED_FLEET_PROJECTS` is the operator-set allow list of nested-fleet Projects, read as `instances.nested_fleet_projects`: a JSON list of positive integer Project IDs, such as `[123]`. It defaults to `[]`, so no Project can enable `nested_fleet` by default. List only the Orbit Project, whose container holds an inner fleet, and disposable trial Projects.
 
 A list that is not a JSON array, such as `{}` or `{"0":123}`, is malformed: enabling then refuses with `project.nested_fleet_projects_invalid`. See [Nested fleet setting](/reference/projects#nested-fleet-setting) for what the flag does. Removing an ID does not change its stored flag and does not prevent turning it off.
 

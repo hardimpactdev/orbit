@@ -83,6 +83,22 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
         return ['conflicting_paths' => is_array($paths) ? array_values(array_filter($paths, is_string(...))) : [], 'conflicting_more' => (int) ($match[2] ?? 0)];
     }
 
+    /**
+     * The copy check's refusal (docs/reference/tasks.md#the-copy-check): its code, and the quoted items of its one line, which name paths,
+     * lines and secret names, never a value. Any other failure of the check refuses as unchecked.
+     *
+     * @return array{error_code: string, refused?: list<string>, refused_more?: int}
+     */
+    private static function copyCheck(mixed $detail): array
+    {
+        if (! is_string($detail) || preg_match('/^(tasks\.publish_(?:secret_value|workflow_change)): (.*?)(?: and ([1-9][0-9]*) more)?$/m', $detail, $match) !== 1) {
+            return ['error_code' => 'tasks.publish_secret_unchecked'];
+        }
+        $items = json_decode('['.$match[2].']', true);
+
+        return ['error_code' => $match[1], 'refused' => is_array($items) ? array_values(array_filter($items, is_string(...))) : [], 'refused_more' => (int) ($match[3] ?? 0)];
+    }
+
     /** Only the check's own refusal line names content; any other failure of the check refuses as unchecked. */
     private static function contentCode(mixed $detail): string
     {
@@ -105,11 +121,12 @@ final readonly class TaskPublishProjection implements DirectOperationProjection,
                 $failure = ValidatedData::object($data['failure'] ?? []);
                 $detail = $failure['detail'] ?? null;
                 $step = $failure['failed_step'] ?? null;
-                $code = SwampLockTimeout::matches($detail) ? TaskDonePublication::LockTimeoutCode : ($step === 'Check the base' && is_string($detail) && preg_match('/^tasks\.publish_conflict: /m', $detail) === 1 ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
-                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed'))))));
+                $copyCheck = in_array($step, ['Check the copy', 'Read the copy check'], true) && ! SwampLockTimeout::matches($detail) ? self::copyCheck($detail) : null;
+                $code = $copyCheck !== null ? $copyCheck['error_code'] : (SwampLockTimeout::matches($detail) ? TaskDonePublication::LockTimeoutCode : ($step === 'Check the base' && is_string($detail) && preg_match('/^tasks\.publish_conflict: /m', $detail) === 1 ? 'tasks.publish_conflict' : (in_array($detail, ['tasks.head_moved', 'tasks.not_fast_forward', 'tasks.workflows_permission', 'tasks.push_failed', 'tasks.publish_failed', 'tasks.repository_execution_unknown'], true)
+                    ? $detail : ($step === 'Check the environment file' ? 'tasks.publish_secret_path' : (in_array($step, ['Check the .env content', 'Read the .env check'], true) ? self::contentCode($detail) : ($step === 'Push the branch' ? 'tasks.push_failed' : (in_array($step, ['Init the bare repo', 'Import the bundle', 'Read bundle contents'], true) ? 'tasks.repository_execution_unknown' : 'tasks.publish_failed')))))));
                 $data['error_code'] = $code;
                 // A conflict names its paths, as the check's one line lists them.
-                $result = ['error_code' => $code, ...($code === 'tasks.publish_conflict' ? self::conflict(ValidatedData::string($detail)) : [])];
+                $result = ['error_code' => $code, ...($code === 'tasks.publish_conflict' ? self::conflict(ValidatedData::string($detail)) : []), ...array_diff_key($copyCheck ?? [], ['error_code' => true])];
             } else {
                 $result = [];
             }

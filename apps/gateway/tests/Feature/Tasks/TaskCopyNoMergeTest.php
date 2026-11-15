@@ -132,6 +132,128 @@ it('still merges another pull request of the same Project through project:pr-mer
     expect($operation->kind)->toBe(OperationKinds::ProjectPrMerge);
 });
 
+/** A second review-and-merge Project that names the same repository as the copy's Project, as Project 46 does once Project 78 moves. */
+function noMergeOtherProject(TaskCopyDoneFixture $world): Project
+{
+    return Project::query()->create(['name' => 'Old Orbit', 'slug' => 'old-orbit', // Another spelling of the same repository: GitHub names are case-insensitive.
+        'repository_url' => str_replace('github.com/example/', 'github.com/Example/', $world->group->project->repository_url),
+        'default_branch' => 'main', 'review_and_merge' => true, 'merge_check' => 'Required checks', 'source_access' => 'github_app']);
+}
+
+it('refuses project:pr-merge of another Project on the same repository for a task copy\'s pull request', function (): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    noMergeGitHub();
+
+    expect(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($other, 7, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::Code)
+        ->and(Operation::query()->where('kind', OperationKinds::ProjectPrMerge)->count())->toBe(0);
+});
+
+it('refuses project:pr-merge of another Project on the same repository for the task branch of a copy group whose publish recorded no number', function (): void {
+    $world = noMergeWorld();
+    Operation::query()->where('kind', OperationKinds::TasksPublish)->update(['status' => 'interrupted', 'result' => null]);
+    $world->group->update(['status' => TaskGroupStatus::Cancelled, 'taskable_type' => null, 'taskable_id' => null, 'watched_pr_number' => null, 'watched_pr_url' => null]);
+    $other = noMergeOtherProject($world);
+    noMergeGitHub(headRef: 'task-'.$world->group->id);
+
+    expect(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($other, 7, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::Code);
+});
+
+it('refuses project:pr-merge of a pull request that a group of another Project on the same repository published, also without a task copy', function (?string $headRef, int $number): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    $vm = Task::query()->create(['project_id' => $world->group->project_id, 'title' => 'VM group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Completed]);
+    Operation::query()->create(['kind' => OperationKinds::TasksPublish, 'target_type' => OperationKinds::TaskGroupTarget, 'target_id' => $vm->id, 'node_id' => null,
+        'input' => ['check' => 1, 'repository' => 'example/trial'], 'status' => 'succeeded', 'sequence' => 1, 'attempts' => 1, 'result' => ['pull_request_number' => 9]]);
+    noMergeGitHub(headRef: $headRef === null ? null : str_replace('<vm>', (string) $vm->id, $headRef));
+
+    expect(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($other, $number, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::OtherProjectCode)
+        ->and(Operation::query()->where('kind', OperationKinds::ProjectPrMerge)->count())->toBe(0);
+})->with(['by its publish' => [null, 9], 'by its task branch' => ['task-<vm>', 10]]);
+
+it('still merges a pull request of its own on a repository that another Project shares', function (): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    noMergeGitHub(headRef: 'feature/hand-made');
+
+    expect(app(StartProjectPullRequestMergeAction::class)->execute($other, 8, NO_MERGE_HEAD, 'test', (string) Str::uuid())->kind)->toBe(OperationKinds::ProjectPrMerge);
+});
+
+it('does not count a copy publish to another repository with the same pull request number', function (): void {
+    $world = noMergeWorld();
+    $elsewhere = Project::query()->create(['name' => 'Elsewhere', 'slug' => 'elsewhere', 'repository_url' => 'https://github.com/example/elsewhere.git', 'default_branch' => 'main']);
+
+    expect(TaskCopyPullRequest::published($elsewhere, 7))->toBeFalse()->and(TaskCopyPullRequest::published($world->group->project, 7))->toBeTrue();
+});
+
+it('refuses task:pr-merge of a group of another Project whose watched pull request a task copy opened on the same repository', function (): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    $group = Task::query()->create(['project_id' => $other->id, 'title' => 'Hand group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running,
+        'pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_number' => 7, 'watched_pr_state' => 'open']);
+    noMergeGitHub(read: false);
+
+    expect(noMergeCode(fn () => app(TaskPullRequestEvidence::class)->merge($group->refresh(), NO_MERGE_HEAD)))->toBe(TaskCopyPullRequest::Code);
+});
+
+it('refuses task:pr-merge when the watched pull request\'s head is a copy group\'s task branch on the same repository', function (): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    $group = Task::query()->create(['project_id' => $other->id, 'title' => 'Hand group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'orchestration' => 'external',
+        'pr_url' => 'https://github.com/example/trial/pull/11', 'watched_pr_url' => 'https://github.com/example/trial/pull/11', 'watched_pr_number' => 11, 'watched_pr_state' => 'open']);
+    noMergeGitHub(headRef: 'task-'.$world->group->id);
+
+    expect(noMergeCode(fn () => app(TaskPullRequestEvidence::class)->merge($group->refresh(), NO_MERGE_HEAD)))->toBe(TaskCopyPullRequest::Code);
+});
+
+it('starts no merge by itself for a task copy group: the gate skips it in its own review-and-merge Project and never sees it from another', function (bool $ownReviews): void {
+    $world = noMergeWorld();
+    $world->group->project->update(['review_and_merge' => $ownReviews]);
+    noMergeOtherProject($world);
+    noMergeGitHub(read: false);
+    $before = Operation::query()->count();
+
+    $results = app(RunTaskPullRequestGateAction::class)->execute();
+
+    expect($results)->toBe($ownReviews ? [['group' => $world->group->id, 'pull_request' => 7, 'step' => null, 'result' => 'skipped', 'code' => TaskCopyPullRequest::Code, 'operation' => null]] : [])
+        ->and(Operation::query()->count())->toBe($before);
+})->with(['own Project reviews and merges' => [true], 'only the other Project does' => [false]]);
+
+it('refuses project:pr-merge for the task branch a copy pushed to this repository before its Project named another one', function (): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    Operation::query()->where('kind', OperationKinds::TasksPublish)->update(['status' => 'interrupted', 'result' => null,
+        'input' => ['check' => 1, 'repository' => 'example/trial', 'branch' => 'task-'.$world->group->id, 'workspace' => ['branch' => 'task-'.$world->group->id]]]);
+    $world->group->update(['status' => TaskGroupStatus::Cancelled, 'taskable_type' => null, 'taskable_id' => null, 'watched_pr_number' => null, 'watched_pr_url' => null]);
+    $world->group->project->update(['repository_url' => 'https://github.com/example/moved.git']);
+    noMergeGitHub(headRef: 'task-'.$world->group->id);
+
+    expect(noMergeCode(fn () => app(StartProjectPullRequestMergeAction::class)->execute($other, 7, NO_MERGE_HEAD, 'test', (string) Str::uuid())))->toBe(TaskCopyPullRequest::Code);
+});
+
+it('skips in task:pr-gate a group of another Project whose watched pull request a task copy opened: no ready step', function (): void {
+    $world = noMergeWorld();
+    $world->group->project->update(['review_and_merge' => false]);
+    $other = noMergeOtherProject($world);
+    $group = Task::query()->create(['project_id' => $other->id, 'title' => 'Hand group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'orchestration' => 'external',
+        'pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_number' => 7, 'watched_pr_state' => 'open']);
+    noMergeGitHub(read: false);
+    $before = Operation::query()->count();
+
+    expect(app(RunTaskPullRequestGateAction::class)->execute())->toBe([['group' => $group->id, 'pull_request' => 7, 'step' => null, 'result' => 'skipped', 'code' => TaskCopyPullRequest::Code, 'operation' => null]])
+        ->and(Operation::query()->count())->toBe($before);
+});
+
+it('refuses the dependency merge of a group of another Project whose pull request a task copy opened', function (): void {
+    $world = noMergeWorld();
+    $other = noMergeOtherProject($world);
+    $group = Task::query()->create(['project_id' => $other->id, 'title' => 'Batch', 'brief' => 'Brief', 'status' => TaskGroupStatus::Running, 'orchestration' => 'external',
+        'pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_url' => 'https://github.com/example/trial/pull/7', 'watched_pr_number' => 7, 'watched_pr_state' => 'open']);
+    config(['dependency_merge.projects.'.$other->id => ['enabled' => true, 'smoke_workflow' => '.github/workflows/smoke.yml']]);
+
+    expect(noMergeCode(fn () => app(DependencyBatchMergeGuard::class)->lineage($group, 1, NO_MERGE_HEAD)))->toBe(TaskCopyPullRequest::Code);
+});
+
 it('skips a task copy group in task:pr-gate of a review-and-merge Project: no ready step, no round, no merge', function (): void {
     $world = noMergeWorld();
     noMergeGitHub(read: false);

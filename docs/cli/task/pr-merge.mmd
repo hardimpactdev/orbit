@@ -21,7 +21,7 @@ sequenceDiagram
   %%> Who can call it:
   %%> - a Node with an access grant to the Gateway; there is no `orbit` command
   %%> Refused at once:
-  %%> - a group whose workspace is a task copy, or that published from one: `tasks.copy_pr_no_merge` (409), before any GitHub read; a person merges its PR on GitHub
+  %%> - a group whose workspace is a task copy, or that published from one, or whose watched PR a copy of any Project on the repository opened: `tasks.copy_pr_no_merge` (409), before any GitHub read; once read, also a PR whose head is a copy group's `task-<id>` branch; a person merges its PR on GitHub
   GW->>GH: Read the PR reviews<br/>short poll · approval on head
   %%> What it does:
   %%> - reads the PR, its reviews and the check runs of the head with read-only App tokens (`pull_requests: read`, `checks: read`)

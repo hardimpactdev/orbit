@@ -79,6 +79,15 @@
         "test_a_publication_export_without_a_proposed_body_or_with_a_link_there_fetches_none": 10.68,
         "test_a_publication_export_refuses_a_proposed_body_path_outside_the_task_branch_file": 1.61
       }
+    },
+    "swamp/tests/task_instance_workspace_scan_test.py": {
+      "source_sha256": "922d6753a10b2c9ae6e205f39ae5b64c779c290cdcfe90195b8d66e0eb38c711",
+      "case_seconds": {
+        "test_a_secret_of_the_inner_gateway_refuses_by_path_line_and_name": 1.663,
+        "test_a_workflow_change_refuses_with_its_path": 1.64,
+        "test_a_clean_change_passes_with_public_facts_only": 1.761,
+        "test_a_nested_copy_without_its_inner_machines_is_unchecked": 3.127
+      }
     }
   }
 }

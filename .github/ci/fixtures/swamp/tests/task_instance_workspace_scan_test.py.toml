@@ -1,0 +1,29 @@
+file = "swamp/tests/task_instance_workspace_scan_test.py"
+slices = false
+cost = 23
+source_sha256 = "922d6753a10b2c9ae6e205f39ae5b64c779c290cdcfe90195b8d66e0eb38c711"
+cases = [
+  "test_a_secret_of_the_inner_gateway_refuses_by_path_line_and_name",
+  "test_a_workflow_change_refuses_with_its_path",
+  "test_a_clean_change_passes_with_public_facts_only",
+  "test_a_nested_copy_without_its_inner_machines_is_unchecked"
+]
+inputs = [
+  "tools/tests/ci-workspace-cost-evidence.json",
+  "swamp/ansible/task_copy_scan.py",
+  "swamp/ansible/tasks/address-node.yml",
+  "swamp/tests/_support/task_instance_workspace.py",
+  "swamp/tests/fixtures/task-instance-workspace.json",
+  "swamp/ansible/task-instance-workspace.yml",
+  "swamp/ansible/tasks/task-instance-workspace-phase.yml",
+  "swamp/extensions/behaviors/operations/task-instance-workspace/**",
+  "swamp/extensions/behaviors/operations/task-repository/**",
+  "swamp/extensions/behaviors/operations/tasks/publish.ts"
+]
+
+# ESTIMATE: completed local baseline seconds x 2.1, rounded up, plus 1 per case.
+[case_costs]
+"test_a_secret_of_the_inner_gateway_refuses_by_path_line_and_name" = 5
+"test_a_workflow_change_refuses_with_its_path" = 5
+"test_a_clean_change_passes_with_public_facts_only" = 5
+"test_a_nested_copy_without_its_inner_machines_is_unchecked" = 8

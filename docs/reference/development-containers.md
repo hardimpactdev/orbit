@@ -2317,7 +2317,7 @@ The release step "Admit nested-fleet refresh" runs `instances:refresh-nested-fle
 
 The Gateway setting [`ORBIT_INSTANCES_NESTED_FLEET_REFRESH`](/reference/gateway-environment) turns the step on. It is off by default; while it is off, the step prints one line and admits nothing. The live fleet has it on since 13 November 2026. An operator turns it on only when the Club key lives off the default's disk and a safety snapshot of the default exists.
 
-The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. The trial Project's repository is a hand-kept copy of `main`, so its release runbook pushes the release commit there before the release. The Orbit Project itself needs no such step.
+The run deploys the release commit itself. A commit missing from the Project's repository refuses the admission with `project.source_unavailable`. A commit off the Project's branch fails the fetch with `deployment.commit_not_on_branch`, and the old seed stays. When the Project's repository is Orbit's own, the release commit is on its `main` already, and no step pushes it. A Project whose repository is a hand-kept copy of `main`, such as a trial repository, needs the release commit pushed there before the release.
 
 | Rule | What happens |
 | --- | --- |

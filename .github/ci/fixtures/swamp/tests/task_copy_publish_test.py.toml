@@ -1,4 +1,4 @@
-source_sha256 = "72c949095340e4d4e3fa7ed406b95cd97129eb2a5ba2aa7362ffca89c6f375b7"
+source_sha256 = "00d08c18e7529020dfc043675442d9d058270ce189f1cd2f1eedab957dba500f"
 cases = [
   "test_a_publication_export_fetches_the_bundle_to_the_worker_and_keeps_no_node_scratch",
   "test_a_publication_export_fetches_the_copy_environment_file_to_the_worker_and_never_returns_it",
@@ -24,11 +24,12 @@ cases = [
   "test_without_a_club_key_the_second_read_of_the_render_adds_nothing",
   "test_the_club_key_reference_is_read_only_for_a_nested_copy",
   "test_a_failed_content_check_leaves_no_reference_or_grep_input_after_the_cleanup",
+  "test_a_copy_check_of_another_range_refuses_as_unchecked",
   "test_an_error_in_the_content_check_refuses_without_the_content_code",
 ]
 file = "swamp/tests/task_copy_publish_test.py"
 # ESTIMATE: local 36.6s for the whole file of 22 cases (python3 -I, Beast, load 7-9) plus 0.72s for its three content-check and export-intent cases (driver run of 8eb9e97ec4, load 5-8: 0.42s, 0.26s, 0.04s) = 37.4s x 2.1, rounded up, plus 1s. The three Ansible proposed-body export cases run in task_copy_publish_proposed_body_test.py. Keep the estimate until five completed hosted samples establish p90.
-cost = 80
+cost = 82
 inputs = [
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/task-instance-workspace.yml",

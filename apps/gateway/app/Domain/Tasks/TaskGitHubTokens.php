@@ -152,8 +152,10 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         if (! is_string($name) || ! is_array($references) || $repository === null || $repository->owner.'/'.$repository->name !== $name) {
             throw $this->forbidden();
         }
+        // A publish runs from a task copy only, and its token cannot change workflows (docs/reference/tasks.md#the-copy-check).
+        $permissions = ['contents' => 'write', 'pull_requests' => 'write'];
         try {
-            $token = $this->access->token($repository);
+            $token = $this->access->copyPublishToken($repository);
         } catch (GitHubApiException) {
             throw new ResourceOperationException('tasks.publish_failed', 'The GitHub App cannot publish to this repository.', 503);
         }
@@ -164,8 +166,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
             $reference = ValidatedData::object($references[$member] ?? null);
             $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
         }
-        $this->record($operation, 'Issued the scoped push token of a Task publication.', $callerNodeId, $runId, $name,
-            [['contents' => 'write', 'pull_requests' => 'write', 'workflows' => 'write']]);
+        $this->record($operation, 'Issued the scoped push token of a Task publication.', $callerNodeId, $runId, $name, [$permissions]);
 
         return $copies;
     }
