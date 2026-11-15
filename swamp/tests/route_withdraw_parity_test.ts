@@ -148,3 +148,92 @@ Deno.test("a pool withdrawal merges as the Swamp composition did and keeps the o
     assertEquals(expected.pools["8.4"], "; Managed by Orbit\n" + resolved(scope(9)));
     assertEquals(await node(value, live), expected);
 });
+
+/** A small seeded generator, so a failing case can be replayed. */
+function random(seed: number) {
+    return () => {
+        seed = (seed * 1103515245 + 12345) % 2147483648;
+        return seed / 2147483648;
+    };
+}
+
+Deno.test("the Node merge equals the Swamp merge on 300 random Caddy, PHP and DNS states, refusals included", async () => {
+    const next = random(20261114);
+    const pick = <T>(items: T[]) => items[Math.floor(next() * items.length)];
+    const subset = <T>(items: T[]) => items.filter(() => next() < 0.5);
+    const header = (variant: string) => `# Managed by Orbit: Node Caddy build\n{\n    admin off\n    ${variant}\n}\n`;
+    const caddyBlock = (key: string, variant: string) =>
+        `# orbit: app-dev ${key}\nhttps://${key}.test {\n    reverse_proxy 10.253.0.9:${variant}\n}\n`;
+    const caddyState = (headerVariant: string, keys: string[]) =>
+        header(headerVariant) + (keys.length ? "\n" + keys.map((key) => caddyBlock(key, pick(["8080", "9090"]))).join("\n") : "");
+    const scope = (id: number, variant: string) => `[orbit-app-instance-${id}]\nuser = orbit\nchdir = /__ORBIT_NODE_HOME__/i${id}\npm.max_children = ${variant}\n`;
+    const poolState = (ids: number[]) => ids.map((id) => scope(id, pick(["4", "5"]))).join("");
+    const dnsState = (names: string[]) => ({
+        records: "# Managed by Orbit.\n" + names.map((name) => `host-record=${name},${pick(["10.44.0.7", "10.44.0.8"])}`).join("\n") + "\n",
+        catalog: JSON.stringify({
+            records: Object.fromEntries(names.map((name) => [name, pick(["10.44.0.7", "10.44.0.8"])])),
+            overrides: Object.fromEntries(subset(["node:9", "node:12"]).map((node) => [node, Object.fromEntries(subset(names).map((name) => [name, "192.168.6.20"]))])),
+            requesters: Object.fromEntries(subset(["10.44.0.40", "10.44.0.41"]).map((address) => [address, pick([9, 12, null])])),
+            ...(next() < 0.3 ? { empty: [] } : {}),
+        }) + "\n",
+    });
+    const cases: { plan: Plan; live: Live }[] = [];
+    for (let i = 0; i < 300; i++) {
+        const keys = ["a", "b", "c", "d"], ids = [1, 2, 3, 4], names = ["a.test", "b.test", "c.test"];
+        const headers = ["metrics", next() < 0.9 ? "metrics" : "debug"];
+        const chain = [0, 1, 2, 3].map(() => caddyState(pick(headers), subset(keys)));
+        const dnsChain = [0, 1, 2, 3].map(() => dnsState(subset(names)));
+        cases.push({
+            plan: {
+                user: "orbit",
+                caddy: {
+                    chain,
+                    steps: [0, 1, 2].filter((s) => s === 0 || chain[s] !== chain[s + 1]).map((s) => ({ from: s, to: s + 1, had_served_groups: next() < 0.5 })),
+                    version: "v",
+                },
+                php: { versions: ["8.4"], before: { "8.4": poolState(subset(ids)) }, after: next() < 0.5 ? {} : { "8.4": poolState(subset(ids)) } },
+                dns: { chain: dnsChain, steps: [0, 1, 2].filter((s) => s === 0 || JSON.stringify(dnsChain[s]) !== JSON.stringify(dnsChain[s + 1])) },
+                cleanup: [],
+            },
+            live: {
+                caddy: next() < 0.1 ? "" : caddyState(pick(headers), subset([...keys, "prod"])),
+                pools: next() < 0.1 ? {} : { "8.4": "; Managed by Orbit\n" + poolState(subset([...ids, 9])).replaceAll("/__ORBIT_NODE_HOME__", ACCOUNT.pw_dir) },
+                dns: dnsState(subset([...names, "shop.example"])),
+            },
+        });
+    }
+    const outcome = (fn: () => unknown) => {
+        try {
+            return fn();
+        } catch (error) {
+            return { error: (error as Error).message };
+        }
+    };
+    const expected = cases.map(({ plan, live }) => outcome(() => reference(plan, live)));
+    const script = `
+import importlib.util, json, sys, types
+spec = importlib.util.spec_from_file_location("w", sys.argv[1]); w = importlib.util.module_from_spec(spec); spec.loader.exec_module(w)
+data = json.load(sys.stdin); account = types.SimpleNamespace(**data["account"]); out = []
+for case in data["cases"]:
+    try:
+        out.append(w.compose(case["plan"], case["live"], account))
+    except w.WithdrawFailure as error:
+        out.append({"error": error.code})
+print(json.dumps(out))`;
+    const child = new Deno.Command("python3", {
+        args: ["-I", "-c", script, `${ROOT}ansible/module_utils/orbit_route_withdraw.py`],
+        stdin: "piped",
+        stdout: "piped",
+        stderr: "piped",
+    }).spawn();
+    const writer = child.stdin.getWriter();
+    await writer.write(new TextEncoder().encode(JSON.stringify({ cases, account: ACCOUNT })));
+    await writer.close();
+    const done = await child.output();
+    assertEquals(new TextDecoder().decode(done.stderr), "");
+    const actual = JSON.parse(new TextDecoder().decode(done.stdout));
+    for (let i = 0; i < cases.length; i++) assertEquals(actual[i], expected[i], `case ${i}`);
+    // The generator reaches both outcomes: merges that land and revision refusals.
+    assert(expected.filter((value) => "error" in (value as object)).length > 20);
+    assert(expected.filter((value) => !("error" in (value as object))).length > 20);
+});

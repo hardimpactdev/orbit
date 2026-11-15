@@ -2,7 +2,7 @@ id: 7d3c1e52-84a1-4f6b-9b0e-2c5a6f1d9e47
 name: route-withdraw
 queueTimeout: 30
 labels: {role: swamp}
-description: "instance.destroy: withdraw a Route from every Node it touches, one Ansible read, one composition and one Ansible apply per Node, and prove every contribution."
+description: "instance.destroy: withdraw a Route from every Node it touches, one plan and one Node-local transaction per Node, and prove every contribution."
 inputs:
   type: object
   properties:
@@ -169,7 +169,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-mutation-command'
-      behaviorName: '${{ "forward-result-" + string(self._index) }}'
+      behaviorName: '${{ "forward-result-" + string(self._index) + "-" + run.id }}'
       methodName: result
       inputs:
         stage: ${{ self.stage }}

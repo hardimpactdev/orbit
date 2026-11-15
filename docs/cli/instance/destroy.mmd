@@ -158,7 +158,7 @@ sequenceDiagram
   SW->>N: Withdraw the Route<br/>plan, one Node transaction
   %%> Caddy publication:
   %%> - one Node-local transaction under the Node lock: read, merge the captured states, compare every other site, scope and record byte for byte, keep the previous generation, test, then commit and reload
-  %%> - a change outside the Route refuses with `route.withdraw_foreign_change`, a failed test with its code, a lock busy for 60 s with `caddy.publish_busy`; every file stays as it was and the normal failure path runs
+  %%> - a change outside the Route refuses with `route.withdraw_foreign_change`, a failed test with its code, locks busy for 30 s with `caddy.publish_busy` or `dns.publish_busy`; every file stays as it was and the normal failure path runs
   %%> What it does:
   %%> - removes the Caddy site of Instance 42, its PHP pool and its certificate, then reloads Caddy; no restart
   %%> - per Node, in parallel: Swamp checks the captured states and writes the merge plan; one Ansible apply runs the Node transaction, then removes the certificate folders

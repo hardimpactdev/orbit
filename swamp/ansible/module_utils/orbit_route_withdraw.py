@@ -279,31 +279,30 @@ def check_untouched(plan, live, composed, account=None):
 # The transaction.
 
 class _Lock:
-    """An exclusive flock(2) on the Node's lock file: the same lock as the util-linux `flock` of orbit_caddy_publish."""
+    """An exclusive flock(2) on one of the Node's publication lock files; the deadline is shared by every lock of one withdrawal."""
 
-    def __init__(self, path, wait):
-        self.path, self.wait, self.stream = path, wait, None
+    def __init__(self, path, deadline, busy):
+        self.path, self.deadline, self.busy, self.stream = path, deadline, busy, None
 
     def __enter__(self):
         try:
             descriptor = os.open(self.path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW | os.O_CLOEXEC, 0o600)
         except OSError as error:
-            raise WithdrawFailure("caddy.publish_lock_invalid", str(error)) from error
+            raise WithdrawFailure("route.publish_lock_invalid", str(error)) from error
         self.stream = os.fdopen(descriptor, "rb")
         identity = os.fstat(self.stream.fileno())
         if (not stat.S_ISREG(identity.st_mode) or identity.st_nlink != 1
                 or identity.st_uid != os.geteuid() or stat.S_IMODE(identity.st_mode) != 0o600):
             self.stream.close()
-            raise WithdrawFailure("caddy.publish_lock_invalid", "The lock must be a private regular file owned by the publisher.")
-        deadline = time.monotonic() + self.wait
+            raise WithdrawFailure("route.publish_lock_invalid", "The lock must be a private regular file owned by the publisher.")
         while True:
             try:
                 fcntl.flock(self.stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return self
             except BlockingIOError:
-                if time.monotonic() >= deadline:
+                if time.monotonic() >= self.deadline:
                     self.stream.close()
-                    raise WithdrawFailure("caddy.publish_busy", f"Node publish lock wait exceeded {self.wait} seconds.") from None
+                    raise WithdrawFailure(self.busy, f"{self.path.name} stayed held past the lock deadline.") from None
                 time.sleep(0.1)
 
     def __exit__(self, *_):
@@ -327,7 +326,7 @@ class _File:
         return "" if self.old is None else self.old.decode()
 
     def keep_previous(self):
-        """The previous generation beside the others, root only, with the live file's mode."""
+        """The previous generation in the previous folder, root only, with the live file's mode."""
         if self.old is not None:
             _write(self.previous_path, self.old, (os.geteuid(), os.getegid()), self.mode)
 
@@ -367,24 +366,26 @@ def _ok(run, argv, code, files, changed=False):
         raise WithdrawFailure(code, stderr.strip()[-2000:], changed=changed)
 
 
-def withdraw(plan, run, *, root="/", wait=60, caddy_gid=None):
-    """Runs wholly on the Node; run is AnsibleModule.run_command. Returns what changed and where each previous generation is."""
+def withdraw(plan, run, *, root="/", wait=30, caddy_gid=None):
+    """Runs wholly on the Node; run is AnsibleModule.run_command. Returns what changed and where each previous generation is.
+
+    Both locks share one deadline of `wait` seconds, well inside the apply phase's 170-second timeout."""
     base = Path(root)
     at = lambda path: base / path.lstrip("/")
     previous = at("/var/lib/orbit/route-previous")
-    serves = bool(plan.get("caddy") or plan.get("php"))
     locks = []
-    if serves:
-        locks.append(at("/etc/caddy/.orbit-publish.lock"))
+    if plan.get("caddy") or plan.get("php"):
+        locks.append((at("/etc/caddy/.orbit-publish.lock"), "caddy.publish_busy"))
     if plan.get("dns"):
         at("/var/lib/orbit/private-dns").mkdir(parents=True, exist_ok=True)
-        locks.append(at("/var/lib/orbit/private-dns/.orbit-publish.lock"))
+        locks.append((at("/var/lib/orbit/private-dns/.orbit-publish.lock"), "dns.publish_busy"))
     previous.mkdir(mode=0o700, parents=True, exist_ok=True)
     os.chmod(previous, 0o700)
+    deadline = time.monotonic() + wait
     held = []
     try:
-        for path in locks:
-            held.append(_Lock(path, wait).__enter__())
+        for path, busy in locks:
+            held.append(_Lock(path, deadline, busy).__enter__())
         return _transaction(plan, run, at, previous, caddy_gid)
     finally:
         for lock in reversed(held):
@@ -396,25 +397,16 @@ def _transaction(plan, run, at, previous, caddy_gid):
     caddy = _File(at("/etc/caddy/Caddyfile"), previous / "Caddyfile", (os.geteuid(), caddy_gid or os.getegid()), 0o640) if plan.get("caddy") else None
     pools = {version: _File(at(f"/etc/php/{version}/fpm/pool.d/orbit-scopes.conf"), previous / f"php-{version}-orbit-scopes.conf")
              for version in (plan["php"]["versions"] if plan.get("php") else [])}
-    dns = ([_File(at("/etc/dnsmasq.d/orbit-records.conf"), previous / "orbit-records.conf"),
-            _File(at("/var/lib/orbit/private-dns/catalog.json"), previous / "catalog.json")] if plan.get("dns") else [])
-    live = {"caddy": caddy.text() if caddy else "", "pools": {v: f.text() for v, f in pools.items() if f.old is not None},
-            "dns": {"records": dns[0].text(), "catalog": dns[1].text()} if dns else None}
-    composed = compose(plan, live, account)
-    check_untouched(plan, live, composed, account)
-
+    served = {**plan, "dns": None}
+    live = {"caddy": caddy.text() if caddy else "", "pools": {v: f.text() for v, f in pools.items() if f.old is not None}, "dns": None}
+    composed = compose(served, live, account)
+    check_untouched(served, live, composed, account)
     caddy_changed = caddy is not None and composed["caddy"].encode() != caddy.old
-    pool_changes = {v: text for v, text in composed["pools"].items()
-                    if (text.encode() if text else None) != pools[v].old}
-    dns_changed = bool(dns) and (composed["dns"]["records"].encode() != dns[0].old or composed["dns"]["catalog"].encode() != dns[1].old)
-    kept = []
-    for file, changed in [(caddy, caddy_changed), *((pools[v], True) for v in pool_changes), *((f, dns_changed) for f in dns)]:
-        if file is not None and changed and file.old is not None:
-            file.keep_previous()
-            kept.append(str(file.previous_path))
+    pool_changes = {v: text for v, text in composed["pools"].items() if (text.encode() if text else None) != pools[v].old}
 
-    # Every candidate is tested before anything is reloaded. The Caddy candidate sits beside the live file, as relative imports need.
-    candidate = None
+    # Every candidate is tested before anything is reloaded, and the previous generation is kept only once every test passed.
+    # The Caddy candidate sits beside the live file, as relative imports need.
+    candidate, staged, dns, dns_changed = None, [], [], False
     try:
         if caddy_changed:
             descriptor, name = tempfile.mkstemp(prefix=".orbit-candidate-", dir=caddy.path.parent)
@@ -425,23 +417,47 @@ def _transaction(plan, run, at, previous, caddy_gid):
                 stream.write(composed["caddy"].encode())
             _ok(run, ["timeout", "60", "runuser", "-u", "caddy", "--", "caddy", "validate", "--config", str(candidate),
                       "--adapter", "caddyfile"], "caddy.validation_failed", [])
-        staged = []
         for version, text in pool_changes.items():
             pools[version].stage(text or None)
             staged.append(pools[version])
         for version in pool_changes:
             _ok(run, ["timeout", "30", f"/usr/sbin/php-fpm{version}", "-t"], "php.test_failed", staged)
-        if dns_changed:
-            dns[0].stage(composed["dns"]["records"])
-            dns[1].stage(composed["dns"]["catalog"])
-            staged += dns
-            _ok(run, ["timeout", "30", "dnsmasq", "--test"], "dns.test_failed", staged)
+        if plan.get("dns"):
+            # Read last, right before the write: some publishers write these files whole without the lock.
+            dns = [_File(at("/etc/dnsmasq.d/orbit-records.conf"), previous / "orbit-records.conf"),
+                   _File(at("/var/lib/orbit/private-dns/catalog.json"), previous / "catalog.json")]
+            if dns[0].old is None or dns[1].old is None:
+                for file in staged:
+                    file.restore()
+                raise WithdrawFailure("dns.current_config_missing", "The private DNS records or catalog are missing.")
+            records = {"caddy": None, "php": None, "dns": plan["dns"]}
+            dns_live = {"caddy": "", "pools": {}, "dns": {"records": dns[0].text(), "catalog": dns[1].text()}}
+            try:
+                dns_composed = compose(records, dns_live)
+                check_untouched(records, dns_live, dns_composed)
+            except (WithdrawFailure, ValueError) as error:
+                for file in staged:
+                    file.restore()
+                if isinstance(error, WithdrawFailure):
+                    raise
+                raise WithdrawFailure("dns.catalog_invalid", str(error)) from error
+            dns_changed = (dns_composed["dns"]["records"].encode() != dns[0].old
+                           or dns_composed["dns"]["catalog"].encode() != dns[1].old)
+            if dns_changed:
+                dns[0].stage(dns_composed["dns"]["records"])
+                dns[1].stage(dns_composed["dns"]["catalog"])
+                staged += dns
+                _ok(run, ["timeout", "30", "dnsmasq", "--test"], "dns.test_failed", staged)
+        kept = []
+        for file, changed in [(caddy, caddy_changed), *((pools[v], True) for v in pool_changes), *((f, dns_changed) for f in dns)]:
+            if file is not None and changed and file.old is not None:
+                file.keep_previous()
+                kept.append(str(file.previous_path))
 
         # Commit: pools, then Caddy, then DNS, as before. A failed reload puts that file's previous generation back and reloads again.
-        pending = [file for file in staged]
+        pending = list(staged)
         for version in pool_changes:
-            argv = ["timeout", "30", "systemctl", "try-reload-or-restart", f"php{version}-fpm"]
-            rc, _, stderr = run(argv)
+            rc, _, stderr = run(["timeout", "30", "systemctl", "try-reload-or-restart", f"php{version}-fpm"])
             if rc != 0:
                 for file in pending:
                     file.restore()

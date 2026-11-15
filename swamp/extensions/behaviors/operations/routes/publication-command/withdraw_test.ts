@@ -535,6 +535,11 @@ Deno.test("the withdrawal workflows require every contribution, and destroy call
         node.find((step) => step.name === "compose")!.task.methodName,
         "withdraw",
     );
+    // Removals on one Node run side by side: the plan, the Node transaction, the cleanup and the proof are each their run's own model, so
+    // none waits on another removal's model lock. The input writer and the phase result keep their fixed names (bin/source_test.ts).
+    for (const step of [...node, ...steps].filter((step) => ["compose", "apply", "cleanup", "forward"].includes(step.name))) {
+        assertEquals((step.task as { behaviorName: string }).behaviorName.includes("run.id"), true, step.name);
+    }
     const destroy = await load("operation-instance-destroy");
     const withdraw = destroy.jobs.flatMap((job) => job.steps).find((step) =>
         step.name === "Withdraw the Route"

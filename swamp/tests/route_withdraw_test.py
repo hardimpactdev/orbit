@@ -178,6 +178,20 @@ class RouteWithdrawTest(unittest.TestCase):
         self.assertEqual(self.pool.read_text(), before)
         self.assertFalse(any("reload" in " ".join(argv) for argv in tools.calls))
 
+    def test_a_failed_test_keeps_no_previous_copy(self):
+        self.pool.write_text(pool(7).replace("__ORBIT_NODE_GROUP__", "1000").replace("/__ORBIT_NODE_HOME__", "/home/orbit"))
+        with self.assertRaises(WITHDRAW.WithdrawFailure):
+            self.withdraw(plan(7, php=True), Tools(fail=["php-fpm8.4 -t"]))
+        self.assertEqual(list(self.previous.iterdir()), [])
+
+    def test_missing_private_dns_files_refuse_by_name_and_put_the_pools_back(self):
+        resolved = pool(7).replace("__ORBIT_NODE_GROUP__", "1000").replace("/__ORBIT_NODE_HOME__", "/home/orbit")
+        self.pool.write_text(resolved)
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, caddy=False, php=True, dns=True))
+        self.assertEqual(refused.exception.code, "dns.current_config_missing")
+        self.assertEqual(self.pool.read_text(), resolved)
+
     def test_a_pool_keeps_the_other_scopes_and_an_emptied_pool_goes(self):
         resolved = lambda i: pool(i).replace("__ORBIT_NODE_GROUP__", "1000").replace("/__ORBIT_NODE_HOME__", "/home/orbit")
         self.pool.write_text(resolved(7) + resolved(9))

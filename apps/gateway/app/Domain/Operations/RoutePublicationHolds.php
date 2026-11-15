@@ -389,10 +389,8 @@ final class RoutePublicationHolds
     /** Gives back the Nodes a removal took at admission, once its Route is withdrawn, then asks for the waiting writes to start. */
     public function releaseWithdrawn(Operation $operation): void
     {
-        // A removal that an earlier release admitted holds its Nodes alone; it gives them back the same way.
         if (self::releasesAfterWithdraw($operation->kind)
-            && DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete()
-            + DB::table('route_publication_holds')->where('operation_id', $operation->id)->whereNull('lease_until')->delete() > 0) {
+            && DB::table('route_withdrawal_holds')->where('operation_id', $operation->id)->delete() > 0) {
             PromoteRouteWrites::dispatch()->afterCommit();
         }
     }

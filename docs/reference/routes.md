@@ -717,20 +717,20 @@ Each Route plan captures the control Node resolved from the Swamp role with its 
 
 The Gateway's Route publication hold orders writers during normal work. A Node has one Caddyfile, one shared PHP-FPM pool file per PHP version (`orbit-scopes.conf`) and, on the private DNS Node, one records file and one catalog. A publisher writes these files whole, as the Gateway rendered them from its site catalog. Two publishers on one Node would lose a site, and a publisher that rendered before a removal would bring the removed site back. So a publisher holds its Nodes alone.
 
-A withdrawal (`route-withdraw-node`, the Route withdrawal of a development removal and of a failed development create or completion) is one Node-local transaction in one Ansible phase. Swamp checks the captured states and writes the merge plan. On the Node, `orbit_route_withdraw` takes an exclusive lock on `/etc/caddy/.orbit-publish.lock` when the Node serves Routes, and on `/var/lib/orbit/private-dns/.orbit-publish.lock` when it holds private DNS. It waits at most 60 seconds for each, then refuses with `caddy.publish_busy`. Under the locks, these steps run:
+A withdrawal (`route-withdraw-node`, the Route withdrawal of a development removal and of a failed development create or completion) is one Node-local transaction in one Ansible phase. Swamp checks the captured states and writes the merge plan. On the Node, `orbit_route_withdraw` takes an exclusive lock on `/etc/caddy/.orbit-publish.lock` when the Node serves Routes, and on `/var/lib/orbit/private-dns/.orbit-publish.lock` when it holds private DNS. It waits at most 30 seconds for both together, then refuses with `caddy.publish_busy` or `dns.publish_busy`. Under the locks, these steps run:
 
-1. It reads the Caddyfile, the pool files and the private DNS files.
+1. It reads the Caddyfile and the pool files. It reads the private DNS files last, right before it writes them.
 2. It merges the captured states into them. Its own sections leave. Every other section stays as the Node holds it.
 3. It compares every other section with what it read, byte for byte, and refuses any difference (below).
-4. It keeps the previous generation of each file it replaces in `/var/lib/orbit/route-previous/`, one copy each.
-5. It tests every candidate: `caddy validate` on the Caddy candidate beside the live file, `php-fpm -t` on the written pools, and `dnsmasq --test` on the written DNS files.
+4. It tests every candidate: `caddy validate` on the Caddy candidate beside the live file, `php-fpm -t` on the written pools, and `dnsmasq --test` on the written DNS files.
+5. Once every test passed, it keeps the previous generation of each file it replaces in `/var/lib/orbit/route-previous/`, one copy each.
 6. It reloads PHP-FPM, renames the Caddy candidate, reloads Caddy and restarts dnsmasq.
 
 The compare in step 3 covers each Caddy site block, PHP scope, DNS record and catalog entry that is not the withdrawn Route's own, and the Caddy global options. On any difference the withdrawal refuses with `route.withdraw_foreign_change` and changes nothing. A withdrawal only removes sections. A captured state that would add or edit a section that stays is refused with `route.withdraw_foreign_change` too.
 
 The previous generations are `Caddyfile`, `php-<version>-orbit-scopes.conf`, `orbit-records.conf` and `catalog.json`. The folder is root only, mode `0700`. It sits outside `/etc/caddy`, `pool.d` and `/etc/dnsmasq.d`, so no service reads a copy.
 
-A failed test puts every written file back before any reload. The Operation then fails with `caddy.validation_failed`, `php.test_failed` or `dns.test_failed`. A failed reload puts that file's previous generation back and reloads again. The Operation then fails with `php.reload_failed`, `caddy.reload_failed` or `dns.restart_failed`.
+A failed test puts every written file back before any reload, and keeps no copy. Missing private DNS files refuse with `dns.current_config_missing`. The Operation then fails with `caddy.validation_failed`, `php.test_failed` or `dns.test_failed`. A failed reload puts that file's previous generation back and reloads again. The Operation then fails with `php.reload_failed`, `caddy.reload_failed` or `dns.restart_failed`.
 
 A revision of the Route's own sections that matches no captured state still refuses with `caddy.owned_revision_conflict`, `php.owned_revision_conflict` or `dns.owned_revision_conflict`. A file that a withdrawal would leave unchanged is not written and its service is not reloaded, so a second withdrawal of the same Route changes nothing. The lock files are regular files owned by root, mode `0600`; they are never replaced or removed. Closing the descriptor releases a lock, including when the process dies. No SSH round trip occurs while a lock is held. The certificate folders of the withdrawn scopes go after the transaction.
 
@@ -738,7 +738,9 @@ Each withdrawal reads what the Node holds under the lock. So two withdrawals of 
 
 A removal gives its hold back right after its withdrawal held, not at its end; its later steps write no Caddy, PHP pool or DNS file. Create and clone still render Caddy and shared PHP input under their publication hold.
 
-A publisher does not take the Node lock: the Gateway hold keeps it apart from every withdrawal. Across a release, `instance.destroy` and `instance.create` are covered by the [release idle guard](/reference/gateway-recovery#release-idle-guard), so none runs while the Gateway switches. A publisher of another kind, admitted by the earlier release, keeps its row in `route_publication_holds`, and the new code reads that row, so no withdrawal starts beside it. A rollback to a release without `route_withdrawal_holds` ignores the rows of removals that still run; wait until no `instance.destroy` runs before a rollback.
+A publisher does not take the Node lock: the Gateway hold keeps it apart from every withdrawal.
+
+Across a release, the [release idle guard](/reference/gateway-recovery#release-idle-guard) waits for `instance.destroy` and `instance.create` before the Swamp load. A removal that the earlier release admits after that wait holds its Nodes alone in `route_publication_holds` and frees them at its end. If its run meets the new workflow, it fails before it writes a file; run it again. A publisher of another kind, admitted by the earlier release, keeps its row in `route_publication_holds`, and the new code reads that row, so no withdrawal starts beside it. A rollback to a release without `route_withdrawal_holds` ignores the rows of removals that still run; wait until no `instance.destroy` runs before a rollback.
 
 Only one operation publishes private Caddy, DNS, or Metrics configuration at a time. The Gateway takes an exclusive lock on one file, `$ORBIT_HOME/.dnsmasq-projections.lock`, before it reads Route, target, Cluster, and Router state. It holds the lock through Caddy builds, DNS publication, and activation. Nested calls in one request share it. A competitor waits up to 30 seconds, or the rest of its command time when that is shorter. Then it returns HTTP 409 `app-dev.projection_busy` before it changes anything.
 
@@ -756,7 +758,7 @@ A second Route write that needs a held Node is admitted with status `waiting`. I
 
 When a waiting `instance:create`, `instance:clone`, `instance:restore` or `route:create` gains its Nodes, the Gateway renders its whole Caddyfiles again from the current site catalog and its admitted Route. It keeps the admitted Instance, Route and certificate identities. A restore renders its retiring Route with its target active, as at its admission. The previous writer commits its accepted sites and releases its hold in the same transaction, so the next render includes them.
 
-A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed. A withdrawal merges them under the DNS Node's lock, and a publisher's apply refuses a file that changed since its read.
+A timed-out task keeps its Nodes until Swamp confirms that its run stopped, or for 15 minutes. The DNS Node is not held: its records are keyed. A withdrawal merges them under the DNS Node's lock and reads them right before it writes. Some publishers write the DNS files whole without that lock; one that writes in those milliseconds can still lose the withdrawal's change or its own, as before.
 
 Task provision and cancel, `instance:register` and the Cluster Router writes also publish sites, but their run does much else. They hold the Nodes of their Route-publish step only (decided by the orchestrator, for Nick's review, 2026-11-06). Before that step the run calls `operation:direct:route-hold` with its run ID. The Gateway reads the Nodes from the admitted intent and answers when it holds all of them, after at most 5 s.
 

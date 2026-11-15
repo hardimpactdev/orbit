@@ -82,7 +82,7 @@ sequenceDiagram
       SW->>N: Withdraw the Route<br/>child route-withdraw
       %%> Caddy publication:
       %%> - one Node-local transaction under the Node lock: read, merge the captured states, compare every other site, scope and record byte for byte, keep the previous generation, test, then commit and reload
-      %%> - a change outside the Route refuses with `route.withdraw_foreign_change`, a failed test with its code, a lock busy for 60 s with `caddy.publish_busy`; every file stays as it was and the normal failure path runs
+      %%> - a change outside the Route refuses with `route.withdraw_foreign_change`, a failed test with its code, locks busy for 30 s with `caddy.publish_busy` or `dns.publish_busy`; every file stays as it was and the normal failure path runs
       SW->>GW: Release the Route Nodes<br/>route-release · run ID
       %%> When:
       %%> - only after the withdrawal held; the container delete writes only this clone's files, so the next Route write on the Node starts now

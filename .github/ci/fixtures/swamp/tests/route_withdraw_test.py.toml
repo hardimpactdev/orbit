@@ -10,6 +10,8 @@ cases = [
   "test_an_edited_own_site_is_a_revision_conflict",
   "test_a_failed_validation_leaves_every_file",
   "test_a_failed_php_test_puts_the_pool_back_before_any_reload",
+  "test_a_failed_test_keeps_no_previous_copy",
+  "test_missing_private_dns_files_refuse_by_name_and_put_the_pools_back",
   "test_a_pool_keeps_the_other_scopes_and_an_emptied_pool_goes",
   "test_a_failed_caddy_reload_puts_the_previous_caddyfile_back_and_reloads_again",
   "test_dns_keeps_other_records_and_catalog_entries",
