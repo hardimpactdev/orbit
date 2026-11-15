@@ -9,6 +9,7 @@ use App\Models\Node;
 use App\Models\Project;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 
 uses(LazilyRefreshDatabase::class);
@@ -50,6 +51,7 @@ describe('a task group cannot declare a topology', function (): void {
         topology_refusal_node();
         app(TaskExtensionState::class)->enable();
         $this->project = topology_refusal_project();
+        $this->group = fn (): Task => Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
     });
 
     it('refuses a new group whose subtask declares a topology', function (): void {
@@ -63,33 +65,91 @@ describe('a task group cannot declare a topology', function (): void {
             ->and(Task::topLevel()->count())->toBe(0);
     });
 
-    it('accepts a new group whose subtasks declare no topology', function (): void {
-        topology_refusal_send('POST', '/api/v1/tasks', [
+    it('refuses any nonempty list by name, also one the old node catalog did not know', function (): void {
+        $response = topology_refusal_send('POST', '/api/v1/tasks', [
+            'project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief',
+            'subtasks' => [topology_refusal_subtask(['app-dev', 'app-prod', 'app-prod-2'])],
+        ]);
+
+        $response->assertStatus(422);
+        expect($response->json('error.code'))->toBe('tasks.orchestration_unsupported');
+    });
+
+    it('ignores an empty topology on a new group, and stores none', function (): void {
+        $response = topology_refusal_send('POST', '/api/v1/tasks', [
             'project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief',
             'subtasks' => [topology_refusal_subtask([])],
         ])->assertStatus(201);
 
-        expect(Task::topLevel()->count())->toBe(1);
+        $group = Task::topLevel()->sole();
+        expect($response->json('data.subtasks.0'))->toHaveKey('title')->not->toHaveKey('topology')
+            ->and(DB::table('tasks')->where('parent_id', $group->id)->value('topology'))->toBeNull();
     });
 
-    it('refuses a new subtask that declares a topology', function (): void {
-        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+    it('refuses a new subtask that declares a topology', function (array $topology): void {
+        $group = ($this->group)();
 
-        $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask(['app-dev', 'app-prod'])]);
+        $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask($topology)]);
 
         $response->assertStatus(422);
         expect($response->json('error.code'))->toBe('tasks.orchestration_unsupported')
             ->and($group->tasks()->count())->toBe(0);
+    })->with(['valid' => [['app-dev', 'app-prod']], 'unknown node' => [['x']]]);
+
+    it('fails validation for a topology that is not a list', function (mixed $topology): void {
+        $group = ($this->group)();
+
+        $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask([]), 'topology' => $topology]);
+
+        $response->assertStatus(422);
+        expect($response->json('error.code'))->toBe('validation.failed')
+            ->and($group->tasks()->count())->toBe(0);
+    })->with(['string' => ['x'], 'null' => [null]]);
+
+    it('ignores an empty topology on a new subtask', function (): void {
+        $group = ($this->group)();
+
+        $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask([])])->assertStatus(201);
+
+        expect($response->json('data'))->toHaveKey('title')->not->toHaveKey('topology')
+            ->and(DB::table('tasks')->where('parent_id', $group->id)->value('topology'))->toBeNull();
     });
 
-    it('refuses an update that gives a subtask a topology', function (): void {
-        $group = Task::topLevel()->create(['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Backlog]);
+    it('refuses an update that gives a subtask a topology', function (array $topology): void {
+        $group = ($this->group)();
         $subtask = $group->tasks()->create(['title' => 'Step', 'brief' => 'Do it']);
 
-        $response = topology_refusal_send('PATCH', "/api/v1/tasks/{$subtask->id}", ['topology' => ['app-dev']]);
+        $response = topology_refusal_send('PATCH', "/api/v1/tasks/{$subtask->id}", ['topology' => $topology]);
 
         $response->assertStatus(422);
         expect($response->json('error.code'))->toBe('tasks.orchestration_unsupported')
-            ->and($subtask->fresh()->topology->isEmpty())->toBeTrue();
+            ->and(DB::table('tasks')->where('id', $subtask->id)->value('topology'))->toBeNull();
+    })->with(['valid' => [['app-dev']], 'unknown node' => [['x']]]);
+
+    it('ignores an update that sends an empty topology', function (): void {
+        $group = ($this->group)();
+        $subtask = $group->tasks()->create(['title' => 'Step', 'brief' => 'Do it', 'position' => 1]);
+
+        $response = topology_refusal_send('PATCH', "/api/v1/tasks/{$subtask->id}", ['topology' => [], 'title' => 'Renamed']);
+
+        $response->assertOk();
+        expect($response->json('data.title'))->toBe('Renamed')
+            ->and($response->json('data'))->not->toHaveKey('topology');
+    });
+
+    it('neither reads nor shows a topology stored before the field went', function (): void {
+        $group = ($this->group)();
+        foreach (['First', 'Second'] as $index => $title) {
+            $stored = $group->tasks()->create(['title' => $title, 'brief' => 'Do it', 'position' => $index + 1]);
+            DB::table('tasks')->where('id', $stored->id)->update(['topology' => json_encode(['app-dev', 'app-prod', 'app-prod-2'])]);
+        }
+
+        $response = topology_refusal_send('POST', '/api/v1/tasks', ['parent_id' => $group->id, ...topology_refusal_subtask([])]);
+
+        $response->assertStatus(201);
+        expect($response->json('data'))->toHaveKey('title')->not->toHaveKey('topology');
+        $show = topology_refusal_send('GET', "/api/v1/tasks/{$group->id}")->assertOk();
+        expect($show->json('data.subtasks'))->toHaveCount(3)
+            ->and(array_column($show->json('data.subtasks'), 'topology'))->toBe([]);
     });
 });

@@ -21,7 +21,6 @@ use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskQuestions;
 use App\Domain\Tasks\TaskReviewMode;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTopology;
 use App\Domain\Tasks\TaskType;
 use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Attributes\ObservedBy;
@@ -138,7 +137,6 @@ use LogicException;
  * @property string|null $subtask_start_commit
  * @property string|null $fixup_problem
  * @property string|null $fixup_head_sha
- * @property TaskTopology $topology
  * @property list<array<string, string|bool|list<string>>>|null $deliverables
  * @property Carbon|null $settled_at
  * @property CarbonImmutable|null $ready_at
@@ -224,7 +222,6 @@ final class Task extends Model
         'review_workspace_tree',
         'review_workspace_lease_id',
         'deliverables',
-        'topology',
         'deliverable_correction_check_id',
         'deliverable_correction_resume',
         'fixup_problem',
@@ -279,7 +276,6 @@ final class Task extends Model
         'fixup_problem',
         'fixup_head_sha',
         'deliverables',
-        'topology',
         'deliverable_correction_check_id',
         'deliverable_correction_resume',
         'settled_at',
@@ -665,7 +661,6 @@ final class Task extends Model
             'ended_at' => 'immutable_datetime',
             'merged_at' => 'immutable_datetime',
             'deliverables' => 'array',
-            'topology' => TaskTopology::class,
             'completion_attempt' => 'integer',
             'completion_handoff_attempt' => 'integer',
             'completion_handoff_comment_id' => 'integer',

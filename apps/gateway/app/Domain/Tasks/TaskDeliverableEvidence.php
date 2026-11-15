@@ -10,9 +10,8 @@ final readonly class TaskDeliverableEvidence
     /**
      * @param  list<array{status: string, path: string}>|null  $diff
      * @param  array<string, array{exit_code: int, output: string, base_started?: bool, base_exit_code?: int, base_output?: string, base_timed_out?: bool, base_timeout_seconds?: int}>  $commands
-     * @param  list<array{status: string, path: string}>|null  $topologyDiff
      */
-    public function __construct(public ?array $diff, public array $commands = [], public ?array $topologyDiff = null) {}
+    public function __construct(public ?array $diff, public array $commands = []) {}
 
     public static function fromArray(mixed $data): ?self
     {
@@ -45,7 +44,7 @@ final readonly class TaskDeliverableEvidence
             }
         }
 
-        return new self(self::diff($data['diff'] ?? null), $commands, self::diff($data['topology_diff'] ?? null));
+        return new self(self::diff($data['diff'] ?? null), $commands);
     }
 
     /** @return list<array{status: string, path: string}>|null */

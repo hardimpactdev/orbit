@@ -16,7 +16,6 @@ use App\Domain\Tasks\TaskPositions;
 use App\Domain\Tasks\TaskReviewBase;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskStatusMoves;
-use App\Domain\Tasks\TaskTopology;
 use App\Models\Activity;
 use App\Models\Instance;
 use App\Models\Node;
@@ -34,9 +33,6 @@ final readonly class UpdateTaskAction
         $this->requireExtension->execute();
 
         $group = Task::topLevel()->with(['project', 'taskable'])->findOrFail($group->id);
-        if ($data->topology !== null) {
-            TaskGroupGuard::supportOrchestration($group->groupOrchestration(), false, [$data->topology]);
-        }
         $task = Task::query()->findOrFail($task->id);
         if ($task->parent_id !== $group->id) {
             throw TaskGroupGuard::deliverablesLocked();
@@ -50,7 +46,7 @@ final readonly class UpdateTaskAction
         $taskState = $task->getRawOriginal();
         $projectState = $group->project->getRawOriginal();
         if ($check !== null || $gate) {
-            if ($data->title !== null || $data->brief !== null || $data->position !== null || $data->topology !== null) {
+            if ($data->title !== null || $data->brief !== null || $data->position !== null) {
                 throw TaskGroupGuard::notInBacklog();
             }
             if ($data->deliverables === []) {
@@ -84,7 +80,7 @@ final readonly class UpdateTaskAction
                     TaskAssistance::resolveExternalSubtask($task, $locked);
                 }
                 if ($data->title === null && $data->brief === null && $data->position === null
-                    && $data->deliverables === null && $data->topology === null) {
+                    && $data->deliverables === null) {
                     if ($task->status !== $data->status) {
                         $task->update(['status' => $data->status]);
                     }
@@ -97,7 +93,7 @@ final readonly class UpdateTaskAction
                 throw TaskGroupGuard::deliverablesLocked();
             }
             if ($data->deliverables !== null && ($currentCheck = TaskGroupGuard::deliverableCorrectionCheck($locked, $task)) !== null) {
-                if ($data->title !== null || $data->brief !== null || $data->position !== null || $data->topology !== null) {
+                if ($data->title !== null || $data->brief !== null || $data->position !== null) {
                     throw TaskGroupGuard::notInBacklog();
                 }
                 if ($data->deliverables === []) {
@@ -165,14 +161,6 @@ final readonly class UpdateTaskAction
             }
             if (! $backlog && $data->deliverables === []) {
                 throw TaskGroupGuard::deliverablesRequired();
-            }
-
-            if ($data->topology !== null) {
-                if ($task->status !== TaskStatus::Todo || $task->subtask_start_commit !== null) {
-                    throw ValidationException::withMessages(['topology' => ['A started subtask cannot change its topology.']]);
-                }
-                TaskTopology::assertFits([...TaskTopology::declarations($group, $task), $data->topology]);
-                $task->topology = $data->topology;
             }
 
             $task->title = $data->title ?? $task->title;

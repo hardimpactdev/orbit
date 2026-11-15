@@ -5,7 +5,6 @@ check start CHECKOUT [SETUP|-] [DELIVERABLES|-] [COMMAND]
                                 start the Project task check detached; print the process and the tree it checks.
                                 SETUP is a JSON file of setup steps to run first: [{"name", "command", "timeout_seconds"}]
                                 DELIVERABLES is a JSON file of the subtask's deliverables to verify after a passing check.
-                                Optional topology: true records the group diff from the merge base of origin/main and HEAD to TREE.
                                 (ADR 0133): {"start", "commands": [{"id", "command", "directory", "fails_on_base", "paths"}]}
                                 A command with fails_on_base runs on the start commit with its paths overlaid, then on the working tree (ADR 0163).
                                 The base tree is a temporary archive under .git/orbit/bases/, not a registered worktree. The base run stops after 600 seconds.
@@ -778,12 +777,6 @@ def verify_deliverables(checkout, head, tree, deliverables, log):
     evidence = {'start': spec.get('start'), 'diff': None, 'commands': {}}
     if spec.get('start'):
         evidence['diff'] = diff(checkout, spec['start'], tree)
-    if spec.get('topology') is True:
-        try:
-            base = git(checkout, 'merge-base', 'refs/remotes/origin/main', head)
-            evidence['topology_diff'] = diff(checkout, base, tree)
-        except subprocess.CalledProcessError:
-            evidence['topology_diff'] = None
     shutil.rmtree(DELIVERABLE_RESULTS, ignore_errors=True)
     os.makedirs(DELIVERABLE_RESULTS, exist_ok=True)
     for command in spec.get('commands', []):

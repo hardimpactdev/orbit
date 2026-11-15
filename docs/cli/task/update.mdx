@@ -6,7 +6,7 @@ sidebarTitle: "task:update"
 Change a task's title, brief, status, copy turn agent, or pull request mode. Title and brief change only while the task is in `backlog`. The status moves between `backlog` and `todo`. A move to `todo` leaves the parent ready for `task:start`. Groups also move among `running`, `reviewing`, `settling`, and `waiting_for_review`, without running work. See [external status rules](/reference/tasks#tasks-and-subtasks).
 
 ```bash
-orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--topology=JSON] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
+orbit task:update [task] [--title=TEXT] [--brief=TEXT] [--status=STATUS] [--preview | --no-preview] [--position=N] [--deliverables=FILE] [--implementer-provider=NAME] [--implementer-model=MODEL] [--implementer-effort=LEVEL] [--reviewer-provider=NAME] [--reviewer-model=MODEL] [--reviewer-effort=LEVEL] [--clear-implementer-agent] [--clear-reviewer-agent] [--pr-mode=MODE] [--json]
 ```
 
 | Option | Meaning |
@@ -51,4 +51,4 @@ In a terminal, the task list includes active tasks for a status update. Title an
 | `task.agent_invalid` | An agent option is empty. |
 | `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |
 
-The Task ID may select a parent or child. Children also accept `--position`, `--deliverables` and `--topology`; parents accept preview intent and `--pr-mode`. Each level keeps its existing status rules. Updating a parent to Todo does not start work.
+The Task ID may select a parent or child. Children also accept `--position` and `--deliverables`; parents accept preview intent and `--pr-mode`. Each level keeps its existing status rules. Updating a parent to Todo does not start work.

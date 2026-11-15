@@ -20,7 +20,7 @@ final class TaskData extends Data
 {
     /** The columns a list row reads; no list reads the unbounded completion summary or fixup problem (docs/reference/tasks.md#list-tasks). */
     public const array ListColumns = [
-        'id', 'parent_id', 'position', 'title', 'brief', 'deliverables', 'topology', 'status', 'type', 'implementer_agent_thread_id', 'tokens',
+        'id', 'parent_id', 'position', 'title', 'brief', 'deliverables', 'status', 'type', 'implementer_agent_thread_id', 'tokens',
         'line_diff', 'lines_added', 'lines_deleted', 'duration_ms', 'questions', 'escalations', 'assistance_requested', 'assistance_kind',
         'assistance_question', 'assistance_reason', 'started_at', 'settled_at',
     ];
@@ -33,8 +33,6 @@ final class TaskData extends Data
         public string $brief,
         /** @var list<array<string, string|bool|list<string>>> */
         public array $deliverables,
-        /** @var list<string> */
-        public array $topology,
         public TaskStatus $status,
         public ?int $implementerAgentThreadId,
         public ?int $tokens,
@@ -116,7 +114,6 @@ final class TaskData extends Data
             title: $task->title,
             brief: $task->brief,
             deliverables: array_map(static fn (TaskDeliverable $deliverable): array => $deliverable->toArray(), $task->deliverableList()),
-            topology: $task->topology->toArray(),
             status: $task->subtaskStatus(),
             implementerAgentThreadId: $task->implementer_agent_thread_id,
             tokens: $task->tokens,

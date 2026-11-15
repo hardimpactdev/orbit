@@ -1321,9 +1321,8 @@ Global keys live in the Gateway's `config/task_vms.php`. Set them in the Gateway
 | `task_vms.pi.artifact_path` | `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` | The absolute path of the pinned Pi executable on the Gateway |
 | `task_vms.pi.artifact_sha256` | `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256` | Its lowercase SHA-256 digest. Set both Pi artifact values or neither |
 | `task_vms.pi.models` | `ORBIT_TASK_VMS_PI_MODELS` | A JSON list of the models Pi offers. Default `[]` |
-| `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | A JSON list of Project IDs whose groups get a [medium VM](#incus-provider) when no subtask declares a topology. Default `[]` |
-| `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | A JSON list of Project IDs whose groups get a [large VM](#incus-provider) when no subtask declares a topology. Takes precedence over `medium_projects`. Default `[]` |
-| `task_vms.topology_paths` | `ORBIT_TASK_VMS_TOPOLOGY_PATHS` | A JSON object from Project ID to a list of path patterns that need [real machines](#paths-that-need-real-machines). Default `{}` |
+| `task_vms.medium_projects` | `ORBIT_TASK_VMS_MEDIUM_PROJECTS` | Unused: the settings still validate it, but no path acts on it since the topology sizing went. Default `[]` |
+| `task_vms.large_projects` | `ORBIT_TASK_VMS_LARGE_PROJECTS` | Unused: the settings still validate it, but no path acts on it since the topology sizing went. Default `[]` |
 
 Task VM code reaches the model router only through the core interface `App\Domain\TaskVms\TaskVmModelRoute`: `assertReady()`, `origin()`, and `key()`. The [ai-router extension](/reference/ai-router) binds it. `origin()` is the [task VM guard](/reference/ai-router#task-vm-guard) on the router's Node, such as `http://10.44.0.3:8318`, and `key()` is the one fixed placeholder key that every task VM holds. The Gateway keeps the key as a secret setting and changes it only on an incident, with no scheduled refresh. A task start writes the origin and the key into the Pi models file of the VM, inside the claim. No start and no release calls the model router, and no per-VM key exists.
 
@@ -1418,7 +1417,6 @@ A group of the `orbit` Project runs on a task VM. It is the proof Project, and t
 
 Configure the Project like this:
 
-- List it in `task_vms.medium_projects`, so its groups get a [medium VM](#incus-provider) with 4 vCPU. Its check runs the test suites in parallel.
 - Add the setup step [`@orbit/ci-caches`](/reference/instance-setup#import-ci-main-caches) after the install steps.
 
 Without the `@orbit/ci-caches` step, Pint and PHPStan start cold in every task VM workspace. With it, a fresh workspace gets the Pint and PHPStan caches that main CI published for its baseline.
@@ -1427,21 +1425,9 @@ The setup and teardown steps run on the VM as `orbit`. The `seed-dependencies` s
 
 ### Declare a topology
 
-A task group cannot declare a topology. The `topology` field of a subtask stays in the API and the CLI, but the Gateway refuses any nonempty list with `422 tasks.orchestration_unsupported`. This holds when a request creates a group, creates a subtask, or updates a subtask. The Gateway checks the format first: an entry names one node, `app-dev`, `app-prod`, or `app-prod-2`, at most once, and may add the role `ingress` after a `+`. A malformed list, or one with more than two nodes, is refused with `tasks.invalid_topology`.
+A subtask declares no topology. The API ignores an empty `topology` list and refuses any other list with `422 tasks.orchestration_unsupported`. A value that is not a list, such as a string or `null`, fails validation with `422 validation.failed`. This holds when a request creates a group, creates a subtask, or updates a subtask. Task responses have no `topology` field, and the CLI has no `--topology` option.
 
-No task VM prepares a topology, and the Gateway reads no topology evidence. A group saved before this rule keeps its declaration. Only VM sizing (`TaskVmSize`) and the check evidence (`TaskCheckEvidence`) still read it. The columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
-
-### Paths that need real machines
-
-`task_vms.topology_paths` is the safety net. It maps a Project ID to path patterns in the syntax of [file deliverables](/reference/tasks#deliverables). For Orbit, list its Node, agent, guest, deployment, and routing code, for example:
-
-```json
-{"46": ["apps/agent/**", "apps/e2e/resources/guest/**", "apps/gateway/app/{Domain,Infrastructure,Actions}/{Nodes,Deployments,Routes,Caddy,WireGuard}/**"]}
-```
-
-Orbit checks this when the handoff check of a group passes. It refuses the handoff when the group's own changes touch a matching path, since no subtask can declare a topology. It compares the candidate tree with the merge base of HEAD and the current `origin/main`, including uncommitted files. Changes inherited from main do not count; the group's own changes, including merge resolutions, still count. An unreadable merge base or diff fails the handoff. See the [handoff rubric](/reference/tasks#execution-ownership).
-
-The reminder starts with `This subtask changes paths that need real machines`. The implementer reverts those changes, or ends its turn blocked so the operator can take that work outside a task group.
+Nothing reads a declaration that a group saved before this rule. The column `tasks.topology` and the columns `task_vms.topology`, `topology_state`, `topology_run`, `topology_started_at`, and `topology_error` stay in the schema, and the Gateway neither reads nor writes them. A contributor can still acquire a topology by hand with `bin/e2e-topology`, as [Incus topologies](/reference/incus-topologies) describes.
 
 ## VM power
 

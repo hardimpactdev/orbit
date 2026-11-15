@@ -115,7 +115,6 @@ it("counts completed nested tasks against the group total", () => {
         title: `Step ${id}`,
         brief: "",
         deliverables: [],
-        topology: [],
         status,
         implementer_agent_thread_id: null,
         tokens: null,

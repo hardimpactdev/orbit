@@ -66,12 +66,6 @@ describe('tasks contract', function (): void {
         run_task_contract('tasks/task-start/not-orchestrated', 'task:start', ['task' => '1'], 1);
     });
 
-    it('renders a declared workload node', function (): void {
-        run_task_contract('tasks/task-create/child-topology', 'task:create', [
-            '--parent' => '1', 'title' => 'Use a workload node', '--brief' => 'Verify the private app-dev node.', '--topology' => '["app-dev"]',
-        ], 0);
-    });
-
     it('renders tasks status', function (): void {
         run_task_contract('tasks/task-status/enabled', 'task:status', [], 0);
         run_task_contract('tasks/task-status/assistance', 'task:status', [], 0);

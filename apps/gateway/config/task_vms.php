@@ -20,14 +20,10 @@ return [
     'wireguard_range' => env('ORBIT_TASK_VMS_WIREGUARD_RANGE') ?: '10.44.0.128/25',
     // One private HTTPS site for Swamp workers; not a list of admitted sites.
     'swamp_host' => env('ORBIT_TASK_VMS_SWAMP_HOST'),
-    // A JSON list of Project ids whose groups without a declared topology get a medium VM (TaskVmSize::resources()).
+    // A JSON list of Project ids. TaskVmSettings validates it; no path acts on it since the topology sizing went.
     'medium_projects' => $projectIds('ORBIT_TASK_VMS_MEDIUM_PROJECTS'),
-    // A JSON list of Project ids whose groups without a declared topology get a large VM (TaskVmSize::resources()).
-    // Large wins when a Project is in both lists; declared topologies keep their own size.
+    // A JSON list of Project ids. TaskVmSettings validates it; no path acts on it since the topology sizing went.
     'large_projects' => $projectIds('ORBIT_TASK_VMS_LARGE_PROJECTS'),
-    // A JSON object from Project id to path patterns, such as {"46":["apps/agent/**"]}. A handoff that changes one fails
-    // while no subtask of the group declares a topology.
-    'topology_paths' => json_decode((string) (env('ORBIT_TASK_VMS_TOPOLOGY_PATHS') ?: '{}'), true),
     'pi' => [
         'artifact_path' => env('ORBIT_TASK_VMS_PI_ARTIFACT_PATH'),
         'artifact_sha256' => env('ORBIT_TASK_VMS_PI_ARTIFACT_SHA256'),

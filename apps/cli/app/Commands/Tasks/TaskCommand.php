@@ -440,49 +440,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         return self::SUCCESS;
     }
 
-    /** @return list<string>|false|null */
-    protected function topologyOption(mixed $raw): array|false|null
-    {
-        if ($raw === null) {
-            return null;
-        }
-        try {
-            $value = is_string($raw) ? json_decode($raw, flags: JSON_THROW_ON_ERROR) : null;
-        } catch (JsonException) {
-            $value = null;
-        }
-        $topology = self::topology($value);
-        if ($topology === null) {
-            $this->renderGatewayFailure('task.invalid_topology', 'Topology must be a JSON array of distinct node entries, such as ["app-dev","app-prod+ingress"].');
-
-            return false;
-        }
-
-        return $topology;
-    }
-
-    /**
-     * The shape of a topology declaration: a list of distinct entries. The Gateway validates the entries themselves,
-     * such as `app-prod+ingress`, and how many a topology may have.
-     *
-     * @return list<string>|null
-     */
-    protected static function topology(mixed $value): ?array
-    {
-        if (! is_array($value) || ! array_is_list($value)) {
-            return null;
-        }
-        $entries = [];
-        foreach ($value as $entry) {
-            if (! is_string($entry) || $entry === '' || in_array($entry, $entries, true)) {
-                return null;
-            }
-            $entries[] = $entry;
-        }
-
-        return $entries;
-    }
-
     protected function renderSubtask(SubtaskResponse $task): int
     {
         if ($this->option('json') === true) {
@@ -494,7 +451,6 @@ abstract class TaskCommand extends GatewayCommand implements GatedExtensionComma
         ConsoleWriter::write($this->output, $this->humanRenderer()->detail("Subtask: {$task->id}", [
             'Task group' => $task->parentId,
             'Position' => $task->position,
-            ...($task->topology === [] ? [] : ['Topology' => implode(', ', $task->topology)]),
             'Title' => $task->title,
             'Status' => $task->status,
             'Assistance' => $task->assistanceRequested,

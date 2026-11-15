@@ -29,7 +29,6 @@ final class CreateTaskGroupCommand extends TaskCommand
         {--project= : Numeric Project ID}
         {--parent= : Numeric parent Task ID}
         {--deliverables= : JSON file with typed child deliverables}
-        {--topology= : JSON array of required workload nodes}
         {--brief= : Goal and acceptance}
         {--status= : backlog (default) or todo}
         {--orchestration= : external (default; Swamp executes task groups)}
@@ -55,7 +54,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         $unsupported = $child
             ? ['status', 'orchestration', 'subtasks', 'review', 'preview', 'current-recipe', 'implementer-provider', 'implementer-model', 'implementer-effort',
                 'reviewer-provider', 'reviewer-model', 'reviewer-effort', 'pr-mode']
-            : ['deliverables', 'topology'];
+            : ['deliverables'];
         foreach ($unsupported as $option) {
             if (! in_array($this->option($option), [null, false], true)) {
                 return $this->renderGatewayFailure('task.option_invalid', "--{$option} is only available when creating ".($child ? 'a parent task.' : 'a subtask.'));
@@ -194,10 +193,9 @@ final class CreateTaskGroupCommand extends TaskCommand
             $title = is_array($entry) ? ($entry['title'] ?? null) : null;
             $brief = is_array($entry) ? ($entry['brief'] ?? null) : null;
             $deliverables = self::deliverables(is_array($entry) ? ($entry['deliverables'] ?? []) : null);
-            $topology = self::topology(is_array($entry) && array_key_exists('topology', $entry) ? $entry['topology'] : []);
 
             if (
-                ! is_string($title) || ! is_string($brief) || $deliverables === null || $topology === null
+                ! is_string($title) || ! is_string($brief) || $deliverables === null
                 || self::textError($title, 'Title', self::TITLE_MAX) !== null
                 || self::textError($brief, 'Brief', self::BRIEF_MAX) !== null
             ) {
@@ -206,7 +204,7 @@ final class CreateTaskGroupCommand extends TaskCommand
                 return false;
             }
 
-            $subtasks[] = new SubtaskInput($title, $brief, $deliverables, array_key_exists('topology', $entry) ? $topology : null);
+            $subtasks[] = new SubtaskInput($title, $brief, $deliverables);
         }
 
         return $subtasks;
@@ -237,11 +235,6 @@ final class CreateTaskGroupCommand extends TaskCommand
             return self::FAILURE;
         }
 
-        $topology = $this->topologyOption($this->option('topology'));
-        if ($topology === false) {
-            return self::FAILURE;
-        }
-
         $deliverables = $this->deliverablesFile();
 
         if ($deliverables === false) {
@@ -263,7 +256,7 @@ final class CreateTaskGroupCommand extends TaskCommand
         $title ??= $this->promptText('Title', self::TITLE_MAX);
         $brief ??= $this->promptText('Brief', self::BRIEF_MAX, multiline: true);
 
-        $task = $this->sendWithProgress($connector, new CreateTaskRequest(projectId: $projectId, title: $title, brief: $brief, parentId: $groupId, deliverables: $deliverables, topology: $topology), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
+        $task = $this->sendWithProgress($connector, new CreateTaskRequest(projectId: $projectId, title: $title, brief: $brief, parentId: $groupId, deliverables: $deliverables), SubtaskResponse::class, ['Create subtask', 'Creating subtask', 'Created subtask']);
 
         return $task instanceof SubtaskResponse ? $this->renderSubtask($task) : self::FAILURE;
     }

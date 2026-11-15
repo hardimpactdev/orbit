@@ -9,7 +9,6 @@ use App\Domain\Shared\StoredInteger;
 use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTopology;
 use App\Models\Task;
 
 final readonly class CreateTaskAction
@@ -29,8 +28,6 @@ final readonly class CreateTaskAction
             throw TaskGroupGuard::deliverablesRequired();
         }
 
-        TaskGroupGuard::supportOrchestration($group->groupOrchestration(), false, [$data->topology]);
-        TaskTopology::assertFits([...TaskTopology::declarations($group), $data->topology]);
         $position = StoredInteger::fromOrZero($group->tasks()->max('position')) + 1;
 
         return Task::query()->create([
@@ -39,7 +36,6 @@ final readonly class CreateTaskAction
             'title' => $data->title,
             'brief' => $data->brief,
             'deliverables' => $data->deliverables,
-            'topology' => $data->topology,
             'status' => TaskStatus::Todo,
         ]);
     }

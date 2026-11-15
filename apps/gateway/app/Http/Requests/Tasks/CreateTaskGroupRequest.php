@@ -9,11 +9,11 @@ use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskInputData;
 use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskDeliverableType;
+use App\Domain\Tasks\TaskGroupGuard;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPrMode;
 use App\Domain\Tasks\TaskReviewMode;
-use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Models\Project;
 use App\Models\Task;
@@ -21,7 +21,6 @@ use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
 use App\Rules\NotBlank;
-use App\Rules\TaskTopologyList;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
@@ -34,7 +33,7 @@ final class CreateTaskGroupRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList|NotBlank>> */
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|NotBlank>> */
     public function rules(): array
     {
         if ($this->has('parent_id')) {
@@ -47,7 +46,7 @@ final class CreateTaskGroupRequest extends FormRequest
         return $this->parentRules();
     }
 
-    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList|NotBlank>> */
+    /** @return array<string, list<string|Exists|In|Enum|DistinctDeliverableIds|FailsOnBase|CommandPaths|NotBlank>> */
     public function parentRules(): array
     {
         return [
@@ -64,8 +63,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'subtasks' => ['sometimes', 'array', 'max:50'],
             'subtasks.*.title' => ['required', 'string', 'max:160'],
             'subtasks.*.brief' => ['required', 'string', 'max:8000'],
-            'subtasks.*.topology' => ['sometimes', 'array', 'list', 'max:'.TaskTopology::maxNodes(), new TaskTopologyList],
-            'subtasks.*.topology.*' => ['required', 'string', 'max:64', 'regex:'.TaskTopology::EntryPattern],
+            'subtasks.*.topology' => ['sometimes', 'array', 'list'],
             'subtasks.*.deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'subtasks.*.deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'subtasks.*.deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
@@ -114,12 +112,12 @@ final class CreateTaskGroupRequest extends FormRequest
             if (! is_array($task) || ! is_string($task['title'] ?? null) || ! is_string($task['brief'] ?? null)) {
                 continue;
             }
+            TaskGroupGuard::noTopology(is_array($task['topology'] ?? null) ? $task['topology'] : []);
 
             $tasks[] = new TaskInputData(
                 title: $task['title'],
                 brief: $task['brief'],
                 deliverables: CreateTaskRequest::deliverables($task['deliverables'] ?? null),
-                topology: TaskTopology::fromInput($task['topology'] ?? []),
             );
         }
 
@@ -145,11 +143,12 @@ final class CreateTaskGroupRequest extends FormRequest
 
     public function childPayload(): CreateTaskData
     {
+        TaskGroupGuard::noTopology(is_array($this->validated('topology')) ? $this->validated('topology') : []);
+
         return new CreateTaskData(
             title: $this->string('title')->toString(),
             brief: $this->string('brief')->toString(),
             deliverables: CreateTaskRequest::deliverables($this->validated('deliverables')),
-            topology: TaskTopology::fromInput($this->validated('topology', [])),
         );
     }
 }

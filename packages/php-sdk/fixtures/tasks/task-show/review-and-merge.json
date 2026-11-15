@@ -103,7 +103,6 @@
                             "description": "The whole change meets the brief and is ready to merge as it is."
                         }
                     ],
-                    "topology": [],
                     "status": "completed",
                     "implementer_agent_thread_id": null,
                     "tokens": null,

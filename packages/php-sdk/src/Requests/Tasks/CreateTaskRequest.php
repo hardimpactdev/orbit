@@ -22,7 +22,6 @@ final class CreateTaskRequest extends GatewayRequest implements HasBody
     /**
      * @param  list<SubtaskInput>|null  $subtasks
      * @param  list<array<string, mixed>>|null  $deliverables
-     * @param  list<string>|null  $topology
      */
     public function __construct(
         private readonly ?int $projectId,
@@ -36,7 +35,6 @@ final class CreateTaskRequest extends GatewayRequest implements HasBody
         private readonly ?string $review = null,
         private readonly ?int $parentId = null,
         private readonly ?array $deliverables = null,
-        private readonly ?array $topology = null,
         private readonly ?TaskAgentsInput $agents = null,
         private readonly ?string $prMode = null,
     ) {}
@@ -70,7 +68,6 @@ final class CreateTaskRequest extends GatewayRequest implements HasBody
                 'title' => $this->title,
                 'brief' => $this->brief,
                 'deliverables' => $this->deliverables,
-                'topology' => $this->topology,
                 'status' => $this->status,
                 'preview' => $this->preview,
                 'current_recipe' => $this->currentRecipe,

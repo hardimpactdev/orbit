@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Data\Tasks;
 
-use App\Domain\Tasks\TaskTopology;
 use Spatie\LaravelData\Attributes\MapOutputName;
 use Spatie\LaravelData\Data;
 use Spatie\LaravelData\Mappers\SnakeCaseMapper;
@@ -17,6 +16,5 @@ final class TaskInputData extends Data
         public string $brief,
         /** @var list<array<string, string|bool|list<string>>> */
         public array $deliverables = [],
-        public TaskTopology $topology = new TaskTopology,
     ) {}
 }

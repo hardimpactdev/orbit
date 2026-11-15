@@ -7,12 +7,10 @@ namespace App\Http\Requests\Tasks;
 use App\Data\Tasks\UpdateTaskData;
 use App\Domain\Tasks\TaskDeliverableType;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\Tasks\TaskTopology;
 use App\Http\Requests\TopLevelJsonObjectInspector;
 use App\Rules\CommandPaths;
 use App\Rules\DistinctDeliverableIds;
 use App\Rules\FailsOnBase;
-use App\Rules\TaskTopologyList;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rules\Enum;
@@ -25,7 +23,7 @@ final class UpdateTaskRequest extends FormRequest
 {
     use ValidatesDeliverablePaths;
 
-    /** @return array<string, list<string|Enum|In|ProhibitedIf|DistinctDeliverableIds|FailsOnBase|CommandPaths|TaskTopologyList>> */
+    /** @return array<string, list<string|Enum|In|ProhibitedIf|DistinctDeliverableIds|FailsOnBase|CommandPaths>> */
     public function rules(): array
     {
         return [
@@ -33,8 +31,7 @@ final class UpdateTaskRequest extends FormRequest
             'brief' => ['sometimes', 'string', 'max:8000'],
             'position' => ['sometimes', 'integer:strict', 'min:1'],
             'status' => ['sometimes', 'string', Rule::enum(TaskStatus::class)],
-            'topology' => ['sometimes', 'array', 'list', 'max:'.TaskTopology::maxNodes(), new TaskTopologyList],
-            'topology.*' => ['required', 'string', 'max:64', 'regex:'.TaskTopology::EntryPattern],
+            'topology' => ['sometimes', 'array', 'list'],
             'deliverables' => ['sometimes', 'array', 'list', 'max:5', new DistinctDeliverableIds],
             'deliverables.*' => ['required', 'array:id,type,description,path,change,command,directory,fails_on_base,paths'],
             'deliverables.*.id' => ['required', 'string', 'max:64', 'regex:/\A[a-z0-9]+(?:-[a-z0-9]+)*\z/'],
@@ -69,7 +66,6 @@ final class UpdateTaskRequest extends FormRequest
             brief: is_string($this->validated('brief')) ? $this->validated('brief') : null,
             position: is_int($position) ? $position : null,
             status: is_string($this->validated('status')) ? TaskStatus::from($this->validated('status')) : null,
-            topology: array_key_exists('topology', $this->validated()) ? TaskTopology::fromInput($this->validated('topology')) : null,
             deliverables: array_key_exists('deliverables', $this->validated()) ? CreateTaskRequest::deliverables($this->validated('deliverables')) : null,
         );
     }
