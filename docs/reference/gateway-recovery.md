@@ -135,11 +135,11 @@ The `operation-gateway-release` workflow runs on the swamp role's workers on Nod
 | Check the migration | Fails the run when the migration's exit code is not 0. The paused record's message ends with the migration's output. |
 | Wait for active Operations | Checks the Gateway DB every 5 seconds for up to 600 seconds. Refuses with `gateway.release_busy` and the blocking Operation IDs if queued, running or waiting Operations covered by the [release idle guard](#release-idle-guard) remain. |
 | Load Swamp on Node 209 | Runs the [load workflow](#load-swamp) as a child, with the grants from the build. |
-| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon → Admit VM refreshes. |
+| Hand over the release | Runs `gateway-release-activate` as a child, from the definition the load installed: Drain Horizon → Switch the release → Verify the Gateway → Start Horizon → Admit nested-fleet refresh. |
 
 The busy guard runs immediately before Swamp load, while the old release and Horizon still serve. It reads current Operation state on each poll and proceeds as soon as none blocks. It does not stop new admissions. A refusal leaves the old release live and pauses automatic releases because migrations already ran. `force` skips only the ancestry check; it never skips this guard.
 
-The activate child admits VM refreshes only after verification succeeds and Start Horizon finishes (or is skipped because no Horizon unit is configured). It uses the new release’s artisan, so its queued `StartAdmittedSwampRun` jobs reach the new workers. A failed verification, switch back or failed Horizon start admits no refreshes. Admission is best effort (`allowFailure: true`): failure does not fail the release, and the release waits only for admission to end, never for refresh completion.
+The activate child admits the [nested-fleet refresh](/reference/development-containers#refresh-after-a-release) only after verification succeeds and Start Horizon finishes (or is skipped because no Horizon unit is configured). It uses the new release’s artisan, so its queued `StartAdmittedSwampRun` jobs reach the new workers. A failed verification, switch back or failed Horizon start admits nothing. Admission is best effort (`allowFailure: true`): failure does not fail the release, and the release waits only for admission to end. No release step admits a task VM image refresh.
 
 The build adds the worktree of the fetched commit, links the shared env and storage, installs the Composer dependencies, writes the agent manifest, and seals the release with `REVISION` and a cached configuration. It reuses a sealed release of the same commit.
 
@@ -404,7 +404,7 @@ It runs `config:cache` locally into a temporary file, sets mode `0600`, then ren
 
 The Gateway scheduler runs `gateway:release:auto` every five minutes through `GatewaySchedule::command`. PRs merge straight into main, so the merges of those five minutes go out in one release of the newest green commit. With the [Gateway queue](/reference/gateway-queue#scheduled-work) configured, each tick is a queued job. It looks for the newest green commit and admits a Swamp run. Automatic releases are disabled by default, and they are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Turn them on after the Gateway runs from the [release layout](#release-layout) and a first manual release succeeds.
 
-Every release also admits the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of each task VM host, from its step "Admit VM refreshes", after verification succeeds and Start Horizon finishes. Refresh admission failure never fails the release; the release waits for admission only, while the refresh runs separately. A refresh that is open on a host keeps running, and the newest commit waits behind it.
+A release admits no refresh of the task VM base snapshots: that step, its daily schedule and its artisan commands are removed ([refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)).
 
 ```bash
 orbit gateway:auto-release:enable

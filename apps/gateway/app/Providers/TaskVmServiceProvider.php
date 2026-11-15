@@ -6,8 +6,6 @@ namespace App\Providers;
 
 use App\Console\Commands\ListTaskVmImageBuildsCommand;
 use App\Console\Commands\PrepareTaskVmHubCommand;
-use App\Console\Commands\RefreshTaskVmImageCommand;
-use App\Console\Commands\RefreshTaskVmImagesCommand;
 use App\Console\Commands\ResumeTaskVmCommand;
 use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
@@ -34,8 +32,6 @@ final class TaskVmServiceProvider extends ServiceProvider
         $this->commands([
             ListTaskVmImageBuildsCommand::class,
             PrepareTaskVmHubCommand::class,
-            RefreshTaskVmImageCommand::class,
-            RefreshTaskVmImagesCommand::class,
             ResumeTaskVmCommand::class,
         ]);
     }

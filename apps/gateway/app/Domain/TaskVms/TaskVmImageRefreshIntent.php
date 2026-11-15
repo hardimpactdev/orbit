@@ -34,10 +34,7 @@ final readonly class TaskVmImageRefreshIntent
     /** Where the proof Swamp Club key lives on a task VM; the nested Gateway reads it through a disk device (swamp/ansible/task-vm-role.yml). */
     public const string ClubKey = '/etc/orbit/swamp-club-api-key';
 
-    /** The key of the Operation state that holds the commit to refresh to when the open refresh ends. */
-    public const string Next = 'refresh_next';
-
-    public function __construct(private StartOperationAction $operations, private OperationStore $store, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
+    public function __construct(private StartOperationAction $operations, private TaskVmSettings $settings, private TaskVmPromotedImage $images,
         private SwampSshExecutionInput $ssh, private SwampCommandStep $shared, private TaskVmConvergeInput $converge, private TaskVmSlotRuns $runs, private TaskVmSlotPool $slots,
         private TaskContainerHostIntent $containers) {}
 
@@ -74,8 +71,9 @@ final readonly class TaskVmImageRefreshIntent
     }
 
     /**
-     * Admits the refresh of `$host` to `$commit`, or to the release the Gateway runs. A refresh that is open on the host stays; a different
-     * `$commit` waits behind it, one pending commit per host, the newest wins, and the run that ends admits it (`TaskVmImageRefreshProjection`).
+     * Admits the refresh of `$host` to `$commit`, or to the release the Gateway runs. A refresh that is open on the host is returned instead;
+     * no commit waits behind it. Nothing in the Gateway starts a refresh any more (the release and daily triggers are gone); the kind leaves
+     * with the rest of the task VM path.
      * With `$fromStock`, the run first deletes the base VM and its seed and builds the base from the stock image; it is refused while a
      * refresh is open, which was admitted without that.
      */
@@ -88,12 +86,12 @@ final readonly class TaskVmImageRefreshIntent
         if ($fromStock && self::open($host) instanceof Operation) {
             throw new ResourceOperationException('operation.target_busy', 'A refresh of this host is open; rebuild after it ends.', 409);
         }
-        if (($open = $this->openOrQueue($host, $commit)) instanceof Operation) {
+        if (($open = $this->openRefresh($host)) instanceof Operation) {
             return $open;
         }
         $lock = Cache::lock('task-vm-image-refresh-'.$host->id, 120);
         if (! $lock->get()) {
-            return $this->openOrQueue($host, $commit) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
+            return $this->openRefresh($host) ?? throw new ResourceOperationException('operation.target_busy', 'Another refresh of this host is being admitted.', 409);
         }
         try {
             // The proof's claim takes its identity in the admission transaction. A rebuild checks again under the lock.
@@ -101,7 +99,7 @@ final readonly class TaskVmImageRefreshIntent
                 throw new ResourceOperationException('operation.target_busy', 'A refresh of this host is open; rebuild after it ends.', 409);
             }
 
-            return $this->openOrQueue($host, $commit) ?? DB::transaction(function () use ($host, $caller, $request, $commit, $fromStock): Operation {
+            return $this->openRefresh($host) ?? DB::transaction(function () use ($host, $caller, $request, $commit, $fromStock): Operation {
                 // The run deletes the base before it builds the new one, so the recorded base is withdrawn at once: starts on the host are
                 // refused until the run promotes the new base, and after a failure the next refresh builds the base as on a new host.
                 if ($fromStock) {
@@ -120,24 +118,15 @@ final readonly class TaskVmImageRefreshIntent
     }
 
     /**
-     * The refresh that is open on `$host`, told to refresh to `$commit` when it ends if it runs for another commit; null when none is open.
+     * The refresh that is open on `$host`, or null when none is open.
      *
      * @phpstan-impure
      */
-    private function openOrQueue(Node $host, ?string $commit): ?Operation
+    private function openRefresh(Node $host): ?Operation
     {
-        return DB::transaction(function () use ($host, $commit): ?Operation {
-            $open = self::open($host);
-            $open = $open instanceof Operation ? Operation::query()->lockForUpdate()->find($open->id) : null;
-            if (! $open instanceof Operation || $open->status->terminal()) {
-                return null;
-            }
-            if ($commit !== null && ($open->input['commit'] ?? null) !== $commit) {
-                $this->store->change($open, ['state' => [...($open->state ?? []), self::Next => $commit]]);
-            }
+        $open = self::open($host);
 
-            return $open;
-        });
+        return $open instanceof Operation && ! $open->status->terminal() ? $open : null;
     }
 
     /**

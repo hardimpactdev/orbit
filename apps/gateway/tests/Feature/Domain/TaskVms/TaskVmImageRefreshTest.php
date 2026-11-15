@@ -15,7 +15,6 @@ use App\Domain\TaskVms\TaskVmRuntime;
 use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
-use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\Cluster;
 use App\Models\Node;
 use App\Models\Operation;
@@ -105,7 +104,7 @@ it('returns the open refresh of a host for a second admission, and none once it 
     expect(TaskVmImageRefreshIntent::open($host))->toBeNull();
 });
 
-it('queues the newest release commit behind the open refresh, and admits it when that refresh ends', function (): void {
+it('returns the open refresh for any commit, queues no commit behind it, and admits nothing when it ends', function (): void {
     Queue::fake();
     $host = imageRefreshHost();
     $operation = Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id,
@@ -118,21 +117,17 @@ it('queues the newest release commit behind the open refresh, and admits it when
     $older = str_repeat('1', 40);
     $newest = str_repeat('2', 40);
 
-    // The open refresh already runs for this commit: nothing waits. A newer commit waits, and the newest of two wins; the run's own state stays.
-    expect($intent->start($host, 'test', commit: $same)->id)->toBe($operation->id);
-    expect($operation->refresh()->state)->not->toHaveKey(TaskVmImageRefreshIntent::Next);
-    // A plain admission, as the daily trigger makes it, queues nothing.
-    $intent->start($host, 'test');
-    expect($operation->refresh()->state)->not->toHaveKey(TaskVmImageRefreshIntent::Next);
-    $intent->start($host, 'test', commit: $older);
-    $intent->start($host, 'test', commit: $newest);
-    expect($operation->refresh()->state)->toMatchArray([TaskVmImageRefreshIntent::Next => $newest, 'swamp_run_id' => 'fixture-refresh'])
+    // No release trigger exists any more: a second admission returns the open refresh and its state stays as it was.
+    foreach ([$same, $older, $newest, null] as $commit) {
+        expect($intent->start($host, 'test', commit: $commit)->id)->toBe($operation->id);
+    }
+    expect($operation->refresh()->state)->toBe(['swamp_run_id' => 'fixture-refresh', 'native_progress' => ['run' => 'fixture-refresh']])
         ->and(Operation::query()->where('kind', 'task_vm.image_refresh')->count())->toBe(1);
 
     app(TaskVmImageRefreshProjection::class)->apply($operation, ['status' => 'failed', 'result' => [], 'run_id' => 'fixture-refresh',
         'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'error_code' => 'task_vm.image_refresh_failed']);
 
-    Queue::assertPushed(RefreshTaskVmImages::class, static fn (RefreshTaskVmImages $job): bool => $job->hostId === $host->id && $job->commit === $newest);
+    Queue::assertNothingPushed();
 });
 
 it('fails the proof slot of a refresh that Swamp refused to start, so the retry finds the capacity it left', function (): void {

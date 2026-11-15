@@ -64,12 +64,9 @@ sequenceDiagram
   %%> - always runs after activation paths, including failed drain, switch, verification or switch-back; skips only when no Horizon unit is configured
   %%> - a failed start admits no refresh
   alt verification and Horizon pass
-    SW->>GN: Admit VM refreshes<br/>verified release's artisan
-    %%> What it does:
-    %%> - also permits a skipped Horizon start; admission is best effort and never waits for refresh completion (stage 6)
     SW->>GN: Admit nested-fleet refresh<br/>verified release's artisan
     %%> What it does:
-    %%> - admits the deployment of each nested-fleet default to the release commit, best effort; with none it admits nothing (stage 6)
+    %%> - also permits a skipped Horizon start; admits the deployment of each nested-fleet default to the release commit, best effort; with none it admits nothing (stage 6)
     SW-->>GW: Run succeeded<br/>terminal result
     Note over GW: Record the release<br/>verified
     %%> Result:

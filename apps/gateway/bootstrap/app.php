@@ -27,7 +27,6 @@ use App\Jobs\Fleet\AdmitFleetRollout;
 use App\Jobs\Fleet\CheckFleetRebootConfirmation;
 use App\Jobs\Operations\PollSwampScheduledResults;
 use App\Jobs\Operations\ReconcileSwampOperations;
-use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Jobs\TaskVms\ReleaseIdleTaskVms;
 use App\Jobs\TaskVms\SweepTaskVmHosts;
 use App\Jobs\WebSocket\CloseWebSocketOperations;
@@ -86,11 +85,6 @@ $app = Application::configure(basePath: dirname(__DIR__))
         // Runs that finished in Swamp are read once a minute and projected; Swamp's commit feed needs a v3 datastore.
         GatewaySchedule::job($schedule, new PollSwampScheduledResults)->everyMinute()
             ->when(static fn (): bool => GatewayQueueRedis::configured() && app(SwampScheduledResults::class)->enabled());
-        // Stage 6: a task VM host without an operator hold brings its image and seed up to date once a day; the live fleet holds every
-        // host (docs/reference/old-paths.md#off-in-the-live-fleet). The release trigger is in the release projection.
-        // A host with a refresh open returns it, so a repeat starts nothing.
-        GatewaySchedule::job($schedule, new RefreshTaskVmImages)->dailyAt('03:20')
-            ->when(static fn (): bool => TaskVmSettings::scheduled()->enabled);
         // Stage 8: a verified release admits the fleet rollout (release projection). Nodes outside the daytime set wait for the
         // 03:00–06:00 Amsterdam window, so the rollout is also admitted once when that window opens.
         GatewaySchedule::job($schedule, new AdmitFleetRollout)->dailyAt('03:05')->timezone('Europe/Amsterdam')
