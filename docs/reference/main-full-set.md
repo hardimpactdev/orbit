@@ -28,7 +28,9 @@ Each unit has a 540-second ceiling. Long Deno files are sliced by their current 
 
 ## Durable main consumers
 
-Main history is the durable queue. New pushes append commits; replacing a waiting GitHub workflow does not remove them. One fixture consumer holds the existing five Sabre runners. At admission it reads the newest main SHA and the last published answer, then runs the union of deferred requests from every first-parent commit in that interval on the newest tree. Selection reads each commit's registry data, including changes later reverted. The gate and replay share file discovery, including tests in grouped extension directories. It does not execute scripts from earlier commits. A removed or renamed requested case is a red planning answer, never silently omitted.
+Main history is the durable queue. New pushes append commits; replacing a waiting GitHub workflow does not remove them. One fixture consumer holds the existing five Sabre runners. At admission it reads the newest main SHA and the last published answer, then runs the union of deferred requests from every first-parent commit in that interval on the newest tree. Selection reads each commit's registry data, including changes later reverted. The gate and replay share file discovery, including tests in grouped extension directories. It does not execute scripts from earlier commits.
+
+A removed or renamed requested case is a red planning answer, never silently omitted.
 
 The claim and report name `covers <oldest>..<newest>`, the exclusive base and the exact tested SHA. Each commit points at the same report. This proves the union on that tree, not every earlier tree. Missing results, setup failure and timeout are red answers and advance the queue after publication. A failed report API write does not advance it.
 
