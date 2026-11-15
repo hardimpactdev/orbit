@@ -488,25 +488,6 @@ contexts:
     host:
       pool: topology-seed
     item: seed:old
-  retired-resources:
-    clean:
-      prefixes:
-      - task-
-    clean_read:
-      results:
-      - {}
-      - stdout: '[{"name":"task-old"},{"name":"keep"}]'
-      - stdout: '[{"name":"task-old","type":"custom"},{"name":"task-image","type":"image"},{"name":"keep","type":"custom"}]'
-  dnsmasq-log-owned:
-    raw_lines:
-    - log-queries=extra
-    - log-facility=/var/log/orbit/dnsmasq-orbittask0.log
-    bridge: orbittask0
-  dnsmasq-log-foreign:
-    raw_lines:
-    - log-queries=extra
-    - log-facility=/var/log/foreign.log
-    bridge: orbittask0
   ufw-observed:
     firewall_added:
       stdout_lines:
@@ -1714,28 +1695,6 @@ cases:
   - topology-seed
   - seed
   - old
-- file: task-vm-host.yml
-  task: Remove the instances of retired prefixes
-  field: loop
-  context: retired-resources
-  expected:
-  - task-old
-- file: task-vm-host.yml
-  task: Remove the volumes of retired prefixes
-  field: loop
-  context: retired-resources
-  expected:
-  - task-old
-- file: task-vm-host.yml
-  task: Task VM egress log
-  field: vars.dnsmasq_taken
-  context: dnsmasq-log-owned
-  expected: false
-- file: task-vm-host.yml
-  task: Task VM egress log
-  field: vars.dnsmasq_taken
-  context: dnsmasq-log-foreign
-  expected: true
 - file: tasks/firewall.yml
   task: Find changed owned firewall rules
   field: vars.observed
@@ -2464,10 +2423,6 @@ non_command_output:
   task: Remove the certificate folders
   field: vars.caddy_folders
   reason: Prefixes admitted certificate scopes.
-- file: task-vm-host.yml
-  task: Task VM egress log
-  field: vars.dnsmasq_logs
-  reason: Builds log paths from bridge names.
 - file: tasks/fleet-reboot-read.yml
   task: Keep the boot state
   field: ansible.builtin.set_fact.boot.newest_kernel

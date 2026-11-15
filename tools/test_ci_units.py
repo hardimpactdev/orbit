@@ -161,7 +161,7 @@ class InventorySelectionTest(unittest.TestCase):
              patch.object(units.gate, 'resolve_base', return_value=self.base), \
              patch.object(units.selection, 'changed_inputs', return_value=(self.base, [
                  'tools/tests/ci-fixture-cases.json',
-                 'apps/gateway/tests/Unit/Domain/TaskVms/TaskVmRefreshGateTest.php'])), \
+                 'apps/gateway/tests/Unit/Domain/TaskVms/TaskVmWorkflowGateTest.php'])), \
              patch.object(sys, 'argv', ['ci-units', 'plan', '--base', self.base, '--head', head]), \
              contextlib.redirect_stdout(io.StringIO()) as output:
             self.assertEqual(units.main(), 0)
@@ -282,17 +282,17 @@ class RegistrySelectionTest(unittest.TestCase):
             self.assertEqual(units.registry_changes(self.git('merge-base', main, topic), topic),
                              (['swamp/process.ts'], False))
 
-    def test_egress_role_is_narrow_and_known_slow_file_is_deferred(self):
+    def test_hub_lan_role_is_narrow_and_known_slow_file_is_deferred(self):
         budget, fixtures, defaults = units.configuration()
-        file = 'swamp/tests/ansible_task_vm_host_egress_test.py'
+        file = 'swamp/tests/ansible_wireguard_hub_lan_test.py'
         unrelated = units.plan(['swamp/ansible/tasks/instance-container-process.yml',
                                 'swamp/workflows/workflow-operation-process-container.yaml'], budget, fixtures, defaults)
         self.assertNotIn(file, names(unrelated) + unrelated['deferred'])
-        for path in (file, 'swamp/ansible/task-vm-host.yml'):
+        for path in (file, 'swamp/ansible/tasks/node-hub-lan-proof.yml'):
             result = units.plan([path], budget, fixtures, defaults)
             self.assertNotIn(file, names(result))
             self.assertIn(file, result['deferred'])
-            self.assertIn('43102509039', units.plan_summary(result, fixtures))
+            self.assertIn('cannot be sliced', units.plan_summary(result, fixtures))
 
 
 class TableTest(unittest.TestCase):

@@ -7,7 +7,7 @@ description: "How Orbit records, log only, which outside hosts a task VM connect
 
 A task VM can reach any public address. The bridge ACL `orbittask0-egress` drops private ranges and allows the rest. Step 1 records which outside hosts task VMs really use. Step 2 derives an allowlist from that record and enforces it through a proxy outside the VM. Step 1 blocks nothing.
 
-Three changes build it: the host part, the agent fact, and the Gateway table with `orbit task:egress`. The command has its own page, [`task:egress`](/cli/task/egress).
+Three changes built it: the host part (removed), the agent fact, and the Gateway table with `orbit task:egress`. The command has its own page, [`task:egress`](/cli/task/egress).
 
 ## How it works
 
@@ -67,9 +67,7 @@ A kernel without `/proc/net/nf_conntrack` is the reason for the `nftables` rule.
 
 ## Running the host part
 
-The host part is built. It is the tag `egress-log` of `swamp/ansible/task-vm-host.yml`. The [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) runs it as its first step, `Log egress`, in a job of its own. Nothing starts that refresh any more: its release step, daily schedule and artisan commands are removed, so no host gets it this way ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
-
-The step runs before the base is touched. Only a safety check fails the refresh: rules that do not load, a bridge with IPv6, or an ACL that lost its drop rule. Every other check prints a warning with its code in the Swamp run log, and the refresh goes on, because a log-only failure must not block the base refresh. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. [Log task VM egress](/reference/compute-drivers#log-task-vm-egress) lists the checks. The part writes these files on the host:
+The host part is removed. It was the tag `egress-log` of `swamp/ansible/task-vm-host.yml`, and only the removed base snapshot refresh ran it ([old paths](/reference/old-paths)). No host gets the setup any more. A host that ran it keeps these files, with the table and the unit, until an operator removes them:
 
 | File | Content |
 | --- | --- |
