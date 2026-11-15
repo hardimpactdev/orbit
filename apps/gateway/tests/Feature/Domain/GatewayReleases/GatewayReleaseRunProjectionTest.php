@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Domain\GatewayReleases\GatewayReleaseRunProjection;
 use App\Jobs\Fleet\AdmitFleetRollout;
-use App\Jobs\TaskVms\RefreshTaskVmImages;
 use App\Models\GatewayRelease;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
@@ -76,12 +75,6 @@ it('queues the fleet rollout admission after a verified release only', function 
     GatewayRelease::query()->delete();
     endReleaseRun('succeeded');
     Queue::assertPushed(AdmitFleetRollout::class, 1);
-});
-
-it('queues no task image refresh itself: the run\'s own step admits it', function (): void {
-    Queue::fake();
-    endReleaseRun('succeeded');
-    Queue::assertNotPushed(RefreshTaskVmImages::class);
 });
 
 it('warns on a verified release when the Swamp Node\'s Ansible collections differ from the release\'s, with the converge that installs them', function (): void {

@@ -28,7 +28,7 @@ The shared native `automatic-production-deploy` producer schedules [automatic de
 
 While task VMs are enabled, the Gateway queues the [task VM host sweep](/reference/compute-drivers#sweep-task-vm-hosts) every 30 minutes. It releases stale Incus starts through `task_vm.slot_release`. Every five minutes it also queues the [idle release](/reference/tasks#release-an-idle-task-vm) of task VMs.
 
-The Gateway also queues the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the Linux task VM hosts every day at 03:20 while task VMs are enabled. A host with a refresh open returns it.
+No schedule starts the [refresh of the base snapshots](/reference/compute-drivers#refresh-the-base-snapshot) of the task VM hosts any more: the 03:20 daily refresh is removed.
 
 While the [fleet rollout](/reference/gateway-recovery#fleet-rollout) is on, the Gateway queues its admission every day at 03:05 Europe/Amsterdam, when the window of the non-daytime Nodes opens. A verified release queues the same admission. The job waits a minute at a time while the commit has no CLI release yet or a rollout runs.
 

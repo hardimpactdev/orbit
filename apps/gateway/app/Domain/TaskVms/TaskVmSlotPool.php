@@ -161,7 +161,7 @@ final readonly class TaskVmSlotPool
         foreach ($skipped as $id => $name) {
             $refresh = TaskVmImageRefreshIntent::open($id);
             $text .= " {$name}: ".(app(TaskVmSeedFloor::class)->reason($id) ?? 'no refresh has promoted a usable base for it').'; '
-                .($refresh instanceof Operation ? "a refresh is running (operation {$refresh->id}), run the proof again when it ends." : 'no refresh is running; a release that changes the playbooks, pins or lock files starts one.');
+                .($refresh instanceof Operation ? "a refresh is running (operation {$refresh->id}), run the proof again when it ends." : 'no refresh is running, and nothing starts one: task VMs are off.');
         }
 
         return $text;

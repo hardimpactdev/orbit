@@ -492,7 +492,10 @@ describe('proof:run admission', function (): void {
         $child = ProofRunSettlement::children($proof->id)->first();
         $detail = $child?->state['capacity_wait_reason'] ?? $proof->state['capacity_wait_reason'] ?? proofFailureDetail($proof) ?? '';
         expect(str_contains($detail, 'no usable nested fleet seed are skipped: beast'))->toBe($skipped)
-            ->and(str_contains($detail, 'playbooks, pins and lock files up to the merge base'))->toBe($skipped);
+            ->and(str_contains($detail, 'playbooks, pins and lock files up to the merge base'))->toBe($skipped)
+            // No release starts a refresh any more, so the text promises none.
+            ->and(str_contains($detail, 'no refresh is running, and nothing starts one: task VMs are off.'))->toBe($skipped)
+            ->and($detail)->not->toContain('starts one.');
         if ($skipped) {
             expect(ProofRunSettlement::children($proof->id)->sole()->current_step)->toBe('Wait for a task place');
         }

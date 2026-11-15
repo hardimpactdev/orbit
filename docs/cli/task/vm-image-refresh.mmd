@@ -1,7 +1,7 @@
 sequenceDiagram
-  %% Target design: each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. In every Gateway release, and daily, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op. Old path: the refresh of the nested-fleet default after a release (docs/cli/instance/container/fleet-refresh.mmd) replaces its release trigger and daily run; see docs/reference/old-paths.md.
+  %% Target design: each task VM host keeps one stopped base VM, `shark-base`, that never gets an identity. Its ZFS snapshot is the base a task start copies; there is no Incus image and no publish. When a refresh runs, the base VM converges and a new snapshot becomes the base, so a task start's converge stays near a no-op. Old path, off: the refresh of the nested-fleet default after a release (docs/cli/instance/container/fleet-refresh.mmd) replaced its release trigger and daily run, which are removed; nothing in the Gateway starts this kind, and it leaves with the task VM path (docs/reference/old-paths.md).
   %% status: draft
-  %% command: none · in every Gateway release, and daily
+  %% command: none · no trigger; nothing starts it
   %% kind: task_vm.image_refresh
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
@@ -14,19 +14,15 @@ sequenceDiagram
   participant VM as Base VM<br/>shark-base
   Note over GW: Admit the refresh<br/>one run per host
   %%> Started by:
-  %%> - every verified Gateway release, from its step "Admit VM refreshes", after successful verification and successful or skipped Horizon start: `task-vms:refresh-images --commit <sha>` runs from the verified release; admission is best effort and does not wait for refresh completion. The intent holds the new commit's recipe, pins and checkout; the run uses the new commit's workflows and playbooks; a code-only release refreshes too
-  %%> - the daily schedule at 03:20, and an operator
-  %%> - a release asks a host again, up to 6 rounds 5 s apart, when Swamp could not take the run yet because it had just reloaded
+  %%> - nothing: the release step "Admit VM refreshes", the daily 03:20 schedule and the artisan commands `task-vms:refresh-images` and `task-vms:refresh-image` are removed
   %%> Result:
-  %%> - the candidate proof may take the shared CI reserve (place 1), then any free task place; task work cannot starve it, and a busy proof may still refuse it until the next trigger
+  %%> - the candidate proof may take the shared CI reserve (place 1), then any free task place; task work cannot starve it, and a busy proof may still refuse it
   %%> - a CI-only host permits its own refresh proof, pinned to that host; Sabre refresh proves on Sabre and never spills onto another host
-  %%> - one run per host, all hosts in parallel; the run never holds the release, and a host that refuses is skipped until the next trigger
-  %%> - a host with a refresh open keeps it, and the newest commit waits behind it: one pending commit per host, the newest wins, and the run that ends admits it
+  %%> - one run per host; a host with a refresh open keeps it, and a second admission returns it; no commit waits behind it
   alt host has an image refresh hold
-    Note over GW: Skip held host<br/>skipped:operator_hold
+    Note over GW: Refuse held host<br/>task_vm.image_refresh_held
     %%> Result:
-    %%> - release command output and the daily admission log name the host; no Operation is created or queued
-    %%> - a direct operator refresh, including --from-stock, refuses with task_vm.image_refresh_held
+    %%> - an admission, including --from-stock, refuses with task_vm.image_refresh_held; no Operation is created or queued
     %%> - the host keeps serving its last promoted snapshot; an admitted refresh is unchanged
   else host has no hold
   GW->>SW: Start run, full intent<br/>operation-task-vm-image-refresh
@@ -50,7 +46,7 @@ sequenceDiagram
   %%> - after cloud-init ends with status 0 or 2, reads `orbit`'s authorized keys through Incus and checks their native SHA256 fingerprints against the admitted control public key before Converge; missing or empty keys fail with `task_vm.bootstrap_key_missing`, and no matching fingerprint fails with `task_vm.bootstrap_key_mismatch`
   %%> - this early authentication refusal detects incomplete provisioning; it does not prevent a reboot, rewrite keys or replay cloud-init
   %%> - the task VM project keeps `restricted.snapshots=allow`: the base is a snapshot, and only a host API client can take one
-  %%> - `task-vms:refresh-image <host> --from-stock` withdraws the recorded base at admission, so no task start copies it, and the run first deletes the base VM and its seed with their snapshots and builds the base from stock; after a failure the next refresh builds it as on a new host
+  %%> - an admission from stock withdraws the recorded base at admission, so no task start copies it, and the run first deletes the base VM and its seed with their snapshots and builds the base from stock; after a failure the next refresh builds it as on a new host
   SW->>VM: Converge<br/>the same converge as a task start
   %%> What it does:
   %%> - each part runs only when its digest changed: the outer VM, the warm checkout at the release commit, each container

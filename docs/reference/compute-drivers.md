@@ -2,8 +2,8 @@
 title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
-  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**,app/Console/Commands/{RefreshTaskVmImageCommand,RefreshTaskVmImagesCommand}.php}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
@@ -314,7 +314,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. Recipe pins change only through reviewed manual edits. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
-2. Each task VM host [refreshes its base snapshot](#refresh-the-base-snapshot).
+2. No task VM host refreshes its base snapshot any more: the refresh has no trigger ([refresh the base snapshot](#refresh-the-base-snapshot)).
 3. The next [PHP step](/reference/php-runtime#php-build) of an Instance brings its versions to the recipe.
 4. Hosted CI installs the new build in its next run. See [runner updates](/reference/implementation-loop#one-php-build-in-ci) for the pre-merge operator steps.
 
@@ -552,7 +552,7 @@ Image installer services use `UMask=0022`, matching recipe execution on Nodes. T
 
 Verification runs Node, pnpm, Bun, and Vite+ launchers only as `orbit` and compares their versions with inspection. Other guest-facing binaries must report the same version as root when run as `orbit`. Launcher caches remain owned by `orbit`.
 
-Existing base snapshots and VMs retain their permissions. After a fix, refresh the host with `task-vms:refresh-image <host>`, then recreate affected VMs.
+Existing base snapshots and VMs retain their permissions. No refresh can be started any more: task VMs are off and their refresh triggers are removed ([old paths](/reference/old-paths#off-in-the-live-fleet)).
 
 ### Clone and set up every workspace
 
@@ -741,7 +741,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The Gateway jobs `SweepTaskVmHosts`, `ReleaseIdleTaskVms` and `RefreshTaskVmImages` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
+The Gateway jobs `SweepTaskVmHosts` and `ReleaseIdleTaskVms` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
 
 Provisioning, enrollment, runtime preparation, resume, destruction, parking and internal removal keep their existing synchronous implementations and tests. Their replacement Operations remain inert until their parents declare the required `node.add`, `node.remove` and Process children and those owning admissions are registered. Merely registering a Node or Process kind does not activate an incomplete parent. Admission refuses with `operation.kind_unavailable` before it records intent or changes the VM.
 
@@ -777,7 +777,7 @@ A medium or large VM holds test Nodes, so it boots with a clone of the [topology
 
 When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone. The [claim gate](#claims-copy-the-base-snapshot) needs a recorded base snapshot, which carries its seed, so a claimed VM always finds one.
 
-When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. [Refresh the host](#refresh-the-base-snapshot) with `task-vms:refresh-image <host>`. Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
+When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. No refresh can rebuild the base any more (see [Refresh the base snapshot](#refresh-the-base-snapshot)). Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
 
 Create, start, stop, and delete are idempotent by name. A running VM counts as created and started, a stopped or absent VM counts as stopped, and an absent VM counts as deleted. Stop waits up to 120 seconds for the guest to shut down, and then stops the VM with force.
 
@@ -801,7 +801,7 @@ Orbit uses complete CLI command names and explicit archive destinations, compati
 2. Finish live task VM rows through normal lifecycle operations. Save and disable instance autostart with the drain script below, then stop all remaining instances. Take the stopped-state backup below.
 4. Verify client and server 7.0.1. Compare project, VM, ZFS, custom volume, and seed inventories with the backup.
 5. Boot an old-image guest and a new disposable guest. Check agent exec, stop/start, bridge isolation, and ACL egress.
-6. Run `php artisan task-vms:refresh-image shark`. Require the proof and the promotion of the snapshot before the topology gate.
+6. Not possible any more: the refresh that proves and promotes the snapshot has no trigger (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
 7. Run one complete topology task group explicitly on Shark. Require seed adoption, Node copies, enrollment, checks, teardown, and clone removal.
 
 The Shark topology group is the **go/no-go point**. The full host 7.0.1 → task VM 7.0.1 → topology Node chain remains unverified until it passes. Failure stops rollout and invokes the rehearsed rollback below before normal admission resumes.
@@ -1240,17 +1240,13 @@ The `Log egress` step runs before the base VM is touched. A failed safety check 
 
 #### Refresh the base snapshot
 
-Each task VM host refreshes its own base. Nothing is copied between hosts. An operator runs one with `php artisan task-vms:refresh-image <host>` on the Gateway, or every host with `task-vms:refresh-images`, which takes `--commit <sha>` for a release other than the one the Gateway runs.
+Each task VM host refreshes its own base. Nothing is copied between hosts. Nothing starts a refresh any more: the release step "Admit VM refreshes", the daily schedule at 03:20 and the artisan commands `task-vms:refresh-images` and `task-vms:refresh-image` are removed. They are replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates each nested-fleet default. The kind `task_vm.image_refresh` stays until the rest of the task VM path leaves ([old paths](/reference/old-paths#off-in-the-live-fleet)).
 
-Two triggers admit every Linux host: every verified release, from its step "Admit VM refreshes" after successful verification and successful or skipped Horizon start, which runs `task-vms:refresh-images --commit <sha>` from the verified release, and a daily schedule at 03:20. Release admission is best effort and does not wait for refresh completion. On 13 November 2026 every host has a refresh hold, so both triggers skip it ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
+The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain. An admission of a held host refuses with `task_vm.image_refresh_held`. Every host has the hold since 13 November 2026.
 
-Set a per-host hold with `orbit node:update NODE --image-refresh-hold`; clear it with `--no-image-refresh-hold`. The Node column `image_refresh_hold` defaults to false and appears in Node list and show. Release and daily admission skip each held host with `skipped:operator_hold`, without creating or queueing an Operation. The release keeps this host-name result in its "Admit VM refreshes" step output; the daily job records the same result in the admission log. Other hosts refresh as usual. The host stays configured and keeps serving task VMs from its last promoted image.
+A host with a refresh open keeps it; a second admission returns it, and no commit waits behind it. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records.
 
-Operator refreshes respect the hold too, as operator fleet reboot passes respect `reboot_hold`. A single-host `task-vms:refresh-image`, including `--from-stock`, refuses with `task_vm.image_refresh_held`. The all-host command reports the held host as skipped. Changes apply to the next admission, including a release commit queued behind an open refresh. An admitted refresh continues; setting the hold does not cancel it.
-
-A host with a refresh open keeps it and queues the newest commit behind it: the run that ends admits that commit. A host that refuses is skipped until the next trigger. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records.
-
-`task-vms:refresh-image <host> --from-stock` rebuilds the base. At admission it withdraws the recorded base, so a task start on that host is refused until the run promotes the new one. The run deletes the base VM and its seed, with their snapshots, then builds the base from the stock image as on a new host. After a failure, the next refresh builds it as on a new host too. After every refresh that passed, a `host-clean` phase removes what no current path makes:
+An admission from stock rebuilds the base. At admission it withdraws the recorded base, so a task start on that host is refused until the run promotes the new one. The run deletes the base VM and its seed, with their snapshots, then builds the base from the stock image as on a new host. After a failure, the next refresh builds it as on a new host too. After every refresh that passed, a `host-clean` phase removes what no current path makes:
 
 - in the task VM project, every image except the stock one;
 - in the same project, the volumes and instances named `orbit-topology-seed-*` or `orbit-baseline-*`;
@@ -1375,7 +1371,7 @@ There is no fallback image. A claim copies the recorded base snapshot of its hos
 A new host needs Incus and ufw, and its managed user needs passwordless `sudo`. Then:
 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr`. Set a new `zfs_dataset` for native storage, or omit it and set `pool_size` for an Incus-managed loop file.
-2. Run `task-vms:refresh-image {node} --from-stock`. Its host phase prepares the host, then the refresh builds the base and proves one start from its snapshot.
+2. Not possible any more: no refresh can be started (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
 
 Host preparation allows DHCP requests from the task bridge and DNS to its host address through UFW, as well as forwarded VM traffic. The input rules use the catalog names `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`, visible with `firewall:list --managed`. A [container host](#prepare-a-container-host) has the same three rules for its container bridge, as `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`. Incus's own firewall allowances do not override UFW's input policy. Without these input rules, a host with default-deny input cannot give the base VM a DHCP lease, and cloud-init fails to install its SSH server.
 
@@ -1486,10 +1482,10 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.invalid_host_output` | 502 | Incus or a task VM guest returned output that fails these checks |
 | `task_vm.host_command_failed` | 502 | An `incus` command on the host, or a guest command in a task VM, failed |
 | `task_vm.job_failed` | 500 | A task VM job failed with an error that has no code of its own |
-| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. Run `task-vms:refresh-image <host>` |
-| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. Run `task-vms:refresh-image <host>` |
+| `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. No refresh can rebuild it any more |
+| `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. No refresh can rebuild it any more |
 | `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
-| `task_vm.image_refresh_held` | 409 | The host has an image refresh hold; clear it through `node:update` before an explicit refresh |
+| `task_vm.image_refresh_held` | 409 | The host has an image refresh hold; clear it through `node:update` before an admission |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |

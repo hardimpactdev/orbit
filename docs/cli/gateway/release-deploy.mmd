@@ -91,18 +91,10 @@ sequenceDiagram
     %%> - starting a running unit changes nothing
     %%> Decided by the orchestrator, for review:
     %%> - the drain relies on the unit's stop policy alone; the rollback script no longer starts a stopped Horizon, because this step does after every end of the run
-    AC->>GN: Admit VM refreshes<br/>artisan · verified release
-    %%> Held hosts:
-    %%> - the step output names each held host as `skipped:operator_hold`; no refresh Operation starts for it
-    %%> What it does:
-    %%> - only after verification succeeds and Start Horizon finishes, admits one `task_vm.image_refresh` per task VM host without an image refresh hold with the new release's artisan
-    %%> - the new Horizon workers consume the queued start jobs; the release waits only for admission, never for refresh completion
-    %%> On failure:
-    %%> - best effort: admission failure never fails the release
     AC->>GN: Admit nested-fleet refresh<br/>artisan · verified release
     %%> What it does:
-    %%> - after the same checks, admits one `instance.deploy` to the release commit for each nested-fleet default on a switched-on Node (instance/container/fleet-refresh.mmd)
-    %%> - with no such default it prints one line and admits nothing; it never calls the task VM refresh
+    %%> - only after verification succeeds and Start Horizon finishes (or is skipped), admits one `instance.deploy` to the release commit for each nested-fleet default on a switched-on Node (instance/container/fleet-refresh.mmd)
+    %%> - with no such default it prints one line and admits nothing; no release step admits a task VM image refresh any more
     %%> On failure:
     %%> - best effort: a refusal or a failed admission never fails the release, and nothing waits for the refresh
     AC->>GN: Resume document cleanup<br/>best effort
