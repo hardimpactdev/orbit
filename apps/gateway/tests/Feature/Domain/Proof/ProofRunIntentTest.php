@@ -3,8 +3,11 @@
 declare(strict_types=1);
 
 use App\Actions\Operations\CancelOperationAction;
+use App\Data\Operations\OperationData;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubReadFailure;
+use App\Domain\GitHub\GitHubReadFailureKind;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -84,6 +87,9 @@ function proofSource(): object
 
         public bool $down = false;
 
+        /** What a read throws while GitHub is down; a generic outage when null. */
+        public ?GitHubApiException $failure = null;
+
         public array $documents = [];
 
         public int $reads = 0;
@@ -97,7 +103,7 @@ function proofSource(): object
             $this->reads++;
             $this->checkedCommits[] = $sha;
 
-            return $this->down ? throw GitHubApiException::unavailable() : $this->exists;
+            return $this->down ? throw $this->failure ?? GitHubApiException::unavailable() : $this->exists;
         }
 
         public function branchesWithHead(string $sha): array
@@ -220,6 +226,27 @@ describe('which commits Orbit proves', function (): void {
 
         expect(proofRefused(fn () => app(ProofCommitTrust::class, ['source' => $source])->assert(PROOF_SHA))->errorCode)->toBe('proof.github_unavailable');
     });
+
+    it('refuses with a code that says what the caller should do, and keeps the reason of the failed read', function (?GitHubReadFailure $failure, string $code, int $status, string $message): void {
+        $source = proofSource();
+        $source->down = true;
+        $source->failure = $failure === null ? GitHubApiException::tokenRefused(403, 'Resource not accessible by integration') : GitHubApiException::readFailed($failure);
+
+        $refusal = proofRefused(fn () => app(ProofCommitTrust::class, ['source' => $source])->assert(PROOF_SHA));
+
+        expect([$refusal->errorCode, $refusal->status, $refusal->getMessage()])->toBe([$code, $status, $message]);
+    })->with([
+        'transient' => [new GitHubReadFailure(GitHubReadFailureKind::Transient, 'commit', transport: 'ConnectionException'), 'proof.github_unavailable', 503,
+            'GitHub could not be read, so the commit cannot be checked. The commit read failed with ConnectionException. Run the command again.'],
+        'rate limited' => [new GitHubReadFailure(GitHubReadFailureKind::RateLimited, 'commit', 403, resetAt: new DateTimeImmutable('2026-11-15T06:00:00+00:00')), 'proof.github_rate_limited', 429,
+            'GitHub could not be read, so the commit cannot be checked. The commit read hit the GitHub rate limit (HTTP 403), which resets at 2026-11-15T06:00:00+00:00. Run the command again after the reset.'],
+        'refused' => [new GitHubReadFailure(GitHubReadFailureKind::Refused, 'commit', 401), 'proof.github_refused', 502,
+            'GitHub could not be read, so the commit cannot be checked. The commit read answered HTTP 401. An operator must check the Gateway GitHub App and its access to the repository.'],
+        'token refused' => [null, 'proof.github_refused', 502,
+            'GitHub could not be read, so the commit cannot be checked. GitHub refused the Project token request (403): Resource not accessible by integration. An operator must check the Gateway GitHub App and its access to the repository.'],
+        'not found' => [new GitHubReadFailure(GitHubReadFailureKind::NotFound, 'commit branches', 404), 'proof.github_not_found', 422,
+            'GitHub could not be read, so the commit cannot be checked. The commit branches read answered HTTP 404. Running it again does not help.'],
+    ]);
 
     it('checks a pull request from outside: the label, a maintainer and exactly the head', function (
         array $labels, array $reviews, bool $open, string $head, bool $accepted,
@@ -540,6 +567,18 @@ describe('proof:run admission', function (): void {
 
         Process::run(['rm', '-rf', $base]);
         expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.github_unavailable')->and(Task::query()->count())->toBe(0);
+    });
+
+    it('fails the proof at admission with the reason of the failed read on the Operation', function (): void {
+        proofWorld($source = proofSource());
+        $source->down = true;
+        $source->failure = GitHubApiException::readFailed(new GitHubReadFailure(GitHubReadFailureKind::RateLimited, 'commit', 403, resetAt: new DateTimeImmutable('2026-11-15T06:00:00+00:00')));
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.github_rate_limited')
+            ->and(proofFailureDetail($proof))->toBe('GitHub could not be read, so the commit cannot be checked. The commit read hit the GitHub rate limit (HTTP 403), which resets at 2026-11-15T06:00:00+00:00. Run the command again after the reset.')
+            ->and(OperationData::fromModel($proof)->error)->toMatchArray(['code' => 'proof.github_rate_limited', 'detail' => proofFailureDetail($proof)]);
     });
     it('admits nothing when the watchdog ended the proof while the job was slow', function (): void {
         config(['proof.execution' => true]);
