@@ -1,19 +1,19 @@
 ---
-# The tasks of a sleep and of a wake's end. `power` is `sleep` (instance-container-power.yml: the sleep's one phase) or `awake` (the end
-# of a wake's `start` part of instance-container.yml, which includes this file when its intent names the marker).
+# The tasks of a sleep and of a wake's end. `power` is `prepared_sleep` (instance-container-power.yml: the sleep's one phase) or
+# `awake` (the end of a wake's `start` part of instance-container.yml, which includes this file when its intent names the marker).
 
 # Caddy's site of a container Instance checks the marker only once a publish of the Node's sites rendered the check. A marker without
 # the check would leave the Route proxying to a stopped container, so the sleep refuses before it changes anything. An Instance without
 # a published Route has no site (the intent's `route` is false): nothing proxies to it, so there is nothing to check.
 - name: Refuse a sleep intent that does not say whether a Route has a site
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.assert:
     that: intent.route is defined and intent.route is boolean
     fail_msg: The sleep intent names no `route`; the Gateway always sends it.
     quiet: true
 
 - name: Read Caddy's loaded configuration
-  when: power == 'sleep' and intent.route
+  when: power == 'prepared_sleep' and intent.route
   ansible.builtin.uri:
     url: "{{ caddy_admin }}/config/"
     return_content: true
@@ -23,7 +23,7 @@
   failed_when: false
 
 - name: Refuse a sleep while the site has no asleep check
-  when: power == 'sleep' and intent.route
+  when: power == 'prepared_sleep' and intent.route
   ansible.builtin.assert:
     that:
       - caddy_config.status | default(0) == 200
@@ -33,7 +33,7 @@
 
 # Before the freeze: a request during the freeze gets the wake page. The directory is the app-dev role's hibernation directory.
 - name: Write the asleep marker
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.copy:
     content: ""
     dest: "{{ marker }}"
@@ -43,36 +43,36 @@
 
 # The helper of this commit, so the run never depends on when the role last converged (docs/reference/prepared-restore.md).
 - name: Install the power helper
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.include_tasks: { file: instance-power-helper.yml, apply: {tags: [always]} }
 
 # The helper reads the container's state first. Running: it opens swap on each cgroup of the subtree that holds 0 and records it, pauses,
 # records the plan of every process's resident pages, and reclaims once. Frozen by an earlier sleep: it changes nothing and returns that
 # sleep's result. Stopped: it stays stopped. A failed swap write or pause closes what it opened: the container serves as before.
 - name: Prepare the container's sleep
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [always]} }
   vars:
     power_call: ['prepare', '--instance', '{{ container.instance_id }}', '--operation', '{{ operation_id }}']
     power_call_stdin: "{{ power_intent | to_json }}"
 
 - name: Note the prepared sleep
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.set_fact: { sleep_prepared: "{{ power_called }}" }
 
 - name: Remove the marker of a container that still runs
-  when: power == 'sleep' and sleep_prepared.outcome == 'failed' and sleep_prepared.state_after == 'running'
+  when: power == 'prepared_sleep' and sleep_prepared.outcome == 'failed' and sleep_prepared.state_after == 'running'
   ansible.builtin.file: { path: "{{ marker }}", state: absent }
 
 # A failure that leaves the container frozen keeps the marker: it is asleep, and a later resume closes what the sleep opened.
 - name: Refuse a sleep the helper could not finish
-  when: power == 'sleep' and sleep_prepared.outcome in ['failed', 'missing']
+  when: power == 'prepared_sleep' and sleep_prepared.outcome in ['failed', 'missing']
   ansible.builtin.fail: { msg: "{{ sleep_prepared.error_code | default('instance.container_freeze_failed', true) }}" }
 
 # Each call reads memory.stat once and stores the anonymous and file bytes in the sleep's result; the kernel's counters settle across
 # CPUs a moment after the reclaim, so the phase reads them until both are 0, at most 20 times (`retries` counts the reads after the first). The last read is what stays in RAM.
 - name: Settle the frozen container's counters
-  when: power == 'sleep' and sleep_prepared.outcome == 'frozen'
+  when: power == 'prepared_sleep' and sleep_prepared.outcome == 'frozen'
   ansible.builtin.command:
     argv: >-
       {{ ['systemd-run', '--unit=orbit-instance-power-' ~ container.instance_id, '--wait', '--pipe', '--collect', '--quiet',
@@ -89,13 +89,13 @@
 
 - name: Refuse a sleep whose counter read crashed
   when: >-
-    power == 'sleep' and sleep_prepared.outcome == 'frozen' and sleep_residual.rc != 0
+    power == 'prepared_sleep' and sleep_prepared.outcome == 'frozen' and sleep_residual.rc != 0
     and (sleep_residual.stdout != '' or 'already loaded or has a fragment file' not in sleep_residual.stderr)
   ansible.builtin.fail: { msg: instance.power_helper_failed }
 
 # A read the lock kept busy each time leaves the residual unknown: the container stays frozen, as when the count was unreadable.
 - name: Note what stayed in RAM
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.set_fact:
     sleep_prepared_restore: >-
       {{ (sleep_residual.stdout | from_json).prepared_restore
@@ -108,7 +108,7 @@
 # resume closes what the sleep opened. A failed resume fails the sleep with the container frozen behind its marker: asleep. A
 # nested-fleet container is never stopped: it runs again as before the sleep, and the sleep fails.
 - name: Note whether the memory stayed in RAM
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.set_fact:
     sleep_held: >-
       {{ sleep_prepared.outcome == 'frozen'
@@ -118,7 +118,7 @@
     sleep_nested: "{{ container.allowed_devices is defined }}"
 
 - name: Resume the container whose memory stayed in RAM
-  when: power == 'sleep' and sleep_held | bool
+  when: power == 'prepared_sleep' and sleep_held | bool
   block:
     - name: Discard the plan of the container whose memory stayed in RAM
       ansible.builtin.include_tasks: { file: instance-power-call.yml, apply: {tags: [always]} }
@@ -135,7 +135,7 @@
       ansible.builtin.fail: { msg: instance.container_freeze_failed }
 
 - name: Keep a nested-fleet container running when its memory stayed in RAM
-  when: power == 'sleep' and sleep_held | bool and sleep_nested | bool
+  when: power == 'prepared_sleep' and sleep_held | bool and sleep_nested | bool
   block:
     - name: Remove the marker of the running nested-fleet container
       ansible.builtin.file: { path: "{{ marker }}", state: absent }
@@ -143,7 +143,7 @@
       ansible.builtin.fail: { msg: instance.container_freeze_failed }
 
 - name: Stop the container whose memory stayed in RAM
-  when: power == 'sleep' and sleep_held | bool and not sleep_nested | bool
+  when: power == 'prepared_sleep' and sleep_held | bool and not sleep_nested | bool
   block:
     - name: Stop the container
       ansible.builtin.command: { argv: [incus, --project, "{{ container.project }}", stop, --timeout, "30", "{{ container.name }}"] }
@@ -159,7 +159,7 @@
 # `swap_subtree` counts the inner cgroups this sleep opened. `prepared_restore` is the helper's own object: a stop says `skipped`,
 # reason `stopped`, with what stayed in RAM.
 - name: Note how the container sleeps
-  when: power == 'sleep'
+  when: power == 'prepared_sleep'
   ansible.builtin.set_fact:
     power_result:
       sleep: "{{ 'stopped' if sleep_held | bool or sleep_prepared.outcome == 'stopped' else 'frozen' }}"

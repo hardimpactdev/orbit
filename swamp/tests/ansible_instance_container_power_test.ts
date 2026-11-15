@@ -17,7 +17,7 @@ const runId = "0f0e0d0c-0b0a-4908-8706-050403020100";
 Deno.test("the sleep and the wake each run one charted phase with the shipped Ansible settings; the sleep's names its Operation", () => {
     const context = { inputs: { operation_id: 41, node_id: 9, intent: {} }, steps: { input: { status: "succeeded", outputs: { assets: shipped } } }, run: { id: runId } };
     const evaluate = (value: string) => value.startsWith("${{") ? String(cel.evaluate(value.slice(3, -2).trim(), context)) : value;
-    for (const [kind, parts] of [["sleep", [["Sleep the container", "--tags sleep", "instance-container-power.yml"]]],
+    for (const [kind, parts] of [["sleep", [["Sleep the container", "--tags prepared_sleep", "instance-container-power.yml"]]],
         ["wake", [["Wake the container", "--tags start", "instance-container.yml"]]]] as const) {
         const all = steps(kind);
         assertEquals(all.map((step) => step.name), ["input", ...parts.map((part) => part[0]), "result", "cleanup"]);
@@ -180,7 +180,7 @@ async function sleep(
             }),
         );
         const done = await new Deno.Command("ansible-playbook", {
-            args: ["-i", "localhost,", "--tags", "sleep", "-e", "ansible_connection=local", "-e", "ansible_become=false",
+            args: ["-i", "localhost,", "--tags", "prepared_sleep", "-e", "ansible_connection=local", "-e", "ansible_become=false",
                 "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `caddy_admin=http://127.0.0.1:${caddy.addr.port}`,
                 "-e", `marker_owner=${user}`, "-e", `marker_group=${group}`, `${playbook(folder)}/instance-container-power.yml`],
             env: { HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, ORBIT_OPERATION_ID: "41", PATH: `${folder}/bin:${Deno.env.get("PATH")}`,

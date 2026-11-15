@@ -37,7 +37,7 @@ sequenceDiagram
   %%> - no container, a non-development Instance, an active task or lifecycle work starts no run
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   GW-->>CLI: 202 Accepted<br/>Operation ID
-  SW->>N: Sleep the container<br/>Ansible · tags sleep
+  SW->>N: Sleep the container<br/>Ansible · tags prepared_sleep
   %%> What it does:
   %%> - one phase: checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`; an Instance without a published Route has no site and nothing to check; the intent's `route` says which
   %%> - writes the asleep marker, so each request from now on gets the wake page
