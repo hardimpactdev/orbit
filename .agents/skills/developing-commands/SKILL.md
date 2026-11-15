@@ -142,3 +142,5 @@ A fast caller-contract proof should derive its input from the shipped producer a
 Fixture intents must include the fields their Gateway producer always sends, even empty lists. A missing field can stop an after-merge case before its assertions; repair the fixture payload and run the named case through its final assertion before claiming coverage.
 
 A proof CLI timeout does not settle its Operation. Cancel and confirm settlement or stop admission of later cases in that batch, retaining an explicit receipt for each unrun case. Account for CLI waits separately from setup and assertion budgets, and preserve product timing assertions.
+
+A coalesced CI receiver must select each waiting commit before taking the union: a net diff loses reverted inputs and historical deferrals. Publish every commit link before advancing a durable answer marker, and keep a failed run’s claim so a collector can report missing work. Never call newest-only proof selection range coverage.

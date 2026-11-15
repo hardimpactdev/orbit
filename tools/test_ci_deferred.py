@@ -207,22 +207,23 @@ class DeferredTest(unittest.TestCase):
                                  str(ROOT / '.github/workflows/ci-deferred.yml')], capture_output=True, text=True, timeout=90)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_workflow_keeps_every_push_and_systemd_on_managed_runners(self):
+    def test_coalesced_workflow_serializes_sabre_and_pins_the_claimed_sha(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
-        self.assertNotIn('concurrency', workflow)
+        self.assertEqual({'group': 'main-fixture-consumer', 'cancel-in-progress': False}, workflow['concurrency'])
         jobs = workflow['jobs']
-        self.assertTrue(all('concurrency' not in job for job in jobs.values()))
         self.assertEqual(['main'], workflow.get('on', workflow.get(True))['push']['branches'])
         self.assertEqual(5, jobs['fixtures']['strategy']['max-parallel'])
         self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], jobs['fixtures']['runs-on'])
         self.assertIn("has_shards == 'true'", jobs['fixtures']['if'])
         self.assertEqual({'contents': 'read'}, workflow['permissions'])
-        self.assertNotIn('pull-requests', jobs['plan']['permissions'])
-        self.assertEqual('write', jobs['report']['permissions']['statuses'])
-        for job in jobs.values():
+        self.assertIn("github.ref == 'refs/heads/main'", jobs['claim']['if'])
+        for name, job in jobs.items():
             checkout = next(s for s in job['steps'] if s.get('uses', '').startswith('actions/checkout@'))
-            self.assertEqual('${{ github.sha }}', checkout['with']['ref'])
+            self.assertEqual('main' if name == 'claim' else '${{ needs.claim.outputs.sha }}', checkout['with']['ref'])
+            self.assertFalse(checkout['with']['persist-credentials'])
+            if name in ('plan', 'fixtures'):
+                self.assertNotIn('write', job.get('permissions', {}).values())
         main = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
         for job in ('required', 'delivery'):
             self.assertNotIn('deferred', str(main['jobs'][job]['needs']))

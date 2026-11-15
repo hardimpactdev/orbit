@@ -134,6 +134,16 @@ class TrustLossReportTest(unittest.TestCase):
         self.assertEqual(proof.report(code, output, SHA, 'key', allow_trust_skip=True)[0], 'failed')
 
 
+class MainConsumerTest(unittest.TestCase):
+    def test_all_flag_is_explicit_and_does_not_change_the_default_call(self):
+        for all_cases in (False, True):
+            child = Mock(returncode=0)
+            child.communicate.return_value = ('{}', None)
+            with patch.object(proof.subprocess, 'Popen', return_value=child) as start, patch.object(proof.signal, 'signal'):
+                proof.run(SHA, 'key', 'orbit', all_cases=all_cases)
+            self.assertEqual(all_cases, '--all' in start.call_args.args[0])
+
+
 class CapacityReportTest(unittest.TestCase):
     def capacity(self):
         return {'id': 73, 'status': 'failed', 'error': {'code': 'tasks.capacity_unavailable', 'detail': 'private host detail'},

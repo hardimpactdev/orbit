@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""Durable main history, serialized consumers, and terminal answers outside Required."""
+import argparse
+import json
+import os
+from pathlib import Path
+import runpy
+import subprocess
+import tempfile
+from types import SimpleNamespace
+
+ROOT = Path(__file__).resolve().parents[1]
+full = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-full-set')))
+deferred = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-deferred')))
+WORKFLOWS = {'fixtures': 'ci-deferred.yml', 'proof': 'ci-main-proof.yml'}
+CONTEXTS = {'fixtures': 'Main deferred fixtures', 'proof': 'Main copy proof'}
+
+
+def link(github, run_id, attempt=1):
+    return f'https://github.com/{github.repo}/actions/runs/{run_id}/attempts/{attempt}'
+
+
+def artifact(github, run_id, name):
+    rows = list(github.pages(f'actions/runs/{run_id}/artifacts', 'artifacts'))
+    if not any(row['name'] == name and not row['expired'] for row in rows):
+        return None
+    with tempfile.TemporaryDirectory(prefix='main-queue-artifact-') as scratch:
+        subprocess.run(['gh', 'run', 'download', str(run_id), '--repo', github.repo, '--name', name, '--dir', scratch],
+                       check=True, capture_output=True, text=True, timeout=90)
+        return json.loads((Path(scratch) / (name + '.json')).read_text())
+
+
+def marker(consumer):
+    return 'Main queue answer (' + consumer + ')'
+
+
+def answered(github, claim):
+    return any(row['context'] == (marker(claim['consumer']) if claim['advance'] else claim['context']) and row['state'] in ('success', 'failure')
+               and row.get('target_url') == link(github, claim['run_id'], claim.get('attempt', 1))
+               for row in github.pages('commits/' + claim['sha'] + '/statuses'))
+
+
+def validate_claim(claim):
+    if claim.get('consumer') not in WORKFLOWS or not claim.get('commits'):
+        raise ValueError('Invalid main queue claim')
+    actual = full.git('rev-list', '--first-parent', '--reverse', f'{claim["base"]}..{claim["sha"]}').splitlines()
+    if actual != claim['commits']:
+        raise ValueError('Claim commits do not match its main interval')
+    subprocess.run(['git', '-C', str(ROOT), 'merge-base', '--is-ancestor', claim['sha'], 'origin/main'], check=True, timeout=60)
+
+
+def publish(github, claim, report, url):
+    """All commit links first, durable answer marker last. API failures leave work pending."""
+    validate_claim(claim)
+    consumer = claim['consumer']
+    state = 'success' if report.get('passed') is True else 'failure'
+    context = claim['context']
+    description = f'covers {claim["commits"][0][:12]}..{claim["sha"][:12]}; {state}'
+    for sha in claim['commits']:
+        status = {'state': state, 'context': context, 'description': description, 'target_url': url}
+        if consumer == 'proof' and not report.get('range_covered'):
+            status['description'] = 'Newest SHA selection only; waiting range NOT covered'
+            if sha != claim['sha']:
+                status['state'] = 'failure'
+        github.request('POST', 'statuses/' + sha, status)
+    if consumer == 'fixtures' and report.get('problems'):
+        plan = report.get('plan') or {**claim, 'fixtures': {}}
+        candidates = full.candidate_prs(github, claim['commits'])
+        selection = full.module('queue_report_selection', ROOT / 'bin/ci-build-plan')
+        _, comments = full.report_payloads(plan, report['problems'], report.get('warnings', []), candidates, url, selection)
+        for number, payload in comments:
+            github.request('POST', f'issues/{number}/comments', payload)
+    if claim['advance']:
+        github.request('POST', 'statuses/' + claim['sha'], {'state': state, 'context': marker(consumer),
+                       'description': 'Published answer; ' + ('range not covered' if consumer == 'proof' and not report.get('range_covered') else description),
+                       'target_url': link(github, claim['run_id'], claim.get('attempt', 1))})
+
+
+def settle(github, run_id):
+    """An ended consumer without a normal answer still produces a named red answer."""
+    run = github.request('GET', f'actions/runs/{run_id}')
+    if (run['status'] != 'completed' or run['head_branch'] != 'main'
+            or run['event'] not in ('push', 'schedule', 'workflow_dispatch')
+            or run['path'].split('@')[0] not in {'.github/workflows/' + name for name in [*WORKFLOWS.values(), 'ci-full-set.yml']}):
+        return None
+    claim = artifact(github, run_id, 'main-queue-claim')
+    if claim is None or str(claim['run_id']) != str(run_id):
+        return None  # A lost wakeup never claimed a range; the next consumer still sees it.
+    claim['attempt'] = run.get('run_attempt', 1)
+    if answered(github, claim):
+        return None
+    report = artifact(github, run_id, 'main-queue-report')
+    if report is None or report.get('claim') != claim:
+        report = {'claim': claim, 'passed': False, 'range_covered': False,
+                  'problems': [{'unit': 'consumer', 'reason': f'run ended {run["conclusion"]} without a complete report; planned work is NOT RUN', 'files': []}]}
+    publish(github, claim, report, link(github, run_id, claim['attempt']))
+    return report
+
+
+def recover(github, consumer, run_id):
+    # Artifacts are indexed by name: idle timer runs need no scan of hundreds of empty runs.
+    for row in github.pages('actions/artifacts?name=main-queue-claim', 'artifacts'):
+        prior = row.get('workflow_run', {}).get('id')
+        if not prior or str(prior) == str(run_id) or row['expired']:
+            continue
+        run = github.request('GET', f'actions/runs/{prior}')
+        allowed = {'.github/workflows/' + WORKFLOWS[consumer]}
+        if consumer == 'fixtures':
+            allowed.add('.github/workflows/ci-full-set.yml')
+        if run['path'].split('@')[0] not in allowed:
+            continue
+        if run['status'] != 'completed':
+            raise ValueError(f'Prior consumer {prior} still owns its range')
+        settle(github, prior)
+        return
+
+
+def queue_range(github, consumer, sha, context=None, origin=None):
+    origin = origin or ('.github/workflows/ci-deferred.yml' if consumer == 'fixtures' else '.github/workflows/ci-main-proof.yml')
+    introduced = full.git('log', '--first-parent', '--diff-filter=A', '--format=%H', sha, '--', origin).splitlines()
+    if not introduced:
+        raise ValueError('No queue origin for ' + origin)
+    base = full.git('rev-parse', introduced[-1] + '^')
+    commits = full.git('rev-list', '--first-parent', '--reverse', f'{base}..{sha}').splitlines()
+    for index in range(len(commits) - 1, -1, -1):
+        if any(row['context'] == (context or marker(consumer)) and row['state'] in ('success', 'failure')
+               for row in github.pages('commits/' + commits[index] + '/statuses')):
+            return commits[index], commits[index + 1:]
+    return base, commits
+
+
+def claim_work(github, consumer, sha, run_id, full_set=False, base=None, nightly=False):
+    recover(github, consumer, run_id)
+    checkpoint, commits = queue_range(github, consumer, sha)
+    mode, advance = 'deferred' if consumer == 'fixtures' else 'newest-only', True
+    context = CONTEXTS[consumer]
+    if base:
+        checkpoint = full.git('rev-parse', base + '^{commit}')
+        subprocess.run(['git', '-C', str(ROOT), 'merge-base', '--is-ancestor', checkpoint, sha], check=True, timeout=60)
+        commits = full.git('rev-list', '--first-parent', '--reverse', f'{checkpoint}..{sha}').splitlines()
+        advance = False
+        context += ' (backfill ' + str(run_id) + ')'
+    elif not commits and (full_set or nightly):
+        # A periodic sweep may check an already answered SHA; it never moves the deferred checkpoint.
+        if consumer == 'fixtures':
+            checkpoint, commits = queue_range(github, consumer, sha, 'Main full set', '.github/workflows/ci-full-set.yml')
+        if not commits:
+            checkpoint, commits = full.git('rev-parse', sha + '^'), [sha]
+        advance = False
+        mode = 'full' if consumer == 'fixtures' else 'all'
+        context = 'Main full set' if consumer == 'fixtures' else 'Main copy proof (nightly)'
+    if not commits:
+        return None
+    return {'version': 1, 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'consumer': consumer, 'run_id': str(run_id), 'base': checkpoint, 'sha': sha,
+            'commits': commits, 'covers': commits[0] + '..' + sha, 'mode': mode, 'advance': advance, 'context': context}
+
+
+def fixture_plan(claim, output):
+    plan = {**claim, 'shards': [], 'units': [], 'fixtures': {}}
+    full.save(output, plan)
+    try:
+        if claim['mode'] == 'full':
+            api = full.api()
+            config, inventory = api.registry.load(ROOT)
+            result = full.build_plan(config, inventory, full.collect_current, api)
+        else:
+            result = deferred.build_range(claim['base'], claim['sha'], claim['commits'])
+        plan.update(result)
+    except (ValueError, OSError, subprocess.SubprocessError) as error:
+        plan['planner_error'] = str(error)
+        full.save(output, plan)
+        raise
+    full.save(output, plan)
+    return plan
+
+
+def fixture_report(claim, plan_path, results, shard_result):
+    plan = json.loads(plan_path.read_text()) if plan_path.exists() else {**claim, 'shards': [], 'units': [], 'fixtures': {}, 'planner_error': 'Plan missing'}
+    problems, warnings = full.reconcile(plan, results, shard_result)
+    return {'claim': claim, 'passed': not problems, 'range_covered': True, 'problems': problems, 'warnings': warnings,
+            'planned_cases': plan.get('cases_total'), 'planned_units': len(plan['units']), 'plan': plan}
+
+
+
+def journal(github, output):
+    """Refresh the Beast sweep file from durable reports; one line per failed consumer run."""
+    seen_path = output.with_suffix(output.suffix + '.seen.json')
+    seen = set(json.loads(seen_path.read_text())) if seen_path.exists() else set()
+    failures = set()
+    if output.exists():
+        failures = {json.loads(line)['run_id'] for line in output.read_text().splitlines() if line}
+    for name in ('main-queue-report', 'collected-answer'):
+        for row in github.pages('actions/artifacts?name=' + name, 'artifacts'):
+            ident = str(row['id'])
+            if ident in seen:
+                continue
+            if row['expired']:
+                raise ValueError('Uncollected main report expired: ' + ident)
+            run_id = row['workflow_run']['id']
+            report = artifact(github, run_id, name)
+            if report and report.get('claim') and not report.get('passed'):
+                claim = report['claim']
+                if claim['run_id'] not in failures:
+                    output.parent.mkdir(parents=True, exist_ok=True)
+                    with output.open('a') as stream:
+                        stream.write(json.dumps({'run_id': claim['run_id'], 'tested_sha': claim['sha'], 'covers': claim['covers'],
+                                                 'consumer': claim['consumer'], 'url': link(github, claim['run_id'], claim.get('attempt', 1)),
+                                                 'problems': report.get('problems', [])}) + '\n')
+                    failures.add(claim['run_id'])
+            seen.add(ident)
+            full.save(seen_path, sorted(seen))
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['claim', 'plan', 'report', 'publish', 'collect', 'journal'])
+    parser.add_argument('--consumer', choices=WORKFLOWS, default='fixtures')
+    parser.add_argument('--claim', type=Path)
+    parser.add_argument('--plan', type=Path)
+    parser.add_argument('--results', type=Path)
+    parser.add_argument('--output', type=Path, required=True)
+    parser.add_argument('--shard-result', default='failure')
+    parser.add_argument('--run-id')
+    args = parser.parse_args()
+    github = full.GitHub()
+    if args.command == 'journal':
+        journal(github, args.output)
+        return 0
+    if args.command == 'collect':
+        result = settle(github, args.run_id)
+        full.save(args.output, result or {'no_claim': True})
+        return 0
+    if args.command == 'claim':
+        sha = full.git('rev-parse', 'HEAD')
+        claim = claim_work(github, args.consumer, sha, os.environ['GITHUB_RUN_ID'],
+                           os.environ.get('FULL_SET') == 'true', os.environ.get('BACKFILL_BASE') or None,
+                           os.environ.get('NIGHTLY') == 'true')
+        if claim:
+            full.save(args.output, claim)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('has_work=' + str(bool(claim)).lower() + '\nsha=' + sha + '\n')
+        return 0
+    claim = json.loads(args.claim.read_text())
+    claim['attempt'] = int(os.environ.get('GITHUB_RUN_ATTEMPT', '1'))
+    if args.command == 'plan':
+        plan = fixture_plan(claim, args.output)
+        with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+            output.write('matrix=' + json.dumps({'include': [{'name': shard['name']} for shard in plan['shards']]}) + '\n')
+            output.write('has_shards=' + str(bool(plan['shards'])).lower() + '\n')
+        return 0
+    if args.command == 'report':
+        report = fixture_report(claim, args.plan, args.results, args.shard_result)
+        full.save(args.output, report)
+        return 0  # Publication owns the job verdict, so a red report is always uploaded first.
+    report = json.loads(args.output.read_text())
+    publish(github, claim, report, link(github, claim['run_id'], claim.get('attempt', 1)))
+    summary = json.dumps({key: value for key, value in report.items() if key != 'plan'}, indent=2)
+    if os.environ.get('GITHUB_STEP_SUMMARY'):
+        Path(os.environ['GITHUB_STEP_SUMMARY']).write_text('```json\n' + summary + '\n```\n')
+    return 0 if report['passed'] else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

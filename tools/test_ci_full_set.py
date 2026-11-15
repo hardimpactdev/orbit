@@ -429,24 +429,13 @@ class WorkflowTest(unittest.TestCase):
                                 capture_output=True, text=True, timeout=90)
         self.assertEqual(0, result.returncode, result.stdout + result.stderr)
 
-    def test_main_only_pool_capacity_serialization_and_scoped_write_permissions(self):
+    def test_manual_full_set_uses_the_same_consumer_and_cannot_compete_for_sabre(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-full-set.yml').read_text())
-        triggers = workflow.get('on', workflow.get(True))
-        self.assertEqual({'push', 'workflow_dispatch'}, set(triggers))
-        self.assertEqual(['main'], triggers['push']['branches'])
-        self.assertEqual({'group': 'main-full-set', 'cancel-in-progress': False}, workflow['concurrency'])
-        jobs = workflow['jobs']
-        fixtures = jobs['fixtures']
-        self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], fixtures['runs-on'])
-        self.assertEqual(5, fixtures['strategy']['max-parallel'])
-        self.assertFalse(fixtures['strategy']['fail-fast'])
-        for name in ('plan', 'report'):
-            self.assertIn("github.ref == 'refs/heads/main'", jobs[name]['if'])
-        for name, job in jobs.items():
-            writes = {key for key, value in job.get('permissions', {}).items() if value == 'write'}
-            self.assertEqual({'pull-requests', 'statuses'} if name == 'report' else set(), writes)
-        self.assertEqual('ubuntu-26.04', jobs['report']['runs-on'])
+        self.assertEqual({'workflow_dispatch'}, set(workflow.get('on', workflow.get(True))))
+        self.assertEqual({'consumer'}, set(workflow['jobs']))
+        self.assertEqual('./.github/workflows/ci-deferred.yml', workflow['jobs']['consumer']['uses'])
+        self.assertTrue(workflow['jobs']['consumer']['with']['full_set'])
 
 
 if __name__ == '__main__':
