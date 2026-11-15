@@ -100,9 +100,9 @@ final readonly class NativeSshExecutor implements SshExecutor
 
     /**
      * Options that run the command as a channel on the Node's shared connection, or none when
-     * the socket directory cannot hold a socket, so the command opens its own connection. A command that runs
-     * inside Horizon's control group opens its own too, because a master started there would outlive the stop of
-     * the unit and hold the release that drains it.
+     * the socket directory cannot hold a socket, so the command opens its own connection. Only a process whose
+     * control group outlives it starts the master; any other rides a running master or connects alone
+     * ({@see SshControlGroup}).
      *
      * A connection through a jump host shares a connection too, when it names the host's
      * identity. Hosts behind different jump hosts can have the same private address, and a
@@ -115,10 +115,10 @@ final readonly class NativeSshExecutor implements SshExecutor
     {
         $directory = dirname($connection->identityFile).'/mux';
         $jump = $connection->proxyJump;
+        $mode = $connection->shareConnection ? $this->group->multiplexing() : SshMultiplexing::Alone;
 
         if (
-            ! $connection->shareConnection
-            || $this->group->insideHorizon()
+            $mode === SshMultiplexing::Alone
             || ($jump !== null && ($connection->hostIdentity === null || $connection->hostIdentity === ''))
             || strlen($directory) > self::MaxSocketDirectoryLength
             || ! $this->socketDirectory($directory)
@@ -129,6 +129,10 @@ final readonly class NativeSshExecutor implements SshExecutor
         $socket = $jump === null
             ? '%C'
             : sha1("{$jump->user}@{$jump->host}:{$jump->port}>{$connection->user}@{$connection->host}:{$connection->port}#{$connection->hostIdentity}");
+
+        if ($mode === SshMultiplexing::Ride) {
+            return ['-o', 'ControlMaster=no', '-o', "ControlPath={$directory}/{$socket}"];
+        }
 
         return [
             '-o',
