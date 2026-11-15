@@ -1868,6 +1868,10 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
             member = argv[argv.index("python3") + 3] if "python3" in argv else None
             # `fail`: every guest call fails with a dead unit's receipt; a member name fails only that call, and `"check-incus"` fails
             # the check as Incus itself does, with no receipt.
+            if member is not None and fail == "services-detail" and member == "services":
+                return subprocess.CompletedProcess(argv, 1, "", "Traceback (most recent call last):\n"
+                                                   "subprocess.CalledProcessError: Command returned non-zero exit status 1.\n"
+                                                   "Job for php-fpm.service failed because the control process exited with error code.\n")
             if member is not None and fail == "check-incus" and member == "check":
                 return subprocess.CompletedProcess(argv, 1, "", "Error: Instance is not running PRIVATE-STDERR")
             if member is not None and (fail is True or fail == member):
@@ -1972,6 +1976,18 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         code, guest, _, output, error = self.phase("services", stdin=copy)
         self.assertEqual((code, error, guest), (0, "", [("services", {"processes": processes})]))
         self.assertEqual(json.loads(output), {"phase": "services", "changes": []})
+
+    def test_services_keep_a_failures_detail_when_the_copy_also_holds_the_release_scripts(self):
+        # Redaction drops every stderr line that shares a value with the secret: the scripts must not be part of it.
+        processes = self.VALUE["processes"]
+        copy = json.dumps({"stage": {"script": SCRIPT.read_text(), "guest": NETWORK_CHECK.read_text()},
+                           "private": json.dumps({"processes": processes}), "processes": processes})
+        code, _, _, _, error = self.phase("services", fail="services-detail", stdin=copy)
+        self.assertEqual(code, 1)
+        self.assertEqual(error, "instance.container_services_failed: command incus exited 1 (incus exec instance-proof python3 guest services):\n"
+                                "Traceback (most recent call last):\n"
+                                "subprocess.CalledProcessError: Command returned non-zero exit status 1.\n"
+                                "Job for php-fpm.service failed because the control process exited with error code.\n")
 
     def test_complete_runs_the_services_then_the_check_in_one_phase_and_passes_only_the_process_files(self):
         # The completion's one step (docs/reference/development-containers.md#complete-a-clone): its stdin is the copy's private text.

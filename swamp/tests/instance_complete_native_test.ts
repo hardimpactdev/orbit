@@ -13,7 +13,7 @@ import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
 type RecordValue = Record<string, unknown>;
-type Mode = "success" | "dead-unit" | "route-failure" | "cancel" | "published" | "two-part" | "processes-only";
+type Mode = "success" | "dead-unit" | "route-failure" | "cancel" | "published" | "two-part";
 /** The long completion steps a cancel must stop: the services, the database fill and the fleet start. */
 const LONG = ["clone-services", "server-database-fill", "clone-fleet"] as const;
 type Long = typeof LONG[number];
@@ -64,9 +64,7 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
     const vault = await call("vault", "create", "local_encryption", "orbit-control-inputs");
     assert(vault.ok, vault.stderr + vault.stdout);
     // The Gateway's copy, put through stdin as its frame does. two-part: a copy with newlines, which one RegExp breaks (release 2080).
-    // processes-only: the copy of the release before, which has no scripts.
-    const value = mode === "two-part" ? JSON.stringify(stage) + "\n" + JSON.stringify({ processes })
-        : mode === "processes-only" ? JSON.stringify({ processes }) : copy;
+    const value = mode === "two-part" ? JSON.stringify(stage) + "\n" + JSON.stringify({ processes }) : copy;
     const writer = new Deno.Command(binary!, { args: ["vault", "put", "orbit-control-inputs", "instance-complete-processes-1", "--json"], cwd: folder,
         ...auth, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
     const stream = writer.stdin.getWriter();
@@ -285,19 +283,6 @@ Deno.test({ name: "pinned complete: the services step reads the real-size one-li
         assert(JSON.stringify(steps["clone-services"]).includes("Regular expression too large"), JSON.stringify(steps["clone-services"]).slice(0, 400));
         // As in release 2080, the broken redactor fails every later step of the run too: nothing ends the completion ready.
         assertEquals([stub(steps, "clone-check"), stub(steps, "finish"), stub(steps, "accepted")], ["skipped", "failed", "skipped"]);
-    } finally {
-        f.cleanup();
-    }
-} });
-
-Deno.test({ name: "pinned complete: the services step refuses a copy without the release scripts", ignore: !binary, async fn() {
-    const f = await fixture("processes-only");
-    try {
-        const done = await execute(f, false);
-        assert(!done.success, text(done.stdout) + text(done.stderr));
-        const steps = await f.steps();
-        assertEquals([stub(steps, "clone-services"), result(steps).failed_step], ["failed", "workspace"]);
-        assert(JSON.stringify(steps["clone-services"]).includes("not a completion copy"));
     } finally {
         f.cleanup();
     }

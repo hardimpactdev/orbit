@@ -179,6 +179,10 @@ def main():
     # The T3 step runs the checkout too, so the checkout's own bound holds there as well.
     workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services", "complete", "t3"} else None
     secret = sys.stdin.read()
+    if phase == "services":
+        # The completion's one copy also holds the release scripts (docs/reference/development-containers.md#complete-a-clone). The
+        # phase keeps only the Process files, so a failure's redaction weighs them alone, not every script line.
+        secret = json.dumps({"processes": json.loads(secret)["processes"]})
     # Seconds per part of this phase, printed with its result; names only (docs/reference/development-containers.md#create).
     timings = {}
 
