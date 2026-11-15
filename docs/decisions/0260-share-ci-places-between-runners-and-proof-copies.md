@@ -84,6 +84,6 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 ## Affects
 
 - Components: apps/gateway, apps/web, apps/docs
-- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role), [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0259](/decisions/0259-prove-changed-operations-on-the-pull-request)
+- ADRs: [0213](/decisions/0213-run-ci-runners-through-a-ci-runner-role), [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers), [0262](/decisions/0262-prove-changed-operations-on-the-pull-request)
 - Detail: [Node provisioning: ci-runner role](/reference/node-provisioning#ci-runner-role); [proof:run](/cli/proof/run); [Implementation loop: CI](/reference/implementation-loop#ci)
 - Verify: a proof with more batches than one Node's places runs copies on several CI Nodes and merges one result; the count holds while runner jobs and proof copies start together; the runner view lists each Node's places and each runner's current job

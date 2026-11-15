@@ -3,9 +3,9 @@
     {
       "tab": "Decisions",
       "group": "Records",
-      "order": 259,
+      "order": 262,
       "pages": [
-        "decisions/0259-prove-changed-operations-on-the-pull-request"
+        "decisions/0262-prove-changed-operations-on-the-pull-request"
       ]
     }
   ]

@@ -1,10 +1,10 @@
 ---
-title: "ADR 0259: Prove changed operations on the pull request"
-sidebarTitle: "0259 Proof on the pull request"
+title: "ADR 0262: Prove changed operations on the pull request"
+sidebarTitle: "0262 Proof on the pull request"
 description: "In progress. A check runs only when its inputs change, on the pull request. The proof of each changed operation blocks the merge and replaces the shape-gate fixtures. The after-merge consumers and the nightly sweep are removed."
 ---
 
-# ADR 0259: Prove changed operations on the pull request
+# ADR 0262: Prove changed operations on the pull request
 
 A check runs when its inputs change, and only then, on the pull request. The quick checks stay as they are. The [proof](/cli/proof/run) of every operation that a change touches runs on the same pull request and blocks the merge. It replaces the shape-gate fixtures, which test the same automation a second time against stand-ins. The after-merge consumers and the nightly sweep are removed.
 
