@@ -221,7 +221,6 @@ additionalFiles:
   - ansible/tasks/task-instance-workspace-phase.yml
   - ansible/task_copy_scan.py
   - ansible/tasks/task-copy-base-names.yml
-  - ansible/task-vm-idle-save.yml
   - ansible/shape-gate-requirements.txt
   - ansible/tasks/task-vm-ready.yml
   - ansible/tasks/task-vm-recipe.yml
@@ -234,7 +233,6 @@ additionalFiles:
   - ansible/tasks/task-vm-rust.yml
   - ansible/tasks/task-vm-swamp.yml
   - ansible/tasks/task-vm-image-cache.yml
-  - ansible/tasks/task-vm-pi.yml
   - ansible/tasks/task-vm-tools.yml
   - ansible/tasks/task-vm-incus.yml
   - ansible/tasks/task-vm-nested-firewall.yml

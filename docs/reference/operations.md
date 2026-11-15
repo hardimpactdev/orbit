@@ -149,8 +149,6 @@ A `tasks.check` captures its budget at admission in `input.run_budget_seconds`, 
 
 The workflows set the captured number as the native `timeoutSec` of each of their SSH steps, so a step against a VM that is gone ends with the Operation.
 
-The other task VM workflows (`task-vm-workspace` and `task-maintenance-path`) limit their SSH steps to 3,900 seconds, the largest fixed budget of the Operations that call them.
-
 The measured parts on a fresh VM are the restore from the ready copies, the rsync sync, and `composer install` where lock files differ from the seed (31 to 35 seconds for five). The plain snapshot `base` takes a fraction of a second. 360 seconds covers them with margin. A maintainer should replace the fixed row after measuring passing runs. When the Gateway times out a script of a proof, the proof goes on and cancels its group.
 
 A `proof.command` captures its budget at admission from the batches it proves. A run in a copy proves its batches through the workflow `operation-proof-run-copy`: the commit is brought in (fetch up to 60 s, then the deploy steps whose inputs changed, each with its own timeout), then each batch runs through `proof-fleet-verify`. The Gateway destroys the copy after the run. The checkout and deploy steps come out of the 600-second shard part.

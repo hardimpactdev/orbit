@@ -14,7 +14,6 @@ import {
 } from "../tasks/publish.ts";
 import { capturedArgv, readPublicTail } from "../../_lib/public_output.ts";
 import { lifecycleArgv } from "./lifecycle.ts";
-import { snapshot } from "./program.ts";
 
 /*
  * Typed data for tasks.check and its scheduled CI observations. Every task VM
@@ -47,6 +46,22 @@ type Context = {
 const output = async (ctx: Context, value: unknown) => ({
     dataHandles: [await ctx.writeResource("public", "output", value)],
 });
+
+/**
+ * `git write-tree` and `git rev-parse HEAD` of one snapshot, from its
+ * `snapshot-<phase>-tree` and `snapshot-<phase>-head` steps.
+ */
+function snapshot(steps: Steps, phase: string): { head: string; tree: string } {
+    const value = (name: string) => {
+        const item = run(steps, `snapshot-${phase}-${name}`);
+        const oid = (item.stdout ?? "").trim();
+        if (item.exitCode !== 0 || !Sha.test(oid)) {
+            throw new Error(`Snapshot ${phase} ${name} is unavailable`);
+        }
+        return oid;
+    };
+    return { head: value("head"), tree: value("tree") };
+}
 
 /** A repository-relative file: no leading `/` and no empty, `.` or `..` segment. */
 const relativeFile = (path: string) =>
