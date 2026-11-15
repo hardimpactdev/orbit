@@ -81,6 +81,13 @@ function heldBy(int $node): ?int
         ?? DB::table('route_withdrawal_holds')->where('node_id', $node)->min('operation_id');
 }
 
+it('gives a routed removal a budget that outlasts its 300 s Node transaction phase', function (): void {
+    $destroy = app(StartInstanceDestroyAction::class)->execute($this->instance, true);
+
+    // 60 s for the removal steps and 330 s for the one Route: the phase's `timeout 300` (route-withdraw-node) plus its proof and release.
+    expect($destroy->input['run_budget_seconds'])->toBe(390);
+});
+
 it('lets the next Route write on the Node start once the removal has withdrawn its Route, not at the end of the removal', function (): void {
     $destroy = ($this->running)(app(StartInstanceDestroyAction::class)->execute($this->instance, true));
     expect(heldBy($this->node->id))->toBe($destroy->id);

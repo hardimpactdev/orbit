@@ -102,7 +102,9 @@ Destroy removes the Instance's folder for pending mail activation from the Node,
 
 ## Retry and ownership
 
-The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). Before it removes the source, the run removes each member's [hibernation](/reference/app-dev-runtime-hibernation) files: its awake marker, cold marker and Caddy access log. A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
+The Gateway captures the run budget at admission from the teardown timeouts, the Routes it withdraws and its owned databases; see [Instance setup](/reference/instance-setup#run-setup). Each withdrawn Route adds 330 seconds, so the run outlasts the 300-second [Node transaction](/reference/routes#coordinate-publication) of its withdrawal.
+
+Before it removes the source, the run removes each member's [hibernation](/reference/app-dev-runtime-hibernation) files: its awake marker, cold marker and Caddy access log. A failed or cancelled run retains its removal intent. Start a fresh normal `instance:destroy` Operation with a new idempotency key to converge the same admitted removal. Repeating the old key returns the old Operation. This workflow does not depend on `workflow resume`: pinned e459 loses inline official SSH global arguments when resuming a failed run.
 
 A retry repeats every step; each converges, and a checkout that is already gone counts as removed. If a step fails after the Route withdrawal, the site stays down until a rerun finishes the removal. A withdrawal that held frees the Route publication hold at once and records `route_withdrawn_at` on the removal ([One Route write per Node](/reference/operations#one-route-write-per-node)). A retry after that skips the withdrawal and takes no hold.
 

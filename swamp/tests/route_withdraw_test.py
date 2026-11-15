@@ -87,7 +87,7 @@ class RouteWithdrawTest(unittest.TestCase):
         temp = tempfile.TemporaryDirectory(prefix="orbit-withdraw-")
         self.addCleanup(temp.cleanup)
         self.root = Path(temp.name)
-        for folder in ("etc/caddy", "etc/php/8.4/fpm/pool.d", "etc/dnsmasq.d", "var/lib/orbit/private-dns"):
+        for folder in ("etc/caddy", "etc/php/8.4/fpm/pool.d", "etc/dnsmasq.d", "var/lib/orbit/private-dns", "run/lock"):
             (self.root / folder).mkdir(parents=True)
         self.caddy = self.root / "etc/caddy/Caddyfile"
         self.pool = self.root / "etc/php/8.4/fpm/pool.d/orbit-scopes.conf"
@@ -112,7 +112,7 @@ class RouteWithdrawTest(unittest.TestCase):
         self.assertEqual(oct((self.previous / "Caddyfile").stat().st_mode & 0o777), "0o640")
         self.assertEqual(result["previous"], [str(self.previous / "Caddyfile")])
         validate = next(i for i, argv in enumerate(tools.calls) if "validate" in argv)
-        reload = tools.calls.index(["timeout", "60", "systemctl", "reload", "caddy"])
+        reload = tools.calls.index(["timeout", "30", "systemctl", "reload", "caddy"])
         self.assertLess(validate, reload)
         self.assertFalse(list((self.root / "etc/caddy").glob(".orbit-candidate-*")))
 
@@ -283,6 +283,58 @@ class RouteWithdrawTest(unittest.TestCase):
             WITHDRAW.withdraw(plan(7), run, root=str(self.root), wait=10)
         self.assertEqual(refused.exception.code, "route.publish_lock_failed")
         self.assertEqual(self.caddy.read_text(), live)
+
+    def test_the_dns_lock_is_the_one_every_private_dns_writer_takes(self):
+        self.records.write_text(records("i7.test"))
+        self.catalog.write_text(catalog("i7.test"))
+        lock = self.root / "run/lock/orbit-dnsmasq.lock"
+        # publish-dns.py and DnsmasqPrivateDnsManager create it with the default umask: a 0644 lock of the publisher is accepted.
+        lock.touch(mode=0o644)
+        lock.chmod(0o644)
+        descriptor = os.open(lock, os.O_RDWR)
+        self.addCleanup(os.close, descriptor)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            WITHDRAW.withdraw(plan(7, caddy=False, dns=True), Tools(), root=str(self.root), wait=1)
+        self.assertEqual(refused.exception.code, "dns.publish_busy")
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        self.withdraw(plan(7, caddy=False, dns=True))
+        self.assertNotIn("i7.test", self.records.read_text())
+        lock.chmod(0o666)
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, caddy=False, dns=True))
+        self.assertEqual(refused.exception.code, "route.publish_lock_invalid")
+
+    def test_a_missing_account_or_a_file_that_is_not_utf8_refuses_by_name(self):
+        with patch.object(WITHDRAW.pwd, "getpwnam", side_effect=KeyError("orbit")), self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7, php=True))
+        self.assertEqual(refused.exception.code, "php.account_missing")
+        self.caddy.write_bytes(b"# Managed by Orbit: Node Caddy build\n\xff\n")
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            self.withdraw(plan(7))
+        self.assertEqual(refused.exception.code, "route.file_not_utf8")
+
+    def test_a_writer_without_the_lock_that_changes_the_caddyfile_meanwhile_is_never_overwritten(self):
+        pools = self.resolved_pool(7, 9)
+        other = caddyfile(site(7), PRODUCTION, site(8), site(9))
+
+        def run(argv, **kwargs):
+            # A whole-file build of another writer lands while the candidate is validated.
+            if "validate" in argv:
+                self.caddy.write_text(other)
+            return Tools()(argv, **kwargs)
+
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            WITHDRAW.withdraw(plan(7, php=True), run, root=str(self.root), wait=10)
+        self.assertEqual(refused.exception.code, "route.live_changed")
+        self.assertEqual((self.caddy.read_text(), self.pool.read_text()), (other, pools))
+
+    def test_a_lock_another_writer_created_becomes_private(self):
+        lock = self.root / "etc/caddy/.orbit-publish.lock"
+        lock.touch(mode=0o644)
+        lock.chmod(0o644)
+        self.withdraw(plan(7))
+        self.assertEqual(oct(lock.stat().st_mode & 0o777), "0o600")
 
     def test_a_held_lock_times_out_with_publish_busy(self):
         lock = self.root / "etc/caddy/.orbit-publish.lock"

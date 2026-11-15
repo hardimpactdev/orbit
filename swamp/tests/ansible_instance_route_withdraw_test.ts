@@ -148,8 +148,11 @@ for (
                     (await Deno.readTextFile(
                         ROOT + "/ansible/library/orbit_route_withdraw.py",
                     )).replace(
-                        'caddy_gid=grp.getgrnam("caddy").gr_gid if plan.get("caddy") else None',
-                        `caddy_gid=${gid}, root="${root}"`,
+                        'grp.getgrnam("caddy").gr_gid if plan.get("caddy") else None',
+                        gid,
+                    ).replace(
+                        "withdraw(plan, module.run_command, caddy_gid=caddy_gid)",
+                        `withdraw(plan, module.run_command, caddy_gid=caddy_gid, root="${root}")`,
                     ),
                 );
                 await Deno.copyFile(

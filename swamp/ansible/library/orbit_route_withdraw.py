@@ -35,7 +35,11 @@ def main():
 
     plan = module.params["plan"]
     try:
-        result = withdraw(plan, module.run_command, caddy_gid=grp.getgrnam("caddy").gr_gid if plan.get("caddy") else None)
+        caddy_gid = grp.getgrnam("caddy").gr_gid if plan.get("caddy") else None
+    except KeyError:
+        module.fail_json(msg="caddy.group_missing: the caddy group does not exist on this Node.", error_code="caddy.group_missing")
+    try:
+        result = withdraw(plan, module.run_command, caddy_gid=caddy_gid)
     except WithdrawFailure as error:
         module.fail_json(msg=str(error), error_code=error.code, changed=error.changed)
     except OSError as error:
