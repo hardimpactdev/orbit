@@ -574,6 +574,7 @@ class Target:
         self.ticks = process["start_ticks"]
         self.ranges = ranges
         self.pidfd = -1
+        self.stat_fd = -1
         self.result = "pending"
         self.pages_read = 0
         self.ranges_advised = 0
@@ -587,7 +588,19 @@ def _alive(host, target, relative):
     return host.kernel.pidfd_alive(target.pidfd) and _identity(host, target, relative)
 
 
-def _advise(host, target, deadline, relative, iov_max):
+def _current(host, target):
+    """The check before each batch: the pidfd's process still lives, and the stat file opened with it still shows its start time.
+    That file stays bound to the process it was opened for, so a reused PID cannot pass; a gone process fails the read."""
+    if not host.kernel.pidfd_alive(target.pidfd):
+        return False
+    try:
+        stat = os.pread(target.stat_fd, 4096, 0)
+    except OSError:
+        return False
+    return int(stat[stat.rindex(b")") + 2:].split()[19]) == target.ticks
+
+
+def _advise(host, target, deadline, iov_max):
     """process_madvise(MADV_WILLNEED) over every range in batches. False when the target must stop."""
     batch = []
     batch_bytes = 0
@@ -597,7 +610,7 @@ def _advise(host, target, deadline, relative, iov_max):
         nonlocal complete
         if time.monotonic() > deadline:
             return None
-        if not _alive(host, target, relative):
+        if not _current(host, target):
             return None
         vector = (Iovec * len(batch))(*[Iovec(start, length) for start, length in batch])
         result, _ = host.kernel.process_madvise(target.pidfd, vector, len(batch))
@@ -619,28 +632,38 @@ def _advise(host, target, deadline, relative, iov_max):
     return complete
 
 
-def _populate(host, target, deadline, relative, iov_max, page_size):
-    """process_vm_readv of one byte per page, in batches of contiguous iovecs. None when the target must stop."""
+def _page_vector(ranges, page_size):
+    """One iovec of one byte per recorded page, for all of a process's ranges: pairs of (address, 1), built once per range with
+    C-level array operations, so a batch is only a view at an offset."""
+    total = sum(length for _, _, _, length in ranges) // page_size
+    pairs = array.array("Q", bytes(16 * total))
+    at = 0
+    for _, _, start, length in ranges:
+        count = length // page_size
+        pairs[2 * at:2 * (at + count):2] = array.array("Q", range(start, start + length, page_size))
+        at += count
+    pairs[1::2] = array.array("Q", [1]) * total
+    return pairs, total
+
+
+def _populate(host, target, deadline, iov_max, page_size):
+    """process_vm_readv of one byte per page, in batches of up to iov_max iovecs that may span ranges. None when the target must
+    stop."""
+    pairs, total = _page_vector(target.ranges, page_size)
     scratch = ctypes.create_string_buffer(iov_max)
     local = Iovec(ctypes.addressof(scratch), 0)
     complete = True
-    for _, _, start, length in target.ranges:
-        addresses = array.array("Q", range(start, start + length, page_size))
-        for offset in range(0, len(addresses), iov_max):
-            if time.monotonic() > deadline or not _alive(host, target, relative):
-                return None
-            chunk = addresses[offset:offset + iov_max]
-            pairs = array.array("Q", bytes(16 * len(chunk)))
-            pairs[0::2] = chunk
-            pairs[1::2] = array.array("Q", [1]) * len(chunk)
-            remote = (Iovec * len(chunk)).from_buffer(pairs)
-            local.length = len(chunk)
-            result, _ = host.kernel.process_vm_readv(target.pid, local, remote, len(chunk))
-            target.pages_read += max(result, 0)
-            if result != len(chunk):
-                # An unmapped or unreadable page, a short read or ENOMEM: abandon this range and go on with safe work.
-                complete = False
-                break
+    for offset in range(0, total, iov_max):
+        if time.monotonic() > deadline or not _current(host, target):
+            return None
+        count = min(iov_max, total - offset)
+        remote = (Iovec * count).from_buffer(pairs, offset * ctypes.sizeof(Iovec))
+        local.length = count
+        result, _ = host.kernel.process_vm_readv(target.pid, local, remote, count)
+        target.pages_read += max(result, 0)
+        if result != count:
+            # An unmapped or unreadable page, a short read or ENOMEM: abandon this batch and go on with safe work.
+            complete = False
     return complete
 
 
@@ -654,8 +677,8 @@ def _next(work):
 def _work(host, work, deadline, relative, iov_max, page_size):
     for target in iter(lambda: _next(work), None):
         try:
-            advised = _advise(host, target, deadline, relative, iov_max)
-            populated = None if advised is None else _populate(host, target, deadline, relative, iov_max, page_size)
+            advised = _advise(host, target, deadline, iov_max)
+            populated = None if advised is None else _populate(host, target, deadline, iov_max, page_size)
         except Exception:  # noqa: BLE001 - one target's error never stops the others or counts as done
             target.result = "failed"
             continue
@@ -683,6 +706,11 @@ def restore_pages(host, manifest, ranges, deadline):
             target.result = "failed"
             continue
         target.pidfd = fd
+        try:
+            target.stat_fd = os.open(os.path.join(host.proc, str(target.pid), "stat"), os.O_RDONLY)
+        except OSError:
+            target.result = "skipped"
+            continue
         # The pidfd now pins this incarnation: a second identity check rules out a PID reused before the open.
         if not _alive(host, target, relative):
             target.result = "skipped"
@@ -705,6 +733,8 @@ def restore_pages(host, manifest, ranges, deadline):
     for target in targets:
         if target.pidfd >= 0:
             os.close(target.pidfd)
+        if target.stat_fd >= 0:
+            os.close(target.stat_fd)
         if target.result in ("deadline", "pending"):
             timed_out = True
             counts["partial"] += 1

@@ -315,13 +315,32 @@ class RestoreTest(Fixture):
         self.prepare()
         manifest, _ = power.load_plan(self.host, ID)
         victim = self.children[1].pid
-        recorded = next(p["range_count"] for p in manifest["processes"] if p["host_pid"] == victim)
+        pages = next(p["resident_pages"] for p in manifest["processes"] if p["host_pid"] == victim)
         self.kernel.short_read_pid = victim
         result = self.restore()
         self.assertEqual(result["prepared_restore"]["status"], "partial")
-        # One short read abandons its range: at most one read per recorded range, never a retry.
+        # Each short read abandons its batch and the worker goes on: one read per batch, never a retry.
         calls = [c for c in self.kernel.calls if c == ("readv", victim)]
-        self.assertEqual(len(calls), recorded)
+        self.assertEqual(len(calls), -(-pages // self.kernel.iov_max))
+
+    def test_a_process_that_exits_during_the_restore_gets_no_further_call(self):
+        self.prepare()
+        victim = sorted(self.children, key=lambda c: c.pid)[0]
+        original = self.kernel.process_vm_readv
+
+        def exit_after_first(pid, local, remote, count):
+            result = original(pid, local, remote, count)
+            if pid == victim.pid and victim.poll() is None:
+                victim.kill()
+                victim.wait()
+            return result
+
+        self.kernel.process_vm_readv = exit_after_first
+        result = self.restore()
+        self.assertEqual(result["prepared_restore"]["status"], "partial")
+        # The first batch ran; the check before the next batch found the process gone, though it had more batches.
+        self.assertGreater(4 << 20, self.kernel.iov_max * os.sysconf("SC_PAGESIZE"))
+        self.assertEqual(self.kernel.calls.count(("readv", victim.pid)), 1)
 
     def test_a_passed_deadline_stops_all_work_and_says_timed_out(self):
         self.prepare()
