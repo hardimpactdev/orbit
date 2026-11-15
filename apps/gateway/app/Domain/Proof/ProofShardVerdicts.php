@@ -39,11 +39,12 @@ final class ProofShardVerdicts
             $expected = $assignment['cases'];
             $seen = [];
             foreach ($lines as $line) {
-                // A copy's batch reports the reset of its inner fleet on a line of its own: evidence, not a verdict (ProofVerdictLines::batches).
-                if (ProofVerdictLines::batches($line) !== []) {
+                $parsed = ProofVerdictLines::parse($line);
+                // A copy's batch reports the reset of its inner fleet on a line of its own (ProofVerdictLines::batches): not a verdict. A line
+                // that also carries a verdict is a verdict.
+                if ($parsed === [] && ProofVerdictLines::batches($line) !== []) {
                     continue;
                 }
-                $parsed = ProofVerdictLines::parse($line);
                 if (count($parsed) !== 1) {
                     $invalid = true;
 

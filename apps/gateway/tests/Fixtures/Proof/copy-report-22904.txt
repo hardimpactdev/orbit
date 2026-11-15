@@ -1,0 +1,6 @@
+node:list	swamp/proof/node/list.cases.yaml	fresh-fleet	{"id": "recorded-nodes", "verdict": "passed", "secs": 0.9}
+node:list	swamp/proof/node/list.cases.yaml	fresh-fleet	{"id": "repeat-read", "verdict": "passed", "secs": 1.7}
+node:list	swamp/proof/node/list.cases.yaml	fresh-fleet	{"id": "role-state-human", "verdict": "passed", "secs": 1.0}
+node:list	swamp/proof/node/list.cases.yaml	fresh-fleet	{"batch": "fresh-fleet", "reset": {"commit": null, "reset_seconds": 38.2}}
+node:list	swamp/proof/node/list.cases.yaml	no-grant	{"id": "no-grants-refused", "verdict": "passed", "secs": 1.4}
+node:list	swamp/proof/node/list.cases.yaml	no-grant	{"batch": "no-grant", "reset": {"commit": null, "reset_seconds": 22.7}}

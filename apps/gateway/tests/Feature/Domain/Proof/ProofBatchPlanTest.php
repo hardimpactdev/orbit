@@ -63,6 +63,22 @@ it('accounts for every assigned case and fails missing duplicate malformed and u
     // Proof 22900 (release 2084): a copy's batch adds its reset seconds; every case passed, and the run must pass.
     'complete with the reset line of a copy' => ["ROW{\"id\":\"a\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"id\":\"b\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"batch\": \"fresh\", \"reset\": {\"reset_seconds\": 16.2}}", true],
     'a reset line alone' => ['ROW{"batch": "fresh", "reset": {"reset_seconds": 16.2}}', false],
+    'a verdict that also carries reset fields still counts' => ["ROW{\"batch\":\"fresh\",\"reset\":{\"reset_seconds\":1},\"id\":\"a\",\"verdict\":\"failed\",\"secs\":1}\nROW{\"id\":\"a\",\"verdict\":\"passed\",\"secs\":1}\nROW{\"id\":\"b\",\"verdict\":\"passed\",\"secs\":1}", false],
+]);
+
+// The real Report output of the two copy runs of proof 22900 on release 2084 (Operations 22902 and 22904): verdict lines and one reset
+// line per batch, nothing else. Every case passed, so each shard passes, with no report row of its own.
+it('passes the real reports of two copy runs: one reset line per batch, every case passed', function (string $file, array $assignments): void {
+    $rows = ProofShardVerdicts::rows($assignments, (string) file_get_contents(__DIR__.'/../../../Fixtures/Proof/'.$file));
+
+    expect(ProofVerdicts::passed($rows['cases']))->toBeTrue()->and($rows['ran'])->toBeTrue()
+        ->and(array_column($rows['cases'], 'program'))->not->toContain('proof-report')
+        ->and(array_column($rows['cases'], 'case'))->toBe(array_merge(...array_column($assignments, 'cases')));
+})->with([
+    'run 22902' => ['copy-report-22902.txt', [['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml', 'batch' => 'node-down', 'cases' => ['offline-node-retained']]]],
+    'run 22904' => ['copy-report-22904.txt', [
+        ['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml', 'batch' => 'fresh-fleet', 'cases' => ['recorded-nodes', 'repeat-read', 'role-state-human']],
+        ['command' => 'node:list', 'file' => 'swamp/proof/node/list.cases.yaml', 'batch' => 'no-grant', 'cases' => ['no-grants-refused']]]],
 ]);
 
 it('plans selected ids only, retains their batch setup and rejects an unknown id', function (): void {
