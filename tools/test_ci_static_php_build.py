@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 import unittest
 
+import yaml
+
 ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader('static_php_build', str(ROOT / 'bin/static-php-build'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -34,8 +36,10 @@ class StaticPhpBuildTest(unittest.TestCase):
         self.assertEqual(item['tag'], f'static-php-{item["php_version"]}-{item["build"][:12]}')
         self.assertEqual(item['url'], f'https://github.com/hardimpactdev/orbit/releases/download/{item["tag"]}/{item["tag"]}-linux-x86_64.tar.gz')
         self.assertNotIn('ffi', item['extensions'])
-        self.assertNotIn('pcov', item['extensions'])
         self.assertIn('pdo_pgsql', item['extensions'])
+        # PCOV is a CLI-only extension: the build makes it shared, so it is no static extension of either binary.
+        self.assertEqual(item['cli_extensions'], ['pcov'])
+        self.assertNotIn('pcov', item['extensions'])
 
     def test_every_input_changes_the_build_id(self):
         shipped = build.definitions(RECIPE)['8.5']['build']
@@ -43,7 +47,8 @@ class StaticPhpBuildTest(unittest.TestCase):
             lambda r: r['instances']['php']['versions']['8.5'].update(php_version='8.5.13'),
             lambda r: r['instances']['php'].update(frankenphp='1.13.6'),
             lambda r: r['instances']['php'].update(static_php_cli='0' * 40),
-            lambda r: r['instances']['php'].update(without=['ffi', 'pcov', 'xsl']),
+            lambda r: r['instances']['php'].update(without=['ffi', 'xsl']),
+            lambda r: r['instances']['php'].update(cli_extensions=['pcov', 'xsl']),
             lambda r: r['php']['versions']['8.5']['extensions'].remove('zip'),
         ]
         ids = {self.changed(change)['build'] for change in changes}
@@ -74,6 +79,18 @@ class StaticPhpBuildTest(unittest.TestCase):
         self.assertIn('frankenphp:/tmp/frankenphp', craft)
         self.assertIn('sapi: "cli,frankenphp"', craft)
         self.assertNotRegex(craft, r'@[A-Z_]+@')
+
+    def test_the_craft_file_builds_the_cli_extensions_shared_and_never_static(self):
+        item = build.definitions(RECIPE)['8.5']
+        craft = yaml.safe_load(build.craft(item, Path('/tmp/frankenphp')))
+        self.assertEqual(craft['shared-extensions'], 'pcov')
+        self.assertNotIn('pcov', craft['extensions'].split(','))
+        self.assertNotIn('ffi', craft['extensions'].split(','))
+
+    def test_the_build_links_glibc_dynamically_for_the_baseline_cpu(self):
+        env = build.build_env({'PATH': '/usr/bin', 'SPC_TARGET': 'x86_64-linux-musl', 'SPC_TOOLCHAIN': 'GccNativeToolchain'})
+        # static-php-cli's Zig toolchain, with a glibc no newer than Ubuntu 26.04's and a named CPU, not the runner's.
+        self.assertEqual(env, {'PATH': '/usr/bin', 'SPC_TARGET': 'x86_64-linux-gnu.2.17', 'SPC_TOOLCHAIN': ''})
 
     def test_the_release_checks_its_sums_beside_the_files(self):
         # SHA256SUMS names each file without a folder, so each check of it runs in the folder that holds the files.
