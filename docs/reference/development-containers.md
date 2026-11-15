@@ -1122,7 +1122,7 @@ Decided on 2026-11-14 by the owner: the create publishes the clone's address bes
 The admission then looks at the Route publication hold of the Route's serving Nodes ([coordinate publication](/reference/routes#coordinate-publication)):
 
 - **Free.** No Route write holds or waits for one of the Nodes. The create takes the hold in its admission transaction. Its Caddy render is fresh.
-- **Publication.** With the hold, the create's job `publication` runs beside the clone steps: `clone-route-csr-<i>`, then `clone-route`, the Route create child with its TLS probe.
+- **Publication.** With the hold, the create's job `publication` runs beside the clone steps: `clone-route-csr-<i>`, then `clone-route`, the Route create child with its TLS probe. Its site step does not write the Caddyfile that the Gateway rendered. It puts the Route's own Caddy groups into what the Node holds, under the Node lock, and leaves every other site as it is ([publish a development site](/reference/routes#publish-a-development-site)).
 - **Held.** The create never waits. Its intent carries no publication, and the completion publishes the address, as before.
 
 The hold table's key is the Node, so of two creates admitted in the same second exactly one takes the hold. The other gets the completion path, and its thread never waits for the first create.
@@ -1138,7 +1138,7 @@ No publication step needs the running app. The site step skips the Route access 
 | Value | Meaning |
 | --- | --- |
 | `published` | The create published the address. The completion publishes nothing. |
-| `deferred` | The Route Nodes were held at admission. The completion publishes the address. |
+| `deferred` | The Route Nodes were held at admission, or a Node refused the merge of the site and changed nothing. The completion publishes the address. |
 | `failed` | The publication failed in the create, which still succeeds. The Route records `instance.create_route_failed`, and the completion publishes it again. |
 
 A clone without a Route has no `route_publication`. A create that fails after `clone-route` succeeded keeps the address up; a publication that started and did not succeed is withdrawn by the create's `withdraw-route`, under the Nodes it still holds.

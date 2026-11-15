@@ -537,7 +537,7 @@ The address of a clone with a Route is published in the create when its Route No
 | `route_publication` | Create steps | Completion steps | `Publish the address` |
 | --- | --- | --- | --- |
 | `published` | `clone-route-csr-<i>` and `clone-route` succeeded | no `route-csr-<i>`; `route` skipped | done when `clone-route` ends |
-| `deferred` | `clone-route` skipped; no `clone-route-csr-<i>` | job `publication`: `route-csr-<i>` and `route`, as before | follows the completion's job `publication` |
+| `deferred` | `clone-route` skipped and no `clone-route-csr-<i>`; or `clone-route` failed because a Node refused the merge of the site and changed nothing | job `publication`: `route-csr-<i>` and `route`, as before | follows the completion's job `publication` |
 | `failed` | a `clone-route-csr-<i>` or `clone-route` failed; the create still succeeds | job `publication` publishes again | follows the completion's job `publication`; its failure is `failed_step: route`, `instance.create_route_failed`, and Retry is `instance:complete` |
 | absent | no Route: `clone-route` skipped | `route` skipped | done |
 
