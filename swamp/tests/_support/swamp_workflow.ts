@@ -104,7 +104,7 @@ export function levelsOf(workflow: string): { jobs: string[][]; steps: Record<st
  * jobs and, inside each job, steps run in the depth levels of its TopologicalSortService. A level starts only when the whole level before
  * it has ended; in a level every step starts at once unless another step holds its behavior lock. A step whose dependency condition fails
  * or whose guard is true is skipped at once, and a job whose dependency condition fails is skipped. Guards, behavior names and `assert`
- * steps are evaluated with the pinned CEL; `finish(step, cel)` gives the outcome of the step named `finish`.
+ * steps are evaluated with the pinned CEL; `finish(step, cel)` gives the outcome of each step named in `results` (`finish` by default).
  */
 export function runWorkflow(
   workflow: string,
@@ -112,6 +112,7 @@ export function runWorkflow(
   intent: Record<string, unknown>,
   outcomes: Record<string, Outcome>,
   finish: (step: GraphStep, cel: (expression: string) => unknown) => Outcome,
+  results: string[] = ["finish"],
 ): Record<string, Ran> {
   const flow = parse(Deno.readTextFileSync(new URL(`../../workflows/${workflow}`, import.meta.url))) as { jobs: GraphJob[] };
   const sort = new TopologicalSortService();
@@ -172,7 +173,7 @@ export function runWorkflow(
           }
           const lock = step.task.type === "behavior" ? String(cel(step.task.behaviorName!)) : null;
           if (lock !== null && locks.has(lock)) continue;
-          const outcome: Outcome = step.name === "finish" ? finish(step, cel)
+          const outcome: Outcome = results.includes(step.name) ? finish(step, cel)
             : step.task.type === "assert" ? { status: cel("${{ " + step.task.expr + " }}") === true ? "succeeded" : "failed" }
             : outcomes[step.name] ?? {};
           ran[step.name] = { status: outcome.status ?? "succeeded", outputs: outcome.outputs ?? { stdout: "" }, start: now, end: now + (outcome.duration ?? 1) };

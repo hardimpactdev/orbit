@@ -1,8 +1,9 @@
 order = 860
-source_sha256 = "d4f547fa029574a6ff9fad01a17cd6dae80d6d88137823b7ff862cd7013f4af5"
+source_sha256 = "25064f5cef5e39b376f19755dc3e274d480a4bbe920083b18bb1aa2478bc7913"
 cases = [
   "pinned create: a normal clone ends ready at its registration and runs no step of its completion",
   "pinned create: a failed checkout in the T3 step registers nothing, stops the container and removes the private folder",
+  "pinned create: a refused registration runs finish, names the registration, stops the container and keeps no session",
   "pinned create: a clone with a Route publishes it beside the copy and still ends at its registration",
   "pinned create: a failed publication (route-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
   "pinned create: a failed publication (route-csr-failure) leaves the run succeeded and the create ready, names the Route warning and withdraws nothing",
@@ -10,7 +11,7 @@ cases = [
   "pinned create: a later clone step that fails after the Route published fails the run, keeps the published address and stops the container",
 ]
 file = "swamp/tests/instance_create_native_test.ts"
-cost = 30
+cost = 40 # 8 cases in 58-74 s locally on a loaded Beast; the real registration adds a vault per case
 after_merge = true
 reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
 inputs = [
@@ -21,5 +22,6 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/extensions/behaviors/operations/instance-t3/mod.ts",
   "swamp/tests/fixtures/instance-create-16210-t3-register.json",
 ]

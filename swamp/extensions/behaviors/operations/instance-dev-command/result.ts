@@ -4,6 +4,53 @@ export const Step = z.object({ status: z.string(), outputs: Public.optional() })
     .passthrough();
 
 /**
+ * The arguments of a create's result: the run folder, the intent and each phase's step. `finish` takes them, and a ready clone's
+ * `clone-register` takes the same map (one YAML anchor in workflow-operation-instance-create.yaml), so both build one result.
+ * `t3_file`: where `clone-session-copy` put a clone's `t3.json` (docs/cli/instance/container/create.mmd).
+ */
+export const CreateArgs = z.object({
+    intent: Public,
+    folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
+    t3_file: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+-t3\.json$/).optional(),
+    checkout: Step.nullable(),
+    database: z.string(),
+    setup: z.string(),
+    processes: z.array(z.string()),
+    route: z.string(),
+    certificates: z.array(z.string()).default([]),
+    t3_observation: z.string().default(""),
+    route_observation: Public.default({}),
+    container: z.object({
+        mail: Step.nullable().default(null),
+        launch: z.string(),
+        workspace: Step.nullable(),
+        deploy: z.array(z.string()),
+        processes: z.string(),
+        seed: z.string(),
+        t3: z.string().default("skipped"),
+        register: z.string().default("skipped"),
+        server: z.string().nullable().default(null),
+        club_key: Step.nullable().default(null),
+    }).nullable().default(null),
+});
+
+/**
+ * Removes a create's run folder and the copied `t3.json` beside it (either may hold a clone's checked T3 sessions); true when both
+ * are gone, also when one never existed. Any other failure leaves them to the cleanup step.
+ */
+export async function removeRun(folder: string, t3File?: string): Promise<boolean> {
+    let gone = true;
+    for (const path of [folder, ...(t3File === undefined ? [] : [t3File])]) {
+        try {
+            await Deno.remove(path, { recursive: true });
+        } catch (error) {
+            gone &&= error instanceof Deno.errors.NotFound;
+        }
+    }
+    return gone;
+}
+
+/**
  * The public part of a failed container or clone phase's result.json that the Operation keeps, or null. A refusal with a Node
  * service target keeps its code and target. A nested-fleet default refused while its Node records a failed nested-fleet image build
  * keeps its own code (docs/reference/development-containers.md#the-nested-fleet-image). Every other phase failure keeps the

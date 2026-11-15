@@ -1,0 +1,34 @@
+order = 1500
+source_sha256 = "34d1b30a8fe0458993e2f096638fa71278bace8b719a16072f98a81368c10b58"
+cases = [
+  "a checked reply stores both sessions as sensitive fields and returns the create's result with only their vault keys",
+  "a migrate's registration reads the run folder's t3.json and returns only the server with its vault keys",
+  "a registration whose result is not ready keeps the run folder for finish and the container stop",
+  "each failed check refuses with the code of POST /conn/environments, stores nothing and removes the copy",
+  "a renewal proves the session over the recorded URL, stores it, reports only its vault key, and removes the copy",
+  "a renewal that meets another environment reports conn.environment_mismatch, stores nothing, and removes the copy",
+  "a renewal that meets a refused session reports conn.session_rejected, stores nothing, and removes the copy",
+  "a renewal that meets a session without admin scopes reports conn.admin_scope_missing, stores nothing, and removes the copy",
+  "a renewal whose server does not answer reports conn.server_unreachable and removes the copy",
+  "a renewal without a readable copy reports conn.response_invalid and removes the folder",
+  "each workflow step of @nckrtl/instance-t3 passes the arguments of the method it names",
+]
+file = "swamp/extensions/behaviors/operations/instance-t3/mod_test.ts"
+cost = 11 # ESTIMATE: 11 cases completed in 0.14 s locally; one second per case
+inputs = [
+  "swamp/extensions/behaviors/operations/instance-t3/mod.ts",
+  "swamp/extensions/behaviors/operations/instance-t3/manifest.yaml",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+]
+[case_costs]
+"a checked reply stores both sessions as sensitive fields and returns the create's result with only their vault keys" = 1
+"a migrate's registration reads the run folder's t3.json and returns only the server with its vault keys" = 1
+"a registration whose result is not ready keeps the run folder for finish and the container stop" = 1
+"each failed check refuses with the code of POST /conn/environments, stores nothing and removes the copy" = 1
+"a renewal proves the session over the recorded URL, stores it, reports only its vault key, and removes the copy" = 1
+"a renewal that meets another environment reports conn.environment_mismatch, stores nothing, and removes the copy" = 1
+"a renewal that meets a refused session reports conn.session_rejected, stores nothing, and removes the copy" = 1
+"a renewal that meets a session without admin scopes reports conn.admin_scope_missing, stores nothing, and removes the copy" = 1
+"a renewal whose server does not answer reports conn.server_unreachable and removes the copy" = 1
+"a renewal without a readable copy reports conn.response_invalid and removes the folder" = 1
+"each workflow step of @nckrtl/instance-t3 passes the arguments of the method it names" = 1
