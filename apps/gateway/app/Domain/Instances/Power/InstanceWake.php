@@ -26,6 +26,8 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Sleep;
 use Throwable;
 
+use function Illuminate\Support\defer;
+
 /** `instance:wake` and the wake of a Route visit: one open wake per Instance, which a second caller joins. */
 final readonly class InstanceWake extends InstancePower
 {
@@ -73,9 +75,15 @@ final readonly class InstanceWake extends InstancePower
      */
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
+        return $this->resume($this->begin($instance, $caller, $requestId));
+    }
+
+    /** The admission of start(): a wake, joined when one is open, or the start of a nested-fleet clone. */
+    private function begin(Instance $instance, ?string $caller, ?string $requestId): Operation
+    {
         $runtime = $instance->runtime()->first();
         if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
-            return $this->resume(parent::start($instance, $caller, $requestId));
+            return parent::start($instance, $caller, $requestId);
         }
         $idempotency = app(OperationIdempotency::class);
         if ($idempotency->key === null || $idempotency->fingerprint === null) {
@@ -142,14 +150,19 @@ final readonly class InstanceWake extends InstancePower
         return $operation;
     }
 
+    /** Whether the Operation is a wake admitted for the Node's resume that has not ended or left for its workflow. */
+    private static function awaitsNode(Operation $operation): bool
+    {
+        return $operation->status === OperationStatus::Queued && ($operation->state[self::ResumeState] ?? null) === 'node';
+    }
+
     /**
-     * The Node's resume of a wake admitted for it, after the admission committed: on success the Operation ends here; otherwise
-     * the same Operation starts its workflow. A caller who joins such a wake waits for it up to the bound, so a second visit
-     * gets the app too.
+     * The command's wake: the Node's resume of a wake admitted for it runs within the call. A caller who joins such a wake waits
+     * for it up to the bound, so it gets the ended Operation too.
      */
     private function resume(Operation $operation): Operation
     {
-        if ($operation->status !== OperationStatus::Queued || ($operation->state[self::ResumeState] ?? null) !== 'node') {
+        if (! self::awaitsNode($operation)) {
             return $operation;
         }
         if (! $operation->wasRecentlyCreated) {
@@ -162,6 +175,16 @@ final readonly class InstanceWake extends InstancePower
 
             return $operation;
         }
+
+        return $this->resumeOnNode($operation);
+    }
+
+    /**
+     * The Node's resume of a wake admitted for it, after the admission committed: on success the Operation ends here; otherwise
+     * the same Operation starts its workflow.
+     */
+    private function resumeOnNode(Operation $operation): Operation
+    {
         $startedAt = Carbon::now();
         try {
             $instance = Instance::query()->with('node')->findOrFail($operation->target_id);
@@ -212,11 +235,12 @@ final readonly class InstanceWake extends InstancePower
     }
 
     /**
-     * The answer of the runtime activation endpoint for a container Instance behind its asleep marker: true when the wake has
-     * ended and the site serves the app again (the agent's resume), null while a wake is open or was started now, else the
-     * message of the failed wake that the failure page shows until a retry.
+     * The answer of the runtime activation endpoint for a container Instance behind its asleep marker: null while a wake is open
+     * or was started now, so the visitor gets the waiting page at once, else the message of the failed wake that the failure page
+     * shows until a retry. The visitor never waits for the wake: the Node's resume of a wake admitted now runs after the
+     * response, and the page's poll gets the app once the marker is gone. A visit that joins an open wake does not wait either.
      */
-    public function activate(Instance $instance, bool $retry, string $caller): string|true|null
+    public function activate(Instance $instance, bool $retry, string $caller): ?string
     {
         if (! $retry) {
             $last = Operation::query()->whereIn('kind', [self::Kind, InstanceSleep::Kind])->where('target_type', 'instance')
@@ -226,9 +250,15 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
-            // A Route visit takes the same way as the command: a nested-fleet clone that no sleep froze takes its start.
-            if ($this->start($instance, $caller, null)->status === OperationStatus::Succeeded) {
-                return true;
+            // A Route visit takes the same admission as the command: a nested-fleet clone that no sleep froze takes its start.
+            $operation = $this->begin($instance, $caller, null);
+            if ($operation->wasRecentlyCreated && self::awaitsNode($operation)) {
+                // A 401 page is no success, so the callback must run always. A worker that dies here leaves the safety net's run.
+                defer(function () use ($operation): void {
+                    if (self::awaitsNode($operation->refresh())) {
+                        $this->resumeOnNode($operation);
+                    }
+                }, always: true);
             }
         } catch (ResourceOperationException $exception) {
             // Other lifecycle work holds the Instance: the page polls again, and a later request starts the wake.

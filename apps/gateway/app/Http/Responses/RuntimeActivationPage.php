@@ -41,17 +41,6 @@ final readonly class RuntimeActivationPage
         );
     }
 
-    /**
-     * The wake ended within the activation call: the visitor's browser sends the same request again, with its method and body
-     * (307), and the site now serves the app. The page's own poll follows it the same way.
-     */
-    public function again(string $originalUri): Response
-    {
-        return response('', 307)
-            ->header('Location', $this->safeOriginalUri($originalUri))
-            ->header('Cache-Control', 'no-store, private');
-    }
-
     public function ready(): Response
     {
         return response('', 200);

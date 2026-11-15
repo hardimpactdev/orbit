@@ -34,6 +34,7 @@ use App\Models\Operation;
 use App\Models\Route;
 use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Support\Defer\DeferredCallbackCollection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -414,14 +415,20 @@ it('takes the run, not the Node\'s resume, when the last sleep opened swap for i
     Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $wake->id && $job->delay === null);
 });
 
-it('wakes a frozen container through the Node in the same Operation and sends the visitor back to the same request', function (): void {
+it('answers a visit to a frozen container with the waiting page before any Node call, and resumes it after the answer', function (): void {
     $clone = frozenClone();
     $node = wakeNode($clone);
 
-    activationPoll($clone, '/dashboard?tab=1')->assertStatus(307)->assertHeader('Location', '/dashboard?tab=1')
-        ->assertHeader('Cache-Control', 'no-store, private');
-
+    // Within the visitor's call the wake is only admitted: no Node call runs, so the waiting page answers at once.
+    expect(app(InstanceWake::class)->activate($clone, false, 'node:'.$clone->node_id))->toBeNull()
+        ->and($node->calls)->toBe([]);
     $wake = Operation::query()->where('kind', InstanceWake::Kind)->sole();
+    expect($wake->status->value)->toBe('queued')->and($wake->state[InstanceWake::ResumeState])->toBe('node');
+
+    // After the answer the Node resumes the container, in the same Operation.
+    app(DeferredCallbackCollection::class)->invoke();
+
+    $wake->refresh();
     expect($wake->status->value)->toBe('succeeded')
         ->and($wake->result)->toMatchArray(['power_state' => 'running', 'wake' => 'resumed', 'marker_found' => true])
         ->and($wake->result)->toHaveKeys(['trigger_seconds', 'confirm_seconds'])
@@ -434,6 +441,29 @@ it('wakes a frozen container through the Node in the same Operation and sends th
     Queue::assertPushed(StartAdmittedSwampRun::class, 1);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->operationId === $wake->id
         && $job->delay !== null && now()->diffInSeconds($job->delay) >= InstanceWake::SafetyNetSeconds - 1);
+});
+
+it('gives the visit the waiting page, then ends the wake through the Node once the answer went', function (): void {
+    $clone = frozenClone();
+    $node = wakeNode($clone);
+
+    activationPoll($clone, '/dashboard?tab=1')->assertStatus(401)->assertHeader('X-Orbit-Runtime-Activation-State', 'pending')
+        ->assertHeader('Cache-Control', 'no-store, private')->assertSee(json_encode('/dashboard?tab=1', JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT), false);
+
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded')
+        ->and($node->calls)->toBe(['hibernation.marker:mark', 'hibernation.times']);
+});
+
+it('makes no Node call after the answer for a wake that was cancelled in the meantime', function (): void {
+    $clone = frozenClone();
+    $node = wakeNode($clone);
+
+    expect(app(InstanceWake::class)->activate($clone, false, 'node:'.$clone->node_id))->toBeNull();
+    Operation::query()->where('kind', InstanceWake::Kind)->update(['status' => 'cancelled', 'lock_key' => null]);
+    app(DeferredCallbackCollection::class)->invoke();
+
+    expect($node->calls)->toBe([])
+        ->and(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('cancelled');
 });
 
 it('answers the wake command with the ended Operation when the Node resumed the container', function (): void {
@@ -478,7 +508,7 @@ it('never calls the Node for a running Instance without its marker', function ()
         ->and($state->calls)->toBe([]);
 });
 
-it('lets a second visit during the resume join the wake and get the app too', function (): void {
+it('gives a second visit during the resume the waiting page at once, joining the wake without waiting for it', function (): void {
     $clone = frozenClone();
     $state = wakeNode($clone);
     // The first visit admitted the wake and its Node call runs; the second visit finds it open.
@@ -489,9 +519,11 @@ it('lets a second visit during the resume join the wake and get the app too', fu
         $first->refresh()->forceFill(['status' => 'succeeded', 'lock_key' => null, 'state' => [InstanceWake::ResumeState => 'resumed']])->save();
     });
 
-    activationPoll($clone, '/second')->assertStatus(307)->assertHeader('Location', '/second');
+    activationPoll($clone, '/second')->assertStatus(401)->assertHeader('X-Orbit-Runtime-Activation-State', 'pending');
 
-    expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1)->and($state->calls)->toBe([]);
+    expect(Operation::query()->where('kind', InstanceWake::Kind)->count())->toBe(1)->and($state->calls)->toBe([])
+        ->and($first->refresh()->status->value)->toBe('queued');
+    Sleep::assertNeverSlept();
 });
 
 it('gives a joining visit the progress page when the joined wake falls back to its workflow', function (): void {
@@ -504,11 +536,12 @@ it('gives a joining visit the progress page when the joined wake falls back to i
     activationPoll($clone)->assertStatus(401);
 });
 
-it('sends the visitor back only to a path of its own site', function (string $forwarded, string $location): void {
+it('lets the waiting page reload only a path of its own site', function (string $forwarded, string $location): void {
     $clone = frozenClone();
     wakeNode($clone);
 
-    activationPoll($clone, $forwarded)->assertStatus(307)->assertHeader('Location', $location);
+    activationPoll($clone, $forwarded)->assertStatus(401)
+        ->assertSee('const uri = '.json_encode($location, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_AMP | JSON_HEX_QUOT).';', false);
 })->with([
     ['/a/b?x=1&orbit-wake-retry=1', '/a/b?x=1'],
     ['//evil.example/x', '/'],
@@ -525,7 +558,7 @@ it('lets the extensions catch up after a wake through the Node, as after a workf
     $contribution->shouldReceive('projectWake')->once()->withArgs(fn (Instance $woken): bool => $woken->id === $clone->id);
     app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
 
-    activationPoll($clone)->assertStatus(307);
+    activationPoll($clone)->assertStatus(401);
 });
 
 it('keeps a cancel that came during the Node resume, and starts no workflow for it', function (): void {
@@ -542,14 +575,14 @@ it('keeps a cancel that came during the Node resume, and starts no workflow for 
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });
 
-it('still sends the visitor to the app when an extension fails after the Node resume', function (): void {
+it('still ends the wake when an extension fails after the Node resume', function (): void {
     $clone = frozenClone();
     wakeNode($clone);
     $contribution = Mockery::mock(InstanceLifecycleContribution::class)->shouldIgnoreMissing();
     $contribution->shouldReceive('projectWake')->andThrow(new RuntimeException('extension down'));
     app()->instance(InstanceLifecycleContributions::class, new InstanceLifecycleContributions([$contribution]));
 
-    activationPoll($clone)->assertStatus(307);
+    activationPoll($clone)->assertStatus(401);
     expect(Operation::query()->where('kind', InstanceWake::Kind)->sole()->status->value)->toBe('succeeded');
     Queue::assertNotPushed(StartAdmittedSwampRun::class, fn (StartAdmittedSwampRun $job): bool => $job->delay === null);
 });
