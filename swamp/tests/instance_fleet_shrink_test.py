@@ -147,14 +147,41 @@ class FleetShrinkTest(unittest.TestCase):
         self.assertEqual(result, {'shrink': 'ran', 'relinked': 9, 'dedupe': 'not_btrfs'})
         self.assertIn('nested-app-dev: skipped 1 paths', errors)
 
+    def test_a_path_that_starts_with_two_slashes_is_absolute_too(self):
+        target = self.outer('two-slashes')
+        self.listed('nested-app-dev', '/' + str(target))
+        result, errors = self.run_on_a_directory_pool()
+        self.assertUnlinked(target)
+        self.assertEqual(result['relinked'], 9)
+        self.assertIn('nested-app-dev: skipped 1 paths', errors)
+
+    def test_a_path_that_cannot_be_linked_is_skipped_and_the_others_are_linked(self):
+        disk = self.disk('nested-app-dev')
+        (disk / 'usr/lib/cargo/bin/coreutils/.orbit-relink-ls').mkdir()
+        # A name that the temporary's prefix makes too long.
+        long = 'usr/lib/cargo/bin/coreutils/' + 'x' * 250
+        (disk / long).write_bytes(BINARY)
+        (disk / long).chmod(0o755)
+        self.listed('nested-app-dev', long)
+        # A line that is no UTF-8 is one more path that is not there.
+        md5sums = disk / 'var/lib/dpkg/info/rust-coreutils.md5sums'
+        md5sums.write_bytes(md5sums.read_bytes() + hashlib.md5(BINARY).hexdigest().encode() + b'  usr/bin/\xff\n')
+        result, errors = self.run_on_a_directory_pool()
+        self.assertEqual(result, {'shrink': 'ran', 'relinked': 8, 'dedupe': 'not_btrfs'})
+        self.assertIn('nested-app-dev: skipped 3 paths', errors)
+        self.assertTrue((disk / 'usr/lib/cargo/bin/coreutils/.orbit-relink-ls').is_dir())
+        self.assertEqual(self.links('nested-app-dev'), 3)
+
     def test_a_dotdot_path_in_the_md5sums_never_reaches_a_file_outside_the_disk(self):
         target = self.outer('dotdot')
         self.listed('nested-app-dev', os.path.relpath(target, self.disk('nested-app-dev')))
         # A `..` part that stays inside the disk is skipped too: one rule, no resolving.
         self.listed('nested-app-prod', 'usr/lib/../lib/cargo/bin/coreutils/ls')
-        self.assertEqual(self.run_on_a_directory_pool()[0]['relinked'], 9)
+        result, errors = self.run_on_a_directory_pool()
+        self.assertEqual(result['relinked'], 9)
         self.assertUnlinked(target)
         self.assertEqual(self.links('nested-app-dev'), 4)
+        self.assertIn('nested-app-prod: skipped 1 paths', errors)
 
     def test_a_symlinked_folder_in_a_listed_path_is_not_followed(self):
         target = self.outer('folder/ls')

@@ -56,8 +56,9 @@ CACHES = ('var/cache/apt/archives',)
 def inside(disk, relative, kind):
     """`disk / relative` when the path stays inside `disk`: no absolute path, no `..` part, every part below `disk` a real folder (no
     symlink, by lstat) and the last part of `kind` (stat.S_ISREG or stat.S_ISDIR). None otherwise, and when a part is missing."""
+    # `is_absolute` also holds for `//x`, whose first part is `//`, not `/`.
     parts = PurePosixPath(relative).parts
-    if not parts or parts[0] == '/' or '..' in parts:
+    if not parts or PurePosixPath(relative).is_absolute() or '..' in parts:
         return None
     path = disk
     for index, part in enumerate(parts):
@@ -105,7 +106,7 @@ def md5sums(disk, package):
     for name in (f'{package}.md5sums', f'{package}:amd64.md5sums'):
         path = inside(disk, f'var/lib/dpkg/info/{name}', stat.S_ISREG)
         if path is not None:
-            for line in path.read_text().splitlines():
+            for line in path.read_text(errors='surrogateescape').splitlines():
                 digest, _, relative = line.partition('  ')
                 if digest and relative:
                     yield digest, relative
@@ -135,17 +136,17 @@ def relink(disk):
                 continue
             if path.lstat().st_ino == first.lstat().st_ino or not same_file(first, path):
                 continue
-            # Its folder is inside the disk (above); a leftover of an earlier run goes, but a folder of that name is skipped.
+            # Its folder is inside the disk (above); a leftover of an earlier run goes. A path that cannot be linked (a folder in the
+            # temporary's place, a name too long for the prefix) is skipped, never fatal.
             temporary = path.with_name('.orbit-relink-' + path.name)
             try:
-                if stat.S_ISDIR(temporary.lstat().st_mode):
-                    skipped += 1
-                    continue
-                temporary.unlink()
-            except FileNotFoundError:
-                pass
-            os.link(first, temporary, follow_symlinks=False)
-            os.rename(temporary, path)
+                if os.path.lexists(temporary):
+                    temporary.unlink()
+                os.link(first, temporary, follow_symlinks=False)
+                os.rename(temporary, path)
+            except OSError:
+                skipped += 1
+                continue
             replaced += 1
     return replaced, skipped
 
