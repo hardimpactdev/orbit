@@ -18,7 +18,7 @@ use App\Support\ValidatedData;
 use Illuminate\Support\Str;
 
 /**
- * The admission of one agent turn in a task copy (docs/cli/task/turn.mmd). Swamp runs T3's own `t3 thread` command in the copy as
+ * The admission of one agent turn in a task copy (docs/cli/task/copy-turn.mmd). Swamp runs T3's own `t3 thread` command in the copy as
  * `agent`; T3 issues and revokes its session inside the container, so the intent names no credential and no vault key.
  */
 final readonly class TaskCopyTurn

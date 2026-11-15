@@ -18,7 +18,7 @@ use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
-/** docs/cli/task/turn.mmd: work on a group whose provision waits or runs names that Operation instead of a busy target. */
+/** docs/cli/task/copy-turn.mmd: work on a group whose provision waits or runs names that Operation instead of a busy target. */
 beforeEach(function (): void {
     SwampNodeFixture::ensure();
     $this->gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',

@@ -34,7 +34,7 @@ final readonly class OperationKinds
 
     public const string TasksProvision = 'tasks.provision';
 
-    /** The turn of a task that runs in a copy of its Project's default Instance (docs/cli/task/turn.mmd). */
+    /** The turn of a task that runs in a copy of its Project's default Instance (docs/cli/task/copy-turn.mmd). */
     public const string TasksCopyTurn = 'tasks.copy_turn';
 
     public const string TasksSync = 'tasks.sync';
