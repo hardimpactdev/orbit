@@ -1,0 +1,247 @@
+id: 7c1d4e2a-5b3f-4a8e-9d6c-2f1e0a9b8c74
+name: operation-proof-run-copy
+description: >-
+  Prove assigned whole batches of a commit in a copy of the proof Project's default Instance (docs/cli/proof/run.mmd), from full inputs
+  on 209: bring the commit into the copy (the phase proof_checkout of instance-container.yml, then the Project's development deploy steps
+  whose inputs changed), check the workspace commit, and prove each batch through proof-fleet-verify, whose reset puts the copy's inner
+  fleet on `base` first. The Gateway started the copy at admission and destroys it when this run ends. No step calls the Gateway.
+queueTimeout: 30
+vaults:
+- orbit-control-inputs
+inputs:
+  type: object
+  properties:
+    operation_id:
+      type: integer
+      minimum: 1
+    node_id:
+      type: integer
+      minimum: 1
+    kind: {type: string, const: proof.command}
+    intent:
+      type: object
+      properties:
+        commit: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+        # The phase's intent: the copy's container and Node, the commit, the public repository it comes from, and the deploy steps.
+        checkout:
+          type: object
+          properties:
+            container: {type: object}
+            ssh_execution: {type: object}
+            commit: {type: string, pattern: '^[0-9a-f]{40}([0-9a-f]{24})?$'}
+            repository: {type: string, pattern: '^https://github\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+\.git$'}
+            deployment:
+              type: object
+              properties:
+                steps: {type: array, items: {type: object}}
+              required: [steps]
+              additionalProperties: false
+          required: [container, ssh_execution, commit, repository, deployment]
+          additionalProperties: false
+        verifications: {type: array, minItems: 1, items: {type: object}}
+      required: [commit, checkout, verifications]
+      additionalProperties: false
+    # `step_<index>`: the command of each development deploy step, in its vault key for this run.
+    execution_secrets:
+      type: object
+      propertyNames: {pattern: '^step_([0-9]|[12][0-9]|3[01])$'}
+      additionalProperties:
+        type: object
+        properties:
+          vault: {type: string, enum: [orbit-control-inputs]}
+          key: {type: string, pattern: '^development-deploy-operation-[1-9][0-9]*-step-([0-9]|[12][0-9]|3[01])$'}
+        required: [vault, key]
+        additionalProperties: false
+  required:
+  - operation_id
+  - node_id
+  - kind
+  - intent
+  - execution_secrets
+  additionalProperties: false
+jobs:
+- name: prove
+  labels: {role: swamp}
+  steps:
+  - name: input
+    labels: {role: swamp}
+    writes: true
+    task:
+      type: behavior
+      behaviorType: '@nckrtl/ansible-input'
+      behaviorName: ${{ "ansible-input" }}
+      methodName: write
+      inputs:
+        intent: '${{ inputs.intent.checkout }}'
+        path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
+  # One phase from the copy's Node, as `orbit` in the copy: fetch the commit by SHA (60 s, no retry), check it out detached, and name
+  # the deploy steps whose inputs did not change since the seed. The name is the copy's, so runs in two copies go side by side.
+  - name: Bring in the commit
+    labels: {role: swamp}
+    writes: true
+    dependsOn: [{step: input, condition: {type: succeeded}}]
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("proof-copy-checkout-" + string(inputs.intent.checkout.container.instance_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags proof_checkout "$ORBIT_ANSIBLE/instance-container.yml"
+        env:
+          ANSIBLE_DISPLAY_FAILED_STDERR: '1'
+          ANSIBLE_FORCE_COLOR: '0'
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+          ORBIT_RUN_ID: '${{ run.id }}'
+          ORBIT_ANSIBLE: '${{ steps.input.outputs.assets }}'
+          ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
+          ANSIBLE_CONFIG: '${{ steps.input.outputs.assets + "/ansible.cfg" }}'
+  - name: Read the steps to skip
+    labels: {role: swamp}
+    dependsOn: [{step: Bring in the commit, condition: {type: succeeded}}]
+    guard: ${{ !inputs.intent.checkout.deployment.steps.exists(s, size(s.inputs) > 0) }}
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proof-copy-steps-skip" }}
+      methodName: execute
+      inputs:
+        run: timeout 10 cat "$ORBIT_RUN/deploy-steps-skip"
+        env:
+          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
+  # As a deployment of the default runs them: in the copy as `orbit`, each from its own vault copy. A step with `inputs` that the
+  # checkout found unchanged is skipped; when it runs and passes, it moves its pending record to `done`. A failed required step stops
+  # the rest; an optional one prints its exit code and the run goes on, as in a deployment.
+  - name: Run dev deploy steps
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: Bring in the commit
+      condition: {type: succeeded}
+    - step: Read the steps to skip
+      condition:
+        type: or
+        conditions:
+        - type: succeeded
+        - type: skipped
+    guard: ${{ steps.exists(k, k.startsWith("Run dev deploy steps") && steps[k].status == "failed") || (size(self.step.inputs) > 0 && steps["Read the steps to skip"].status == "succeeded" && steps["Read the steps to skip"].outputs.stdout.contains("," + self.step.name + ",")) }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: ${{ ("proof-copy-deploy-" + string(inputs.intent.checkout.container.instance_id) + "-" + string(self._index)).split(".").join("-") }}
+      methodName: exec
+      globalArgs:
+        name: ${{ ("proof-copy-deploy-" + string(inputs.intent.checkout.container.instance_id) + "-" + string(self._index)).split(".").join("-") }}
+        transport:
+          kind: ssh
+          user: ${{ inputs.intent.checkout.ssh_execution.target.user }}
+          port: ${{ inputs.intent.checkout.ssh_execution.target.port }}
+          identityFile: ${{ inputs.intent.checkout.ssh_execution.identity_file }}
+          hostKeys: ${{ inputs.intent.checkout.ssh_execution.target.host_keys }}
+        hosts:
+        - name: target
+          address: ${{ inputs.intent.checkout.ssh_execution.target.host }}
+      inputs:
+        hosts: name:target
+        sudo: true
+        argv: '${{ ["incus", "exec", "--project", inputs.intent.checkout.container.project, "--cwd", inputs.intent.checkout.container.workspace, inputs.intent.checkout.container.name, "--", "runuser", "-u", "orbit", "--", "/usr/bin/env", "-i"] + inputs.intent.checkout.container.environment + ["/bin/sh", "-c"] + (size(self.step.inputs) > 0 ? [self.step.required ? "s=$(cat) && timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1 && { [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; }" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; r=$?; [ \"$r\" -ne 0 ] || [ ! -e \"$2/pending/$3\" ] || mv -f -- \"$2/pending/$3\" \"$2/done/$3\"; echo \"$r\"", "sh", string(self.step.timeout_seconds), inputs.intent.checkout.container.workspace + "/.git/orbit-deploy-steps", self.step.name] : [self.step.required ? "s=$(cat) && exec timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1" : "s=$(cat) || exit 1; timeout \"$1\" /bin/bash --noprofile --norc -eu -c \"$s\" </dev/null >/dev/null 2>&1; echo \"$?\"", "sh", string(self.step.timeout_seconds)]) }}'
+        timeoutSec: ${{ self.step.timeout_seconds + 10 }}
+        stdin: ${{ vault.get(inputs.execution_secrets["step_" + string(self._index)].vault, inputs.execution_secrets["step_" + string(self._index)].key) }}
+    forEach:
+      item: step
+      in: '${{ inputs.intent.checkout.deployment.steps }}'
+    concurrency: 1
+  # The commit the copy's workspace holds now, read in the copy as `orbit`. It runs when every deploy step passed or was skipped, also
+  # when all were skipped or the Project has none, and never after any failed step, such as a failed read of the skip list.
+  - name: Read the workspace commit
+    labels: {role: swamp}
+    dependsOn:
+    - step: Bring in the commit
+      condition: {type: succeeded}
+    - step: Run dev deploy steps
+      condition: {type: always}
+    guard: ${{ steps.exists(k, steps[k].status == "failed") }}
+    task:
+      type: behavior
+      behaviorType: '@swamp/ssh'
+      behaviorName: '${{ ("proof-copy-workspace-" + string(inputs.intent.checkout.container.instance_id)).split(".").join("-") }}'
+      methodName: exec
+      globalArgs:
+        name: '${{ ("proof-copy-workspace-" + string(inputs.intent.checkout.container.instance_id)).split(".").join("-") }}'
+        transport:
+          kind: ssh
+          user: '${{ inputs.intent.checkout.ssh_execution.target.user }}'
+          port: '${{ inputs.intent.checkout.ssh_execution.target.port }}'
+          identityFile: '${{ inputs.intent.checkout.ssh_execution.identity_file }}'
+          hostKeys: '${{ inputs.intent.checkout.ssh_execution.target.host_keys }}'
+        hosts:
+        - name: target
+          address: '${{ inputs.intent.checkout.ssh_execution.target.host }}'
+      inputs:
+        hosts: name:target
+        sudo: true
+        okExitCodes: any
+        timeoutSec: 30
+        argv: '${{ ["incus", "exec", "--project", inputs.intent.checkout.container.project, "--cwd", inputs.intent.checkout.container.workspace, inputs.intent.checkout.container.name, "--", "runuser", "-u", "orbit", "--", "timeout", "20", "git", "rev-parse", "HEAD"] }}'
+  # The Gateway records the failure of this step as `proof.workspace_commit_mismatch`, with the commit that the read printed.
+  - name: Check the workspace commit
+    labels: {role: swamp}
+    dependsOn:
+    - step: Read the workspace commit
+      condition: {type: succeeded}
+    task:
+      type: assert
+      expr: 'steps["Read the workspace commit"].outputs.stdout.trim() == inputs.intent.commit'
+      severity: high
+      message: The workspace of the proof copy is not at the commit under proof
+  # The cases of this one command, in batches. The child succeeds whatever the verdicts are; the report holds them.
+  - name: Prove assigned batches
+    forEach: {item: verify, in: '${{ inputs.intent.verifications }}'}
+    concurrency: 1
+    labels: {role: swamp}
+    writes: true
+    dependsOn:
+    - step: Check the workspace commit
+      condition: {type: succeeded}
+    task:
+      type: workflow
+      workflowIdOrName: proof-fleet-verify
+      inputs:
+        operation_id: ${{ inputs.operation_id }}
+        node_id: '${{ self.verify.node_id }}'
+        kind: proof.verify
+        intent: '${{ self.verify }}'
+        execution_secrets: {}
+  # The run folder holds the intent and the skip list, never a secret. Always, also after a failure.
+  - name: Remove the run folder
+    labels: {role: swamp}
+    dependsOn:
+    - step: Bring in the commit
+      condition: &always
+        type: always
+    - step: Prove assigned batches
+      condition: *always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: ${{ "proof-copy-run-cleanup" }}
+      methodName: execute
+      inputs:
+        run: timeout 5 rm -rf -- "$ORBIT_RUN"
+        env:
+          ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
+  # The verdict lines of the command, one JSON object a line. The Gateway reads this step once, when the run ends.
+  - name: Report
+    labels: {role: swamp}
+    dependsOn:
+    - step: Remove the run folder
+      condition: *always
+    task:
+      type: behavior
+      behaviorType: command/shell
+      behaviorName: '${{ ("proof-run-report-" + string(inputs.intent.checkout.container.instance_id)).split(".").join("-") }}'
+      methodName: execute
+      inputs:
+        run: |
+          printf '%s\n' "$LINES"
+        env:
+          LINES: '${{ inputs.intent.verifications.map(v, v.step in steps ? steps[v.step].?outputs.?report.?stdout.orValue("").trim().split("\n").filter(l, l != "").map(l, v.command + "\t" + v.file + "\t" + v.batch + "\t" + l).join("\n") : "").filter(l, l != "").join("\n") }}'

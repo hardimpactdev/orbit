@@ -1,4 +1,867 @@
 {
+    "proof_run_copy": {
+        "intent": {
+            "commit": "c0ffee0000000000000000000000000000000001",
+            "checkout": {
+                "container": {
+                    "instance_id": 2,
+                    "project": "orbit-instances-nested",
+                    "name": "instance-2",
+                    "machine_name": {
+                        "hostname": "task-1.trial",
+                        "pretty": "task-1.trial"
+                    },
+                    "config": {
+                        "limits.cpu": "4",
+                        "limits.memory": "12GiB",
+                        "limits.processes": "4096",
+                        "security.nesting": "true",
+                        "security.syscalls.intercept.mknod": "true",
+                        "security.syscalls.intercept.setxattr": "true",
+                        "security.idmap.isolated": "true",
+                        "security.idmap.size": "101000000",
+                        "boot.autostart": "false",
+                        "environment.NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                        "environment.no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                    },
+                    "root_disk_pool": "orbit-instances",
+                    "root_disk_size": "40GiB",
+                    "image": "orbit-instance-nested",
+                    "address": "10.253.0.3",
+                    "network": "orbitinst0",
+                    "allowed_devices": {
+                        "root": {
+                            "type": "disk",
+                            "path": "/",
+                            "pool": "orbit-instances",
+                            "size": "40GiB"
+                        },
+                        "eth0": {
+                            "type": "nic",
+                            "name": "eth0",
+                            "network": "orbitinst0",
+                            "ipv4.address": "10.253.0.3",
+                            "security.port_isolation": "true",
+                            "security.acls": "orbitinst0-proxy,instance-2",
+                            "security.acls.default.egress.action": "reject",
+                            "security.acls.default.ingress.action": "reject",
+                            "security.ipv4_filtering": "true",
+                            "security.mac_filtering": "true"
+                        },
+                        "orbit-runtime": {
+                            "type": "disk",
+                            "source": "/opt/orbit-runtime",
+                            "path": "/opt/orbit-runtime",
+                            "readonly": "true",
+                            "shift": "true"
+                        },
+                        "orbit-agent": {
+                            "type": "disk",
+                            "source": "/opt/orbit-agent",
+                            "path": "/opt/orbit-agent",
+                            "readonly": "true",
+                            "shift": "true"
+                        },
+                        "t3": {
+                            "type": "proxy",
+                            "listen": "tcp:10.44.0.7:3800",
+                            "connect": "tcp:10.253.0.3:3773",
+                            "nat": "true"
+                        }
+                    },
+                    "club_key": {
+                        "directory": "/run/orbit-club",
+                        "file": "swamp-club-api-key",
+                        "owner": 1000,
+                        "group": 1000,
+                        "tmpfiles": "/etc/tmpfiles.d/orbit-club.conf",
+                        "gateway": "nested-gateway",
+                        "serve_unit": "orbit-swamp-serve"
+                    },
+                    "acl": "instance-2",
+                    "nic_acl": "orbitinst0-proxy",
+                    "bridge_cidr": "10.253.0.0/24",
+                    "bridge_admitted_at": 1794704498542429,
+                    "bridge_endpoints": [],
+                    "acl_rules": {
+                        "description": "Orbit Instance 2",
+                        "egress": [],
+                        "ingress": [
+                            {
+                                "action": "allow",
+                                "source": "10.253.0.1/32",
+                                "protocol": "tcp",
+                                "destination_port": "8080",
+                                "state": "enabled"
+                            },
+                            {
+                                "action": "allow",
+                                "protocol": "tcp",
+                                "destination_port": "3773",
+                                "state": "enabled"
+                            }
+                        ]
+                    },
+                    "firewall": [
+                        {
+                            "route": "yes",
+                            "interface_in": "orbit",
+                            "interface_out": "orbitinst0",
+                            "to_ip": "10.253.0.3",
+                            "to_port": "3773",
+                            "proto": "tcp",
+                            "rule": "deny",
+                            "from_ip": "10.44.0.128/25",
+                            "comment": "orbit:instance-2-t3-task-vms"
+                        },
+                        {
+                            "route": "yes",
+                            "interface_in": "orbit",
+                            "interface_out": "orbitinst0",
+                            "to_ip": "10.253.0.3",
+                            "to_port": "3773",
+                            "proto": "tcp",
+                            "rule": "allow",
+                            "from_ip": "any",
+                            "comment": "orbit:instance-2-t3"
+                        }
+                    ],
+                    "mirror": "/var/lib/orbit/instance-repositories/2.git",
+                    "repository": "https://github.com/nckrtl/trial.git",
+                    "protocols": [
+                        "https"
+                    ],
+                    "branch": "main",
+                    "commit": null,
+                    "workspace": "/srv/workspace",
+                    "environment_file": "/srv/workspace/.env",
+                    "environment": [
+                        "HOME=/home/orbit",
+                        "USER=orbit",
+                        "LOGNAME=orbit",
+                        "PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
+                        "VP_HOME=/var/lib/orbit/vite-plus-home",
+                        "VP_NO_UPDATE_CHECK=1",
+                        "HTTP_PROXY=http://10.253.0.1:3128",
+                        "HTTPS_PROXY=http://10.253.0.1:3128",
+                        "NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                        "http_proxy=http://10.253.0.1:3128",
+                        "https_proxy=http://10.253.0.1:3128",
+                        "no_proxy=localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                        "NODE_USE_ENV_PROXY=1",
+                        "PLAYWRIGHT_BROWSERS_PATH=0"
+                    ],
+                    "proxy_environment": {
+                        "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                        "no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                    },
+                    "mail": null,
+                    "mail_units": [],
+                    "units": [],
+                    "web_config": null,
+                    "php": null,
+                    "clone": {
+                        "source": "instance-1",
+                        "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
+                        "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
+                        "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
+                        "clean_workspace": true,
+                        "t3": {
+                            "port": 3800,
+                            "listen": "10.44.0.7",
+                            "device": "t3",
+                            "title": "trial",
+                            "unit": "t3.service",
+                            "internal_port": 3773,
+                            "ready_seconds": 30,
+                            "url": "http://10.44.0.7:3800",
+                            "label": "trial / task-1",
+                            "t3": "/opt/orbit-agent/current/agent/bin/t3",
+                            "project_mark": "/home/agent/.config/orbit/t3-project",
+                            "condition": "/etc/orbit/instance"
+                        },
+                        "model_environment": {
+                            "path": "/home/agent/.config/orbit/model.env",
+                            "uid": 2750,
+                            "gid": 2750,
+                            "mode": "0600",
+                            "frame": "#orbit-model-environment"
+                        },
+                        "proxy_environment": {
+                            "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                            "no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                        },
+                        "boot_files": [
+                            {
+                                "path": "/etc/ld.so.conf.d/zz-orbit-browser.conf",
+                                "content": "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "path": "/etc/fonts/fonts.conf",
+                                "content": "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n<!-- Managed by Orbit. -->\n<fontconfig>\n  <dir>/opt/orbit-runtime/current/fonts</dir>\n  <cachedir prefix=\"xdg\">fontconfig</cachedir>\n  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>serif</family><prefer><family>DejaVu Serif</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>emoji</family><prefer><family>Noto Color Emoji</family></prefer></alias>\n  <alias binding=\"same\"><family>Arial</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Helvetica</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Times New Roman</family><accept><family>Liberation Serif</family></accept></alias>\n  <alias binding=\"same\"><family>Courier New</family><accept><family>Liberation Mono</family></accept></alias>\n</fontconfig>\n",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "path": "/etc/gitconfig",
+                                "content": "# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "path": "/etc/ld.so.cache",
+                                "content": "",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "source": "/etc/orbit/agent/ca.pem",
+                                "path": "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+                                "hash_directory": "/etc/ssl/certs",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "home": "/home/agent",
+                                "directories": [
+                                    "/home/agent/.pki",
+                                    "/home/agent/.pki/nssdb"
+                                ],
+                                "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+                                "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+                                "uid": 2750,
+                                "gid": 2750,
+                                "mode": "0600",
+                                "directory_mode": "0700",
+                                "library": "libp11-kit0",
+                                "version": "0.26.2-2"
+                            },
+                            {
+                                "path": "/etc/systemd/system.conf.d/91-orbit-browsers.conf",
+                                "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "path": "/etc/profile.d/91-orbit-browsers.sh",
+                                "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            },
+                            {
+                                "path": "/etc/machine-info",
+                                "content": "PRETTY_HOSTNAME=task-1.trial\n",
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644"
+                            }
+                        ],
+                        "files": [
+                            {
+                                "path": "/etc/orbit/instance",
+                                "before_start": true,
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644",
+                                "content": "# Managed by Orbit.\nORBIT_INSTANCE_ID=2\nORBIT_INSTANCE=task-1\nORBIT_PROJECT=trial\nORBIT_PROJECT_ID=1\nORBIT_PROJECT_NAME=\"trial\"\nORBIT_NODE=beast\nORBIT_URL=\n"
+                            },
+                            {
+                                "path": "/home/agent/.codex/config.toml",
+                                "before_start": true,
+                                "uid": 2750,
+                                "gid": 2750,
+                                "mode": "0600",
+                                "content": "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\nbase_url = \"http://10.253.0.1:8319/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\nwire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"/srv/workspace\"]\ntrust_level = \"trusted\"\n"
+                            },
+                            {
+                                "path": "/home/agent/.claude.json",
+                                "before_start": true,
+                                "uid": 2750,
+                                "gid": 2750,
+                                "mode": "0600",
+                                "json": {
+                                    "hasCompletedOnboarding": true
+                                }
+                            },
+                            {
+                                "path": "/home/agent/.t3/userdata/settings.json",
+                                "before_start": true,
+                                "uid": 2750,
+                                "gid": 2750,
+                                "mode": "0600",
+                                "json": {
+                                    "linkedEnvironmentsEnabled": true,
+                                    "providerInstances": {
+                                        "claudeLow": {
+                                            "driver": "claudeAgent",
+                                            "displayName": "Claude, low effort",
+                                            "environment": [
+                                                {
+                                                    "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                    "value": "low"
+                                                }
+                                            ]
+                                        },
+                                        "claudeMedium": {
+                                            "driver": "claudeAgent",
+                                            "displayName": "Claude, medium effort",
+                                            "environment": [
+                                                {
+                                                    "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                    "value": "medium"
+                                                }
+                                            ]
+                                        },
+                                        "claudeHigh": {
+                                            "driver": "claudeAgent",
+                                            "displayName": "Claude, high effort",
+                                            "environment": [
+                                                {
+                                                    "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                    "value": "high"
+                                                }
+                                            ]
+                                        },
+                                        "claudeXhigh": {
+                                            "driver": "claudeAgent",
+                                            "displayName": "Claude, xhigh effort",
+                                            "environment": [
+                                                {
+                                                    "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                    "value": "xhigh"
+                                                }
+                                            ]
+                                        },
+                                        "claudeMax": {
+                                            "driver": "claudeAgent",
+                                            "displayName": "Claude, max effort",
+                                            "environment": [
+                                                {
+                                                    "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                    "value": "max"
+                                                }
+                                            ]
+                                        }
+                                    }
+                                }
+                            },
+                            {
+                                "path": "/etc/systemd/system/t3.service.d/10-orbit-boot.conf",
+                                "before_start": true,
+                                "uid": 0,
+                                "gid": 0,
+                                "mode": "0644",
+                                "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+                            }
+                        ],
+                        "links": [
+                            {
+                                "path": "/home/agent/.claude/CLAUDE.md",
+                                "target": "/opt/orbit-agent/current/notes/package.md"
+                            },
+                            {
+                                "path": "/home/agent/.codex/AGENTS.md",
+                                "target": "/opt/orbit-agent/current/notes/package.md"
+                            }
+                        ]
+                    },
+                    "processes": []
+                },
+                "ssh_execution": {
+                    "control_node_id": 1,
+                    "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
+                    "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0",
+                    "target": {
+                        "name": "target",
+                        "node_id": 2,
+                        "host": "10.44.0.7",
+                        "user": "orbit",
+                        "port": 22,
+                        "host_keys": [
+                            "ssh-ed25519 fixture-public-key"
+                        ]
+                    }
+                },
+                "commit": "c0ffee0000000000000000000000000000000001",
+                "repository": "https://github.com/hardimpactdev/orbit.git",
+                "deployment": {
+                    "steps": [
+                        {
+                            "name": "install-apps-gateway",
+                            "phase": "before_activation",
+                            "required": true,
+                            "timeout_seconds": 300,
+                            "command_digest": "d9d5fb516888a1795d55d7e0b25d7e4be4583078559a0388f6dc8a4d08be0c0d",
+                            "inputs": [
+                                "apps/gateway/composer.lock"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "verifications": [
+                {
+                    "group_id": 1,
+                    "instance_id": 2,
+                    "node_id": 2,
+                    "command": "firewall:allow",
+                    "file": "swamp/proof/firewall/allow.cases.yaml",
+                    "checkout_path": "/srv/workspace",
+                    "ssh_execution": {
+                        "control_node_id": 1,
+                        "identity_file": "/etc/orbit/swamp-role-worker/ssh-identity",
+                        "public_key": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0dHR0",
+                        "target": {
+                            "name": "target",
+                            "node_id": 2,
+                            "host": "10.44.0.7",
+                            "user": "orbit",
+                            "port": 22,
+                            "host_keys": [
+                                "ssh-ed25519 fixture-public-key"
+                            ]
+                        }
+                    },
+                    "copy": {
+                        "project": "orbit-instances-nested",
+                        "name": "instance-2"
+                    },
+                    "restore_first": true,
+                    "final_restore": false,
+                    "container": {
+                        "instance_id": 2,
+                        "project": "orbit-instances-nested",
+                        "name": "instance-2",
+                        "machine_name": {
+                            "hostname": "task-1.trial",
+                            "pretty": "task-1.trial"
+                        },
+                        "config": {
+                            "limits.cpu": "4",
+                            "limits.memory": "12GiB",
+                            "limits.processes": "4096",
+                            "security.nesting": "true",
+                            "security.syscalls.intercept.mknod": "true",
+                            "security.syscalls.intercept.setxattr": "true",
+                            "security.idmap.isolated": "true",
+                            "security.idmap.size": "101000000",
+                            "boot.autostart": "false",
+                            "environment.NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                            "environment.no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                        },
+                        "root_disk_pool": "orbit-instances",
+                        "root_disk_size": "40GiB",
+                        "image": "orbit-instance-nested",
+                        "address": "10.253.0.3",
+                        "network": "orbitinst0",
+                        "allowed_devices": {
+                            "root": {
+                                "type": "disk",
+                                "path": "/",
+                                "pool": "orbit-instances",
+                                "size": "40GiB"
+                            },
+                            "eth0": {
+                                "type": "nic",
+                                "name": "eth0",
+                                "network": "orbitinst0",
+                                "ipv4.address": "10.253.0.3",
+                                "security.port_isolation": "true",
+                                "security.acls": "orbitinst0-proxy,instance-2",
+                                "security.acls.default.egress.action": "reject",
+                                "security.acls.default.ingress.action": "reject",
+                                "security.ipv4_filtering": "true",
+                                "security.mac_filtering": "true"
+                            },
+                            "orbit-runtime": {
+                                "type": "disk",
+                                "source": "/opt/orbit-runtime",
+                                "path": "/opt/orbit-runtime",
+                                "readonly": "true",
+                                "shift": "true"
+                            },
+                            "orbit-agent": {
+                                "type": "disk",
+                                "source": "/opt/orbit-agent",
+                                "path": "/opt/orbit-agent",
+                                "readonly": "true",
+                                "shift": "true"
+                            },
+                            "t3": {
+                                "type": "proxy",
+                                "listen": "tcp:10.44.0.7:3800",
+                                "connect": "tcp:10.253.0.3:3773",
+                                "nat": "true"
+                            }
+                        },
+                        "club_key": {
+                            "directory": "/run/orbit-club",
+                            "file": "swamp-club-api-key",
+                            "owner": 1000,
+                            "group": 1000,
+                            "tmpfiles": "/etc/tmpfiles.d/orbit-club.conf",
+                            "gateway": "nested-gateway",
+                            "serve_unit": "orbit-swamp-serve"
+                        },
+                        "acl": "instance-2",
+                        "nic_acl": "orbitinst0-proxy",
+                        "bridge_cidr": "10.253.0.0/24",
+                        "bridge_admitted_at": 1794704498542429,
+                        "bridge_endpoints": [],
+                        "acl_rules": {
+                            "description": "Orbit Instance 2",
+                            "egress": [],
+                            "ingress": [
+                                {
+                                    "action": "allow",
+                                    "source": "10.253.0.1/32",
+                                    "protocol": "tcp",
+                                    "destination_port": "8080",
+                                    "state": "enabled"
+                                },
+                                {
+                                    "action": "allow",
+                                    "protocol": "tcp",
+                                    "destination_port": "3773",
+                                    "state": "enabled"
+                                }
+                            ]
+                        },
+                        "firewall": [
+                            {
+                                "route": "yes",
+                                "interface_in": "orbit",
+                                "interface_out": "orbitinst0",
+                                "to_ip": "10.253.0.3",
+                                "to_port": "3773",
+                                "proto": "tcp",
+                                "rule": "deny",
+                                "from_ip": "10.44.0.128/25",
+                                "comment": "orbit:instance-2-t3-task-vms"
+                            },
+                            {
+                                "route": "yes",
+                                "interface_in": "orbit",
+                                "interface_out": "orbitinst0",
+                                "to_ip": "10.253.0.3",
+                                "to_port": "3773",
+                                "proto": "tcp",
+                                "rule": "allow",
+                                "from_ip": "any",
+                                "comment": "orbit:instance-2-t3"
+                            }
+                        ],
+                        "mirror": "/var/lib/orbit/instance-repositories/2.git",
+                        "repository": "https://github.com/nckrtl/trial.git",
+                        "protocols": [
+                            "https"
+                        ],
+                        "branch": "main",
+                        "commit": null,
+                        "workspace": "/srv/workspace",
+                        "environment_file": "/srv/workspace/.env",
+                        "environment": [
+                            "HOME=/home/orbit",
+                            "USER=orbit",
+                            "LOGNAME=orbit",
+                            "PATH=/opt/orbit-runtime/current/bin:/usr/local/bin:/usr/bin:/bin",
+                            "VP_HOME=/var/lib/orbit/vite-plus-home",
+                            "VP_NO_UPDATE_CHECK=1",
+                            "HTTP_PROXY=http://10.253.0.1:3128",
+                            "HTTPS_PROXY=http://10.253.0.1:3128",
+                            "NO_PROXY=localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                            "http_proxy=http://10.253.0.1:3128",
+                            "https_proxy=http://10.253.0.1:3128",
+                            "no_proxy=localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                            "NODE_USE_ENV_PROXY=1",
+                            "PLAYWRIGHT_BROWSERS_PATH=0"
+                        ],
+                        "proxy_environment": {
+                            "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                            "no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                        },
+                        "mail": null,
+                        "mail_units": [],
+                        "units": [],
+                        "web_config": null,
+                        "php": null,
+                        "clone": {
+                            "source": "instance-1",
+                            "snapshot": "seed-cccccccccccccccccccccccccccccccccccccccc",
+                            "seed_commit": "cccccccccccccccccccccccccccccccccccccccc",
+                            "source_mirror": "/var/lib/orbit/instance-repositories/1.git",
+                            "clean_workspace": true,
+                            "t3": {
+                                "port": 3800,
+                                "listen": "10.44.0.7",
+                                "device": "t3",
+                                "title": "trial",
+                                "unit": "t3.service",
+                                "internal_port": 3773,
+                                "ready_seconds": 30,
+                                "url": "http://10.44.0.7:3800",
+                                "label": "trial / task-1",
+                                "t3": "/opt/orbit-agent/current/agent/bin/t3",
+                                "project_mark": "/home/agent/.config/orbit/t3-project",
+                                "condition": "/etc/orbit/instance"
+                            },
+                            "model_environment": {
+                                "path": "/home/agent/.config/orbit/model.env",
+                                "uid": 2750,
+                                "gid": 2750,
+                                "mode": "0600",
+                                "frame": "#orbit-model-environment"
+                            },
+                            "proxy_environment": {
+                                "NO_PROXY": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                                "no_proxy": "localhost,127.0.0.1,::1,10.253.0.1,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                            },
+                            "boot_files": [
+                                {
+                                    "path": "/etc/ld.so.conf.d/zz-orbit-browser.conf",
+                                    "content": "# Managed by Orbit.\n/opt/orbit-runtime/current/lib\n",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "path": "/etc/fonts/fonts.conf",
+                                    "content": "<?xml version=\"1.0\"?>\n<!DOCTYPE fontconfig SYSTEM \"urn:fontconfig:fonts.dtd\">\n<!-- Managed by Orbit. -->\n<fontconfig>\n  <dir>/opt/orbit-runtime/current/fonts</dir>\n  <cachedir prefix=\"xdg\">fontconfig</cachedir>\n  <alias><family>sans-serif</family><prefer><family>DejaVu Sans</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>serif</family><prefer><family>DejaVu Serif</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>monospace</family><prefer><family>DejaVu Sans Mono</family><family>Noto Color Emoji</family></prefer></alias>\n  <alias><family>emoji</family><prefer><family>Noto Color Emoji</family></prefer></alias>\n  <alias binding=\"same\"><family>Arial</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Helvetica</family><accept><family>Liberation Sans</family></accept></alias>\n  <alias binding=\"same\"><family>Times New Roman</family><accept><family>Liberation Serif</family></accept></alias>\n  <alias binding=\"same\"><family>Courier New</family><accept><family>Liberation Mono</family></accept></alias>\n</fontconfig>\n",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "path": "/etc/gitconfig",
+                                    "content": "# Managed by Orbit.\n[safe]\n\tdirectory = /srv/workspace\n",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "path": "/etc/ld.so.cache",
+                                    "content": "",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "source": "/etc/orbit/agent/ca.pem",
+                                    "path": "/usr/local/share/ca-certificates/orbit-managed-root-ca.crt",
+                                    "hash_directory": "/etc/ssl/certs",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "home": "/home/agent",
+                                    "directories": [
+                                        "/home/agent/.pki",
+                                        "/home/agent/.pki/nssdb"
+                                    ],
+                                    "path": "/home/agent/.pki/nssdb/pkcs11.txt",
+                                    "entry": "library=/opt/orbit-runtime/current/pkcs11/p11-kit-trust.so\nname=Orbit system trust\n\n",
+                                    "uid": 2750,
+                                    "gid": 2750,
+                                    "mode": "0600",
+                                    "directory_mode": "0700",
+                                    "library": "libp11-kit0",
+                                    "version": "0.26.2-2"
+                                },
+                                {
+                                    "path": "/etc/systemd/system.conf.d/91-orbit-browsers.conf",
+                                    "content": "# Managed by Orbit.\n[Manager]\nDefaultEnvironment=PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "path": "/etc/profile.d/91-orbit-browsers.sh",
+                                    "content": "# Managed by Orbit.\nexport PLAYWRIGHT_BROWSERS_PATH=0\n",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                },
+                                {
+                                    "path": "/etc/machine-info",
+                                    "content": "PRETTY_HOSTNAME=task-1.trial\n",
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644"
+                                }
+                            ],
+                            "files": [
+                                {
+                                    "path": "/etc/orbit/instance",
+                                    "before_start": true,
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644",
+                                    "content": "# Managed by Orbit.\nORBIT_INSTANCE_ID=2\nORBIT_INSTANCE=task-1\nORBIT_PROJECT=trial\nORBIT_PROJECT_ID=1\nORBIT_PROJECT_NAME=\"trial\"\nORBIT_NODE=beast\nORBIT_URL=\n"
+                                },
+                                {
+                                    "path": "/home/agent/.codex/config.toml",
+                                    "before_start": true,
+                                    "uid": 2750,
+                                    "gid": 2750,
+                                    "mode": "0600",
+                                    "content": "check_for_update_on_startup = false\nmodel_provider = \"orbit\"\n\n[model_providers.orbit]\nname = \"Orbit\"\nbase_url = \"http://10.253.0.1:8319/v1\"\nenv_key = \"ORBIT_MODEL_KEY\"\nwire_api = \"responses\"\nsupports_websockets = false\n\n[projects.\"/srv/workspace\"]\ntrust_level = \"trusted\"\n"
+                                },
+                                {
+                                    "path": "/home/agent/.claude.json",
+                                    "before_start": true,
+                                    "uid": 2750,
+                                    "gid": 2750,
+                                    "mode": "0600",
+                                    "json": {
+                                        "hasCompletedOnboarding": true
+                                    }
+                                },
+                                {
+                                    "path": "/home/agent/.t3/userdata/settings.json",
+                                    "before_start": true,
+                                    "uid": 2750,
+                                    "gid": 2750,
+                                    "mode": "0600",
+                                    "json": {
+                                        "linkedEnvironmentsEnabled": true,
+                                        "providerInstances": {
+                                            "claudeLow": {
+                                                "driver": "claudeAgent",
+                                                "displayName": "Claude, low effort",
+                                                "environment": [
+                                                    {
+                                                        "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                        "value": "low"
+                                                    }
+                                                ]
+                                            },
+                                            "claudeMedium": {
+                                                "driver": "claudeAgent",
+                                                "displayName": "Claude, medium effort",
+                                                "environment": [
+                                                    {
+                                                        "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                        "value": "medium"
+                                                    }
+                                                ]
+                                            },
+                                            "claudeHigh": {
+                                                "driver": "claudeAgent",
+                                                "displayName": "Claude, high effort",
+                                                "environment": [
+                                                    {
+                                                        "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                        "value": "high"
+                                                    }
+                                                ]
+                                            },
+                                            "claudeXhigh": {
+                                                "driver": "claudeAgent",
+                                                "displayName": "Claude, xhigh effort",
+                                                "environment": [
+                                                    {
+                                                        "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                        "value": "xhigh"
+                                                    }
+                                                ]
+                                            },
+                                            "claudeMax": {
+                                                "driver": "claudeAgent",
+                                                "displayName": "Claude, max effort",
+                                                "environment": [
+                                                    {
+                                                        "name": "CLAUDE_CODE_EFFORT_LEVEL",
+                                                        "value": "max"
+                                                    }
+                                                ]
+                                            }
+                                        }
+                                    }
+                                },
+                                {
+                                    "path": "/etc/systemd/system/t3.service.d/10-orbit-boot.conf",
+                                    "before_start": true,
+                                    "uid": 0,
+                                    "gid": 0,
+                                    "mode": "0644",
+                                    "content": "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"
+                                }
+                            ],
+                            "links": [
+                                {
+                                    "path": "/home/agent/.claude/CLAUDE.md",
+                                    "target": "/opt/orbit-agent/current/notes/package.md"
+                                },
+                                {
+                                    "path": "/home/agent/.codex/AGENTS.md",
+                                    "target": "/opt/orbit-agent/current/notes/package.md"
+                                }
+                            ]
+                        },
+                        "processes": []
+                    },
+                    "fleet": {
+                        "guests": {
+                            "gateway": "nested-gateway",
+                            "app-dev": "nested-app-dev",
+                            "app-prod": "nested-app-prod"
+                        },
+                        "layout": {
+                            "gateway": {
+                                "address": "10.232.2.11"
+                            },
+                            "app-dev": {
+                                "address": "10.232.2.12"
+                            },
+                            "app-prod": {
+                                "address": "10.232.2.13"
+                            }
+                        },
+                        "operator": {
+                            "address": "10.45.0.10",
+                            "hub": "10.45.0.1",
+                            "network": "10.45.0.0/24"
+                        },
+                        "checkout": {
+                            "path": "/home/orbit/orbit"
+                        },
+                        "proxy": {
+                            "HTTP_PROXY": "http://10.253.0.1:3128",
+                            "HTTPS_PROXY": "http://10.253.0.1:3128",
+                            "http_proxy": "http://10.253.0.1:3128",
+                            "https_proxy": "http://10.253.0.1:3128",
+                            "NO_PROXY": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24",
+                            "no_proxy": "localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24"
+                        }
+                    },
+                    "batch": "fresh-fleet",
+                    "case_ids": [
+                        "allow"
+                    ],
+                    "step": "Prove assigned batches-0"
+                }
+            ]
+        },
+        "execution_secrets": {
+            "step_0": {
+                "vault": "orbit-control-inputs",
+                "key": "development-deploy-operation-4-step-0"
+            }
+        },
+        "operation_id": 4,
+        "kind": "proof.command",
+        "node_id": 2
+    },
     "publish_copy": {
         "intent": {
             "check": 1,

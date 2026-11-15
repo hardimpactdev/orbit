@@ -52,47 +52,68 @@ final readonly class TaskCopyStart
         if (($replay = $this->idempotency->replay('instance.create')) !== null) {
             return $replay;
         }
-        $project = $group->project()->firstOrFail();
+        $read = $this->read($group->project()->firstOrFail());
+
+        return DB::transaction(fn (): Operation => $this->admitRead($group, $caller, $request, $read));
+    }
+
+    /**
+     * The reads a copy start needs before its transaction: the source facts, the default's container and its Node's ID map. Each can
+     * reach the forge or the Node, so a caller that starts copies in its own transaction, such as a proof, calls this first.
+     *
+     * @return array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null}
+     */
+    public function read(Project $project): array
+    {
         // The create captures missing source facts itself; that read can reach the forge, so it runs here, before the transaction.
         if ($project->source_facts_captured_at === null && $project->source_access !== ProjectSourceAccess::GhCli) {
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
-        $asleep = $this->assertDefaultRuns($project);
-        $host = $this->readIds($project);
 
-        return DB::transaction(function () use ($group, $caller, $request, $host, $asleep): Operation {
-            $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
-            app(TaskProvisionIntent::class)->assertProvisionable($group);
-            $project = $group->project;
-            $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->lockForUpdate()->first();
-            $runtime = $default?->runtime;
-            // A copy starts from a default with a seed that runs or sleeps: the clone copies the seed snapshot and never wakes it. A
-            // default stopped by hand or unfinished fails here, before any record.
-            if ($default === null || $runtime === null || $default->status !== InstanceState::Active || $runtime->seed_commit === null
-                || ($runtime->power_state !== InstanceRuntimePowerState::Running && ! ($asleep && InstanceSleep::asleep($default, $runtime) !== null))) {
-                throw new ResourceOperationException('tasks.copy_source_unavailable',
-                    "Project [{$project->slug}] has no running or sleeping default Instance with a seed snapshot to copy.", 409);
-            }
-            $name = TaskWorkspaceName::for($group);
-            if (Instance::query()->where('project_id', $project->id)->where('name', $name)->exists()) {
-                throw new ResourceOperationException('tasks.copy_name_taken', "Instance [{$name}] already exists in Project [{$project->slug}].", 409);
-            }
-            // The cap guards what a nested-fleet copy costs the Node (memory and its isolated ID range); a copy of another Project is a
-            // plain clone and counts as every clone does.
-            $limit = Config::integer('orbit.tasks.copies_max');
-            $live = self::live($default->node_id);
-            if ($runtime->incus_project === InstancePlacement::NestedProject && $live >= $limit) {
-                throw new ResourceOperationException('tasks.copy_capacity_full',
-                    "The Node holds {$live} task copies; the Gateway allows {$limit} at once.", 409, details: ['live' => $live, 'limit' => $limit]);
-            }
-            $this->assertIdRanges($default, $runtime, $host);
-            $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
-                new CreateInstanceData($project->id, $default->node_id, $name, null, null, $name), $caller, $request, $group);
-            $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
-            $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+        return ['asleep' => $this->assertDefaultRuns($project), 'host' => $this->readIds($project)];
+    }
 
-            return $operation;
-        });
+    /**
+     * Admits one copy for the group from the reads of {@see read()}. Call it in a transaction; a second copy in the same transaction
+     * counts the first as live and as an open create on the Node.
+     *
+     * @param  array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null}  $read
+     */
+    public function admitRead(Task $group, string $caller, ?string $request, array $read): Operation
+    {
+        $host = $read['host'];
+        $asleep = $read['asleep'];
+        $group = Task::topLevel()->with('project')->lockForUpdate()->findOrFail($group->id);
+        app(TaskProvisionIntent::class)->assertProvisionable($group);
+        $project = $group->project;
+        $default = Instance::query()->where('project_id', $project->id)->where('name', DefaultInstanceName::Name)->lockForUpdate()->first();
+        $runtime = $default?->runtime;
+        // A copy starts from a default with a seed that runs or sleeps: the clone copies the seed snapshot and never wakes it. A
+        // default stopped by hand or unfinished fails here, before any record.
+        if ($default === null || $runtime === null || $default->status !== InstanceState::Active || $runtime->seed_commit === null
+            || ($runtime->power_state !== InstanceRuntimePowerState::Running && ! ($asleep && InstanceSleep::asleep($default, $runtime) !== null))) {
+            throw new ResourceOperationException('tasks.copy_source_unavailable',
+                "Project [{$project->slug}] has no running or sleeping default Instance with a seed snapshot to copy.", 409);
+        }
+        $name = TaskWorkspaceName::for($group);
+        if (Instance::query()->where('project_id', $project->id)->where('name', $name)->exists()) {
+            throw new ResourceOperationException('tasks.copy_name_taken', "Instance [{$name}] already exists in Project [{$project->slug}].", 409);
+        }
+        // The cap guards what a nested-fleet copy costs the Node (memory and its isolated ID range); a copy of another Project is a
+        // plain clone and counts as every clone does.
+        $limit = Config::integer('orbit.tasks.copies_max');
+        $live = self::live($default->node_id);
+        if ($runtime->incus_project === InstancePlacement::NestedProject && $live >= $limit) {
+            throw new ResourceOperationException('tasks.copy_capacity_full',
+                "The Node holds {$live} task copies; the Gateway allows {$limit} at once.", 409, details: ['live' => $live, 'limit' => $limit]);
+        }
+        $this->assertIdRanges($default, $runtime, $host);
+        $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
+            new CreateInstanceData($project->id, $default->node_id, $name, null, null, $name), $caller, $request, $group);
+        $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
+        $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
+
+        return $operation;
     }
 
     /**

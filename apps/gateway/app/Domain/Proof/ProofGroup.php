@@ -5,16 +5,18 @@ declare(strict_types=1);
 namespace App\Domain\Proof;
 
 use App\Domain\Operations\OperationIdempotency;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmState;
+use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use Closure;
 
-/** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM, so a cancelled proof must cancel it. */
+/** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM or the copy, so every end of a run must cancel it. */
 final readonly class ProofGroup
 {
     /** The Activity trigger of the cancels that the proof machinery makes for the groups of its own runs. */
@@ -27,10 +29,11 @@ final readonly class ProofGroup
      * Admits one task operation under its own key, because the request key of proof:run belongs to the proof.run Operation.
      *
      * @param  Closure(): Operation  $start
+     * @param  string  $attempt  set apart a later admission of the same kind, such as the cancel after a failed destroy of the copy
      */
-    public function admit(Task $group, string $kind, Closure $start): Operation
+    public function admit(Task $group, string $kind, Closure $start, string $attempt = ''): Operation
     {
-        $key = 'proof:'.$group->id.':'.$kind;
+        $key = 'proof:'.$group->id.':'.$kind.$attempt;
 
         return app(OperationIdempotency::class)->under($kind, $key, hash('sha256', $key), $start);
     }
@@ -44,6 +47,19 @@ final readonly class ProofGroup
         $group = $owner->target_type === 'task_group' && $owner->kind === self::OwnerKind ? Task::topLevel()->find($owner->target_id) : null;
 
         return $group !== null && $this->holdsVm($group);
+    }
+
+    /**
+     * The key part of the next cancel of a group that owns a copy: each destroy of the copy that ended without success needs a cancel of
+     * its own, because the group stays bound to the copy and a replay of the earlier key would admit nothing. Empty for the first cancel.
+     */
+    private static function cancelAttempt(Task $group): string
+    {
+        $copy = Instance::query()->where('task_workspace_owner_id', $group->id)->value('id');
+        $failed = $copy === null ? 0 : Operation::query()->where('kind', 'instance.destroy')->where('target_type', 'instance')->where('target_id', $copy)
+            ->whereIn('status', OperationStatus::terminalValues())->where('status', '!=', OperationStatus::Succeeded)->count();
+
+        return $failed === 0 ? '' : ':'.$failed;
     }
 
     private function holdsVm(Task $group): bool
@@ -68,7 +84,8 @@ final readonly class ProofGroup
             return;
         }
         try {
-            $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, $trigger, null));
+            // A proof's copy holds only the commit under proof and the runner's evidence: its cancel discards them.
+            $this->admit($group, 'tasks.cancel', fn () => app(TaskCancelIntent::class)->start($group, $trigger, null, discard: true), self::cancelAttempt($group));
         } catch (ResourceOperationException $exception) {
             if (! in_array($exception->errorCode, ['tasks.not_cancellable', 'tasks.group_closed'], true)) {
                 throw $exception;

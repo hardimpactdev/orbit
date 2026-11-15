@@ -8,12 +8,12 @@ sequenceDiagram
   participant GH as GitHub
   participant Q as Proof queue<br/>FIFO
   participant SW as Swamp
-  participant VM as Proof VMs
+  participant CP as Proof copies
   CLI->>GW: Record the proof
-  %%> Record commit, authenticated caller and options, then queue admission. Only an active authenticated ci-runner Node uses the CI pool. Operator proofs join task admission. A proof Project with `nested_fleet` on refuses with `operation.kind_unavailable` (503) before the proof is recorded; a recorded proof that reaches task admission later fails with the same code.
+  %%> Record commit, authenticated caller and options, then queue admission. The proof Project is a nested-fleet Project whose tasks run as copies of its default Instance. Operator and CI proofs use the same copy places.
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
-  %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a VM.
+  %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a copy. Trust passes before any copy exists: a copy holds the nested Club key, so untrusted code never reaches one.
   CLI->>CLI: Expand base and head<br/>with the runner
   %%> The runner validates and expands fixtures, list vars, variants and batch setup. Compare its canonical per-case definitions by id. Command code changes select the whole file. Runner, selection code or selection list changes disable narrowing for every selected command. Tooling alone selects no commands. Unknown fixture keys and any planning doubt select the whole file.
   CLI->>GH: Publish the selection<br/>for this base and head
@@ -21,7 +21,7 @@ sequenceDiagram
   GW->>GH: Read the runner selection<br/>for this base and head
   %%> Accept only the exact version, head, merge base and cases file. Missing, expired, malformed or mismatched results select the whole file. The Gateway does not compare YAML definitions.
   GW->>GW: Record case ids<br/>and reasons
-  %%> Select added and changed cases and their variants, and users whose expanded dependencies changed. Deleted cases select nothing. Report changed, added, uses changed fixture, uses changed var, batch setup changed, command code changed or proof tooling changed. A verified zero-case selection succeeds without a VM.
+  %%> Select added and changed cases and their variants, and users whose expanded dependencies changed. Deleted cases select nothing. Report changed, added, uses changed fixture, uses changed var, batch setup changed, command code changed or proof tooling changed. A verified zero-case selection succeeds without a copy.
   GW->>GW: Plan selected cases<br/>in batches
   %%> Expand selected variant ids only. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id
@@ -37,54 +37,38 @@ sequenceDiagram
   %%> On failure:
   %%> - A child that nothing ends stops holding the place after its own deadline plus the existing 60-minute stale-hold bound. Without a deadline, use its last activity plus the longest shard budget and that bound. A timed-out lock holder uses its finish time, or last activity when absent, plus the bound.
   %%> - If that cancellation is lost, a held child of an ended or missing parent stops holding the place 60 minutes after its last activity. Admission past a stale child warns after commit and gateway:status reports gateway.proof_place_stale_child. Admission never changes the stale child.
-  %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. A full VM pool or stale base uses the same allowance and its existing VM wait step.
+  %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. No free copy place uses the same allowance.
+  GW->>GW: Count copy places
+  %%> Places: at most proof.copies (2), and never the last two copy places of the Node of the proof Project's default: min(proof.copies, copies_max - live copies - 2). With no place the proof waits, retrying every 20 seconds. Read the default and its Node's ID map before the admission transaction.
   GW->>GW: Balance whole batches<br/>by measured time
-  %%> Longest measured batch first; assign each to the least loaded VM. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
+  %%> Longest measured batch first; assign each to the least loaded copy. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
+  GW->>GW: Start one copy per shard
+  %%> In the admission transaction, each shard's task group starts an `instance.create` of a copy of the default's seed, the same start as a task copy, and records its run child.
   GW->>GW: Hold admitted child starts
-  %%> Keep unrelated Operations able to start while this proof hands over its children. Execution copies must all succeed before the first start is queued.
+  %%> Keep unrelated Operations able to start while this proof hands over its children. Execution copies must all succeed before the first start is queued. A child is not due until its copy is `active`: Orbit checks again every 20 seconds. A copy whose create or completion failed, or that is gone, fails its child with proof.run_failed; its cases are unrun.
   loop each admitted child, in order
-    GW->>SW: Start one run per VM
+    GW->>SW: Start one run per copy
     %%> Queue only the first start, then queue its successor 20 seconds after its answer, including refusal or definite job failure. A lost confirmation never permits resubmission. Its successor waits until recovery binds the run or the child ends, bounded by the released child's 600-second admission deadline. The next start is due 20 seconds after that resolution. Before submission, an ended or cancelled parent cancels the child through normal cancellation and group cleanup.
     %%> A held child has no native admission deadline. Release starts its normal 600-second admission budget and preserves its captured execution budget. A lost successor uses the existing watchdog: after the parent's allowance, all children quiet for 300 seconds makes unstarted children fail with proof.admission_interrupted and cleans up their groups.
   end
-  SW->>VM: Claim a place
-  %%> Fresh VM from the host base at the trusted commit. No CI keep-failed option.
-  SW->>VM: Read the workspace commit
+  SW->>CP: Bring in the commit
+  %%> One Ansible phase from the copy's Node, as `orbit` in the copy: fetch the commit by SHA from the public Orbit repository through the copy's own egress, check it out detached, and run each of the Project's development deploy steps whose inputs changed since the seed. A failed fetch fails by name after 60 s. No retry.
   SW->>SW: Check the workspace commit
+  %%> The workspace is at the commit under proof, or the run fails with proof.workspace_commit_mismatch before any case. Each batch's reset restarts and migrates the nested Gateway on this checkout, and the runner applies its grants and collections, so the fleet runs the tested code.
   loop each assigned batch, in order
-    SW->>VM: Restore the head checkout
-    %%> A prior flagged-case proof may have switched to the merge base. Restore the admitted head before planning the next batch.
-    SW->>VM: Read the command batches
+    SW->>CP: Read the command batches
     SW->>SW: Select the assigned batch
-    SW->>VM: Restore the base snapshot
-    SW->>VM: Run batch setup
-    SW->>VM: Run selected cases
-    opt CI replay after every head case passed
-      SW->>SW: Check head verdicts
-      SW->>VM: Check out the base
-      SW->>VM: Select replay cases
-      %%> Use the runner's case-level comparison, then keep fails_on_base: true. Unchanged flags and unflagged cases never replay, even under whole-file code or tooling selection.
-      SW->>VM: Remove the base copy
-      SW->>SW: Scope replay case ids
-      %%> Keep only cases admitted to this batch.
-      SW->>VM: Switch to the base
-      SW->>VM: Read nested commit
-      SW->>SW: Check nested commit
-      SW->>VM: Take head case files
-      %%> Copy cases, batches and the spec loader. Keep base runner and step implementations.
-      SW->>VM: Restore base snapshot
-      SW->>VM: Run replay setup
-      SW->>VM: Run replay cases
-      SW->>SW: Join replay verdicts
-      %%> Each replay must fail with cause assertion. A pass, another cause or missing evidence fails the proof with a CASE@merge-base verdict. Keep flags after merge; only a later case change opts them into another replay.
-    end
-    VM-->>SW: Verdict lines
+    SW->>CP: Reset the inner fleet
+    SW->>CP: Run batch setup
+    SW->>CP: Run selected cases
+    %%> A copy runs no replay of flagged cases (`fails_on_base: true`) on the merge base: the head's verdicts are the run's.
+    CP-->>SW: Verdict lines
     %%> The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that ends at its run budget keeps them; only the cases of the batches that did not end are unrun.
   end
-  SW->>VM: Release the place
-  %%> Delete after every outcome. Failed or missing cleanup schedules normal group cancellation. A live or releasing VM holds its place until confirmed deletion.
   SW-->>GW: Report verdicts<br/>full artifact
   %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts prevent a pass; a missing expected case is unrun.
+  GW->>GW: Remove the copy
+  %%> Every run end (passed, failed, cancelled, timed out, interrupted, never started) cancels its group with discard, which destroys the copy. A busy copy is asked again; the watchdog asks again for every group of a proof Operation that still owns a copy.
   GW->>GW: Merge all shard verdicts
   %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Preserve a native interrupted shard as inconclusive interrupted coverage, even with all passed rows. A completed failed case or a non-interrupted child that did not pass takes precedence and fails the proof. Keep every case verdict, including synthesized unrun rows. Cancellation and admission interruption keep their existing failure semantics.
   GW-->>CLI: One merged report

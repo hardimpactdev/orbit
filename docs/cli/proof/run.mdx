@@ -1,7 +1,7 @@
 ---
 title: "orbit proof:run"
 sidebarTitle: "proof:run"
-description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in a disposable test fleet inside a task VM, and reports a verdict for each case."
+description: "Prove the commands that a commit changes. Orbit picks the cases from the commit, runs them in the inner fleet of disposable copies of the Orbit container, and reports a verdict for each case."
 covers:
   - apps/gateway/app/Domain/Proof/ProofRunIntent.php
   - apps/gateway/app/Domain/Proof/ProofChildStarts.php
@@ -10,6 +10,10 @@ covers:
   - apps/gateway/app/Domain/Proof/ProofCommandProjection.php
   - apps/gateway/app/Domain/Proof/ProofRunSettlement.php
   - apps/gateway/app/Domain/Proof/ProofRunWatch.php
+  - apps/gateway/app/Domain/Proof/ProofCopies.php
+  - apps/gateway/config/proof.php
+  - swamp/workflows/workflow-operation-proof-run-copy.yaml
+  - swamp/ansible/tasks/instance-proof-checkout.yml
   - bin/ci-proof-run
 ---
 
@@ -27,7 +31,7 @@ The selection list maps the CLI, Gateway, SDK and native execution files for `no
 | --- | --- | --- |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
 | `--report-only` | off | Record reporting intent. Capacity waits and pool eligibility are the same with or without this flag. |
-| `--keep-failed` | off | For an operator proof, keep the VM of a failed run for 60 minutes. CI always deletes its VMs. The result names its VM, group and expiry. The Gateway cancels the group at expiry. Other proofs do not preempt it. A passing run deletes its VM. |
+| `--keep-failed` | off | Has no effect on a proof in copies: every run removes its copy. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 
@@ -39,7 +43,7 @@ In a terminal, an omitted commit is asked for with a text prompt. A noninteracti
 
 The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
-Built so far: the trust check, the case selection, the run in a task VM and the verdict of each case. The CI job `proof-run` is part of Required checks. Today it starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
+Built so far: the trust check, the case selection, the run in copies and the verdict of each case. The CI job `proof-run` is part of Required checks. Today it starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
 The CI wrapper waits up to 270 minutes, covering the two-hour admission budget and two-hour execution budget with 30 minutes of margin. Its Actions jobs allow 275 minutes. See [CI time budgets](/reference/implementation-loop) for the separate fast-check limits.
 
@@ -74,25 +78,27 @@ A child waiting its turn to start stays protected while its parent is open and w
 
 A proof that waits more than 120 minutes fails `proof.capacity_timeout`. This applies to operator and CI parents, including an older parent blocking the queue. Ended or cancelled parents and proofs with nothing to prove leave the queue. Two predecessors of up to two hours each exceed the allowance: a third proof behind them fails by the wait and must be run again.
 
-The front CI proof takes every free CI VM place on hosts with usable bases, up to its number of batches. It needs at least one place. A full VM pool or stale base uses the same admission allowance and keeps the step "Wait for VMs to be released".
+Each run of a proof gets a copy of the proof Project's default Instance, the Orbit container with its inner fleet. A proof takes at most two copies at once (`proof.copies`), and it never takes the last two copy places of the default's Node, so task groups can still start: places are `min(proof.copies, orbit.tasks.copies_max - live copies - 2)`. With no place, the proof waits with the step "Wait for a free copy place" and retries every 20 seconds, within the same two-hour allowance. Operator and CI proofs follow the same rule.
 
-Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded VM. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
+Orbit reads the cases at the trusted commit and expands their variant ids. It sums measured case durations from prior reports for each whole batch, then assigns the longest batches to the least loaded copy. A batch never splits. Unseen cases use the median measured duration, or one second when no measurements exist.
 
-Each VM's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more, the proof waits for another CI place, as long as some usable place is taken. With every usable place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
+Each copy's share gets a run budget from its batches, at most two hours. When a share of more than one batch needs more and a copy place is still taken by another work, the proof waits for another place. With every place free, it runs anyway. Orbit records the verdicts of each batch as the batch ends, so a share that reaches its budget keeps them; only the cases of its unfinished batches are `unrun`.
+
+Admission starts every copy in its transaction, after the trust check passed: a copy holds the inner fleet's Club key, so code that Orbit does not trust never reaches one. Each copy is an `instance.create` of the default's seed, owned by the run's task group. The group has one subtask row and no agent thread.
 
 Orbit starts the children of one proof in order. It queues the first start after all execution copies succeed, then queues each next start 20 seconds after the previous start answers. A refusal or definite start failure still lets the siblings start.
 
 A start with no confirmed answer is never submitted again. Its next child waits until recovery finds its run or it ends. The released child's 600-second admission deadline bounds that wait. Orbit then queues the next child 20 seconds after resolution. If that advance is missed, the next reconciliation pass repairs it and counts the delay from that pass.
 
-This leaves room for unrelated Operations to start between children. The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released.
+This leaves room for unrelated Operations to start between children. The [admission clock](/reference/operations#direct-swamp-starts) begins when a child is released. A child is released only when its copy is `active`; Orbit checks again every 20 seconds. A copy whose create or completion failed, or that is gone, fails its child with `proof.run_failed`, and its cases are `unrun`.
 
-Each allocated VM starts from the host base with the task checkout at the tested commit. Orbit checks that commit, restores the nested fleet, and runs the VM's assigned batches in order. Before each batch it restores the head checkout, because replaying a changed case with `fails_on_base: true` may switch it to the merge base. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
+In each copy, the run first brings in the commit: one Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository through the copy's own network route, as `orbit`, and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run by name; nothing retries. The phase then runs each of the Project's development deploy steps whose inputs changed since the seed, as a deployment does, so `vendor/` and the generated files belong to the commit. Orbit checks that the workspace is at the commit, then runs the copy's assigned batches in order. Before each batch the copy's inner fleet goes back to `base`, which restarts the nested Gateway on the checkout and migrates it forward, and the runner applies the checkout's Swamp grants and Ansible collections. So the fleet runs the code of the commit, not of the seed. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
-Operator proofs use one VM per command through the task pool's FIFO admission. Their optional `--keep-failed` retains a failed VM for 60 minutes. CI ignores that option and always deletes its VMs.
+A proof in copies does not replay flagged cases on the merge base (`fails_on_base: true`): that replay runs only on a task VM.
 
-Every run releases its VM after success or failure. If cleanup fails or a run never starts, normal group cancellation deletes the VM. One live or releasing VM holds one place until deletion is confirmed.
+Every run end removes its copy: Orbit cancels the run's group with discard, which destroys the copy. That holds after a pass, a failure, a cancel, a timeout, an interruption and a run that never started. A copy that an Operation still holds is asked again. After a Gateway restart the queued cancel runs, and the watchdog asks again for every group that still owns a copy.
 
-Orbit reads the full case reports, checks the expected case identities and merges every VM’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without claiming a VM.
+Orbit reads the full case reports, checks the expected case identities and merges every copy’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without a copy.
 
 ## The execution switch
 
@@ -106,7 +112,7 @@ A run reported as `interrupted` keeps that status and records `outcome: interrup
 
 The CI summary and receipt preserve `interrupted` and the job exits nonzero. An interrupted outcome never passes, including with all passed rows. Malformed coverage or a nonzero CLI exit cannot pass either.
 
-The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The VM is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
+The result names the commit, each case with its command, selection reason, verdict and duration, and the uncovered paths. The `program` of a case is the cases file and the case id, `swamp/proof/firewall/allow.cases.yaml#new-restricted-allow`; a `failed` or `unrun` case also carries its cause and the failed checks. The copy is destroyed after the run, so the evidence lasts only as long as a receipt store is not built; the verdicts stay in the result.
 
 | Outcome | Exit status |
 | --- | --- |
@@ -117,11 +123,11 @@ The result names the commit, each case with its command, selection reason, verdi
 | You pressed Ctrl-C. | `130`. |
 | The process received SIGTERM. | `143`. |
 
-A child whose turn has not come is cancelled without submission if its proof was cancelled or ended. Ctrl-C, or `operation:cancel` on the proof, closes the parent at once and requests cancellation of its runs and groups. Children can continue until cancellation and VM destruction finish. Each group ends when its run ends.
+A child whose turn has not come is cancelled without submission if its proof was cancelled or ended. Ctrl-C, or `operation:cancel` on the proof, closes the parent at once and requests cancellation of its runs and groups. Children can continue until cancellation and the copy's destroy finish. Each group ends when its run ends.
 
 ## After the run
 
-The run destroys its VM after success and after failure, and Orbit records the end of the group from that step. If the destroy step did not run or failed, because the run was cancelled, timed out or failed early, Orbit cancels the group the normal way, which destroys the VM. The verdicts stay as they are. If that cancel fails, the group stays for another `task:cancel`.
+Orbit cancels the run's group when the run ends, however it ends, which destroys the copy. The verdicts stay as they are. If that cancel fails, the group stays for another `task:cancel --discard`.
 
 A repeat starts a new run, because a proof checks the commit as it is now. The same `--idempotency-key` returns the original run instead of starting another.
 
@@ -131,7 +137,7 @@ A repeat starts a new run, because a proof checks the commit as it is now. The s
 
 ## Errors
 
-The request answers at once with the proof Operation. The checks of the commit, the selection of the cases and the admission run after that, in a queue job. A refusal of the admission is therefore on the proof Operation, with its code and message, and the command prints it when it follows the proof. The request itself refuses only `proof.swamp_unavailable`, `operation.kind_unavailable` for a proof Project with `nested_fleet` on, a start that the extension, the access check or the idempotency key refuses, and `proof.commit_invalid`, which the command checks before any request.
+The request answers at once with the proof Operation. The checks of the commit, the selection of the cases and the admission run after that, in a queue job. A refusal of the admission is therefore on the proof Operation, with its code and message, and the command prints it when it follows the proof. The request itself refuses only `proof.swamp_unavailable`, a start that the extension, the access check or the idempotency key refuses, and `proof.commit_invalid`, which the command checks before any request.
 
 | Code | Meaning |
 | --- | --- |
@@ -141,13 +147,12 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |
 | `proof.path_unmapped` | A changed path matches no line of the selection list. The message names the path. |
 | `proof.cases_failed` | A selected case failed or did not run. The result holds each verdict. |
-| `proof.workspace_commit_mismatch` | The workspace of a run's VM was not at the commit under proof when the run checked it, before any case, for example because the import of the commit failed and left a clone of main. No case ran. The result names the commit that was expected and the one the VM had (`workspace.expected`, `workspace.found`, empty when the VM printed none), and the human output prints both. A VM that cannot be reached at all fails as `proof.run_failed`. Run the proof again. |
-| `proof.run_failed` | The VM or the test fleet of a run did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
+| `proof.workspace_commit_mismatch` | The workspace of a run's copy was not at the commit under proof when the run checked it, before any case. No case ran. The result names the commit that was expected and the one the copy had (`workspace.expected`, `workspace.found`, empty when it printed none), and the human output prints both. A failed fetch of the commit fails as `proof.run_failed`. Run the proof again. |
+| `proof.run_failed` | The copy, its commit or its inner fleet did not become ready, or its cases printed no verdict. Every selected case of that command is `unrun`. |
 | `proof.queue_unavailable` | The queue refused the job that admits the proof. No case ran. Run the command again. |
 | `proof.admission_interrupted` | The job that admits the proof was lost before it started the runs. No case ran, and each selected case is `unrun`. Run the command again. |
-| `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof, a VM place or a usable base. No case ran. |
+| `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof or a copy place. No case ran. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
-| `operation.kind_unavailable` | The proof Project has `nested_fleet` on; the task-workspace entry of the placement rule refuses it. The request refuses before it records the proof. A proof recorded earlier fails with this code when it reaches task admission. No case ran. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
 | `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |
 | `proof.swamp_unavailable` | No active Swamp Node exists to run the proof. |

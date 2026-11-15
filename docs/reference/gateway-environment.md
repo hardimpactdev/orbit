@@ -60,7 +60,7 @@ The Gateway reads [Swamp run output](/reference/tasks#swamp-run-output) with the
 | `ORBIT_SWAMP_PROOF_CLUB_API_KEY` | Dedicated club credential for disposable proof topologies. Keep its value in the Gateway environment. |
 | `ORBIT_NESTED_FLEET_CLUB_API_KEY` | The Swamp Club key of nested fleets' Gateways, separate from the proof key. Written by `gateway:nested-fleet-club-key:install`; each run start reads this file. Empty: a nested-fleet container starts without it. |
 
-Two provisions receive a names-only execution copy: Project 62 (`swamp-proof`), and the task group that a `proof:run` creates. Every other task, in the Orbit Project too, gets none.
+Two provisions receive a names-only execution copy: Project 62 (`swamp-proof`), and the task group that a `proof:run` on a task VM creates. Every other task, in the Orbit Project too, gets none. A `proof:run` in copies gets no proof credential: each copy's nested Gateway gets the nested-fleet key at its start.
 
 Proof provision writes the credential to `/home/orbit/.config/swamp/club-api-key` inside the owned Task VM, mode `0600` for `orbit`, in a `0700` directory. Three pinned official `@swamp/ssh exec` argument lists run with sudo: `install -d` makes the directory, `rm -f` drops a previous file or link, and `install … /dev/stdin` writes the token. The native parent sends the token only on SSH stdin. Run history records that the step had stdin, never the value; neither the Operation input nor its result contains it. Each step has a 10-second dispatch budget and runs under `timeout 30`. A missing credential refuses proof placement. Normal task cancellation destroys the VM and its private filesystem.
 

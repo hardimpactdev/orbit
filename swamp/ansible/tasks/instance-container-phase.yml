@@ -923,6 +923,14 @@
       ansible.builtin.command: { argv: "{{ as_root + ['rm', '-f', '--', container_bundle] }}" }
       changed_when: false
 
+# A proof run in a copy brings the commit under proof into the copy's workspace (tasks/instance-proof-checkout.yml).
+- name: Bring in the commit under proof
+  tags: [proof_checkout]
+  when: phase == 'proof_checkout'
+  ansible.builtin.include_tasks:
+    file: tasks/instance-proof-checkout.yml
+    apply: {tags: [always]}
+
 # A development deploy step with `inputs` runs only when they or its command changed since its last passed run in this workspace
 # (docs/cli/instance/container/deploy-default.mmd). Its digest is the sha256 of its command's digest and the Git object IDs of its
 # inputs at the checked-out commit; a path missing at the commit gives no digest, so the step runs. The record is the workspace's own:
@@ -930,9 +938,9 @@
 # the step moves to `done` when it passes. The names to skip go to the run folder, where "Read the steps to skip" reads them for
 # the steps' guard. A deployment with no step that has `inputs` reads and writes none of it.
 - name: Decide which deploy steps run
-  tags: [checkout]
+  tags: [checkout, proof_checkout]
   when: >-
-    phase == 'checkout' and intent.deployment is defined
+    phase in ['checkout', 'proof_checkout'] and intent.deployment is defined
     and intent.deployment.steps | selectattr('inputs') | list | length > 0
   vars:
     deploy_steps_watched: "{{ intent.deployment.steps | selectattr('inputs') | list }}"
@@ -1023,8 +1031,8 @@
 # entry between its listing and its change. An entry that is gone needs nothing; any other error fails the pass and names its path.
 # Each entry is opened without following a link, so a link that replaces an entry never changes the mode of what it points at.
 - name: Keep the workspace writable for its group
-  tags: [checkout, processes]
-  when: phase in ['checkout', 'processes']
+  tags: [checkout, processes, proof_checkout]
+  when: phase in ['checkout', 'processes', 'proof_checkout']
   ansible.builtin.command:
     argv: "{{ as_root + ['python3', '-I', '-c', workspace_modes_program, container.workspace] }}"
   vars:

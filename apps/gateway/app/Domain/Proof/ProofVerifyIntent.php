@@ -89,7 +89,7 @@ final readonly class ProofVerifyIntent
      *
      * @return array<string,mixed>
      */
-    private function captureCopy(Task $group, TaskInstanceWorkspace $copy, string $command): array
+    public function captureCopy(Task $group, TaskInstanceWorkspace $copy, string $command): array
     {
         if (! $group->project->nested_fleet) {
             throw new ResourceOperationException('proof.wrong_project', 'Proof cases in a task copy need a Project with a nested fleet.', 409);

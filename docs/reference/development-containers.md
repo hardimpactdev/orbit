@@ -2635,6 +2635,8 @@ Gap: which refusal comes first on a full Node for nested-fleet clones, and its e
 
 Six phase task files keep the fleet of a nested-fleet Instance. The deployment of a nested-fleet default calls the check, the start, the refresh and the resume through the tags `fleet_check`, `fleet_start`, `fleet_refresh` and `fleet_resume` of `instance-container.yml`. The create of its clone, and the [start of a stopped clone](#a-stopped-nested-fleet-clone-starts), call the check and the resume ([A clone starts its fleet](#a-clone-starts-its-fleet)). The proof of a task copy calls the reset through the tag `fleet_reset` ([Reset](#reset)). No flow calls the rules alone yet.
 
+A [`proof:run`](/cli/proof/run#the-run) in a copy first runs the phase `proof_checkout` (`tasks/instance-proof-checkout.yml`). As `orbit`, it fetches the commit under proof by SHA from the public Orbit repository with the deploy commands' environment, 60 s and no retry, and checks it out detached. It then names the development deploy steps whose inputs did not change, as a deployment's checkout does.
+
 Each phase runs on the Node and reaches the inner Incus with `incus exec` into the Instance container. Their input is `intent.container` and `intent.fleet`; the header of `swamp/ansible/tasks/instance-fleet.yml` defines it. The Gateway fills `intent.fleet` (`NestedFleetIntent`) from the fleet constants of task VMs, with the commit of the old seed, for the deployment of the default and the create of its clone.
 
 | Phase | Task file | What it does |

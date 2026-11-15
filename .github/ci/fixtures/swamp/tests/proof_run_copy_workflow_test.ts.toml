@@ -1,0 +1,15 @@
+order = 1500
+source_sha256 = "c316af26c301e449c8b2888030d7cbf4e796a805f10224082098fd2ef5949f5f"
+cases = [
+  "the batches run when every deploy step was skipped, and when the Project has none",
+  "a failed deploy step, fetch or skip list runs no batch; the run folder goes and the report runs",
+  "a workspace at another commit runs no batch",
+]
+file = "swamp/tests/proof_run_copy_workflow_test.ts"
+cost = 1
+inputs = [
+  "swamp/tests/_support/swamp_expression.ts",
+  "swamp/tests/_support/swamp_workflow.ts",
+  "swamp/tests/fixtures/workflow-start-intents.json",
+  "swamp/workflows/workflow-operation-proof-run-copy.yaml",
+]

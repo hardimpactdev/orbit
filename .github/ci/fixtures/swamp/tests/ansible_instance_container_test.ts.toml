@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "29ad35819e8849e0cc2c3cd25794a82c22d398cb5ee9a04b395e3088fbf66a6b"
+source_sha256 = "0ef789401cb0b59d5ad0485b15ac8cced63c18b902866c1afd63118366988913"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -8,6 +8,7 @@ cases = [
   "a retake that stopped between the delete and the rename is finished first; any other leftover retake goes",
   "a deployment sends only what the workspace lacks; a force-moved branch, local commits and a first build get what the checkout needs",
   "a deploy step with inputs is named unchanged after it passed at the same inputs, and due again when one moves or is missing",
+  "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
   "a deployment checks out the branch's new commit, seeds it and deletes the older seed; dirty or diverged work refuses",
   "one play of a merged deploy step runs its phases like separate plays, and a phase's handlers run before the next phase",
   "a start points php at the Project's PHP version, and removes the link of a Project without PHP",
@@ -99,6 +100,9 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 4092
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The proof checkout of a copy (21s locally, run in full before the PR): the file sits at the 8-shard PR limit. The PR keeps the
+  # workflow's expressions in workflow_start_resolution_test.ts and the Gateway's input in ProofRunCopiesTest.php.
+  "a proof checkout fetches the commit by SHA from the public repository, checks it out detached and names the due deploy steps; a missing commit fails by name",
   # The sleep and wake of defaults and nested-fleet Instances in the start part (20s, 56s and 42s locally, run in full before the PR): the
   # file sits at the 8-shard PR limit, so any added cost defers it whole. The PR keeps the swap close (each recorded cgroup that still
   # exists, none outside the container, the record removed) and the nested never-stop of a sleep in ansible_instance_container_power_test.ts.
@@ -178,6 +182,7 @@ inputs = [
   "swamp/ansible/tasks/instance-bridge-rules.yml",
   "swamp/ansible/tasks/instance-container-*.yml",
   "swamp/ansible/tasks/instance-fleet.yml",
+  "swamp/ansible/tasks/instance-proof-checkout.yml",
   "swamp/ansible/tasks/instance-network-nic-check.yml",
   "swamp/ansible/tasks/instance-host.yml",
   "swamp/ansible/tasks/instance-container-files.yml",

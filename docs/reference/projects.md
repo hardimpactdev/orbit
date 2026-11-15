@@ -26,7 +26,7 @@ Every Instance of a Project with the flag on is a container in the nested Incus 
 - the Node is not on the [build list](/reference/development-containers#the-build-list): `instance.nested_fleet_container_required` (409);
 - the result would be a host checkout, such as a clone of a default that is a checkout: the same code.
 
-Every other path refuses such a Project with `operation.kind_unavailable` (503), because it makes no such container. These paths are clone, register and migrate, `proof:run` for the proof Project, and task work that needs a new workspace: provision, prep, build, turn, prep fix and review round, also after a wait. Each refusal comes before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
+Every other path refuses such a Project with `operation.kind_unavailable` (503), because it makes no such container. These paths are clone, register and migrate, and task work that needs a new task VM workspace: provision, prep, build, turn, prep fix and review round, also after a wait. A `proof:run` of such a Project runs in [copies](/cli/proof/run#the-run). Each refusal comes before any record: no Instance, runtime, task place, Node identity, capacity wait or Operation. An Operation that already waited when the flag was turned on ends `failed` with the same code. A Project with the flag off is not affected.
 
 The same placement rule also says where a new Instance lives:
 

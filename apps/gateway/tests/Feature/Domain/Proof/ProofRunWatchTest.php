@@ -460,7 +460,7 @@ it('keeps the existing query count for proofs without holds while repairing held
     }
     app(ProofRunWatch::class)->sweep();
     Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $held->id && $job->delay->equalTo(now()->addSeconds(20)));
-})->with(['young' => [60, 2], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 3]]);
+})->with(['young' => [60, 3], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 4]]);
 
 /** The reviewer's lost queued start, still held even though its parent has ended. */
 function watchStrandedHeld(Operation $proof, int $age = 90 * 86400): Operation
@@ -516,7 +516,7 @@ it('recovers stranded children without touching an open parent child, a released
     Queue::assertPushed(CancelProofGroup::class, 1);
 })->with(['open', 'released', 'bound']);
 
-it('keeps the two empty-fleet reads and folds stranded children into the existing watchdog selection', function (): void {
+it('keeps the three empty-fleet reads (open proofs, kept VMs, copies to release) and folds stranded children into the existing watchdog selection', function (): void {
     Queue::fake();
     $node = watchNode();
     $queries = [];
@@ -524,7 +524,7 @@ it('keeps the two empty-fleet reads and folds stranded children into the existin
         $queries[] = $query->sql;
     });
     app(ProofRunWatch::class)->sweep();
-    expect($queries)->toHaveCount(2);
+    expect($queries)->toHaveCount(3);
     $empty = count($queries);
     $proof = watchProof($node, 60);
     $child = watchStrandedHeld($proof, 60);
