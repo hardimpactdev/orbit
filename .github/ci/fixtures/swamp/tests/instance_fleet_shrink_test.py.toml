@@ -1,9 +1,9 @@
 order = 1481
-source_sha256 = "8e0f3af9000b9e7e3c62d1ccf0977d76330c5ab224dd58e011482b36161399d0"
+source_sha256 = "3a655bbb0344eb9a582afce0bb072cde4080c68b92d920579e3e17b0c5cba95c"
 cases = [
   "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
   "test_the_package_files_in_apt_archives_go_and_the_lock_stays",
-  "test_each_journal_is_trimmed_to_what_journald_keeps_there",
+  "test_the_cache_removal_follows_no_symlink_out_of_the_disk",
   "test_a_record_that_is_no_object_is_no_record",
   "test_a_record_of_an_older_rule_is_due_once",
   "test_a_file_that_differs_from_the_shipped_one_is_never_replaced",
@@ -27,5 +27,5 @@ inputs = [
 "test_a_failed_dedupe_fails_the_run_writes_no_record_and_stays_due" = 1
 "test_the_package_files_in_apt_archives_go_and_the_lock_stays" = 1
 "test_a_record_of_an_older_rule_is_due_once" = 1
-"test_each_journal_is_trimmed_to_what_journald_keeps_there" = 1
+"test_the_cache_removal_follows_no_symlink_out_of_the_disk" = 1
 "test_a_record_that_is_no_object_is_no_record" = 1

@@ -14,9 +14,8 @@ Three parts, in this order:
   Each is replaced atomically by a link to the file (a new link beside it, then a rename over it), so no reader ever finds the path
   missing or partial.
 - Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
-  91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. Each journal is trimmed to the 64 MiB
-  that journald keeps there (zz-orbit-nested-journal.conf), with `journalctl --root`: the containers are stopped, so journald would
-  trim it only after the new `base` was taken.
+  91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. No path that leaves the disk through
+  a symlink is followed.
 - Dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent (the kernel
   compares the bytes before it shares them, so a file never changes). It needs a btrfs pool and the `duperemove` package, which
   instance_shape_tools.py keeps in the container; without it the first two parts run.
@@ -46,8 +45,6 @@ RULE = '2'
 # Caches of a nested container that the shrink empties: apt's downloaded package files. apt keeps no new ones (the fleet file
 # 91orbit-nested-package-files); the egress proxy serves them again when apt needs one.
 CACHES = ('var/cache/apt/archives',)
-# The journal size that zz-orbit-nested-journal.conf gives journald in each nested container.
-JOURNAL = '64M'
 
 
 def rootfs(pools, name):
@@ -111,7 +108,7 @@ def relink(disk):
 
 
 def empty_caches(disk):
-    """Remove the package files in each cache folder of `disk`, and trim its journal to the size journald keeps there."""
+    """Remove the package files in each cache folder of `disk`, following no symlink."""
     for cache in CACHES:
         for folder in (disk / cache, disk / cache / 'partial'):
             if any(part.is_symlink() for part in [folder, *folder.parents] if disk in part.parents) or not folder.is_dir():
@@ -119,8 +116,6 @@ def empty_caches(disk):
             for path in folder.iterdir():
                 if path.name.endswith('.deb') and path.is_file() and not path.is_symlink():
                     path.unlink()
-    if (disk / 'var/log/journal').is_dir() and not (disk / 'var/log/journal').is_symlink():
-        subprocess.run(['timeout', '120', 'journalctl', f'--root={disk}', f'--vacuum-size={JOURNAL}'], stdout=sys.stderr, stderr=sys.stderr, check=True)
 
 
 def check(record, pools, names):
