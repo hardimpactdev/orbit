@@ -213,28 +213,63 @@ it('never holds views longer than one window, whatever end the ledger names', fu
 });
 
 it('keeps the count when two processes take handshakes at the same time', function (): void {
+    // A long lock wait for this test only: under load the 50 ms wait can run out, and that connect then goes ahead uncounted
+    // by design (see the next test). With room to wait, a count lost while the lock is held is the only way to miss 400.
     $path = sys_get_temp_dir().'/orbit-ledger-'.bin2hex(random_bytes(4)).'/ledger.json';
     $children = [];
     foreach ([1, 2] as $_) {
         $pid = pcntl_fork();
         if ($pid === 0) {
-            $ledger = new SwampHandshakes($path);
-            $socket = new HandshakeCountingServe(limit: 1_000);
-            for ($index = 0; $index < 200; $index++) {
-                $ledger->connect($socket, readEndpoint('run-token'), 15, SwampCaller::Start);
+            // A child never returns into the suite: SIGKILL when all 200 went through, SIGABRT when one threw.
+            $signal = SIGABRT;
+            try {
+                $ledger = new SwampHandshakes($path, lockMilliseconds: 10_000);
+                $socket = new HandshakeCountingServe(limit: 1_000);
+                for ($index = 0; $index < 200; $index++) {
+                    $ledger->connect($socket, readEndpoint('run-token'), 15, SwampCaller::Start);
+                }
+                $signal = SIGKILL;
+            } finally {
+                posix_kill(getmypid(), $signal);
             }
-            posix_kill(getmypid(), SIGKILL);
         }
         $children[] = $pid;
     }
+    $signals = [];
     foreach ($children as $pid) {
         pcntl_waitpid($pid, $status);
+        $signals[] = pcntl_wifsignaled($status) ? pcntl_wtermsig($status) : null;
     }
+    expect($signals)->toBe([SIGKILL, SIGKILL]);
 
     $state = json_decode((string) file_get_contents($path), true);
     unlink($path);
     rmdir(dirname($path));
     expect($state['callers'])->toBe(['run:start' => 400]);
+});
+
+it('connects uncounted, and counts nothing, while another process holds the ledger lock past the wait', function (): void {
+    $path = sys_get_temp_dir().'/orbit-ledger-'.bin2hex(random_bytes(4)).'/ledger.json';
+    $ledger = new SwampHandshakes($path);
+    $ledger->connect($this->serve, readEndpoint('run-token'), 15, SwampCaller::Start);
+    $before = (string) file_get_contents($path);
+    $holder = fopen($path, 'c+');
+    flock($holder, LOCK_EX);
+    try {
+        $ledger->connect($this->serve, readEndpoint('run-token'), 15, SwampCaller::Start);
+        $ledger->connect($this->serve, readEndpoint(), 2, SwampCaller::Dependencies);
+    } finally {
+        flock($holder, LOCK_UN);
+        fclose($holder);
+    }
+    $after = (string) file_get_contents($path);
+    unlink($path);
+    rmdir(dirname($path));
+
+    // Both went ahead, a view too: fail open. The ledger kept only the first, counted handshake.
+    expect($this->serve->connects)->toBe(['run-token' => 2, 'read-token' => 1])
+        ->and($after)->toBe($before)
+        ->and(json_decode($after, true)['callers'])->toBe(['run:start' => 1]);
 });
 
 it('logs the handshakes of a minute by token and caller when the next minute begins', function (): void {

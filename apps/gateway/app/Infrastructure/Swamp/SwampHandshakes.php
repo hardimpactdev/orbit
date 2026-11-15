@@ -21,9 +21,9 @@ use Throwable;
  * `Limit - ViewShare` stay for priority callers whatever screens read. Priority callers always connect: serve decides for them.
  *
  * The ledger is one small JSON file under `ORBIT_HOME/cache`, outside every release folder, guarded by `flock`. The lock covers a
- * read and a write of that file only, never a network call or a log write. A lock not held within `LockMilliseconds`, a file that
- * cannot be opened, or any other error lets the caller connect as if there were no ledger (fail open), with one warning per
- * process. A corrupt or oversized file is replaced. A refused upgrade (429) holds views until its `Retry-After`; it never holds a
+ * read and a write of that file only, never a network call or a log write. A lock not held within its wait (`LockMilliseconds`
+ * unless a test sets another), a file that cannot be opened, or any other error lets the caller connect as if there were no
+ * ledger (fail open), with one warning per process. A corrupt or oversized file is replaced. A refused upgrade (429) holds views until its `Retry-After`; it never holds a
  * priority caller. The first handshake of a new minute logs the counts of the minute before, by token and caller.
  */
 final class SwampHandshakes
@@ -36,6 +36,7 @@ final class SwampHandshakes
     /** Serve's window of 60 s plus one second for clock and transit drift. */
     public const int WindowSeconds = 61;
 
+    /** The longest a connect waits for the ledger lock before it goes ahead uncounted. */
     public const int LockMilliseconds = 50;
 
     private const int MaxFileBytes = 8_192;
@@ -50,7 +51,7 @@ final class SwampHandshakes
 
     private ?int $lastRetryAfter = null;
 
-    public function __construct(private readonly string $path) {}
+    public function __construct(private readonly string $path, private readonly int $lockMilliseconds = self::LockMilliseconds) {}
 
     public static function path(string $orbitHome): string
     {
@@ -168,7 +169,7 @@ final class SwampHandshakes
             if ($handle === false) {
                 throw new \RuntimeException('The ledger could not be opened.');
             }
-            $deadline = microtime(true) + self::LockMilliseconds / 1000;
+            $deadline = microtime(true) + $this->lockMilliseconds / 1000;
             while (! ($locked = flock($handle, LOCK_EX | LOCK_NB))) {
                 if (microtime(true) >= $deadline) {
                     throw new \RuntimeException('The ledger lock was not free.');
