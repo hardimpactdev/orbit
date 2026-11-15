@@ -1,0 +1,62 @@
+---
+# The power helper of development containers (docs/reference/prepared-restore.md#the-power-helper). The app-dev convergence includes
+# this file, and so will the sleep and wake phases, so a run never depends on when the role last converged. Every caller runs the
+# helper as the transient unit orbit-instance-power-<id>.service; the drop-in below holds the unit's properties for every such name,
+# so no caller repeats them. The capability probe runs when the helper changed or its manifest is missing; a primitive that fails
+# means no plan, never a pretend install.
+- name: Make the folders of the power helper
+  ansible.builtin.file: { path: "{{ item.path }}", state: directory, owner: root, group: root, mode: "{{ item.mode }}" }
+  loop:
+    - { path: /usr/local/libexec, mode: "0755" }
+    - { path: /var/lib/orbit/hibernation, mode: "0755" }
+    - { path: /var/lib/orbit/hibernation/instances, mode: "0700" }
+    - { path: /etc/systemd/system/orbit-instance-power-.service.d, mode: "0755" }
+  loop_control: { label: "{{ item.path }}" }
+
+- name: Write the power helper
+  ansible.builtin.copy:
+    src: files/instance-container-power.py
+    dest: /usr/local/libexec/orbit-instance-power
+    owner: root
+    group: root
+    mode: "0755"
+  register: power_helper
+
+# Root with only the capabilities the kernel requires: CAP_SYS_PTRACE for pagemap and process_vm_readv, CAP_SYS_NICE for
+# process_madvise and CAP_DAC_OVERRIDE for cgroup files that the container's root owns.
+- name: Write the properties of every power helper unit
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/orbit-instance-power-.service.d/orbit.conf
+    owner: root
+    group: root
+    mode: "0644"
+    content: |
+      [Service]
+      Type=exec
+      User=root
+      CapabilityBoundingSet=CAP_SYS_PTRACE CAP_SYS_NICE CAP_DAC_OVERRIDE
+      AmbientCapabilities=
+      NoNewPrivileges=yes
+      PrivateTmp=yes
+      ProtectSystem=strict
+      ProtectHome=yes
+      ReadWritePaths=-/var/lib/orbit/hibernation -/dev/shm/orbit/hibernation /sys/fs/cgroup
+  register: power_helper_unit
+
+- name: Load the power helper unit properties
+  ansible.builtin.systemd_service: { daemon_reload: true }
+  when: power_helper_unit.changed
+
+- name: Read the capability manifest
+  ansible.builtin.stat: { path: /var/lib/orbit/hibernation/capabilities.json }
+  register: power_capabilities_file
+
+- name: Probe the kernel primitives of the power helper
+  ansible.builtin.command: { argv: [/usr/local/libexec/orbit-instance-power, capabilities] }
+  when: power_helper.changed or not power_capabilities_file.stat.exists
+  register: power_capabilities
+  changed_when: true
+
+- name: Report the power helper's primitives
+  ansible.builtin.debug: { msg: "{{ (power_capabilities.stdout | from_json).capabilities }}" }
+  when: power_capabilities is not skipped

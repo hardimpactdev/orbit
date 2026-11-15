@@ -323,6 +323,9 @@
       when: (dev_ports_ruleset.changed or dev_ports_live.rc != 0) and not dev_ports_started.changed
       changed_when: true
 
+- name: Install the power helper
+  ansible.builtin.include_tasks: instance-power-helper.yml
+
 # The fast wake of a frozen container (docs/reference/development-containers.md#the-node-resumes-a-frozen-container): the Gateway's
 # wake request in /dev/shm/orbit/hibernation (root:caddy 0755, so only root writes there) starts the fixed script below. It runs as
 # root with no capabilities: the Incus socket and the container's cgroup file belong to root, and `incus-admin` is root's equal.

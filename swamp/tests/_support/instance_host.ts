@@ -80,11 +80,16 @@ function transform(task: Task, folder: string): Task {
     if (task.name === "Set the folder owners and modes" && command) {
         command.argv = "{{ item if item[0] != 'chown' else ['true'] }}";
     }
+    // The probe needs root and the host's own /proc; the fixture reports every primitive as missing.
+    if (task.name === "Probe the kernel primitives of the power helper" && command) {
+        command.argv = ["echo", '{"capabilities": {"process_madvise": false}}'];
+    }
     return task;
 }
 
 const replacements = (folder: string): [string, string][] => [
     ["/usr/local/libexec", `${folder}/libexec`],
+    ["/var/lib/orbit/hibernation", `${folder}/hibernation`],
     ["/var/lib/orbit/instance-bridge", `${folder}/bridge-policy`],
     ["/var/lib/orbit/instance-container-libraries", `${folder}/container-libraries`],
     // The Node's own Orbit root CA, a real self-signed certificate of the fixture; the container path stays as it is.
@@ -117,10 +122,12 @@ function writeTasks(folder: string) {
     Deno.copyFileSync(new URL("instance_machine_name.py", root), `${folder}/instance_machine_name.py`);
     Deno.mkdirSync(`${folder}/files`, { recursive: true });
     Deno.copyFileSync(new URL("files/instance-container-wake.sh", root), `${folder}/files/instance-container-wake.sh`);
+    Deno.copyFileSync(new URL("files/instance-container-power.py", root), `${folder}/files/instance-container-power.py`);
     Deno.copyFileSync(new URL("files/instance-browser-trust.sh", root), `${folder}/files/instance-browser-trust.sh`);
     for (
         const name of [
             "instance-host.yml",
+            "instance-power-helper.yml",
             "instance-network-check.yml",
             "instance-network-nic-check.yml",
             "instance-network-move.yml",

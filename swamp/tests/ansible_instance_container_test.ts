@@ -16,7 +16,7 @@ import { fixture as hostFixture } from "./_support/instance_host.ts";
 // Chromium's trust adds six tasks: the folder gathers its one Debian package part (the trust module), the image checks the module's
 // library (one exec) and writes agent's NSS store (one exec and one push), and the container step keeps its list of containers
 // without the store for the Operation result; the host files stay as they were.
-const MAIN_NORMAL_HOST = {calls: 69, tasks: 181, digest: "484a8ee104ff4a6397498ef96a917169c22dcbdcc44a537cca59c16733463f15"};
+const MAIN_NORMAL_HOST = {calls: 69, tasks: 188, digest: "aa7ff2d85a59ceb0265ac0a05dc173fdc9d513f76c1c8a5b07c0dd5ff71f8593"};
 
 const hasAnsible =
   new Deno.Command("sh", { args: ["-c", "command -v ansible-playbook"] })
@@ -2528,6 +2528,7 @@ Deno.test({
       // Captured by this same case from the tasks of origin/main 77f6bf5c22 (2a-local 7b9e25ba02 changes no task), plus the five tasks
       // that install the fast wake of a frozen container (#3639); its Incus calls and host files are unchanged. Plus the one task that
       // admits the containers to their own sites, with its two UFW rule files (443 and the development listener); no Incus call changes.
+      // Plus the seven tasks that install the power helper, its unit properties and its capability probe (ADR 0261); no Incus call changes.
       assertEquals({calls: seen.calls, tasks: seen.tasks, digest: seen.digest}, MAIN_NORMAL_HOST);
       assertEquals(f.state().projects.map((row: {name: string}) => row.name), ["orbit-instances"]);
       assert(!f.has("modules-load/orbit-instances.conf"));
