@@ -54,7 +54,7 @@ The nightly `--all` run checks every available kind at one pinned main SHA when 
 
 `Manual copy proof` accepts one full lowercase commit SHA through `workflow_dispatch` on main. GitHub limits dispatch to repository writers. Before admission, the workflow also verifies write access for the original and rerunning actor and requires the SHA to be reachable from a branch of `hardimpactdev/orbit`. The Gateway still applies its exact-head trust rule. The runner checks out only the trusted main workflow commit; the tested code runs inside the proof copies.
 
-This entry reuses the enrolled proof caller and `bin/ci-proof-run`, with neither `--base` nor `--all`. It shares the main proof concurrency group, permits one executing run, and does not cancel an active proof. It uploads the complete case result as `proof-receipt`, including failed runs. A zero-case `nothing_to_prove` answer fails this execution check. It writes no main queue checkpoint, enables no consumer, and gates no merge or release. Dispatch only after the orchestrator confirms the live release and says to start.
+This entry reuses the enrolled proof caller and `bin/ci-proof-run`, with neither `--base` nor `--all`. It permits one executing manual workflow and does not cancel an active proof. The Gateway’s shared proof place still serializes case execution. It uploads the complete case result as `proof-receipt`, including failed runs. A zero-case `nothing_to_prove` answer fails this execution check. It writes no main queue checkpoint, enables no consumer, and gates no merge or release. Dispatch only after the orchestrator confirms the live release and says to start.
 
 ### Failure sweep on Beast
 

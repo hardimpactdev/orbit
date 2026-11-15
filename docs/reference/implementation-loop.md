@@ -283,6 +283,8 @@ A clean CLI exit is insufficient: the job requires a passing result with case ve
 
 Every proof CI summary includes the [base-refresh caveat](/reference/command-development-pipeline#2-development-environment). A passing proof does not establish that refresh reconverges the nested Nodes’ OS state.
 
+The [manual hosted proof entry](/reference/main-full-set#one-manual-hosted-proof) accepts one repository SHA from a maintainer without enabling automatic proofs. It uses the same caller and case receipts, and runs no target code on the caller.
+
 The independent [main proof consumer](/reference/main-full-set#proof-consumer) passes an ancestor base with the tested SHA. It unions each intervening commit’s selection, including changes later reverted, and records the base in its CI receipt. Nightly runs use `--all` instead. Neither path gates Required checks or a release.
 
 The job summary lists case verdicts and uncovered paths. The `proof-receipt` artifact records the commit, operation, selected commands, outcome and idempotency key. An `interrupted` outcome means inconclusive coverage and exits nonzero; [proof outcomes](/cli/proof/run#verdicts) define failure precedence. It excludes execution input and host settings. Reports use full Swamp output artifacts because native history summaries keep only 4 KiB.
