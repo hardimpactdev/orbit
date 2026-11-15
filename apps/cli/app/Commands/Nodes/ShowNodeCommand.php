@@ -89,6 +89,7 @@ final class ShowNodeCommand extends NodeCommand
             'TLD' => NodeOutput::tld($node->tld),
             'Platform' => $platform,
             'Apps folder' => $node->settings?->apps?->path,
+            'CI places' => NodeOutput::ciPlaces($node->settings?->ci),
             'Access to' => NodeOutput::accessList($node->access->canAccess ?? []),
             'Accessible by' => NodeOutput::accessList($node->access->accessibleBy ?? []),
         ];
