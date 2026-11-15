@@ -37,6 +37,8 @@ class FleetShrinkTest(unittest.TestCase):
         self.stub('incus', 'case "$2" in /1.0/instances/*) echo \'{"expanded_devices": {"root": {"pool": "inner"}}}\';;\n'
                   '/1.0/storage-pools/inner) echo "{\\"driver\\": \\"$DRIVER\\"}";; *) exit 1;; esac\n')
         self.stub('duperemove', f'echo "$@" >> {self.duperemove_log}\n')
+        self.journal_log = self.folder / 'journalctl.log'
+        self.stub('journalctl', f'echo "$@" >> {self.journal_log}\n')
 
     def stub(self, name, body):
         path = self.bin / name
@@ -59,6 +61,7 @@ class FleetShrinkTest(unittest.TestCase):
         info.mkdir(parents=True)
         (info / 'rust-coreutils.md5sums').write_text('\n'.join(lines) + '\n')
         (disk / 'var/lib/dpkg/status').write_text('Package: rust-coreutils\nStatus: install ok installed\nVersion: 0.10.0-1ubuntu2\n')
+        (disk / 'var/log/journal').mkdir(parents=True)
         archives = disk / 'var/cache/apt/archives'
         (archives / 'partial').mkdir(parents=True)
         for name in ['acl_2.3.2-2_amd64.deb', 'partial/caddy_2.11.7_amd64.deb', 'lock']:
@@ -97,6 +100,15 @@ class FleetShrinkTest(unittest.TestCase):
             archives = self.disk(name) / 'var/cache/apt/archives'
             self.assertEqual(sorted(str(path.relative_to(archives)) for path in archives.rglob('*')), ['lock', 'partial'])
 
+    def test_each_journal_is_trimmed_to_what_journald_keeps_there(self):
+        self.shrink('run')
+        self.assertEqual(self.journal_log.read_text().splitlines(), [f'--root={self.disk(name)} --vacuum-size=64M' for name in NAMES])
+
+    def test_a_record_that_is_no_object_is_no_record(self):
+        self.record.parent.mkdir(parents=True)
+        self.record.write_text('[]')
+        self.assertEqual(self.shrink('check'), {'due': True, 'reason': 'record'})
+
     def test_a_record_of_an_older_rule_is_due_once(self):
         self.shrink('run')
         recorded = json.loads(self.record.read_text())
@@ -118,6 +130,8 @@ class FleetShrinkTest(unittest.TestCase):
         bare = self.folder / 'bare'
         bare.mkdir()
         (bare / 'incus').symlink_to(self.bin / 'incus')
+        (bare / 'journalctl').symlink_to(self.bin / 'journalctl')
+        (bare / 'timeout').symlink_to('/usr/bin/timeout')
         for tool in ['sh', 'echo']:
             (bare / tool).symlink_to(f'/bin/{tool}')
         self.assertEqual(self.shrink('run', path=str(bare)), {'shrink': 'relinked', 'relinked': 9, 'dedupe': 'missing'})

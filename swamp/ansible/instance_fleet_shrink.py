@@ -5,9 +5,7 @@ The fleet refresh runs it as root in the Instance container: `python3 -I -c <thi
 in its `base` window, with the three containers stopped, their old `base` deleted and before the new one is taken, so the new `base`
 and the seed hold the small form.
 
-Three parts:
-- Caches. The package files in each nested container's apt archives go (CACHES): apt keeps no new ones, and the egress proxy
-  serves a package again when apt needs it.
+Three parts, in this order:
 - Relink. Ubuntu's rust-coreutils ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in
   `/usr/lib/cargo/bin/coreutils/`. In the first nested fleet they were 116 separate copies, 1.26 GiB per machine. RELINK names each
   package and the one file it ships with links. Only the files of that package that dpkg records with that file's digest are
@@ -15,13 +13,17 @@ Three parts:
   links of that file. Other files of one digest, such as the package's empty locale files, are separate files in the package and stay.
   Each is replaced atomically by a link to the file (a new link beside it, then a rename over it), so no reader ever finds the path
   missing or partial.
+- Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
+  91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. Each journal is trimmed to the 64 MiB
+  that journald keeps there (zz-orbit-nested-journal.conf), with `journalctl --root`: the containers are stopped, so journald would
+  trim it only after the new `base` was taken.
 - Dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent (the kernel
   compares the bytes before it shares them, so a file never changes). It needs a btrfs pool and the `duperemove` package, which
-  instance_shape_tools.py keeps in the container; without it only the relink runs.
+  instance_shape_tools.py keeps in the container; without it the first two parts run.
 
 It costs nothing when nothing changed: the record holds the sha256 of each machine's dpkg status, and `check` is due only when the
-record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when both parts
-ran, so a run without duperemove is due again at the next refresh. A check that cannot read (`unreadable`) is not due.
+record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when the dedupe ran
+too (or the pool is no btrfs pool), so a run without duperemove is due again at the next refresh. A check that cannot read (`unreadable`) is not due.
 
 It never fails: its last line on standard output is one JSON object. `check`: {"due": true|false, "reason": "record"|"packages"|
 "current"|"unreadable"}. `run`: {"shrink": "ran"|"relinked"|"failed", "relinked": <files>, "dedupe": "ran"|"missing"|"not_btrfs"|"failed"}.
@@ -44,6 +46,8 @@ RULE = '2'
 # Caches of a nested container that the shrink empties: apt's downloaded package files. apt keeps no new ones (the fleet file
 # 91orbit-nested-package-files); the egress proxy serves them again when apt needs one.
 CACHES = ('var/cache/apt/archives',)
+# The journal size that zz-orbit-nested-journal.conf gives journald in each nested container.
+JOURNAL = '64M'
 
 
 def rootfs(pools, name):
@@ -61,9 +65,10 @@ def state(disks):
 
 def read_record(record):
     try:
-        return json.loads(Path(record).read_text())
+        recorded = json.loads(Path(record).read_text())
     except (OSError, ValueError):
         return None
+    return recorded if isinstance(recorded, dict) else None
 
 
 def md5sums(disk, package):
@@ -106,17 +111,16 @@ def relink(disk):
 
 
 def empty_caches(disk):
-    """Remove the package files in each cache folder of `disk`; the bytes it freed."""
-    freed = 0
+    """Remove the package files in each cache folder of `disk`, and trim its journal to the size journald keeps there."""
     for cache in CACHES:
         for folder in (disk / cache, disk / cache / 'partial'):
-            if folder.is_symlink() or not folder.is_dir():
+            if any(part.is_symlink() for part in [folder, *folder.parents] if disk in part.parents) or not folder.is_dir():
                 continue
             for path in folder.iterdir():
                 if path.name.endswith('.deb') and path.is_file() and not path.is_symlink():
-                    freed += path.lstat().st_size
                     path.unlink()
-    return freed
+    if (disk / 'var/log/journal').is_dir() and not (disk / 'var/log/journal').is_symlink():
+        subprocess.run(['timeout', '120', 'journalctl', f'--root={disk}', f'--vacuum-size={JOURNAL}'], stdout=sys.stderr, stderr=sys.stderr, check=True)
 
 
 def check(record, pools, names):

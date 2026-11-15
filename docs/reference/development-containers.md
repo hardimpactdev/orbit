@@ -2388,22 +2388,22 @@ The gate and the runner take the tools as ready only when the venv holds `.compl
 
 #### The inner machines stay small
 
-The three nested containers hold their root disks on the inner pool. A refresh keeps them small in the window where it retakes `base`, with the three stopped, the old `base` deleted and the new one not yet taken. So the new `base` and the seed hold the small form. The step is `swamp/ansible/instance_fleet_shrink.py`, run as root in the outer container. It has two parts:
-
-Before them it empties the nested containers' apt archives: the `.deb` files in `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it.
+The three nested containers hold their root disks on the inner pool. A refresh keeps them small in the window where it retakes `base`, with the three stopped, the old `base` deleted and the new one not yet taken. So the new `base` and the seed hold the small form. The step is `swamp/ansible/instance_fleet_shrink.py`, run as root in the outer container. It has three parts, in this order.
 
 The first part is the relink. Ubuntu's `rust-coreutils` ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in `/usr/lib/cargo/bin/coreutils/`. The step reads the package's dpkg digests. Each file with the digest of `/usr/bin/coreutils` is linked back to that file. It must also have the same bytes, owner and mode. Other files of one digest, such as the package's empty locale files, are separate files in the package, so they stay separate. Each link replaces its path atomically: a new link beside it, then a rename over it.
 
-The second part is the dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent. The kernel compares the bytes before it shares them, so no file changes. It needs a btrfs pool and `duperemove`. [The pinned shape tools](#the-pinned-shape-tools) step keeps `duperemove` in the container.
+The second part is the caches. The step removes the `.deb` files in each nested container's `/var/cache/apt/archives` and its `partial` folder. apt keeps no new ones (the size files of [Fleet rules](#fleet-rules)), and the egress proxy serves a package again when apt needs it. It also trims each journal to 64 MiB with `journalctl --root`. journald would trim it only at its start, after the new `base` was taken.
+
+The third part is the dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent. The kernel compares the bytes before it shares them, so no file changes. It needs a btrfs pool and `duperemove`. [The pinned shape tools](#the-pinned-shape-tools) step keeps `duperemove` in the container.
 
 The shrink is due when no shrink is recorded, or when a nested container's dpkg status changed since the last one: a package was installed, removed or upgraded. A record of an older rule of the step counts as no record, so a new rule runs once. The record is `/var/lib/orbit/fleet-shrink.json` in the outer container: the sha256 of each machine's dpkg status. The check reads three files, in under a second; a refresh that changed no package spends nothing more. A due shrink makes `base` due for all three, so the dedupe shares blocks across them.
 
 | Case | What the step does | Result |
 | --- | --- | --- |
 | No package changed since the last shrink | Checks only | `shrink: skipped`, `shrink_reason: current` |
-| No record, or a dpkg status changed | Relinks and dedupes; writes the record; `base` of all three | `shrink: ran`, `shrink_reason: record` or `packages` |
-| `duperemove` is not installed yet | Relinks only and writes no record, so the next refresh runs it again | `shrink: relinked` |
-| The inner pool is a directory pool | Relinks only (no dedupe on a directory pool) and writes the record | `shrink: ran` |
+| No record, or a dpkg status changed | Relinks, empties the archives, trims the journals and dedupes; writes the record; `base` of all three | `shrink: ran`, `shrink_reason: record` or `packages` |
+| `duperemove` is not installed yet | Relinks, empties the archives and trims the journals; writes no record, so the next refresh runs it again | `shrink: relinked` |
+| The inner pool is a directory pool | All but the dedupe (none on a directory pool); writes the record | `shrink: ran` |
 | The check cannot read | Nothing; `base` is decided as before | `shrink: skipped`, `shrink_reason: unreadable` |
 | The run fails or times out (600 s) | Writes no record; the refresh goes on | `shrink: failed` |
 
