@@ -103,7 +103,7 @@ A proof in copies does not replay flagged cases on the merge base (`fails_on_bas
 
 Every run end removes its copy: Orbit cancels the run's group with discard, which destroys the copy. That holds after a pass, a failure, a cancel, a timeout, an interruption and a run that never started. A copy that an Operation still holds is asked again. After a Gateway restart the queued cancel runs, and the watchdog asks again for every group that still owns a copy.
 
-Orbit reads the full case reports, checks the expected case identities and merges every copy’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without a copy.
+Orbit reads the full case reports, checks the expected case identities and merges every copy’s verdicts into one report. A missing, duplicate or unexpected verdict prevents a pass. The line on which a copy's batch reports the reset seconds of its inner fleet is evidence, not a verdict. The proof closes after all runs end and passes only when every selected command has all its cases passed. A selection with no command passes without a copy.
 
 ## The execution switch
 

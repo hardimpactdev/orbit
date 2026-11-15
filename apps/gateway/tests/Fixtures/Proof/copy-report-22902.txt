@@ -1,0 +1,2 @@
+node:list	swamp/proof/node/list.cases.yaml	node-down	{"id": "offline-node-retained", "verdict": "passed", "secs": 88.2}
+node:list	swamp/proof/node/list.cases.yaml	node-down	{"batch": "node-down", "reset": {"commit": null, "reset_seconds": 36.1}}
