@@ -31,7 +31,7 @@ final readonly class ReadNativeRunFailure
         $id = bin2hex(random_bytes(16));
         $deadline = microtime(true) + 2;
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $caPath, $token), 0.5);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $caPath, $token), 0.5, SwampCaller::Reconcile);
             $this->socket->send(['type' => 'workflow.history.get', 'id' => $id, 'payload' => ['workflowIdOrName' => $runId]]);
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
                 foreach ($this->socket->receive(min(0.2, $remaining)) as $message) {

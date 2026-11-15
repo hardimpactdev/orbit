@@ -8,6 +8,7 @@ use App\Domain\Tasks\SwampReaderAssistance;
 use App\Domain\Tasks\SwampReaderCredential;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\GatewayReleases\GatewayReleaseLock;
+use App\Infrastructure\Swamp\SwampCaller;
 use App\Infrastructure\Tasks\SwampReaderEnvironment;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use Illuminate\Support\Facades\DB;
@@ -35,6 +36,7 @@ final readonly class InstallSwampReaderCredentialAction
                     $settings['ORBIT_SWAMP_ADDRESS'] ?? 'swamp.orbit',
                     $credential->token(),
                     $settings['ORBIT_SWAMP_CA_PATH'] ?? rtrim(config()->string('orbit.home'), '/').'/ca/root.pem',
+                    SwampCaller::Release,
                 )->read(0);
             } catch (Throwable) {
                 throw new RuntimeException('The replacement could not read Swamp. The shared env was not changed.');

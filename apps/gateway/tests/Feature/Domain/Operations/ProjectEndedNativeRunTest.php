@@ -13,6 +13,7 @@ use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Jobs\Operations\ProjectEndedNativeRun;
 use App\Jobs\Operations\ReconcileSwampOperations;
@@ -52,7 +53,7 @@ function promptPublish(): Operation
  * once, inside the first history read, to put a second projection between that read and the first projection's lock.
  *
  * @param  array<string, mixed>  $history
- * @return WebSocketClient&object{frames: list<array<string,mixed>>, historyReads: int, fail: bool, onHistory: ?Closure}
+ * @return WebSocketClient&object{frames: list<array<string,mixed>>, historyReads: int, fail: bool, refuse: int, onHistory: ?Closure}
  */
 function promptSocket(array $history): WebSocketClient
 {
@@ -65,6 +66,9 @@ function promptSocket(array $history): WebSocketClient
 
         public bool $fail = false;
 
+        /** How many more connects serve refuses with 429. */
+        public int $refuse = 0;
+
         public ?Closure $onHistory = null;
 
         private bool $open = false;
@@ -74,6 +78,10 @@ function promptSocket(array $history): WebSocketClient
 
         public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
         {
+            if ($this->refuse > 0) {
+                $this->refuse--;
+                throw new WebSocketException('refused', 429, retryAfterSeconds: 17);
+            }
             $this->open = true;
         }
 
@@ -237,6 +245,37 @@ it('leaves a failed read for the pass, which projects it', function (): void {
     promptPass();
     expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
         ->and($operation->error_code)->toBe('operation.result_unreadable');
+});
+
+it('projects a finished run again after the serve window when serve refused its read with 429', function (): void {
+    $create = promptCloneCreate();
+    swampVaultStandIn();
+    workspaceReader();
+    $socket = promptSocket(promptCreateHistory($create, ready: true));
+    $socket->refuse = 1;
+
+    $first = (new ProjectEndedNativeRun($create->id))->withFakeQueueInteractions();
+    app()->call([$first, 'handle']);
+
+    // Before, the end waited for the minute pass.
+    $first->assertReleased(delay: 18);
+    expect($create->refresh()->status)->toBe(OperationStatus::Running);
+
+    $again = (new ProjectEndedNativeRun($create->id))->withFakeQueueInteractions();
+    app()->call([$again, 'handle']);
+    $again->assertNotReleased();
+    expect($create->refresh()->status)->toBe(OperationStatus::Succeeded);
+});
+
+it('leaves a read that failed without a 429 for the minute pass, as before', function (): void {
+    $operation = promptPublish();
+    $socket = promptSocket(promptHistory($operation, 'operation-task-publish', 'succeeded', []));
+    $socket->fail = true;
+
+    $job = (new ProjectEndedNativeRun($operation->id))->withFakeQueueInteractions();
+    app()->call([$job, 'handle']);
+
+    $job->assertNotReleased();
 });
 
 it('projects two ends of the same run once', function (): void {

@@ -123,7 +123,7 @@ final readonly class SwampVaultExecutionCopy
     private function connect(SwampDispatch $dispatch, WebSocketEndpoint $endpoint, string $vault, string $key, string $id): array
     {
         try {
-            return $dispatch->socket($endpoint, self::ConnectSeconds, $this->socket);
+            return $dispatch->socket($endpoint, self::ConnectSeconds, $this->socket, SwampCaller::Copy);
         } catch (Throwable $exception) {
             if (self::httpStatus($exception) !== null) {
                 throw $exception;
@@ -131,7 +131,7 @@ final readonly class SwampVaultExecutionCopy
             Log::info('Swamp execution copy connect retried', ['vault' => $vault, 'key' => $key, 'vault_request_id' => $id,
                 'exception_type' => $exception::class]);
 
-            return $dispatch->socket($endpoint, self::ConnectSeconds, $this->socket);
+            return $dispatch->socket($endpoint, self::ConnectSeconds, $this->socket, SwampCaller::Copy);
         }
     }
 
@@ -154,7 +154,7 @@ final readonly class SwampVaultExecutionCopy
         }
         $id = bin2hex(random_bytes(16));
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, SwampCaller::Copy);
             $this->socket->send(['type' => 'vault.read-secret', 'id' => $id, 'payload' => ['vaultName' => $vault, 'secretKey' => $key]]);
             $deadline = microtime(true) + 30;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {

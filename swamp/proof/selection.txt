@@ -143,11 +143,14 @@ apps/gateway/app/Infrastructure/Swamp/StartSwampRun.php    none: shared code; a 
 apps/gateway/app/Infrastructure/Swamp/SwampCommandStep.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampConnection.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampDispatch.php    none: shared code; a proof runs only when a command's own code or cases change
-apps/gateway/app/Infrastructure/Swamp/SwampReadBudget.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampCaller.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampHandshakes.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampReadBusy.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampRunSubscriber.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampSshExecutionInput.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampTerminalReadUnavailable.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Infrastructure/Swamp/SwampVaultExecutionCopy.php  none: shared code; a proof runs only when a command's own code or cases change
+apps/gateway/app/Infrastructure/Swamp/SwampViewWait.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Jobs/Operations/ReconcileSwampOperations.php  none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Models/Operation.php                      none: shared code; a proof runs only when a command's own code or cases change
 apps/gateway/app/Providers/Domains/OperationsServiceProvider.php  none: shared code; a proof runs only when a command's own code or cases change

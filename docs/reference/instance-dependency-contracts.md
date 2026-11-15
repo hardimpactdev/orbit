@@ -95,7 +95,9 @@ The producer publishes reports before switching the index. Swamp [data retention
 
 The Instance endpoint is `GET /api/v1/instances/{instance}/dependencies`; the Project endpoint is `GET /api/v1/projects/{project}/dependencies`. Both enforce their existing resource access boundary. The selected source is fetched on demand; returned package and finding rows are paginated. A missing source means unknown evidence. An inaccessible resource is refused before reading Swamp.
 
-Only validated and redacted evidence enters the cache, as plain arrays. Reads rebuild typed data from those arrays; they do not require PHP class deserialization. Failed reads log only a fixed error code (`tls`, `auth`, `invalid`, `timeout`, or `unavailable`), stage, and Project ID, without upstream text or credentials. A failed index read skips remote report reads. Failed index and report reads wait 30 seconds before retrying, while cached evidence stays stale or unavailable.
+Only validated and redacted evidence enters the cache, as plain arrays. Reads rebuild typed data from those arrays; they do not require PHP class deserialization. Failed reads log only a fixed error code (`tls`, `auth`, `invalid`, `timeout`, `busy`, or `unavailable`), stage, and Project ID, without upstream text or credentials. A failed index read skips remote report reads. Failed index and report reads wait 30 seconds before retrying, while cached evidence stays stale or unavailable. A `busy` read did not connect because the [handshake ledger](/reference/swamp-command-steps#handshake-ledger) kept serve's window for Operations; it waits until a view may read again, and the response names that wait in `Retry-After`.
+
+One request reads its index and its report on one connection. A refreshed index also refreshes, on that connection, the stale default-branch indexes of other Projects.
 
 A failed refresh keeps prior evidence and marks it stale; it never extends its observation time. Without prior evidence the result is unavailable. PR certainty is recomputed from its producer check time on every response, including cached responses.
 
@@ -109,7 +111,7 @@ The Gateway accepts optional `source` as the source's SHA-256 ID, `packages_page
 
 The response contains the Project and optional Instance identity, selected full ref, the recorded Instance commit when known, read availability, publication time, latest attempt, source summaries, PR evidence, and the selected report. Source summaries expose paths, managers, attempts and last-good commit/time; they omit native storage coordinates. The selected report carries package and finding counts with their pages. Pagination changes only rendering; validation checks the complete bounded report first.
 
-A valid native reply must identify the requested producer and data name, report the exact requested version, and contain UTF-8 JSON within the resource byte limit. The socket message and frame limits are set per read to six times the resource bound plus 4 KiB for the native JSON envelope, before decoding it. Reject malformed content, mismatched identities, unsafe paths, unsupported schemas, duplicate resolution or finding IDs, and report/pointer disagreement. Invalid input returns unavailable or stale evidence without exposing upstream exception text.
+A valid native reply must identify the requested producer and data name, report the exact requested version, and contain UTF-8 JSON within the resource byte limit. The socket message and frame limits are six times the largest resource bound (1 MiB) plus 4 KiB for the native JSON envelope, set per connection before decoding; each reply is then checked against its own resource bound. Reject malformed content, mismatched identities, unsafe paths, unsupported schemas, duplicate resolution or finding IDs, and report/pointer disagreement. Invalid input returns unavailable or stale evidence without exposing upstream exception text.
 
 ## Shared fixture fields
 

@@ -84,7 +84,6 @@ use App\Infrastructure\Swamp\NativeStepFailure;
 use App\Infrastructure\Swamp\StartSwampRun;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
-use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
@@ -2350,13 +2349,9 @@ it('does not reopen or renew expiry after invalid late output ends with a named 
         ->and(containerRefusal(fn () => migrateStart($instance)))->toBe('instance.migrate_recovery_required');
 });
 
-it('returns the stored overdue migrate when the shared read allowance is empty', function (): void {
+it('returns the stored overdue migrate without a serve read', function (): void {
     $instance = migrateCheckout(containerDefaultProject(), containerDefaultNode());
     $operation = demandMigrate($instance);
-    $budget = app(SwampReadBudget::class);
-    for ($i = 0; $i < SwampReadBudget::PerMinute; $i++) {
-        expect($budget->take('other-kind:'.$i, 30))->toBeTrue();
-    }
     $before = $operation->getAttributes();
     $socket = Mockery::mock(WebSocketClient::class);
     $socket->shouldNotReceive('connect', 'send');

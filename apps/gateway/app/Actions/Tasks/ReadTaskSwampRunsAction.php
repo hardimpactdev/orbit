@@ -9,7 +9,8 @@ use App\Data\Tasks\TaskSwampRunsData;
 use App\Data\Tasks\TaskSwampStepData;
 use App\Domain\Tasks\SwampRunReader;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Swamp\SwampReadBudget;
+use App\Infrastructure\Swamp\SwampReadBusy;
+use App\Infrastructure\Swamp\SwampViewWait;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -22,7 +23,6 @@ final readonly class ReadTaskSwampRunsAction
     public function __construct(
         private SwampRunReader $reader,
         private CommandActivityInputSanitizer $sanitizer,
-        private SwampReadBudget $budget,
     ) {}
 
     public function execute(Task $group): TaskSwampRunsData
@@ -34,9 +34,14 @@ final readonly class ReadTaskSwampRunsAction
         if ($previous !== null && $previous->observed_at !== null && CarbonImmutable::parse($previous->observed_at)->greaterThan(now()->subSeconds(5))) {
             return $previous;
         }
+        $hold = Cache::get($key.':hold');
         try {
-            if (! $this->budget->take('task-group:'.$group->id, 5)) {
-                throw new RuntimeException('The Swamp read budget is spent.');
+            if ($hold !== null) {
+                // A read of this group failed, or waits for the serve window, less than five seconds ago (or until the window allows it).
+                if (is_int($hold)) {
+                    app(SwampViewWait::class)->note($hold - now()->getTimestamp());
+                }
+                throw new RuntimeException('The last read of this group is held.');
             }
             $snapshot = $this->reader->read($group->id);
             $runs = array_map($this->run(...), array_slice($snapshot['runs'], 0, 5));
@@ -44,7 +49,12 @@ final readonly class ReadTaskSwampRunsAction
             Cache::put($key, $result->toArray(), 86_400);
 
             return $result;
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            if ($hold === null) {
+                // At most one read per group in five seconds, a failed one too, whatever number of screens poll it.
+                $busy = $exception instanceof SwampReadBusy;
+                Cache::put($key.':hold', $busy ? now()->getTimestamp() + $exception->retryAfterSeconds : true, $busy ? $exception->retryAfterSeconds : 5);
+            }
             if ($previous === null) {
                 return new TaskSwampRunsData('unavailable', null, [], false);
             }
