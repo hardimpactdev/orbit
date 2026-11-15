@@ -203,7 +203,7 @@ The Gateway answers with the Router's LAN address when all of these hold:
 
 Every other requester gets the Router's WireGuard address. That includes a member without a LAN address, a member of another Cluster, and a source that is not an active registered WireGuard Node. The Gateway identifies the requester by the WireGuard source address that delivered the query. A shared LAN subnet or an identity in the DNS message does not count.
 
-A Route change captures the sites that will exist after it, and the Gateway renders these answers from them, as it renders the host records, whatever the status of a Route. A Route that the change removes, or whose create is undone, loses its `overrides` entry in the same Operation that withdraws it. No later change is needed to clear it.
+A Route change captures the sites that will exist after it, and the Gateway renders these answers from them, as it renders the host records, whatever the status of a Route. A Route that the change removes, or whose create is undone, loses its `overrides` entry in the same Operation that withdraws it, when it has one: a Cluster Route under the Cluster TLD has none ([records a TLD already answers](#records-a-tld-already-answers)).
 
 The rule covers the Cluster TLD and every exact Cluster-scoped Route domain, also a domain outside the Cluster TLD. Other names keep their own answers:
 
@@ -231,7 +231,7 @@ Private DNS answers by TLD. The Gateway writes no exact record that a TLD rule a
 A `host-record` line is left out when all of these hold:
 
 - The listener's first matching suffix, and dnsmasq's most specific `address=` rule, both give the record's address.
-- Each requester with LAN overrides either has an override for the name itself or gets the same address from its suffix override.
+- Each requester with LAN overrides keeps its answer: it has an override for the name itself, or its suffix answer (with its suffix override) is the same address.
 
 A LAN override for a name is left out when its requester gets the same address from its suffix override and no exact record stands in between. In practice the Cluster TLD's own override (`test`) answers every Cluster Route under it.
 
@@ -240,9 +240,13 @@ These keep their lines:
 - A site on another Node than the one the TLD answers with, such as a Node-scoped Route on a member.
 - A Node-scoped Route on the Router, because a member would otherwise get the Router's LAN address from the TLD override.
 - A name outside every TLD, and the platform names.
-- Every site of a Cluster while a Router change renders it with another Router.
+- A Cluster site that still names the old Router during a Router change.
 
-Every requester gets the same address as with the exact record. dnsmasq on the `vpn` Node also stops giving a reverse (PTR) answer for a name left out; nothing in Orbit asks for one. Lines that an older render wrote stay until the next publication that writes the whole records file, and they give the same answers. This is ADR 0234's rule, decided on 2026-10-26.
+Every requester gets the same address as with the exact record, also for AAAA and other types: `local=` keeps them NODATA. dnsmasq on the `vpn` Node also stops giving a reverse (PTR) answer for a name left out; nothing in Orbit asks for one. This is ADR 0234's rule, decided on 2026-10-26.
+
+A Route change merges only the keys its captured states change, so it never removes a line that an older render wrote. Such lines stay until a publication writes the whole records file and catalog: a create or `route:create` with a domain outside every TLD, or `node:add` of the `vpn` Node. While they stay they give the old answer.
+
+That old answer equals the TLD's answer until a Router or LAN address of the Cluster changes; then the old address stays for those names. So the release that brings this rule ends with one such whole publication, after the creates admitted by the previous release have ended.
 
 ### Inspect the selection
 

@@ -50,6 +50,8 @@ function liveShapedDnsFleet(): array
     $sabre = $node('sabre', '10.44.0.10', '192.168.6.21', $cluster->id, [RoleName::AppDev]);
     $shark = $node('shark', '10.44.0.11', '192.168.6.22', $cluster->id, [RoleName::AppDev]);
     $node('mini', '10.44.0.9', null, null, []);
+    // A member without a LAN address: it gets the Router's WireGuard address, as every requester outside the Cluster.
+    $node('quiet', '10.44.0.12', null, $cluster->id, [RoleName::AppDev]);
     $project = Project::query()->create(['name' => 'proof', 'slug' => 'ihj-proof-h42', 'repository_url' => 'https://github.com/laravel/laravel.git', 'default_branch' => 'main', 'root' => 'public']);
 
     return ['beast' => $beast, 'sabre' => $sabre, 'shark' => $shark, 'cluster' => $cluster, 'project' => $project, 'gateway' => $gateway];
@@ -82,18 +84,19 @@ function liveShapedDnsSites(array $fleet): array
 }
 
 /** @return array{records: string, answers: array<string, array<string, ?string>>} */
-function privateDnsMatrix(array $fleet, array $sites): array
+function privateDnsMatrix(array $fleet, array $sites, array $clusterOverrides = []): array
 {
-    return app(RoutePublicationSites::class)->render(collect($sites), static function () use ($sites): array {
+    return app(RoutePublicationSites::class)->render(collect($sites), static function () use ($sites, $clusterOverrides): array {
         $renderer = app(DevelopmentDnsConfigRenderer::class);
-        $catalog = $renderer->catalog();
+        $catalog = $renderer->catalog(null, [], $clusterOverrides);
         $requesters = ['node:beast' => DnsRequester::registered(Node::query()->where('name', 'beast')->value('id'), '10.44.0.7'),
             'node:sabre' => DnsRequester::registered(Node::query()->where('name', 'sabre')->value('id'), '10.44.0.10'),
             'node:shark' => DnsRequester::registered(Node::query()->where('name', 'shark')->value('id'), '10.44.0.11'),
             'node:mini' => DnsRequester::registered(Node::query()->where('name', 'mini')->value('id'), '10.44.0.9'),
             'node:gateway' => DnsRequester::registered(Node::query()->where('name', 'gateway')->value('id'), '10.44.0.2'),
+            'node:quiet' => DnsRequester::registered(Node::query()->where('name', 'quiet')->value('id'), '10.44.0.12'),
             'unidentified' => DnsRequester::unidentified('10.44.0.200')];
-        $names = [...array_map(static fn (DevelopmentSite $site): string => $site->domain, $sites), 'test', 'unknown.ihj-proof-h42.test', 'gateway.orbit', 'nothing.example.org'];
+        $names = [...array_map(static fn (DevelopmentSite $site): string => $site->domain, $sites), 'test', 'unknown.ihj-proof-h42.test', 'gateway.orbit', 'metrics.orbit', 'nothing.example.org'];
         $answers = [];
         foreach ($requesters as $label => $requester) {
             foreach ($names as $name) {
@@ -101,18 +104,20 @@ function privateDnsMatrix(array $fleet, array $sites): array
             }
         }
 
-        return ['records' => $renderer->render(), 'answers' => $answers];
+        return ['records' => $renderer->render(null, [], $clusterOverrides), 'answers' => $answers];
     }, complete: true);
 }
 
-it('answers every requester and name exactly as before', function (): void {
+it('answers every requester and name exactly as before, also while a Router change renders another Router', function (): void {
     $fleet = liveShapedDnsFleet();
-    $matrix = privateDnsMatrix($fleet, liveShapedDnsSites($fleet));
+    $sites = liveShapedDnsSites($fleet);
+    $answers = ['current' => privateDnsMatrix($fleet, $sites)['answers'],
+        'router-change' => privateDnsMatrix($fleet, $sites, [$fleet['cluster']->id => ['router_node_id' => $fleet['sabre']->id]])['answers']];
     if (getenv('ORBIT_WRITE_DNS_GOLDEN') === '1') {
-        file_put_contents(PRIVATE_DNS_GOLDEN, json_encode($matrix['answers'], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
+        file_put_contents(PRIVATE_DNS_GOLDEN, json_encode($answers, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
     }
 
-    expect($matrix['answers'])->toBe(json_decode((string) file_get_contents(PRIVATE_DNS_GOLDEN), true));
+    expect($answers)->toBe(json_decode((string) file_get_contents(PRIVATE_DNS_GOLDEN), true));
 });
 
 it('writes no record a TLD already answers, and keeps every other one', function (): void {
