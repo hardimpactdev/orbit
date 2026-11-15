@@ -1,5 +1,6 @@
 id: 93fd584e-b2ab-50c1-9c13-d0ce81b6dfc6
 name: route-remove-firewall
+autoContinue: false
 description: "route.destroy: one Node drops the LAN rules and public ports no Route needs."
 vaults: []
 queueTimeout: 30

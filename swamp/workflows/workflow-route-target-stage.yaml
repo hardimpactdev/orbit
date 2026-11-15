@@ -1,5 +1,6 @@
 id: 4496e9e3-8450-58eb-80b5-91201b6b3eff
 name: route-target-stage
+autoContinue: false
 description: "route.target_set: one new target Node, staged before the Router selects it."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

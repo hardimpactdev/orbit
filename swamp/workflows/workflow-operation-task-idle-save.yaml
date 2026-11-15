@@ -1,5 +1,6 @@
 id: 7c508e3a-5d66-4335-9630-78b38e482861
 name: operation-task-idle-save
+autoContinue: false
 description: >-
   Save the workspace of an idle task group to origin before its VM is released (docs/cli/task/idle-save.mmd): one Ansible phase
   commits the changes of the workspace, bundles HEAD and fetches the bundle to Node 209; 209 imports it and pushes it, with a token

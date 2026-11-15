@@ -1,5 +1,6 @@
 id: a316a21c-564c-4f25-bc20-713f6f987d20
 name: operation-database-server-close
+autoContinue: false
 queueTimeout: 30
 description: Give default the admin password on an adopted Valkey server with one valkey-cli call per step; AUTH comes from the vault on stdin.
 vaults: [orbit-control-inputs]

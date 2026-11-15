@@ -1,5 +1,6 @@
 id: 2c8195ba-b28b-4bb1-9c65-abda5b48a477
 name: operation-database-user-create
+autoContinue: false
 queueTimeout: 30
 description: database:user:create from 209, one docker exec -i per batch; each login reads its password from the vault as the first stdin line.
 vaults: [orbit-control-inputs]

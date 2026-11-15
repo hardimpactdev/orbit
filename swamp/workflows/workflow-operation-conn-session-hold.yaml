@@ -1,5 +1,6 @@
 id: 6b0e2d4a-8f1c-4c7e-9a35-2d7f1e9c4b58
 name: operation-conn-session-hold
+autoContinue: false
 description: Make the session the Gateway holds for one Node on a container T3 server (docs/cli/conn/session-hold.mmd). Mint a pairing link with the admin session, redeem it on T3's normal pairing endpoint, store the session as a native sensitive field, then clean up and assert.
 vaults:
 - orbit-control-inputs

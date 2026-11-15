@@ -1,5 +1,6 @@
 id: 7df691d6-2ab4-48e7-89ba-f973561eb9a7
 name: operation-task-pr-ready
+autoContinue: false
 description: Take one admitted task pull request out of draft and, in manual mode, request the reviewer's review, with native GitHub commands.
 inputs:
   type: object

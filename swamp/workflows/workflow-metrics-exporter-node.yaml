@@ -1,5 +1,6 @@
 id: d84434b2-1b78-4a5c-ab38-9bc9c96db387
 name: metrics-exporter-node
+autoContinue: false
 description: Apply the exporter Node part of one metrics.exporter_enable or metrics.exporter_disable intent with official behaviors.
 queueTimeout: 30
 inputs:

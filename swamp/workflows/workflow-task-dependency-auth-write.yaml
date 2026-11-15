@@ -1,5 +1,6 @@
 id: c12932c9-046f-54ef-b078-45a48969c3c9
 name: task-dependency-auth-write
+autoContinue: false
 description: Mint the read token of the dependency install and write the Composer and npm configuration of the task account from it, mode 0600. The remove workflow deletes both files.
 vaults:
 - orbit-control-inputs

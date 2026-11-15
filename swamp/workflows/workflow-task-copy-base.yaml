@@ -1,5 +1,6 @@
 id: 895c585f-a7ac-43f7-9701-62d71be8edb7
 name: task-copy-base
+autoContinue: false
 description: >-
   task:sync of a task copy: the workspace phase base brings the Project's default branch into the copy through its Node mirror, and
   base-cleanup removes what a base left. Only the sync's copy path calls it; the read credential is a Git header that reaches only

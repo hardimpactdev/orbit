@@ -1,5 +1,6 @@
 id: 2c16b6c3-e9db-48ec-af98-05cb1a473782
 name: route-certificate-remove
+autoContinue: false
 queueTimeout: 30
 description: "One Node: a withdrawn scope's certificate folders, removed by official steps."
 vaults: []

@@ -1,5 +1,6 @@
 id: b9ec5074-49d4-5c43-baf3-a69ae6f19cd3
 name: route-remove-check
+autoContinue: false
 description: "route.destroy: one Node shows that nothing of the Route is left (cfgmgmt check)."
 vaults: []
 queueTimeout: 30

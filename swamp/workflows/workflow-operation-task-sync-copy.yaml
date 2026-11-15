@@ -1,5 +1,6 @@
 id: e1b781af-f4b7-4e62-9ecd-94d61fb1e86f
 name: operation-task-sync-copy
+autoContinue: false
 description: >-
   task:sync of a task copy (docs/cli/task/sync.mmd): the workspace phase base brings the Project's default branch into the copy
   through the copy's Node mirror and one bundle of what it lacks, into refs/remotes/origin/<default branch>; no credential reaches

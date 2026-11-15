@@ -1,5 +1,6 @@
 id: 5e94ea76-174b-5a8f-a12a-ae8f1c563836
 name: instance-clone-source
+autoContinue: false
 description: Create the production account, home and release-layout marker, then fetch the committed source into releases/initial
   as that account.
 vaults:

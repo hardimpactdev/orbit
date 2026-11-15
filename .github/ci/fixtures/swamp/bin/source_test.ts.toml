@@ -1,7 +1,8 @@
 order = 140
-source_sha256 = "7b8e2a337c628f66a6281897137accb4e60400490e1604c438e9ffae170cac30"
+source_sha256 = "9df816b8515aeb9efa246b662e43dbf5410c663c153d4a1a352e0fad3d629e1d"
 cases = [
   "model IDs are unique",
+  "every workflow keeps an interrupted run interrupted",
   "workflow queue bounds have measured per-kind budgets",
   "every Ansible file ships with the ansible-input extension",
   "runtime credentials and generated records are ignored",

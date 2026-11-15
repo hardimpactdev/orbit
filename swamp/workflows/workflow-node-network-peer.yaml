@@ -2,6 +2,7 @@
 # Generated from network-command/workflows.ts
 id: 3c0eb942-9c7f-438d-8d4c-7c739642c155
 name: node-network-peer
+autoContinue: false
 description: Pinned official SSH from209; full public input and typed terminal output.
 vaults: []
 queueTimeout: 30

@@ -1,5 +1,6 @@
 id: 6a0f42e3-1cd3-4d84-8b26-59ea7e7a321f
 name: operation-vault-setup
+autoContinue: false
 description: Verify the account and collection with the official Bitwarden CLI on a Swamp worker.
 vaults:
 - orbit-control-inputs

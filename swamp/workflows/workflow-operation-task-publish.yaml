@@ -1,5 +1,6 @@
 id: dd1ccba6-5339-44da-8040-616a905706a4
 name: operation-task-publish
+autoContinue: false
 description: Publish the admitted checked commit in the chart's six steps; task VM work is official SSH exec argv, a task copy's export is its workspace phase, 209 work is inline git and gh api.
 vaults:
 - orbit-control-inputs

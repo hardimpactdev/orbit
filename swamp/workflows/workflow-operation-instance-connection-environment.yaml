@@ -1,5 +1,6 @@
 id: b8021b0c-528e-4af8-ba6f-09ecc563bf56
 name: operation-instance-connection-environment
+autoContinue: false
 description: env:sync on a container Instance; add the attached connections' network paths and write only their keys into the .env.
 vaults: [orbit-control-inputs]
 queueTimeout: 10

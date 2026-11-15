@@ -1,5 +1,6 @@
 id: 7d77e663-d6a1-4dfa-96ac-625b826ad094
 name: project-dependency-evidence
+autoContinue: false
 description: One bounded native PR read per admitted URL, followed by native evidence correlation.
 vaults:
 - orbit-control-inputs

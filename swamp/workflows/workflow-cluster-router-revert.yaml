@@ -1,5 +1,6 @@
 id: d20ef954-1554-5201-973a-6f61376700e0
 name: cluster-router-revert
+autoContinue: false
 description: "cluster.router_set: the captured Caddy, LAN and DNS state back, so the old Router keeps serving."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

@@ -1,5 +1,6 @@
 id: fdd25bfe-62c9-47b6-b401-ea3900ac8a69
 name: operation-instance-mail-update
+autoContinue: false
 description: Repair the shared development mail path, then apply the exact mailer-line rule.
 queueTimeout: 10
 labels: {role: swamp}

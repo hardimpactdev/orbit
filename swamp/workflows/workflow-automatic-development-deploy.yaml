@@ -1,5 +1,6 @@
 id: 9897ae74-90ae-493b-a17e-71bbfc6c1749
 name: automatic-development-deploy
+autoContinue: false
 queueTimeout: 30
 description: Run development policy only for the container defaults the Gateway found behind their branch.
 labels: {role: swamp}

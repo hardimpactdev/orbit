@@ -1,5 +1,6 @@
 id: 0387cd8c-46b0-5f69-b3dc-bd167399985f
 name: instance-clone-environment
+autoContinue: false
 description: Write the rendered .env for the production account and prepare its pinned Vite+ runtime.
 vaults:
 - orbit-control-inputs

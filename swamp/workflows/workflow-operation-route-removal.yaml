@@ -1,5 +1,6 @@
 id: 855a0c69-2eab-4eea-8488-0b63b2312cb1
 name: operation-route-removal
+autoContinue: false
 description: "Route destroy and withdrawal in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

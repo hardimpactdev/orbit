@@ -1,5 +1,6 @@
 id: c2c6c4a5-a667-4a81-9f5a-fae18fdf5d4a
 name: operation-instance-create
+autoContinue: false
 description: 'Development Instance create: checkout/default Ansible phases, or the direct clone phases up to the session copy in their own job, with the clone''s Route beside them, and the T3 registration with the create''s result first in the create job when its admission took the Route Nodes (the completion does its database, fleet, Processes, and a Route this run did not publish). Native progress records each phase.'
 vaults: [orbit-control-inputs]
 queueTimeout: 10

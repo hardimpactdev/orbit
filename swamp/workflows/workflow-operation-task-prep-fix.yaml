@@ -1,5 +1,6 @@
 id: 95872d2a-e42e-4355-a3d6-747269134586
 name: operation-task-prep-fix
+autoContinue: false
 description: >-
   Apply the review of the owner to a prep group in one run from full inputs on 209: resume the task VM only when parked, let the author
   apply the corrections as a new commit, check them with the runner plan and a bounded review loop, and push them to the same

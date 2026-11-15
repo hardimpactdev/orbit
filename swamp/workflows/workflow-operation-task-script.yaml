@@ -1,5 +1,6 @@
 id: 71e40e98-b4dc-4ce1-b4cb-8c328e581a78
 name: operation-task-script
+autoContinue: false
 description: Run the admitted repository script on Node 209 as official SSH exec argv in the owned task VM workspace.
 vaults: []
 queueTimeout: 30

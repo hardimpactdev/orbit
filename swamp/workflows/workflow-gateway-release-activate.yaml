@@ -1,5 +1,6 @@
 id: 3effe849-5048-45ba-8a9a-6bc62ef70c57
 name: gateway-release-activate
+autoContinue: false
 description: Switch the Gateway to a built release, verify it and resume its cleanups; the release run starts it from the new commit's definition.
 # A failed check switches back to the previous release; migrations are expand and contract, so it runs on the new
 # schema (docs/reference/gateway-recovery.md#release-as-a-swamp-run).

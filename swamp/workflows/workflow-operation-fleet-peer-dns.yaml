@@ -2,6 +2,7 @@
 # Generated from network-command/workflows.ts
 id: f05d2ee0-5aa7-4271-9924-fda8b65a786d
 name: operation-fleet-peer-dns
+autoContinue: false
 description: Pinned official SSH from209; full public input and typed terminal output.
 vaults: []
 queueTimeout: 60

@@ -1,5 +1,6 @@
 id: 2631be29-8b8d-40af-94d8-07f76f795c87
 name: operation-schedule-create
+autoContinue: false
 description: Converge public Schedule units and timer intent through official cfgmgmt on 209.
 vaults: []
 inputs:

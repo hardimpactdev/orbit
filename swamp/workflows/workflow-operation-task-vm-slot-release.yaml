@@ -1,5 +1,6 @@
 id: 8b920884-4d7f-4c4d-b740-1c00d0d809bc
 name: operation-task-vm-slot-release
+autoContinue: false
 description: >-
   Release one task VM (docs/cli/task/vm-release.mmd) from full inputs on 209: the VM and its seed clone are deleted, its hub peer is
   removed, side by side. The Gateway then deletes its Node record. No step calls the Gateway or the model router.

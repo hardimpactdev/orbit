@@ -1,5 +1,6 @@
 id: 6247e94c-f8c1-471c-b19f-74e7f37e381d
 name: operation-vault-teardown
+autoContinue: false
 description: Delete exact ledger matches with the official CLI; Gateway-only retention
   starts no run.
 tags: {}

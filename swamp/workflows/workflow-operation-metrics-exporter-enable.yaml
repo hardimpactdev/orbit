@@ -1,5 +1,6 @@
 id: b1f8417f-fd4e-49a3-81f4-34f168e47d30
 name: operation-metrics-exporter-enable
+autoContinue: false
 description: metrics.exporter_enable from captured intent. Install and allow, check the endpoints, then publish the scrape configuration with a reload.
 inputs:
   properties:

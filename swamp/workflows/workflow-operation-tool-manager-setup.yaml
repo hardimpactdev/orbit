@@ -1,5 +1,6 @@
 id: 2a25f8bb-82b0-4bcb-93d2-cd0ce9fcb4af
 name: operation-tool-manager-setup
+autoContinue: false
 description: The shared Tool Manager setup that tool.install runs on first use and the development deploy runs for Vite+.
 vaults: []
 queueTimeout: 60

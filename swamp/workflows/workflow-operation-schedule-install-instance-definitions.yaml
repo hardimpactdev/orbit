@@ -1,5 +1,6 @@
 id: 73c78a4c-e148-4130-89e3-33104b28ae6e
 name: operation-schedule-install-instance-definitions
+autoContinue: false
 description: Converge captured Schedule definitions through native child workflows on 209.
 vaults: []
 inputs:

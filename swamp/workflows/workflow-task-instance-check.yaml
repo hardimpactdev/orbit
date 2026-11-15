@@ -1,5 +1,6 @@
 id: 7f6de06c-8f84-400c-9c26-8273b8b24773
 name: task-instance-check
+autoContinue: false
 description: Run one task check in its container Instance through Ansible phases on the Instance Node; the task check rules judge the evidence.
 queueTimeout: 30
 labels: {role: swamp}

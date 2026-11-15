@@ -1,5 +1,6 @@
 id: b2f83469-9dcd-5aaf-a57d-7ee137a158fb
 name: instance-clone-candidate
+autoContinue: false
 description: Check the clone candidate source on its Node, read-only, as the candidate Node user.
 vaults:
 - orbit-control-inputs

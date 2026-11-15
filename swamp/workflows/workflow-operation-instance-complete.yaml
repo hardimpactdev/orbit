@@ -1,5 +1,6 @@
 id: d44e77ae-a9c8-430d-965d-e9d06039d145
 name: operation-instance-complete
+autoContinue: false
 description: 'Container clone completion (docs/cli/instance/complete.mmd): the database, a nested fleet, and one Node step for the services part of the workspace and the check in the complete job; the Route in its own job; a failed or cancelled run withdraws the Route it published.'
 vaults: [orbit-control-inputs]
 queueTimeout: 10

@@ -1,5 +1,6 @@
 id: 71347678-030a-595a-9509-d8309edc5420
 name: route-create-sign
+autoContinue: false
 description: "route.create: 209 has one Node-made CSR signed by the Gateway."
 vaults: []
 queueTimeout: 30

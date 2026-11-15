@@ -1,5 +1,6 @@
 id: 8e4d2b71-3c59-4a0e-b6d8-7f1a93c05e22
 name: proof-fleet-verify-batch
+autoContinue: false
 description: One batch of proof cases on the task VM or in a task copy. The restore of `base` (a VM) or the reset of the copy's inner fleet, the batch setup, then one runner step for all its cases (several at a time, the ones that run alone last), then one report of the verdict lines.
 vaults: []
 queueTimeout: 30

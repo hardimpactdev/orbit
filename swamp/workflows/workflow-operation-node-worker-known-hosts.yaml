@@ -1,5 +1,6 @@
 id: 2b9f1d87-8208-4c3a-b656-96606bdad3da
 name: operation-node-worker-known-hosts
+autoContinue: false
 inputs:
   type: object
   properties:

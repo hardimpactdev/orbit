@@ -1,5 +1,6 @@
 id: 30f3bb33-0431-4fdf-9cd5-b54c5da45354
 name: operation-cluster-router
+autoContinue: false
 description: "Cluster Router set in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

@@ -1,5 +1,6 @@
 id: c031ac7e-2e4f-471e-8d4f-22733dd014e0
 name: project-maintenance-inspect
+autoContinue: false
 description: Inspect a Project's default branch for dependency updates and advisories, without a clone.
 queueTimeout: 30
 vaults:

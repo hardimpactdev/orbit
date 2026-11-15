@@ -2,6 +2,7 @@
 # Generated from node-removal-command/workflows.ts
 id: 450e57df-e174-4ad6-bba5-306c2581d919
 name: operation-node-remove
+autoContinue: false
 description: 'Official resource removal and single-command SSH actions; retained user data, native end check.'
 vaults:
   - orbit-control-inputs

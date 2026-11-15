@@ -1,5 +1,6 @@
 id: 3b9f6a14-52c7-4e08-8d1a-7e40c5b2f9a6
 name: route-withdraw-node
+autoContinue: false
 description: "instance.destroy: one Node's Route withdrawal. Plan it from the captured states, then one Node-local transaction under the Node lock reads, merges, tests and applies pools, Caddyfile and private DNS records, each written once, and removes the certificate folders."
 vaults: []
 queueTimeout: 30

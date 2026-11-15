@@ -1,5 +1,6 @@
 id: 8ae4fb17-d77a-4fb3-8ecb-cf6f5384e65e
 name: operation-node-agent-rekey
+autoContinue: false
 description: Write a new Node agent key with official cfgmgmt from 209, restart the agent and prove the key.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

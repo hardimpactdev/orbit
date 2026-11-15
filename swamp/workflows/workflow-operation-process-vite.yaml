@@ -1,5 +1,6 @@
 id: 0392e20f-4cd0-4035-993e-79917039312b
 name: operation-process-vite
+autoContinue: false
 description: Prepare one Vite dev Process before it starts, from 209 over official SSH and cfgmgmt; create, start and restart share it.
 vaults: []
 # Keep `inputs` in flow style: bin/check-flows reads a block-style `kind` line as the kind's owning workflow, and this child owns none.

@@ -1,5 +1,6 @@
 id: 8b61ea39-e5d5-4f20-aab9-f9e6b339da9f
 name: fleet-reboot-node
+autoContinue: false
 description: "One Node of a fleet.reboot pass: the drain, reboot and check phases of ansible/operation-fleet-reboot.yml, run from 209."
 vaults: [orbit-control-inputs]
 queueTimeout: 60

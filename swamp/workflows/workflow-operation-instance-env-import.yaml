@@ -1,5 +1,6 @@
 id: 7b6f1d4e-2c3a-4e9b-9f1a-5d8c3e2b1a07
 name: operation-instance-env-import
+autoContinue: false
 description: Copy one Instance's .env into Swamp's vault on 209, for the Gateway to read once; nothing changes on the Node.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

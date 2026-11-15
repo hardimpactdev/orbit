@@ -1,5 +1,6 @@
 id: 9b3d6f2e-41a8-4c7e-8d15-6a0f2c9e7b54
 name: operation-ai-router-model-forwarder
+autoContinue: false
 description: "ai_router.model_forwarder: the model router guard re-applied with an agent Node added to its sources or dropped, then the container model forwarder on that Node applied or removed by Ansible, and the path proved from the Node."
 vaults:
 - orbit-control-inputs

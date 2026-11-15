@@ -1,5 +1,6 @@
 id: 0e659cfe-fc72-4853-af4e-611c6d4fd8f7
 name: project-observe
+autoContinue: false
 description: Observe admitted Project pull requests once and project public lifecycle evidence.
 vaults:
 - orbit-control-inputs

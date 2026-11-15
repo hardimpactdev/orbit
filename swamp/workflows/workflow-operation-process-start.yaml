@@ -1,5 +1,6 @@
 id: e0019cbb-1534-4d7d-ad49-a7728f905981
 name: operation-process-start
+autoContinue: false
 description: 'Rule 22 Process control: official cfgmgmt, SSH argv and a native end check.'
 vaults:
 - orbit-control-inputs

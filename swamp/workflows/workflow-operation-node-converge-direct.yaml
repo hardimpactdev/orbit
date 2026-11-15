@@ -1,5 +1,6 @@
 id: daace7ba-223f-47b6-9452-7c0da7cf384e
 name: operation-node-converge
+autoContinue: false
 description: 'Inspect and reconcile recorded Node state in ordered Ansible phases; always remove private input.'
 vaults:
   - orbit-control-inputs

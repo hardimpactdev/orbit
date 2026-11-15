@@ -1,5 +1,6 @@
 id: 25e07c84-55fc-4e9f-9a5a-dc587d36092d
 name: operation-database-import
+autoContinue: false
 queueTimeout: 30
 description: database:import from 209, one script over official SSH as the Node's SSH user; the Gateway builds its argv and reads its one result line.
 vaults: [orbit-control-inputs]

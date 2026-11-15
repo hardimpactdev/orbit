@@ -1,5 +1,6 @@
 id: 92c89a8c-6487-42f5-a70e-d67be3921b28
 name: operation-dependency-merge
+autoContinue: false
 description: Squash one admitted dependency batch with native GitHub commands and pure dependency evidence.
 inputs:
   type: object

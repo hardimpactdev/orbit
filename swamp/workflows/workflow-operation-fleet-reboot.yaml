@@ -1,5 +1,6 @@
 id: 3551bc1b-ee36-4dc5-bf9b-6c0e1140aad6
 name: operation-fleet-reboot
+autoContinue: false
 description: "fleet.reboot: drain, reboot and check each admitted Node, one at a time in pass order, as Ansible phases from 209; report every Node's outcome."
 vaults: [orbit-control-inputs]
 queueTimeout: 60

@@ -1,5 +1,6 @@
 id: 662587a5-f394-492c-8e7f-7eccbb124066
 name: operation-metrics-disable
+autoContinue: false
 description: metrics.disable from captured intent. Withdraw metrics.orbit first, then the containers, the fleet exporters, the Grafana rules and the configuration; the volumes go only with purge.
 vaults: [default, orbit-control-inputs]
 inputs:

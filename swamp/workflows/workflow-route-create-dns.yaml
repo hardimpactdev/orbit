@@ -1,5 +1,6 @@
 id: d72f5ebe-a54b-5cff-9a56-23bb4efb9214
 name: route-create-dns
+autoContinue: false
 description: "route.create: the private DNS records outside the TLD."
 vaults: []
 queueTimeout: 30

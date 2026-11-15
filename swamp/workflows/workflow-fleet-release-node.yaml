@@ -1,5 +1,6 @@
 id: 3125b46d-bd66-4e0a-96bf-e336d7f182fc
 name: fleet-release-node
+autoContinue: false
 description: Gate one fleet Node on 209, publish its CLI only when required, record the outcome, and for a rollout publish the pinned observer with official cfgmgmt, all from 209.
 vaults: []
 queueTimeout: 60

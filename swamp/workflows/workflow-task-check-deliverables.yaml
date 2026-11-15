@@ -1,5 +1,6 @@
 id: 7615a9cf-2059-5bf2-9e6d-3529913d1095
 name: task-check-deliverables
+autoContinue: false
 description: Run the file diff and each command deliverable, on the start commit first when it must fail there.
 vaults:
 - orbit-control-inputs

@@ -1,5 +1,6 @@
 id: 738a2f9d-dc6c-4754-92c3-f51de9cb91f9
 name: operation-instance-deploy-direct
+autoContinue: false
 description: 'Development deploy as official SSH argv from 209, and the production release deploy of docs/cli/instance/deploy.mmd: official SSH argv and cfgmgmt from 209, as the Instance account.'
 vaults:
 - orbit-control-inputs

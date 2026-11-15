@@ -1,5 +1,6 @@
 id: 22e84308-c7ae-4c33-90c6-32dfeb970870
 name: operation-node-add
+autoContinue: false
 description: Enroll a Node with native host observations, Ansible phases for the Node state and frozen role plans.
 queueTimeout: 30
 vaults:

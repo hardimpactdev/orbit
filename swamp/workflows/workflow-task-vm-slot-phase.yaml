@@ -1,5 +1,6 @@
 id: 79145fca-fa29-4a40-91d2-5fccd0473f99
 name: task-vm-slot-phase
+autoContinue: false
 description: >-
   Run one tagged part of the slot play of the task VM host playbook (swamp/ansible/task-vm-host.yml) that needs no secret, such as
   `delete`, against one Incus host from the Swamp Node with the host's pinned keys.

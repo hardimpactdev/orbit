@@ -380,6 +380,8 @@ export function workflow(network: boolean) {
             ? "3c0eb942-9c7f-438d-8d4c-7c739642c155"
             : "f05d2ee0-5aa7-4271-9924-fda8b65a786d",
         name: network ? "node-network-peer" : "operation-fleet-peer-dns",
+        // A run cut by a serve restart stays interrupted (docs/swamp-shape.md, rule 6).
+        autoContinue: false,
         description:
             "Pinned official SSH from209; full public input and typed terminal output.",
         vaults: [],

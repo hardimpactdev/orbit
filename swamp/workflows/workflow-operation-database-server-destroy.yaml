@@ -1,5 +1,6 @@
 id: 2fb743f6-7bd7-4d0a-8a61-168d30da8a44
 name: operation-database-server-destroy
+autoContinue: false
 description: Database server removal from 209, docker rm and one inspect end check over official SSH; the data volume stays.
 vaults: []
 queueTimeout: 30

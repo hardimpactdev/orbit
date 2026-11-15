@@ -1,5 +1,6 @@
 id: e94e53a3-608a-4f5a-a253-e80c7fce2df4
 name: task-github-cleanup
+autoContinue: false
 description: Revoke the GitHub token of a pull request step when it was minted, and remove the private GitHub CLI configuration directory of the run. The revoke is best effort; the removal must succeed.
 vaults:
 - orbit-control-inputs

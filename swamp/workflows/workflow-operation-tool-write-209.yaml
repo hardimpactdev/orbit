@@ -1,5 +1,6 @@
 id: 3f4a442f-a80b-4d66-9ef8-5b1f4c462f7f
 name: operation-tool-write-209
+autoContinue: false
 description: Native Tool installation and update through cfgmgmt and bounded SSH argv.
 vaults: []
 queueTimeout: 60

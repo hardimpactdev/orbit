@@ -1,5 +1,6 @@
 id: 709bf433-fbb8-48ea-99f2-2e24759c4697
 name: task-instance-workspace
+autoContinue: false
 description: One internal Node-side task workspace phase; no public task admission.
 queueTimeout: 30
 labels: {role: swamp}

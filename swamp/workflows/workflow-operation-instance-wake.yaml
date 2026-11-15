@@ -1,5 +1,6 @@
 id: 2d0e5e38-2784-42df-9092-377969d45ad9
 name: operation-instance-wake
+autoContinue: false
 description: Start a sleeping development container, remove its asleep marker once the app answers, then wait for T3.
 queueTimeout: 10
 labels: {role: swamp}

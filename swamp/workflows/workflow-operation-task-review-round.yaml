@@ -1,5 +1,6 @@
 id: 4b7b23f4-b2d0-4a6b-8f93-527231d1cffd
 name: operation-task-review-round
+autoContinue: false
 description: >-
   One review round of the automatic mode in one run from full inputs on 209: resume a parked task VM, let a fresh reviewer judge the
   pull request head, post the verdict as a comment of the App, and, when the review has findings, let the author fix them, check

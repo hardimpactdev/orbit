@@ -1,5 +1,6 @@
 id: 8882537c-e250-4b80-8690-ce8c0fa419b8
 name: operation-route-create
+autoContinue: false
 description: "Route create in the chart's seven steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

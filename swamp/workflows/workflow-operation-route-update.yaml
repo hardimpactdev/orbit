@@ -1,5 +1,6 @@
 id: b1a5e413-5c52-4d05-966b-f78d57c2da06
 name: operation-route-update
+autoContinue: false
 description: "Route update in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

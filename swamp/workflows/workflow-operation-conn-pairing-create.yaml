@@ -1,5 +1,6 @@
 id: 85fb12d7-c3a6-4d70-a2a8-c2a497374fc8
 name: operation-conn-pairing-create
+autoContinue: false
 description: Mint one pairing through native curl, store its unique native sensitive field, then clean up and assert.
 vaults:
 - orbit-control-inputs

@@ -1,5 +1,6 @@
 id: 26151fce-b162-5a77-be75-ca9997d7afb8
 name: operation-cluster-router-unset
+autoContinue: false
 description: "Cluster Router unset in the chart's steps (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

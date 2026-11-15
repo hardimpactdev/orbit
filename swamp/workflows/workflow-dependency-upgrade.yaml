@@ -1,5 +1,6 @@
 id: 00e7b9ff-4117-499d-9b7d-a482ecd3f6b7
 name: dependency-upgrade
+autoContinue: false
 description: Read an admitted scratch checkout and return a native dependency plan
   without host dispatch.
 tags: {}

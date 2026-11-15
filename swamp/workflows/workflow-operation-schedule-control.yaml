@@ -1,5 +1,6 @@
 id: baa6dafa-1638-4565-a5af-cd7103633c42
 name: operation-schedule-control
+autoContinue: false
 description: Enable the installed Schedule timer through official cfgmgmt on 209.
 vaults: []
 inputs:
