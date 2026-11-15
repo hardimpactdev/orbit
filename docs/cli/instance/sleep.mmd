@@ -48,6 +48,7 @@ sequenceDiagram
   %%> What it does:
   %%> - writes `max` to `memory.swap.max` of every cgroup in the container's subtree that holds 0: the container's own (Incus writes 0) and, in a nested-fleet Instance, the inner payload cgroups (the inner Incus writes 0 too)
   %%> - records the inner cgroups it opened on the Node, `/dev/shm/orbit/hibernation/app-instance-<id>.swap` (it makes the folder a Node's reboot emptied), and their count in the result, `swap_subtree`; a cgroup with its own limit, such as 32 MiB, stays as it is
+  %%> - when it opened no inner cgroup, it writes no record and removes one left from before: a plain clone's wake takes the Node's resume, which never removes it
   %%> - a cgroup that vanishes during the walk or refuses the write is not opened and fails nothing: its pages stay in RAM, which the check below counts
   %%> - `incus pause`, then a reclaim of the container's memory
   %%> - the processes and their state stay; their memory goes to swap, about 13 MiB stays in RAM for a clone, 78 MiB for a nested-fleet default
