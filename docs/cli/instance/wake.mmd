@@ -33,6 +33,11 @@ sequenceDiagram
   %%> - after a failed wake, Caddy gets the failure page with Try again until a retry or the command starts a new wake
   %%> On failure:
   %%> - no container, a non-development Instance, a nested-fleet default whose last sleep did not freeze it, or other lifecycle work starts no run
+  opt the caller is Caddy, for a visit
+    GW-->>CL: 401 progress page, at once<br/>spinner only
+    %%> Result:
+    %%> - the visitor never waits for the wake: the Gateway admits or joins it and answers before any Node call or run start
+  end
   opt the last sleep froze a container with no inner swap
     %% path: resume
     GW->>N: Write the wake request<br/>agent · hibernation.marker
@@ -59,7 +64,7 @@ sequenceDiagram
     %%> - a cancel during the resume keeps the Operation cancelled
   end
   GW->>SW: Start run, full intent<br/>operation-instance-wake
-  GW-->>CL: 202 Accepted<br/>Operation ID · progress page
+  GW-->>CL: 202 Accepted<br/>Operation ID
   SW->>N: Wake the container<br/>Ansible · tags start
   %%> What it does:
   %%> - Frozen: `incus resume`, `memory.swap.max` back to 0 on the container's cgroup and on each cgroup of the swap record that still exists (a short-lived unit's cgroup may be gone; that never fails the wake), FrankenPHP gets 10 tries 1 s apart; nothing boots and nothing converges, `wake: resumed`

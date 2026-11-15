@@ -128,7 +128,8 @@ final readonly class InstanceWake extends InstancePower
     }
 
     /**
-     * A frozen container's wake is recorded without its run: the Node's resume comes first, after the commit (resume()).
+     * A frozen container's wake is recorded without its run: the Node's resume comes first, after the commit
+     * (resumeOnNode(): within the command's call, or after a visit's answer).
      *
      * @param  array<string, mixed>  $input
      */
