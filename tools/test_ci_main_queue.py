@@ -289,7 +289,8 @@ class RangePlanTest(unittest.TestCase):
 
 class ProofScopeTest(unittest.TestCase):
     def receipt(self):
-        return {'commit': C, 'outcome': 'passed', 'result': {'cases': [{'command': 'node:list', 'case': 'list', 'verdict': 'passed'}]}}
+        return {'commit': C, 'outcome': 'passed', 'operation_status': 'succeeded', 'started_at': '2026-11-15T04:00:00Z',
+                'result': {'outcome': 'passed', 'selected_commands': ['node:list'], 'cases': [{'command': 'node:list', 'case': 'list', 'verdict': 'passed'}]}}
 
     def test_exact_range_receipt_links_every_commit_to_one_report(self):
         receipt = {**self.receipt(), 'base': claim('proof', 'range')['base']}

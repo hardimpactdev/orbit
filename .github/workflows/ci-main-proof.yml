@@ -8,6 +8,10 @@ name: Main copy proof
   - cron: 17 3 * * *
   workflow_dispatch:
     inputs:
+      retry_admission:
+        description: Grant three more admission attempts without moving the checkpoint
+        type: boolean
+        default: false
       full_set:
         description: Run all kinds if the proof queue is empty
         type: boolean
@@ -43,6 +47,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         FULL_SET: ${{ inputs.full_set || false }}
+        RETRY_ADMISSION: ${{ github.event_name == 'workflow_dispatch' && inputs.retry_admission || false }}
         NIGHTLY: ${{ github.event.schedule == '17 3 * * *' && vars.ORBIT_MAIN_PROOF_NIGHTLY_ENABLED == 'true' }}
       run: bin/ci-main-queue claim --consumer proof --output "$RUNNER_TEMP/main-queue-claim.json"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9

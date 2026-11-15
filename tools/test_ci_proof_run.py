@@ -188,7 +188,8 @@ class InterruptedReportTest(unittest.TestCase):
                         self.assertEqual('interrupted', outcome)
                         self.assertEqual({'commit': SHA, 'idempotency_key': 'ci-proof.7.2', 'operation_id': 73,
                                           'outcome': 'interrupted', 'selected_commands': ['firewall:allow'],
-                                          'error_code': 'proof.run_interrupted'}, receipt)
+                                          'error_code': 'proof.run_interrupted', 'operation_status': 'interrupted', 'started_at': None,
+                                          'caller': {'exit_status': code, 'http_status': None, 'error_detail': None, 'transport_error': None}}, receipt)
 
     def test_a_completed_failure_stays_visible_alongside_interrupted_coverage(self):
         output = json.dumps({'result': {'outcome': 'failed', 'selected_commands': ['firewall:allow', 'firewall:deny'],

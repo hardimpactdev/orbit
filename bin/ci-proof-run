@@ -108,27 +108,45 @@ def report(code, output, sha, key, allow_trust_skip=False):
             if isinstance(holder, dict) and type(holder.get('id')) is int:
                 operation_id = holder['id']
                 break
+    operation = next((holder for holder in holders if isinstance(holder, dict) and 'result' in holder), {})
+    http_status = next((value for value in (error.get('http_status'), error.get('status'),
+                        (document or {}).get('http_status') if isinstance(document, dict) else None)
+                        if type(value) is int and 100 <= value <= 599), None)
+    if http_status is None:
+        status_message = re.fullmatch(r'Gateway request failed with HTTP status ([1-5][0-9]{2})\.', str(error.get('detail') or error.get('message') or ''))
+        if status_message:
+            http_status = int(status_message[1])
     receipt = {'commit': sha, 'idempotency_key': key, 'operation_id': operation_id,
                'outcome': outcome, 'selected_commands': commands if selection_known else None,
-               'error_code': error.get('code') if isinstance(error.get('code'), str) else None}
+               'error_code': error.get('code') if isinstance(error.get('code'), str) else None,
+               'operation_status': operation.get('status'), 'started_at': operation.get('started_at'),
+               'caller': {'exit_status': code, 'http_status': http_status,
+                          'error_detail': error.get('detail') or error.get('message'),
+                          'transport_error': (error.get('detail') or error.get('message')) if error.get('code') == 'gateway.unreachable' else None}}
+
     return outcome, lines, receipt
 
 
-def run(sha, key, orbit, all_cases=False, base=None):
+def run(sha, key, orbit, all_cases=False, base=None, diagnostic=None):
     if base is not None and (not SHA.fullmatch(base) or all_cases):
         raise ValueError("A range needs a full base SHA and cannot use --all")
     child = subprocess.Popen([orbit, 'proof:run', sha, *(['--all'] if all_cases else []), *(['--base', base] if base is not None else []), '--json', '--idempotency-key', key],
-                             stdout=subprocess.PIPE, text=True)
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     # A cancelled job gets SIGINT, then SIGTERM. Orbit cancels its run on both.
     for name in (signal.SIGINT, signal.SIGTERM):
         signal.signal(name, lambda number, frame: child.send_signal(number))
     try:
-        output, _ = child.communicate(timeout=WAIT)
+        output, stderr = child.communicate(timeout=WAIT)
+        code = child.returncode
     except subprocess.TimeoutExpired:
         child.send_signal(signal.SIGINT)
-        output, _ = child.communicate()
-        return 124, output
-    return child.returncode, output
+        output, stderr = child.communicate()
+        code = 124
+    if stderr:
+        print(stderr, file=sys.stderr, end='')
+        if diagnostic is not None:
+            diagnostic['cli_stderr'] = stderr[-4096:]
+    return code, output
 
 
 def main():
@@ -155,8 +173,15 @@ def main():
         orbit = shutil.which('orbit')
         if orbit is None:
             sys.exit('The orbit CLI is not on the runner PATH. The runner must be an enrolled Node.')
-        code, output = run(sha, key, orbit, base=base) if base is not None else (run(sha, key, orbit, all_cases=True) if os.environ.get('PROOF_ALL') == 'true' else run(sha, key, orbit))
+        diagnostic = {}
+        try:
+            code, output = run(sha, key, orbit, base=base, all_cases=os.environ.get('PROOF_ALL') == 'true', diagnostic=diagnostic)
+        except OSError as error:
+            code, output = 127, '{}'
+            diagnostic['transport_error'] = str(error)
+
         outcome, lines, receipt = report(code, output, sha, key, allow_trust_skip=check_eligibility)
+        receipt['caller'].update(diagnostic)
         if base is not None:
             receipt['base'] = base
         if os.environ.get('PROOF_STORE_RESULT') == 'true':

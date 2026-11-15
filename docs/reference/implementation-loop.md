@@ -399,6 +399,8 @@ Managed Linux Nodes, recipe artifacts, and PHP builds support amd64 only. CI bui
 
 The shared PHP action installs PHP 8.5 and Composer 2.10.3 through the pinned PHP setup action. It does not compile the Rust agent or install the Node software recipe. Nodes and images continue to use the [machine software recipe](/reference/compute-drivers). Composer download caches stay separate from generated files and tool result caches.
 
+The [main proof consumer](/reference/main-full-set#proof-consumer) advances coverage only after a completed verdict. Its separate admission retry counter keeps GitHub or Gateway failures from discarding a main interval.
+
 ### Gateway shards
 
 Gateway Pest runs in one hosted job with four workers and no shards. Gateway static analysis also runs the two privileged kernel cases. CLI Pest and SDK Pest each run in a separate hosted job in one process. E2E, remote-program and web unit test jobs remain local checks; their test files and commands remain available.

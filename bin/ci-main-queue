@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import runpy
 import subprocess
@@ -13,6 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 full = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-full-set')))
 deferred = SimpleNamespace(**runpy.run_path(str(ROOT / 'bin/ci-deferred')))
 WORKFLOWS = {'fixtures': 'ci-deferred.yml', 'proof': 'ci-main-proof.yml'}
+PROOF_ATTEMPTS = 'Main proof admission attempts'
+PROOF_REPORT = 'Main proof report'
+PROOF_ATTEMPT_LIMIT = 3
 CONTEXTS = {'fixtures': 'Main deferred fixtures', 'proof': 'Main copy proof'}
 
 
@@ -35,7 +39,7 @@ def marker(consumer):
 
 
 def answered(github, claim):
-    return any(row['context'] == (marker(claim['consumer']) if claim['advance'] else claim['context']) and row['state'] in ('success', 'failure')
+    return any(row['context'] == (PROOF_REPORT if claim['consumer'] == 'proof' else (marker(claim['consumer']) if claim['advance'] else claim['context'])) and row['state'] in ('success', 'failure')
                and row.get('target_url') == link(github, claim['run_id'], claim.get('attempt', 1))
                for row in github.pages('commits/' + claim['sha'] + '/statuses'))
 
@@ -59,7 +63,7 @@ def publish(github, claim, report, url):
     for sha in claim['commits']:
         status = {'state': state, 'context': context, 'description': description, 'target_url': url}
         if consumer == 'proof' and not report.get('range_covered'):
-            status['description'] = 'Newest SHA selection only; waiting range NOT covered'
+            status['description'] = 'Unproven range; checkpoint retained; see proof report'
             if sha != claim['sha']:
                 status['state'] = 'failure'
         github.request('POST', 'statuses/' + sha, status)
@@ -70,10 +74,34 @@ def publish(github, claim, report, url):
         _, comments = full.report_payloads(plan, report['problems'], report.get('warnings', []), candidates, url, selection)
         for number, payload in comments:
             github.request('POST', f'issues/{number}/comments', payload)
-    if claim['advance']:
+    if claim['advance'] and (consumer != 'proof' or (report.get('verdict_reached') is True and report.get('range_covered') is True)):
         github.request('POST', 'statuses/' + claim['sha'], {'state': state, 'context': marker(consumer),
                        'description': 'Published answer; ' + ('range not covered' if consumer == 'proof' and not report.get('range_covered') else description),
                        'target_url': link(github, claim['run_id'], claim.get('attempt', 1))})
+
+    if consumer == 'proof':
+        github.request('POST', 'statuses/' + claim['sha'], {'state': state, 'context': PROOF_REPORT,
+                       'description': 'Published proof verdict' if report.get('verdict_reached') else 'Unproven; checkpoint retained; see admission retry report',
+                       'target_url': link(github, claim['run_id'], claim.get('attempt', 1))})
+
+
+def reserve_proof_attempt(github, base, run_id, reset=False):
+    latest = next((row for row in github.pages('commits/' + base + '/statuses') if row['context'] == PROOF_ATTEMPTS), None)
+    used = 0
+    if latest and not reset:
+        match = re.fullmatch(r'Attempt ([1-3])/3; range remains unproven until verdict', latest['description'])
+        if not match:
+            raise ValueError('Invalid proof admission attempt marker; operator action required')
+        used = int(match[1])
+    if used >= PROOF_ATTEMPT_LIMIT:
+        raise ValueError('proof admission retries exhausted (3/3); range after ' + base
+                         + ' is still unproven; dispatch retry_admission=true after investigation; last attempt: '
+                         + str(latest.get('target_url')))
+    number = used + 1
+    github.request('POST', 'statuses/' + base, {'state': 'pending', 'context': PROOF_ATTEMPTS,
+                   'description': f'Attempt {number}/3; range remains unproven until verdict',
+                   'target_url': link(github, run_id, int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')))})
+    return number
 
 
 def settle(github, run_id):
@@ -123,13 +151,14 @@ def queue_range(github, consumer, sha, context=None, origin=None):
     base = full.git('rev-parse', introduced[-1] + '^')
     commits = full.git('rev-list', '--first-parent', '--reverse', f'{base}..{sha}').splitlines()
     for index in range(len(commits) - 1, -1, -1):
-        if any(row['context'] == (context or marker(consumer)) and row['state'] in ('success', 'failure')
-               for row in github.pages('commits/' + commits[index] + '/statuses')):
+        latest = next((row for row in github.pages('commits/' + commits[index] + '/statuses')
+                       if row['context'] == (context or marker(consumer))), None)
+        if latest and latest['state'] in ('success', 'failure'):
             return commits[index], commits[index + 1:]
     return base, commits
 
 
-def claim_work(github, consumer, sha, run_id, full_set=False, base=None, nightly=False):
+def claim_work(github, consumer, sha, run_id, full_set=False, base=None, nightly=False, retry_admission=False):
     recover(github, consumer, run_id)
     checkpoint, commits = queue_range(github, consumer, sha)
     mode, advance = 'deferred' if consumer == 'fixtures' else 'range', True
@@ -151,7 +180,11 @@ def claim_work(github, consumer, sha, run_id, full_set=False, base=None, nightly
         context = 'Main full set' if consumer == 'fixtures' else 'Main copy proof (nightly)'
     if not commits:
         return None
-    return {'version': 1, 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'consumer': consumer, 'run_id': str(run_id), 'base': checkpoint, 'sha': sha,
+    admission = {}
+    if consumer == 'proof' and advance:
+        admission = {'admission_attempt': reserve_proof_attempt(github, checkpoint, run_id, reset=retry_admission),
+                     'admission_limit': PROOF_ATTEMPT_LIMIT}
+    return {**admission, 'version': 1, 'attempt': int(os.environ.get('GITHUB_RUN_ATTEMPT', '1')), 'consumer': consumer, 'run_id': str(run_id), 'base': checkpoint, 'sha': sha,
             'commits': commits, 'covers': commits[0] + '..' + sha, 'mode': mode, 'advance': advance, 'context': context}
 
 
@@ -239,7 +272,8 @@ def main():
         sha = full.git('rev-parse', 'HEAD')
         claim = claim_work(github, args.consumer, sha, os.environ['GITHUB_RUN_ID'],
                            os.environ.get('FULL_SET') == 'true', os.environ.get('BACKFILL_BASE') or None,
-                           os.environ.get('NIGHTLY') == 'true')
+                           os.environ.get('NIGHTLY') == 'true',
+                           os.environ.get('RETRY_ADMISSION') == 'true')
         if claim:
             full.save(args.output, claim)
         with open(os.environ['GITHUB_OUTPUT'], 'a') as output:

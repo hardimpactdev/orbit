@@ -152,3 +152,5 @@ A manual hosted proof checks out trusted workflow code, passes the tested SHA on
 Give scheduled full sweeps their own default-off switch when rolling out an incremental consumer. Enabling range processing must not silently enable a longer nightly run.
 
 A fixture that replaces a subprocess environment must retain the interpreter's loader paths. Mint-order audits must distinguish a vault name from the resolved key on each live path. Size long fixture files from completed per-case receipts; keep censored estimates explicit and split before the whole-file ceiling.
+
+A main proof checkpoint records completed verdicts, never admission or transport failures. Keep retry accounting separate from coverage and keyed to the unproven base, so new merges cannot hide a lost interval or reset a bounded retry. Test collector recovery and checkpoint restoration as well as the normal publisher.
