@@ -339,21 +339,24 @@ it('sends exactly the two Orbit routes to their fixed Gateway paths over TLS, an
         'reverse_proxy https://10.6.0.2' => "reverse_proxy https://127.0.0.1:{$gatewayPort}", '/etc/orbit/agent/ca.pem' => "{$directory}/cert.pem",
         'http://:'.AiRouterModelForwarder::Port => "http://:{$forwarderPort}",
     ]);
-    $gateway = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n\tauto_https disable_redirects\n}\nhttps://:{$gatewayPort} {\n\tbind 127.0.0.1\n"
-        ."\ttls {$directory}/cert.pem {$directory}/key.pem\n\trespond \"gateway {method} host={host} uri={uri} auth={header.Authorization}\"\n}\n";
-    $guard = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n}\nhttp://:{$guardPort} {\n\tbind 127.0.0.1\n\trespond \"guard uri={uri}\"\n}\n";
+    // One stand-in serves both upstreams: the Gateway over TLS and the guard over plain HTTP. Two Caddy processes keep the test fast.
+    $upstreams = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n\tauto_https disable_redirects\n\tservers {\n\t\tprotocols h1\n\t}\n}\n"
+        ."https://:{$gatewayPort} {\n\tbind 127.0.0.1\n\ttls {$directory}/cert.pem {$directory}/key.pem\n"
+        ."\trespond \"gateway {method} host={host} uri={uri} auth={header.Authorization}\"\n}\n"
+        ."http://:{$guardPort} {\n\tbind 127.0.0.1\n\trespond \"guard uri={uri}\"\n}\n";
     $caddies = [];
     try {
-        foreach (['forwarder' => $forwarder, 'gateway' => $gateway, 'guard' => $guard] as $name => $content) {
+        foreach (['forwarder' => $forwarder, 'upstreams' => $upstreams] as $name => $content) {
             file_put_contents("{$directory}/{$name}.Caddyfile", $content);
-            $caddies[] = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/{$name}.Caddyfile"]);
+            $caddies[] = Process::env(['XDG_DATA_HOME' => $directory, 'XDG_CONFIG_HOME' => $directory])
+                ->start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/{$name}.Caddyfile"]);
         }
         $send = static fn (string $method, string $uri): string => Http::withToken('copy-key')->send($method, "http://127.0.0.1:{$forwarderPort}{$uri}")->body();
-        retry(50, static function () use ($send): void {
+        retry(160, static function () use ($send): void {
             if (! str_starts_with($send('GET', '/orbit/v1/copy/whoami'), 'gateway ') || ! str_starts_with($send('GET', '/'), 'guard ')) {
                 throw new RuntimeException('Caddy is still starting.');
             }
-        }, 100);
+        }, 25);
 
         expect($send('GET', '/orbit/v1/copy/whoami'))->toBe('gateway GET host=10.6.0.2 uri=/api/v1/copy/whoami auth=Bearer copy-key')
             ->and($send('POST', '/orbit/v1/copy/pull-request'))->toBe('gateway POST host=10.6.0.2 uri=/api/v1/copy/pull-request auth=Bearer copy-key')
