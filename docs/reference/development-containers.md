@@ -1122,8 +1122,10 @@ Decided on 2026-11-14 by the owner: the create publishes the clone's address bes
 The admission then looks at the Route publication hold of the Route's serving Nodes ([coordinate publication](/reference/routes#coordinate-publication)):
 
 - **Free.** No Route write holds or waits for one of the Nodes. The create takes the hold in its admission transaction. Its Caddy render is fresh.
-- **Publication.** With the hold, the create's job `publication` runs beside the clone steps: `clone-route-csr-<i>`, then `clone-route`, the Route create child with its TLS probe. Its site step does not write the Caddyfile that the Gateway rendered. It puts the Route's own Caddy groups into what the Node holds, under the Node lock, and leaves every other site as it is ([publish a development site](/reference/routes#publish-a-development-site)).
+- **Publication.** With the hold, the create's job `publication` runs beside the clone steps: `clone-route-csr-<i>`, then `clone-route`, the Route create child with its TLS probe.
 - **Held.** The create never waits. Its intent carries no publication, and the completion publishes the address, as before.
+
+The site step of `clone-route` does not write the Caddyfile that the Gateway rendered. It puts the Route's own Caddy groups into what the Node holds, under the Node lock, and leaves every other site as it is ([publish a development site](/reference/routes#publish-a-development-site)).
 
 The hold table's key is the Node, so of two creates admitted in the same second exactly one takes the hold. The other gets the completion path, and its thread never waits for the first create.
 

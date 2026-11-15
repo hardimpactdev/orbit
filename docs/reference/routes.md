@@ -785,9 +785,11 @@ When an operation needs several owners, it takes them in this order: Node lifecy
 A container clone's create publishes its Route in its `clone-route` step ([the address during the create](/reference/development-containers#the-address-during-the-create)). Its site step does not write the Caddyfile that the Gateway rendered. In `orbit_route_site`, after the certificates, it runs the other direction of the withdrawal's Node-local transaction (`publish` in `orbit_route_withdraw`). Its states are the create's captured publication of the Node (`route_mutations.restore`, the stage that a failed create's withdrawal also reads), and they hold only the Route's own groups. Under `/etc/caddy/.orbit-publish.lock`, with the same 30-second wait, these steps run:
 
 1. It reads the Caddyfile.
-2. Each group that the captured states change is the Route's own. It takes the group's last state: added, replaced, or removed when the last state lacks it. Every other group, their order and the global options stay as the Node holds them.
-3. It compares every other group, their order and the global options with what it read, byte for byte, and refuses any difference.
-4. It runs `caddy validate` on the candidate beside the live file, keeps the previous generation in `/var/lib/orbit/route-previous/Caddyfile`, checks once more that the live file is as it read it, renames the candidate and reloads Caddy.
+2. It puts in the Route's own groups: each group that the captured states change takes its last state. A group that the last state lacks is removed.
+3. It compares every other group, their order and the global options with what it read, byte for byte. It refuses any difference.
+4. It runs `caddy validate` on the candidate beside the live file.
+5. It keeps the previous generation in `/var/lib/orbit/route-previous/Caddyfile`.
+6. It checks once more that the live file is as it read it. Then it renames the candidate and reloads Caddy.
 
 Every group the publication may change must be a development site of the Route: Caddy source `app-dev`, the groups `<scope>`, `<scope>-dev`, `<scope>-bridge` and `<scope>-dev-bridge`. A captured state that changes a production, Ingress, Gateway or any other group refuses with `route.publish_foreign_change`. A live own group that differs from the captured states is replaced, not refused, because a retry of the same create publishes the same groups again. A second create of the same name is a new Instance, so its groups are new. Caddy reloads even when the file is unchanged, as the publication always did, because a new certificate of the Route needs it.
 
