@@ -1262,7 +1262,9 @@ The Gateway frames that copy, `instance-complete-processes-<operation>`, when th
 - `private`: the Process environment files as `{"processes": ...}`, the text the services part reads.
 - `processes`: the same files again, for a workflow that stages the scripts from its `input` step and gives the whole copy to `services`.
 
-A copy over 1 MiB refuses the completion with `instance.complete_launch_too_large` before its run starts. The run's intent carries the launcher program (`clone_launcher`). The clone script's `complete` phase runs the services part and then the check in one dispatch: a services failure fails the phase; the check's outcome is its output (its own line, a dead unit's receipt, or no line), and the phase then ends 0 so the step keeps it.
+A copy over 1 MiB refuses the completion with `instance.complete_launch_too_large` before its run starts. The run's intent carries the launcher program (`clone_launcher`).
+
+The clone script's `complete` phase runs the services part and then the check in one dispatch. A services failure fails the phase. The check's outcome is its output: its own line, a dead unit's receipt, or no line. The phase then ends 0, so the step keeps that output.
 
 The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md):
 
