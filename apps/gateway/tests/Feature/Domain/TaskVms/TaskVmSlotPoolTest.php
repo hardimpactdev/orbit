@@ -32,6 +32,7 @@ use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
+use App\Domain\Proof\ProofCopies;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
@@ -2428,23 +2429,16 @@ describe('nested-fleet Projects', function (): void {
         expect($rows())->toBe($before);
     });
 
-    it('refuses proof:run for a flagged proof Project before it records the proof', function () use ($rows, $refused, $flag): void {
+    // A flagged proof Project proves in copies (docs/cli/proof/run.mdx#the-run): the proof is recorded and takes the copy path, never a VM
+    // place. With no copy place to spare (the default cap of one copy) it waits, with no group, VM or child.
+    it('records proof:run for a flagged proof Project and admits it to copies, never to a task VM place', function (bool $ci) use ($rows, $flag): void {
         $caller = slotPoolCiProofWorld(2);
         $flag(Project::query()->findOrFail(config('proof.project')));
-        $before = $rows();
-        $refused(fn () => app(ProofRunIntent::class)->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $caller));
-        $refused(fn () => app(ProofRunIntent::class)->start(str_repeat('a', 40), false, 'test', null));
-        expect($rows())->toBe($before);
-    });
-
-    it('fails a proof recorded before its Project was flagged, without groups, places or children', function (bool $ci) use ($rows, $flag): void {
-        $caller = slotPoolCiProofWorld(2);
         $intent = app(ProofRunIntent::class);
         $proof = $intent->start(str_repeat('a', 40), false, 'test', null, authenticatedCaller: $ci ? $caller : null);
-        $flag(Project::query()->findOrFail(config('proof.project')));
         $before = $rows();
         $intent->admit($proof->id);
-        expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('operation.kind_unavailable')
-            ->and($rows())->toBe($before)->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofCopies::WaitStep)
+            ->and([...$rows(), 'waiting' => 0])->toBe([...$before, 'waiting' => 0])->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
     })->with(['operator' => [false], 'CI' => [true]]);
 });
