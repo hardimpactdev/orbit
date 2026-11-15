@@ -31,6 +31,7 @@ final class UpdateProjectCommand extends GatewayCommand
         {--task-check= : New task check command for task baselines and handoffs}
         {--clear-task-check : Remove the task check command so tasks run no check command}
         {--task-workspace-routed= : Change routing for future task workspaces (true or false)}
+        {--default-auto-deploy= : Whether each new commit of the default branch deploys the container default (true or false)}
         {--merge-check= : The check that must pass on a head before Orbit merges it, such as "Required checks"}
         {--clear-merge-check : Remove the merge check}
         {--task-implementer-provider= : Default implementer provider of task copies, such as claude}
@@ -140,8 +141,17 @@ final class UpdateProjectCommand extends GatewayCommand
             );
         }
 
+        $defaultAutoDeploy = null;
+        if ($this->input->hasParameterOption('--default-auto-deploy')) {
+            $value = $this->option('default-auto-deploy');
+            if ($value !== 'true' && $value !== 'false') {
+                return $this->renderGatewayFailure('project.default_auto_deploy_invalid', 'Default auto-deploy must be true or false.');
+            }
+            $defaultAutoDeploy = $value === 'true';
+        }
+
         if ($name === null && $type === null && $slug === null && $repositoryUrl === null && $sourceAccess === null && $defaultBranch === null && $root === null && $taskCheck === null && ! $clearTaskCheck && $taskWorkspaceRouted['value'] === null
-            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null && $taskPrMode === null && ! $clearTaskPrMode) {
+            && $mergeCheck === null && ! $clearMergeCheck && $taskAgents === null && $taskPrMode === null && ! $clearTaskPrMode && $defaultAutoDeploy === null) {
             return $this->renderGatewayFailure(
                 'project.update_required',
                 'Provide at least one Project update.',
@@ -173,6 +183,7 @@ final class UpdateProjectCommand extends GatewayCommand
                 taskAgents: $taskAgents,
                 taskPrMode: $taskPrMode,
                 taskPrModeProvided: $taskPrMode !== null || $clearTaskPrMode,
+                defaultAutoDeploy: $defaultAutoDeploy,
             ),
             ProjectResponse::class,
             ['Update Project', 'Updating Project', 'Updated Project'],

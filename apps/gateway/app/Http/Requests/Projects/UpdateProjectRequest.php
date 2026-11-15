@@ -39,6 +39,7 @@ final class UpdateProjectRequest extends FormRequest
             'task_check' => ['sometimes', 'nullable', 'string', 'max:4096'],
             'task_workspace_routed' => ['sometimes', 'boolean:strict'],
             'nested_fleet' => ['sometimes', 'boolean:strict'],
+            'default_auto_deploy' => ['sometimes', 'boolean:strict'],
             'merge_check' => ['sometimes', 'nullable', 'string', 'max:255'],
             'task_pr_mode' => ['sometimes', 'nullable', 'string', Rule::enum(TaskPrMode::class)],
             ...TaskCopyAgent::rules('task_'),
@@ -51,7 +52,7 @@ final class UpdateProjectRequest extends FormRequest
         try {
             return app(TopLevelJsonObjectInspector::class)->inspect(
                 $this->getContent(),
-                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', 'task_pr_mode', ...TaskCopyAgent::fields('task_')],
+                ['code', 'name', 'type', 'slug', 'repository_url', 'source_access', 'default_branch', 'root', 'task_check', 'task_workspace_routed', 'merge_check', 'nested_fleet', 'default_auto_deploy', 'task_pr_mode', ...TaskCopyAgent::fields('task_')],
             );
         } catch (UnexpectedValueException $exception) {
             throw ValidationException::withMessages(['body' => [$exception->getMessage()]]);
@@ -76,6 +77,7 @@ final class UpdateProjectRequest extends FormRequest
                 && ! $this->exists('merge_check')
                 && ! $this->exists('nested_fleet')
                 && ! $this->exists('task_pr_mode')
+                && ! $this->exists('default_auto_deploy')
                 && ! $this->hasAny(TaskCopyAgent::fields('task_'))
             ) {
                 $validator->errors()->add('body', 'Provide at least one Project update.');
@@ -140,6 +142,8 @@ final class UpdateProjectRequest extends FormRequest
             nestedFleetProvided: array_key_exists('nested_fleet', $validated),
             nestedFleet: ($validated['nested_fleet'] ?? false) === true,
             taskAgents: TaskCopyAgent::provided($validated, 'task_'),
+            defaultAutoDeployProvided: array_key_exists('default_auto_deploy', $validated),
+            defaultAutoDeploy: ($validated['default_auto_deploy'] ?? true) === true,
             taskPrModeProvided: array_key_exists('task_pr_mode', $validated),
             taskPrMode: is_string($validated['task_pr_mode'] ?? null) ? TaskPrMode::from($validated['task_pr_mode']) : null,
             name: is_string($validated['name'] ?? null) ? $validated['name'] : null,

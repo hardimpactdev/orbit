@@ -37,6 +37,7 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
         private readonly ?TaskAgentsInput $taskAgents = null,
         private readonly ?string $taskPrMode = null,
         private readonly bool $taskPrModeProvided = false,
+        private readonly ?bool $defaultAutoDeploy = null,
     ) {}
 
     public function resolveEndpoint(): string
@@ -65,8 +66,9 @@ final class UpdateProjectRequest extends GatewayRequest implements HasBody
                 ...($this->taskWorkspaceRouted === null ? [] : ['task_workspace_routed' => $this->taskWorkspaceRouted]),
                 ...($this->mergeCheckProvided ? ['merge_check' => $this->mergeCheck] : []),
                 ...($this->taskPrModeProvided ? ['task_pr_mode' => $this->taskPrMode] : []),
+                ...($this->defaultAutoDeploy === null ? [] : ['default_auto_deploy' => $this->defaultAutoDeploy]),
             ],
-            static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'task_workspace_routed', 'merge_check', 'task_pr_mode'], true) || $value !== null,
+            static fn (mixed $value, string $key): bool => in_array($key, ['task_check', 'task_workspace_routed', 'merge_check', 'task_pr_mode', 'default_auto_deploy'], true) || $value !== null,
             ARRAY_FILTER_USE_BOTH,
         ) + ($this->taskAgents?->toArray('task_') ?? []);
     }

@@ -24,6 +24,8 @@ final readonly class AutomaticDeployFireProjection implements ScheduledResultPro
 {
     public const string Workflow = '78efdd30-08ce-4ffb-a8eb-c7259c96ad24';
 
+    public const string DevelopmentWorkflow = '9897ae74-90ae-493b-a17e-71bbfc6c1749';
+
     public const string StateKey = 'automatic-deploy.fires';
 
     /** Recent projected runs; a replayed fire changes nothing. */
@@ -35,7 +37,7 @@ final readonly class AutomaticDeployFireProjection implements ScheduledResultPro
 
     public function applyScheduled(string $workflowId, array $run, array $result): void
     {
-        if ($workflowId !== self::Workflow) {
+        if (! in_array($workflowId, [self::Workflow, self::DevelopmentWorkflow], true)) {
             throw new LogicException('Unknown automatic deploy schedule.');
         }
         $result = ValidatedData::object(json_decode(Arr::string($result, 'fire_json', '{}'), true, flags: JSON_THROW_ON_ERROR));

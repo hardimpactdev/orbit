@@ -683,6 +683,29 @@ describe('project:update', function (): void {
         expect(Artisan::output())->toContain('Task pull request mode')->toContain($shown);
     })->with([['pr_when_done', 'pr_when_done'], [null, 'Gateway default']]);
 
+    it('turns the automatic deploy of the container default off and on through the SDK request', function (string $value, bool $sent): void {
+        $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--default-auto-deploy' => $value])->assertExitCode(0);
+        expect($mockClient->getLastRequest()?->body()->all())->toBe(['default_auto_deploy' => $sent]);
+    })->with([['false', false], ['true', true]]);
+
+    it('refuses a default auto-deploy value that is not true or false before contacting the Gateway', function (): void {
+        $mockClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
+        $this->artisan('project:update', ['project' => '3', '--default-auto-deploy' => 'off', '--json' => true])
+            ->expectsOutputToContain('project.default_auto_deploy_invalid')->assertExitCode(1);
+        expect($mockClient->getLastRequest())->toBeNull();
+    });
+
+    it('shows whether the container default deploys each new commit', function (): void {
+        MockClient::global([
+            ShowProjectRequest::class => MockResponse::make(['data' => [...app_payload(), 'default_auto_deploy' => true], 'meta' => ['request_id' => app_request_id()]]),
+            ListInstancesRequest::class => MockResponse::make(['data' => [], 'meta' => ['request_id' => app_request_id()]]),
+        ]);
+
+        expect(Artisan::call('project:show', ['project' => '3']))->toBe(0);
+        expect(Artisan::output())->toContain('Default auto-deploy');
+    });
+
     it('sets and clears the Project copy turn agent defaults through the SDK request', function (): void {
         $setClient = MockClient::global([UpdateProjectRequest::class => app_mock_response()]);
         $this->artisan('project:update', ['project' => '3', '--task-implementer-model' => 'claude-sonnet-5-5', '--task-reviewer-effort' => 'max'])->assertExitCode(0);

@@ -339,6 +339,11 @@ describe('project requests', function (): void {
             ->and(new UpdateProjectRequest(projectId: 3, taskPrModeProvided: true)->body()->all())->toBe(['task_pr_mode' => null])
             ->and(new UpdateProjectRequest(projectId: 3, name: 'App')->body()->all())->not->toHaveKey('task_pr_mode');
     });
+    it('sends default_auto_deploy only when provided, false included', function (): void {
+        expect(new UpdateProjectRequest(projectId: 3, defaultAutoDeploy: false)->body()->all())->toBe(['default_auto_deploy' => false])
+            ->and(new UpdateProjectRequest(projectId: 3, defaultAutoDeploy: true)->body()->all())->toBe(['default_auto_deploy' => true])
+            ->and(new UpdateProjectRequest(projectId: 3, name: 'App')->body()->all())->not->toHaveKey('default_auto_deploy');
+    });
 });
 
 function project_gateway_connector(MockClient $mockClient): GatewayConnector

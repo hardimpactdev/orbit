@@ -482,6 +482,16 @@ it('gives a deployed Instance a full window, then lets it sleep', function (int 
         ->and($decision->lastDeployAt)->toBe($this->now->getTimestamp() - $deployedAgo);
 })->with([[IdleWindow - 60, 'deployed_recently'], [IdleWindow + 60, 'sleep']]);
 
+it('lets a default sleep after an automatic deploy, which is no activity', function (): void {
+    $default = idleDefault($this);
+    Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+        'status' => 'succeeded', 'input' => [], 'state' => [], 'triggered_by' => 'swamp:auto-deploy', 'finished_at' => $this->now->subSeconds(60)]);
+
+    $decision = collect(idleSweep($this)->run(true))->firstWhere('instanceId', $default->id);
+
+    expect($decision->decision)->toBe('sleep')->and($decision->lastDeployAt)->toBeNull();
+});
+
 it('wires the Conn read of T3 and the Node agent read of the logs into the sweep', function (): void {
     expect(app(NodeFileTimes::class))->toBeInstanceOf(AgentNodeFileTimes::class)
         ->and(collect(app()->tagged(InstanceAgentActivity::class))->map(fn (object $agent): string => $agent::class)->all())

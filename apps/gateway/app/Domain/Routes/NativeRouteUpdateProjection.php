@@ -99,6 +99,14 @@ final readonly class NativeRouteUpdateProjection implements DirectOperationProje
             } elseif ($cutover) {
                 $selected->update(['failed_step' => $failedStep, 'error_code' => $operation->error_code]);
             }
+            if ($operation->status === OperationStatus::Succeeded && $selected->sites_published) {
+                foreach ($selected->targets()->with(['instance.node.roles', 'instance.routes'])->get() as $target) {
+                    $instance = $target->instance;
+                    if ($instance->placedOnAppDev() && $instance->authoritativeRoute()?->id === $selected->id) {
+                        $instance->update(['development_projection_pending' => false]);
+                    }
+                }
+            }
             foreach (['certificates_ready', 'public_verified', 'placement_cleanup', 'complete'] as $stage) {
                 app(AnalyticsRoutePlan::class)->checkpointUpdate(RouteExecutionProof::objects($intent['analytics_changes'] ?? []), $stage);
             }

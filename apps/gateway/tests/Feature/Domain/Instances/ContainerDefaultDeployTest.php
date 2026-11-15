@@ -271,8 +271,9 @@ it('keeps the step code of a checkout default whose step waited for a behavior l
 it('records the seed commit and a running container after a deployment passes, and leaves the checkout seed alone', function (): void {
     $instance = deployDefault(container: true);
     $commit = str_repeat('c', 40);
+    $instance->update(['auto_deploy_state' => ['result' => 'started', 'head' => $commit, 'commit' => $commit]]);
     $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
-        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+        'status' => OperationStatus::Running, 'triggered_by' => 'swamp:auto-deploy', 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
 
     app(InstanceDeployProjection::class)->apply($operation, ['status' => 'succeeded', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => [
         'steps' => ['Read the container result' => ['stdout' => json_encode(['commit' => $commit], JSON_THROW_ON_ERROR)]], 'summary' => ['failed_steps' => []]]]);
@@ -281,6 +282,7 @@ it('records the seed commit and a running container after a deployment passes, a
     expect($runtime->seed_commit)->toBe($commit)
         ->and($runtime->power_state)->toBe(InstanceRuntimePowerState::Running)
         ->and($instance->refresh()->seed_commit)->toBeNull()
+        ->and($instance->auto_deploy_state['result'])->toBe('up_to_date')
         ->and($instance->deployments()->latest('id')->firstOrFail()->commit)->toBe($commit);
 });
 
@@ -549,21 +551,15 @@ it('keeps checkout deployment source facts and unpinned commit resolution unchan
     expect($operation->input['deployment']['variant'])->toBe('development');
 });
 
-it('skips source capture for an automatic checkout default deployment', function (): void {
+it('refuses an automatic deployment of a checkout default before any work', function (): void {
     Queue::fake();
     $instance = deployDefault(container: false);
-    ProjectDevelopmentDeployStep::query()->where('project_id', $instance->project_id)->delete();
-    $instance->project->update(['php_version' => '8.4']);
     app()->instance(AutomaticDeployPolicyWriter::class, AutomaticDeployPolicyWriter::Swamp);
     $this->mock(ProjectSourceReader::class)->shouldNotReceive('read');
-    $commit = str_repeat('a', 40);
 
-    $operation = app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, $commit);
-
-    expect($operation->input['deployment']['variant'])->toBe('development');
-    expect($operation->input['commit'])->toBe($commit);
-    expect($instance->project->refresh())->php_version->toBe('8.4')->source_facts_captured_at->toBeNull();
-    expect($instance->project->environmentTemplate()->exists())->toBeFalse();
+    expect(fn () => app(StartInstanceDeployAction::class)->automatic($instance, $instance->node, null, str_repeat('a', 40)))
+        ->toThrow(ResourceOperationException::class, 'Automatic deployment requires eligible active app-dev or app-prod placement.');
+    expect(Operation::query()->where('kind', 'instance.deploy')->exists())->toBeFalse();
 });
 
 it('skips source capture for a production deployment', function (bool $automatic): void {

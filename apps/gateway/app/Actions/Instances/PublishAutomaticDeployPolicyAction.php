@@ -42,7 +42,6 @@ final readonly class PublishAutomaticDeployPolicyAction
                     || ($receipt->input['publication'] ?? null) !== $route->publication->value) {
                     throw new ResourceOperationException('instance.projection_unproven', 'The authoritative Route has no matching completed publication.', 409);
                 }
-                $instance->development_projection_pending = false;
             }
             $instance->auto_deploy_state = [...($instance->auto_deploy_state ?? []), ...$data->projection()];
             $instance->save();

@@ -40,6 +40,7 @@ final class ProjectData extends Data
         public ?string $taskReviewerModel = null,
         public ?string $taskReviewerEffort = null,
         public ?TaskPrMode $taskPrMode = null,
+        public bool $defaultAutoDeploy = true,
     ) {}
 
     public static function fromModel(Project $project): self
@@ -69,6 +70,7 @@ final class ProjectData extends Data
             taskReviewerModel: $project->task_reviewer_model,
             taskReviewerEffort: $project->task_reviewer_effort,
             taskPrMode: $project->task_pr_mode,
+            defaultAutoDeploy: $project->default_auto_deploy,
         );
     }
 }
