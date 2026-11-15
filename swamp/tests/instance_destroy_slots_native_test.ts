@@ -30,42 +30,55 @@ async function fixture() {
     const initialized = await call("repo", "init", folder, "--tool", "none", "--no-vault");
     assert(initialized.ok, initialized.stderr + initialized.stdout);
     const name = "operation-instance-destroy";
-    const created = JSON.parse((await call("workflow", "create", name)).stdout);
-    const workflow = parse(Deno.readTextFileSync(new URL(`../workflows/workflow-${name}.yaml`, import.meta.url))) as RecordValue;
-    workflow.id = created.id;
-    delete workflow.vaults;
-    for (const job of workflow.jobs as RecordValue[]) {
-        delete job.labels;
-        for (const step of job.steps as RecordValue[]) {
-            delete step.labels;
-            const task = step.task as RecordValue;
-            if (task.type !== "behavior") continue;
-            const hold = step.name === "Delete the container" ? `timeout ${holdSeconds} tail -f /dev/null || true; ` : "";
-            step.task = { type: "behavior", behaviorType: "command/shell", behaviorName: task.behaviorName, methodName: "execute", inputs: {
-                run: `s=$(date +%s%N); ${hold}printf '%s|%s|%s|%s\\n' "$STEP" "$NAME" "$s" "$(date +%s%N)" >> '${folder}/calls'`,
-                env: { STEP: String(step.name), NAME: task.behaviorName } } };
+    // The removal and its database child, each behavior a stub; "Delete the container" and "Drop databases and users" hold their name.
+    for (const flow of ["operation-database-destroy", name]) {
+        const created = JSON.parse((await call("workflow", "create", flow)).stdout);
+        const workflow = parse(Deno.readTextFileSync(new URL(`../workflows/workflow-${flow}.yaml`, import.meta.url))) as RecordValue;
+        workflow.id = created.id;
+        delete workflow.vaults;
+        for (const job of workflow.jobs as RecordValue[]) {
+            delete job.labels;
+            for (const step of job.steps as RecordValue[]) {
+                delete step.labels;
+                const task = step.task as RecordValue;
+                if (task.type !== "behavior") continue;
+                const hold = ["Delete the container", "Drop databases and users"].includes(String(step.name))
+                    ? `timeout ${holdSeconds} tail -f /dev/null || true; ` : "";
+                step.task = { type: "behavior", behaviorType: "command/shell", behaviorName: task.behaviorName, methodName: "execute", inputs: {
+                    run: `s=$(date +%s%N); ${hold}printf '%s|%s|%s|%s\\n' "$STEP" "$NAME" "$s" "$(date +%s%N)" >> '${folder}/calls'`,
+                    env: { STEP: String(step.name), NAME: task.behaviorName } } };
+            }
         }
+        Deno.writeTextFileSync(created.path, stringify(workflow));
+        const valid = await call("workflow", "validate", flow);
+        assert(valid.ok, valid.stderr + valid.stdout);
     }
-    Deno.writeTextFileSync(created.path, stringify(workflow));
-    const valid = await call("workflow", "validate", name);
-    assert(valid.ok, valid.stderr + valid.stdout);
-    // A Route-less container removal as DevelopmentInstanceDestroyProjection sends it: no Route, no teardown, no database.
-    const input = (instanceId: number) => JSON.stringify({
-        operation_id: instanceId, node_id: 9, kind: "instance.destroy", execution_secrets: {},
+    const ssh = { target: { host: "10.44.0.5", user: "orbit", port: 22, host_keys: ["ssh-ed25519 fixture"] }, identity_file: "/none" };
+    const database = { driver: "pgsql", ssh_execution: ssh, admin_client: ["psql"] };
+    const secret = (part: string) => ({ vault: "orbit-control-inputs", key: `database-destroy-1-${part}` });
+    // A Route-less container removal as DevelopmentInstanceDestroyProjection sends it: no Route and no teardown. With `owned`, it owns a
+    // database on the server of Node 5.
+    const input = (instanceId: number, owned = false) => JSON.stringify({
+        operation_id: instanceId, node_id: 9, kind: "instance.destroy",
+        execution_secrets: owned ? Object.fromEntries(["fence", "drop", "gone", "restore"].map((part) => [`server_1_${part}`, secret(part)])) : {},
         intent: {
             instance_id: instanceId, force: true,
             container_destroy: { instance_id: instanceId, name: `instance-${instanceId}` },
             members: [{ instance_id: instanceId, route_id: null }], additional_route_ids: [],
             ssh_execution: { target: { host: "10.44.0.9", user: "orbit", port: 22, host_keys: ["ssh-ed25519 fixture"] }, identity_file: "/none" },
             native_runtime: { processes: [] }, teardown_steps: [], push_check_paths: [], source_paths: [],
-            direct_destroy: { node_user: "orbit", database: { servers: [], sqlite: [] }, hibernation: [0, 1, 2].map((i) => ({ instance_id: instanceId, path: `/h/${instanceId}.${i}` })) },
+            direct_destroy: { node_user: "orbit", database: { servers: owned ? [{ server_id: 1, node_id: 5, intent: database }] : [], sqlite: [] }, hibernation: [0, 1, 2].map((i) => ({ instance_id: instanceId, path: `/h/${instanceId}.${i}` })) },
         },
     });
-    const run = async (instanceId: number) => {
-        const child = new Deno.Command(binary!, { args: ["workflow", "run", name, "--stdin", "--json"], cwd: folder, ...auth, env,
+    // database:destroy of its own, as the Gateway starts it: no slot.
+    const direct = JSON.stringify({ operation_id: 1, node_id: 5, kind: "database.destroy", intent: database,
+        execution_secrets: Object.fromEntries(["fence", "drop", "gone", "restore"].map((part) => [part, secret(part)])) });
+    const run = async (instanceId: number, owned = false) => {
+        const flow = instanceId === 0 ? "operation-database-destroy" : name;
+        const child = new Deno.Command(binary!, { args: ["workflow", "run", flow, "--stdin", "--json"], cwd: folder, ...auth, env,
             stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
         const writer = child.stdin.getWriter();
-        await writer.write(new TextEncoder().encode(input(instanceId)));
+        await writer.write(new TextEncoder().encode(instanceId === 0 ? direct : input(instanceId, owned)));
         await writer.close();
         return await child.output();
     };
@@ -82,18 +95,25 @@ Deno.test({ name: "pinned destroy: nine container removals of one Node at once a
         try {
             // Clones made together have consecutive IDs: nine slots of 64 on Node 9.
             const ids = [3201, 3202, 3203, 3204, 3205, 3206, 3207, 3208, 3209];
-            const runs = await Promise.all(ids.map((id) => f.run(id)));
+            // The first two own a database on one server: its steps take each removal's slot too.
+            const runs = await Promise.all(ids.map((id, i) => f.run(id, i < 2)));
             runs.forEach((r, i) => assert(r.success, `removal of ${ids[i]}: ${text(r.stdout)}${text(r.stderr)}`));
             const calls = f.calls();
             const deletes = calls.filter((c) => c.step === "Delete the container");
             assertEquals(deletes.map((c) => c.name).sort(), ids.map((id) => `id-delete-the-container-9-${id % 64}`).sort());
             // Each removal's own steps take turns under its own slot; no two removals share a name.
-            for (const id of ids) {
+            const database = ["Check they are gone", "Drop databases and users", "Fence new clients"];
+            for (const [i, id] of ids.entries()) {
                 const own = calls.filter((c) => c.name.endsWith(`-9-${id % 64}`)).map((c) => c.step);
                 assertEquals(own.sort(), ["Clean container files", "Delete the container", "Prepare container removal", "Read container removal",
-                    "Remove hibernation files", "Remove hibernation files", "Remove hibernation files"].sort());
+                    "Remove hibernation files", "Remove hibernation files", "Remove hibernation files", ...(i < 2 ? database : [])].sort());
             }
-            assertEquals(calls.length, ids.length * 7);
+            assertEquals(calls.filter((c) => c.name.startsWith("database-destroy-ssh-5-9-")).length, 6);
+            // A database:destroy of its own keeps one name per database Node.
+            const before = calls.length;
+            const done = await f.run(0);
+            assert(done.success, text(done.stdout) + text(done.stderr));
+            assertEquals([...new Set(f.calls().slice(before).map((c) => c.name))], ["database-destroy-ssh-5"]);
         } finally {
             f.cleanup();
         }

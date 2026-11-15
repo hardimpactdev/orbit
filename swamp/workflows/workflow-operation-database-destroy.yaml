@@ -10,6 +10,9 @@ inputs:
     node_id: {type: integer, minimum: 1}
     kind: {type: string, const: database.destroy}
     intent: {type: object}
+    # An Instance removal's `<node>-<instance_id % 64>`: its steps then take the removal's slot, which the Gateway keeps to one open
+    # removal per Node. A database:destroy of its own sends none and keeps one name per database Node.
+    slot: {type: string, pattern: '^[0-9]+-[0-9]+$'}
     # Names only: fence, drop, gone and restore, each the admin password line and one batch, one whole value.
     execution_secrets:
       type: object
@@ -34,10 +37,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("database-destroy-ssh-" + string(inputs.node_id) + ("slot" in inputs ? "-" + inputs.slot : "")).split(".").join("-") }}'
       methodName: exec
       globalArgs: &ssh
-        name: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+        name: '${{ ("database-destroy-ssh-" + string(inputs.node_id) + ("slot" in inputs ? "-" + inputs.slot : "")).split(".").join("-") }}'
         transport:
           kind: ssh
           user: ${{ inputs.intent.ssh_execution.target.user }}
@@ -61,7 +64,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("database-destroy-ssh-" + string(inputs.node_id) + ("slot" in inputs ? "-" + inputs.slot : "")).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -78,7 +81,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("database-destroy-ssh-" + string(inputs.node_id) + ("slot" in inputs ? "-" + inputs.slot : "")).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:
@@ -98,7 +101,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: ${{ "database-destroy-ssh-" + string(inputs.node_id) }}
+      behaviorName: '${{ ("database-destroy-ssh-" + string(inputs.node_id) + ("slot" in inputs ? "-" + inputs.slot : "")).split(".").join("-") }}'
       methodName: exec
       globalArgs: *ssh
       inputs:

@@ -366,6 +366,7 @@ jobs:
         node_id: ${{ self.server.node_id }}
         kind: database.destroy
         intent: ${{ self.server.intent }}
+        slot: ${{ string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64) }}
         execution_secrets:
           fence: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_fence"] }}
           drop: ${{ inputs.execution_secrets["server_" + string(self.server.server_id) + "_drop"] }}

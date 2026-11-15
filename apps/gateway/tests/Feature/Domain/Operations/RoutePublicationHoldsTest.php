@@ -634,6 +634,37 @@ it('keeps the slot of a removal that timed out until Swamp confirms that its run
     expect($retry->fresh()->status)->toBe(OperationStatus::Queued);
 });
 
+it('asks the waiters to start when a removal without a Route ends, so a removal of its slot starts at once', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    [$first, $same] = [instanceRemoval(3206), instanceRemoval(3270)];
+    expect($holds->admit($first))->toBeTrue()->and($holds->admit($same))->toBeFalse();
+    Queue::fake();
+    finish($first);
+    runPromotion();
+    expect($same->fresh()->status)->toBe(OperationStatus::Queued);
+});
+
+it('keeps the slot of a timed-out removal that still holds its target lock, however long ago it ended', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $first = instanceRemoval(3206);
+    expect($holds->admit($first))->toBeTrue();
+    app(OperationStore::class)->change($first, ['status' => OperationStatus::Failed, 'error_code' => 'operation.timed_out',
+        'finished_at' => now()->subMinutes(20), 'lock_key' => 'instance:3206', 'state' => [...$first->state, 'native_timeout' => []]]);
+    $retry = instanceRemoval(3270);
+    expect(RoutePublicationHolds::keepsNodes($first->fresh()))->toBeTrue()
+        ->and($holds->admit($retry))->toBeFalse()
+        ->and(OperationData::fromModel($retry->fresh())->holdWaitReason)->toBe('instance_slot');
+});
+
+it('says a removal admitted behind another Operation waits for it, not for an older write', function (): void {
+    $holds = app(RoutePublicationHolds::class);
+    $completion = routeWrite([], 'instance.complete');
+    $removal = instanceRemoval(3206);
+    $removal->update(['input' => [...$removal->input, 'after_operation_id' => $completion->id]]);
+    expect($holds->admit($removal->refresh()))->toBeFalse()
+        ->and(OperationData::fromModel($removal->fresh())->holdWaitReason)->toBe('after_operation');
+});
+
 it('records why a removal waits: a held Node, the removal cap, the withdrawal slot', function (): void {
     $holds = app(RoutePublicationHolds::class);
     $publisher = routeWrite([5]);
@@ -669,7 +700,7 @@ it('records why a removal waits: a held Node, the removal cap, the withdrawal sl
 it('takes the Instance slot the way the destroy workflow names its container steps', function (): void {
     $workflow = (string) file_get_contents(base_path('../../swamp/workflows/workflow-operation-instance-destroy.yaml'));
 
-    expect(substr_count($workflow, 'string(int(inputs.intent.instance_id) % '.RoutePublicationHolds::DestroySlots.')'))->toBe(6)
+    expect(substr_count($workflow, 'string(int(inputs.intent.instance_id) % '.RoutePublicationHolds::DestroySlots.')'))->toBe(7)
         ->and(RoutePublicationHolds::destroySlot(instanceRemoval(3206)))->toBe(3206 % RoutePublicationHolds::DestroySlots)
         ->and(RoutePublicationHolds::destroySlot(routeWrite([5])))->toBeNull();
 });

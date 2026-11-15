@@ -90,6 +90,9 @@ final class RoutePublicationHolds
 
     private const string InstanceSlot = 'instance_slot';
 
+    /** A write admitted to start after another Operation (`after_operation_id`) waits for that Operation to end. */
+    private const string AfterOperation = 'after_operation';
+
     /** How long one step-scoped hold lasts without a release; the Operation's end frees it sooner. */
     private const int LeaseSeconds = 300;
 
@@ -237,7 +240,7 @@ final class RoutePublicationHolds
         // A write that publishes a render made now records the sites its Nodes serve, so its start can tell when they changed.
         // The reason is kept with the wait, so a read tells a held Node, a cap and a slot apart (`hold_wait_reason`).
         app(OperationStore::class)->change($operation, ['status' => OperationStatus::Waiting,
-            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes, 'hold_wait_reason' => $refused,
+            'state' => [...($operation->state ?? []), 'hold_nodes' => $nodes, 'hold_wait_reason' => $after ? self::AfterOperation : $refused,
                 ...(self::rendersAtStart($operation) ? [] : ['hold_sites' => self::served($nodes)])]]);
 
         return false;
@@ -328,7 +331,7 @@ final class RoutePublicationHolds
             // A write still waiting for its Operation, or a removal for an older one of its slot, claims nothing yet, so it holds back no
             // younger write.
             if (self::afterOpen($waiter)) {
-                $this->waitFor($waiter, ClonePublication::WaiterFirst);
+                $this->waitFor($waiter, self::AfterOperation);
 
                 continue;
             }
@@ -384,8 +387,9 @@ final class RoutePublicationHolds
     }
 
     /**
-     * An older removal of the same Instance slot on the same Node is still open, or has ended while Swamp may still run it: this one
-     * starts after it, so the two never wait on one step name. Oldest first, so the oldest of a slot always goes.
+     * An older removal of the same Instance slot on the same Node is still open, or has ended while Swamp may still run it (`keepsNodes`:
+     * a timed-out run that still holds its target lock, or one that ended unconfirmed in the last minutes): this one starts after it, so
+     * the two never wait on one step name. Oldest first, so the oldest of a slot always goes.
      */
     private static function slotOpen(Operation $operation): bool
     {
@@ -395,7 +399,7 @@ final class RoutePublicationHolds
         }
 
         return Operation::query()->where('kind', 'instance.destroy')->where('node_id', $operation->node_id)->where('id', '<', $operation->id)
-            ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())
+            ->where(static fn ($query) => $query->whereNotIn('status', OperationStatus::terminalValues())->orWhereNotNull('lock_key')
                 ->orWhere('finished_at', '>', now()->subMinutes(self::UnconfirmedMinutes)))
             ->get()->contains(static fn (Operation $other): bool => self::destroySlot($other) === $slot
                 && (! $other->status->terminal() || self::keepsNodes($other)));
