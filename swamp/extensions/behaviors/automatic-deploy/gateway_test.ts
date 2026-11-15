@@ -188,16 +188,33 @@ function fixture() {
     const { context } = createModelTestContext({ globalArgs: {} });
     const write = context.writeResource.bind(context);
     const writes: Awaited<ReturnType<typeof write>>[] = [];
+    // When each record's latest version was written, by the fake clock; a seeded record counts as written now.
+    const created = new Map<string, string>();
+    const queries: string[] = [];
     const ctx = Object.assign(context, {
+        definition: { name: "automatic-production-deploy" },
         readResource: (name: string) =>
             Promise.resolve(structuredClone(data.get(name) ?? null)),
+        queryData: (predicate: string) => {
+            queries.push(predicate);
+            return Promise.resolve(
+                [...data].filter(([name]) => /^(state|development)-/.test(name))
+                    .map(([name, attributes]) => ({
+                        name,
+                        specName: name.split("-")[0],
+                        createdAt: created.get(name) ?? fake.now,
+                        attributes: structuredClone(attributes),
+                    })),
+            );
+        },
         writeResource: async (
-            spec: "state",
+            spec: "state" | "development",
             name: string,
             value: Record<string, unknown>,
         ) => {
             behavior.resources[spec].schema.parse(value);
             data.set(name, structuredClone(value));
+            created.set(name, fake.now);
             const handle = await write(spec, name, value);
             writes.push(handle);
             return handle;
@@ -214,6 +231,8 @@ function fixture() {
         requests,
         writes,
         data,
+        created,
+        queries,
         ctx,
         http,
         client,
@@ -1148,4 +1167,109 @@ Deno.test("nonempty array results cannot invent a deployment receipt", async () 
         "unreadable",
     );
     assertEquals(f.requests.map((r) => r.method), ["GET"]);
+});
+Deno.test("refresh writes policy memory older than a day again unchanged, for every Instance", async () => {
+    const f = fixture();
+    // Instance 9 has auto deploy off; only Swamp holds its rollback pause and block.
+    const paused = StateSchema.parse({
+        pause: {
+            reason: "rollback",
+            deployment_id: 4,
+            commit: A,
+            paused_at: "2026-10-20T08:00:00.000Z",
+        },
+        blocked: [B],
+    });
+    f.data.set("state-9", structuredClone(paused));
+    f.created.set("state-9", "2026-10-26T20:00:00.000Z");
+    const development = { sequence: 3, result: "succeeded", commit: A };
+    f.data.set("development-9", structuredClone(development));
+    f.created.set("development-9", "2026-10-20T19:00:00.000Z");
+    // Written 23 hours ago: inside the refresh age.
+    f.data.set("state-8", structuredClone(paused));
+    f.created.set("state-8", "2026-10-26T21:00:00.000Z");
+
+    const result = await f.behavior.methods.refresh.execute(
+        {},
+        f.ctx as never,
+    );
+
+    assertEquals(f.queries, [
+        'modelType == "@nckrtl/automatic-deploy" && modelName == "automatic-production-deploy" && (specName == "state" || specName == "development")',
+    ]);
+    assertEquals(f.data.get("state-9"), paused);
+    assertEquals(f.created.get("state-9"), f.fake.now);
+    assertEquals(f.data.get("development-9"), development);
+    assertEquals(f.created.get("development-9"), f.fake.now);
+    assertEquals(f.created.get("state-8"), "2026-10-26T21:00:00.000Z");
+    assertEquals(result.dataHandles.map((h) => h.name).sort(), [
+        "development-9",
+        "state-9",
+    ]);
+    // Refresh reads nothing from the Gateway and starts nothing.
+    assertEquals(f.requests, []);
+    // Byte-equal: the same JSON, as a new version.
+    assertEquals(JSON.stringify(f.data.get("state-9")), JSON.stringify(paused));
+});
+Deno.test("refresh never creates, revives or rolls back a record the catalog still lists", async () => {
+    const f = fixture();
+    const old = "2026-10-20T00:00:00.000Z";
+    const paused = StateSchema.parse({ blocked: [B] });
+    // The catalog still lists state-5, but its record was removed; state-6 changed after the query read it.
+    f.data.set("state-6", structuredClone(paused));
+    f.created.set("state-6", old);
+    f.ctx.queryData = (predicate: string) => {
+        f.queries.push(predicate);
+        return Promise.resolve([
+            {
+                name: "state-5",
+                specName: "state",
+                createdAt: old,
+                attributes: structuredClone(paused),
+            },
+            {
+                name: "state-6",
+                specName: "state",
+                createdAt: old,
+                attributes: StateSchema.parse({ blocked: [A] }),
+            },
+            // Not a name the tick writes: left alone, and it does not stop the refresh.
+            {
+                name: "state-7-old",
+                specName: "state",
+                createdAt: old,
+                attributes: structuredClone(paused),
+            },
+        ]);
+    };
+    const result = await f.behavior.methods.refresh.execute(
+        {},
+        f.ctx as never,
+    );
+    assertEquals(result.dataHandles, []);
+    assertEquals(f.data.has("state-5"), false);
+    assertEquals(f.data.has("state-7-old"), false);
+    assertEquals(f.data.get("state-6"), paused);
+    assertEquals(f.created.get("state-6"), old);
+});
+Deno.test("refresh fails on a policy memory row without a readable creation time", async () => {
+    const f = fixture();
+    f.data.set("state-9", StateSchema.parse({}));
+    f.created.set("state-9", "not a time");
+    await assertRejects(
+        () => f.behavior.methods.refresh.execute({}, f.ctx as never),
+        Error,
+        "state-9 has no readable creation time",
+    );
+});
+Deno.test("refresh fails when it cannot query, and the tick never queries", async () => {
+    const f = fixture();
+    await f.run();
+    assertEquals(f.queries, []);
+    f.ctx.queryData = () => Promise.reject(new Error("catalog unavailable"));
+    await assertRejects(
+        () => f.behavior.methods.refresh.execute({}, f.ctx as never),
+        Error,
+        "catalog unavailable",
+    );
 });

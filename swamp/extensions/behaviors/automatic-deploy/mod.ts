@@ -23,12 +23,69 @@ const TickArguments = z.object({
 interface Context {
     globalArgs: { gatewayUrl: string; caFile: string };
     signal?: AbortSignal;
+    definition: { name: string };
     readResource(name: string): Promise<Record<string, unknown> | null>;
     writeResource(
         spec: string,
         name: string,
         value: Record<string, unknown>,
     ): Promise<{ name: string }>;
+    queryData(predicate: string): Promise<unknown[]>;
+}
+
+/**
+ * Swamp's data retention (`garbageCollection.data` in `.swamp.yaml`) deletes every record whose latest version is
+ * older than its cutoff, and it exempts no Orbit type. The tick writes policy memory only when it changes, skips an
+ * Instance with auto deploy off, and does not run at all while its schedule is paused, so a pause or block would be
+ * lost. The `refresh` method, on its own schedule, writes again unchanged every record whose latest version is older
+ * than this.
+ */
+export const POLICY_MEMORY_REFRESH_MS = 24 * 60 * 60 * 1000;
+const POLICY_MEMORY_NAME = /^(state|development)-[1-9][0-9]*$/;
+const PolicyMemoryRow = z.object({
+    name: z.string(),
+    specName: z.enum(["state", "development"]),
+    createdAt: z.string(),
+    attributes: z.record(z.string(), z.unknown()),
+});
+
+/** Writes unchanged every policy memory record of this behavior older than the refresh age. */
+export async function refreshPolicyMemory(
+    context: Pick<
+        Context,
+        "definition" | "queryData" | "readResource" | "writeResource"
+    >,
+    now: string,
+): Promise<{ name: string }[]> {
+    const rows = await context.queryData(
+        `modelType == "@nckrtl/automatic-deploy" && modelName == ${
+            JSON.stringify(context.definition.name)
+        } && (specName == "state" || specName == "development")`,
+    );
+    const handles: { name: string }[] = [];
+    for (const raw of rows) {
+        const row = PolicyMemoryRow.parse(raw);
+        // The tick names policy memory only this way; any other record is not its memory.
+        if (!POLICY_MEMORY_NAME.test(row.name)) continue;
+        const age = Date.parse(now) - Date.parse(row.createdAt);
+        if (Number.isNaN(age)) {
+            throw new Error(
+                `Policy memory ${row.name} has no readable creation time: ${row.createdAt}`,
+            );
+        }
+        if (age < POLICY_MEMORY_REFRESH_MS) continue;
+        // The stored record, not the catalog row, is what is written again: a record that is gone or has changed
+        // since the query is left alone, so a refresh never creates, revives or rolls back a record.
+        const stored = await context.readResource(row.name);
+        if (
+            stored === null ||
+            JSON.stringify(stored) !== JSON.stringify(row.attributes)
+        ) continue;
+        handles.push(
+            await context.writeResource(row.specName, row.name, stored),
+        );
+    }
+    return handles;
 }
 export interface LiveGateway extends Gateway {
     development(
@@ -219,6 +276,17 @@ export function automaticDeploy(
                     );
                     return { dataHandles: [...handles.values()] };
                 },
+            },
+            refresh: {
+                description:
+                    "Write again, unchanged, every policy memory record older than a day, so data retention keeps it while the tick is paused.",
+                arguments: z.object({}),
+                execute: async (
+                    _input: Record<string, never>,
+                    context: Context,
+                ) => ({
+                    dataHandles: await refreshPolicyMemory(context, clock()),
+                }),
             },
         },
     };
