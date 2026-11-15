@@ -34,6 +34,7 @@ The `app-dev` role installs the helper at `/usr/local/libexec/orbit-instance-pow
 | `capabilities` | Probes the kernel and writes the capability manifest. Takes no lock. |
 | `prepare --instance <id> --operation <opid>` | Sleeps the container: opens swap, pauses, records the plan, reclaims. Reads the Instance's intent on stdin. |
 | `restore --instance <id> --operation <opid>` | Wakes the container: validates the plan, restores pages, unfreezes, closes swap. Reads the intent on stdin when a run calls it; the fast worker sends none. |
+| `residual --instance <id> --operation <opid>` | Reads the frozen container's `memory.stat` once and stores its anonymous and file bytes in `sleep.json` of the sleep `<opid>`. The sleep phase's counter settle calls it. |
 | `discard --instance <id>` | Removes all of the Instance's helper files: plan, sleep result, limits record, target descriptor, receipts, and its request and outcome files. |
 | `discard --instance <id> --plan-only` | Removes only the plan. The stop path of a sleep uses it. |
 
@@ -59,9 +60,9 @@ A field that is missing, unknown or out of range makes the helper refuse with `i
 | `command`, `instance_id`, `operation_id` | all | Echo of the call; `operation_id` is `null` for `discard` and `capabilities` |
 | `outcome` | all | One closed value per command; see the list below the table |
 | `error_code` | all | `null`, or `instance.container_freeze_failed` (`prepare`), `instance.container_start_failed` (`restore` could not resume) or `instance.power_helper_failed`. A missing container or another incarnation is `outcome: missing`, which the caller maps to its existing error |
-| `state_before`, `state_after` | `prepare`, `restore` | `running`, `frozen`, `stopped` or `missing`, as Incus reported them |
+| `state_before`, `state_after` | `prepare`, `restore`, `residual` | `running`, `frozen`, `stopped` or `missing`, as Incus reported them |
 | `swap_subtree` | `prepare`, `restore` | Inner cgroups that this sleep opened, or that this resume closed |
-| `prepared_restore` | `prepare`, `restore` | The [result object](#results), without the residual fields, which the sleep phase adds from its counter read |
+| `prepared_restore` | `prepare`, `restore`, `residual` | The [result object](#results). `prepare` returns it without the residual fields when it froze the container, and with them when it found the container frozen; `residual` returns it with them |
 | `seconds` | `prepare`, `restore` | `{pause, capture, publish, reclaim}` or `{load, restore, resume, close}`, each in seconds; a step that did not run is absent |
 | `capabilities` | `capabilities` | Each primitive and whether it works |
 
@@ -69,6 +70,7 @@ Outcomes per command:
 
 - `prepare`: `frozen`, `already_frozen`, `stopped`, `missing` or `failed`;
 - `restore`: `resumed`, `already_running`, `stopped`, `missing` or `failed`;
+- `residual`: `recorded` or `not_recorded`; `not_recorded` changes nothing, and means the container is not frozen or `sleep.json` belongs to another sleep;
 - `discard`: `discarded`; `capabilities`: `checked`.
 
 A `failed` outcome also says whether the container is left running or frozen, through `state_after`. A crash leaves no such fact, so the caller keeps the asleep marker.
@@ -112,7 +114,7 @@ The helper keeps its state in fixed folders. Private files belong to root alone;
 | `/var/lib/orbit/hibernation/instances/<id>/` | `root:root 0700` | One Instance's private state |
 | `…/<id>/target.json` | `0600` | The target descriptor |
 | `…/<id>/limits.json` | `0600` | The swap limits this sleep opened |
-| `…/<id>/sleep.json` | `0600` | The public result of the sleep that froze the container: `sleep_operation_id`, `swap_subtree` and `prepared_restore` |
+| `…/<id>/sleep.json` | `0600` | The public result of the sleep that froze the container: `sleep_operation_id`, `swap_subtree` and `prepared_restore`, with the residual fields of the last `residual` call |
 | `…/<id>/plan/manifest.json`, `…/<id>/plan/ranges.bin` | `0600` | The one committed plan |
 | `…/<id>/receipts/op-<opid>.json` | `0600` | Detailed metrics of one Operation; the newest 16 stay |
 | `/var/lib/orbit/hibernation/outcomes/` | `root:caddy 0755` | Status files of the fast wake, `0644` |
@@ -190,7 +192,7 @@ These are global safety bounds, not settings per app. Hitting one abandons the h
 | Plan metadata | 64 MiB |
 | Recorded readable residency | The container's memory limit, at most 8 GiB |
 | iovec per syscall | `min(512, IOV_MAX)` |
-| Counter settle after the reclaim | 20 reads, 0.1 s apart (Ansible) |
+| Counter settle after the reclaim | 20 `residual` calls, 0.1 s apart (Ansible) |
 | Fast wake request age | 1 s |
 | `incus resume` in `restore` | 1 s |
 | Fast worker's readiness request | 1.5 s |
@@ -212,7 +214,9 @@ The 2 s bound limits the work the helper submits and how long it waits. Linux ca
 6. It captures and publishes the plan.
 7. It writes `memory.reclaim` once; `EAGAIN` is normal. Then it writes `sleep.json` and returns `frozen`.
 
-Ansible then reads `memory.stat` until anonymous and file memory are both 0, at most 20 times. The last read is the residual memory. The existing policy decides on more than 32 MiB of anonymous memory. Swap is full at that point, so no prefetch would help: the phase runs `discard --plan-only` first, and then `restore` finds no plan, resumes without a memory syscall and closes `limits.json`. When the Instance is a nested-fleet one, the sleep then fails, as before. Any other Instance stops, and its result says `skipped`, reason `stopped`.
+Ansible then runs `residual` through the lock until anonymous and file memory are both 0, at most 20 times, 0.1 s apart. Each call reads the counters once and stores them in `sleep.json`, so the last call is the residual memory, and a repeated sleep of the frozen container returns the same values. Only the helper reads the counters; the wait is Ansible's.
+
+The existing policy decides on more than 32 MiB of anonymous memory. Swap is full at that point, so no prefetch would help: the phase runs `discard --plan-only` first, and then `restore` finds no plan, resumes without a memory syscall and closes `limits.json`. When the Instance is a nested-fleet one, the sleep then fails, as before. Any other Instance stops, and its result says `skipped`, reason `stopped`.
 
 A capture that is unsupported, too large or too slow leaves no plan. The sleep continues: freeze and reclaim are the same as without a plan. A failed pause or reclaim takes the existing failure path, and `prepare` closes every limit it opened before it returns. A failure that leaves the container frozen keeps the marker and `limits.json`, so a later `restore` can recover it.
 
@@ -233,7 +237,9 @@ A capture that is unsupported, too large or too slow leaves no plan. The sleep c
 1. It calls `process_madvise(MADV_WILLNEED)` over all the ranges.
 2. It calls `process_vm_readv`, reading one byte per page into a scratch buffer that it reuses and never inspects.
 
-Before each batch, the worker checks its pidfd and the process's start time. It stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work. It never retries a range and never follows a replacement process. Advice that failed never counts as done. After the restore the plan is consumed. A later wake without a new sleep finds no plan.
+A batch holds up to `min(512, IOV_MAX)` pages of one process and may span its ranges. Before each batch, the worker checks its pidfd and the process's start time, read from a `stat` file that it opened with the pidfd and that stays bound to that process. It stops when the identity changed or the deadline passed. A range that is unmapped or unreadable, a short advice or read, or `ENOMEM` makes the result `partial` and abandons that batch; the worker goes on with safe work.
+
+The worker never retries a range and never follows a replacement process. Advice that failed never counts as done. After the restore the plan is consumed. A later wake without a new sleep finds no plan.
 
 **Reason codes.** `skipped` and `timed_out` carry one closed code:
 
@@ -300,7 +306,7 @@ The Operation keeps its existing keys: `power_state`, `sleep`, `wake`, `marker_f
 | `prepared_restore.reason` | A [reason code](#wake) for `unsupported` and `skipped` |
 | `prepared_restore.generation` | The plan's UUID, for `ready` |
 | `prepared_restore.processes`, `resident_mapping_bytes`, `metadata_bytes`, `prepare_seconds` | Actual measurements, for `ready` |
-| `prepared_restore.residual_anon_bytes`, `residual_file_bytes` | The last counter read |
+| `prepared_restore.residual_anon_bytes`, `residual_file_bytes` | The last `residual` call's read |
 
 `ready` means a committed, complete plan. An incomplete generation is never `ready`.
 

@@ -44,7 +44,7 @@ sequenceDiagram
   %%> - installs the power helper from this commit when it differs, then runs `orbit-instance-power prepare` as the unit `orbit-instance-power-<id>`, the Instance's lock; a busy lock is retried 0.25 s apart, 40 times
   %%> - prepare reads the state from Incus first; running: removes the earlier plan and `sleep.json`, writes `max` to `memory.swap.max` of every cgroup of the subtree that holds 0 and records them in `limits.json` before the pause; `incus pause`
   %%> - prepare, frozen: lists `cgroup.procs` of the whole subtree, every process alike, and records each one's identity and the resident pages of its readable mappings; publishes the plan atomically; one `memory.reclaim`
-  %%> - then reads `memory.stat` until anonymous and file memory are 0, 20 reads 0.1 s apart; the last read is what stays in RAM
+  %%> - then runs `orbit-instance-power residual` until anonymous and file memory are 0, 20 calls 0.1 s apart; each call reads `memory.stat` once and stores it in `sleep.json`; the last one is what stays in RAM
   %%> - a frozen container stays as it is, keeps its plan for the next wake and reports the earlier sleep's result from `sleep.json`; a stopped one stays stopped, its old plan is discarded, `not_applicable`
   %%> - a busy lock is only systemd's `UnitExists` refusal; a helper crash fails the phase with `instance.power_helper_failed`, never retried
   %%> - a nested-fleet Instance gets no plan: `skipped`, `placement_unproven`
