@@ -444,6 +444,32 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['cases'])->toHaveCount(1);
     });
 
+    it('lists a cases file with no case as uncovered, for --all and when its command code changed', function (): void {
+        config(['proof.execution' => false]);
+        $source = proofSource();
+        $source->paths = ['swamp/proof/database/import.cases.yaml', 'swamp/proof/firewall/allow.cases.yaml'];
+        $source->documents = [PROOF_SHA.':swamp/proof/database/import.cases.yaml' => "command: database:import\nuncovered:\n  main: no fixture\ncases: []\n"];
+        $source->files = [new ProofChangedFile('docs/a.md', 'modified')];
+        proofWorld($source);
+        $noCase = ['path' => 'swamp/proof/database/import.cases.yaml', 'reason' => 'none: no case yet'];
+
+        $all = proofAdmitted(all: true);
+
+        expect($all->error_code)->toBe('proof.execution_disabled')
+            ->and(array_column($all->input['cases'], 'file'))->toBe(['swamp/proof/firewall/allow.cases.yaml'])
+            ->and($all->input['selected_commands'])->toBe(['firewall:allow'])
+            ->and($all->input['uncovered'])->toBe([$noCase]);
+
+        // The command's own code changed: its empty file selects nothing, so the proof has nothing to prove.
+        $source->list .= "apps/cli/app/Commands/Databases/**  database:import\n";
+        $source->files = [new ProofChangedFile('apps/cli/app/Commands/Databases/ImportDatabaseCommand.php', 'modified')];
+        $code = proofAdmitted();
+
+        expect($code->status)->toBe(OperationStatus::Succeeded)
+            ->and($code->result['outcome'])->toBe('nothing_to_prove')
+            ->and($code->result['uncovered'])->toBe([$noCase]);
+    });
+
     // A proof runs only in copies: a proof Project whose tasks do not run as copies fails by the removed task VM runtime, with no group and no wait.
     it('fails a proof of a Project whose tasks do not run as copies by the removed task VM runtime, with no group and no waiting run', function (bool $reportOnly, bool $ci): void {
         proofWorldWithoutCopies();
@@ -699,7 +725,8 @@ it('uses the historical selection list and current population for a whole-file s
 
     if ($state !== 'current') {
         expect($proof->result['outcome'])->toBe('nothing_to_prove');
-        expect($proof->input['uncovered'])->toBe([['path' => $file, 'reason' => 'gone at tested SHA']]);
+        // A file that is gone is gone; a file that is there with no case has no case yet.
+        expect($proof->input['uncovered'])->toBe([['path' => $file, 'reason' => $state === 'empty' ? 'none: no case yet' : 'gone at tested SHA']]);
     } else {
         expect($proof->input['cases'])->toBe([['command' => 'firewall:allow', 'file' => $file, 'reasons' => ['*' => 'command code changed']]]);
         expect(app(ProofBatchPlan::class)->read(PROOF_SHA, $proof->input['cases'])[0]['cases'])->toBe(['newly-added']);

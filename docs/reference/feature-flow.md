@@ -104,7 +104,7 @@ swamp/workflows/workflow-vault-sync.yaml      none: no case yet
 | `*` | Every case runs. The list does not use it: a proof runs only when a command's own code or cases change. |
 | `none: <reason>` | The path has no case yet. It is listed as uncovered and does not fail the run. |
 
-The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Further colons of the command name become `-`, so `instance:deploy-step:create` has `swamp/proof/instance/deploy-step-create.cases.yaml`. A command without that file is listed as uncovered with the reason `no cases file for COMMAND`. When every case runs, each cases file of the commit is one command, labelled by its family and file name.
+The cases file of a command is `swamp/proof/<family>/<command>.cases.yaml`. Further colons of the command name become `-`, so `instance:deploy-step:create` has `swamp/proof/instance/deploy-step-create.cases.yaml`. A command without that file is listed as uncovered with the reason `no cases file for COMMAND`. When every case runs, each cases file of the commit is one command, labelled by its family and file name. A cases file that states `cases: []` has no case yet. However it is selected, by `--all`, by its command's code or by a range, it is listed as uncovered with the reason `none: no case yet` and does not fail the run.
 
 - The last matching line wins.
 - A path that matches no line is refused with `proof.path_unmapped`, so the author must classify every path.

@@ -44,6 +44,9 @@ use Throwable;
  */
 final readonly class ProofRunIntent
 {
+    /** Why a selected cases file that holds no case yet is listed as uncovered (docs/reference/feature-flow.md#choose-the-cases). */
+    private const string NoCaseYet = 'none: no case yet';
+
     /** The total admission budget, including capacity waits. */
     public const int WaitSeconds = 7200;
 
@@ -359,7 +362,8 @@ final readonly class ProofRunIntent
                         continue;
                     }
                 } elseif ($ids === []) {
-                    $uncovered[$file] = ['path' => $file, 'reason' => 'gone at tested SHA'];
+                    // The file is there but holds no case yet at the tested commit.
+                    $uncovered[$file] = ['path' => $file, 'reason' => self::NoCaseYet];
 
                     continue;
                 }
@@ -400,7 +404,14 @@ final readonly class ProofRunIntent
             $result = $this->source->caseSelection($changes->mergeBase, $commit);
             $rules = $list === null ? null : ProofSelectionList::parse($list);
             $selected = [];
+            $uncovered = $selection->uncovered;
             foreach ($candidates as $candidate) {
+                // A cases file that holds no case yet selects no command, however it was selected; it is listed as uncovered.
+                if (self::holdsNoCase($this->source->file($commit, $candidate['file']))) {
+                    $uncovered[] = ['path' => $candidate['file'], 'reason' => self::NoCaseYet];
+
+                    continue;
+                }
                 $codeChanged = $selection->everythingBecause !== null || array_any($changes->paths(), static function (string $path) use ($rules, $candidate, $batchPath): bool {
                     $rule = $rules?->match($path);
 
@@ -416,11 +427,19 @@ final readonly class ProofRunIntent
                 }
             }
 
-            return new ProofSelectionResult($selected, $selection->uncovered, $selection->everythingBecause, $selection->mergeBase);
+            return new ProofSelectionResult($selected, $uncovered, $selection->everythingBecause, $selection->mergeBase);
         } catch (ParseException) {
             throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML.', 409);
         } catch (GitHubApiException $exception) {
             throw ProofGitHubRefusal::from($exception, 'the cases cannot be selected');
         }
+    }
+
+    /** Whether a cases file states `cases: []`: it has no case yet. Any other shape is for the batch plan to accept or refuse. */
+    private static function holdsNoCase(?string $file): bool
+    {
+        $spec = Yaml::parse($file ?? '');
+
+        return is_array($spec) && array_key_exists('cases', $spec) && $spec['cases'] === [];
     }
 }

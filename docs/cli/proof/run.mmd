@@ -34,6 +34,7 @@ sequenceDiagram
   end
   GW->>GW: Record case ids<br/>and reasons
   %%> Select added and changed cases and their variants, and users whose expanded dependencies changed. Deleted cases select nothing. Report changed, added, uses changed fixture, uses changed var, batch setup changed, command code changed or proof tooling changed. A verified zero-case selection succeeds without a copy.
+  %%> A selected cases file with `cases: []`, by --all, by its command's code or by a range, selects nothing and is listed as uncovered (none: no case yet).
   GW->>GW: Plan selected cases<br/>in batches
   %%> Expand selected variant ids only. Sum measured case seconds from prior reports; unseen cases use the measured median, or one second with no history.
   GW->>Q: Join by proof Operation id
