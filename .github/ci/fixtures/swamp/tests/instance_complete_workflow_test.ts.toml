@@ -1,5 +1,5 @@
 order = 870
-source_sha256 = "dbf9aca3a00c8c12c38ecef6df684bc4d341fc5d82d4c062c59d991c36fb15e7"
+source_sha256 = "2d8973c8fc1d050818d965df3ffb0e5bafaabba0362dfbd79a4e5be3a167b28c"
 cases = [
   "the completion's jobs and steps sit in the levels the plan names, by the pinned engine's sort",
   "a plain clone, a clone with a database and a nested-fleet clone read only the keys they have",
@@ -9,6 +9,7 @@ cases = [
   "a nested-fleet clone starts its fleet before the services; a failed fleet names the fleet and withdraws the Route",
   "each failure names its step and code, and a published Route is withdrawn",
   "a completion of a Route its create published carries no Route: no Route step, no withdrawal on a failed check (D3)",
+  "copies of a nested-fleet default started at once take their own fleet step name: 64 per Node, never one per Node",
 ]
 file = "swamp/tests/instance_complete_workflow_test.ts"
 cost = 1

@@ -2624,6 +2624,8 @@ Inside the refresh, the agent wait and the Doctor wait are bounded by 300 s each
 
 A new Instance or a task of the nested-fleet Project is a ZFS clone of the default's seed, as every [clone](#create) is. The clone then starts the outer container and places the Club key. Its step `clone-fleet` runs the [fleet step](#the-fleet-step)'s check and resume. It waits for the inner Incus and checks the fleet rules. It starts the nested containers and the operator tunnel `wg-nested`. Then it waits for the same Doctor check that a proof uses: the nested Gateway is healthy and its three agents are online.
 
+The step can run for minutes, and Swamp fails a step that waits 60 s for a name another run holds. So the step takes one of 64 names per Node, `ic-clone-fleet-<node>-<instance id % 64>`. Copies started at once get near ids and start their fleets side by side.
+
 Only then do the workspace phase and T3 run. The [create chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/create.mmd) shows the step.
 
 The Gateway gives the create intent its `fleet` only for a clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). Every other create has no `fleet` key and skips the step.

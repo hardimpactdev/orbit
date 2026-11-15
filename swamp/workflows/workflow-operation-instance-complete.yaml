@@ -152,7 +152,9 @@ jobs:
             stdin: '${{ vault.get(inputs.execution_secrets.process_environments.vault, inputs.intent.server_valkey == null ? inputs.execution_secrets.process_environments.key : inputs.execution_secrets.server_valkey_check.key) }}'
             timeoutSec: 70
       # A clone of a nested-fleet default starts the fleet it copied (docs/reference/development-containers.md#a-clone-starts-its-fleet).
-      # Only such an intent has `fleet`; every other clone skips it. Its Club key came with the create's container start.
+      # Only such an intent has `fleet`; every other clone skips it. Its Club key came with the create's container start. The step can
+      # run 15 minutes and Swamp fails a run that waits 60 s for a name another run holds, so the name takes one of 64 slots per Node
+      # (instance_id % 64): copies started at once have near ids and do not share one (Operations 24033 and 24034 shared one per Node).
       - name: clone-fleet
         labels: {role: swamp}
         writes: true
@@ -161,7 +163,7 @@ jobs:
         task:
           type: behavior
           behaviorType: command/shell
-          behaviorName: '${{ "ic-clone-fleet-" + string(inputs.node_id) }}'
+          behaviorName: '${{ ("ic-clone-fleet-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}'
           methodName: execute
           inputs:
             run: timeout 300 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_check "$ORBIT_ANSIBLE/instance-container.yml" && timeout 600 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags fleet_resume "$ORBIT_ANSIBLE/instance-container.yml"
