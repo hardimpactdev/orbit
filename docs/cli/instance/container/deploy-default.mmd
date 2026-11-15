@@ -24,6 +24,7 @@ sequenceDiagram
   %%> - reads before the write transaction; admission rechecks eligibility, source configuration and idempotency before recording facts; see /reference/deployments#container-source-facts
   %%> - refuses admission when capture or source classification fails
   GW->>SW: Start run, full intent<br/>instance-deploy-direct
+  %%> - the long steps (prepare, checkout, each dev deploy step, finish, the fleet restore) lock a Swamp behavior of this Instance on its Node, so deployments of two defaults on one Node never wait for each other; the Instance lock keeps two deployments of one default apart
   SW->>N: Prepare the container<br/>Ansible · start · fetch
   %%> What it does:
   %%> - one play runs the phases `start` and `fetch`, in this order; a nested-fleet default runs its fleet check and first seed between them: container/fleet-refresh.mmd
@@ -85,5 +86,6 @@ sequenceDiagram
   else a required step fails
     SW--xGW: Run failed<br/>failed step
     %%> Result:
+    %%> - a step that waited 60 s for a behavior lock and never ran records `instance.deploy_lock_timeout`, not the step's own code
     %%> - no new seed snapshot is taken, so clones keep starting at the last commit that deployed; Swamp's policy retries after its backoff
   end

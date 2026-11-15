@@ -16,6 +16,7 @@ use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\NativeOperationProjection;
 use App\Domain\Tools\VpEnvironment;
+use App\Infrastructure\Swamp\SwampLockTimeout;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Operation;
@@ -25,6 +26,8 @@ use Illuminate\Support\Facades\DB;
 /** Records bounded native facts. All sequencing, runtime checks and effects belong to Swamp. */
 final readonly class InstanceDeployProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowInput, NativeOperationProjection
 {
+    public const string LockTimeoutCode = 'instance.deploy_lock_timeout';
+
     public function __construct(
         private DirectOperation $direct,
         private InstanceDeploymentDirectInput $intent,
@@ -67,12 +70,18 @@ final readonly class InstanceDeployProjection implements DirectOperationProjecti
             $status = ValidatedData::string($data['status']);
             $payload = ValidatedData::object($data['result'] ?? []);
             if ($status !== 'running') {
+                $native = $data;
                 $variant = ValidatedData::string(ValidatedData::object($locked->input['deployment'])['variant']);
                 [$data, $payload] = match (true) {
                     $variant === 'container' => ContainerDeployOutcome::from($data, $this->secrets($instance)),
                     $this->development($locked) => DevelopmentDeployOutcome::from($data),
                     default => ProductionDeployOutcome::from($data, $locked),
                 };
+                // A container default's step that waited 60 s for a behavior lock that another run held changed nothing in that step; the native detail is
+                // Swamp's one lock line, read before an outcome adds the run's own words (docs/cli/instance/deploy.mdx#errors).
+                if ($status === 'failed' && $variant === 'container' && SwampLockTimeout::matches(ValidatedData::object($native['failure'] ?? [])['detail'] ?? null)) {
+                    $data['error_code'] = self::LockTimeoutCode;
+                }
             }
             $historyId = $locked->state['deployment_id'] ?? null;
             if (! is_int($historyId)) {

@@ -231,6 +231,43 @@ it('records a running container but no seed when a deployment fails after the co
         ->and($operation->refresh()->error_code)->toBe('deployment.checkout_dirty');
 });
 
+it('records a container default\'s step that waited 60 s for a behavior lock as instance.deploy_lock_timeout', function (string $detail, string $file, string $code): void {
+    $instance = deployDefault(container: true);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'failure' => ['failed_step' => 'Finish the container', 'detail' => $detail],
+        'result' => ['steps' => [ContainerDeployOutcome::ResultStep => ['stdout' => $file]], 'summary' => ['failed_steps' => ['Finish the container']]]]);
+
+    expect($operation->refresh()->error_code)->toBe($code)
+        ->and($operation->failed_step)->toBe('Finish the container');
+})->with([
+    // Operation 22649: its Finish waited on the Finish of another default's deployment on the same Node.
+    'held' => ['Lock "/home/orbit/swamp/.swamp/data/command/shell/271a8c06-0b1e-4c5d-9f00-1a2b3c4d5e6f/.lock" held by orbit@swamp (pid 4242) — timed out after 60001ms',
+        '{"commit":null,"phases_passed":["start","fetch","checkout"]}', 'instance.deploy_lock_timeout'],
+    'let go at the deadline' => ['Lock "/home/orbit/swamp/.swamp/data/command/shell/271a8c06-0b1e-4c5d-9f00-1a2b3c4d5e6f/.lock" — timed out after 60000ms',
+        '{"commit":null}', 'instance.deploy_lock_timeout'],
+    // A restore that also failed adds its words to the detail; the native lock line still names the first failure.
+    'restore failed too' => ['Lock "/home/orbit/swamp/.swamp/data/command/shell/271a8c06-0b1e-4c5d-9f00-1a2b3c4d5e6f/.lock" — timed out after 60000ms',
+        '{"commit":null,"restore_failure":"restore_failure: the restored fleet did not start"}', 'instance.deploy_lock_timeout'],
+    'own step timeout' => ['Finish the container timed out after 300s', '{"commit":null}', 'operation.native_failed'],
+    'lock line inside other output' => ["ansible failed\nLock \"/x/.swamp/data/a/.lock\" — timed out after 60000ms", '{"error_code":"instance.container_processes_failed"}', 'instance.container_processes_failed'],
+]);
+
+it('keeps the step code of a checkout default whose step waited for a behavior lock', function (): void {
+    $instance = deployDefault(container: false);
+    $operation = Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $instance->id, 'node_id' => $instance->node_id,
+        'status' => OperationStatus::Running, 'input' => ['deployment' => app(InstanceDeploymentIntent::class)->snapshot($instance)], 'state' => ['swamp_run_id' => 'run-1']]);
+
+    app(InstanceDeployProjection::class)->apply($operation, ['status' => 'failed', 'run_id' => 'run-1', 'started_at' => now()->toIso8601String(),
+        'finished_at' => now()->toIso8601String(), 'failure' => ['failed_step' => 'Fetch the branch',
+            'detail' => 'Lock "/home/orbit/swamp/.swamp/data/@swamp/ssh/271a8c06-0b1e-4c5d-9f00-1a2b3c4d5e6f/.lock" — timed out after 60000ms'],
+        'result' => ['steps' => [], 'summary' => ['failed_steps' => ['Fetch the branch']]]]);
+
+    expect($operation->refresh()->error_code)->toBe('deployment.source_failed');
+});
+
 it('records the seed commit and a running container after a deployment passes, and leaves the checkout seed alone', function (): void {
     $instance = deployDefault(container: true);
     $commit = str_repeat('c', 40);

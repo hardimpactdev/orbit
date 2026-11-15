@@ -13,7 +13,7 @@ type Step = {
     name: string;
     guard?: string;
     dependsOn?: { step: string; condition: Condition }[];
-    task: { inputs: { run?: string; env?: Record<string, string> } };
+    task: { behaviorName?: string; globalArgs?: { name?: string }; inputs: { run?: string; env?: Record<string, string> } };
 };
 const flow = parse(
     Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-deploy-direct.yaml", import.meta.url)),
@@ -174,4 +174,21 @@ Deno.test("after a restore the restored fleet is started and waited for, and the
     assert(names.indexOf("Start on the old seed") < names.indexOf("Start the restored fleet"));
     assert(step("Start the restored fleet").task.inputs.run!.includes("--tags fleet_resume "));
     assertEquals(skips("Start the restored fleet", container, statuses), true);
+});
+
+Deno.test("two deployments of different defaults on one Node never share a behavior lock for a long step", () => {
+    // Swamp holds a behavior's lock for the whole step and fails a second step after 60 s (Operation 22649 waited on 2454's Finish).
+    // Only default Instances deploy, so the per-Instance names stay bounded by the defaults a Node ever held.
+    const render = (text: string, instance: number) =>
+        String(cel.evaluate(expression(text), { inputs: { node_id: 9, intent: { instance_id: instance } }, self: { _index: 3 }, run: { id: "run-1" } }));
+    const containerSteps = deploy.filter((s) => s.task.behaviorName?.includes("instance-deploy-container"));
+    assertEquals(containerSteps.length, 10);
+    const scoped = containerSteps.filter((s) => render(s.task.behaviorName!, 2454) !== render(s.task.behaviorName!, 1898)).map((s) => s.name);
+    assertEquals(scoped, ["Prepare the container", "Check out in the container", "Run dev deploy steps", "Finish the container", ...restoreSteps]);
+    assertEquals(render(step("Finish the container").task.behaviorName!, 2454), "instance-deploy-container-finish-9-2454");
+    const ssh = step("Run dev deploy steps");
+    assertEquals(render(ssh.task.behaviorName!, 2454), "instance-deploy-container-step-9-2454-3");
+    assertEquals(render(ssh.task.globalArgs!.name!, 2454), render(ssh.task.behaviorName!, 2454));
+    // The short steps (a cat, an rm, the intent file) keep one name per Node or one fixed name.
+    assertEquals(render(step("Read the container result").task.behaviorName!, 2454), "instance-deploy-container-result-9");
 });
