@@ -24,11 +24,11 @@ Open:
 
 ## Context
 
-Between 13 and 15 November 2026, Orbit's CI had three stages:
+Orbit's CI has three stages:
 
-- **Pull request checks** on GitHub-hosted runners: about 20 kinds of quick checks (Pest, PHPStan, builds, docs, Swamp shape and Deno tests) and up to 8 fixture shards for the changed files. The median from push to `Required checks` was 3.6 minutes.
+- **Pull request checks**: quick checks (Pest, PHPStan, builds, docs, Swamp shape and Deno tests) and fixture shards for the changed files, selected by their inputs.
 - **Release** on main: the same checks again, unless the merged tree matches a green pull request tree, then the CLI release and the docs site.
-- **After-merge consumers** ([Main full set](/reference/main-full-set)): `Main deferred fixtures` ran on Sabre the fixtures that pull requests skipped, on every push and every 10 minutes, and swept the whole set every night; `Main full set` runs the same sweep on demand; `Main copy proof` ran a report-only proof of the newest main commit on the proof runners. The 765 shard jobs on Sabre waited a median of 54 minutes and up to 6.2 hours for a runner, and 225 were cancelled before any runner took them. Nothing waited for these results, and a failure surfaced hours after the merge.
+- **After-merge consumers** ([Main full set](/reference/main-full-set)): `Main deferred fixtures` runs the fixtures that pull requests skip, on every push and every 10 minutes, and sweeps the whole set every night; `Main full set` runs the same sweep on demand; `Main copy proof` runs a report-only proof of the newest main commit. Their shards queue for the self-hosted runners they are pinned to. Nothing waits for their result, so a failure surfaces after the merge, when main is already red.
 
 The shape-gate fixtures are 179 test files under `swamp/tests/`, `swamp/bin/` and `swamp/extensions/`, registered in `.github/ci/fixtures/`. Most run a shipped playbook or workflow on the CI runner against stand-ins: this machine as the Node, a stand-in Incus, no network. They declare about 6.6 hours of single-worker time; `ansible_instance_migrate_test.ts` alone declares 2.3 hours. The [proof](/cli/proof/run) runs the same operations end to end, through the Gateway and Swamp, against a nested fleet. The two layers test the same behavior twice.
 
