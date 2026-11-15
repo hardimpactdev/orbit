@@ -73,7 +73,7 @@ A separate remote Node service access fixture covers exact TCP admission, proxy 
 
 The retained guard fixture pins only the source-removal step and the absence of workflow dependency checks, so unrelated Route phases can change. The withdrawal fixture runs two local Ansible applications to verify cleanup after a partial publication and after an already absent site.
 
-[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its deferred consumer coalesces waiting main commits and runs the union of their omitted cases on the newest SHA; each commit links to that range’s answer. Both receivers run two workers per Sabre shard to reduce timeouts caused by runner load. The separate main proof consumer uses the enrolled caller and at most two task copies; its reports never gate Required or delivery. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
+[Main full set](/reference/main-full-set) runs every shape fixture after merge, outside the merge and deploy path. Its deferred consumer coalesces waiting main commits and runs the union of their omitted cases on the newest SHA; each commit links to that range’s answer. Both receivers run two workers per shard to reduce timeouts caused by runner load. The separate main proof consumer uses the enrolled caller and at most two task copies; its reports never gate Required or delivery. Static PHP compilation is off on pull requests, which keep its pin validation; main builds and publishes after the merge.
 
 Withdrawal fixtures also check that publication stops when the live checksum differs from the base used for composition. The Node helper tests use temporary files, fake Caddy commands and real file locks; they cover contention, holder death and reload failure.
 
@@ -409,9 +409,9 @@ Gateway Pest runs in one hosted job with four workers and no shards. Gateway sta
 
 During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
-Sabre and Shark run CI runners in unprivileged Incus containers.
+Each CI Node runs its CI runners in unprivileged Incus containers. Every runner carries the same labels and no host label, so a workflow never names a host; see [CI runner role](/reference/node-provisioning#ci-runner-role).
 
-The container setup enables the runner’s user systemd manager with lingering. Apply that prerequisite alone to an existing container with `tools/ci-runners/setup.sh user_manager NAME`; it does not restart the Actions listener or grant sudo to jobs. With operator approval, both hosts also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Beast and Shark through Incus.
+The container setup enables the runner’s user systemd manager with lingering. Apply that prerequisite alone to an existing container with `tools/ci-runners/setup.sh user_manager NAME`; it does not restart the Actions listener or grant sudo to jobs. With operator approval, CI Nodes also run temporary Swamp migration workers. They may share capacity during the migration; restore their CI capacity when that work ends. Task VMs run only on Incus hosts that have task places.
 
 Public repositories use GitHub-hosted runners, with self-hosted runners available when configured. Private repositories use self-hosted runners.
 
@@ -425,7 +425,7 @@ Run `tools/ci-runners/setup.sh actions NAME` after action pins change, then rest
 
 Every shard runner also runs `tools/ci-runners/job-started-hook.sh` before each job, through the runner's standard `ACTIONS_RUNNER_HOOK_JOB_STARTED` setting. The hook resets each reused git checkout under the work directory with `git sparse-checkout disable`, `git reset --hard` and `git clean -ffdx`. It empties a checkout that is in sparse mode (`core.sparseCheckout`, or skip-worktree entries in the index) or that git cannot reset: `reset --hard` leaves skip-worktree files on disk, and the next job's `git sparse-checkout disable` then fails on them.
 
-A job that leaves tracked files modified therefore cannot fail the next `actions/checkout`. `container NAME` installs the hook; `tools/ci-runners/setup.sh hook NAME` installs it on a running runner without a restart. Restart the runner service once it is idle to load it. The host-level `orbit-proof` runners on Beast and Shark take the same hook with `tools/ci-runners/setup.sh proof_hook` on their host.
+A job that leaves tracked files modified therefore cannot fail the next `actions/checkout`. `container NAME` installs the hook; `tools/ci-runners/setup.sh hook NAME` installs it on a running runner without a restart. Restart the runner service once it is idle to load it. The host-level `orbit-proof` runners take the same hook with `tools/ci-runners/setup.sh proof_hook` on their host.
 
 ### Agent delivery
 
@@ -520,7 +520,14 @@ bin/swamp-shape-gate --base REF     # compare with another base
 bin/swamp-shape-gate --only shape   # or --only validate
 ```
 
-The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate`, keyed by their pins, and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
+The script installs the linters into a virtual environment under `~/.cache/orbit-shape-gate` and reuses it. `swamp/ansible/shape-gate-requirements.txt` is the only place that names the pins; the workflow names none. It sets umask 022, as CI has, then runs the checks in this order: the Ansible phase checks, the shape regression Deno tests, `check-swamp-shape.ts`, `check-swamp-base-policy.py`, `lint-behavior-names.ts`, the frozen agent command check and the workflow placement lint, `lint-workflow-placement.ts`. The placement lint needs no credential, so it is one of the static controls that `--only control` runs.
+
+The venv folder is `venv-<digest>`. The digest covers two things:
+
+- the pin files `swamp/ansible/shape-gate-requirements.txt` and `swamp/ansible/requirements.txt`
+- the Python interpreter that builds the venv: its version and its real path
+
+A venv runs only with the interpreter that built it. A venv of another interpreter can hold `.complete` and still fail, for example with `cannot load libpython3.13`. So when the interpreter changes, the name changes too, and the gate never reuses a venv of another interpreter. It builds a new one. The CI cache key of these tools covers the same interpreter version and real path beside the pin files, so CI never restores a venv of another interpreter. The task VM role playbook names its venv by the same rule.
 
 Independent commands share up to four workers, with one worker inside each command. The Instance host fixture files run in two serial groups at the front of the queue: updates and ACL cases in one; host, image and runtime cases in the other. At most two Instance host playbooks run at once, leaving workers for the other checks. The updates and ACL cases measured 356 and 257 seconds on ci-shark-2, or 613 seconds together. The image/runtime group must not also carry those ACL cases.
 
@@ -534,7 +541,7 @@ The gate prints each command's start and reports its result as soon as it finish
 
 The shape checker resolves a constant quoted CEL child-workflow name and scans that child just as it scans a literal target.
 
-A task VM holds the same environment in `/opt/orbit-shape-gate`, and so does a copy of a nested-fleet default: its [refresh](/reference/development-containers#the-pinned-shape-tools) builds the tools before the seed. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins, so the check runs offline.
+A task VM holds the same environment in `/opt/orbit-shape-gate`, and so does a copy of a nested-fleet default: its [refresh](/reference/development-containers#the-pinned-shape-tools) builds the tools before the seed. The task VM role playbook builds it for the pins of its release. The script uses it when its name matches the pins and the interpreter, so the check runs offline.
 
 Workflow validation needs a Swamp account and reads only `SWAMP_API_KEY` and `SWAMP_SIGNIN_TOKEN`. Without them, the script skips the workflow validation, the Node enrollment trust test (it imports the extensions that validation pulls) and the grant pattern check (it also needs PHP). It names each skipped step and still exits 0. `--only validate` exits 78 then, which the candidate gate reads as skipped. CI passes `--strict`: a skipped step is a failure there.
 
@@ -788,7 +795,7 @@ Reviewers report `strtotime()`, inline type overrides, and unguarded classificat
 
 Pushes to `main` share one concurrency group. A running run always finishes, and a newer push replaces the waiting one. An automatic Gateway release ships only a commit with its own successful `Required checks` run, so a replaced commit never ships by itself. It ships inside the next green commit, which descends from it and whose builds and static checks cover its tree.
 
-A group per `main` commit is a rejected alternative. It gave every commit a result, but during a burst of merges every commit queued a full run on the runners on Sabre, and the newest commit, the one a release ships, ran last. On 2026-10-08 about a dozen merges in 15 minutes delayed the release by 30 to 40 minutes.
+A group per `main` commit is a rejected alternative. It gave every commit a result, but during a burst of merges every commit queued a full run on the CI runners, and the newest commit, the one a release ships, ran last. On 2026-10-08 about a dozen merges in 15 minutes delayed the release by 30 to 40 minutes.
 
 The cost is a smaller fallback when the newest run fails. The release resolver examines at most 20 commits, and a replaced commit has no result to fall back to. After a burst of more than 20 merges whose newest run fails, auto-release waits for a fix to merge and pass. A manual re-run of an older `main` run also joins the shared group, so it replaces a waiting run.
 

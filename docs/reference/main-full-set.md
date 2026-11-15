@@ -12,7 +12,7 @@ covers:
 
 # Main full set
 
-`Main full set` runs every shape-gate fixture when the deferred queue is empty. It is independent of Required checks and releases. Its shards use only `[self-hosted, orbit-shard, sabre]`, with at most five executing shards and two workers per shard. With four workers, 20 fixture processes ran at once on Sabre and most failures were timeouts, not failing tests. More work creates more queued shards, rather than dropping files. A complete run is expected to take about 80 minutes. Manual dispatch accepts main only.
+`Main full set` runs every shape-gate fixture when the deferred queue is empty. It is independent of Required checks and releases. Its shards run on the shared runner labels `[self-hosted, orbit-shard]`, which every CI runner carries; they name no host. At most five shards execute at once, with two workers per shard. With four workers per shard, too many fixture processes ran at once on one CI Node, and most failures were timeouts, not failing tests. More work creates more queued shards, rather than dropping files. A complete run is expected to take about 80 minutes. Manual dispatch accepts main only.
 
 The plan installs pinned PyYAML before checking its workflow policy, then loads the same per-fixture registry as PR planning through `bin/ci-registry`. Each metadata file supplies its fixture’s costs, input rules and saved population; shared budgets stay in `.github/ci/checks.toml`. It collects current Deno registrations without running bodies, then includes every case, including PR exclusions and after-merge-only files.
 
@@ -30,7 +30,7 @@ Each unit has a 540-second ceiling. Long Deno files are sliced by their current 
 
 ## Durable main consumers
 
-Main history is the durable queue. New pushes append commits; replacing a waiting GitHub workflow does not remove them. One fixture consumer holds the existing five Sabre runners. At admission it reads the newest main SHA and the last published answer, then runs the union of deferred requests from every first-parent commit in that interval on the newest tree. Selection reads each commit's registry data, including changes later reverted. The gate and replay share file discovery, including tests in grouped extension directories. It does not execute scripts from earlier commits.
+Main history is the durable queue. New pushes append commits; replacing a waiting GitHub workflow does not remove them. One fixture consumer holds at most five shard runners from the shared pool. At admission it reads the newest main SHA and the last published answer, then runs the union of deferred requests from every first-parent commit in that interval on the newest tree. Selection reads each commit's registry data, including changes later reverted. The gate and replay share file discovery, including tests in grouped extension directories. It does not execute scripts from earlier commits.
 
 The union runs only case names present at the tested SHA. The report lists removed or renamed names as `gone at tested SHA`; those names do not fail the run. A whole-file request includes every current case, including new names. A failed collection or a missing execution receipt still fails the run. Earlier run results remain in history; a later answer covers only its own claimed range.
 
@@ -38,9 +38,9 @@ The claim and report name `covers <oldest>..<newest>`, the exclusive base and th
 
 A collector settles ended runs whose normal report was lost, using their saved claim; a run cancelled before claiming work leaves the range waiting. The published answer remains in commit statuses when artifacts expire. A schedule retries work every ten minutes if a push wakeup is lost.
 
-The newest push waits for at most the running batch plus dispatch and runner availability; there is no wall-clock guarantee during a runner outage. The full set starts only when the deferred queue is empty, on the nightly schedule or a manual full-set request. A push does not cancel an executing sweep. Units keep their 540-second limit and shards keep their 35-minute limit. At most five Sabre runners execute them. No fixture body occupies GitHub's hosted runner pool. Required and releases never depend on either consumer.
+The newest push waits for at most the running batch plus dispatch and runner availability; there is no wall-clock guarantee during a runner outage. The full set starts only when the deferred queue is empty, on the nightly schedule or a manual full-set request. A push does not cancel an executing sweep. Units keep their 540-second limit and shards keep their 35-minute limit. At most five shard runners execute them. No fixture body occupies GitHub's hosted runner pool. Required and releases never depend on either consumer.
 
-Manual deferred backfill supplies an ancestor base. It uses a separate status and does not advance normal coverage. The full-set workflow is a manual entry into the same serialized consumer, so it cannot compete for Sabre slots.
+Manual deferred backfill supplies an ancestor base. It uses a separate status and does not advance normal coverage. The full-set workflow is a manual entry into the same serialized consumer, so it cannot compete for shard runners.
 
 ### Proof consumer
 
