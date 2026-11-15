@@ -174,6 +174,19 @@ class PlanningTest(unittest.TestCase):
             with patch.dict(full.collect_current.__globals__, {'api': lambda: self.api, 'ROOT': API.resolve().parents[1]}):
                 self.assertEqual(['case 1', 'case 2', 'case 3', 'case 4'], full.collect_current(str(source))['cases'])
 
+    @unittest.skipUnless(shutil.which('deno'), 'needs Deno')
+    def test_empty_registration_requires_explicit_range_collection_and_import_errors_still_fail(self):
+        with tempfile.TemporaryDirectory() as scratch:
+            source = Path(scratch) / 'empty_test.ts'
+            source.write_text('export {};\n')
+            with patch.dict(full.collect_current.__globals__, {'api': lambda: self.api, 'ROOT': API.resolve().parents[1]}):
+                self.assertEqual({'cases': []}, full.collect_current(str(source), allow_empty=True))
+                with self.assertRaisesRegex(ValueError, 'fixture registered zero tests'):
+                    full.collect_current(str(source))
+                source.write_text('throw new Error("broken import");\n')
+                with self.assertRaises(subprocess.CalledProcessError):
+                    full.collect_current(str(source), allow_empty=True)
+
     def test_real_unit_timeout_retains_its_name_and_next_unit_can_run(self):
         step = self.api.gate.Step('shape', 'named stalled fixture', [sys.executable, '-c', 'import signal; signal.pause()'])
         with patch('sys.stdout', io.StringIO()):

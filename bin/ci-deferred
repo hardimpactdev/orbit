@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run the bounded main plan's omitted cases at its exact push SHA, outside Required."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 import os
 from pathlib import Path
@@ -91,6 +92,26 @@ def historical_request(base, sha, read_revision=None):
     return requested, required_names, paths
 
 
+def current_requests(requested, required_names, tracked, collect):
+    """Intersect prior requests with the tested tree, and keep every dropped name visible."""
+    files = sorted(requested.keys() & tracked)
+    with ThreadPoolExecutor(max_workers=full.WORKERS) as pool:
+        populations = dict(zip(files, pool.map(collect, files)))
+    kept, gone = {}, []
+    for file, wanted in sorted(requested.items()):
+        live = set(populations[file]['cases']) if file in populations else set()
+        prior = set(required_names.get(file, [])) | set(wanted or [])
+        gone.extend({'file': file, 'case': name, 'reason': 'gone at tested SHA'} for name in sorted(prior - live))
+        if file not in populations:
+            if not prior:
+                gone.append({'file': file, 'case': None, 'reason': 'gone at tested SHA'})
+        elif wanted is None and live:
+            kept[file] = None  # A whole-file request includes new live cases too.
+        elif wanted is not None and (selected := sorted(set(wanted) & live)):
+            kept[file] = selected
+    return kept, populations, gone
+
+
 def build_range(base, sha, commits):
     fixture_api = full.api()
     cache = {}
@@ -113,15 +134,11 @@ def build_range(base, sha, commits):
     requested, required_names = union_requests(requests), union_requests(names)
     config, inventory = fixture_api.registry.load(ROOT)
 
-    def collect(file):
-        population = full.collect_current(file)
-        missing = set(required_names.get(file, [])) - set(population['cases'])
-        if missing:
-            raise ValueError(file + ': historical deferred cases no longer registered: ' + ', '.join(sorted(missing)))
-        return population
-
-    plan = full.build_plan(config, inventory, collect, fixture_api, requested=requested)
-    plan.update(empty_selection=not requested, changed_paths=sorted(paths), historical_cases=required_names)
+    tracked = set(full.git('ls-tree', '-r', '--name-only', sha, '--', 'swamp').splitlines())
+    requested, populations, gone = current_requests(requested, required_names, tracked, lambda file: full.collect_current(file, allow_empty=True))
+    plan = full.build_plan(config, inventory, populations.__getitem__, fixture_api, requested=requested)
+    plan.update(empty_selection=not requested, changed_paths=sorted(paths), historical_cases=required_names,
+                gone_at_tested_sha=gone)
     return plan
 
 def initial_context(sha):

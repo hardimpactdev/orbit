@@ -182,7 +182,8 @@ def fixture_report(claim, plan_path, results, shard_result, plan_result):
     if plan_result != 'success':
         problems.append({'unit': 'fixture planner job', 'reason': 'Planner ended ' + plan_result, 'files': []})
     return {'claim': claim, 'passed': not problems, 'range_covered': True, 'problems': problems, 'warnings': warnings,
-            'planned_cases': plan.get('cases_total'), 'planned_units': len(plan['units']), 'plan': plan}
+            'planned_cases': plan.get('cases_total'), 'planned_units': len(plan['units']),
+            'gone_at_tested_sha': plan.get('gone_at_tested_sha', []), 'plan': plan}
 
 
 

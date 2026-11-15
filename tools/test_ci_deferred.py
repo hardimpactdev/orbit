@@ -90,6 +90,22 @@ class DeferredTest(unittest.TestCase):
             path.write_text(json.dumps([row]))
             self.assertEqual(([], []), full.reconcile(plan, directory, 'success'))
 
+    def test_browser_runtime_flip_moves_to_receiver_without_losing_other_cases(self):
+        file = 'swamp/tests/ansible_instance_host_browser_test.ts'
+        case = 'a converge that adds browser parts to a runtime folder in use flips it and restarts no Process in a running container'
+        budget, fixtures, defaults = api.configuration()
+        config, inventory = api.registry.load(ROOT)
+        pr = api.plan([file], budget, fixtures, defaults)
+        admitted = [name for shard in pr['shards'] for unit in shard['units']
+                    if unit.split('#')[0] == file
+                    for name in api.case_names(unit, fixtures)]
+        self.assertNotIn(case, admitted)
+        self.assertCountEqual(set(fixtures[file]['cases']) - {case}, admitted)
+        wanted = receiver.requested_cases(pr, fixtures, api)
+        self.assertEqual([case], wanted[file])
+        plan = full.build_plan(config, inventory, inventory.__getitem__, api, requested={file: wanted[file]})
+        self.assertEqual([case], [name for unit in plan['units'] for name in unit['cases']])
+
     def test_real_registry_selection_keeps_seed_and_pair_deferrals(self):
         budget, fixtures, defaults = api.configuration()
         config, inventory = api.registry.load(ROOT)

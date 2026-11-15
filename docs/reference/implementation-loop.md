@@ -211,6 +211,8 @@ The fleet reboot fixture uses six interleaved units. Each unit is costed from th
 
 The 40 seconds between the 150-second lane and the 190-second shard deadline is the headroom above that percentile. A case moves to after-merge only when its own cost plus startup exceeds the 150-second lane; name it and its percentile in the table.
 
+The browser runtime-flip case is also deferred: its two converges took 121.4 seconds in run `43660983227` and set the main critical path. The durable receiver runs it after merge; all assertions remain. Runner queue time still counts toward the five-minute target and is not bounded by fixture costs.
+
 The container fixture uses that rule from 23 hosted pull request runs of 13 November 2026 (43344497786 to 43427754924): its 60 retained cases declare 3319 seconds, 3679 with startup, and need seven shards. On the same runs, a case's slowest completed time was at most 1.26 times its 90th percentile. A replay of those times through the planned shards, four workers each, kept every shard below 160 seconds at the 99th percentile.
 
 Container host preparation uses one case per unit. Each of its declared body costs uses its largest completed observation, rounded up plus one second, which is stricter than the 90th percentile; paired cases must not receive an equal share of the file total. Deadline cuts are censored observations, not completed measurements.
