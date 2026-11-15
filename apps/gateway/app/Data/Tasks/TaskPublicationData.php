@@ -28,6 +28,8 @@ final class TaskPublicationData extends Data
 {
     public const string Working = 'working';
 
+    public const string WaitingForPrText = 'waiting_for_pr_text';
+
     public const string WaitingForRelease = 'waiting_for_release';
 
     public const string Publishing = 'publishing';
@@ -44,6 +46,8 @@ final class TaskPublicationData extends Data
         public ?string $commit = null,
         public ?int $operationId = null,
         public ?string $errorCode = null,
+        /** The reviewer's text on the done check (docs/reference/tasks.md#the-reviewers-pull-request-text). */
+        public ?TaskPullRequestTextData $prText = null,
     ) {}
 
     /** Null for a group without a task copy. */
@@ -74,18 +78,23 @@ final class TaskPublicationData extends Data
         if (! $check instanceof TaskCheck) {
             return new self($mode, $source, self::Working);
         }
+        $text = TaskGroupDone::prText($group, $check);
+        $text = $text === null ? null : new TaskPullRequestTextData($text['title'], $text['body'], $text['operation_id']);
         $refusal = $group->publish_refusal;
         if ($refusal !== null && $refusal['check_id'] === $check->id) {
-            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, null, $refusal['code']);
+            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, null, $refusal['code'], $text);
         }
         $failed = TaskDonePublication::unsuccessful($group, $check, $mode);
         if ($failed instanceof Operation) {
-            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, $failed->id, TaskDonePublication::code($failed));
+            return new self($mode, $source, self::Refused, $check->id, $check->commit_sha, $failed->id, TaskDonePublication::code($failed), $text);
+        }
+        if ($text === null) {
+            return new self($mode, $source, self::WaitingForPrText, $check->id, $check->commit_sha);
         }
         // A pr_when_done group whose done check recorded pr_when_done is the tick's to publish, within a minute.
         $state = $mode === TaskPrMode::PrWhenDone && $check->pr_mode === TaskPrMode::PrWhenDone ? self::Publishing : self::WaitingForRelease;
 
-        return new self($mode, $source, $state, $check->id, $check->commit_sha);
+        return new self($mode, $source, $state, $check->id, $check->commit_sha, prText: $text);
     }
 
     private static function checkOf(?Operation $operation): ?int

@@ -14,6 +14,9 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
 use App\Models\Operation;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
+use Illuminate\Process\InvokedProcess;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Process;
 use Orbit\Extensions\AiRouter\Actions\AdmitAiRouterModelForwarderAction;
@@ -38,6 +41,8 @@ function forwarderRouter(): Node
 {
     $services = forwarderNode('services', '10.44.0.3');
     forwarderNode('swamp', '10.44.0.15')->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
+    // The forwarder's Orbit routes go to the active Gateway's WireGuard address.
+    forwarderNode('gateway', '10.6.0.2')->roles()->create(['role' => RoleName::Gateway, 'status' => LifecycleStatus::Active]);
     app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
         [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
         '/pi', str_repeat('a', 64), ['gpt-6']));
@@ -73,6 +78,53 @@ function forwarderRuleNames(Node $node): array
     return array_column(app(ListManagedFirewallRulesAction::class)->execute($node), 'name');
 }
 
+/**
+ * The rendered forwarder on loopback: its bind, its ports and its upstreams. Its Orbit routes go to `$gateway` over plain HTTP: the TLS
+ * transport names the Node agent's root certificate, which a test runner has not, and Caddy refuses to start without it.
+ *
+ * @param  array<string, string>  $map
+ */
+function forwarderOnLoopback(string $rendered, array $map, string $gateway): string
+{
+    $loopback = preg_replace('#reverse_proxy https://10\.6\.0\.2 \{\n(\t+header_up Host 10\.6\.0\.2\n)\t+transport http \{\n\t+tls_trust_pool file [^\n]+\n\t+\}\n#',
+        "reverse_proxy {$gateway} {\n\$1", strtr($rendered, $map));
+    if (! is_string($loopback) || str_contains($loopback, 'https://')) {
+        throw new LogicException('The forwarder still names a TLS upstream.');
+    }
+
+    return $loopback;
+}
+
+/**
+ * Waits until each port answers, at most 3 seconds, with each request bounded to a second; a Caddy that exited fails at once with its output.
+ *
+ * @param  array<string, InvokedProcess>  $caddies
+ * @param  list<int>  $ports
+ */
+function forwarderCaddiesAnswer(array $caddies, array $ports): void
+{
+    $deadline = microtime(true) + 3;
+    while (true) {
+        foreach ($caddies as $name => $caddy) {
+            if (! $caddy->running()) {
+                throw new RuntimeException("The {$name} Caddy exited: ".$caddy->errorOutput());
+            }
+        }
+        try {
+            foreach ($ports as $port) {
+                Http::timeout(1)->connectTimeout(1)->post("http://127.0.0.1:{$port}/")->throwIf(static fn ($response): bool => $response->status() === 502);
+            }
+
+            return;
+        } catch (ConnectionException|RequestException) {
+        }
+        if (microtime(true) > $deadline) {
+            throw new RuntimeException('The Caddy processes did not answer within 3 seconds.');
+        }
+        usleep(25_000);
+    }
+}
+
 it('admits the Node at the guard and records a forwarder with no key, as one run on the guard lock', function (): void {
     $services = forwarderRouter();
     $beast = forwarderNode('beast', '10.44.0.7');
@@ -98,8 +150,13 @@ it('admits the Node at the guard and records a forwarder with no key, as one run
         ->and($intent['forwarder'])->toMatchArray(['state' => 'present', 'bridge' => 'orbitc0', 'address' => '10.251.33.1',
             'origin' => 'http://10.251.33.1:8319', 'guard_origin' => 'http://10.44.0.3:8318',
             'directory' => '/etc/orbit/ai-router-forwarder', 'unit' => 'orbit-ai-router-forwarder.service'])
-        ->and($intent['forwarder']['caddyfile'])->toContain("bind 10.251.33.1\n")->toContain("reverse_proxy http://10.44.0.3:8318\n")
-        ->not->toContain('header_up')->not->toContain('credentials')
+        ->and($intent['forwarder']['caddyfile'])->toContain("bind 10.251.33.1\n")->toContain("\thandle {\n\t\treverse_proxy http://10.44.0.3:8318\n\t}\n")
+        ->not->toContain('credentials')
+        // The two Orbit routes of a task copy: each exact path to its fixed Gateway path, trusting only the Orbit root certificate.
+        ->toContain("\thandle /orbit/v1/copy/whoami {\n\t\trewrite * /api/v1/copy/whoami\n\t\treverse_proxy https://10.6.0.2 {\n\t\t\theader_up Host 10.6.0.2\n"
+            ."\t\t\ttransport http {\n\t\t\t\ttls_trust_pool file /etc/orbit/agent/ca.pem\n")
+        ->toContain("\thandle /orbit/v1/copy/pull-request {\n\t\trewrite * /api/v1/copy/pull-request\n")
+        ->and(substr_count($intent['forwarder']['caddyfile'], 'reverse_proxy https://'))->toBe(2)
         ->and($intent['forwarder']['firewall'])->toBe(['desired' => [
             ['ufw', 'allow', 'in', 'on', 'orbitc0', 'proto', 'tcp', 'from', 'any', 'to', '10.251.33.1', 'port', '8319', 'comment', 'orbit:ai-router-forwarder'],
         ], 'remove' => []])
@@ -216,6 +273,10 @@ it('refuses a forwarder on the router Node, the swamp Node, an invalid Node or b
     forwarderSucceeded(app(AdmitAiRouterTaskGuardAction::class)->execute(remove: true, triggeredBy: 'test'));
     expect($refusal(fn () => $admit->execute($beast, 'orbitc0', '10.251.33.1')))->toBe('ai_router.guard_absent');
 
+    forwarderSucceeded(app(AdmitAiRouterTaskGuardAction::class)->execute(triggeredBy: 'test'));
+    Node::query()->where('name', 'gateway')->update(['wireguard_ip' => null]);
+    expect($refusal(fn () => $admit->execute($beast, 'orbitc0', '10.251.33.1')))->toBe('ai_router.gateway_unaddressed');
+
     app(AiRouterState::class)->disable();
     expect($refusal(fn () => $admit->execute($beast, 'orbitc0', '10.251.33.1')))->toBe('ai_router.disabled')
         ->and($refusal(fn () => $admit->execute($beast, null, null, remove: true)))->toBe('ai_router.disabled');
@@ -251,10 +312,10 @@ it('passes the placeholder through the forwarder unchanged, so the guard alone d
         'bind 10.44.0.3' => 'bind 127.0.0.1', ' 10.44.0.7' => ' 127.0.0.1/32',
         AiRouterTaskGuard::Credentials => $directory, 'http://:'.AiRouterTaskGuard::Port => "http://:{$guardPort}",
     ]);
-    $forwarder = strtr(app(AiRouterModelForwarder::class)->caddyfile('10.251.33.1', 'http://10.44.0.3:8318'), [
+    $forwarder = forwarderOnLoopback(app(AiRouterModelForwarder::class)->caddyfile('10.251.33.1', 'http://10.44.0.3:8318', '10.6.0.2'), [
         'bind 10.251.33.1' => 'bind 127.0.0.1', 'http://10.44.0.3:8318' => "http://127.0.0.1:{$guardPort}",
         'http://:'.AiRouterModelForwarder::Port => "http://:{$forwarderPort}",
-    ]);
+    ], "http://127.0.0.1:{$upstream}");
     // The echo server needs its own admin listener too; Caddy otherwise binds the shared default :2019.
     $echo = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n}\nhttp://:{$upstream} {\n\tbind 127.0.0.1\n\trespond \"auth={header.Authorization} uri={uri}\"\n}\n";
     $run = static function (string $caddyfile) use ($directory, $forwarder, $echo, $upstream, $guardPort, $forwarderPort) {
@@ -263,21 +324,19 @@ it('passes the placeholder through the forwarder unchanged, so the guard alone d
         foreach (['guard' => $caddyfile, 'forwarder' => $forwarder, 'echo' => $echo] as $name => $content) {
             file_put_contents($files[] = "{$directory}/{$name}.Caddyfile", $content);
         }
-        $caddies = array_map(static fn (string $file) => Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', $file]), $files);
+        $caddies = array_map(static fn (string $file) => Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', $file]),
+            array_combine(['guard', 'forwarder', 'echo'], $files));
         // A listening forwarder can return 502 while either downstream Caddy is still starting.
-        retry(50, static function () use ($upstream, $guardPort, $forwarderPort): void {
-            foreach ([$upstream, $guardPort, $forwarderPort] as $port) {
-                Http::post("http://127.0.0.1:{$port}/");
-            }
-        }, 100);
+        forwarderCaddiesAnswer($caddies, [$upstream, $guardPort, $forwarderPort]);
 
         return $caddies;
     };
-    $send = static fn (string $uri, ?string $key): array => [($response = Http::withHeaders(array_filter(['Authorization' => $key === null ? null : "Bearer {$key}"]))
+    $send = static fn (string $uri, ?string $key): array => [($response = Http::timeout(1)->connectTimeout(1)
+        ->withHeaders(array_filter(['Authorization' => $key === null ? null : "Bearer {$key}"]))
         ->post("http://127.0.0.1:{$forwarderPort}{$uri}"))->status(), $response->body()];
     $stop = static function (array $caddies): void {
         foreach ($caddies as $caddy) {
-            $caddy->stop(2);
+            $caddy->stop(0);
         }
     };
 
@@ -302,6 +361,80 @@ it('passes the placeholder through the forwarder unchanged, so the guard alone d
             $stop($caddies);
         }
     } finally {
+        Process::run(['rm', '-rf', $directory]);
+    }
+});
+
+it('sends exactly the two Orbit routes to their fixed Gateway paths, and every other path to the guard, on real Caddy', function (): void {
+    if (! is_executable(trim((string) shell_exec('command -v caddy')))) {
+        $this->markTestSkipped('Caddy is not installed.');
+    }
+    $port = static function (): int {
+        $socket = stream_socket_server('tcp://127.0.0.1:0');
+        $name = (string) stream_socket_get_name($socket, false);
+        fclose($socket);
+
+        return (int) substr($name, strrpos($name, ':') + 1);
+    };
+    [$gatewayPort, $guardPort, $forwarderPort] = [$port(), $port(), $port()];
+    $directory = sys_get_temp_dir().'/orbit-forwarder-routes-'.bin2hex(random_bytes(4));
+    mkdir($directory);
+    $rendered = app(AiRouterModelForwarder::class)->caddyfile('10.251.33.1', 'http://10.44.0.3:8318', '10.6.0.2');
+    // The whole rendered file, its TLS transport included, adapts on real Caddy; nothing runs for this part.
+    file_put_contents("{$directory}/rendered.Caddyfile", $rendered);
+    $adapted = Process::timeout(3)->run(['caddy', 'adapt', '--adapter', 'caddyfile', '--config', "{$directory}/rendered.Caddyfile"]);
+    // The routing runs on loopback over plain HTTP: the TLS transport is the one part the stand-in replaces.
+    $forwarder = forwarderOnLoopback($rendered, [
+        'bind 10.251.33.1' => 'bind 127.0.0.1', 'http://10.44.0.3:8318' => "http://127.0.0.1:{$guardPort}",
+        'http://:'.AiRouterModelForwarder::Port => "http://:{$forwarderPort}",
+    ], "http://127.0.0.1:{$gatewayPort}");
+    // One stand-in serves both upstreams, with its own admin listener as in the guard test.
+    $upstreams = "{\n\tadmin 127.0.0.1:0\n\tpersist_config off\n}\nhttp://:{$gatewayPort} {\n\tbind 127.0.0.1\n"
+        ."\trespond \"gateway {method} host={host} uri={uri} auth={header.Authorization}\"\n}\n"
+        ."http://:{$guardPort} {\n\tbind 127.0.0.1\n\trespond \"guard uri={uri}\"\n}\n";
+    $caddies = [];
+    try {
+        expect($adapted->exitCode())->toBe(0, $adapted->errorOutput())
+            ->and(substr_count($forwarder, 'reverse_proxy http://127.0.0.1:'.$gatewayPort))->toBe(2);
+        foreach (['forwarder' => $forwarder, 'upstreams' => $upstreams] as $name => $content) {
+            file_put_contents("{$directory}/{$name}.Caddyfile", $content);
+            $caddies[$name] = Process::start(['caddy', 'run', '--adapter', 'caddyfile', '--config', "{$directory}/{$name}.Caddyfile"]);
+        }
+        // Each request gives up after a second, and a Caddy that exited fails the test at once with its output: nothing waits unbounded.
+        $send = static fn (string $method, string $uri): string => Http::timeout(1)->connectTimeout(1)->withToken('copy-key')
+            ->send($method, "http://127.0.0.1:{$forwarderPort}{$uri}")->body();
+        $deadline = microtime(true) + 3;
+        while (true) {
+            foreach ($caddies as $name => $caddy) {
+                if (! $caddy->running()) {
+                    throw new RuntimeException("The {$name} Caddy exited: ".$caddy->errorOutput());
+                }
+            }
+            try {
+                if (str_starts_with($send('GET', '/orbit/v1/copy/whoami'), 'gateway ') && str_starts_with($send('GET', '/'), 'guard ')) {
+                    break;
+                }
+            } catch (ConnectionException) {
+            }
+            if (microtime(true) > $deadline) {
+                throw new RuntimeException('The Caddy pair did not answer within 3 seconds.');
+            }
+            usleep(25_000);
+        }
+
+        expect($send('GET', '/orbit/v1/copy/whoami'))->toBe('gateway GET host=10.6.0.2 uri=/api/v1/copy/whoami auth=Bearer copy-key')
+            ->and($send('POST', '/orbit/v1/copy/pull-request'))->toBe('gateway POST host=10.6.0.2 uri=/api/v1/copy/pull-request auth=Bearer copy-key')
+            // Nothing else of the Gateway API: a near path, an encoded escape and the API path itself all go to the guard.
+            ->and($send('GET', '/orbit/v1/copy/whoami/x'))->toBe('guard uri=/orbit/v1/copy/whoami/x')
+            ->and($send('GET', '/orbit/v1/copy/whoami%2F..%2F..%2Ftasks'))->toStartWith('guard ')
+            ->and($send('GET', '/orbit/v1/tasks'))->toBe('guard uri=/orbit/v1/tasks')
+            ->and($send('GET', '/api/v1/tasks'))->toBe('guard uri=/api/v1/tasks')
+            ->and($send('POST', '/v1/responses'))->toBe('guard uri=/v1/responses');
+    } finally {
+        foreach ($caddies as $caddy) {
+            // No graceful wait: Caddy could hold a keep-alive connection open for its grace period.
+            $caddy->stop(0);
+        }
         Process::run(['rm', '-rf', $directory]);
     }
 });

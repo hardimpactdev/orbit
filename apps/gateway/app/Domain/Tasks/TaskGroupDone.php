@@ -51,15 +51,38 @@ final readonly class TaskGroupDone
      */
     private function reviewed(Task $group, Task $last, TaskCheck $check): bool
     {
-        if ($group->reviewer_agent_thread_id === null) {
-            return false;
-        }
-        $turn = Operation::query()->where('kind', OperationKinds::TasksCopyTurn)->where('target_type', OperationKinds::TaskGroupTarget)
-            ->where('target_id', $group->id)->where('input->thread_id', $group->reviewer_agent_thread_id)->orderByDesc('id')->first();
+        $turn = self::reviewerTurn($group);
 
         return $turn instanceof Operation && $turn->status === OperationStatus::Succeeded && ($turn->input['subtask'] ?? null) === $last->id
             && ($turn->input['candidate'] ?? null) === $check->commit_sha && ($turn->result['state'] ?? null) === AgentThreadState::Done->value
             && ($turn->result['ended'] ?? null) === true;
+    }
+
+    /** The newest turn of the group's reviewer thread, of any status, or null. */
+    public static function reviewerTurn(Task $group): ?Operation
+    {
+        if ($group->reviewer_agent_thread_id === null) {
+            return null;
+        }
+
+        return Operation::query()->where('kind', OperationKinds::TasksCopyTurn)->where('target_type', OperationKinds::TaskGroupTarget)
+            ->where('target_id', $group->id)->where('input->thread_id', $group->reviewer_agent_thread_id)->orderByDesc('id')->first();
+    }
+
+    /**
+     * The reviewer's pull request text on the check (docs/reference/tasks.md#the-reviewers-pull-request-text): only the text that the
+     * reviewer thread's newest turn sent counts. A later reviewer turn that sent none leaves the check without text.
+     *
+     * @return array{title: string, body: string, operation_id: int}|null
+     */
+    public static function prText(Task $group, TaskCheck $check): ?array
+    {
+        $turn = self::reviewerTurn($group);
+        if (! $turn instanceof Operation || $check->pr_text_operation_id !== $turn->id || $check->pr_title === null || $check->pr_body === null) {
+            return null;
+        }
+
+        return ['title' => $check->pr_title, 'body' => $check->pr_body, 'operation_id' => $turn->id];
     }
 
     /** No earlier copy turn may still run, and no Operation of the group runs. */

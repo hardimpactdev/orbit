@@ -7,6 +7,7 @@ namespace App\Domain\Tasks;
 use App\Data\Tasks\StartTaskPublishData;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskCheck;
@@ -14,35 +15,46 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The publish of a task copy's done check, for the tick and for the release call alike (docs/reference/tasks.md#publish-by-itself):
- * the group title, a body of the brief, the completed subtasks and the checked commit, and a ready pull request. The publish's
- * `.env` content check reads this title and body too.
+ * the reviewer's title and body (docs/reference/tasks.md#the-reviewers-pull-request-text), the issue the group closes, and a ready
+ * pull request. The publish's `.env` content check and the copy check read this title and body too.
  */
 final class TaskDonePublication
 {
     /** A publish whose step waited too long for a Swamp behavior lock: no refusal, the tick starts the same check again. */
     public const string LockTimeoutCode = 'tasks.publish_lock_timeout';
 
+    /** A done group whose reviewer thread's newest turn sent no pull request text. */
+    public const string TextMissingCode = 'tasks.pr_text_missing';
+
     /** The limit of a pull request body that the publish request accepts. */
     public const int BodyLimit = 65536;
+
+    /** The limit of the reviewer's body: the closing line and the waiver lines still fit within {@see self::BodyLimit}. */
+    public const int ReviewerBodyLimit = 60000;
 
     /** How many publishes of one done check may time out on a lock, the first and its retries, before the check shows as refused. */
     public const int LockTimeoutAttempts = 3;
 
     public static function for(Task $group, TaskCheck $check): StartTaskPublishData
     {
-        $group->loadMissing('tasks');
-        $subtasks = $group->tasks->filter(static fn (Task $task): bool => $task->status === TaskStatus::Completed)->sortBy([['position', 'asc'], ['id', 'asc']])
-            ->map(static fn (Task $task): string => '- '.$task->title)->implode("\n");
-        $tail = "\n\n## Subtasks\n\n{$subtasks}\n\nChecked commit `{$check->commit_sha}`, handoff check {$check->id}.";
-        // A long brief is cut so the whole body stays within the limit; the subtasks and the checked commit always stay.
-        $brief = trim((string) $group->brief);
-        $room = max(0, self::BodyLimit - mb_strlen($tail));
-        if (mb_strlen($brief) > $room) {
-            $brief = mb_substr($brief, 0, max(0, $room - 1)).'…';
-        }
-        $body = mb_substr($brief.$tail, 0, self::BodyLimit);
+        $text = TaskGroupDone::prText($group, $check) ?? throw new ResourceOperationException(self::TextMissingCode,
+            'The task group\'s work is done, but its reviewer sent no pull request text. A reviewer turn that approves the commit sends it.', 409);
 
-        return new StartTaskPublishData($check->id, ['title' => $group->title, 'body' => $body, 'draft' => false]);
+        return new StartTaskPublishData($check->id, ['title' => $text['title'], 'body' => $text['body'], 'draft' => false]);
+    }
+
+    /**
+     * The body, with `Closes #<issue>` at its end for a group that names its issue and whose body does not close it already
+     * (docs/reference/tasks.md#closes-the-issue). Every publish with a pull request text applies it: the reviewer's and a person's.
+     */
+    public static function closing(Task $group, string $body): string
+    {
+        $issue = $group->issue_number;
+        if ($issue === null || preg_match('/\b(?:close[sd]?|fix(?:e[sd])?|resolve[sd]?)\b:?\s+#'.$issue.'(?!\d)/i', $body) === 1) {
+            return $body;
+        }
+
+        return rtrim($body)."\n\nCloses #{$issue}";
     }
 
     /**

@@ -105,6 +105,7 @@ use LogicException;
  * @property bool|null $current_recipe
  * @property TaskReviewMode $review_mode
  * @property TaskPrMode|null $pr_mode
+ * @property int|null $issue_number the GitHub issue of the Project's repository that the group's pull request closes (docs/reference/tasks.md#closes-the-issue)
  * @property array{code: string, check_id: int, at: string}|null $publish_refusal
  * @property string $implementer_model the task VM path's model; a task copy reads implementer_agent_model
  * @property string $reviewer_model
@@ -171,6 +172,7 @@ final class Task extends Model
         'review_mode',
         'pr_mode',
         'publish_refusal',
+        'issue_number',
         'implementer_model',
         'reviewer_model',
         'implementer_agent_provider',
@@ -312,6 +314,7 @@ final class Task extends Model
         'review_mode',
         'pr_mode',
         'publish_refusal',
+        'issue_number',
         'implementer_model',
         'reviewer_model',
         'implementer_agent_provider',
@@ -640,6 +643,7 @@ final class Task extends Model
             'current_recipe' => 'boolean',
             'review_mode' => TaskReviewMode::class,
             'pr_mode' => TaskPrMode::class,
+            'issue_number' => 'integer',
             'publish_refusal' => 'array',
             'watched_pr_number' => 'integer',
             'agent_unavailable_since' => 'datetime',

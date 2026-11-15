@@ -1201,7 +1201,46 @@ For a Project without a task check, a passed handoff check only records the comm
 
 The Gateway scheduler runs `task:pr-when-done` every minute while the Tasks extension is on. For each group in `pr_when_done` whose work is done, and whose done check recorded `pr_when_done`, it starts the same `tasks.publish` as [`task:publish`](#publish-an-external-group), with the done check, a title and a body. Every guard of a manual publish applies: the group lock, the [copy publish allow list](#task-copy), the candidate check, the `.env` and Club key checks, and the token minted at the push. The [chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/pr-when-done.mmd) shows the tick.
 
-The title is the group title. The body holds the group brief, the completed subtasks, and the checked commit with its handoff check ID. The pull request opens ready, not as a draft. Each start is keyed `pr-when-done:<group>:<check>`, so a repeat tick on the same done check starts nothing. A retry after a [lock timeout](#a-refused-automatic-publish) adds its attempt: `pr-when-done:<group>:<check>:2` and `:3`.
+The title and the body are the [reviewer's pull request text](#the-reviewers-pull-request-text). The pull request opens ready, not as a draft. Each start is keyed `pr-when-done:<group>:<check>`, so a repeat tick on the same done check starts nothing. A retry after a [lock timeout](#a-refused-automatic-publish) adds its attempt: `pr-when-done:<group>:<check>:2` and `:3`.
+
+### The reviewer's pull request text
+
+The reviewer in the task copy writes the pull request: its title and its body. Orbit opens the pull request with that text. The copy holds no Git token and never calls GitHub.
+
+The reviewer sends the text during its turn, from the copy, with its [copy key](/reference/development-containers#the-copy-key):
+
+```bash
+. ~/.config/orbit/model.env
+curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" \
+  --form-string 'title=Keep every field when an organisation is created' \
+  -F 'body=<pr-body.md' "$ORBIT_COPY_API/pull-request"
+```
+
+The reviewer reads the key from the file, not from its environment: Codex can leave variables whose names hold `KEY` out of the shell it runs.
+
+The request also takes JSON, `{"title": "...", "body": "..."}`. It names no group, check or commit: the key names the copy, and the copy names its group. The Gateway accepts it only when all of these hold:
+
+- The copy's group is open and has no pull request. Otherwise `tasks.group_closed` (409).
+- A turn of the group's reviewer thread runs now, on a checked commit. Otherwise `tasks.pr_text_not_reviewer_turn` (409).
+- That turn's check is still an eligible candidate of the current subtask. Otherwise `tasks.commit_not_checked` (422).
+- The Project is released for copy publish, as [Task copy](#task-copy) describes. Otherwise `tasks.copy_publish_held` (409).
+- The title has 1 to 256 characters on one line, and the body 1 to 60,000 UTF-16 code units, as the publish step counts them. Otherwise `validation.failed` (422).
+
+Orbit records the text on that check, with the reviewer turn's Operation, and answers 202:
+
+```json
+{"data": {"state": "recorded", "check_id": 20977, "operation_id": 21890, "opens": "when the group is done"}}
+```
+
+A second call in the same turn replaces the text. Orbit opens nothing at this point. A turn cannot publish its own work: while it runs, the group is busy. The reviewer sends the text only when it approves the commit. Its turn prompt says so.
+
+When the group is [done](#when-the-work-is-done), the publish takes the title and the body from the done check. The text counts only when the reviewer thread's newest turn sent it. A later reviewer turn on the same check that sends nothing leaves the group without text. Every guard of the publish reads this text as it read Orbit's own: the `.env` content check, the [copy check](#the-copy-check) and the waiver lines.
+
+There is no fallback text. A group whose done check has no text waits in `waiting_for_pr_text` until a reviewer turn sends one. A task copy made before the copy key existed cannot send text: a person publishes its group with `task:publish <group> --check=<id> --title=<text> --body=<text>`.
+
+#### Closes the issue
+
+A group can name the GitHub issue it works on: [`task:create --issue=<number>`](/cli/task/create). The issue is in the Project's own repository. Every publish with a pull request text then makes sure that the body closes it, whoever wrote the text: the reviewer or a person with `task:publish --title --body`. When the body holds no `Closes #<number>`, `Fixes #<number>` or `Resolves #<number>`, in any form of these words, Orbit adds `Closes #<number>` at the end. A body that names such a word with that number anywhere, also in a code sample, counts as closing it. GitHub closes the issue when the pull request merges. A group without an issue gets no such line.
 
 ### Publication state
 
@@ -1210,24 +1249,26 @@ The title is the group title. The body holds the group brief, the completed subt
 | Field | Meaning |
 | --- | --- |
 | `mode`, `mode_source` | The mode in effect and where it came from |
-| `state` | `working`, `waiting_for_release`, `publishing`, `refused` or `published` |
+| `state` | `working`, `waiting_for_pr_text`, `waiting_for_release`, `publishing`, `refused` or `published` |
 | `check_id`, `commit` | The done check and its commit, or null while the group is `working` |
 | `operation_id` | The `tasks.publish` Operation, when one started |
 | `error_code` | The code of a refused publish, or null |
+| `pr_text` | The [reviewer's text](#the-reviewers-pull-request-text) on the done check, `{title, body, operation_id}`, or null |
 
 | State | Meaning |
 | --- | --- |
 | `working` | The work is not done yet |
+| `waiting_for_pr_text` | The work is done, but the reviewer thread's newest turn sent no pull request text. A new reviewer turn that sends it moves the group on |
 | `waiting_for_release` | The work is done, and Orbit does not publish by itself: the mode is `review_before_pr`, or the done check recorded `review_before_pr` |
 | `publishing` | A publish of the done check runs, or the tick starts one within a minute because the group and its done check are in `pr_when_done`, also to retry a [lock timeout](#a-refused-automatic-publish) |
 | `refused` | A publish of the done check failed, was cancelled or was refused, by any caller. A [lock timeout](#a-refused-automatic-publish) counts after its last retry, or at once outside `pr_when_done` |
 | `published` | The group has its pull request |
 
-[`task:status`](/cli/task/status) lists every group in `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
+[`task:status`](/cli/task/status) lists every group in `waiting_for_pr_text`, `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
 
 ### Release a waiting group
 
-`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the same title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
+`task:publish <group>` without `--check`, `--title` and `--body` publishes what the automatic publish would: the done check, the reviewer's title and body, and a ready pull request. It refuses with `tasks.not_done` (409) when the group's work is not done, and with `tasks.pr_text_missing` (409) when the group waits for its text. It also releases a group in `refused` after the cause is fixed. The form with `--check` stays as [Publish an external group](#publish-an-external-group) describes. A group without a task copy has no done check: without `--check`, its publish keeps the validation error (422) on `check`.
 
 The admission reads done again inside its transaction, after it locks the group's row. A subtask added or a turn started since the first read refuses with `tasks.not_done`. For the automatic publish it also reads the mode again there: a group or done check outside `pr_when_done` refuses the same way.
 
@@ -1235,7 +1276,7 @@ The admission reads done again inside its transaction, after it locks the group'
 
 A refusal at admission, such as `tasks.copy_publish_held`, `tasks.commit_not_checked` or `tasks.instance_not_running` for a stopped task copy, starts no Operation. Orbit stores its code on the group, and `publication` shows `refused` with that code. A publish of the done check that failed, was interrupted or was cancelled, whoever started it, keeps its code on its Operation, such as `tasks.push_failed`, or `operation.cancelled` and `operation.interrupted` when it has none; `publication` shows it the same way. Orbit does not start that done check again by itself, except after a lock timeout, as below. A new handoff check or `task:publish <group>` tries again; start a stopped copy first.
 
-Only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal: the next tick reads the group again and stores nothing. Any other refusal is stored, also a 503 such as `swamp.ssh_identity_unavailable`, because Orbit marks no admission code as passing; release the group once its cause is fixed. A fault that is no refusal is reported, stored as `tasks.publish_failed`, and the tick goes on with the next group. A refusal is never stored over a publish of the group that was admitted in between.
+Only `operation.target_busy`, `tasks.copy_turn_unended` and `tasks.not_done` are no refusal. A group in `waiting_for_pr_text` is not admitted at all: the next tick reads the group again and stores nothing. Any other refusal is stored, also a 503 such as `swamp.ssh_identity_unavailable`, because Orbit marks no admission code as passing; release the group once its cause is fixed. A fault that is no refusal is reported, stored as `tasks.publish_failed`, and the tick goes on with the next group. A refusal is never stored over a publish of the group that was admitted in between.
 
 A publish that failed because a Swamp behavior lock timed out is no refusal. Its run waited 60 seconds for a step that another run held, and nothing on the copy or on GitHub was wrong. The step can come after the push, so the branch may be pushed already. A retry is still safe: an identical tip pushes nothing, and the PR plan updates an open pull request instead of opening a second. Swamp reports a failed step whose error reads `Lock "<path>/.lock" held by <holder> (pid <pid>) — timed out after <ms>ms`, or the same without the holder when it let go at the deadline. Orbit records `tasks.publish_lock_timeout`.
 

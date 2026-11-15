@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Orbit\Extensions\AiRouter\Actions;
 
 use App\Actions\Operations\StartOperationAction;
+use App\Domain\Nodes\NodeAccessAuthorizer;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
@@ -23,7 +24,7 @@ use Orbit\Extensions\AiRouter\Domain\AiRouterTaskGuard;
 final readonly class AdmitAiRouterModelForwarderAction
 {
     public function __construct(private AiRouterState $state, private AiRouterTaskGuard $guard, private AiRouterModelForwarder $forwarder,
-        private SwampSshExecutionInput $ssh, private StartOperationAction $start) {}
+        private SwampSshExecutionInput $ssh, private StartOperationAction $start, private NodeAccessAuthorizer $access) {}
 
     public function execute(Node $node, ?string $bridge, ?string $address, bool $remove = false, ?string $triggeredBy = null, ?string $requestId = null): Operation
     {
@@ -52,6 +53,11 @@ final readonly class AdmitAiRouterModelForwarderAction
             || ! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             throw new ResourceOperationException('validation.failed', 'The forwarder needs the bridge name and its IPv4 address.', 422);
         }
+        // The forwarder's Orbit routes go to the active Gateway's WireGuard address (/reference/ai-router#orbit-routes-for-task-copies).
+        $gateway = Node::query()->whereKey($this->access->activeGatewayId())->value('wireguard_ip');
+        if (! is_string($gateway) || filter_var($gateway, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
+            throw new ResourceOperationException('ai_router.gateway_unaddressed', 'The active Gateway has no WireGuard address for the forwarder\'s Orbit routes.', 409);
+        }
         $others = array_values(array_filter($this->guard->forwarders($router), static fn (Node $other): bool => $other->id !== $node->id));
         $rule = $this->forwarder->rule($bridge, $address);
 
@@ -68,7 +74,7 @@ final readonly class AdmitAiRouterModelForwarderAction
                     'guard_origin' => $this->guard->origin($router),
                     'directory' => AiRouterModelForwarder::Directory,
                     'unit' => AiRouterModelForwarder::Unit,
-                    'caddyfile' => $this->forwarder->caddyfile($address, $this->guard->origin($router)),
+                    'caddyfile' => $this->forwarder->caddyfile($address, $this->guard->origin($router), $gateway),
                     'user' => AiRouterModelForwarder::User,
                     'table' => AiRouterModelForwarder::Table,
                     'table_unit' => AiRouterModelForwarder::TableUnit,

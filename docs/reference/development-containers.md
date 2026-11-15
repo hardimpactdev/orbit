@@ -771,6 +771,31 @@ Both environment checks read the source checkout before the copy. A `log` mailer
 
 A container holds only a placeholder key, in `/home/agent/.config/orbit/model.env`. Claude Code and Codex send model calls to a forwarder at port 8319 of the bridge's gateway address. The [forwarder](/reference/ai-router#container-model-forwarder) passes them to the model router guard, which admits the agent Node and swaps in the real key. The real key stays off the Node. While the forwarder's table is loaded, only containers on the bridge reach the guard, through the forwarder. The guard accepts the `?beta=true` query that Claude Code sends. On a prepared Node, `ai-router:model-forwarder NODE --bridge=orbitinst0 --address=<bridge address>` places the forwarder.
 
+### The copy key
+
+The model key does not tell one container from another: every container holds the same placeholder. So a [task copy](/reference/tasks#task-copy) gets one more key of its own, the copy key. It is the only way a copy calls Orbit, and Orbit uses it only for the [reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text).
+
+The Gateway makes a random key each time it writes a task copy's model environment, at the copy's create. A task copy is never migrated: it already runs in a container. The Gateway stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
+
+The key goes into `model.env` as `ORBIT_COPY_KEY`. This is the same `0600` file of `agent` that holds the placeholder. `ORBIT_COPY_API` in the same file holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both values to Claude Code and Codex. The app user `orbit` cannot read them.
+
+A clone that is not a task copy gets no copy key and no `ORBIT_COPY_*` line. The copy's destroy deletes its runtime record, so the key ends with the copy. The copy holds no other credential for Orbit and no Git token.
+
+A call reaches the Gateway only through the [forwarder's Orbit routes](/reference/ai-router#orbit-routes-for-task-copies). The Gateway accepts it only when both of these hold:
+
+1. The bearer key's hash matches one runtime record of a task copy. Otherwise it answers 401 `copy.key_invalid`.
+2. The request comes from the WireGuard address of that runtime's Node. Otherwise it answers 403 `copy.peer_mismatch`. A key that leaves its Node is useless.
+
+From the runtime, the Gateway finds the copy and then its group. The request never names a group, a check or a commit.
+
+`GET $ORBIT_COPY_API/whoami` answers the copy's Instance, Project and group:
+
+```json
+{"data": {"instance_id": 2611, "project_id": 68, "group_id": 5257}}
+```
+
+A task copy made before this release has no copy key. It keeps working, but it cannot call Orbit.
+
 ## Network
 
 A container reaches only what this table lists. Everything else is dropped by its NIC ACL. The bridge independently rejects everything except the proxies and the Node’s attached-target union. Its ingress policy stays unchanged.
@@ -2818,11 +2843,13 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 | `clone_source_instance_id` | The default Instance it was cloned from. Null for the default Instance and for a migrated checkout |
 | `power_state` | `running` or `stopped`. A sleeping container is stopped. The terminal results of create, deploy, migrate, sleep and wake write it |
 | `seed_commit` | A default Instance's commit of its newest `seed-<commit>` snapshot, which clones copy. Null before its first seed |
+| `agent_key_hash` | The SHA-256 hash of a task copy's [copy key](#the-copy-key). Null for every other container, and for a task copy made before the copy key existed |
 
 The database keeps these rules:
 
 - A Node's container, bridge address and T3 port each belong to one runtime.
-- A runtime keeps its Node, container, address, port, container server and clone source; only the versions and the power state change.
+- A runtime keeps its Node, container, address, port, container server and clone source.
+- A runtime changes only its versions, its power state and its copy key hash.
 - A runtime records its container server, `t3` or `conn`, exactly when it has a T3 port.
 - A clone source is the Instance named `default` of the same Project on the same Node, and runs in a container.
 - A default with clones keeps its runtime and its name.

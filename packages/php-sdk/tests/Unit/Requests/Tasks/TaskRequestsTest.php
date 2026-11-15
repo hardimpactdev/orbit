@@ -791,7 +791,7 @@ it('transports keyed native cancellation and parses the accepted Operation', fun
 });
 
 it('sends a publish check, or the empty object for the release of a task copy\'s done check', function (?int $check, ?array $pullRequest, string $body): void {
-    expect((string) (new PublishTaskGroupRequest(13, $check, $pullRequest))->body())->toBe($body);
+    expect((string) new PublishTaskGroupRequest(13, $check, $pullRequest)->body())->toBe($body);
 })->with([
     'a check' => [17, null, '{"check":17}'],
     'a check with a pull request' => [17, ['title' => 'T', 'body' => 'B'], '{"check":17,"pull_request":{"title":"T","body":"B"}}'],
@@ -799,9 +799,10 @@ it('sends a publish check, or the empty object for the release of a task copy\'s
 ]);
 
 it('sends pr_mode on create and update only when it is named', function (): void {
-    expect(json_decode((string) (new CreateTaskRequest(1, 'Group', 'Brief', prMode: 'pr_when_done'))->body(), true))->toMatchArray(['pr_mode' => 'pr_when_done'])
-        ->and(json_decode((string) (new CreateTaskRequest(1, 'Group', 'Brief'))->body(), true))->not->toHaveKey('pr_mode')
-        ->and(json_decode((string) (new UpdateTaskRequest(4, prMode: 'review_before_pr'))->body(), true))->toBe(['pr_mode' => 'review_before_pr']);
+    expect(json_decode((string) new CreateTaskRequest(1, 'Group', 'Brief', prMode: 'pr_when_done')->body(), true))->toMatchArray(['pr_mode' => 'pr_when_done'])
+        ->and(json_decode((string) new CreateTaskRequest(1, 'Group', 'Brief')->body(), true))->not->toHaveKey('pr_mode')->not->toHaveKey('issue')
+        ->and(json_decode((string) new CreateTaskRequest(1, 'Group', 'Brief', issue: 9)->body(), true))->toMatchArray(['issue' => 9])
+        ->and(json_decode((string) new UpdateTaskRequest(4, prMode: 'review_before_pr')->body(), true))->toBe(['pr_mode' => 'review_before_pr']);
 });
 
 /** @return array<string, mixed> the `data` of a recorded Gateway reply */
@@ -814,16 +815,21 @@ function task_mode_fixture_data(string $name): array
 
 it('maps the mode, its source and the publication of a task copy\'s group, and leaves them out for any other group', function (): void {
     $publication = ['mode' => 'review_before_pr', 'mode_source' => 'project', 'state' => 'waiting_for_release', 'check_id' => 17,
-        'commit' => str_repeat('b', 40), 'operation_id' => null, 'error_code' => null];
-    $group = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-show/default'), 'pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication], 'request-id');
+        'commit' => str_repeat('b', 40), 'operation_id' => null, 'error_code' => null,
+        'pr_text' => ['title' => 'Keep every field', 'body' => 'Type and website were lost.', 'operation_id' => 21890]];
+    $group = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-show/default'), 'pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project',
+        'publication' => $publication, 'issue' => 9], 'request-id');
     $plain = TaskGroupResponse::fromGatewayData([...task_mode_fixture_data('task-show/default'), 'pr_mode' => null, 'pr_mode_source' => null, 'publication' => null], 'request-id');
 
     expect($group->prMode)->toBe('review_before_pr')
         ->and($group->prModeSource)->toBe('project')
         ->and($group->publication?->state)->toBe('waiting_for_release')
-        ->and($group->toArray())->toMatchArray(['pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication])
+        ->and($group->publication?->prText)->toBe($publication['pr_text'])
+        ->and($group->issue)->toBe(9)
+        ->and($group->toArray())->toMatchArray(['pr_mode' => 'review_before_pr', 'pr_mode_source' => 'project', 'publication' => $publication, 'issue' => 9])
         ->and($plain->publication)->toBeNull()
-        ->and($plain->toArray())->not->toHaveKey('publication')->not->toHaveKey('pr_mode');
+        ->and($plain->issue)->toBeNull()
+        ->and($plain->toArray())->not->toHaveKey('publication')->not->toHaveKey('pr_mode')->not->toHaveKey('issue');
 });
 
 it('keeps the mode of a task copy\'s list row, which carries no publication', function (): void {

@@ -424,6 +424,8 @@ it('frames the model environment after the credential line on the copy step stdi
     $framed = collect($vault->puts)->firstWhere('key', 'instance-create-clone-'.$operation->id);
     expect($run['execution_secrets']['git_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-clone-'.$operation->id])
         ->and($framed['value'])->toContain(InstanceContainer::ModelEnvironmentFrame."\nANTHROPIC_BASE_URL=")->toContain("ORBIT_MODEL_KEY=placeholder-model-key\n")
+        // A clone that is no task copy gets no copy key (docs/reference/development-containers.md#the-copy-key).
+        ->not->toContain('ORBIT_COPY_')
         // The framed copy is the only one: no step reads a separate model copy.
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-create-model-'.$operation->id)
         ->and($run['intent']['container']['clone']['model_environment']['frame'])->toBe(InstanceContainer::ModelEnvironmentFrame)

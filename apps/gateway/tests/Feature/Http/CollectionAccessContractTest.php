@@ -138,6 +138,8 @@ function collection_access_outside_node_access(): array
     return [
         // routes/api/agent.php:11 requires the Node's agent secret; each read answers for the calling Node (ADR 0155).
         'agent:realtime', 'agent:workspaces', 'agent:watch', 'agent:log-streams',
+        // routes/api/copy.php requires a task copy's own key from its own Node; it answers only that copy (docs/reference/development-containers.md#the-copy-key).
+        'copy:whoami',
         // routes/api/gateway.php:14 and :16 are public bootstrap reads: Gateway status and the root CA certificate.
         'gateway:status', 'gateway:trust',
         // routes/api/gateway.php:19 lets any active WireGuard peer read what the fleet should run (ADR 0202).

@@ -254,7 +254,7 @@ A container on an agent Node reaches the router through a forwarder on its Node.
 | Piece | Where | Detail |
 | --- | --- | --- |
 | `orbit-ai-router-forwarder.service` | The agent Node | Its own Caddy on the container bridge address, port 8319. Its own system user `orbit-ai-router-forwarder`, no admin endpoint, no saved config, no key |
-| Proxy | The same Caddy | Passes every request to the guard origin, such as `http://10.44.0.3:8318`. It adds only Caddy's `X-Forwarded-*` headers, and nothing secret |
+| Proxy | The same Caddy | Passes every request to the guard origin, such as `http://10.44.0.3:8318`, except the two [Orbit routes](#orbit-routes-for-task-copies). It adds only Caddy's `X-Forwarded-*` headers, and nothing secret |
 | UFW `orbit:ai-router-forwarder` | The agent Node | Admits port 8319 on the bridge only |
 | nftables table `inet orbit_ai_router_forwarder` | The agent Node | Admits the forwarder only from the bridge, drops every forwarded packet to the guard, and resets every connection from the Node to the guard but the forwarder user's |
 | `orbit-ai-router-forwarder-table.service` | The agent Node | Loads the table early at boot, after `nftables.service` and before WireGuard, Docker and Incus. A reload loads the table again in place; stopping the unit deletes it |
@@ -277,6 +277,21 @@ The guarantee holds only while the table is loaded. Root on the Node can delete 
 The guard sees the Node, not the container. Usage is per Node. The guard keeps no per-container record, as it keeps none per task VM.
 
 The forwarder cannot tell the users inside a container apart. The container runtime keeps the app user `orbit` off the forwarder with an nftables rule in the container's own network namespace that admits only the `agent` uid to the forwarder's address and port.
+
+### Orbit routes for task copies
+
+The forwarder is also the one path from a task copy to Orbit. A container cannot reach the Gateway otherwise: the egress proxy refuses private and Orbit addresses. The forwarder sends exactly two paths to the Gateway API, and every other path to the guard as before:
+
+| Path in the container | Gateway path |
+| --- | --- |
+| `GET /orbit/v1/copy/whoami` | `/api/v1/copy/whoami` |
+| `POST /orbit/v1/copy/pull-request` | `/api/v1/copy/pull-request` |
+
+Each path matches exactly and is rewritten to its one fixed Gateway path, so no other path of the Gateway API is reachable from a container. The forwarder connects to the Gateway's WireGuard address over HTTPS and trusts only the Orbit root certificate that the Node agent already holds, `/etc/orbit/agent/ca.pem`. It holds no credential for Orbit.
+
+The Gateway sees the request come from the Node's WireGuard address. That is not enough: these two routes do not accept a Node. Each needs the task copy's own [copy key](/reference/development-containers#the-copy-key), and the key must belong to a copy on that same Node. The rest of the Gateway API stays closed to these requests, because the forwarder never sends another path.
+
+A forwarder applied before this release has no Orbit routes. Apply it again on each agent Node, as below, after the Gateway release that serves the routes. The Caddyfile names the Gateway's WireGuard address, so apply it again on each agent Node also after the Gateway moves to another address.
 
 ### Apply or remove a forwarder
 
@@ -323,6 +338,7 @@ A removing run ends by checking that the router's Node answers SSH from the Node
 | `ai_router.guard_absent` | 409 | An applying run while the guard is not in place: no guard run yet, or `ai-router:task-guard --remove` took it off. Run `ai-router:task-guard` first |
 | `ai_router.node_invalid` | 422 | The Node is missing, inactive, not Linux, or has no WireGuard IPv4 address |
 | `ai_router.forwarder_refused` | 409 | The Node is the router's Node, or has the `swamp` or `vpn` role |
+| `ai_router.gateway_unaddressed` | 409 | The active Gateway has no WireGuard IPv4 address for the forwarder's [Orbit routes](#orbit-routes-for-task-copies) |
 | `validation.failed` | 422 | `--bridge` is not an interface name, or `--address` is not an IPv4 address |
 | `resource.not_found` | 404 | A removal for a Node that never had a forwarder run |
 | `operation.target_busy` | 409 | Another guard or forwarder run holds the guard |

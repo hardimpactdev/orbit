@@ -48,6 +48,7 @@ final readonly class CreateTaskGroupAction
             'orchestration' => $data->orchestration,
             'review_mode' => $data->review,
             'pr_mode' => $data->prMode,
+            'issue_number' => $data->issue,
             'created_by_node_id' => $creator?->id,
             'project_id' => $data->projectId,
             'title' => $data->title,

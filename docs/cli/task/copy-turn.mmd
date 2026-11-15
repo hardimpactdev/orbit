@@ -22,7 +22,7 @@ sequenceDiagram
   Note over GW: Admit the turn<br/>owned copy · subtask · role thread
   %%> What it does:
   %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`. Task VMs are removed: every other group answers `tasks.vm_runtime_removed` (422), and nothing is recorded. A nested-fleet group without a copy refuses here with `tasks.no_workspace`
-  %%> - composes the prompt: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit
+  %%> - composes the prompt: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit, and says: if you approve, send the pull request title and body to `$ORBIT_COPY_API/pull-request` with the copy key (docs/reference/tasks.md#the-reviewers-pull-request-text)
   %%> - an implementer's prompt says how to ask: with the question tool; a question ends the turn, and the answer comes as the next turn
   %%> - a turn that continues a thread whose last turn asked quotes that question, each with its options, before the caller's prompt: the prompt is the answer
   %%> - without `--thread`, the turn continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread, when it is a `t3` thread of this copy. A role with no such thread starts one. `--thread=new` starts a new one; `--thread=ID` must name the thread the turn would continue
