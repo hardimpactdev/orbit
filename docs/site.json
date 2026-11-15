@@ -215,7 +215,11 @@
     },
     {
       "source": "/decisions/0193-run-task-agents-as-a-dedicated-user",
-      "destination": "/reference/pi-server#one-user-for-every-task-agent"
+      "destination": "/reference/old-paths#the-pi-task-loop"
+    },
+    {
+      "source": "/reference/pi-server",
+      "destination": "/reference/old-paths#the-pi-agent-server"
     },
     {
       "source": "/reference/installation",
@@ -895,11 +899,11 @@
     },
     {
       "source": "/decisions/0167-resume-a-pi-turn-interrupted-by-a-server-restart",
-      "destination": "/reference/pi-server#restarts"
+      "destination": "/reference/old-paths#the-pi-task-loop"
     },
     {
       "source": "/decisions/0168-offload-large-pi-tool-output",
-      "destination": "/reference/pi-server#large-tool-output"
+      "destination": "/reference/old-paths#the-pi-task-loop"
     },
     {
       "source": "/decisions/0169-start-each-subtask-review-in-a-fresh-thread",

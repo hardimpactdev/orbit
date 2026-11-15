@@ -58,8 +58,7 @@ if mode == 'partial' and operation == 'update':
 if mode == 'fail' or (mode == 'install-fail' and operation == 'install'):
     sys.exit(100)
 if operation == 'install' and mode != 'no-tools':
-    names = ['nft'] if args[-1] == 'nftables' else ['setfacl', 'getfacl']
-    for name in names:
+    for name in ['nft']:
         path = pathlib.Path(os.environ['FIXTURE_BIN']) / name
         path.write_text('#!/bin/bash\\necho fixture-version\\n')
         path.chmod(0o755)
@@ -82,17 +81,14 @@ if operation == 'install' and mode != 'no-tools':
         return result
 
     def test_installed_tools_skip_all_privileged_setup(self):
-        for name in ('nft', 'setfacl', 'getfacl'):
-            self.command(name, "print('fixture-version')\n")
-        for package in ('nftables', 'acl'):
-            with self.subTest(package=package):
-                result = self.run_helper(package)
-                self.assertEqual(result.returncode, 0, result.stderr)
-                self.assertEqual(self.calls, [])
-                print(f'{package} present: {self.elapsed:.3f}s')
+        self.command('nft', "print('fixture-version')\n")
+        result = self.run_helper()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.calls, [])
+        print(f'nftables present: {self.elapsed:.3f}s')
 
     def test_missing_tools_are_installed_and_verified(self):
-        for package, names in (('nftables', ('nft',)), ('acl', ('setfacl', 'getfacl'))):
+        for package, names in (('nftables', ('nft',)),):
             with self.subTest(package=package):
                 self.log.unlink(missing_ok=True)
                 result = self.run_helper(package)
@@ -113,10 +109,7 @@ if operation == 'install' and mode != 'no-tools':
         self.assertIn('--no-install-recommends', self.apt[-1]['args'])
         self.assertIn('--yes', self.apt[-1]['args'])
 
-    def test_one_missing_acl_command_and_a_broken_nft_require_install(self):
-        self.command('setfacl', "print('fixture-version')\n")
-        self.assertEqual(self.run_helper('acl').returncode, 0)
-        self.assertTrue(self.apt)
+    def test_a_broken_nft_requires_install(self):
         self.command('nft', 'raise SystemExit(1)\n')
         result = self.run_helper()
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -180,22 +173,24 @@ if operation == 'install' and mode != 'no-tools':
                 self.assertLess(self.elapsed, 4)
                 print(f'primary {mode}, mocked fallback: {self.elapsed:.3f}s')
 
-    def test_workflow_keeps_both_kernel_cases_and_pi_acl_tests(self):
+    def test_workflow_keeps_both_kernel_cases(self):
         source = (ROOT / '.github/workflows/ci.yml').read_text()
         gateway = source.split('  gateway-static:\n', 1)[1].split('\n  gateway-tests:\n', 1)[0]
-        pi = source.split('  pi:\n', 1)[1].split('\n  agent:\n', 1)[0]
-        for job, package in ((gateway, 'nftables'), (pi, 'acl')):
-            self.assertIn('    runs-on: ubuntu-26.04\n', job)
-            self.assertIn('    timeout-minutes: 2\n', job)
-            self.assertIn(f'../../bin/ci-runner-prerequisites {package}', job)
-            self.assertNotIn('apt-get', job)
+        self.assertIn('    runs-on: ubuntu-26.04\n', gateway)
+        self.assertIn('    timeout-minutes: 2\n', gateway)
+        self.assertIn('../../bin/ci-runner-prerequisites nftables', gateway)
+        self.assertNotIn('apt-get', gateway)
+        self.assertNotIn('ci-runner-prerequisites acl', source)
         for path in ('tests/Feature/Extensions/AiRouter/AiRouterModelForwarderTest.php',
                      'tests/Feature/Domain/Instances/InstanceEgressTest.php'):
             self.assertIn(f"vendor/bin/pest --default-time-limit=5 --group privileged {path} --filter 'on a real kernel'", gateway)
         self.assertEqual(gateway.count("ORBIT_REAL_KERNEL_TESTS: '1'"), 2)
-        self.assertIn('sudo -n -u nobody true', pi)
-        self.assertIn('run: bun run test', pi)
 
+    def test_the_acl_prerequisites_of_the_removed_pi_job_are_refused(self):
+        result = self.run_helper('acl')
+        self.assertEqual(result.returncode, 2)
+        self.assertIn('Usage: ci-runner-prerequisites {nftables}', result.stderr)
+        self.assertEqual(self.calls, [])
 
 if __name__ == '__main__':
     unittest.main()

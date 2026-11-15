@@ -145,7 +145,7 @@ class RequiredGateTest(unittest.TestCase):
         self.assertIn("PROOF_BLOCKING: ${{ vars.ORBIT_PROOF_BLOCKING != 'false' }}", block)
 
     def test_every_other_selected_failure_or_skip_still_blocks(self):
-        for component in ('gateway-tests', 'cli-tests', 'sdk-tests', 'pi', 'agent', 'php', 'swamp'):
+        for component in ('gateway-tests', 'cli-tests', 'sdk-tests', 'agent', 'php', 'swamp'):
             for slow in ('true', 'false'):
                 for result in ('failure', 'cancelled', 'skipped'):
                     with self.subTest(component=component, slow=slow, result=result):

@@ -39,9 +39,9 @@ if ! command -v openssl >/dev/null 2>&1; then
     exit 2
 fi
 
-# The web app, the Pi server, and the desktop app use Bun; the Node agent and the desktop shell use Cargo.
+# The web app and the desktop app use Bun; the Node agent and the desktop shell use Cargo.
 # docs/reference/bun-and-rust-projects.md lists the versions and how to check each project.
-bun_projects=("apps/web" "apps/pi-server" "apps/desktop")
+bun_projects=("apps/web" "apps/desktop")
 cargo_projects=("apps/agent" "apps/desktop/src-tauri")
 
 if ((with_bun)) && ! command -v bun >/dev/null 2>&1; then

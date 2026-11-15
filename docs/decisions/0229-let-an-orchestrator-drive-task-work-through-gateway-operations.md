@@ -32,7 +32,7 @@ A spike with the Swamp workflow engine drove the same loop from outside. It ran 
 
 ### Every effect already exists inside Tasks
 
-Tasks already performs every effect that task work needs, on the group's own [task VM](/reference/compute-drivers#task-vms). The claim provisions the VM and its workspace. The baseline and handoff checks run in the workspace. Implementer and reviewer turns run on the VM's [Pi server](/reference/pi-server). An approval commits the checked tree, and the Gateway pushes that commit from its own mirror. Each effect runs only when the state machine of `tasks:tick` decides it.
+Tasks already performs every effect that task work needs, on the group's own [task VM](/reference/compute-drivers#task-vms). The claim provisions the VM and its workspace. The baseline and handoff checks run in the workspace. Implementer and reviewer turns run on the VM's [Pi server](/reference/old-paths#the-pi-task-loop). An approval commits the checked tree, and the Gateway pushes that commit from its own mirror. Each effect runs only when the state machine of `tasks:tick` decides it.
 
 Only the WebSocket app routes accept `Idempotency-Key` today. Their key is scoped to the calling Node, and a conflict is `websocket.idempotency_conflict`.
 
@@ -40,7 +40,7 @@ Only the WebSocket app routes accept `Idempotency-Key` today. Their key is scope
 
 A task VM holds everything its task needs, so the same VM runs on an Incus host. A step that ran outside the VM would need a second path for each VM location.
 
-An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran beside the spike. Durable keeps one agent conversation through crashes and deduplicates a submission by its request ID. Nick chose to run it inside the task VM, behind the Pi server's current [API](/reference/pi-server#api).
+An evaluation of the Pi Durable harness (`@earendil-works/pi-durable`) ran beside the spike. Durable keeps one agent conversation through crashes and deduplicates a submission by its request ID. Nick chose to run it inside the task VM, behind the Pi server's current [API](/reference/old-paths#the-pi-task-loop).
 
 ### Decisions this builds on
 
@@ -216,12 +216,12 @@ A test lists every entry point that sends a turn, starts a check, or changes a c
 
 ### Step 2: Pi on Durable in the task VM
 
-Built in [#1464](https://github.com/hardimpactdev/orbit/pull/1464). New task VMs need a binary built from the Durable revision, pinned with both `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; existing groups keep their binary. See [Roll out a new binary](/reference/pi-server#roll-out-a-new-binary).
+Built in [#1464](https://github.com/hardimpactdev/orbit/pull/1464). New task VMs need a binary built from the Durable revision, pinned with both `ORBIT_TASK_VMS_PI_ARTIFACT_PATH` and `ORBIT_TASK_VMS_PI_ARTIFACT_SHA256`; existing groups keep their binary. See [Roll out a new binary](/reference/old-paths#the-pi-task-loop).
 
 Pi on the Durable harness replaces the session internals of the Pi server inside the task VM. The server's HTTP API stays, so `tasks.turn` does not change. The model key stays in the VM, per group. The change applies to both modes, because one Pi server serves both.
 
 - The send key stays the submission key. It becomes Durable's request ID, so a repeat still starts no turn.
-- A Pi server restart no longer fails the turn: the server resumes it. The Gateway no longer sends a restart resume; [Restarts](/reference/pi-server#restarts) describes Durable's recovery. Durable's crash-loop parking after five restarts fails the turn. The orchestrator raises assistance for an external group, and the tick for a tick group.
+- A Pi server restart no longer fails the turn: the server resumes it. The Gateway no longer sends a restart resume; [Restarts](/reference/old-paths#the-pi-task-loop) describes Durable's recovery. Durable's crash-loop parking after five restarts fails the turn. The orchestrator raises assistance for an external group, and the tick for a tick group.
 - Durable retries a transient provider error, with its policy set to Orbit's budget. The Gateway no longer retries after 1, 2, 4, and 8 minutes ([Retry a transient provider error](/reference/tasks#execution-ownership)).
 - Durable deduplicates within the VM's storage only. Across a lost VM, the keyed operation is the guard.
 - Checks stay operations. An agent does not reliably rerun a check that was cut off.
@@ -255,5 +255,5 @@ Step 3 waits for the amendments that cover topology subtasks and review-and-merg
 
 - Components: apps/gateway, apps/cli, packages/php-sdk, apps/web, apps/docs
 - ADRs: [0218](/decisions/0218-take-long-commands-off-the-request-path), whose retention spares keyed operations.
-- Detail: [Operations](/reference/operations) for the idempotency key and the waiting status; [Tasks](/reference/tasks) for `orchestration`, the five operations, the commit at handoff, assistance on external groups, and the removals of steps 2 and 3; [Pi server](/reference/pi-server) and `apps/pi-server` for step 2
+- Detail: [Operations](/reference/operations) for the idempotency key and the waiting status; [Tasks](/reference/tasks) for `orchestration`, the five operations, the commit at handoff, assistance on external groups, and the removals of steps 2 and 3; [Pi server](/reference/old-paths#the-pi-task-loop) and `apps/pi-server` for step 2
 - Verify: Gateway feature tests for each operation, its idempotency conflict, and each refusal; an Incus E2E that runs an external group from provision to a pull request, kills the Gateway worker during a waiting check, and reads the same result after recovery

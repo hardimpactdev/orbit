@@ -245,11 +245,7 @@ class BuildPlanTest(unittest.TestCase):
     def test_a_test_only_change_checks_syntax(self):
         self.assertEqual({'php', 'gateway-static', 'gateway-tests'}, self.selected(['apps/gateway/tests/Feature/ThingTest.php']))
 
-    def test_pi_and_agent_sources_select_required_component_checks(self):
-        for path in ('apps/pi-server/src/main.ts', 'apps/pi-server/tests/session.test.ts',
-                     'apps/pi-server/package.json', 'apps/pi-server/bun.lock', 'apps/pi-server/patches/pi.patch'):
-            with self.subTest(path=path):
-                self.assertEqual({'pi'}, self.selected([path]))
+    def test_agent_sources_select_required_component_checks(self):
         for path in ('apps/agent/src/main.rs', 'apps/agent/Cargo.toml', 'apps/agent/Cargo.lock',
                      'apps/agent/tests/binary_input.rs', 'apps/agent/crates/contract/src/lib.rs'):
             with self.subTest(path=path):
@@ -257,9 +253,18 @@ class BuildPlanTest(unittest.TestCase):
         for path in ('apps/gateway/extensions/documents/agent/src/lib.rs',
                      'apps/gateway/extensions/ai-router/agent/Cargo.toml'):
             self.assertIn('agent', self.selected([path]))
-        for path in ('apps/web/src/main.ts', 'docs/reference/pi-server.md', 'apps/pi-server/README.md',
-                     'apps/agent/AGENTS.md'):
-            self.assertFalse(self.selected([path]) & {'pi', 'agent'}, path)
+        for path in ('apps/web/src/main.ts', 'apps/agent/AGENTS.md'):
+            self.assertNotIn('agent', self.selected([path]), path)
+
+    def test_the_removed_pi_server_has_no_check(self):
+        self.assertNotIn('pi', plan.JOBS)
+        self.assertNotIn('\n  pi:\n', (plan.ROOT / '.github/workflows/ci.yml').read_text())
+        self.assertFalse((plan.ROOT / 'apps/pi-server').exists())
+        # The deletion itself is a diff: its paths keep a root that selects no job, so planning it does not raise.
+        for path in ('apps/pi-server/src/main.ts', 'apps/pi-server/.gitignore', 'apps/pi-server/README.md'):
+            with self.subTest(path=path):
+                plan.check_source_roots([path])
+                self.assertEqual(set(), self.selected([path]))
 
     def test_each_frozen_pin_file_runs_the_published_binary_contract_check(self):
         for name in ('frozen-manifest.json', 'frozen-commands.json', 'frozen-commands-source.json'):
@@ -270,7 +275,7 @@ class BuildPlanTest(unittest.TestCase):
     def test_the_rust_check_tracks_agent_sources_and_the_node_version(self):
         self.assertIn('agent', self.selected(['apps/agent/src/main.rs']))
         self.assertNotIn('agent', self.selected(['apps/gateway/app/Thing.php']))
-        self.assertEqual({'web', 'pi', 'agent'}, self.selected(['.node-version']))
+        self.assertEqual({'web', 'agent'}, self.selected(['.node-version']))
 
     def test_gateway_grant_renderer_changes_require_native_serve_validation(self):
         for path in ('apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php',
@@ -369,7 +374,7 @@ class RegistryFastSelectionTest(unittest.TestCase):
         self.table.parent.mkdir(parents=True)
         self.initial = ('[budget]\ndefault_cost = 30\n[fixtures]\ndefault = []\n'
                         '[[fixture]]\nfile = "swamp/example.ts"\ncost = 40\n'
-                        '[check.pi]\ninputs = ["apps/pi-server/**"]\ncost = 11\n'
+                        '[check.agent]\ninputs = ["apps/agent/**"]\ncost = 11\n'
                         '[check.docs]\ninputs = ["docs/**"]\ncost = 70\n'
                         '[check.swamp]\ninputs = []\ncost = 117\n')
         self.base = self.commit(self.initial)
@@ -410,10 +415,10 @@ class RegistryFastSelectionTest(unittest.TestCase):
 
     def test_each_changed_fast_check_selects_itself_including_removed_rules(self):
         for old, new, expected in (
-            ('cost = 11\n', 'cost = 12\n', {'pi'}),
-            ('apps/pi-server/**', 'apps/pi-server/src/**', {'pi'}),
+            ('cost = 11\n', 'cost = 12\n', {'agent'}),
+            ('apps/agent/**', 'apps/agent/src/**', {'agent'}),
             ('cost = 70', 'cost = 71', {'docs'}),
-            ('[check.pi]\ninputs = ["apps/pi-server/**"]\ncost = 11\n', '', {'pi'}),
+            ('[check.agent]\ninputs = ["apps/agent/**"]\ncost = 11\n', '', {'agent'}),
         ):
             with self.subTest(expected=expected, old=old):
                 self.commit(self.initial.replace(old, new))
@@ -452,11 +457,11 @@ class RegistryFastSelectionTest(unittest.TestCase):
                 self.assertEqual(self.jobs(), set())
 
     def test_other_files_keep_their_normal_selection_and_shared_machinery_runs_all(self):
-        path = self.root / 'apps/pi-server/src/example.ts'
+        path = self.root / 'apps/agent/src/example.rs'
         path.parent.mkdir(parents=True)
         path.write_text('// source\n')
         self.commit(self.initial.replace('cost = 40', 'cost = 45'))
-        self.assertEqual(self.jobs(), {'pi'})
+        self.assertEqual(self.jobs(), {'agent'})
         workflow = self.root / '.github/workflows/ci.yml'
         workflow.parent.mkdir(parents=True)
         workflow.write_text('# changed workflow\n')

@@ -19,7 +19,6 @@ Each project in the repository uses the stack in this table.
 | `apps/web` | TypeScript, React, TanStack Router and Query, Tailwind CSS, Vite+ |
 | `apps/desktop` | Rust, Tauri 2, wrapping `apps/web` |
 | `apps/agent` | Rust |
-| `apps/pi-server` | TypeScript on Bun, the Pi coding agent |
 | `apps/docs` | PHP 8.5, Laravel 13, Librarian |
 | `apps/e2e` | PHP 8.5, Laravel 13, Incus |
 
@@ -29,4 +28,4 @@ Service Nodes run Ubuntu 26.04. macOS Nodes support selected Homebrew formulae, 
 
 ## Checks
 
-Pest, Pint, Larastan, PHPStan, and Rector check the PHP projects. Vitest and Playwright check the web app, and Vitest checks the Pi server. Cargo's `fmt`, `clippy`, and `test` check the Node agent. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to run these checks. Incus provides disposable Linux machines for end-to-end tests. GitHub Actions runs the checks for every pull request. See the [contributor guide](/contributor-guide) for the local workflow.
+Pest, Pint, Larastan, PHPStan, and Rector check the PHP projects. Vitest and Playwright check the web app. Cargo's `fmt`, `clippy`, and `test` check the Node agent. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to run these checks. Incus provides disposable Linux machines for end-to-end tests. GitHub Actions runs the checks for every pull request. See the [contributor guide](/contributor-guide) for the local workflow.

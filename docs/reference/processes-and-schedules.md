@@ -442,7 +442,7 @@ The parent binds `source_installations` and `destination_installations` to their
 
 Protected Process values resolve only for their recorded Process target. Schedule commands use their owning Instance or Node ID as the secret reference, with the Schedule UUID retained in the admitted input. Resolution verifies both the actual owner relation and the recorded Node before reading command contents.
 
-Task VM runtime preparation composes the canonical Process installer within its native root. The Process belongs to the admitted VM Node and uses its fixed systemd `pi-server` definition. The private installation callback retains Process ownership and configuration checks.
+An Instance's Process members install only under a parent that targets that Instance on its own Node: `instance.create`, `instance.clone`, `instance.register` or `process.install_instance_definitions`. Any other parent, such as an old `tasks.provision`, is refused with `operation.execution_forbidden`.
 
 
 Leaf Process kinds use the direct native workflow only. Their completion projects bounded runtime status without keyed receipts or a Gateway readiness command. Instance composition uses native member steps in the owning run.

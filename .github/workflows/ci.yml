@@ -534,35 +534,6 @@ jobs:
           retention-days: 14
           overwrite: true
 
-  pi:
-    name: Pi check, test and build
-    needs: changes
-    if: ${{ toJSON(fromJSON(needs.changes.outputs.jobs)['pi']) != 'false' }}
-    runs-on: ubuntu-26.04
-    timeout-minutes: 2
-    defaults:
-      run:
-        working-directory: apps/pi-server
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: .node-version
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version: 1.4.2
-      - name: Install and verify worker ACL prerequisites
-        run: |
-          ../../bin/ci-runner-prerequisites acl
-          sudo -n -u nobody true
-      - run: bun install --frozen-lockfile
-      - run: bun run check
-      - run: bun run test
-      - run: bun run build
-
   agent:
     name: Rust agent check and test
     needs: changes
@@ -899,7 +870,7 @@ jobs:
   required:
     name: ${{ github.ref == 'refs/heads/main' && 'PR required checks' || 'Required checks' }}
     if: always() && github.ref != 'refs/heads/main'
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp, fixtures]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: ${{ github.event_name == 'pull_request' && vars.ORBIT_SLOW_CHECKS_BLOCKING != 'false' && vars.ORBIT_PROOF_BLOCKING != 'false' && needs.changes.outputs.proof_run == 'true' && 275 || 2 }}
     permissions:
@@ -952,7 +923,7 @@ jobs:
   delivery:
     name: Main delivery checks
     if: always() && github.ref == 'refs/heads/main' && contains(fromJSON('["push", "workflow_dispatch"]'), github.event_name)
-    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, pi, agent, proof, gateway-release, changes, swamp, fixtures]
+    needs: [php, gateway-static, gateway-tests, cli, cli-static, cli-tests, sdk-static, sdk-tests, e2e-static, docs, api-reference, web, agent, proof, gateway-release, changes, swamp, fixtures]
     runs-on: ubuntu-26.04
     timeout-minutes: 2
     steps:

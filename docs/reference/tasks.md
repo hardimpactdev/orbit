@@ -774,7 +774,7 @@ Before returning the workspace or activating its Route, Orbit inspects its sourc
 
 A visitable Laravel task workspace inherits the configured web root; a nested root such as `apps/site/public` uses the shared [application directory](/reference/projects#application-directory) for environment and runtime consumers. Preparation and inspection still verify Git identity, checkout ownership, and task metadata over the whole repository. Unrouted workspaces skip application classification; inspection does not discover a nested app.
 
-The VM's managed user `orbit` owns the checkout and runs the agents, the setup steps, and the checks. So the workspace needs no ACLs and no `safe.directory` entry. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains the choice.
+The VM's managed user `orbit` owns the checkout and runs the agents, the setup steps, and the checks. So the workspace needs no ACLs and no `safe.directory` entry.
 
 | Project setting | New workspace |
 | --- | --- |
@@ -970,10 +970,6 @@ A new thread's values are checked against what the copy's T3 offers, in two plac
 Stock T3 0.1.7 lists its models through no command, and `t3 thread start` does not check a model: a model Claude Code does not know would fail only inside the run. T3 fetches its model catalog and caches it in its data folder, so the turn reads that file in the copy.
 
 Without the cache file, T3 uses the catalog it ships, which no file holds; the check is then skipped, and a model Claude Code does not know fails in the run with `tasks.turn_failed`. A start that T3 refuses, such as one on a provider instance it does not hold, fails with `tasks.copy_turn_failed` and T3's own message.
-
-**Pi.** The `pi` driver runs threads on the [Pi server](/reference/pi-server) of the task's VM. The Gateway chooses the session id. Each send carries a key, and a retry reuses it, so an ambiguous failure never starts a second turn.
-
-The driver maps a model name to Pi's `provider/model` form. Every model uses the VM's one provider, `orbit-task-vm`; see [Run Pi on a task VM](/reference/pi-server#run-pi-on-a-task-vm). The driver refuses a Claude model, including a name that starts with `claude` and a `provider/model` whose provider is `anthropic`, and the turn does not start on another runtime. Pi threads never ask for input, and they report no per-thread line counts.
 
 ### Archive finished threads
 
@@ -1413,7 +1409,7 @@ The strip shows tokens per merged PR with its cost, lead time, yield, first-pass
 
 ## Agent viewer
 
-Task state reads answer from recorded Gateway state: `task:show`, `task:list`, `task:agent:list`, `task:agent:show`, insights, and the web board. Reads never contact a task VM, Pi server, or Node. A parked or deleted VM does not change that rule. The Swamp run view may read recorded runs from Swamp, the trusted control plane.
+Task state reads answer from recorded Gateway state: `task:show`, `task:list`, `task:agent:list`, `task:agent:show`, insights, and the web board. Reads never contact a task VM or a Node. A parked or deleted VM does not change that rule. The Swamp run view may read recorded runs from Swamp, the trusted control plane.
 
 The Agents section lists started threads and their recorded metrics. Any unfinished Operation that holds a thread makes that thread `working`, even if its last completed turn was `done`. A terminal projection records the final state and clears an old observation error.
 
@@ -1498,7 +1494,7 @@ These Gateway environment keys configure the extension.
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
 | `ORBIT_TASKS_PR_MODE` | The [mode](#task-group-modes) of a group whose group and Project set none: `review_before_pr` (default) or `pr_when_done`. Any other value is `tasks.pr_mode_setting_invalid` |
-| `ORBIT_PI_PORT` | The port of the Pi server on each task VM, default `3774`. Each VM has its own token |
+| `ORBIT_PI_PORT` | The port of the removed [Pi server](/reference/old-paths#the-pi-agent-server), default `3774`. No Node service may use it, and the task VM hub rules name it, until the task VM settings go |
 | `TYPESAFE_API_KEY` | The key for Jev calls |
 | `TYPESAFE_URL`, `TYPESAFE_MODEL` | The TypeSafe endpoint, default `https://api.typesafe.ai/v1`, and the classification model, default `jev-latest` |
 
@@ -1572,7 +1568,7 @@ Shared prompts stay free of Project policy. They do not name a feature contract 
 
 ### Every task group runs on its own task VM
 
-Each task group gets its own [task VM](#task-workspace). [One user](/reference/pi-server#one-user-for-every-task-agent) runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
+Each task group gets its own [task VM](#task-workspace). One user runs its agents and checks in the same environment. The [VM edge](/reference/compute-drivers#why-task-vms-work-this-way) is the boundary. A task waits for its VM; there is no shared-host fallback.
 
 Operators can inspect the task Node's last reported resource use with [`node:metrics`](/cli/node/metrics). The read does not contact or wake the VM. An offline VM retains its last snapshot with the original observation time and a `possibly outdated` label; this is resource evidence, not proof that an agent turn is still running.
 

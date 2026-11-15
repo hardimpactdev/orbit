@@ -24,7 +24,7 @@ inputs = [".github/workflows/ci.yml", ".github/actions/**", ".github/ci/checks.t
 
 [ignored]
 # These paths have intentionally paused checks, prose skips, or always-run plan tests.
-inputs = ["bin/ci-units", "bin/ci-full-set", "bin/ci-deferred", "bin/ci-main-queue", "bin/ci-main-proof", "bin/ci-proof-manual", "bin/ci-delivery", "bin/ci-tree-receipt", "bin/ci-proof-eligibility", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx", "apps/pi-server/**/*.md", "apps/pi-server/**/*.mdx"]
+inputs = ["bin/ci-units", "bin/ci-full-set", "bin/ci-deferred", "bin/ci-main-queue", "bin/ci-main-proof", "bin/ci-proof-manual", "bin/ci-delivery", "bin/ci-tree-receipt", "bin/ci-proof-eligibility", "tools/test_ci_*", "tools/test_swamp_import_base*", "tools/test_frozen_agent_commands*", "apps/desktop/**", "apps/agent/**/*.md", "apps/agent/**/*.mdx"]
 
 [check.php]
 inputs = [
@@ -225,16 +225,6 @@ inputs = [
 cost = 38
 ceiling = 120
 
-[check.pi]
-inputs = [
-  ".node-version",
-  "apps/pi-server/**",
-  "!apps/pi-server/**/*.md",
-  "!apps/pi-server/**/*.mdx",
-]
-cost = 11
-ceiling = 120
-
 [check.agent]
 inputs = [
   ".node-version",
@@ -381,9 +371,10 @@ default = ["e2e-static"]
 inputs = ["apps/gateway/**"]
 default = ["gateway-static"]
 
+# The removed Pi server: its deleted paths need a root until no plan diffs across the removal; it selects no check.
 [roots."apps/pi-server"]
 inputs = ["apps/pi-server/**"]
-default = ["pi"]
+default = []
 
 [roots."apps/web"]
 inputs = ["apps/web/**"]

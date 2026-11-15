@@ -71,21 +71,14 @@ final readonly class SignDirectCertificatesAction
     }
 
     /**
-     * The Node statuses that may be signed for. The Node that a `node.add` adds and the new guest of a `tasks.provision` turn
-     * `active` only when the Gateway records their enrollment, which for a provision happens when its result is applied, after
-     * the Route step has asked for its leaf. Their admitted leaves are therefore signed while they are still `provisioning`.
+     * The Node statuses that may be signed for. The Node that a `node.add` adds turns `active` only when the Gateway records its
+     * enrollment, so its admitted leaves are signed while it is still `provisioning`.
      *
      * @return list<string>
      */
     public static function leafStatuses(Operation $operation, int $nodeId): array
     {
-        $enrolling = match ($operation->kind) {
-            'node.add' => $nodeId === $operation->target_id,
-            'tasks.provision' => $nodeId === ($operation->input['guest_node_id'] ?? null),
-            default => false,
-        };
-
-        return $enrolling ? ['active', 'provisioning'] : ['active'];
+        return $operation->kind === 'node.add' && $nodeId === $operation->target_id ? ['active', 'provisioning'] : ['active'];
     }
 
     /** @return array<string,array{node_id:int,scope:string,domain:string,root_hash:string}> */
@@ -105,8 +98,6 @@ final readonly class SignDirectCertificatesAction
                 ? ['route_lifecycle.route_mutations.restore.certificates']
                 : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
             'instance.register', 'instance.create', 'instance.complete', 'instance.restore' => $restoring ? [] : ['route_lifecycle.preparation.certificates', 'route_lifecycle.route_mutations.forward.certificates'],
-            // The task workspace's Route admission sits under `route`, beside the VM's own execution copies.
-            'tasks.provision' => $restoring ? [] : ['route.route_lifecycle.preparation.certificates', 'route.route_lifecycle.route_mutations.forward.certificates'],
             // route.update and route.target_set never restore; they sign only their plan's leaves.
             'route.update' => $restoring ? [] : ['route_update.plan.leaves'],
             'route.target_set' => $restoring ? [] : ['route_target.plan.leaves'],

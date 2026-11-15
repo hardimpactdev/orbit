@@ -155,11 +155,11 @@ if sys.argv[1] == 'install':
             fake = root / 'bin' / name
             fake.write_text(f'#!/bin/sh\necho "{name} $(basename "$PWD") $*" >> "$BOOTSTRAP_TEST_CALLS"\n')
             fake.chmod(0o755)
-        for project in ('apps/web', 'apps/pi-server', 'apps/desktop/src-tauri', 'apps/agent'):
+        for project in ('apps/web', 'apps/desktop/src-tauri', 'apps/agent'):
             (root / project).mkdir(parents=True, exist_ok=True)
         result = self.bootstrap(root, '--skip-checks', '--with-bun', '--with-rust')
         self.assertEqual(0, result.returncode, result.stderr)
-        self.assertEqual(['bun web install --frozen-lockfile', 'bun pi-server install --frozen-lockfile',
+        self.assertEqual(['bun web install --frozen-lockfile',
                           'bun desktop install --frozen-lockfile', 'cargo agent fetch --locked',
                           'cargo src-tauri fetch --locked'],
                          [line for line in self.calls.read_text().splitlines() if line.startswith(('bun ', 'cargo '))])

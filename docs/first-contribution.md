@@ -37,7 +37,7 @@ Install the tools for the projects that you plan to change.
 | PHP 8.5 and Composer 2 | The five Composer projects and the documentation checks |
 | OpenSSL | `bin/bootstrap` |
 | PCOV or Xdebug, optional | Running only the tests that your change affects |
-| [Bun](https://bun.sh) | The web app, the Pi server, and the desktop app |
+| [Bun](https://bun.sh) | The web app and the desktop app |
 | [Rust](https://rustup.rs) | The Node agent and the desktop app |
 
 [Bun and Rust projects](/reference/bun-and-rust-projects#prerequisites) lists the Bun and Rust versions. The Gateway runs only on Linux. Its tests also run on macOS with extra tools, which [Implement and verify](/contributor-guide#3-implement-and-verify) lists.
@@ -83,7 +83,7 @@ composer test
 composer check
 ```
 
-For the web app, the Pi server, the Node agent, and the desktop app, run the commands in [Bun and Rust projects](/reference/bun-and-rust-projects). When you change pages under `docs/`, run these from the repository root:
+For the web app, the Node agent, and the desktop app, run the commands in [Bun and Rust projects](/reference/bun-and-rust-projects). When you change pages under `docs/`, run these from the repository root:
 
 ```bash
 composer docs-build

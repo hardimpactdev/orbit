@@ -183,7 +183,7 @@ The hub's private key never leaves the Node (Nick, 2026-11-02). The Gateway rend
 
 `orbit.conf` holds `Address`, `ListenPort`, `FwMark`, `PostUp = wg set %i private-key /etc/wireguard/orbit.key` and a `PostUp` that loads every file in `/etc/wireguard/orbit-peers.d`. [The source unit](#the-hub-answers-from-its-endpoint-address), not this file, owns the rules for the mark.
 
-One file per peer lets a run that adds one Node, such as task VM enrollment, write only its own file. Runs that overlap then never drop each other's peers.
+One file per peer lets a run that adds one Node, such as `node.add`, write only its own file. Runs that overlap then never drop each other's peers.
 
 The converge's Ansible `network` phase reaches the hub over SSH as root:
 
@@ -195,7 +195,7 @@ The converge's Ansible `network` phase reaches the hub over SSH as root:
 6. It requires every recorded peer on the interface, or fails with the assertion `vpn.hub_peer_missing`.
 7. It waits up to a minute for each peer that was live in step 1 to have a handshake in the last 180 seconds.
 
-An offline peer, such as a laptop or a parked task VM, has no handshake to give, so the hub does not wait for it. Waiting for every recorded peer failed the hub's converge whenever one was offline (Operation 15006, 2026-11-09). The `check` phase only requires every recorded peer on the interface; with no change it has no handshake to prove.
+An offline peer, such as a laptop, has no handshake to give, so the hub does not wait for it. Waiting for every recorded peer failed the hub's converge whenever one was offline (Operation 15006, 2026-11-09). The `check` phase only requires every recorded peer on the interface; with no change it has no handshake to prove.
 
 A Node keeps its peer file even before the Gateway records its key, because its own run may have written it.
 

@@ -1,23 +1,22 @@
 ---
 title: "Bun and Rust projects"
-description: "How to install, run, and check the web app, the Pi server, the Node agent, and the desktop app, the Orbit projects that are not Composer projects."
+description: "How to install, run, and check the web app, the Node agent, and the desktop app, the Orbit projects that are not Composer projects."
 ---
 
 # Bun and Rust projects
 
-Five of Orbit's ten projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
+Four of Orbit's nine projects are not Composer projects. This page shows how to install, run, and check each one. The [contributor guide](/contributor-guide) covers the five PHP projects and the process that every change follows.
 
 | Project | Path | Tooling | Purpose |
 | --- | --- | --- | --- |
 | Web app | `apps/web` | Bun, Vite+ | The live fleet view that the Gateway serves |
-| Pi server | `apps/pi-server` | Bun, Vite+ | Runs Pi agent sessions on a Node for task agents |
 | Node agent | `apps/agent` | Cargo | Reports Node presence, Process state, and logs to the Gateway |
 | Desktop app | `apps/desktop` | Bun, Cargo, Tauri 2 | A native window around the web app |
 | Swamp | `swamp` | Deno, pinned Swamp runtime | Executes Orbit operations |
 
-`bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app, the Pi server, and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves.
+`bin/bootstrap` installs the Composer projects. With `--with-bun` it also runs `bun install --frozen-lockfile` in the web app and the desktop app. With `--with-rust` it runs `cargo fetch --locked` for the Node agent and the desktop app. It does not install Bun or Rust themselves.
 
-`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these projects from their own directories. Root `composer check` runs some of the web app and Pi server checks when a change touches them, as [Web and Pi server checks](/reference/implementation-loop#web-and-pi-server-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
+`bin/bootstrap` does not check these projects, and `bin/test` runs only the Composer projects. Check these projects from their own directories. Root `composer check` runs some of the web app checks when a change touches them, as [Web app checks](/reference/implementation-loop#web-app-checks) lists. For the web app it runs `bun run check`, `bun run build`, and a generated-types check, but not `bun run test`. It does not check the Node agent or the desktop app.
 
 ## Swamp
 
@@ -29,12 +28,12 @@ Install the tools for the projects that you change.
 
 | Tool | Version | Needed for |
 | --- | --- | --- |
-| [Bun](https://bun.sh) | 1.4.2, the version in each `package.json` | Web app, Pi server, desktop app |
+| [Bun](https://bun.sh) | 1.4.2, the version in each `package.json` | Web app, desktop app |
 | [Rust](https://rustup.rs), with `rustfmt` and `clippy` | stable | Node agent, desktop app |
 | Playwright Chromium and WebKit | the version the web app locks | Web app browser tests |
 | [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) | for your operating system | Desktop app |
 
-Vite+ is a dev dependency of the web app and the Pi server, so the `bun run` scripts find its `vp` command without a global install. Keep the `vite` package alias and `overrides.vite` on the same core version as `vite-plus`; mixed cores give plug-ins incompatible types. Pin the Vitest override to the version that Vite+ uses so the browser and test runner packages agree. When Bun resolves a version, it takes only releases that are at least three days old, as [Dependencies](/contributor-guide#dependencies) explains.
+Vite+ is a dev dependency of the web app, so the `bun run` scripts find its `vp` command without a global install. Keep the `vite` package alias and `overrides.vite` on the same core version as `vite-plus`; mixed cores give plug-ins incompatible types. Pin the Vitest override to the version that Vite+ uses so the browser and test runner packages agree. When Bun resolves a version, it takes only releases that are at least three days old, as [Dependencies](/contributor-guide#dependencies) explains.
 
 ## Web app
 
@@ -65,32 +64,6 @@ Install the browsers once with `bunx playwright install webkit chromium`; For lo
 [Web verification](/reference/web-verification#automated-tests) describes the real daemon lifecycle and engine-specific checks. [Web app](/reference/web-app#browser-tests) explains which polling tests run in Node without a browser.
 
 Gateway Composer install builds `docs/openapi.json`; run `bin/build-api` again after API edits. Web checks and builds generate the ignored `src/api/schema.d.ts`. Never commit either output. The `tools/api-types` Bun workspace owns the generator and its TypeScript 5 compiler API dependency. The web app uses TypeScript 7 for type checking. `bun install --frozen-lockfile` installs both workspaces from one lockfile. A UI change also follows [web verification](/reference/web-verification). The [web app](/reference/web-app) page describes how the Gateway serves and releases the app.
-
-## Pi server
-
-Install the dependencies and run the checks:
-
-```bash
-cd apps/pi-server
-bun install
-bun run check
-bun run test
-bun run build
-```
-
-`bun run build` type-checks the server and compiles it to one binary, `dist/pi-server`. `bun run build:linux` compiles the `x86_64` Linux binary that Nodes run.
-
-Vitest runs test files in parallel with `maxWorkers: "100%"`.
-
-Run the tests on Linux. [Test worker file access](/reference/pi-server#test-worker-file-access) lists the tools they need.
-
-To try the server without a provider sign-in, serve it with a scripted model:
-
-```bash
-PI_SERVER_TOKEN=$(openssl rand -hex 32) bun dev/serve-faux.ts /path/to/workspaces 3790
-```
-
-The scripted model runs one `bash` command in the session's workspace on each turn and then answers. The server listens on `127.0.0.1` at the port you give, `3790` by default, and accepts workspaces only under the path you give. The [Pi server](/reference/pi-server) page describes the real server's flags, its API, and how a Node runs it.
 
 ## Node agent
 
@@ -134,6 +107,6 @@ bun run dev
 
 ## CI
 
-The Web job builds selected web changes and every main commit. Pi runs check, test and build within eight minutes when its inputs change. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select both jobs. `Required checks` expects both selected jobs to succeed. [CI](/reference/implementation-loop#ci) lists the checks. Gateway Pest, web unit tests and desktop checks remain paused.
+The Web job builds selected web changes and every main commit. Rust runs Cargo check and tests within 15 minutes when its inputs change. Shared CI changes select it. `Required checks` expects it to succeed when it is selected. [CI](/reference/implementation-loop#ci) lists the checks. Gateway Pest, web unit tests and desktop checks remain paused.
 
 The agent lockfile also covers compiled extension crates under `apps/gateway/extensions/*/agent/`. Run tests and Clippy through `scripts/check-crates` from `apps/agent` to include the local path dependencies composed by its Cargo manifest. Delivery identity and CI selection include their sources.
