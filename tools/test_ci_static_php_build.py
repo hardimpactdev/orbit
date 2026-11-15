@@ -10,8 +10,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
 loader = importlib.machinery.SourceFileLoader('static_php_build', str(ROOT / 'bin/static-php-build'))
 spec = importlib.util.spec_from_loader(loader.name, loader)
@@ -89,7 +87,8 @@ class StaticPhpBuildTest(unittest.TestCase):
 
     def test_the_craft_file_builds_the_cli_extensions_shared_and_never_static(self):
         item = build.definitions(RECIPE)['8.5']
-        craft = yaml.safe_load(build.craft(item, Path('/tmp/frankenphp')))
+        # The top-level `key: "value"` lines of the craft file. The test needs only the standard library, so the check's Python runs it.
+        craft = dict(re.findall(r'^([a-z-]+): "([^"]*)"$', build.craft(item, Path('/tmp/frankenphp')), re.MULTILINE))
         self.assertEqual(craft['shared-extensions'], 'pcov')
         self.assertNotIn('pcov', craft['extensions'].split(','))
         self.assertNotIn('ffi', craft['extensions'].split(','))
