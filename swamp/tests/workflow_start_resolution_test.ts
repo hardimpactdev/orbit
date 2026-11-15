@@ -161,7 +161,8 @@ Deno.test("the child workflows that a run starts resolve against the inputs thei
   assertEquals(followed("workflow-operation-task-sync-copy.yaml", intents.sync_copy),
     ["Bring in the base -> task-copy-base", "Discard the base scratch -> task-copy-base"]);
   assertEquals(followed("workflow-operation-task-publish.yaml", intents.publish_copy).filter((line) => line.includes("task-instance-workspace")),
-    ["Preflight the copy -> task-instance-workspace", "Export the copy -> task-instance-workspace", "Discard the copy scratch -> task-instance-workspace"]);
+    ["Preflight the copy -> task-instance-workspace", "Export the copy -> task-instance-workspace", "Check the copy -> task-instance-workspace",
+      "Discard the copy scratch -> task-instance-workspace"]);
   // A task VM's publish skips the copy's steps, so it starts no workspace child.
   assertEquals(followed("workflow-operation-task-publish.yaml", intents.publish_vm).filter((line) => line.includes("task-instance-workspace")), []);
 });
