@@ -38,7 +38,7 @@ To inspect resource use on the task's Node, use [`node:metrics`](/cli/node/metri
 | [`task:agent:list`](/cli/task/agent-list) | List a task's agent threads. |
 | [`task:egress`](/cli/task/egress) | List the outside hosts a task's VM connected to. |
 | [`task:agent:show`](/cli/task/agent-show) | Show one redacted read of an agent thread's conversation. |
-| [`task:start`](/cli/task/start) | Provision the VM and workspace of an external task group. |
+| [`task:start`](/cli/task/start) | Start a task as a copy of its Project's default Instance, and wait until the copy is active. |
 | [`task:turn`](/cli/task/turn) | Run one agent turn on an external task group. |
 | [`task:check`](/cli/task/check) | Run a baseline or handoff check in an external task workspace. |
 | [`task:publish`](/cli/task/publish) | Push a checked commit and optionally open or update its pull request. |
@@ -80,7 +80,7 @@ Every command belongs to `task:*`. Select either level with its existing Task ID
 | `task:create <title> --parent=ID` | Create a child of that parent. The Project and workspace are inherited. A child cannot own children. |
 | `task:list [--parent=ID] [--limit=N] [--cursor=CURSOR]` | List a page of the board's parents, or all of one parent's children. |
 | `task:show <task>`, `task:update <task>` | Read or update either level using its own fields and statuses. |
-| `task:start <task>` | Start a parent's VM with the existing `tasks.provision` operation. |
+| `task:start <task>` | Start a parent as a copy of its Project's default Instance, and wait until the copy is active. |
 | `task:cancel <task>` | Cancel the selected parent or child. Parent cancellation releases owned work and its VM; child cancellation affects that child's work only. |
 | `task:destroy <task>` | Delete a child while its parent is in Backlog. Parent deletion is refused. |
 | `task:check <task>`, `task:turn <task>` | Select the child directly. Orbit derives the parent and preserves current-child and check receipt guards. |

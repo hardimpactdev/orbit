@@ -446,6 +446,10 @@ Subtask update changes `title`, `brief`, `position`, or `deliverables`. A `deliv
 
 For an external group, subtask update also accepts `status`. A subtask moves from `todo` to `running`, between `running` and `reviewing`, and from either active status to `completed` or `failed`. `completed` and `failed` are final. Only `task:cancel` sets `cancelled`. Any other move returns HTTP 422 `tasks.status_move_refused`. Repeating the current status changes nothing. An ended group permits no subtask status move. Completing a subtask clears its assistance and reconciles the group request as resolution does. A status update starts no agent or check, advances no other subtask, and does not settle the group. The API, PHP SDK, CLI `--status` option, and MCP expose both status inputs.
 
+#### Subtask status in a task copy
+
+In a group whose workspace is a task copy, the admission of a [copy turn](/cli/task/turn#in-a-task-copy) of either role moves the current subtask from `todo` to `running`, under the group's row lock and in the turn's own transaction. A refused turn moves nothing. No turn, check or reviewer pass moves the subtask further. The caller completes it with `task:update <subtask> --status=completed` after the reviewer's turn on the done check ended; that move is the approval that [the done rule](#when-the-work-is-done) reads. Since the turn started it, the subtask then keeps its title, brief, position and deliverables, as the next paragraph says.
+
 A subtask that has started keeps its title, brief, position, and deliverables. A deliverables update on it returns `tasks.deliverables_locked` and leaves the stored list as it is, except for the one correction after `invalid_deliverable` described below.
 
 Appending a subtask records new work. Swamp decides when to resume the group.
@@ -1158,7 +1162,7 @@ The workflow that requested a reviewer owns review policy. The Gateway records i
 
 ## Task group modes
 
-A group whose workspace is a [task copy](#task-copy) has a mode. The mode decides what Orbit does once the group's work is done: it waits for a person, or it opens the pull request by itself. Orbit never merges the pull request of such a group. A person merges it on GitHub.
+Every group has a mode from its creation on; it acts on a group whose workspace is a [task copy](#task-copy). The mode decides what Orbit does once the group's work is done: it waits for a person, or it opens the pull request by itself. Orbit never merges the pull request of such a group. A person merges it on GitHub.
 
 | Mode | When the work is done |
 | --- | --- |
@@ -1173,7 +1177,7 @@ The mode is resolved each time Orbit reads it, in this order:
 2. The Project's `task_pr_mode`, set by [`project:update --task-pr-mode`](/cli/project/update).
 3. The Gateway's `ORBIT_TASKS_PR_MODE`, default `review_before_pr`. Any other value refuses with `tasks.pr_mode_setting_invalid` (503).
 
-[`task:show`](/cli/task/show) returns the mode as `pr_mode` and where it came from as `pr_mode_source`: `group`, `project` or `gateway`. A subtask has no mode. `task:update --pr-mode` is refused with `tasks.pr_mode_locked` (409) once the group has a pull request, while a publish of the group runs, and after the group ended.
+[`task:show`](/cli/task/show), `task:create` and `task:update` return the mode in effect as `pr_mode` and where it came from as `pr_mode_source`: `group`, `project` or `gateway`. They return it before the copy exists too. A subtask has no mode. `task:update --pr-mode` is refused with `tasks.pr_mode_locked` (409) once the group has a pull request, while a publish of the group runs, and after the group ended.
 
 When a handoff check passes, Orbit records on the check the mode that was in effect at that moment. Orbit publishes by itself only when both that recorded mode and the mode now in effect are `pr_when_done`. So a later change of the Project or the Gateway setting to `pr_when_done` never publishes a group that was already done: such a group needs a new handoff check, or a person runs `task:publish <group>`.
 

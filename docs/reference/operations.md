@@ -439,6 +439,8 @@ A client that has no Reverb connection, such as an MCP agent, polls:
 
 Every read returns the whole record and the steps that changed. So a client that missed reads, or starts again from 0, still ends with the current state.
 
+The CLI prints the id of each Operation it follows before it follows it, on stderr with `--json`. A caller whose follow ended early reads the Operation again with that id ([a follow that ends early](/cli/operation/show#a-follow-that-ends-early)).
+
 ### Follow an operation over Reverb
 
 When the [`websocket` role](/reference/events) is active, the Gateway sends `operation.updated` on the private channel `private-operation.{id}` at each change, and on `orbit` at each status change or cancel request. A client:
