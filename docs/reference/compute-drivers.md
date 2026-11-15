@@ -341,7 +341,7 @@ A build's static extensions are its PHP version's `extensions` less `without` an
 
 static-php-cli builds `pcov` only as a shared extension, so it is a CLI-only extension. The archive holds each CLI-only extension as `modules/<name>.so`. Only the PHP CLI loads it, through [`php-cli.ini`](/reference/php-runtime#pcov-in-the-cli-only).
 
-`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Each binary links everything statically except glibc, and the build uses Ubuntu 26.04's glibc or an older one, so the binaries run in every container. It builds the `cli_extensions` as shared extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
+`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Each binary links everything statically except glibc. `bin/static-php-build` sets static-php-cli's target `SPC_TARGET=x86_64-linux-gnu.2.17`: its Zig toolchain links against glibc 2.17, which is older than Ubuntu 26.04's, so the binaries run in every container. It builds the `cli_extensions` as shared extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
 
 `bin/static-php-build` runs the build:
 
@@ -354,7 +354,9 @@ static-php-cli builds `pcov` only as a shared extension, so it is a CLI-only ext
 
 The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin` and `php/<version>/modules`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder.
 
-FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`: both must load exactly the static extensions. The CLI then runs the probe with `php -n` and `-d extension=<part>/modules/<name>.so` for each of the `cli_extensions`, and must load exactly the static extensions and those. FrankenPHP never loads a CLI-only extension. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`: both must load exactly the static extensions. The CLI then runs the probe with `php -n` and `-d extension=<part>/modules/<name>.so` for each of the `cli_extensions`, and must load exactly the static extensions and those. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+
+`frankenphp php-cli` takes the SAPI name `cli`, so it reads `php-cli.ini` and the `conf.d` scan directory, and it has no `-n`. The probe prints the ini files that PHP read, and the check fails when one binary read any. So the check runs only where the build's config path, `/etc/orbit/php`, does not exist: on a Node and on the CI runner, not in a container. The probe runs in an empty folder, because `frankenphp php-cli` also looks for its ini file in the working folder. Output that PHP prints at startup, such as a warning that it cannot load an extension, also fails the check.
 
 #### The static PHP workflow
 
