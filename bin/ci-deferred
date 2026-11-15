@@ -50,6 +50,80 @@ def build_plan(base, sha):
     return result
 
 
+
+def union_requests(rows):
+    merged = {}
+    for row in rows:
+        for file, names in row.items():
+            if file not in merged:
+                merged[file] = None if names is None else sorted(set(names))
+            elif merged[file] is not None:
+                merged[file] = None if names is None else sorted(set(merged[file]) | set(names))
+    return merged
+
+
+def historical_request(base, sha, read_revision=None):
+    """Replay current admission rules with historical DATA, never historical programs."""
+    fixture_api = full.api()
+    read = read_revision or (lambda rev: fixture_api.registry.read_revision(ROOT, rev))
+    config, inventory = read(sha)
+    before, old_inventory = read(base)
+    budget = config['budget']
+    fixtures = {f['file']: {'cost': budget['default_cost'], 'inputs': [], **f, **inventory.get(f['file'], {})}
+                for f in config['fixture']}
+    # Use Required's discovery too: grouped extension tests and every Deno test suffix can be unregistered.
+    tracked = full.git('ls-tree', '-r', '--name-only', sha, '--', 'swamp').splitlines()
+    for file in fixture_api.fixture_steps(tracked):
+        fixtures.setdefault(file, {'file': file, 'cost': budget['default_cost'], 'inputs': []})
+    paths = full.git('diff', '--name-only', base, sha).splitlines()
+    old = {f['file']: f for f in before['fixture']}
+    new = {f['file']: f for f in config['fixture']}
+    registry_changed = sorted(file for file in old.keys() | new.keys() if old.get(file) != new.get(file))
+    inventory_changed = sorted(file for file in old_inventory.keys() | inventory.keys() if old_inventory.get(file) != inventory.get(file))
+    shared = (any(before.get(key) != config.get(key) for key in ('budget', 'fixtures'))
+              or [f for f in old if f in new] != [f for f in new if f in old])
+    pr = fixture_api.plan(paths, budget, fixtures, config['fixtures']['default'], inventory_changed, registry_changed, shared)
+    requested = requested_cases(pr, fixtures, fixture_api)
+    if any(p in ('bin/ci-deferred', 'bin/ci-full-set', 'bin/ci-main-queue', '.github/workflows/ci-deferred.yml') for p in paths):
+        requested = union_requests([requested, {file: None if f.get('after_merge') else f['after_merge_cases']
+                                               for file, f in fixtures.items() if f.get('after_merge') or f.get('after_merge_cases')}])
+    required_names = {file: sorted(names if names is not None else fixtures[file].get('cases', [])) for file, names in requested.items()}
+    return requested, required_names, paths
+
+
+def build_range(base, sha, commits):
+    fixture_api = full.api()
+    cache = {}
+
+    def read(rev):
+        if rev not in cache:
+            cache[rev] = fixture_api.registry.read_revision(ROOT, rev)
+        return cache[rev]
+
+    requests, names, paths = [], [], set()
+    parent = base
+    for commit in commits:
+        wanted, required, changed = historical_request(parent, commit, read)
+        requests.append(wanted)
+        names.append(required)
+        paths.update(changed)
+        parent = commit
+    if parent != sha:
+        raise ValueError('The claimed range does not end at the tested SHA')
+    requested, required_names = union_requests(requests), union_requests(names)
+    config, inventory = fixture_api.registry.load(ROOT)
+
+    def collect(file):
+        population = full.collect_current(file)
+        missing = set(required_names.get(file, [])) - set(population['cases'])
+        if missing:
+            raise ValueError(file + ': historical deferred cases no longer registered: ' + ', '.join(sorted(missing)))
+        return population
+
+    plan = full.build_plan(config, inventory, collect, fixture_api, requested=requested)
+    plan.update(empty_selection=not requested, changed_paths=sorted(paths), historical_cases=required_names)
+    return plan
+
 def initial_context(sha):
     context = CONTEXT
     if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch':

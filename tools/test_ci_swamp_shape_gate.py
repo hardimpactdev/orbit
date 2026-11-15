@@ -42,7 +42,10 @@ class WorkflowCallsTheScriptTest(unittest.TestCase):
         self.assertIn("cron: '17 */3 * * *'", WORKFLOW)  # Validation retains its schedule.
         receiver = (ROOT / '.github/workflows/ci-full-set.yml').read_text()
         self.assertIn('name: Main full set', receiver)
-        self.assertIn('runs-on: [self-hosted, orbit-shard, sabre]', receiver)
+        self.assertIn('uses: ./.github/workflows/ci-deferred.yml', receiver)
+        import yaml
+        consumer = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())
+        self.assertEqual(['self-hosted', 'orbit-shard', 'sabre'], consumer['jobs']['fixtures']['runs-on'])
         required = (ROOT / '.github/workflows/ci.yml').read_text().split('  required:', 1)[1]
         self.assertNotIn('Main full set', required)
 

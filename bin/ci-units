@@ -40,18 +40,23 @@ selection_regex = selection.selection_regex
 supervisor = module('fixture_supervisor', ROOT / 'swamp/tests/_support/fixture_supervisor.py')
 
 
-def fixture_steps():
-    """Split the gate's grouped file commands, retaining their flags and environment."""
+def fixture_steps(tracked_paths=None):
+    """Split the gate's groups against the working tree or a supplied Git tree, using the same discovery rules."""
     result = {}
-    for step in gate.plan('', ROOT, ROOT, ROOT):
+    tracked = None if tracked_paths is None else {path[len('swamp/'):] for path in tracked_paths if path.startswith('swamp/')}
+    options = {} if tracked is None else {'tracked_paths': sorted(tracked)}
+    for step in gate.plan('', ROOT, ROOT, ROOT, **options):
         if step.group != 'shape' or not step.parallel or step.argv[0] not in ('python3', 'deno'):
             continue
         files, flags = [], []
         for arg in step.argv[2:] if step.argv[0] == 'deno' else step.argv[1:]:
             target = gate.SWAMP / arg
-            if target.is_dir():
-                files += sorted(str(p.relative_to(gate.SWAMP)) for p in target.rglob('*') if gate.DENO_TEST_FILE.fullmatch(p.name))
-            elif target.is_file():
+            directory = target.is_dir() if tracked is None else any(path.startswith(arg.rstrip('/') + '/') for path in tracked)
+            is_file = target.is_file() if tracked is None else arg in tracked
+            if directory:
+                files += (sorted(str(p.relative_to(gate.SWAMP)) for p in target.rglob('*') if gate.DENO_TEST_FILE.fullmatch(p.name))
+                          if tracked is None else sorted(path for path in tracked if path.startswith(arg.rstrip('/') + '/') and gate.DENO_TEST_FILE.fullmatch(Path(path).name)))
+            elif is_file:
                 files.append(arg)
             else:
                 flags.append(arg)

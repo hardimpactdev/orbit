@@ -1,0 +1,64 @@
+#!/usr/bin/env python3
+"""Report-only main proof consumer; range selection awaits the typed proof:run input."""
+import argparse
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+KINDS = {'node:list', 'node:show', 'node:role:list', 'node:metrics', 'node:role:add', 'node:converge', 'firewall:list', 'firewall:allow'}
+
+
+def report(claim, receipt, job_result='success'):
+    result = receipt.get('result') or {}
+    cases = result.get('cases')
+    problems = []
+    if job_result != 'success':
+        problems.append({'unit': 'proof job', 'reason': 'Job ended ' + job_result, 'files': []})
+    if receipt.get('commit') != claim['sha'] or receipt.get('outcome') != 'passed':
+        problems.append({'unit': 'proof', 'reason': 'Missing, mismatched or nonpassing pinned-SHA receipt', 'files': []})
+    if not isinstance(cases, list):
+        problems.append({'unit': 'proof', 'reason': 'Missing case receipts', 'files': []})
+        cases = []
+    seen = set()
+    for case in cases:
+        if not isinstance(case, dict) or not case.get('command') or not case.get('case'):
+            problems.append({'unit': 'proof', 'reason': 'Malformed case receipt', 'files': []})
+            continue
+        key = (case['command'], case['case'])
+        if key in seen or case.get('verdict') != 'passed':
+            problems.append({'unit': ': '.join(key), 'reason': 'Duplicate or nonpassing case: ' + str(case), 'files': [case.get('file', '')]})
+        seen.add(key)
+    if claim['mode'] == 'all':
+        missing = KINDS - {command for command, _ in seen}
+        if missing:
+            problems.append({'unit': 'nightly kinds', 'reason': 'Missing ' + ', '.join(sorted(missing)), 'files': []})
+    return {'claim': claim, 'passed': not problems, 'range_covered': False,
+            'selection': 'all kinds on newest tree' if claim['mode'] == 'all' else 'newest SHA selection only; range input not live',
+            'not_individually_tested': claim['commits'][:-1], 'problems': problems, 'receipt': receipt}
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['run', 'report'])
+    parser.add_argument('--claim', type=Path, required=True)
+    parser.add_argument('--receipt', type=Path)
+    parser.add_argument('--job-result', default='failure')
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    claim = json.loads(args.claim.read_text())
+    claim['attempt'] = int(os.environ.get('GITHUB_RUN_ATTEMPT', '1'))
+    if args.command == 'run':
+        env = {**os.environ, 'PROOF_SHA': claim['sha'], 'PROOF_ALL': str(claim['mode'] == 'all').lower(),
+               'PROOF_STORE_RESULT': 'true', 'PROOF_CHECK_ELIGIBILITY': 'true', 'PROOF_RECEIPT': str(args.output)}
+        return subprocess.run([sys.executable, '-I', str(ROOT / 'bin/ci-proof-run')], env=env).returncode
+    receipt = json.loads(args.receipt.read_text()) if args.receipt.exists() else {}
+    result = report(claim, receipt, args.job_result)
+    args.output.write_text(json.dumps(result, indent=2) + '\n')
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())
