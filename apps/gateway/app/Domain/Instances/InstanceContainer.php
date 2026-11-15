@@ -483,8 +483,12 @@ final readonly class InstanceContainer
                 // The unit starts the runtime's recorded server (docs/reference/development-containers.md#container-server).
                 ['path' => self::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644', 'content' => $runtime->server()->dropIn()],
             ],
-            // The note of the Project's type, as the agents' own instructions file; it states facts about the container only.
-            'links' => [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]],
+            // A checkout that moved into a container links the agents' instructions to the note of the Project's type, which states facts
+            // about the container only. A clone links them into its own agent folder, which its create fills from the note and the
+            // Project's own instructions (docs/reference/development-containers.md#agent-instructions).
+            'links' => $source === null
+                ? [['path' => '/home/agent/.claude/CLAUDE.md', 'target' => $note], ['path' => '/home/agent/.codex/AGENTS.md', 'target' => $note]]
+                : InstanceAgentInstructions::links(),
         ];
     }
 

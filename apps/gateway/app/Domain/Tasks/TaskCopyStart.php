@@ -8,6 +8,7 @@ use App\Actions\Instances\StartDevelopmentInstanceCreateAction;
 use App\Actions\Projects\CaptureProjectSourceFactsAction;
 use App\Data\Instances\CreateInstanceData;
 use App\Domain\Instances\DefaultInstanceName;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -58,10 +59,10 @@ final readonly class TaskCopyStart
     }
 
     /**
-     * The reads a copy start needs before its transaction: the source facts, the default's container and its Node's ID map. Each can
-     * reach the forge or the Node, so a caller that starts copies in its own transaction, such as a proof, calls this first.
+     * The reads a copy start needs before its transaction: the source facts, the default's container, its Node's ID map and the
+     * Project's agent instructions. Each can reach the forge, the Node or the document store, so a caller that starts copies in its own transaction, such as a proof, calls this first.
      *
-     * @return array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null}
+     * @return array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null, agent_files: array<string, string>}
      */
     public function read(Project $project): array
     {
@@ -70,14 +71,17 @@ final readonly class TaskCopyStart
             app(CaptureProjectSourceFactsAction::class)->execute($project);
         }
 
-        return ['asleep' => $this->assertDefaultRuns($project), 'host' => $this->readIds($project)];
+        // A copy is always a clone of the default: its agent instructions are read here, before the transaction
+        // (docs/reference/development-containers.md#agent-instructions).
+        return ['asleep' => $this->assertDefaultRuns($project), 'host' => $this->readIds($project),
+            'agent_files' => app(InstanceAgentInstructions::class)->read($project)];
     }
 
     /**
      * Admits one copy for the group from the reads of {@see read()}. Call it in a transaction; a second copy in the same transaction
      * counts the first as live and as an open create on the Node.
      *
-     * @param  array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null}  $read
+     * @param  array{asleep: bool, host: array{ranges: IsolatedIdRanges, containers: list<string>}|null, agent_files: array<string, string>}  $read
      */
     public function admitRead(Task $group, string $caller, ?string $request, array $read): Operation
     {
@@ -109,7 +113,7 @@ final readonly class TaskCopyStart
         }
         $this->assertIdRanges($default, $runtime, $host);
         $operation = app(StartDevelopmentInstanceCreateAction::class)->execute(
-            new CreateInstanceData($project->id, $default->node_id, $name, null, null, $name), $caller, $request, $group);
+            new CreateInstanceData($project->id, $default->node_id, $name, null, null, $name), $caller, $request, $group, $read['agent_files']);
         $group->taskable()->associate(Instance::query()->findOrFail($operation->target_id));
         $group->fill(['status' => TaskGroupStatus::Reserved, 'reserved_at' => now(), 'capacity_wait_reason' => null])->save();
 

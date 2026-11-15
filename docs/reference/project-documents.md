@@ -15,7 +15,11 @@ Project Documents are folders and versioned files owned by one [Project](/refere
 
 Project Documents is the `documents` [extension](/reference/extensions). Its code lives in `apps/gateway/extensions/documents`. While the switch is off, every document and storage operation refuses with HTTP 409 `extension.disabled`, the MCP tools, CLI commands, and web page are hidden, and the stored documents and bucket stay as they are. The cleanup worker, the probe reconciliation, and the removal of a Project's documents keep running, because they only finish work that is already recorded. A new install starts with the switch off. Upgrades preserve the stored switch value. Turn it on with [`extension:enable documents`](/cli/extension/enable).
 
-Every supported action is available to agents. The web app is another client of the same API, not a separate source of truth. Documents do not replace maintained repository documentation or automatically enter an agent's context. An agent explicitly lists, searches, and reads them. This feature has no collaboration cursor, rich-text editor, public sharing, external URL import, OCR, embeddings, or document-to-task automation.
+Every supported action is available to agents. The web app is another client of the same API, not a separate source of truth. Documents do not replace maintained repository documentation or automatically enter an agent's context, except the reserved [`agent/` folder](#agent-instructions). An agent explicitly lists, searches, and reads them. This feature has no collaboration cursor, rich-text editor, public sharing, external URL import, OCR, embeddings, or document-to-task automation.
+
+## Agent instructions
+
+The folder `agent` at the Project's root is reserved for the Project's [agent instructions](/reference/development-containers#agent-instructions): `agent/AGENTS.md`, and `agent/.skills/<skill>/SKILL.md` with the files beside it. Each new clone of the Project's container default, a task copy among them, gets them at its create. Edit them with the usual commands, for example `project:document:write <project> <entry> --file=AGENTS.md` or MCP `project-document-write`; undo an edit with `project:document:restore-version`. [`project:show`](/cli/project/show) reports what the next copies read. The folder holds at most 32 files and 32 KiB of UTF-8 text, with no control character but a tab or a line end.
 
 ## Ownership and fields
 
@@ -425,7 +429,7 @@ Orbit versions name exact immutable bytes in committed metadata. Mutable object 
 
 ### Small native editor, not a planning environment
 
-Project Documents serve [Agents operate, humans steer](/mission#principles) and [One way, one name](/mission#principles): humans and agents use the same Project tree and explicit revision checks. The plain-text editor is a narrow exception to [Where Orbit stops](/mission#where-orbit-stops), because native notes need human editing alongside the agent API. It is not an IDE or chat/planning interface. Documents do not replace maintained repository documentation or automatically enter agent context.
+Project Documents serve [Agents operate, humans steer](/mission#principles) and [One way, one name](/mission#principles): humans and agents use the same Project tree and explicit revision checks. The plain-text editor is a narrow exception to [Where Orbit stops](/mission#where-orbit-stops), because native notes need human editing alongside the agent API. It is not an IDE or chat/planning interface. Documents do not replace maintained repository documentation or automatically enter agent context, except the reserved `agent/` folder ([ADR 0259](/decisions/0259-deliver-per-project-agent-instructions-from-documents)).
 
 Explicit save and optimistic concurrency expose conflicts instead of silently losing another writer's changes. Name/path search avoids body extraction, OCR, embeddings, and private-content indexes. Collaborative rich-text editing and semantic search would add merge, rendering, and indexing systems beyond this notes-and-attachments boundary.
 

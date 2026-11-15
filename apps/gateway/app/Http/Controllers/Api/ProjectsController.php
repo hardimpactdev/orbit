@@ -11,6 +11,7 @@ use App\Actions\Projects\ShowProjectAction;
 use App\Actions\Projects\UpdateProjectAction;
 use App\Data\Projects\ProjectData;
 use App\Data\Projects\UpdateProjectData;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Projects\ReviewAndMergeRequirements;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
@@ -56,11 +57,13 @@ final class ProjectsController extends Controller
     }
 
     #[RequiresNodeAccess(ServingNode::ProjectOwning)]
-    public function show(Request $request, Project $project, ShowProjectAction $action): JsonResponse
+    public function show(Request $request, Project $project, ShowProjectAction $action, InstanceAgentInstructions $agentInstructions): JsonResponse
     {
         return response()->json([
             'data' => [
                 ...ProjectData::fromModel($action->handle($project))->toArray(),
+                // What the agents of the Project's next copies read, from the records alone (development-containers.md#agent-instructions).
+                'agent_instructions' => $agentInstructions->summary($project),
             ],
             'meta' => $this->meta($request),
         ]);

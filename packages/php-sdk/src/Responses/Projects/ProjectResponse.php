@@ -34,6 +34,13 @@ final readonly class ProjectResponse
         public ?bool $defaultAutoDeploy = null,
         /** `t3` or `conn`: the server of the Project's new containers (docs/reference/projects.md#container-server); null from a Gateway that sends none. */
         public ?string $containerServer = null,
+        /**
+         * What the agents in the Project's next copies read (docs/reference/development-containers.md#agent-instructions):
+         * `{source: project|type_note, agents_md_version: int|null, skills: list<string>}`; null from a Gateway or a list that sends none.
+         *
+         * @var array{source: string, agents_md_version: int|null, skills: list<string>}|null
+         */
+        public ?array $agentInstructions = null,
     ) {}
 
     /** @param array<string, mixed> $data */
@@ -67,7 +74,34 @@ final readonly class ProjectResponse
             hasTaskPrMode: array_key_exists('task_pr_mode', $data),
             defaultAutoDeploy: is_bool($data['default_auto_deploy'] ?? null) ? $data['default_auto_deploy'] : null,
             containerServer: is_string($data['container_server'] ?? null) ? $data['container_server'] : null,
+            agentInstructions: self::agentInstructions($data['agent_instructions'] ?? null),
         );
+    }
+
+    /** @return array{source: string, agents_md_version: int|null, skills: list<string>}|null */
+    private static function agentInstructions(mixed $value): ?array
+    {
+        if (! is_array($value) || ! is_string($value['source'] ?? null)) {
+            return null;
+        }
+        $skills = is_array($value['skills'] ?? null) ? array_values(array_filter($value['skills'], is_string(...))) : [];
+
+        return ['source' => $value['source'], 'agents_md_version' => is_int($value['agents_md_version'] ?? null) ? $value['agents_md_version'] : null, 'skills' => $skills];
+    }
+
+    /** The `Agent instructions` line: `project: AGENTS.md v3, skills: a, b`, or `type note`. Null when the Gateway sent none. */
+    public function agentInstructionsLabel(): ?string
+    {
+        if ($this->agentInstructions === null) {
+            return null;
+        }
+        if ($this->agentInstructions['source'] !== 'project') {
+            return 'type note';
+        }
+        $parts = [...($this->agentInstructions['agents_md_version'] === null ? [] : ['agent/AGENTS.md v'.$this->agentInstructions['agents_md_version']]),
+            ...($this->agentInstructions['skills'] === [] ? [] : ['skills: '.implode(', ', $this->agentInstructions['skills'])])];
+
+        return 'project: '.implode(', ', $parts);
     }
 
     /** @return array<string, mixed> */
@@ -90,6 +124,7 @@ final readonly class ProjectResponse
             ...($this->hasTaskPrMode ? ['task_pr_mode' => $this->taskPrMode] : []),
             ...($this->defaultAutoDeploy === null ? [] : ['default_auto_deploy' => $this->defaultAutoDeploy]),
             ...($this->containerServer === null ? [] : ['container_server' => $this->containerServer]),
+            ...($this->agentInstructions === null ? [] : ['agent_instructions' => $this->agentInstructions]),
             'request_id' => $this->requestId,
         ];
     }

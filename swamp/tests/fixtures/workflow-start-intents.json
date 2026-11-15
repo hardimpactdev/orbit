@@ -81,7 +81,7 @@
                     "acl": "instance-2",
                     "nic_acl": "orbitinst0-proxy",
                     "bridge_cidr": "10.253.0.0/24",
-                    "bridge_admitted_at": 1794704498542429,
+                    "bridge_admitted_at": 1794778544819133,
                     "bridge_endpoints": [],
                     "acl_rules": {
                         "description": "Orbit Instance 2",
@@ -374,11 +374,19 @@
                         "links": [
                             {
                                 "path": "/home/agent/.claude/CLAUDE.md",
-                                "target": "/opt/orbit-agent/current/notes/package.md"
+                                "target": "/home/agent/.config/orbit/agent/AGENTS.md"
                             },
                             {
                                 "path": "/home/agent/.codex/AGENTS.md",
-                                "target": "/opt/orbit-agent/current/notes/package.md"
+                                "target": "/home/agent/.config/orbit/agent/AGENTS.md"
+                            },
+                            {
+                                "path": "/home/agent/.claude/skills",
+                                "target": "/home/agent/.config/orbit/agent/.skills"
+                            },
+                            {
+                                "path": "/home/agent/.agents/skills",
+                                "target": "/home/agent/.config/orbit/agent/.skills"
                             }
                         ]
                     },
@@ -523,7 +531,7 @@
                         "acl": "instance-2",
                         "nic_acl": "orbitinst0-proxy",
                         "bridge_cidr": "10.253.0.0/24",
-                        "bridge_admitted_at": 1794704498542429,
+                        "bridge_admitted_at": 1794778544819133,
                         "bridge_endpoints": [],
                         "acl_rules": {
                             "description": "Orbit Instance 2",
@@ -816,11 +824,19 @@
                             "links": [
                                 {
                                     "path": "/home/agent/.claude/CLAUDE.md",
-                                    "target": "/opt/orbit-agent/current/notes/package.md"
+                                    "target": "/home/agent/.config/orbit/agent/AGENTS.md"
                                 },
                                 {
                                     "path": "/home/agent/.codex/AGENTS.md",
-                                    "target": "/opt/orbit-agent/current/notes/package.md"
+                                    "target": "/home/agent/.config/orbit/agent/AGENTS.md"
+                                },
+                                {
+                                    "path": "/home/agent/.claude/skills",
+                                    "target": "/home/agent/.config/orbit/agent/.skills"
+                                },
+                                {
+                                    "path": "/home/agent/.agents/skills",
+                                    "target": "/home/agent/.config/orbit/agent/.skills"
                                 }
                             ]
                         },

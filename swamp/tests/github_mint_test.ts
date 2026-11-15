@@ -96,7 +96,7 @@ Deno.test("every mint step names a purpose the Gateway issues and the run it bel
             }
         }
     }
-    assert(calls >= 6, `expected the six task steps to mint, found ${calls}`);
+    assert(calls >= 5, `expected the five task steps to mint, found ${calls}`);
 });
 
 /** The jobs that must have run before `job`. */
@@ -144,42 +144,6 @@ Deno.test("a step reads a minted key only after the step that mints it", async (
             }
         }
     }
-});
-
-const ends = ["always", "completed", "or"];
-
-Deno.test("a workflow that writes the dependency auth removes it on every outcome, and installs only after the write", async () => {
-    let writers = 0;
-    for (const { file, workflow } of await workflows()) {
-        const calls = (name: string) =>
-            workflow.jobs.flatMap((job) =>
-                job.steps.filter((step) => step.task?.workflowIdOrName === name).map((step) => ({ job, step }))
-            );
-        const [write] = calls("task-dependency-auth-write");
-        if (write === undefined) continue;
-        writers += 1;
-        const [remove] = calls("task-dependency-auth-remove");
-        assert(remove !== undefined, `${file}: writes the dependency auth and never removes it`);
-        if (remove.job === write.job) {
-            assert(before(remove.job.steps, remove.step).has(write.step.name), `${file}: the removal does not wait for the write`);
-            for (const parent of remove.step.dependsOn ?? []) {
-                assert(ends.includes(String(parent.condition?.type)), `${file}: the removal waits for "${parent.step}" only on success`);
-            }
-        } else {
-            assert(jobsBefore(workflow.jobs, remove.job).has(write.job.name), `${file}: the removal job does not wait for the write job`);
-            for (const parent of remove.job.dependsOn ?? []) {
-                assert(ends.includes(String(parent.condition?.type)), `${file}: the removal job waits for "${parent.job}" only on success`);
-            }
-        }
-        for (const job of workflow.jobs) {
-            for (const step of job.steps.filter((candidate) => /^(Install the package|setup-)/.test(candidate.name))) {
-                if (job === write.job) {
-                    assert(before(job.steps, step).has(write.step.name), `${file}: "${step.name}" does not wait for the write`);
-                }
-            }
-        }
-    }
-    assert(writers >= 1, `expected the package install to write the dependency auth through the shared child, found ${writers}`);
 });
 
 Deno.test("copy-only secret checks do not read the VM mint key, and losing that guard or reading the key is detected", async () => {

@@ -18,6 +18,7 @@ use App\Domain\Instances\Deployment\DevelopmentDeploySteps;
 use App\Domain\Instances\DevelopmentInstanceBranchAdmission;
 use App\Domain\Instances\DevelopmentInstanceCreateAdmission;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
+use App\Domain\Instances\InstanceAgentInstructions;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceSourceLayout;
@@ -65,7 +66,13 @@ final readonly class StartDevelopmentInstanceCreateAction
      * `$taskOwner` is the task group whose copy this new clone is (TaskCopyStart): the group becomes the clone's owner when its row is
      * written, as the database allows an owner only then. Every other create passes none.
      */
-    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null): Operation
+    /**
+     * `$agentFiles`: the Project's agent instructions that a caller in its own transaction read before it (TaskCopyStart::read); null
+     * reads them here, before the admission transaction.
+     *
+     * @param  array<string, string>|null  $agentFiles
+     */
+    public function execute(CreateInstanceData $data, ?string $caller, ?string $requestId, ?Task $taskOwner = null, ?array $agentFiles = null): Operation
     {
         if (($replay = $this->idempotency->replay('instance.create')) !== null) {
             return $replay;
@@ -79,10 +86,13 @@ final readonly class StartDevelopmentInstanceCreateAction
         }
 
         $observed = $project;
+        // A clone's agent instructions: their bodies are read before the admission transaction
+        // (docs/reference/development-containers.md#agent-instructions). Only a clone of a container default takes them.
+        $agentFiles ??= $this->clonesDefault($project, $data->name) ? app(InstanceAgentInstructions::class)->read($project) : [];
         $selection = $data->branchSelection === null ? null
             : app(DevelopmentInstanceBranchAdmission::class)->prepare($project, $data->name, $data->branchSelection, $caller);
 
-        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner): Operation {
+        return DB::transaction(function () use ($data, $caller, $requestId, $selection, $observed, $taskOwner, $agentFiles): Operation {
             $project = Project::query()->findOrFail($data->projectId);
             $this->admission->assertSourceAccess($project);
             $node = Node::query()->findOrFail($data->nodeId);
@@ -237,7 +247,7 @@ final readonly class StartDevelopmentInstanceCreateAction
             $input['direct_provisioning'] = [...$provisioning, 'route' => $input['route_create'] ?? null, 'database' => $database,
                 'server_database' => $server['input'] ?? null, 'server_valkey' => $valkey['input'] ?? null, 'container' => $steps === null ? null
                     : $this->containerIntent($instance, $node, $steps, $source, $server['connection'] ?? null,
-                        ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain)];
+                        ValidatedData::string(ValidatedData::object($provisioning['resolve'])['branch']), $route?->domain, $agentFiles)];
             if ($selection !== null && is_array($input['direct_provisioning']['container'])) {
                 $input['direct_provisioning']['container']['branch_selection'] = $selection->toArray();
             }
@@ -389,6 +399,21 @@ final readonly class StartDevelopmentInstanceCreateAction
         return [true, null];
     }
 
+    /**
+     * Whether this create is a clone of the container default, read before the transaction as container() decides it inside: an
+     * existing Instance by its runtime's clone source, a new one by its name and the default's runtime.
+     */
+    private function clonesDefault(Project $project, string $name): bool
+    {
+        $name = DefaultInstanceName::resolve($project, $name);
+        $instance = Instance::query()->where('project_id', $project->id)->where('name', $name)->first();
+        if ($instance instanceof Instance) {
+            return $instance->runtime()->whereNotNull('clone_source_instance_id')->exists();
+        }
+
+        return $name !== 'default' && Instance::query()->where('project_id', $project->id)->where('name', 'default')->whereHas('runtime')->exists();
+    }
+
     private function assertContainerProject(Project $project): void
     {
         app(InstanceContainer::class)->assertPhp($project);
@@ -419,15 +444,22 @@ final readonly class StartDevelopmentInstanceCreateAction
      * The container, its runtime row and, for the Project's default, its development deploy steps, which the run copies to the vault.
      *
      * @param  list<array{name:string,phase:string,required:bool,timeout_seconds:int,command_digest:string,inputs:list<string>}>  $steps
+     * @param  array<string, string>  $agentFiles  The Project's agent instructions (InstanceAgentInstructions::read)
      * @return array<string,mixed>
      */
-    private function containerIntent(Instance $instance, Node $node, array $steps, ?Instance $source, ?DatabaseConnection $database, string $branch, ?string $domain): array
+    private function containerIntent(Instance $instance, Node $node, array $steps, ?Instance $source, ?DatabaseConnection $database, string $branch, ?string $domain, array $agentFiles): array
     {
         $containers = app(InstanceContainer::class);
 
         // The default stays on the Project's default branch, which its deployments follow; a clone takes its own branch.
-        return [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $source instanceof Instance ? $branch : '',
+        $intent = [...$containers->intent($instance, $containers->reserve($instance, $node, $source), $database, $source instanceof Instance ? $branch : '',
             $domain === null ? null : 'https://'.$domain), 'steps' => $steps];
+        // A clone's create fills its agent folder once: the copy keeps this version (docs/reference/development-containers.md#agent-instructions).
+        if ($source instanceof Instance && is_array($intent['clone'] ?? null)) {
+            $intent['clone']['agent_instructions'] = app(InstanceAgentInstructions::class)->intent($instance->project, $agentFiles);
+        }
+
+        return $intent;
     }
 
     private function assertRetry(Instance $instance, Node $node, ?string $root, ?string $branch): void

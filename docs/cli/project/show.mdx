@@ -13,3 +13,5 @@ JSON includes `default_auto_deploy`: true when each new commit of the default br
 JSON includes `task_pr_mode`: `review_before_pr`, `pr_when_done`, or null when the Project sets none and its task groups use the Gateway's default. Human output labels it `Task pull request mode`. See [Task group modes](/reference/tasks#task-group-modes).
 
 JSON includes `container_server`, `t3` or `conn`, and human output labels it `Container server`. See [Container server](/reference/projects#container-server).
+
+JSON includes `agent_instructions`: what the agents of the Project's next copies read. `source` is `project` when the Project's Documents hold an `agent/AGENTS.md` or a skill, else `type_note`; `agents_md_version` is the current version number of `agent/AGENTS.md`, or null; `skills` lists the skill names. Human output labels it `Agent instructions`, for example `project: agent/AGENTS.md v3, skills: create-pull-request` or `type note`. See [Agent instructions](/reference/development-containers#agent-instructions).

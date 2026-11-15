@@ -145,3 +145,11 @@ it('admits native Caddy candidates without changing the frozen agent input', fun
 
     expect((new AgentCaddyPackage($agents))->install($node)->stdout)->toBe(AgentCaddyPackage::Changed."\n");
 });
+
+it('pins no Pi build: the task VM start installs no Pi server', function (): void {
+    $recipe = new RecipeLoader()->source();
+
+    expect(RecipeLoader::catalog())->not->toHaveKey('pi')
+        ->and($recipe->tools)->not->toHaveKey('pi')
+        ->and($recipe->profile('base'))->not->toContain('pi');
+});
