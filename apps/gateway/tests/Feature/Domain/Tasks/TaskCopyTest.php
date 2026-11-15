@@ -28,6 +28,7 @@ use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\InstanceThreadContribution;
 use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Instances\NativeDevelopmentInstanceInput;
+use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationIdempotency;
@@ -456,9 +457,41 @@ describe('a task start on the copy path', function (): void {
     })->with([
         // As Project 79's default on 2026-11-13: stopped by hand, its record still running.
         'stopped' => [['state' => 'unknown', 'reason' => 'stopped']],
-        'asleep' => [['state' => 'unknown', 'reason' => 'asleep']],
         'unreachable' => [['state' => 'unknown', 'reason' => 'unreachable']],
     ]);
+
+    it('copies an asleep default\'s seed snapshot without waking it', function (string $sleep): void {
+        $default = copySource();
+        $default->runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+        Operation::query()->create(['kind' => InstanceSleep::Kind, 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+            'status' => 'succeeded', 'input' => [], 'state' => [], 'result' => ['power_state' => 'stopped', 'sleep' => $sleep], 'finished_at' => now()]);
+        $group = copyGroup($default->project);
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => 'asleep'];
+
+        expect(startCopy($group)->kind)->toBe('instance.create')
+            ->and($default->runtime->refresh()->power_state)->toBe(InstanceRuntimePowerState::Stopped)
+            ->and(Operation::query()->where('kind', 'instance.wake')->count())->toBe(0);
+    })->with(['frozen', 'stopped']);
+
+    it('refuses a stopped default whose asleep marker no sleep left, and a container that does not run without its marker', function (string $case): void {
+        $default = copySource();
+        $default->runtime->update(['power_state' => InstanceRuntimePowerState::Stopped]);
+        if ($case === 'a failed sleep') {
+            Operation::query()->create(['kind' => InstanceSleep::Kind, 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+                'status' => 'failed', 'error_code' => 'instance.container_freeze_failed', 'input' => [], 'state' => [], 'finished_at' => now()]);
+        }
+        $group = copyGroup($default->project);
+        // The reader answers `asleep` only for a container that does not run behind its marker, and `stopped` without the marker.
+        $this->ssh->answer = ['state' => 'unknown', 'reason' => $case === 'no marker after a sleep' ? 'stopped' : 'asleep'];
+        if ($case === 'no marker after a sleep') {
+            Operation::query()->create(['kind' => InstanceSleep::Kind, 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+                'status' => 'succeeded', 'input' => [], 'state' => [], 'result' => ['sleep' => 'frozen'], 'finished_at' => now()]);
+        }
+        $before = copyRows();
+
+        expect(copyRefusal(fn () => startCopy($group)))->toBe('tasks.copy_source_unavailable 409')
+            ->and(copyRows())->toBe($before);
+    })->with(['no sleep', 'a failed sleep', 'no marker after a sleep']);
 
     it('admits a running default whose Git read ran out of time or found no repository', function (array $answer): void {
         $group = copyGroup(copySource()->project);

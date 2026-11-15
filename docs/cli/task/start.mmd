@@ -22,8 +22,9 @@ sequenceDiagram
     Note over GW: Admit the copy's create<br/>instance.create · task-TASK
     %%> Requirements:
     %%> - the task is in todo and holds no workspace; otherwise `tasks.not_todo` or `tasks.group_closed`
-    %%> - the Project's default Instance is active and running, with a seed snapshot; otherwise HTTP 409 `tasks.copy_source_unavailable`, also for a stopped default, and nothing is recorded
-    %%> - before the transaction, one bounded read of the default's container (at most about 6 s) confirms it runs: its power record can be stale after a stop by hand; a stopped, asleep or unreachable container refuses the same way
+    %%> - the Project's default Instance is active, with a seed snapshot, and runs or sleeps; otherwise HTTP 409 `tasks.copy_source_unavailable`, also for a default stopped by hand, and nothing is recorded
+    %%> - before the transaction, one bounded read of the default's container (at most about 6 s) confirms it runs or sleeps: its power record can be stale after a stop by hand; a container that does not run and has no asleep marker, or that cannot be read, refuses the same way
+    %%> - an asleep default stays asleep: the copy clones its seed snapshot, which needs no running container
     %%> - no Instance is named `task-TASK` yet; otherwise `tasks.copy_name_taken`
     %%> - for a nested-fleet Project only: the default's Node holds fewer nested-fleet task copies than the Gateway's `ORBIT_TASKS_COPIES_MAX` (default 1); every nested copy that a task owns counts, also one that fails or is being destroyed; otherwise `tasks.copy_capacity_full`, with no wait. A copy of any other Project is a plain clone: it neither counts nor waits
     %%> - before the transaction, one bounded read of the Node's ID ranges (at most about 4 s): root's subordinate range and every container's ID map, stopped ones too; an unreadable Node refuses, `tasks.copy_id_ranges_unreadable`

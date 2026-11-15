@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace App\Domain\Instances\Power;
 
 use App\Domain\Hibernation\RuntimeHibernation;
-use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Processes\DesiredProcessState;
 use App\Domain\Shared\ResourceOperationException;
@@ -21,10 +21,11 @@ use Illuminate\Database\Eloquent\Builder;
 
 /**
  * The idle sleep of development containers (docs/reference/development-containers.md#sleep-and-wake). The runtime hibernator calls it
- * every sweep. An Instance sleeps after one full idle window of watching in which it had no HTTP activity, no wake and no agent activity,
- * and no turn runs. The watch starts the first time an acting run reads the Instance: an access log written before then, or a site
- * without one, is no evidence of idleness by itself. A Node or a T3 server that cannot be read keeps an Instance awake. Each sleep is an
- * `instance.sleep` Operation triggered by the sweep, at most a few per run.
+ * every sweep. An Instance sleeps after one full idle window of watching in which it had no HTTP activity, no wake, no deployment and,
+ * with a T3 server, no agent activity and no running turn. A default and a nested-fleet Instance follow the same rule: only data keeps
+ * an Instance awake. The watch starts the first time an acting run reads the Instance: an access log written before then, or a site
+ * without one, is no evidence of idleness by itself. A Node or a T3 server that cannot be read keeps an Instance awake; an Instance
+ * without a T3 server has none to read. Each sleep is an `instance.sleep` Operation triggered by the sweep, at most a few per run.
  */
 final readonly class ContainerIdleSweep
 {
@@ -44,10 +45,34 @@ final readonly class ContainerIdleSweep
     ) {}
 
     /**
+     * The sweep under one value of the setting: a dry run changes nothing, an acting run starts the watch and the sleeps.
+     *
      * @param  list<int>|null  $only  Instance ids to consider; null considers every container Instance.
      * @return list<ContainerIdleDecision>
      */
-    public function run(bool $dryRun, ?array $only = null, ?int $idleSeconds = null, ?CarbonImmutable $now = null): array
+    public function run(bool $dryRun, ?array $only = null, ?int $idleSeconds = null, ?CarbonImmutable $now = null,
+        ContainerSleepScope $scope = ContainerSleepScope::All): array
+    {
+        return $this->sweep($dryRun, $only, $idleSeconds, $now, [$scope])[$scope->value];
+    }
+
+    /**
+     * A dry run under every value of the setting, from one read of each Node and each T3 server.
+     *
+     * @param  list<int>|null  $only
+     * @return array<string, list<ContainerIdleDecision>> The decisions keyed by the value.
+     */
+    public function preview(?array $only = null, ?int $idleSeconds = null, ?CarbonImmutable $now = null): array
+    {
+        return $this->sweep(true, $only, $idleSeconds, $now, ContainerSleepScope::cases());
+    }
+
+    /**
+     * @param  list<int>|null  $only
+     * @param  list<ContainerSleepScope>  $scopes  One value for an acting run.
+     * @return array<string, list<ContainerIdleDecision>>
+     */
+    private function sweep(bool $dryRun, ?array $only, ?int $idleSeconds, ?CarbonImmutable $now, array $scopes): array
     {
         $now ??= CarbonImmutable::now();
         $window = $idleSeconds ?? $this->idleSeconds;
@@ -56,64 +81,72 @@ final readonly class ContainerIdleSweep
             ->with(['instance.node.roles', 'instance.project', 'instance.processes', 'instance.nodeServiceTargets'])
             ->orderBy('instance_id')->get();
 
-        $decisions = [];
+        $standing = [];
         $watched = [];
         foreach ($runtimes as $runtime) {
-            $instance = $runtime->instance;
-            $reason = $this->standing($instance, $runtime);
-            if ($reason !== null) {
-                $decisions[$instance->id] = ContainerIdleDecision::skip($instance, $reason);
-
-                continue;
+            $standing[$runtime->instance_id] = array_map(fn (ContainerSleepScope $scope): ?string => $this->standing($runtime->instance, $runtime, $scope), $scopes);
+            // A Node and a T3 server are read only for an Instance that some value may put to sleep.
+            if (in_array(null, $standing[$runtime->instance_id], true)) {
+                $watched[$runtime->instance->node_id][] = $runtime;
             }
-            $watched[$instance->node_id][] = $runtime;
         }
 
-        $sleeps = 0;
+        $evidence = [];
         foreach ($watched as $group) {
             $paths = array_map(static fn (InstanceRuntime $runtime): string => RuntimeHibernation::accessLogPath(RuntimeHibernation::key($runtime->instance_id)), $group);
             $times = $this->files->read($group[0]->instance->node, $paths);
             foreach ($group as $index => $runtime) {
-                $instance = $runtime->instance;
-                if ($times === null) {
-                    $decisions[$instance->id] = ContainerIdleDecision::skip($instance, 'http_unreadable');
-
-                    continue;
-                }
-                $evidence = $this->evidence($runtime, $times[$paths[$index]] ?? null, $dryRun, $now);
-                $reason = $this->reason($evidence, $now, $window);
-                if ($reason === null && $sleeps >= $this->sleepsPerRun) {
-                    $reason = 'next_run';
-                }
-                if ($reason !== null) {
-                    $decisions[$instance->id] = $evidence->with('skip', $reason);
-
-                    continue;
-                }
-                $sleeps++;
-                if ($dryRun) {
-                    $decisions[$instance->id] = $evidence->with('sleep', 'idle');
-
-                    continue;
-                }
-                try {
-                    $decisions[$instance->id] = $evidence->with('sleep', 'idle', $this->sleep->start($instance, self::TriggeredBy, null)->id);
-                } catch (ResourceOperationException $error) {
-                    $decisions[$instance->id] = $evidence->with('skip', 'refused:'.$error->errorCode);
-                }
+                $evidence[$runtime->instance_id] = $times === null ? null : $this->evidence($runtime, $times[$paths[$index]] ?? null, $dryRun, $now);
             }
         }
-        ksort($decisions);
 
-        return array_values($decisions);
+        $decisions = [];
+        foreach ($scopes as $index => $scope) {
+            $sleeps = 0;
+            $rows = [];
+            foreach ($runtimes as $runtime) {
+                $rows[] = $this->decide($runtime->instance, $standing[$runtime->instance_id][$index],
+                    $evidence[$runtime->instance_id] ?? null, $dryRun, $now, $window, $sleeps);
+            }
+            $decisions[$scope->value] = $rows;
+        }
+
+        return $decisions;
     }
 
-    /** The reasons that need no read of the Node or the container, in the order the sleep admission checks them. */
-    private function standing(Instance $instance, InstanceRuntime $runtime): ?string
+    /** One row under one value. `$evidence` is null when the Instance's Node did not answer: a row with no standing reason was read. */
+    private function decide(Instance $instance, ?string $standing, ?ContainerIdleDecision $evidence, bool $dryRun, CarbonImmutable $now,
+        int $window, int &$sleeps): ContainerIdleDecision
+    {
+        if ($standing !== null) {
+            return ContainerIdleDecision::skip($instance, $standing);
+        }
+        if ($evidence === null) {
+            return ContainerIdleDecision::skip($instance, 'http_unreadable');
+        }
+        $reason = $this->reason($evidence, $now, $window);
+        if ($reason === null && $sleeps >= $this->sleepsPerRun) {
+            $reason = 'next_run';
+        }
+        if ($reason !== null) {
+            return $evidence->with('skip', $reason);
+        }
+        $sleeps++;
+        if ($dryRun) {
+            return $evidence->with('sleep', 'idle');
+        }
+        try {
+            return $evidence->with('sleep', 'idle', $this->sleep->start($instance, self::TriggeredBy, null)->id);
+        } catch (ResourceOperationException $error) {
+            return $evidence->with('skip', 'refused:'.$error->errorCode);
+        }
+    }
+
+    /** The reasons that need no read of the Node or the container: the value's own first, then in the order the sleep admission checks them. */
+    private function standing(Instance $instance, InstanceRuntime $runtime, ContainerSleepScope $scope): ?string
     {
         return match (true) {
-            $instance->name === 'default' => 'default',
-            $runtime->incus_project === InstancePlacement::NestedProject || $instance->project->nested_fleet => 'nested_fleet',
+            ($excluded = $scope->excludes($runtime)) !== null => $excluded,
             $instance->placementEnvironment() !== 'development' => 'not_development',
             in_array($instance->id, $this->neverSleep, true) => 'never_sleep',
             $runtime->power_state !== InstanceRuntimePowerState::Running => 'asleep',
@@ -135,15 +168,20 @@ final readonly class ContainerIdleSweep
         if ($watch === null && ! $dryRun) {
             $runtime->forceFill(['idle_watch_started_at' => $now])->save();
         }
-        $wake = Operation::query()->where('kind', InstanceWake::Kind)->where('target_type', 'instance')->where('target_id', $instance->id)
+        // A wake of a nested-fleet clone that no sleep froze is its start (InstanceStart): its end counts as a wake's.
+        $wake = Operation::query()->whereIn('kind', [InstanceWake::Kind, InstanceStart::Kind])->where('target_type', 'instance')->where('target_id', $instance->id)
             ->whereNotNull('finished_at')->max('finished_at');
+        $deploy = Operation::query()->where('kind', OperationKinds::InstanceDeploy)->where('target_type', 'instance')->where('target_id', $instance->id)
+            ->whereNotNull('finished_at')->max('finished_at');
+        // An Instance without a T3 server, such as a default, has nothing to read: the T3 rows do not apply to it.
+        $server = $runtime->t3_port !== null;
         $activity = null;
-        foreach ($this->agents as $agent) {
+        foreach ($server ? $this->agents : [] as $agent) {
             $activity = $agent->read($instance) ?? $activity;
         }
 
         return new ContainerIdleDecision($instance->id, $instance->name, 'skip', '', null, $watch, $log,
-            $activity ?? AgentActivity::unreadable(), is_string($wake) ? CarbonImmutable::parse($wake)->getTimestamp() : null);
+            $server ? $activity ?? AgentActivity::unreadable() : null, self::unix($wake), self::unix($deploy), $server);
     }
 
     /** The first reason that keeps a watched Instance awake, or null when it may sleep. A watch that starts now reads as `watch_starting`. */
@@ -157,11 +195,19 @@ final readonly class ContainerIdleSweep
             $recent($evidence->watchStartedAt) => 'watching',
             $recent($evidence->lastHttpAt) => 'http_active',
             $recent($evidence->lastWakeAt) => 'woke_recently',
+            // A release refresh resumes a sleeping default: it gets a full window before the next freeze.
+            $recent($evidence->lastDeployAt) => 'deployed_recently',
+            ! $evidence->t3Server => null,
             $t3 === null || ! $t3->readable => 't3_unreadable',
             $t3->turnRuns => 't3_turn_running',
             $recent($t3->lastActivityUnix) => 't3_active',
             default => null,
         };
+    }
+
+    private static function unix(mixed $time): ?int
+    {
+        return is_string($time) ? CarbonImmutable::parse($time)->getTimestamp() : null;
     }
 
     private function hasOpenOperation(Instance $instance): bool

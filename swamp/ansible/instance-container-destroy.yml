@@ -90,6 +90,10 @@
             - name: Remove this Instance's asleep marker
               when: container.asleep_marker is defined
               ansible.builtin.file: {path: "{{ container.asleep_marker }}", state: absent}
+            # A sleep's record of the inner cgroups it opened goes with the container, whose cgroups are gone.
+            - name: Remove this Instance's swap record
+              ansible.builtin.include_tasks: { file: tasks/instance-container-swap.yml, apply: {tags: [always]} }
+              vars: { swap: forget }
             - name: Remove the Node repository mirror
               ansible.builtin.file: { path: "{{ container.mirror }}", state: absent }
             # A task copy's base scratch, which a cancelled task:sync may leave; it holds no credential. The intent names no Instance id,

@@ -7,6 +7,7 @@ namespace App\Domain\Instances\Power;
 use App\Actions\Operations\StartOperationAction;
 use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceLifecycleContributions;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\NestedFleetIntent;
 use App\Domain\Operations\OperationIdempotency;
@@ -36,6 +37,9 @@ final readonly class InstanceWake extends InstancePower
     /** When the wake's run starts anyway if the Gateway never finished the Node's resume (ContainerResume's worst case is about 5 s). */
     public const int SafetyNetSeconds = 15;
 
+    /** The run found a nested-fleet container stopped: it boots none, since only a start or a deployment brings back its fleet. */
+    public const string NestedStopped = 'instance.nested_fleet_stopped';
+
     protected function kind(): string
     {
         return self::Kind;
@@ -46,16 +50,31 @@ final readonly class InstanceWake extends InstancePower
         return InstanceRuntimePowerState::Running;
     }
 
-    protected function refuse(Instance $instance, InstanceRuntime $runtime): void {}
+    /** The container sleeps frozen: its runtime records it stopped and its last sleep froze it (ContainerResume::frozenBySleep). */
+    private static function frozen(InstanceRuntime $runtime, Instance $instance): bool
+    {
+        return $runtime->power_state === InstanceRuntimePowerState::Stopped && ContainerResume::frozenBySleep($instance);
+    }
+
+    /** A nested-fleet default that no sleep froze starts only through its deployment, which brings back its Club key and fleet. */
+    protected function refuse(Instance $instance, InstanceRuntime $runtime): void
+    {
+        if ($runtime->incus_project === InstancePlacement::NestedProject && ! self::frozen($runtime, $instance)) {
+            throw new ResourceOperationException('instance.sleep_unsupported',
+                'A nested-fleet Instance that no sleep froze starts only through its deployment, or a clone through its start.', 409);
+        }
+    }
 
     /**
-     * A nested-fleet clone never sleeps, so its wake is its start: the container, its Club key and its inner fleet
-     * (InstanceStart, docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts). The request's Idempotency-Key
-     * then keys that start. Every other Instance takes the wake below.
+     * A frozen nested-fleet Instance wakes by resume: its fleet, `wg-nested` and the Club key in /run survive a freeze. A nested-fleet
+     * clone that no sleep froze (a host reboot, an OOM kill, a stop by hand) wakes by its start: the container, its Club key and its
+     * inner fleet (InstanceStart, docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts). The request's
+     * Idempotency-Key then keys that start. Every other Instance takes the wake below.
      */
     public function start(Instance $instance, ?string $caller, ?string $requestId): Operation
     {
-        if (! NestedFleetIntent::cloneKeepsFleet($instance, $instance->runtime()->first())) {
+        $runtime = $instance->runtime()->first();
+        if (! NestedFleetIntent::cloneKeepsFleet($instance, $runtime) || ($runtime !== null && self::frozen($runtime, $instance))) {
             return $this->resume(parent::start($instance, $caller, $requestId));
         }
         $idempotency = app(OperationIdempotency::class);
@@ -72,7 +91,7 @@ final readonly class InstanceWake extends InstancePower
      * wake serves the app as it is: the marker goes once the app answers. A resumed container gets `resume_seconds` for its first
      * answer; a silent one is stopped and booted, which a visitor prefers to a wait without end.
      */
-    protected function intent(): array
+    protected function intent(Instance $instance): array
     {
         return ['web' => ['port' => InstanceContainer::WebPort, 'ready_seconds' => 30, 'settle_seconds' => 5, 'resume_seconds' => 10]];
     }
@@ -207,8 +226,8 @@ final readonly class InstanceWake extends InstancePower
             }
         }
         try {
-            // A Route visit wakes a sleeping container only; a nested-fleet clone never sleeps, so it gets the wake's own refusal.
-            if ($this->resume(parent::start($instance, $caller, null))->status === OperationStatus::Succeeded) {
+            // A Route visit takes the same way as the command: a nested-fleet clone that no sleep froze takes its start.
+            if ($this->start($instance, $caller, null)->status === OperationStatus::Succeeded) {
                 return true;
             }
         } catch (ResourceOperationException $exception) {

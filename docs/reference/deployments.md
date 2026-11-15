@@ -105,6 +105,8 @@ Explicit environment synchronization writes the checkout's `.env` files, so the 
 
 A successful container default create or checkout migration records its completed Route projection with the seed. It needs no separate automatic-policy publication before a manual deployment.
 
+A container default may [sleep](/reference/development-containers#sleep-and-wake). A deployment of a sleeping default resumes or boots its container in its `start` phase, closes the swap the sleep opened, and removes the asleep marker once that phase passed, so the Route serves the app again. The end of the deployment counts as activity: the idle sleep waits a full window before it freezes the default again.
+
 If the default has pending Route publication, the automatic policy admits a normal Route update before deployment. A matching succeeded Route receipt clears that mark through the policy projection. Native dev deployment does not change the Route. An unchanged tick with a completed projection does not take the [projection lock](/reference/routes#coordinate-publication), because a full converge rebuilds the Node's PHP-FPM pools, Caddy, and DNS and blocks every other Route operation while it runs.
 
 ### Container source facts

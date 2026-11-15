@@ -76,6 +76,9 @@ Deno.test({
             // The stopped instance-7 sleeps: its asleep marker goes with it, and instance-8's stays.
             Deno.mkdirSync(`${folder}/hibernation`);
             for (const id of [7, 8]) Deno.writeTextFileSync(`${folder}/hibernation/app-instance-${id}.asleep`, "");
+            // A sleep's records of the inner cgroups it opened: instance-7's goes with its container, instance-8's stays.
+            Deno.mkdirSync(`${folder}/shm`);
+            for (const id of [7, 8]) Deno.writeTextFileSync(`${folder}/shm/app-instance-${id}.swap`, "lxc.payload.nested-gateway/memory.swap.max\n");
             for (const name of ["instance-7", "instance-8"]) {
                 Deno.mkdirSync(`${folder}/mail-state/${name}`, {recursive: true});
                 Deno.writeTextFileSync(`${folder}/mail-state/${name}/activation.json`, "[]");
@@ -89,6 +92,7 @@ Deno.test({
                 new URL("tasks/task-copy-base-names.yml", root),
                 `${folder}/tasks/task-copy-base-names.yml`,
             );
+            Deno.copyFileSync(new URL("tasks/instance-container-swap.yml", root), `${folder}/tasks/instance-container-swap.yml`);
             // A base scratch that a cancelled task:sync of this Instance left, named by its mirror's Instance, and another Instance's.
             for (const name of ["orbit-task-base-mirror", "orbit-task-base-8"]) {
                 Deno.mkdirSync(`${folder}/task-base/${name}`, { recursive: true });
@@ -160,6 +164,7 @@ Deno.test({
                         },
                     },
                     container_destroy: {
+                        instance_id: 7,
                         name: "instance-7",
                         project: "orbit-instances",
                         pool: "orbit-instances",
@@ -185,6 +190,8 @@ Deno.test({
                         "ansible_python_interpreter={{ ansible_playbook_python }}",
                         "-e",
                         `task_base_root=${folder}/task-base`,
+                        "-e",
+                        `swap_record_directory=${folder}/shm`,
                         `${folder}/instance-container-destroy.yml`,
                     ],
                     env: {
@@ -214,6 +221,7 @@ Deno.test({
             // The destroyed Instance's base scratch goes; another Instance's stays.
             assertEquals([...Deno.readDirSync(`${folder}/task-base`)].map((entry) => entry.name), ["orbit-task-base-8"]);
             assertEquals([...Deno.readDirSync(`${folder}/hibernation`)].map((entry) => entry.name), ["app-instance-8.asleep"]);
+            assertEquals([...Deno.readDirSync(`${folder}/shm`)].map((entry) => entry.name), ["app-instance-8.swap"]);
             assert(!Deno.statSync(`${folder}/mail-state`).isFile);
             assertEquals([...Deno.readDirSync(`${folder}/mail-state`)].map((entry) => entry.name), ["instance-8"]);
             assertEquals(Deno.readTextFileSync(`${folder}/mail-state/instance-8/activation.json`), "[]");
@@ -264,6 +272,7 @@ Deno.test({
                 Deno.readTextFileSync(new URL("instance-container-destroy.yml", root)).replaceAll("/var/lib/orbit/instance-mail", `${folder}/mail-state`));
             Deno.copyFileSync(new URL("tasks/address-node.yml", root), `${folder}/tasks/address-node.yml`);
             Deno.copyFileSync(new URL("tasks/task-copy-base-names.yml", root), `${folder}/tasks/task-copy-base-names.yml`);
+            Deno.copyFileSync(new URL("tasks/instance-container-swap.yml", root), `${folder}/tasks/instance-container-swap.yml`);
             Deno.writeTextFileSync(`${folder}/bin/incus`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-incus.ts", import.meta.url).pathname}' "$@"\n`);
             Deno.writeTextFileSync(`${folder}/bin/ufw`, `#!/bin/sh\nexec '${Deno.execPath()}' run -A '${new URL("fixtures/instance-container-ufw.ts", import.meta.url).pathname}' "$@"\n`);
             for (const name of ["incus", "ufw"]) Deno.chmodSync(`${folder}/bin/${name}`, 0o755);
@@ -284,7 +293,7 @@ Deno.test({
             const run = () => {
                 const done = new Deno.Command("ansible-playbook", {
                     args: ["-i", "localhost,", "--tags", "remove", "-e", "ansible_connection=local", "-e", "ansible_become=false",
-                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`,
+                        "-e", "ansible_python_interpreter={{ ansible_playbook_python }}", "-e", `task_base_root=${folder}/task-base`, "-e", `swap_record_directory=${folder}/shm`,
                         `${folder}/instance-container-destroy.yml`],
                     env: { ANSIBLE_CONFIG: stepEnv.ANSIBLE_CONFIG, HOST_FIXTURE: folder, ORBIT_RUN: `${folder}/run`, PATH: `${folder}/bin:${Deno.env.get("PATH")}`,
                         ANSIBLE_HOME: `${folder}/ansible`, ANSIBLE_NOCOLOR: "1" },
@@ -293,7 +302,7 @@ Deno.test({
             };
             const calls = () => Deno.readTextFileSync(`${folder}/calls`).trim().split("\n").map((line) => JSON.parse(line) as string[]);
             const state = () => JSON.parse(Deno.readTextFileSync(`${folder}/state.json`));
-            intent({ name: "instance-7", acl: "instance-7", firewall_prefix: "orbit:instance-7-", inner_volume: "inner-7" });
+            intent({ instance_id: 7, name: "instance-7", acl: "instance-7", firewall_prefix: "orbit:instance-7-", inner_volume: "inner-7" });
             let done = run();
             assert(done.ok, done.output);
             assertEquals(Object.keys(state().containers), ["instance-8"]);
@@ -309,7 +318,7 @@ Deno.test({
             assert(!calls().some((call) => call.includes("delete")), JSON.stringify(calls()));
             // A removal without an inner volume in its intent (a clone, or Instance 2454's shape) reads and deletes no volume.
             Deno.writeTextFileSync(`${folder}/calls`, "");
-            intent({ name: "instance-8", acl: "instance-8", firewall_prefix: "orbit:instance-8-" });
+            intent({ instance_id: 8, name: "instance-8", acl: "instance-8", firewall_prefix: "orbit:instance-8-" });
             done = run();
             assert(done.ok, done.output);
             assertEquals(Object.keys(state().volumes), ["inner-8"]);

@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "25a5629aa2c9af89ad8d9751610e099ea417af9c00105fb73143f39f32514054"
+source_sha256 = "29ad35819e8849e0cc2c3cd25794a82c22d398cb5ee9a04b395e3088fbf66a6b"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -26,6 +26,9 @@ cases = [
   "a wake resumes a Frozen container without a boot, closes swap again and removes the marker; its result names the path and seconds",
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
+  "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
+  "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
   "a deployment's start resumes a Frozen container and then converges as usual",
   "a clone runs its own Process units: the default's units and folders from the seed go, and its own start",
   "a clone's first boot starts no unit of the default and the clone has its own machine-id",
@@ -96,6 +99,12 @@ file = "swamp/tests/ansible_instance_container_test.ts"
 cost = 4092
 # 162.648s, hosted four-worker run 43002948719 (completed unit).
 after_merge_cases = [
+  # The sleep and wake of defaults and nested-fleet Instances in the start part (20s, 56s and 42s locally, run in full before the PR): the
+  # file sits at the 8-shard PR limit, so any added cost defers it whole. The PR keeps the swap close (each recorded cgroup that still
+  # exists, none outside the container, the record removed) and the nested never-stop of a sleep in ansible_instance_container_power_test.ts.
+  "a wake closes the swap of the container and of each recorded inner cgroup that still exists, skips a vanished one, and removes the record",
+  "a wake of a nested-fleet container resumes a Frozen one, but never boots a Stopped one nor stops a silent one",
+  "a deployment's or a start's start brings a sleeping container back and removes its asleep marker, with no web wait",
   # The merged deploy steps' equivalence (two fixtures, separate and merged plays, a phase handler before the seed, a play killed after
   # its start phase, and a later phase's failure; about 145s locally): a 72nd slice would push the file above the 8-shard PR limit. The PR keeps the merged plays of a normal
   # default's deploy (start,fetch and seed,check), a refusal in the second phase and a failed first phase in "a deployment checks out

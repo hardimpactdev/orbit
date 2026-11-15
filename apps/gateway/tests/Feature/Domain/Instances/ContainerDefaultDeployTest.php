@@ -181,6 +181,8 @@ it('runs the deployment with the container it admitted and the pinned commit, ev
     $container = ValidatedData::object(ValidatedData::object($input['intent'])['container']);
     expect($container)->toBe([...ValidatedData::object($snapshot['container']), 'commit' => $commit])
         ->and($container['branch'])->toBe('main')
+        // A start or resume of a sleeping default removes this marker once the app answers, so the Route serves the app again.
+        ->and(ValidatedData::object($input['intent'])['asleep_marker'])->toBe('/data/caddy/orbit/hibernation/app-instance-'.$instance->id.'.asleep')
         ->and(array_keys($input['execution_secrets']))->toBe(['step_0', 'credential', 'process_environments'])
         ->and($input['execution_secrets']['process_environments']['key'])->toBe('development-deploy-operation-'.$operation->id.'-processes');
 });

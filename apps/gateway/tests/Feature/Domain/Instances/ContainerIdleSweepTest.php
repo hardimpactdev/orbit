@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 use App\Domain\Hibernation\RuntimeHibernation;
 use App\Domain\Instances\InstanceContainer;
+use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\Power\AgentActivity;
 use App\Domain\Instances\Power\ContainerIdleDecision;
 use App\Domain\Instances\Power\ContainerIdleSweep;
+use App\Domain\Instances\Power\ContainerSleepScope;
 use App\Domain\Instances\Power\InstanceAgentActivity;
 use App\Domain\Instances\Power\InstanceSleep;
 use App\Domain\Instances\Power\NodeFileTimes;
@@ -17,6 +19,7 @@ use App\Domain\Projects\ProjectType;
 use App\Infrastructure\Instances\AgentNodeFileTimes;
 use App\Models\Instance;
 use App\Models\InstanceNodeServiceTarget;
+use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Process;
@@ -122,7 +125,7 @@ it('puts an idle clone to sleep as an Operation that names the sweep and says T3
 
     $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->sole();
     expect(reasonOf($decisions, $clone))->toBe('sleep')
-        ->and(reasonOf($decisions, $this->default))->toBe('default')
+        ->and(reasonOf($decisions, $this->default))->toBe('watch_starting')
         ->and($sleep->target_id)->toBe($clone->id)
         ->and($sleep->triggered_by)->toBe(ContainerIdleSweep::TriggeredBy)
         ->and(collect($decisions)->firstWhere('instanceId', $clone->id)->operationId)->toBe($sleep->id);
@@ -148,9 +151,10 @@ it('changes nothing in a dry run, and lists every container Instance with its re
 
 it('keeps awake an Instance that must never sleep, before any read of the Node or T3', function (string $case, string $reason): void {
     $clone = idleClone($this, 'clone', taskOwned: $case === 'task');
+    // The default sleeps already, so the sweep reads nothing for it.
+    $this->default->runtime()->update(['power_state' => 'stopped']);
     $never = [];
     match ($case) {
-        'nested' => $this->project->forceFill(['nested_fleet' => true])->save(),
         'never' => $never = [$clone->id],
         'asleep' => $clone->runtime()->update(['power_state' => 'stopped']),
         'operation' => Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $clone->id,
@@ -175,7 +179,7 @@ it('keeps awake an Instance that must never sleep, before any read of the Node o
         ->and($this->agentReads)->toBe([])
         ->and($this->reads)->toBe(0);
 })->with([
-    ['production', 'not_development'], ['nested', 'nested_fleet'], ['never', 'never_sleep'], ['asleep', 'asleep'], ['operation', 'busy'], ['process_operation', 'busy'],
+    ['production', 'not_development'], ['never', 'never_sleep'], ['asleep', 'asleep'], ['operation', 'busy'], ['process_operation', 'busy'],
     ['lifecycle', 'busy'], ['task', 'task'], ['keep_alive', 'keep_alive'], ['node_service', 'node_service'],
 ]);
 
@@ -271,13 +275,17 @@ it('reads the access logs of a Node in one call', function (): void {
     expect($this->reads)->toBe(1);
 });
 
-it('gives a woken Instance a full window, then lets it sleep', function (int $wokeAgo, string $reason): void {
+it('gives a woken Instance a full window, then lets it sleep', function (string $kind, int $wokeAgo, string $reason): void {
     $clone = idleClone($this, 'clone');
-    Operation::query()->create(['kind' => 'instance.wake', 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
+    Operation::query()->create(['kind' => $kind, 'target_type' => 'instance', 'target_id' => $clone->id, 'node_id' => $clone->node_id,
         'status' => 'succeeded', 'input' => [], 'state' => [], 'finished_at' => $this->now->subSeconds($wokeAgo)]);
 
     expect(reasonOf(idleSweep($this)->run(true), $clone))->toBe($reason);
-})->with([[IdleWindow - 60, 'woke_recently'], [IdleWindow + 60, 'sleep']]);
+})->with([
+    ['instance.wake', IdleWindow - 60, 'woke_recently'], ['instance.wake', IdleWindow + 60, 'sleep'],
+    // A wake of a nested-fleet clone that no sleep froze takes its start.
+    ['instance.start', IdleWindow - 60, 'woke_recently'], ['instance.start', IdleWindow + 60, 'sleep'],
+]);
 
 it('never puts to sleep an Instance whose turn runs, whatever its age, or whose T3 cannot be read', function (AgentActivity $activity, string $reason): void {
     $clone = idleClone($this, 'clone');
@@ -329,13 +337,11 @@ it('considers only the named Instances, with the window of the run', function ()
 /** The proof path: a named run with a short window may only pick candidates and shorten the window; it skips no rule. */
 it('applies every never-sleep rule in a scoped run with a short window', function (string $case, string $reason): void {
     $clone = idleClone($this, 'clone', logAge: 200, taskOwned: $case === 'task', watchAge: $case === 'never_watched' ? null : 7_200);
-    $target = $case === 'default' ? $this->default : $clone;
-    $this->logs[RuntimeHibernation::accessLogPath(RuntimeHibernation::key($this->default->id))] = $this->now->getTimestamp() - 200;
+    $target = $clone;
     $never = [];
     match ($case) {
-        'default', 'task', 'never_watched' => null,
+        'task', 'never_watched' => null,
         'node_service' => attachNodeService($clone),
-        'nested' => $this->project->forceFill(['nested_fleet' => true])->save(),
         'never' => $never = [$clone->id],
         'operation' => Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $clone->id,
             'node_id' => $clone->node_id, 'lock_key' => OperationStore::lockKey('instance', $clone->id), 'status' => 'running', 'input' => [], 'state' => []]),
@@ -353,10 +359,128 @@ it('applies every never-sleep rule in a scoped run with a short window', functio
         ->and(reasonOf($decisions, $target))->toBe($reason)
         ->and(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(0);
 })->with([
-    ['default', 'default'], ['nested', 'nested_fleet'], ['never', 'never_sleep'], ['operation', 'busy'], ['task', 'task'],
+    ['never', 'never_sleep'], ['operation', 'busy'], ['task', 'task'],
     ['keep_alive', 'keep_alive'], ['turn_runs', 't3_turn_running'], ['user_waits', 't3_active'], ['unreadable', 't3_unreadable'],
     ['never_watched', 'watch_starting'], ['node_service', 'node_service'],
 ]);
+
+/** The Project's default, idle for two hours and watched for two: it has no T3 server, as every default today. */
+function idleDefault(object $test): Instance
+{
+    $test->default->runtime()->update(['idle_watch_started_at' => $test->now->subSeconds(7_200)]);
+    $test->logs[RuntimeHibernation::accessLogPath(RuntimeHibernation::key($test->default->id))] = $test->now->getTimestamp() - 7_200;
+
+    return $test->default->refresh();
+}
+
+it('puts an idle default to sleep by the clone rule, without reading T3, and says it has no T3 server', function (): void {
+    $default = idleDefault($this);
+
+    $decisions = idleSweep($this)->run(false);
+
+    $sleep = Operation::query()->where('kind', InstanceSleep::Kind)->sole();
+    $decision = collect($decisions)->firstWhere('instanceId', $default->id);
+    expect($default->runtime()->firstOrFail()->t3_port)->toBeNull()
+        ->and(reasonOf($decisions, $default))->toBe('sleep')
+        ->and($sleep->target_id)->toBe($default->id)
+        ->and($this->agentReads)->toBe([])
+        ->and($decision->t3)->toBeNull()
+        ->and($decision->t3Server)->toBeFalse();
+
+    $sleep->forceFill(['status' => 'running', 'state' => ['swamp_run_id' => 'idle-default']])->save();
+    $done = app(DirectOperation::class)->projection($sleep)->apply($sleep->refresh(), ['status' => 'succeeded', 'run_id' => 'idle-default',
+        'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['sleep' => 'frozen', 'swap_subtree' => 0]]);
+    expect($done->result)->toBe(['power_state' => 'stopped', 't3_turn' => 'no_server', 'sleep' => 'frozen', 'swap_subtree' => 0]);
+});
+
+it('keeps a default awake by the same data rules as a clone', function (string $case, string $reason): void {
+    $default = idleDefault($this);
+    match ($case) {
+        'http' => $this->logs[RuntimeHibernation::accessLogPath(RuntimeHibernation::key($default->id))] = $this->now->getTimestamp() - 60,
+        'keep_alive' => Process::query()->forceCreate(['owner_type' => 'instance', 'owner_id' => $default->id, 'name' => 'queue', 'runtime' => 'systemd',
+            'working_directory' => '/srv/workspace', 'status' => 'active', 'keep_alive' => true, 'desired_state' => 'running',
+            'runtime_config' => ['command' => ['/usr/bin/php', 'artisan', 'queue:work']]]),
+        'node_service' => attachNodeService($default),
+        'unwatched' => $default->runtime()->update(['idle_watch_started_at' => null]),
+    };
+
+    expect(reasonOf(idleSweep($this)->run(false), $default))->toBe($reason)
+        ->and(Operation::query()->where('kind', InstanceSleep::Kind)->count())->toBe(0);
+})->with([['http', 'http_active'], ['keep_alive', 'keep_alive'], ['node_service', 'node_service'], ['unwatched', 'watch_starting']]);
+
+it('puts a nested-fleet default and a nested-fleet clone to sleep by the same rule', function (): void {
+    // A nested-fleet Project's runtimes are placed in the nested Incus project at their reservation.
+    $this->default->runtime()->delete();
+    $this->default->delete();
+    $this->node->update(['settings' => [...($this->node->settings ?? []), 'nested_fleet' => true]]);
+    $this->project->forceFill(['nested_fleet' => true])->save();
+    $this->default = Instance::query()->create(['node_id' => $this->node->id, 'project_id' => $this->project->id, 'name' => 'default',
+        'checkout_path' => '/workspace/default', 'root' => 'public', 'status' => 'active', 'first_setup_pending' => false, 'source_is_laravel' => true]);
+    app(InstanceContainer::class)->reserve($this->default, $this->node->refresh())->update(['power_state' => 'running', 'seed_commit' => str_repeat('a', 40)]);
+    $default = idleDefault($this);
+    $clone = idleClone($this, 'clone');
+    expect(InstanceRuntime::query()->whereIn('instance_id', [$default->id, $clone->id])->pluck('incus_project')->unique()->all())
+        ->toBe([InstancePlacement::NestedProject]);
+
+    $decisions = idleSweep($this)->run(false);
+
+    expect(reasonOf($decisions, $default))->toBe('sleep')
+        ->and(reasonOf($decisions, $clone))->toBe('sleep')
+        ->and(Operation::query()->where('kind', InstanceSleep::Kind)->pluck('target_id')->sort()->values()->all())->toBe([$default->id, $clone->id]);
+});
+
+it('judges an Instance without a T3 server by the other rows alone, and keeps a clone with an unreadable server awake', function (): void {
+    $default = idleDefault($this);
+    $clone = idleClone($this, 'clone');
+
+    $decisions = idleSweep($this, agents: [])->run(true);
+
+    expect(reasonOf($decisions, $default))->toBe('sleep')
+        ->and(reasonOf($decisions, $clone))->toBe('t3_unreadable');
+});
+
+it('acts under without_t3 only on Instances without a T3 server, and reads no clone for it', function (): void {
+    $default = idleDefault($this);
+    $clone = idleClone($this, 'clone', watchAge: null);
+
+    $decisions = idleSweep($this)->run(false, scope: ContainerSleepScope::WithoutT3);
+
+    expect(reasonOf($decisions, $default))->toBe('sleep')
+        ->and(reasonOf($decisions, $clone))->toBe('t3_server')
+        ->and($this->agentReads)->toBe([])
+        ->and($clone->runtime()->firstOrFail()->idle_watch_started_at)->toBeNull()
+        ->and(Operation::query()->where('kind', InstanceSleep::Kind)->sole()->target_id)->toBe($default->id);
+});
+
+it('previews every value of the setting from one read, and changes nothing', function (): void {
+    $default = idleDefault($this);
+    $clone = idleClone($this, 'clone');
+    $production = idleClone($this, 'production');
+    $production->runtime()->update(['power_state' => 'stopped']);
+
+    $preview = idleSweep($this)->preview();
+
+    $reasons = static fn (string $value): array => collect($preview[$value])->map(fn (ContainerIdleDecision $decision): string => $decision->decision === 'sleep' ? 'sleep' : $decision->reason)->all();
+    expect(array_keys($preview))->toBe(['off', 'without_t3', 'all'])
+        ->and($reasons('off'))->toBe(['off', 'off', 'off'])
+        ->and($reasons('without_t3'))->toBe(['sleep', 't3_server', 't3_server'])
+        ->and($reasons('all'))->toBe(['sleep', 'sleep', 'asleep'])
+        ->and($this->reads)->toBe(1)
+        ->and($this->agentReads)->toBe([$clone->id])
+        ->and(Operation::query()->count())->toBe(0)
+        ->and($default->runtime()->firstOrFail()->idle_watch_started_at?->getTimestamp())->toBe($this->now->getTimestamp() - 7_200);
+});
+
+it('gives a deployed Instance a full window, then lets it sleep', function (int $deployedAgo, string $reason): void {
+    $default = idleDefault($this);
+    Operation::query()->create(['kind' => 'instance.deploy', 'target_type' => 'instance', 'target_id' => $default->id, 'node_id' => $default->node_id,
+        'status' => 'succeeded', 'input' => [], 'state' => [], 'finished_at' => $this->now->subSeconds($deployedAgo)]);
+
+    $decision = collect(idleSweep($this)->run(true))->firstWhere('instanceId', $default->id);
+
+    expect($decision->decision === 'sleep' ? 'sleep' : $decision->reason)->toBe($reason)
+        ->and($decision->lastDeployAt)->toBe($this->now->getTimestamp() - $deployedAgo);
+})->with([[IdleWindow - 60, 'deployed_recently'], [IdleWindow + 60, 'sleep']]);
 
 it('wires the Conn read of T3 and the Node agent read of the logs into the sweep', function (): void {
     expect(app(NodeFileTimes::class))->toBeInstanceOf(AgentNodeFileTimes::class)

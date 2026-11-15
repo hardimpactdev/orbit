@@ -921,6 +921,8 @@ A converted store replaces the same-commit seed too: an immutable old snapshot c
 
 After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. It retakes the snapshot at the same commit too, so a clone gets the default's current caches and built files. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
+A default sleeps like any other development container: after one idle window with no traffic, the [idle sleep](#sleep-and-wake) freezes it and its memory goes to swap. A visit to its Route, a deployment, or [`instance:wake`](/cli/instance/wake) wakes it. A clone or task copy does not wake it: the copy comes from the seed snapshot, which needs no running container.
+
 #### A retake keeps the seed
 
 A retake never leaves the default without a seed. It takes the new snapshot first, beside the old one. When `seed-<commit>` exists already, the new snapshot waits under `next-<commit>`. Only when the new snapshot exists does the old `seed-<commit>` go, and `next-<commit>` takes its name. Older seeds go last. The seed of a default with an [inner volume](#the-seed-pair) is a pair, and both halves follow the same order.
@@ -1367,9 +1369,36 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
 
-Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap for its own cgroup only (`max`), freezes the container, and then asks the kernel to reclaim its memory. A wake writes 0 again. Pages already in swap come back when they are used. No Incus setting changes.
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, and then asks the kernel to reclaim its memory. A wake writes 0 again to exactly the cgroups the sleep opened. Pages already in swap come back when they are used. No Incus setting changes.
 
-When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM after the reclaim. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`. A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze writes 0 back and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
+**The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
+
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. It records the inner cgroups it opened in `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, one path below the container's cgroup per line, and their count in its result as `swap_subtree`. Each resume by a wake's run, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record.
+
+The sleep makes the record's folder first: `/dev/shm` is empty after a Node's reboot. A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them.
+
+The record is written from what the walk opened before any later step can fail, and a rescue also closes what this run opened when the record could not be written. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
+
+A short-lived unit, such as `systemd-hostnamed.service`, can end while the container sleeps, and its cgroup goes with it; the resume skips that path and never fails on it. In practice only the container's own cgroup and the three inner payload roots matter.
+
+The Node's wake script closes only the container's own cgroup, and changing it would need an `app-dev` converge. So the Gateway skips [the Node's resume](#the-node-resumes-a-frozen-container) for a nested-fleet Instance and for any Instance whose last sleep has `swap_subtree` above 0; those wakes take the run. A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. A plain clone has no inner cgroup with 0, so its record is empty.
+
+Measured on a nested-fleet default on 2026-11-14, before this rule:
+
+| Step | Result |
+| --- | --- |
+| Outer cgroup opened only (the earlier sleep) | 1,531 MiB of anonymous memory stayed in RAM after the reclaim, so every nested sleep would have hit the stop path |
+| Every cgroup with 0 in the subtree opened | Anonymous memory in RAM 0; 78 MiB in RAM; 2.1 GiB in swap, from 4.8 GiB in RAM |
+| Freeze, in total | 3.6 s: pause 0.02 s, two reclaims of 1.8 s and 1.6 s |
+| Resume | 0.03 s |
+| Writing the 4 values back to 0 | 1.2 s |
+| Inner Doctor healthy, 3 agents online | 4.0 s after the resume |
+
+When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM after the reclaim. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`.
+
+A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
+
+A stopped container keeps each Process unit's enablement, which holds its desired state, so its later boot brings back what ran before. A sleep that fails to freeze writes 0 back and removes the marker, and the container serves as before (`instance.container_freeze_failed`).
 
 The runtime's `power_state` is `stopped` for both a frozen and a stopped sleeping container. Each reader treats them alike.
 
@@ -1377,7 +1406,9 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 
 | Part | State |
 | --- | --- |
-| [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for development clones. A default and a nested-fleet Instance do not sleep. A wake of a nested-fleet clone is its [start](#a-stopped-nested-fleet-clone-starts) |
+| [`instance:sleep`](/cli/instance/sleep) and [`instance:wake`](/cli/instance/wake) | Built for every development container: a clone, a default and a nested-fleet Instance. [Nested-fleet wakes](#a-stopped-nested-fleet-clone-starts) differ when the container is stopped |
+| A deployment of a sleeping Instance removes the asleep marker | Built |
+| A clone or task copy of an asleep default | Built: the copy needs no running default |
 | A Route visit wakes the Instance | Built |
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
@@ -1386,11 +1417,20 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
-**The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development clone to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. It acts only while `ORBIT_HIBERNATION_CONTAINER_SLEEP` is on; it is off by default. A clone sleeps only when no row of this table keeps it awake. The sweep checks them in this order, and the first match is the reason it reports:
+**The idle sleep.** The [runtime hibernator](/reference/app-dev-runtime-hibernation#idle-window-and-sweep) puts a development container to sleep after an idle hour, with the same idle window and sweep as a checkout Instance. A clone, a default and a nested-fleet Instance follow the same rule; no list of names or ids exempts one. `ORBIT_HIBERNATION_CONTAINER_SLEEP` chooses which Instances it acts on:
 
-| Reason | The clone stays awake when |
+| Value | The idle sleep acts on |
 | --- | --- |
-| `default`, `nested_fleet`, `not_development` | It is a default, a nested-fleet Instance, or not a development Instance. |
+| `false`, the default, or any value not in this table | No Instance. A value not in this table is logged as an error once, and again after a cache clear |
+| `without_t3` | Only Instances without a T3 server: the runtime records no T3 port. Today these are the defaults |
+| `true` | Every development container |
+
+An Instance sleeps only when no row of this table keeps it awake. The sweep checks them in this order, and the first match is the reason it reports:
+
+| Reason | The Instance stays awake when |
+| --- | --- |
+| `t3_server` | The value is `without_t3`, and it has a T3 server. |
+| `not_development` | It is not a development Instance. |
 | `never_sleep` | Its id is in `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`. |
 | `asleep` | It already sleeps. The sweep does not read it. |
 | `busy`, `task` | It is not active, an Operation is open on it or on its Processes, or a task runs in it. |
@@ -1399,23 +1439,28 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | `http_unreadable` | Its Node does not answer the read of the access logs. |
 | `watch_starting`, `watching` | The sweep has not yet watched it for one idle window. |
 | `http_active` | Its Route's access log changed within the window. |
-| `woke_recently` | A wake of it ended within the window. |
+| `woke_recently` | A wake of it ended within the window; for a nested-fleet clone, also the [start](#a-stopped-nested-fleet-clone-starts) a wake takes. |
+| `deployed_recently` | A deployment of it ended within the window. A release refresh resumes a nested-fleet default; it gets a full window before the next freeze. |
 | `t3_unreadable` | Its T3 server cannot be read. |
 | `t3_turn_running` | A turn runs, or a run waits for a delegated thread or a background task. |
 | `t3_active` | Its newest user message, turn end, or request that waits for the user is within the window. |
 | `next_run` | The run already started five sleeps. |
 
-A running turn is preparing, queued, starting or running. Missing data never puts a clone to sleep.
+The three `t3_` rows apply only to an Instance with a T3 server. An Instance without one, such as a default, has no T3 to read, so the sweep judges it by the other rows alone. A clone whose T3 server cannot be read stays awake, as before. A running turn is preparing, queued, starting or running. Missing data never puts an Instance to sleep.
 
 **The watch.** The first run that acts on a clone records when it began to watch it, in `idle_watch_started_at` of the Instance's runtime. Until one idle window has passed since then, the clone stays awake with `watch_starting` or `watching`. An access log written before the watch, such as the file a migrated Instance kept from its checkout, proves nothing about the time since. A dry run never starts a watch.
 
-A clone without a Route sleeps on the watch, its wakes and T3 alone. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
+A clone without a Route sleeps on the watch, its wakes and T3 alone; an Instance without a Route and without a T3 server sleeps on the watch, its wakes and its deployments. An Instance without a published Route has no Caddy site, so its sleep has no asleep check to verify: it writes the marker and freezes the container. Nothing proxies to it until a Route publishes a site, which renders the check. A Node that does not answer, or a T3 server that cannot be read, keeps the clone awake, and the run says why.
 
 A turn that runs is never cut, whatever its age. A thread that waits for the user keeps the clone awake only while its request is younger than the idle window; the freeze keeps the request, and the user's answer in Conn wakes the clone. A Conn client that is only connected is no activity: Conn keeps a socket open to every server it knows and pings it.
 
 The Gateway reads T3 with the admin session it already holds and renews for each clone: one `GET /api/orchestration/shell` per watched clone, and none for a sleeping clone. It writes nothing in the container. It reads the access logs of all clones on a Node in one call to the Node agent.
 
-Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`. A run starts at most five sleeps; the next run takes the rest. `orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with its decision, its reason and the evidence it used: the watch start, the last HTTP request, the last T3 activity or `turn running`, and the last wake. It changes nothing. `--instance=ID`, repeated, limits a run to those Instances and acts while the switch is off. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
+Each sleep is an `instance.sleep` Operation with `triggered_by` `hibernation-sweep`, and its result says `t3_turn: idle`, or `t3_turn: no_server` for an Instance without a T3 server. A run starts at most five sleeps; the next run takes the rest.
+
+`orbit:runtime-hibernator --dry-run` on the Gateway host lists every container Instance with the evidence it used: the watch start, the last HTTP request, the last T3 activity or `turn running` (`no T3 server` without one), the last wake and the last deployment. It prints the decision and the reason of each row under each value of the setting, `false`, `without_t3` and `true`, and names the value in force. Under `false` every row reads `off`; under `without_t3` a row with a T3 server reads `t3_server`. It changes nothing.
+
+`--instance=ID`, repeated, limits a run to those Instances and acts as under `true`, whatever the value; its dry run says so. `--idle-seconds=N`, at least 60 and only with `--instance`, gives that run its own idle window. A scoped run applies every rule above.
 
 **Compared with the checkout rule.** The [checkout rule](/reference/app-dev-runtime-hibernation) stops only an Instance's Processes; its site keeps serving. The container rule freezes the whole Instance, site and T3 included, and it wakes on a Route visit, from Conn, or by [`instance:wake`](/cli/instance/wake).
 
@@ -1430,7 +1475,7 @@ A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker wri
 
 The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it and its site has a web unit, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request on the Instance's Node, `/dev/shm/orbit/hibernation/app-instance-<id>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
+**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it with `swap_subtree` 0, it is not a nested-fleet Instance, and its site has a web unit, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request on the Instance's Node, `/dev/shm/orbit/hibernation/app-instance-<id>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
 
 The `app-dev` role installs the Node's part: the script `/usr/local/libexec/orbit-instance-wake`, the service `orbit-instance-wake.service` and the path unit `orbit-instance-wake.path`, which starts the service while a request exists. The service runs as root with no capabilities, a read-only file system except the two hibernation folders and the cgroup tree, and no new privileges. It needs root because the Incus socket and the container's cgroup file belong to root; membership of `incus-admin` would give the same power.
 
@@ -1454,9 +1499,9 @@ Measured on a frozen fixture clone before this path: the resume took 0.02 second
 
 | Found | The wake |
 | --- | --- |
-| Frozen, marker | Resumes it, writes `memory.swap.max = 0`, and gives FrankenPHP 10 tries one second apart (about 20 seconds at most). It boots nothing and converges nothing. `wake: resumed` |
-| Frozen, marker; FrankenPHP silent after the resume | Stops it by force, then boots it as below: a visitor would rather wait for a boot than for ever. `wake: restarted_after_resume` |
-| Stopped, marker (after a host reboot, or a sleep that fell back to a stop) | Boots it. `wake: started` |
+| Frozen, marker | Resumes it, closes the swap the sleep opened, and gives FrankenPHP 10 tries one second apart (about 20 seconds at most). It boots nothing; a nested-fleet Instance keeps its inner fleet. `wake: resumed` |
+| Frozen, marker; FrankenPHP silent after the resume | Stops it by force, then boots it as below: a visitor would rather wait for a boot than for ever. `wake: restarted_after_resume`. A nested-fleet Instance is never stopped: the wake fails with `instance.web_unready` |
+| Stopped, marker (after a host reboot, or a sleep that fell back to a stop) | Boots it. `wake: started`. A nested-fleet Instance is never booted by a wake: it fails with `instance.nested_fleet_stopped`, and the marker stays |
 | Running, marker (after a host reboot with `boot.autostart`) | No start and no resume; checks FrankenPHP and removes the marker. `wake: already_running` |
 | Running, no marker | Nothing to do. `wake: already_running`, `marker_found: false` |
 | Frozen, no marker | A defect: the wake resumes it, and its result says `marker_found: false` |
@@ -1469,15 +1514,19 @@ That is the converge's own rule: only names such as `libasound.so.2` count, not 
 
 A second check follows for the same reason. The converge keeps each container's Orbit root CA file current through the Incus file API, frozen containers included, but only a command in the container rebuilds the bundle. When `/etc/ssl/certs/ca-certificates.crt` lacks the root that `/usr/local/share/ca-certificates/orbit-managed-root-ca.crt` holds, the wake runs `update-ca-certificates`. A container without that file skips the check. It is logged as "refreshed" in the run's output and "CA bundle refreshed" in the journal, and it never fails the wake.
 
-Only then does the run wait up to 30 seconds for T3 in a clone: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
+Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
-A destroy removes the marker. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+A destroy removes the marker and the swap record. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 
-**While asleep.** Schedules in the container do not run. At the resume, systemd timers that came due during the freeze run at once. Other Operations that need the running container refuse it with `process.target_inactive` or `schedule.target_inactive`. Env, mail and Node service updates and the task workspace read `power_state`. Process and Schedule work on the Node refuses a container that is not `Running`, and Incus reports a frozen one as `Frozen`.
+**What wakes an Instance.** A visit to its Route, a deployment of it, and [`instance:wake`](/cli/instance/wake). A default with no visitor stays asleep until one of them comes. A clone or task copy of an asleep default does not wake it: the copy comes from the seed snapshot. A deployment that starts or resumes the container removes the asleep marker once its `start` part passed (the container runs and its units are active; there is no web probe), so the Route serves the app again; its result records `power_state` `running`.
 
-A connection held open across a freeze meets the server's idle timeout at the resume, and clients reconnect. A default does not sleep, so a deployment or a clone of a sleeping default does not occur; a deployment's start resumes a frozen container before it converges. A destroy deletes a frozen container with `incus delete --force` and needs no wake.
+The end of a deployment counts as activity, like the end of a wake: the Instance stays awake with `deployed_recently` for one idle window, then sleeps when nothing else keeps it awake.
+
+**While asleep.** Schedules run only while the container runs (decided 2026-11-12): Schedules in the container do not run, and a scheduler or queue Process in a sleeping container waits until the wake. A Process that must keep running gets `keep_alive`, which keeps the whole container awake. At the resume, systemd timers that came due during the freeze run at once. Other Operations that need the running container refuse it with `process.target_inactive` or `schedule.target_inactive`. Env, mail and Node service updates and the task workspace read `power_state`. Process and Schedule work on the Node refuses a container that is not `Running`, and Incus reports a frozen one as `Frozen`.
+
+A connection held open across a freeze meets the server's idle timeout at the resume, and clients reconnect. A deployment's start resumes a frozen container, or boots a stopped one, before it converges. A destroy deletes a frozen container with `incus delete --force` and needs no wake.
 
 **Conn.** The hourly renewal skips a sleeping Instance, so it never records `conn.environment_stopped` for one. A successful wake admits the renewal at once when the Gateway's session ends within 7 days or has ended: the run issues a new session in the container without the old one. Devices then renew their own pairings through the Gateway, with no new pairing by the user.
 
@@ -2499,7 +2548,9 @@ The workspace phase runs after the fleet is ready. When it checks out a branch a
 
 ### A stopped nested-fleet clone starts
 
-A nested-fleet clone does not sleep, and its container does not start at boot (`boot.autostart=false`). A host reboot, an out-of-memory kill or a stop by hand leaves it stopped. A start by hand with `incus start` gives it no Club key and no tunnel `wg-nested`. So [`instance:wake`](/cli/instance/wake) of such a clone starts an `instance.start` Operation instead of a wake. The [start chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/start.mmd) has the steps:
+A sleep freezes a nested-fleet clone, and a wake resumes it with its fleet ([Sleep and wake](#sleep-and-wake)).
+
+Its container does not start at boot (`boot.autostart=false`). A host reboot, an out-of-memory kill or a stop by hand leaves it stopped. A start by hand with `incus start` gives it no Club key and no tunnel `wg-nested`. So [`instance:wake`](/cli/instance/wake) of such a clone starts an `instance.start` Operation instead of a wake: when its last sleep did not freeze it, or a wake since found it stopped (`instance.nested_fleet_stopped`). A start of a clone that a sleep froze resumes it, closes swap and removes the asleep marker. The [start chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/start.mmd) has the steps:
 
 The Gateway admits the start only for an active development clone whose runtime keeps a fleet (`InstancePlacement::keepsFleet`). The request's Idempotency-Key keys the start, and a second call joins the open start.
 
@@ -2513,7 +2564,9 @@ A success records `power_state` `running`. The result also gives `nested_fleet_c
 
 Each step leaves what already runs as it is, so a start of a running copy only checks it and writes its proxy bypass. The start does not wait for T3: T3 starts with the container, as at every boot.
 
-Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-container) for units and login shells. T3 restarts once so that it reads the value, but only when the write changed the drop-ins or the manager environment and this start booted the container. Incus records each start as `last_used_at`. A copy that was already running keeps its T3, because someone may work in it. A nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
+Its fleet step also writes the copy's [proxy bypass](#proxy-settings-in-a-container) for units and login shells. T3 restarts once so that it reads the value, but only when the write changed the drop-ins or the manager environment and this start booted the container. Incus records each start as `last_used_at`. A copy that was already running keeps its T3, because someone may work in it.
+
+A stopped nested-fleet default does not take this path: a wake refuses it with `instance.sleep_unsupported`, and only its deployment starts it. A frozen one wakes by resume, like a clone. The run budget is 1,200 seconds; a clone's fleet start took 91 seconds (Operation 20180).
 
 ### Reset
 
@@ -2713,7 +2766,8 @@ The container runtime adds these codes. The other codes of create and destroy st
 | `instance.create_register_failed` | 502 | A clone's registration step failed: T3 refused a session, or the Gateway's lacks its scopes. The step's report names the `conn.*` code |
 | `instance.database_clone_unsupported` | 422 | A clone names another Database server than the default's, or the default has no database on a server to clone |
 | `conn.environment_asleep` | 409 | A pairing with a sleeping Instance's T3 server |
-| `instance.sleep_unsupported` | 409 | `instance:sleep` of an Instance that is not a development container clone, or `instance:wake` of a nested-fleet Instance |
+| `instance.sleep_unsupported` | 409 | `instance:sleep` or `instance:wake` of an Instance that is not a development container, or `instance:wake` of a nested-fleet default that its last sleep did not freeze |
+| `instance.nested_fleet_stopped` | 409 | A wake found a nested-fleet container stopped. Nothing booted; the marker stays. A clone's next wake takes its start; a default starts by its deployment |
 | `instance.sleep_route_unready` | 409 | `instance:sleep` while Caddy's loaded site of the Instance lacks the asleep check. Nothing changed |
 | `node.instance_bridge_exhausted` | 409 | No `/24` of the fleet range is free for a Node's Instance bridge |
 | `instance.container_nodes_invalid` | 500 | `ORBIT_INSTANCES_CONTAINER_NODES` is not a JSON list of Node ids |

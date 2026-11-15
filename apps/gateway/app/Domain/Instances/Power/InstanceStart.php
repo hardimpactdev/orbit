@@ -27,8 +27,9 @@ use Illuminate\Support\Facades\DB;
 /**
  * The start of a nested-fleet clone (docs/reference/development-containers.md#a-stopped-nested-fleet-clone-starts): `instance:wake`
  * admits it for such a clone instead of a wake. The run starts the container through the start guard, delivers the nested Gateway's
- * Club key into its /run, and runs the clone's fleet start (`fleet_check`, then `fleet_resume` with its Doctor wait). A nested-fleet
- * clone never sleeps, so the start knows no asleep marker; a nested-fleet default starts only through its deployment.
+ * Club key into its /run, and runs the clone's fleet start (`fleet_check`, then `fleet_resume` with its Doctor wait). A wake
+ * takes it for a clone that no sleep froze; a start that leaves the container running removes the asleep marker a sleep left. A
+ * nested-fleet default starts only through its deployment.
  */
 final readonly class InstanceStart implements DirectOperationProjection
 {
@@ -54,7 +55,8 @@ final readonly class InstanceStart implements DirectOperationProjection
             $fleet = app(NestedFleetIntent::class)->forClone($instance, $runtime);
 
             return app(StartOperationAction::class)->execute(self::Kind, 'instance', $instance->id, $instance->node_id,
-                ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'fleet' => $fleet],
+                ['container' => app(InstanceContainer::class)->intent($instance, $runtime), 'fleet' => $fleet,
+                    'asleep_marker' => InstancePower::markerPath($instance)],
                 $caller, $requestId, lockKey: OperationStore::lockKey('instance', $instance->id));
         });
     }

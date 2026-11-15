@@ -1,5 +1,5 @@
 order = 360
-source_sha256 = "b6d14813a466387a329b531a3c7c4f5a9bac312b01c5952fb9393581163fc50d"
+source_sha256 = "75e2045a9e0e1b38e935259a94fcc73f2f0495bab93570f2172e13df2b2e3e39"
 cases = [
   "a normal destroy deletes the container over one pipelined SSH master with the shipped config",
   "migrated sleeping container cleanup keeps retained Git while removing its container, volume, ACL, own rules (while another removal shifts rule numbers), asleep marker, mirror and task base scratch; a retry changes nothing",
@@ -14,6 +14,7 @@ inputs = [
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
   "swamp/ansible/instance-container-destroy.yml",
+  "swamp/ansible/tasks/instance-container-swap.yml",
   "swamp/ansible/requirements.txt",
   "swamp/ansible/requirements.yml",
   "swamp/ansible/shape-gate-requirements.txt",

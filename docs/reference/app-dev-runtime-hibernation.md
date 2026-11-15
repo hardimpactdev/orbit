@@ -46,7 +46,7 @@ The [Node agent](/reference/node-agent#commands) reads activity times, manages a
 
 ## Idle window and sweep
 
-`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker. The same run applies the [idle sleep of development containers](/reference/development-containers#sleep-and-wake) when `ORBIT_HIBERNATION_CONTAINER_SLEEP` is on; it uses the same idle window and sweep interval. The [gateway role convergence](/cli/node/role-add) installs the service and enables the timer; releases leave them unchanged.
+`orbit-runtime-hibernator.timer` runs on the Gateway host every 10 minutes. It reads the last HTTP activity of each Instance: the newer of the Instance's Caddy access log and its awake marker. The same run applies the [idle sleep of development containers](/reference/development-containers#sleep-and-wake) to the Instances that `ORBIT_HIBERNATION_CONTAINER_SLEEP` names: none, only those without a T3 server, or all. It uses the same idle window and sweep interval. The [gateway role convergence](/cli/node/role-add) installs the service and enables the timer; releases leave them unchanged.
 
 Set these values in the Gateway's environment, not an Instance's `.env`. They configure hibernation only; [task-agent effort](/reference/tasks#drivers) uses separate Gateway settings. `ORBIT_TASKS_PROVISIONING_FAILURE_THRESHOLD` counts [task workspace provisioning failures](/reference/tasks#execution-ownership), not wake failures. The repository map that [trusts GitHub feedback](/reference/tasks#trusted-github-feedback), `orbit.tasks.github_reviewers`, also lives in Gateway configuration but changes no hibernation threshold, Process keep-alive setting, or wake behavior. Neither does `ORBIT_TASKS_COPIES_MAX`, which caps nested-fleet [task copies](/reference/tasks#task-copy).
 
@@ -57,8 +57,14 @@ Set these values in the Gateway's environment, not an Instance's `.env`. They co
 | Sweep interval | 600 seconds | `orbit.hibernation.sweep_seconds` | `ORBIT_HIBERNATION_SWEEP_SECONDS` |
 | Wake timeout | 60 seconds | `orbit.hibernation.wake_timeout_seconds` | `ORBIT_HIBERNATION_WAKE_TIMEOUT_SECONDS` |
 | Cold wake timeout | 1,800 seconds | `orbit.hibernation.cold_wake_timeout_seconds` | `ORBIT_HIBERNATION_COLD_WAKE_TIMEOUT_SECONDS` |
-| Container idle sleep | Off | `orbit.hibernation.container_sleep` | `ORBIT_HIBERNATION_CONTAINER_SLEEP` |
+| Container idle sleep | Off | `orbit.hibernation.container_sleep`, the environment value as written | `ORBIT_HIBERNATION_CONTAINER_SLEEP`: `false`, `without_t3` (only Instances without a T3 server, such as defaults) or `true` |
 | Containers that never sleep | None | `orbit.hibernation.container_never_sleep` | `ORBIT_HIBERNATION_CONTAINER_NEVER_SLEEP`, comma-separated Instance ids |
+
+`ORBIT_HIBERNATION_CONTAINER_SLEEP` is one setting with three values. `false`, or no value, puts no container to sleep by itself. `true` lets the idle sleep act on every development container. `without_t3` lets it act only on Instances whose runtime records no T3 server, which today are the Projects' defaults; a clone stays awake with the reason `t3_server`.
+
+Any other value, such as `1` or a typo, counts as `false`: nothing sleeps by itself, and no run fails. The first run that reads it logs one error that names the value; the next runs log it no more until the value changes or the Gateway's cache is cleared, which logs it once again. Each dry run prints the warning.
+
+The dry run prints each value's decisions side by side, so an operator sees what a change would do before making it. A dry run with `--instance` says that the named Instances act as under `true`, as a named run does.
 
 After the idle window, the sweep stops each desired-running Process that is not keep-alive. It keeps `desired_state` as it is and removes the awake marker. When the [Node agent view](/reference/node-agent#gateway-view) is fresh and shows a Process already stopped, the sweep skips it. When an Instance has no desired-running Process without keep-alive, the sweep skips it: it never sleeps and is never pruned. An Instance with no recorded HTTP activity counts as idle, so it sleeps at the first sweep.
 
