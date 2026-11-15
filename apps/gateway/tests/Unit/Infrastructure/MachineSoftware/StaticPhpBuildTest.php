@@ -23,7 +23,7 @@ it('pins the static build of PHP 8.5 with the Node extensions less ffi, and PCOV
         ->and($build->cliExtensions)->toBe(['pcov'])
         ->and($build->url)->toContain("/static-php-{$build->phpVersion}-".substr($build->build, 0, 12).'/')
         // The glibc build is not published yet (ADR 0262): the recipe pins no archive, so the runtime folder holds no php/8.5
-        // until a second pull request records the published SHA-256.
+        // until this pull request records the SHA-256 that a manual workflow run of its branch publishes.
         ->and($build->artifact)->toBeNull();
 });
 

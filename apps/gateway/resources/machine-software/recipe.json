@@ -755,17 +755,6 @@
                 }
             }
         },
-        "pi": {
-            "source": "internal",
-            "version": "23e7198f7c98",
-            "source_commit": "23e7198f7c98",
-            "artifacts": {
-                "amd64": {
-                    "filename": "pi-server-23e7198f7c98-linux-x64",
-                    "sha256": "df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438"
-                }
-            }
-        },
         "pnpm": {
             "source": "artifact",
             "version": "12.11.2",
@@ -1237,7 +1226,6 @@
         "rust-std",
         "clippy",
         "rustfmt",
-        "pi",
         "openssh-server",
         "rsync",
         "bind9-dnsutils",

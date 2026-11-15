@@ -70,6 +70,7 @@ final class ShowProjectCommand extends GatewayCommand
             'Reviewer agent' => $project->taskAgentLabel('reviewer') ?? 'Gateway default',
             ...($project->hasTaskPrMode ? ['Task pull request mode' => $project->taskPrMode ?? 'Gateway default'] : []),
             ...($project->containerServer === null ? [] : ['Container server' => $project->containerServer]),
+            ...($project->agentInstructionsLabel() === null ? [] : ['Agent instructions' => $project->agentInstructionsLabel()]),
             'Task workspace routed' => $project->taskWorkspaceRouted,
             ...($project->defaultAutoDeploy === null ? [] : ['Default auto-deploy' => $project->defaultAutoDeploy]),
             ...($project->reviewAndMerge === null ? [] : ['Review and merge' => $project->reviewAndMerge, 'Merge check' => $project->mergeCheck]),

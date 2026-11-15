@@ -5,4 +5,3 @@
 - { name: Install Deno, ansible.builtin.import_tasks: task-vm-deno.yml }
 - { name: Install Rust, ansible.builtin.import_tasks: task-vm-rust.yml }
 - { name: Install Swamp, ansible.builtin.import_tasks: task-vm-swamp.yml }
-- { name: Install Pi, ansible.builtin.import_tasks: task-vm-pi.yml }

@@ -22,7 +22,7 @@ sequenceDiagram
   %%> - pushes the command code and the runnable proof cases to the branch of the draft PR; no second PR is opened
   %%> - the chart, page, cases, code and proof cases are now in one PR, so a reviewer can check that they match
   %%> Built:
-  %%> - not built: the Swamp prep flow (`operation-task-prep`, stage 1) opened the draft PR as the Orbit App; it is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
+  %%> - not built: the Swamp prep flow of stage 1 opened the draft PR as the Orbit App; it is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
   GH->>CI: Start CI<br/>on the PR merge tree, every push
   %%> What it does:
   %%> - GitHub runs `ci.yml` for the immutable PR merge tree on every push, also while the PR is a draft; there is one CI, and the merge requires its one result

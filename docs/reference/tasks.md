@@ -7,7 +7,7 @@ covers:
   - "apps/gateway/app/Http/{Requests/Tasks/**,Controllers/Api/{TasksController,TaskGroupsController,TaskPullRequestController,TaskInsightsController,TaskSwampRunsController,AgentThreadsController,TaskQuestionsController}.php}"
   - "apps/gateway/app/Console/Commands/{TaskPullRequestGateCommand,TaskPublishWhenDoneCommand,CollectT3MetricsCommand,CollectProblemsCommand,FileProblemsCommand,ArchiveTaskThreadsCommand}.php"
   - "apps/gateway/app/Models/{Task,TaskComment,TaskCheck,TaskQuestion,TaskGitHubReviewConsumption,TaskGitHubReviewObservation,TaskReviewedCommit,AgentThread,JevDecision,ProblemFingerprint,ProblemCollectorState}.php"
-  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{program,provision,assets,lifecycle,publication,check}.ts,tasks/{publish,transcript}.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-idle-save,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-review-round,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
+  - "{apps/gateway/resources/tasks/**,swamp/extensions/behaviors/operations/{task-repository/{assets,lifecycle,publication,check}.ts,tasks/publish.ts,dependency-merge/**},swamp/workflows/{workflow-operation-dependency-merge,workflow-operation-task-provision,workflow-operation-task-publish,workflow-operation-task-pr-ready,workflow-operation-task-pr-merge,workflow-operation-task-check,workflow-task-check-ci}.yaml,swamp/extensions/behaviors/_lib/public_output.ts}"
   - apps/docs/app/{Documentation/DocsImpact.php,Console/Commands/DocsImpactCommand.php}
   - "apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2026_12_31_000000_add_task_vm_publish_error_code,2027_01_04_000000_add_task_insight_fields,2027_01_18_000000_create_task_review_rounds_table,2027_01_20_000000_keep_review_mode_off_subtasks,2027_01_22_000000_run_review_round_as_one_operation,2027_01_31_000000_clear_copied_subtask_token_totals,2027_02_02_000001_add_task_idle_save,2027_02_19_000000_add_task_pr_modes}.php"
 ---
@@ -827,6 +827,8 @@ Orbit writes an untracked `.mcp.json` into the workspace before a reviewer start
 ### Task copy
 
 A new task of a Project whose default Instance is a container, or that has [`nested_fleet`](/reference/projects#nested-fleet-setting) on, gets no task VM. Its workspace is a task copy: a clone of the Project's default Instance, named and branched `task-{id}`, which the task owns from its create. [`task:start`](/cli/task/start#a-task-copy) makes it and [`task:cancel`](/cli/task/cancel) and [`task:complete`](/cli/task/complete) destroy it. A cancel refuses a copy that holds work origin lacks unless the caller discards it, and its result records what the copy held. A check runs in it through the [check phases](/reference/task-instance-workspace#check-phases).
+
+The copy's agents follow the Project's own [agent instructions](/reference/development-containers#agent-instructions) from its Documents. `task:start` reads them before its admission transaction, so a copy keeps the version of its start.
 
 A handoff check in a copy makes no commit for a clean head that an earlier check recorded, so checking a published head again leaves nothing that blocks the cancel.
 
@@ -1807,7 +1809,7 @@ A lost merge reply fails the operation. A fresh admission for the same PR and he
 
 ## Native Pi turns
 
-Pi turns on task VMs, `tasks.turn` with the workflow `operation-task-turn`, are removed with the Pi task loop. A turn runs in a task copy as [`tasks.copy_turn`](/cli/task/turn#in-a-task-copy).
+Pi turns on task VMs (`tasks.turn`) are removed with the Pi task loop, with their workflow. A turn runs in a task copy as [`tasks.copy_turn`](/cli/task/turn#in-a-task-copy).
 
 ### Internal container workspace phases
 

@@ -46,51 +46,6 @@ jobs:
       behaviorName: ${{ ("ansible-input-start-" + inputs.intent.slot.name).split(".").join("-") }}
       methodName: write
       inputs: {intent: '${{ inputs.intent }}', path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'}
-    # Pi is an internal artifact on the Gateway host; the software phase copies it to the guest when the guest copy differs from the pin. A guard that is true skips the step.
-  - name: Fetch the Pi server
-    labels: {role: swamp}
-    writes: true
-    guard: ${{ !inputs.intent.with_pi }}
-    dependsOn:
-    - {step: Write the intent, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: '@swamp/ssh'
-      behaviorName: ${{ ("task-vm-guest-pi-" + inputs.intent.slot.name).split(".").join("-") }}
-      methodName: copy
-      globalArgs:
-        name: ${{ ("task-vm-guest-pi-" + inputs.intent.slot.name).split(".").join("-") }}
-        transport:
-          kind: ssh
-          user: ${{ inputs.intent.converge.pi.source.ssh.target.user }}
-          port: ${{ inputs.intent.converge.pi.source.ssh.target.port }}
-          identityFile: ${{ inputs.intent.converge.pi.source.ssh.identity_file }}
-        hosts:
-        - name: source
-          address: ${{ inputs.intent.converge.pi.source.ssh.target.host }}
-          transport: {hostKeys: '${{ inputs.intent.converge.pi.source.ssh.target.host_keys }}'}
-      inputs:
-        hosts: name:source
-        src: ${{ inputs.intent.converge.pi.source.path }}
-        dst: ${{ "/tmp/orbit-ansible-" + run.id + "/pi-server" }}
-        direction: from
-        timeoutSec: 300
-  - name: Check the Pi server
-    labels: {role: swamp}
-    writes: true
-    guard: ${{ !inputs.intent.with_pi }}
-    dependsOn:
-    - {step: Fetch the Pi server, condition: {type: succeeded}}
-    task:
-      type: behavior
-      behaviorType: command/shell
-      behaviorName: ${{ ("task-vm-guest-pi-check-" + inputs.intent.slot.name).split(".").join("-") }}
-      methodName: execute
-      inputs:
-        run: printf '%s  %s\n' "$ORBIT_SHA" "$ORBIT_RUN/pi-server" | timeout 60 sha256sum -c --quiet
-        env:
-          ORBIT_SHA: ${{ inputs.intent.converge.pi.sha256 }}
-          ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
     # One run, two parts: the host part starts the VM, the converge part reaches it over WireGuard once sshd answers. The playbook input
     # (the inventory with the VM, the pinned keys, the variables) is built in this step, from the `converge` part of the intent.
   - name: Run the Ansible phases
@@ -98,7 +53,6 @@ jobs:
     writes: true
     dependsOn:
     - {step: Write the intent, condition: {type: succeeded}}
-    - {step: Check the Pi server, condition: {type: or, conditions: [{type: succeeded}, {type: skipped}]}}
     task:
       type: behavior
       behaviorType: command/shell
@@ -108,7 +62,7 @@ jobs:
       inputs:
         # A failed run ends in the check below, whose message carries Ansible's error to the Operation.
         ignoreExitCode: true
-        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND" && timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/intent.json" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" -e "pi_path=$ORBIT_RUN/pi-server" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-start.yml"
+        run: timeout 30 python3 "$ORBIT_ANSIBLE/build_vars.py" "$ORBIT_RUN" "$ORBIT_KIND" && timeout 3300 /opt/orbit/ansible/venv/bin/ansible-playbook -i "$ORBIT_RUN/inventory.yml" -e "@$ORBIT_RUN/intent.json" -e "@$ORBIT_RUN/vars.yml" -e "run_dir=$ORBIT_RUN" --tags "$ORBIT_TAGS" "$ORBIT_ANSIBLE/task-vm-start.yml"
         env:
           ORBIT_RUN: ${{ "/tmp/orbit-ansible-" + run.id }}
           ORBIT_ANSIBLE: ${{ steps["Write the intent"].outputs.assets }}

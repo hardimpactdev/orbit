@@ -258,6 +258,10 @@ def main():
     def inside(member, private="", intent=None):
         # `intent`: the checkout's own copy of the intent, so the T3 part beside it never reads a dict that it changes.
         intent = container if intent is None else intent
+        # Only the agent part reads the agent folder's content (development-containers.md#agent-instructions); every other member's one
+        # argument stays without it, beside the Node runtime helper that the workspace and services parts carry.
+        if member != "agent" and "agent_instructions" in intent.get("clone", {}):
+            intent = {**intent, "clone": {k: v for k, v in intent["clone"].items() if k != "agent_instructions"}}
         if member in {"workspace", "services"}:
             # The guest writes the shipped Node runtime helper itself, in this one exec: no Incus file call, whose helper may exit as
             # the request reaches it (docs/reference/development-containers.md#a-failed-clone-phase-names-its-command).

@@ -136,7 +136,7 @@
       hostname "$ORBIT_HOSTNAME"
       systemctl daemon-reload
       # They are ordered after this unit, so they start when it ends.
-      systemctl --no-block enable --now wg-quick@orbit.service orbit-agent.service "$ORBIT_PI_UNIT"
+      systemctl --no-block enable --now wg-quick@orbit.service orbit-agent.service
       install -D -m 0644 /dev/null "$applied"
 - name: Install the identity unit
   ansible.builtin.copy:

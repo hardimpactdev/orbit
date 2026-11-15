@@ -59,13 +59,15 @@ The Pi agent server `apps/pi-server` is removed with its CI check, its Dependabo
 
 No Node enrollment, certificate signing, VPN or worker material and no Process install accepts a `tasks.provision` Operation any more. A Node joins the fleet only through `node.add`.
 
-The machine recipe still pins the Pi build as the tool `pi` of the task VM profile `base`. It goes with the Swamp side of the task VM workflows, which reads it. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed.
+The task VM start installs no Pi server any more. Its fetch and checksum steps, the `pi_path` playbook input, the Ansible task file `task-vm-pi.yml`, the Pi line of the role's end check and the Pi unit of the VM identity are deleted.
+
+The machine recipe pins no Pi build: the tool `pi`, its entry in the task VM profile `base` and its catalog line are deleted, so the recipe identity changed. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed. The `pi` fields of the task VM settings, the Pi unit check of `tasks.provision` and the Pi firewall rules of the boot phase stay with the task VM runtime.
 
 ### What stays
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
 
-The Swamp workflows of the removed kinds stay one release longer, because a rollback by one release still names them. Nothing starts them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
+The Swamp workflows that only the Pi loop ran are deleted. They are the Pi turn, the script, the package install, the idle save, the maintenance run, the prep, the prep fix, the build, the review round and the VM resume. Their child workflows, extensions, playbook and tests go with them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
 
 ## Off in the live fleet
 

@@ -27,6 +27,7 @@ sequenceDiagram
   %%> - the Project's `default` Instance runs in a container on this Node, is active and has a seed snapshot, else `instance.default_missing`; an asleep or stopped default is a valid source: the clone copies the seed snapshot and never wakes it
   %%> - Conn is enabled, and the model router has its guard, else `operation.kind_unavailable`
   %%> - the recipe's agent folder pins the program of the Project's `container_server`, else `project.container_server_unavailable` (409) before any record
+  %%> - before the admission transaction, the Gateway reads the Project's agent instructions, the `agent/` folder of its Documents (development-containers.md#agent-instructions): at most 32 files and 32 KiB of UTF-8 text (no control character but a tab or a line end) with plain skill names, else `projects.agent_instructions_too_large` or `projects.agent_instructions_invalid` (422) before any record; a store failure refuses with the store's own error
   %%> - a database on a Database server clones on the default's server; another server refuses `instance.database_clone_unsupported`
   %%> - a nested-fleet Project: the Node has the nested-fleet switch, else the placement rule refuses
   %%> - a nested-fleet default whose runtime records an inner volume, while a deployment of it is open: `instance.default_seed_in_flight` (409) before any record, since the deployment retakes the two halves of the seed one after the other
@@ -141,7 +142,8 @@ sequenceDiagram
     %%> - the result carries the counts and the first 20 names of the reset and removed paths as `workspace_cleaned`; a clone without the mark keeps the default's tree
     %%> Agent part, then T3:
     %%> - the agent part finds the model environment in place and writes the Claude Code and Codex settings that point at the model forwarder; a copy without the model environment fails the part
-    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the note of the Project type, and writes `/etc/orbit/instance`, owned by root and readable by all; files the copy step wrote are found in place
+    %%> - makes the agent folder `/home/agent/.config/orbit/agent` again from `clone.agent_instructions`, which only this part's intent carries, owned by root and readable by `agent`: `AGENTS.md` (the note of the Project type, then the Project's own text) and the Project's `.skills`; a path out of the folder, or a folder reached through a link, fails the part: `instance.create_agent_failed`
+    %%> - links `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` of `agent` to the folder's `AGENTS.md`, and `~/.claude/skills` and `~/.agents/skills` to its `.skills`, and writes `/etc/orbit/instance`, owned by root and readable by all; files the copy step wrote are found in place
     %%> - the T3 part: a T3 that the copy's boot started is not started again (`timings.t3.at_boot` 1); a T3 that does not run is started here, and one that failed at boot is started once more after `reset-failed`, named `restart:t3`; T3 creates its identity at its first start
     %%> - while T3 starts or runs, T3's own CLI issues the `Orbit Gateway` and `Orbit Swamp` sessions at once, as `agent`; the tokens go only to the run's private folder
     %%> - after T3 answers, the T3 project `/srv/workspace` is added as `agent`; during T3's start that call fails
