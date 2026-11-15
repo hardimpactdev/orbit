@@ -25,9 +25,15 @@ Call `executionCopy(string $vault, string $key, string $value): array{vault:stri
 
 Serve rate-limits requests and WebSocket handshakes per client and answers `429` with `Retry-After`. Its source admits at most 50 new WebSocket connections from one IP address in a fixed minute, for every token together, and names the rest of that minute as `Retry-After`; no serve setting changes it. Every Gateway process shares that budget.
 
-The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts). Each start job opens one connection. Its run-time execution copies and its `workflow.run` share it, and it closes when the start ends: serve streams every event of the run to the socket that started it, and `workflow.run` has no detach. So one start costs one handshake. A clone create costs three: its start, the completion's read of the T3 session, and the completion's start. A request that fails closes its connection, and the next request opens a new one.
+The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts).
 
-An admission copy that serve refuses with `429` waits out `Retry-After` plus one second once, at most 61 seconds, and is pushed again. This applies only in a console process, such as a queue job or the scheduled `vault.sync`. An admission has no start job that could be queued again, and no frame was sent. A web request never waits: its admission fails with `swamp.vault_sync_unavailable`, as does a second refusal.
+Each start job opens one connection. Its run-time execution copies and its `workflow.run` share it, and it closes when the start ends: serve streams every event of the run to the socket that started it, and `workflow.run` has no detach. So one start costs one handshake, plus one for each read on the read token that building its inputs makes. A clone create costs three: its start, the completion's read of the T3 session, and the completion's start. A request that fails closes its connection, and the next request opens a new one.
+
+Serve may drop the shared connection after a copy's reply and before `workflow.run`, for example when it restarts. Then the start cannot prove that serve did not receive its frame, so it stays `swamp.start_uncertain` and is not deferred.
+
+An admission copy that serve refuses with `429` waits out `Retry-After` plus one second once, at most 61 seconds, and is pushed again. This applies only in a console process, such as a queue job or the scheduled `vault.sync`. An admission has no start job that could be queued again, and no frame was sent. A web request never waits: its admission fails with `swamp.vault_sync_unavailable`.
+
+So does a second refusal, a `429` without `Retry-After`, and one whose wait would pass 61 seconds. The wait holds the worker: on the single `operations-prompt` worker, a terminal projection that admits an Operation can delay the projections behind it by up to a minute.
 
 A successful `Swamp direct start` log retains `operation_id`, `outcome` and `duration_ms`, and adds `kind`, `inputs_ms`, `connect_ms`, `send_ms`, `first_event_ms`, `bind_ms`, `broadcast_ms` and `queue_wait_ms`. All measures are non-negative integers. Phase times and the total use a monotonic clock. The six start phases sum to no more than `duration_ms`; the separate `queue_wait_ms` measures Operation creation to start-job handler entry, including admission work before queuing.
 
@@ -160,7 +166,9 @@ The pass has no retry, backoff or per-Operation job. Only one pass runs at a tim
 
 ### Kept read connection
 
-Each PHP process keeps one read connection to serve. Jobs that follow each other share it. Before each queue job, the Gateway closes it when it has been idle for more than 10 seconds: no request was sent and no frame arrived on it in that time. The job then reads on a new connection. Reads within one job always share one connection. The rule lives in `SwampConnection`; it applies to every queue, including the operations worker that runs starts, reconciliation and scheduled-result projection.
+Each PHP process keeps one read connection to serve. Jobs that follow each other share it. Before each queue job, the Gateway closes it when it has been idle for more than 10 seconds: no request was sent and no frame arrived on it in that time. The job then reads on a new connection. Reads within one job always share one connection.
+
+The rule lives in `SwampConnection`; it applies to every queue, including the operations worker that runs starts, reconciliation and scheduled-result projection. `SwampConnection` holds one connection at a time. An execution copy or a start uses the run token, so it closes a kept read connection, and the next read opens a new one.
 
 Serve can close a connection while it sits idle, and PHP cannot see this before the connection is used. A kept connection that sat idle for about a minute is always found closed. The 10-second age drops such a connection before a job uses it, so the job does not wait out the reply deadline first.
 

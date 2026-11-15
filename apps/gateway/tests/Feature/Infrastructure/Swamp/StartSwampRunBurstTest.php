@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
@@ -363,4 +364,27 @@ it('does not fail a start that a duplicate job began while its deferral could no
     app(StartSwampRun::class)->refuse($operation, new ResourceOperationException('swamp.start_enqueue_failed', 'The native workflow start could not be queued.', 503), onlyQueued: true);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and($operation->error_code)->toBeNull();
+});
+
+it('queues a start again when serve refuses the start\'s own connection after its copies were already stored', function (): void {
+    $this->freezeTime();
+    [$operation] = burstCreates(1);
+    $serve = new BurstLimitedServe(limit: 100);
+    app()->instance(WebSocketClient::class, $serve);
+    // The run-time copies are stored and their digests kept, as an earlier attempt leaves them: this start pushes none again.
+    app(DirectOperation::class)->workflowInputs($operation);
+    $stored = count($serve->frames);
+    $serve->limit = 0;
+    $ran = [];
+
+    runDueStarts($ran);
+
+    expect($stored)->toBeGreaterThan(0)
+        ->and(array_slice($serve->frames, $stored))->toBe([])
+        ->and($serve->refused)->toBe(1)
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->state['start_deferrals'])->toBe(1);
+    $pushed = Queue::pushedJobs()[StartAdmittedSwampRun::class];
+    expect(end($pushed)['job']->delay->getTimestamp() - now()->getTimestamp())->toBe(61);
 });
