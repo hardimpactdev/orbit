@@ -15,7 +15,7 @@ The agent receives the title, brief and deliverables of the subtask, then your p
 
 `--role` is `implementer` or `reviewer`. A turn without `--thread` continues the role's thread, `--thread=new` starts a new thread, and `--thread=ID` names the thread the turn continues. A new thread takes its role's model; a continued thread keeps its model.
 
-The role `consult` and `--model` belonged to the turn on a task VM, which is removed with the Pi task loop ([old paths](/reference/old-paths#the-pi-task-loop)). This CLI no longer offers them. A Gateway answers an older CLI that sends either with `validation.failed` (422) on that field.
+The role `consult` and `--model` belonged to the turn on a task VM, which is removed with the Pi task loop ([old paths](/reference/old-paths#the-pi-task-loop)). This CLI does not offer them. A Gateway answers an older CLI that sends either with `validation.failed` (422) on that field.
 
 ### A task that runs in a copy
 

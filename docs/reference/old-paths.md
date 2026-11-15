@@ -41,7 +41,7 @@ The Pi task loop ran on task VMs with the Pi agent server. It is removed with th
 
 `task:prep`, `task:prep-fix`, the build and the review round (`tasks.prep`, `tasks.prep_fix`, `tasks.build`, `tasks.review_round`) are removed. Their routes and MCP tools are gone, and the [gate check](/reference/tasks#gate-check) starts none of them. The rows of `task_review_rounds` stay, and nothing reads them.
 
-The maintenance run, the package install, the repository script, the idle save and the Pi turn (`tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save`, `tasks.turn`) are removed too. The routes `package` and `script` and their MCP tools are gone. `task:turn` runs only the [copy turn](/cli/task/turn#in-a-task-copy); its role `consult` and its `--model` option are gone. The Gateway no longer registers the `pi` agent driver. Project maintenance still admits its groups and their copies, but no maintenance run follows. The columns `idle_saved_commit` and `idle_saved_at` stay, and nothing reads them.
+The maintenance run, the package install, the repository script, the idle save and the Pi turn (`tasks.maintenance`, `tasks.package`, `tasks.script`, `tasks.idle_save`, `tasks.turn`) are removed too. The routes `package` and `script` and their MCP tools are gone. `task:turn` runs only the [copy turn](/cli/task/turn#in-a-task-copy); its role `consult` and its `--model` option are gone. The Gateway registers no `pi` agent driver. Project maintenance still admits its groups and their copies, but no maintenance run follows. The columns `idle_saved_commit` and `idle_saved_at` stay, and nothing reads them.
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
 

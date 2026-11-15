@@ -13,13 +13,16 @@ use UnexpectedValueException;
 
 final class StartTaskTurnRequest extends FormRequest
 {
-    /** @return array<string, list<string>> */
+    /**
+     * The consult role and `model` were options of the Pi turn on a task VM, which is removed (docs/reference/old-paths.md). A turn in
+     * a task copy takes its role's model; an older CLI that sends either gets a validation error on that field.
+     *
+     * @return array<string, list<string>>
+     */
     public function rules(): array
     {
         return [
 
-            // The consult role and `model` were options of the Pi turn on a task VM, which is removed (docs/reference/old-paths.md).
-            // A turn in a task copy takes its role's model; an older CLI that sends either gets a validation error on that field.
             'role' => ['required', 'string', 'in:implementer,reviewer'],
             'prompt' => ['required', 'string', 'max:100000'],
             'thread' => ['sometimes', 'string', 'regex:/\A(?:new|[1-9][0-9]*)\z/D'],
