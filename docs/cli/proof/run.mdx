@@ -30,7 +30,7 @@ The selection list maps the CLI, Gateway, SDK and native execution files for `no
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `--base=SHA` | none | Prove the union selected by every commit after this ancestor through `commit`, on the `commit` tree. Cannot be combined with `--all`. |
-| `--all` | off | Run every case, not only the cases that the commit selects. |
+| `--all` | off | Run every case, not only the cases that the commit selects. A cases file with no case yet is listed as uncovered. |
 | `--report-only` | off | Record reporting intent. Capacity waits and pool eligibility are the same with or without this flag. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
@@ -61,7 +61,7 @@ With `--base`, Orbit first verifies that the full lowercase SHA is an ancestor o
 
 A whole-file selection runs every current case of that file. Narrow selections union case ids, retaining those still present at the tested SHA. Removed files and ids are listed as uncovered with `gone at tested SHA`; they do not fail the proof. The case receipt format stays the same. An equal base and commit selects nothing. Missing or non-ancestor bases are refused; an incomplete history read cannot pass.
 
-When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a cases file, are listed as uncovered in the result and do not fail the run.
+When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a cases file, are listed as uncovered in the result and do not fail the run. So is a cases file that states `cases: []`, however it is selected; see [Choose the cases](/reference/feature-flow#choose-the-cases).
 
 ## The run
 
