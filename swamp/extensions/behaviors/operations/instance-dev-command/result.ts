@@ -35,10 +35,6 @@ export const CreateArgs = z.object({
 });
 
 /**
- * Removes a create's run folder and the copied `t3.json` beside it (either may hold a clone's checked T3 sessions); true when both
- * are gone, also when one never existed. Any other failure leaves them to the cleanup step.
- */
-/**
  * Whether a site step of a clone's publication refused its merge on a Node and left its mark (route-create-site.yml) in the run folder.
  * Both result builders, `finish` and a ready clone's `clone-register`, read it before the run folder goes.
  */
@@ -55,6 +51,10 @@ export async function routeDeferred(intent: Record<string, unknown>, route: stri
     return false;
 }
 
+/**
+ * Removes a create's run folder and the copied `t3.json` beside it (either may hold a clone's checked T3 sessions); true when both
+ * are gone, also when one never existed. Any other failure leaves them to the cleanup step.
+ */
 export async function removeRun(folder: string, t3File?: string): Promise<boolean> {
     let gone = true;
     for (const path of [folder, ...(t3File === undefined ? [] : [t3File])]) {

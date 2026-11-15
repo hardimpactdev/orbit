@@ -129,8 +129,6 @@ function handoverCompletion(Operation $create): Operation
 }
 
 it('ends a clone\'s create at its thread: one transaction records T3 and the baseline, keeps it source_resolved and admits instance.complete', function (): void {
-    // The run's end is recorded to the second and the baseline time is read later: one frozen second keeps them comparable under load.
-    $this->freezeSecond();
     $node = containerDefaultNode();
     $operation = handoverCreate(handoverDefault($node));
     $base = DB::transactionLevel();
@@ -180,9 +178,11 @@ it('ends a clone\'s create at its thread: one transaction records T3 and the bas
         ->and(ConnEnvironment::query()->where('instance_id', $instance->id)->value('admin_session'))->toBe('gateway-session')
         ->and(Route::query()->findOrFail($operation->input['route_id'])->status->value)->toBe('pending')
         ->and(Process::query()->where('owner_id', $instance->id)->pluck('status')->all())->not->toContain(LifecycleStatus::Active)
-        // Only hex object ids and names enter the baseline, and it is older than the create's end, so than any pairing.
+        // Only hex object ids and names enter the baseline. It is recorded in the create's end transaction, before the completion it admits,
+        // so before any pairing; the run's own end time, recorded to the second, comes earlier.
         ->and($runtime->workspace_baseline)->toBe(['heads' => [str_repeat('a', 40)], 'stashes' => [], 'untracked' => ['notes.txt']])
-        ->and($runtime->workspace_baseline_at->lessThanOrEqualTo($operation->finished_at))->toBeTrue();
+        ->and($runtime->workspace_baseline_at->greaterThanOrEqualTo($operation->finished_at))->toBeTrue()
+        ->and($runtime->workspace_baseline_at->lessThanOrEqualTo(handoverCompletion($operation)->created_at))->toBeTrue();
     // One top-level transaction holds the end of the create, the T3 server, the baseline and the completion.
     expect(array_keys($written))->toEqualCanonicalizing(['create ended', 'T3 server', 'baseline', 'admitted instance.complete'])
         ->and(array_unique(array_values($written)))->toHaveCount(1);

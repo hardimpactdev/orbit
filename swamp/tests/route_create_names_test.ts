@@ -36,3 +36,18 @@ Deno.test("a thousand clone creates make at most 16 names per family on each Nod
     assertEquals(new Set(Array.from({ length: 16 }, (_, index) => evaluate(families.site, 100 + index, 9, true))).size, 16);
     assertEquals(evaluate(families.site, 43, 9, null), "route-site-9");
 });
+
+Deno.test("a refused merge marks the folder that both result builders read", () => {
+    // route-create-site.yml writes route-deferred-<node>.json next to ORBIT_INTENT_PATH, which is clone-route's admitted path, which is
+    // clone-route-input's path; finish and clone-register read `folder` (routeDeferred) before the run folder goes.
+    type Task = { inputs?: Record<string, unknown> };
+    const create = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as
+        { jobs: { steps: { name: string; task: Task }[] }[] };
+    const step = Object.fromEntries(create.jobs.flatMap((job) => job.steps).map((s) => [s.name, s.task]));
+    const value = (expression: unknown) =>
+        String(environment.evaluate(String(expression).replace(/^\$\{\{|\}\}$/g, "").trim(), { run: { id: "r-1" }, inputs: {}, steps: {} }));
+    const intent = value(step["clone-route-input"].inputs?.path);
+    assertEquals(String(step["clone-route"].inputs?.admitted).includes('steps["clone-route-input"].outputs.path'), true);
+    assertEquals(String(step["clone-route"].inputs?.merge), "true");
+    for (const builder of ["finish", "clone-register"]) assertEquals(intent.slice(0, intent.lastIndexOf("/")), value(step[builder].inputs?.folder), builder);
+});
