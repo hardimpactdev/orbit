@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\TaskVms;
 
 use App\Infrastructure\AgentCommands\AgentDelivery;
+use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
  * The nested fleet of a task VM (docs/cli/task/vm-image-refresh.mmd): three Incus system containers on the nested network of the VM, a
@@ -52,6 +53,12 @@ final class TaskVmNestedFleet
 
     /** The state of the checkout on the app-dev container. */
     private const array AppDevState = ['apps/gateway/.env', 'apps/gateway/storage', 'apps/gateway/bootstrap/cache'];
+
+    /** Whether a machine with this address is a Node of a nested fleet: a task VM's, or an Instance container's, which has the same layout. */
+    public static function holds(string $address): bool
+    {
+        return IpUtils::checkIp($address, self::Subnet);
+    }
 
     /**
      * The operator end of the fleet's private network: the task VM's address, the hub (the nested Gateway) and the subnet.
