@@ -44,7 +44,7 @@ State-only patches, such as task-host capacity changes, stay synchronous in the 
 
 The same `node:update` path stores the boolean `reboot_hold` column at once, apart from the typed `settings` object. See [fleet reboot holds](/reference/gateway-recovery#fleet-reboot) for their scope, admission time and overdue alerts.
 
-The boolean `image_refresh_hold` column uses the same record-only path. Set it with `orbit node:update NODE --image-refresh-hold`; clear it with `--no-image-refresh-hold`. API and MCP requests use the strict boolean `image_refresh_hold` member. See [task VM image refresh holds](/reference/compute-drivers#refresh-the-base-snapshot) for their scope.
+The boolean `image_refresh_hold` column uses the same record-only path. Set it with `orbit node:update NODE --image-refresh-hold`; clear it with `--no-image-refresh-hold`. API and MCP requests use the strict boolean `image_refresh_hold` member. Nothing reads the hold since the task VM image refresh was removed ([Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)); the field leaves with the task VM settings.
 
 ## Set the apps root
 

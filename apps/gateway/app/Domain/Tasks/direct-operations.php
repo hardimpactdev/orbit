@@ -23,8 +23,11 @@ use App\Domain\Tasks\TaskSyncProjection;
 use App\Domain\Tasks\TaskTurnProjection;
 
 $taskVmKinds = require __DIR__.'/../TaskVms/direct-operations.php';
-// What a task start writes onto its new VM; the image refresh proves its candidate with one.
-$claimCopies = $taskVmKinds['task_vm.image_refresh']['execution_copies'];
+// What a task start writes onto its new VM (docs/cli/task/start.mmd): the slot's identity, and the claim with its Pi token and the Pi
+// models file that holds the fixed model key. The `swamp-proof-club-api-key` alternative was written only by the removed image refresh;
+// the pattern stays as it is until the grants release after the Pi loop (S8), so the grants do not change before then.
+$claimCopies = [['vault' => 'orbit-control-inputs', 'key_pattern' => '^(swamp-proof-club-api-key|task-vm-slot-(wireguard|ssh-host|agent)-[1-9][0-9]*)$'],
+    ['vault' => 'orbit-control-inputs', 'key_pattern' => '^task-vm-pi-(claim|token)-[1-9][0-9]*$']];
 $vmResume = $taskVmKinds['task_vm.resume'];
 
 return ['tasks.maintenance' => ['workflow' => 'operation-task-maintenance', 'projection' => TaskMaintenanceProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'maintenance', 'step' => 'Check the result', 'native' => true, 'captures' => ['maintenance' => ['job' => 'maintenance', 'step' => 'shape', 'field' => 'result_json', 'artifact' => 'output']]]], 'tasks.maintenance_finish' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the end', 'native' => true]], 'tasks.cancel' => ['workflow' => 'operation-task-cancel', 'projection' => TaskCancelProjection::class, 'workflow_inputs' => true, 'terminal_result' => ['job' => 'check', 'step' => 'Check the end', 'native' => true]], 'tasks.provision' => [

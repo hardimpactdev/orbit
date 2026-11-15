@@ -82,7 +82,7 @@ function interleavedSlotClaims(array $claims): array
         // The failed lock attempt is the contention barrier. Commit the holder before admitting the contender;
         // neither a child process nor SQLite's busy handler needs to win a scheduling race to make progress.
         $results = [];
-        foreach ($claims as $index => [$group, $host, $ci]) {
+        foreach ($claims as $index => [$group, $ci]) {
             DB::setDefaultConnection($connections[$index]);
             $db = DB::connection();
             if ($index === 1) {
@@ -90,8 +90,7 @@ function interleavedSlotClaims(array $claims): array
             }
             try {
                 $pool = app(TaskVmSlotPool::class);
-                $task = $group === null ? null : Task::topLevel()->findOrFail($group);
-                $vm = $ci ? $pool->take($task, $host, true) : $pool->take($task, $host);
+                $vm = $pool->take(Task::topLevel()->findOrFail($group), $ci);
                 $results[] = ['host' => $vm->host_node_id, 'slot' => $vm->slot_number];
                 $db->commit();
             } catch (TaskCapacityException) {
@@ -145,10 +144,7 @@ it('serializes independent SQLite claims', function (string $mode): void {
     foreach ([1, 2] as $number) {
         $groups[] = Task::query()->create(['project_id' => $project->id, 'title' => 'Claim '.$number, 'brief' => 'Claim', 'status' => TaskGroupStatus::Todo])->id;
     }
-    $claims = $mode === 'refresh' ? [[null, $nodes[0]->id, false], [$groups[1], null, true]]
-        : [[$groups[0], null, $mode === 'ci'], [$groups[1], null, $mode === 'ci']];
-
-    $results = interleavedSlotClaims($claims);
+    $results = interleavedSlotClaims([[$groups[0], $mode === 'ci'], [$groups[1], $mode === 'ci']]);
 
     expect($results)->toBe([['host' => $nodes[0]->id, 'slot' => 1], ['refused' => true]]);
-})->with(['task', 'ci', 'refresh']);
+})->with(['task', 'ci']);

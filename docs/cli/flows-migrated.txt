@@ -54,7 +54,6 @@ route.target_set
 route.update
 schedule.install_instance_definitions
 schedule.run
-task_vm.hub_converge
 task_vm.resume
 tasks.check
 tasks.dependency_merge

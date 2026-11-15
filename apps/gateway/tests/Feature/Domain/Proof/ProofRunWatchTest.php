@@ -6,22 +6,12 @@ use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
-use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmCapacity;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmRuntime;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Queue;
 
@@ -160,59 +150,6 @@ it('leaves a run alone that Swamp may have accepted: its start is uncertain, and
 
     Queue::assertNotPushed(CancelProofGroup::class);
     expect($uncertain->refresh()->status)->toBe(OperationStatus::Running)->and($proof->refresh()->status)->toBe(OperationStatus::Running);
-});
-
-/** A failed run of a proof whose group is still running, as a task VM run left it. */
-function watchFailedGroup(Operation $proof, string $command = 'firewall:allow'): array
-{
-    $group = Task::query()->create(['title' => 'Proof '.$command, 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
-    $run = watchRun($proof, $command, OperationStatus::Failed, 'proof.cases_failed', started: true);
-    $run->forceFill(['target_id' => $group->id, 'input' => [...$run->input, 'group_id' => $group->id]])->save();
-
-    return [$run, $group];
-}
-
-describe('a failed task VM run', function (): void {
-    beforeEach(fn () => Carbon::setTestNow('2026-11-07 10:00:00'));
-    afterEach(fn () => Carbon::setTestNow());
-
-    // The keep of a failed run's VM (`proof:run --keep-failed`) is removed: the watch asks no cancel for a keep any more.
-    it('asks no cancel for a run that recorded a kept VM whose time is up', function (): void {
-        Queue::fake();
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        [$run, $group] = watchFailedGroup($proof);
-        $run->forceFill(['result' => ['kept' => ['vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T09:00:00Z', 'cancel_requested_at' => null]]])->save();
-
-        app(ProofRunWatch::class)->sweep();
-
-        Queue::assertNotPushed(CancelProofGroup::class);
-        expect($run->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
-    });
-
-    it('counts the VM of its group against the capacity of its host until the group is cancelled', function (): void {
-        $node = watchNode();
-        $proof = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [, $group] = watchFailedGroup($proof);
-        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-600', 'wireguard_ip' => '10.44.0.150',
-            'state' => TaskVmState::Ready, 'size' => TaskVmSize::Normal]);
-
-        expect(TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus)->count())->toBe(1);
-    });
-
-    it('counts a VM that failed to provision, which holds the CPU and the memory of its host, and counts every failed VM until deletion', function (): void {
-        $node = watchNode();
-        $proof = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [, $group] = watchFailedGroup($proof);
-        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
-            'state' => TaskVmState::Failed, 'capacity_pool' => 'ci', 'size' => TaskVmSize::Normal]);
-        $other = Task::query()->create(['title' => 'Another group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Failed]);
-        TaskVm::query()->create(['group_id' => $other->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-854', 'wireguard_ip' => '10.44.0.152',
-            'state' => TaskVmState::Failed, 'capacity_pool' => 'ci', 'size' => TaskVmSize::Normal]);
-        $host = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB', ciPlaces: 6);
-        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true, runtime: TaskVmRuntime::Vm)[$node->id];
-
-        expect(TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus)->pluck('name')->all())->toBe(['tvm-853', 'tvm-854'])->and($free())->toBe(4);
-    });
 });
 
 it('leaves an operator proof in task admission to its capacity budget instead of marking its child lost', function (): void {

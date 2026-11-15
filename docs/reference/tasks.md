@@ -154,7 +154,7 @@ Early in the workspace run, beside the clone credential, a step asks the Gateway
 
 Each captured Project setup command runs in order as `env -C <checkout> … /bin/bash -lc <command>`, as the VM's managed user, with its own timeout. Setup receives empty `ORBIT_SEED_PATH` and `ORBIT_SEED_COMMIT`, `COMPOSER_NO_INTERACTION=1`, `ORBIT_CHECK_PROCESSES=1` and `COMPOSER_CACHE_DIR`. The checkout's `.env` is not exported into its environment; tools read it themselves. The command's output never reaches native history; the source run keeps a redacted tail of at most 4 KiB per command ([command output](#keep-command-output-out-of-run-history)). For the proof Project, the [proof club credential](/reference/gateway-environment) reaches the VM on SSH stdin of one more exec; no script runs there either.
 
-Each shared task VM host keeps one Large VM place for its refresh candidate proof. CI-only hosts admit only their own refresh proofs. A [`proof:run`](/cli/proof/run#the-run) never takes a VM place: it runs in copies. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
+No refresh candidate proof takes a task VM CI place: the refresh is removed. A [`proof:run`](/cli/proof/run#the-run) never takes a VM place: it runs in copies. Task starts, prep, builds and review rounds never take it, even when it is idle. See [Place task VMs](/reference/compute-drivers#place-task-vms) for the budget units and place numbers.
 
 Admission captures the workspace's runtime with the same actions as `instance:create`. A Project that serves a web root with `task_workspace_routed` on gets a private Route on the development Cluster. Development Process definitions become Instance Processes. Schedule definitions are production-only ([ADR 0215](/decisions/0215-start-development-processes-from-project-definitions)), so a workspace gets none. The guest's host key is unknown at admission, so the Gateway captures the guest's SSH targets with `host_keys: null`.
 
@@ -1824,7 +1824,7 @@ The orchestrator owns the prompt, gates, budgets, and assistance. The turn opera
 
 An external orchestrator needs the same task VM and workspace as the other keyed operations, without starting a baseline or an agent. Provision shares the workspace provisioner and stops at a usable workspace. One operation hold per group keeps later task effects from overlapping. Capacity waits retain the reservation and release the operation worker; configuration and VM errors end the group instead of starting a Gateway retry policy. Clearing the reservation on cancellation lets existing cleanup own removal.
 
-That VM is always large: the admission of the refresh passes the size to `TaskProvisionIntent`, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#apply-and-check-the-nested-fleet) page has the steps.
+That VM is always large, so no Project size list decides it. The [compute drivers](/reference/compute-drivers#apply-and-check-the-nested-fleet) page has the steps.
 
 ### An optional, generic extension
 

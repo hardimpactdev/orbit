@@ -32,7 +32,7 @@ final readonly class TaskBuildIntent
      * A prep group whose spec is done and whose build has not started: its only subtask is the completed spec subtask, a prep run
      * succeeded, and no build was admitted. Publication leaves the group `waiting_for_review`. A group with a build subtask never matches, whatever its status.
      */
-    public static function waiting(Task $group, ?int $admission = null): bool
+    public static function waiting(Task $group): bool
     {
         $subtasks = $group->tasks()->get();
         $runs = static fn (string $kind) => Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)->where('kind', $kind);
@@ -40,7 +40,7 @@ final readonly class TaskBuildIntent
         return in_array($group->status, [TaskGroupStatus::WaitingForReview, TaskGroupStatus::Running], true)
             && $subtasks->count() === 1 && $subtasks->first()?->status === TaskStatus::Completed
             && $runs(OperationKinds::TasksPrep)->where('status', OperationStatus::Succeeded)->exists()
-            && ! $runs(OperationKinds::TasksBuild)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting, OperationStatus::Succeeded])->when($admission !== null, static fn ($query) => $query->whereKeyNot($admission))->exists();
+            && ! $runs(OperationKinds::TasksBuild)->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting, OperationStatus::Succeeded])->exists();
     }
 
     public function start(Task $group, string $head, string $caller, ?string $request): Operation

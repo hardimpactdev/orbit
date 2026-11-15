@@ -8,7 +8,7 @@ use App\Infrastructure\AgentCommands\AgentDelivery;
 use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
- * The nested fleet of a task VM (docs/cli/task/vm-image-refresh.mmd): three Incus system containers on the nested network of the VM, a
+ * The nested fleet of a task VM (docs/reference/compute-drivers.md#the-base-vm-and-its-snapshot): three Incus system containers on the nested network of the VM, a
  * Gateway with its own Swamp, and the app-dev and app-prod Nodes it leads. The fleet phase of the common converge
  * (swamp/ansible/tasks/task-vm-fleet.yml) builds it from stock Ubuntu once, on a base VM that has none. The records of the nested Gateway
  * name these addresses and MACs, so a built fleet keeps them.

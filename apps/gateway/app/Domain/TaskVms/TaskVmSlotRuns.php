@@ -32,12 +32,12 @@ final readonly class TaskVmSlotRuns
         private TaskVmConvergeInput $converge, private TaskVmPromotedImage $images) {}
 
     /**
-     * Mints the claim's Pi token and renders the intent of a task start from `$snapshot` (the host's recorded base snapshot,
-     * or the new one a refresh proves) at `$commit`, with the task branch `$branch`. Call it in the admission transaction.
+     * Mints the claim's Pi token and renders the intent of a task start from the host's recorded base snapshot at `$commit`, with the
+     * task branch `$branch`. Call it in the admission transaction.
      *
      * @return array{intent:array<string,mixed>,execution_secrets:array<string,mixed>}
      */
-    public function claim(TaskVm $slot, ?string $branch, string $commit, ?string $snapshot = null): array
+    public function claim(TaskVm $slot, ?string $branch, string $commit): array
     {
         $this->route->assertReady();
         $slot->update(['pi_token' => bin2hex(random_bytes(32))]);
@@ -48,9 +48,7 @@ final readonly class TaskVmSlotRuns
         $secrets = $token."\n".self::piModelsFile($this->route->origin(), $this->settings->piModels, $this->route->key());
         $host = $slot->hostNode ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its host.', 409);
         $location = $this->settings->host($host->id);
-        // A refresh proves its new snapshot before the Gateway records it; any other start copies the recorded one.
-        $current = $snapshot === null ? $this->images->snapshot($host, $location)
-            : ['vm' => TaskVmPromotedImage::baseVm($host), 'seed' => TaskVmPromotedImage::baseSeed($host), 'snapshot' => $snapshot, 'recipe_identity' => null];
+        $current = $this->images->snapshot($host, $location);
         $converge = $this->converge->for($host, $commit, $branch, $slot->node);
         $resources = $slot->size->resources();
         $target = $this->target($slot);
@@ -66,7 +64,7 @@ final readonly class TaskVmSlotRuns
                 'guest_ssh' => $this->ssh->forNode($slot->node ?? throw new ResourceOperationException('task_vm.slot_refused', 'A task VM needs its Node.', 409)),
                 'converge' => $converge['converge'],
                 // The Pi server is fetched only when the base's recipe is older than the release's, so that the converge installs the new one.
-                'with_pi' => $snapshot === null && $current['recipe_identity'] !== $converge['recipe_identity'],
+                'with_pi' => $current['recipe_identity'] !== $converge['recipe_identity'],
             ],
             // One flat map of vault references, as every Operation's secrets are.
             'execution_secrets' => [...$this->identity->secrets($slot),

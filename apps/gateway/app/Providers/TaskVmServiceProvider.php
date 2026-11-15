@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace App\Providers;
 
-use App\Console\Commands\ListTaskVmImageBuildsCommand;
-use App\Console\Commands\PrepareTaskVmHubCommand;
 use App\Console\Commands\ResumeTaskVmCommand;
-use App\Domain\TaskVms\TaskVmProvider;
 use App\Domain\TaskVms\TaskVmSettings;
-use App\Infrastructure\TaskVms\IncusTaskVmProvider;
 use App\Infrastructure\TaskVms\TaskVmStepClock;
 use Illuminate\Support\ServiceProvider;
 use ReflectionClass;
@@ -22,7 +18,6 @@ final class TaskVmServiceProvider extends ServiceProvider
         // Read Node-owned host intent on first use, once per request or queued job.
         $this->app->scoped(TaskVmSettings::class, static fn (): TaskVmSettings => new ReflectionClass(TaskVmSettings::class)
             ->newLazyProxy(static fn (): TaskVmSettings => TaskVmSettings::fromConfig()));
-        $this->app->bind(TaskVmProvider::class, IncusTaskVmProvider::class);
         // Scoped, so each queued job starts with a stopped clock and no baked programs.
         $this->app->scoped(TaskVmStepClock::class);
     }
@@ -30,8 +25,6 @@ final class TaskVmServiceProvider extends ServiceProvider
     public function boot(): void
     {
         $this->commands([
-            ListTaskVmImageBuildsCommand::class,
-            PrepareTaskVmHubCommand::class,
             ResumeTaskVmCommand::class,
         ]);
     }

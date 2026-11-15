@@ -88,11 +88,6 @@ final class OperationBudgetTable
         'node.prepare_php_packages' => 3600,
         'node.remove' => 2100,
         'node.role_add' => 2700,
-        // Provisional. Basis: the first refresh of a new host, the longest: the first boot of its base VM (600 s at its bound), the
-        // converge from stock with the build of the nested fleet (5,400 s at its bound; the standalone fleet build, since removed, took 1,840 s as op 11816), the
-        // snapshot and the task start that proves it (tasks.provision, 3,900 s at its bound), plus margin. A refresh of a built base takes
-        // about two minutes (ops 13052, 13053). Replace with the 14-day p95 after the first successes.
-        'task_vm.image_refresh' => 10800,
         // No run yet. Basis: the VM step of tasks.provision (about 160 s, op 11752), "Converge once" (about 60 s at the pins, 3,300 s at
         // its bound) and the stop (130 s at its bound), rounded up to one hour. Replace with the 14-day p95 after the first successes.
         'tasks.provision' => 3900,

@@ -9,8 +9,8 @@ use App\Models\Node;
 use App\Models\TaskVmImageBuild;
 
 /**
- * The base a host's task VMs start from: the snapshot of its base VM that its latest refresh recorded
- * (docs/cli/task/vm-image-refresh.mmd), which a task start copies. Only a refresh makes a base. The output of the retired recipe image
+ * The base a host's task VMs start from: the snapshot of its base VM that its latest refresh recorded,
+ * which a task start copies. Only the removed refresh made a base. The output of the retired recipe image
  * build is an image, not a snapshot, so it is never a base and never replaces the snapshot.
  */
 final readonly class TaskVmPromotedImage
@@ -65,12 +65,6 @@ final readonly class TaskVmPromotedImage
         $base = $this->forHost($host, $location);
 
         return ['vm' => self::baseVm($host), 'seed' => self::baseSeed($host), 'snapshot' => $base['snapshot'], 'recipe_identity' => $base['recipe_identity']];
-    }
-
-    /** Withdraws the host's recorded base of `$runtime`: no start copies it, and the next refresh of that runtime builds it as on a new host. */
-    public function withdraw(Node $host, TaskVmRuntime $runtime): void
-    {
-        TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('runtime', $runtime)->whereNotNull('promoted_at')->update(['promoted_at' => null]);
     }
 
     /** The host's latest promoted refresh of `$runtime`. A promoted image of the retired build is skipped, so it never replaces the base snapshot. */

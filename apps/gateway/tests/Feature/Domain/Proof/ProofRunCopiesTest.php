@@ -372,6 +372,20 @@ describe('proof:run in copies: the start waits for the copy', function (): void 
             ->and(collect($run->result['cases'])->pluck('verdict')->unique()->all())->toBe(['unrun']);
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     });
+
+    // A held run admitted before the task VM proof path was removed carries no copy: nothing can start it, so it fails like a run
+    // whose copy is gone, instead of being released to a VM workflow.
+    it('fails a held run that is not in a copy, with its cases unrun, and cancels its group', function (): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        app(OperationStore::class)->change($run, ['input' => [...$run->input, 'copy' => false],
+            'state' => [...($run->state ?? []), 'proof_child_start' => ['not_before' => now()->subSecond()->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
+
+        expect(app(ProofCopies::class)->state($run->refresh()))->toBe('failed')
+            ->and(app(ProofChildStarts::class)->release($run))->toBeFalse();
+        expect($run->refresh()->status)->toBe(OperationStatus::Failed)->and($run->error_code)->toBe(ProofCommandProjection::RunFailed);
+        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
+    });
 });
 
 describe('proof:run in copies: when a copy will never be ready', function (): void {

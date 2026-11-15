@@ -115,7 +115,7 @@ sequenceDiagram
     Note over GW: Save the records
     %%> What it does:
     %%> - saves the name, platform, LAN address, reboot hold, image refresh hold or task VM host settings at once when no apps preparation or task-host input withdrawal is needed; no Node is contacted
-    %%> - `--image-refresh-hold` and `--no-image-refresh-hold` store the image refresh hold; every Node read shows it; the next refresh admission respects it
+    %%> - `--image-refresh-hold` and `--no-image-refresh-hold` store the image refresh hold; every Node read shows it; nothing reads it since the task VM image refresh was removed
     %%> - `--reboot-hold=true` or `false` saves a boolean column; every Node read shows it; the next fleet reboot admission freezes it
     %%> - a new LAN address takes effect where Orbit next renders it; a Node on the hub's private network moves to the hub's LAN endpoint at its next `node:converge`
     %%> Skipped:

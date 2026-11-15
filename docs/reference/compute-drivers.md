@@ -3,7 +3,7 @@ title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
   - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
@@ -441,11 +441,11 @@ A host may have a [`containers` setting](/reference/node-settings#task-container
 
 Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
-A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which each host refreshes to the same recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Task VMs run only on the Incus hosts Beast and Shark. When neither host has capacity, the group waits.
+A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which the removed base refresh converged to the recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Task VMs run only on the Incus hosts Beast and Shark. When neither host has capacity, the group waits.
 
 The host's image, instance-name, and host-wide resource inventories use the typed agent commands `incus.images`, `incus.instances`, and `incus.inventory`. Rust validates complete Incus output and returns fingerprints, aliases, and resource names. Instance-name reads first prove that the configured project exists; a missing project cannot count as an empty host. Host-wide inventory includes every project and storage pool so the Gateway can compare it with recorded ownership. These reads take no mutation lock. Invalid or incomplete output refuses with `task_vm.invalid_host_output`; a failed Incus call returns `task_vm.host_command_failed`.
 
-The first phase of every base refresh prepares its host through Ansible. It validates existing storage, project network scope, and bridge address before changing them, then converges the pool, project, bridge, ACL, profile, stock image and forwarding rule. The agent observes only; it does not prepare hosts.
+The first phase of every base refresh prepared its host through Ansible; the refresh is removed, and this section says what it did. It validates existing storage, project network scope, and bridge address before changing them, then converges the pool, project, bridge, ACL, profile, stock image and forwarding rule. The agent observes only; it does not prepare hosts.
 
 `incus.volumes` reads the custom volumes in the configured project and pool. Swamp owns volume changes through keyed Operation children; the Gateway keeps volume ownership and inventory reads.
 
@@ -678,35 +678,7 @@ Doctor does not inspect the Node of a `parked` task VM, because the VM is stoppe
 
 ### Report strays
 
-Doctor reports what Orbit does not own on a task VM host, and the records that should be gone. It never changes any of it: the operator decides. It reports one finding per stray in the host's `node` family. Builders and volumes that the image builds left behind are strays now, and the operator removes them.
-
-A **stray instance** is an Incus instance in any project of the host that is none of these:
-
-- a task VM `tvm-<number>` in the host's project, which the [sweep](#sweep-task-vm-hosts) checks against its row;
-- a retained base image builder `tvm-image-<build id>` or smoke VM in the host's project (see [the sweep rules](#sweep-task-vm-hosts));
-- an entry of the host's `operator_owned` list.
-
-A **stray volume** is an Incus custom volume in any project and pool of the host that is none of these:
-
-- a task VM's clone of the topology seed, `tvm-<number>-topology-seed`, in the host's project and pool;
-- the [topology seed](#the-base-vm-and-its-snapshot) `orbit-topology-seed-<12 hex>` of an image that the host's project keeps, in its project and pool;
-- a seed under construction of such an image: `-new`;
-- an entry of the host's `operator_owned` list.
-
-The audit lists every project with `incus query /1.0/instances?all-projects=true`, and the custom volumes of every storage pool with `incus query /1.0/storage-pools/<pool>/volumes/custom?all-projects=true`. Doctor reports every pool. Images, networks, and profiles are not part of it. A host whose list fails reports `node.task_vm_inspection_failed`.
-
-A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [release](#release-a-task-vm) of the group removes such a VM within minutes, so a stray record means that release is stuck.
-
-A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable.
-
-| Code | Kind | Meaning |
-| --- | --- | --- |
-| `node.task_vm_stray_instance` | drift | A stray instance, observed as `<project>/<name>` |
-| `node.task_vm_stray_volume` | drift | A stray volume, observed as `<project>/<pool>/<name>` |
-| `node.task_vm_stray_record` | drift | A stray record, observed as the task VM name and its state |
-| `node.task_vm_stray_node` | drift | A stray Node |
-
-To clear a finding, delete the stray after you check it, or add an operator-owned guest to `operator_owned`. For a stray record, cancel or complete its group, or destroy the VM. For a stray Node, remove the Node with `orbit node:remove`.
+Doctor reports no strays on a task VM host. Its host audit had no caller after the task VM runtime was removed, and it is deleted. The codes `node.task_vm_stray_instance`, `node.task_vm_stray_volume`, `node.task_vm_stray_record` and `node.task_vm_stray_node` are never reported; the operator lists a host with `incus list --all-projects` instead.
 
 ### States
 
@@ -749,23 +721,11 @@ Admission captures live VM names and the highest allocated VM and build IDs befo
 
 Swamp runs task VM effects through recorded Operations. Each effect fixes its host, guest identity and command input before execution. The Gateway admits the effect and requires a matching successful command receipt before recording completion. A retry uses the same Operation and effect key. A lost reply does not authorize a second VM or a different target.
 
-`IncusTaskVmProvider` exposes observations only: the power of a VM. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`; no provider class creates, starts or deletes a VM.
+No provider class is left in the Gateway: the observation provider and its host reader had no caller and are deleted. A task start copies the base snapshot with the Ansible phases of `task-vm-host.yml`.
 
-A [medium VM](#incus-provider) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. Before each base VM start, the refresh converges `raw.qemu.conf`. Its `[boot-opts]` keys `menu = "on"` and `splash-time = "0"` tell OVMF to skip its 3 s boot menu wait. The snapshot and every task copy inherit that config. This applies to existing bases too; setting the key only at creation leaves an existing base with the wait. GRUB already has a zero timeout in the stock image.
+A [medium VM](#incus-provider) gets `limits.cpu=4`, `limits.memory=8GiB`, and a 40 GiB root disk instead, and a large VM `limits.cpu=6`, `limits.memory=12GiB`, and a 60 GiB root disk. A task copy inherits the boot config of its base snapshot.
 
-A medium or large VM holds test Nodes, so it boots with a clone of the [topology seed](#the-base-vm-and-its-snapshot) of its `image_fingerprint`:
-
-1. When the volume `tvm-<id>-topology-seed` is missing, create copies the seed `orbit-topology-seed-<12 hex>` to that name. On ZFS the copy is a clone. It uses only what the VM writes.
-2. A retried create finds the clone and copies nothing.
-3. The launch adds the clone as the disk device `topology-seed` in the `devices` of the instance YAML on stdin, beside its `config`.
-
-When the host has no seed for the VM's base image, create fails with `task_vm.topology_seed_missing`, and nothing launches. A normal VM gets no clone. The [claim gate](#claims-copy-the-base-snapshot) needs a recorded base snapshot, which carries its seed, so a claimed VM always finds one.
-
-When the launch fails and the project has no `orbit-task-base` alias, create fails with `task_vm.base_image_missing`. No refresh can rebuild the base any more (see [Refresh the base snapshot](#refresh-the-base-snapshot)). Orbit never falls back to the stock image: a VM from it has no `openssh-server`, so it cannot enroll.
-
-Create, start, stop, and delete are idempotent by name. A running VM counts as created and started, a stopped or absent VM counts as stopped, and an absent VM counts as deleted. Stop waits up to 120 seconds for the guest to shut down, and then stops the VM with force.
-
-Create starts a VM that exists but is stopped, and fails with the `incus start` error when it cannot. A launch that reports an error counts only when the VM runs afterwards. Otherwise create fails with the launch error. A delete that reports an error counts when the VM is gone. The claim checks `task_vms.enabled` before it allocates a VM. The jobs of an existing row use the provider whatever `enabled` says, so Orbit still destroys task VMs after you turn them off.
+A medium or large VM boots with a clone of the [topology seed](#the-base-vm-and-its-snapshot) of its base, which the claim's recorded base snapshot carries.
 
 ### Incus LTS packages and upgrades
 
@@ -963,7 +923,7 @@ Restore the prior Gateway release with its loader and recipe, and select its ret
 
 ### Prepare an Incus host
 
-Every base refresh starts with the shared `host-prepare` Ansible phase. It checks existing resources before changing them. A missing pool is created from a new `zfs_dataset` when configured; an existing dataset is refused because Incus takes ownership of its source. Without a dataset, Incus creates a ZFS pool on its own loop file, sized by `pool_size` (default `640GiB`). A leftover loop file or symlink at `/var/lib/incus/disks/<pool>.img` is refused untouched, because Incus would truncate it. An existing pool must use ZFS, and a configured dataset must match its source. Existing pools are never resized or replaced.
+Every base refresh started with the shared `host-prepare` Ansible phase (the refresh is removed). It checks existing resources before changing them. A missing pool is created from a new `zfs_dataset` when configured; an existing dataset is refused because Incus takes ownership of its source. Without a dataset, Incus creates a ZFS pool on its own loop file, sized by `pool_size` (default `640GiB`). A leftover loop file or symlink at `/var/lib/incus/disks/<pool>.img` is refused untouched, because Incus would truncate it. An existing pool must use ZFS, and a configured dataset must match its source. Existing pools are never resized or replaced.
 
 On a host whose pool source is a regular file, this phase caps the host-wide ZFS ARC at 2 GiB, both now and after reboot. That is about 6.6% of a 30.24 GiB host and leaves room for databases and other services. The phase does not change ARC settings on native-ZFS hosts, including an existing native pool with no `zfs_dataset` setting. It installs the ZFS userspace tools when needed and loads the kernel module before creating a pool. Then it sets up these parts:
 
@@ -982,7 +942,7 @@ The phase takes these values from the host Node's typed `settings.task_vms`. See
 
 Orbit reserves bridge names that start with `orbittask`. Every such bridge must carry its egress ACL, because the ufw rule accepts forwarded traffic from all of them. Only the shared host preparation phase creates these bridges, and it attaches the ACL at creation. Never create an `orbittask` bridge in another way.
 
-The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Low-level VM config is allowed for memory reporting.
+The restrictions forbid privileged and nested containers, host devices, backups, and every network except the task bridge. Snapshots are allowed because the host's base VM snapshot is the base of every task start ([The base VM and its snapshot](#the-base-vm-and-its-snapshot)). Only a client of the host's Incus API can take a snapshot; a task VM reaches only its guest socket, which cannot. Low-level VM config is allowed for memory reporting.
 
 The dropped egress ranges are `10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `169.254.0.0/16`, `100.64.0.0/10`, `224.0.0.0/4`, and `240.0.0.0/4`. Port isolation blocks traffic between VMs on the same bridge. Both are needed. The ufw rule lets bridge traffic pass the host's forward policy, and replies use the existing rule for established connections.
 
@@ -1137,9 +1097,9 @@ The build refuses an image with a sudo path: an `ubuntu` user, a file in `sudoer
 
 ### The base VM and its snapshot
 
-Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([refresh chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd), [provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/start.mmd)). There is no Incus image and no publish.
+Each task VM host keeps one stopped base VM, `<host>-base`, with its seed volume `<host>-base-seed`. The VM never gets an identity. A ZFS snapshot of the VM and of its seed is the base of every task start: a start copies it ([provision chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/start.mmd)). There is no Incus image and no publish.
 
-Only the base snapshot refresh makes a base. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
+Only the base snapshot refresh made a base, and it is removed ([Refresh the base snapshot](#refresh-the-base-snapshot)); this section says how the recorded bases were built. The recipe image build is gone, with the kind `task_vm.image_build`, `task-vms:build-image`, `task-vms:build-recipe`, the per-minute recipe reconcile and the image reaper ([old paths](/reference/old-paths)). The Gateway records a host's base as the snapshot that its latest refresh proved. A promoted build that holds an image, not a snapshot, is never a base, and it never replaces the snapshot. A start on a host without a recorded snapshot is refused with `task_vm.image_unavailable`.
 
 A new host gets its base VM in the first phase of its first refresh, `base-start`, once. The phase creates an empty seed volume `<host>-base-seed`, runs `incus init` from the stock Ubuntu VM image that host preparation copied, and boots the VM. The first boot makes the `orbit` account with the key of the Swamp control Node and installs the SSH server.
 
@@ -1224,51 +1184,11 @@ The `Log egress` step runs before the base VM is touched. A failed safety check 
 
 #### Refresh the base snapshot
 
-Each task VM host refreshes its own base. Nothing is copied between hosts. Nothing starts a refresh any more: the release step "Admit VM refreshes", the daily schedule at 03:20 and the artisan commands `task-vms:refresh-images` and `task-vms:refresh-image` are removed. They are replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates each nested-fleet default. The kind `task_vm.image_refresh` stays until the rest of the task VM path leaves ([old paths](/reference/old-paths#off-in-the-live-fleet)).
+No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
 
-The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain. An admission of a held host refuses with `task_vm.image_refresh_held`. Every host has the hold since 13 November 2026.
+The workflow `operation-task-vm-image-refresh` and its children stay in Swamp one release longer, and nothing starts them ([old paths](/reference/old-paths)). Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
-A host with a refresh open keeps it; a second admission returns it, and no commit waits behind it. `task-vms:image-builds` (also `task-vms:list-image-builds`) lists recent refresh records.
-
-An admission from stock rebuilds the base. At admission it withdraws the recorded base, so a task start on that host is refused until the run promotes the new one. The run deletes the base VM and its seed, with their snapshots, then builds the base from the stock image as on a new host. After a failure, the next refresh builds it as on a new host too. After every refresh that passed, a `host-clean` phase removes what no current path makes:
-
-- in the task VM project, every image except the stock one;
-- in the same project, the volumes and instances named `orbit-topology-seed-*` or `orbit-baseline-*`;
-- the projects of past experiments that `TaskVmHostLeftovers::RetiredProjects` names (`orbit-baselines`, `orbit-measure-nr`), with what they hold;
-- the images of `orbit-proto`.
-
-A failure there fails no refresh.
-
-The Gateway admits the `task_vm.image_refresh` kind with the whole intent:
-
-- the SSH target of the host with its recorded host keys, the project and the pool;
-- the recorded base snapshot, if any, and the name of the new one;
-- the stock image, the size of the base VM and the cloud-init config for a base VM that does not exist yet;
-- the converge intent of a task start, and a free place for the proof.
-
-It refuses a host that is not an active, configured task VM host, a host with no free place, and a Gateway whose release has no commit. No step of the run calls the Gateway.
-
-The workflow `operation-task-vm-image-refresh` runs from Node 209, one `command/shell` step per phase of the Ansible playbooks:
-
-| Step | What it does |
-|---|---|
-| `Prepare the host` | Phase `host-prepare` of `task-vm-host.yml`: validates and converges the pool, project, bridge, ACL, profile, stock image and forwarding rule. |
-| `Log egress` | Phase `egress-log` of `task-vm-host.yml`, in a job of its own that runs first: sets up the [egress log](#log-task-vm-egress) of the host bridge. |
-| `Start the base VM` | Phase `base-start` of `task-vm-host.yml`: makes the base VM of a new host, keeps `restricted.snapshots=allow`, starts the VM, waits for its first boot, and gives it the proof key. |
-| `Converge` | The converge of a task start (`task-vm-start` runs it with its host part), phases `software`, `tools`, `boot`, `checkout`, `fleet`, `check`. It wipes no identity. It builds a missing nested fleet. |
-| `Stop and snapshot` | Phase `base-snapshot`: stops the base VM and snapshots it and its seed volume under the run's name. |
-| `Prove the candidate` | `task-vm-candidate-proof`: one task start from the new snapshot in the free place, then its release. |
-| `Prune old snapshots` | Phase `base-prune`: keeps the new snapshot and the recorded one, which becomes `-previous`, and removes the others. |
-
-After cloud-init ends with status 0 or 2, `base-start` reads `orbit`'s authorized keys through Incus and compares their native SHA256 fingerprints with the admitted control public key. Missing or empty keys fail with `task_vm.bootstrap_key_missing`; no matching fingerprint fails with `task_vm.bootstrap_key_mismatch`. Both refusals stop the refresh before `Converge`. This detects incomplete provisioning. It does not prevent a reboot, rewrite keys or replay cloud-init.
-
-A failed run runs `Roll the base VM back` (phase `base-discard`): the base VM stops, the run's snapshot goes, and the VM rolls back to the recorded snapshot. A host keeps the base it had. The Gateway records the new snapshot as the host's latest promoted build only when the run passed, with the recipe identity of the release. A running task VM keeps its own clone of the older snapshot.
-
-The converge of a refresh is bounded at 5,400 s, and the converge of a task start at 3,300 s, because a new host builds the whole base. Both callers use the same 300-second SSH readiness budget in `task-vm-ready.yml`, polling every second and continuing as soon as the connection succeeds. A task start waits for SSH over WireGuard, including the guest's early boot and identity setup. A direct connection does not imply the guest has finished booting. The converge waits for the nested Gateway only while it builds the fleet.
-
-The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
-
-A refresh that fails before its proof leaves its place `failed`. No sweep releases it any more ([Sweep task VM hosts](#sweep-task-vm-hosts)). A refresh that finds no CI place answers the [refusal](/reference/tasks#task-runtime) of the removed task VMs instead of waiting.
+The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
 
 ##### Build the nested fleet in the converge
 
@@ -1355,7 +1275,7 @@ There is no fallback image. A claim copies the recorded base snapshot of its hos
 A new host needs Incus and ufw, and its managed user needs passwordless `sudo`. Then:
 
 1. Set the host Node's [`settings.task_vms`](/reference/node-settings#configure-a-task-vm-host) with `node:update --task-vms` or the Node update API. Use a unique `cidr`. Set a new `zfs_dataset` for native storage, or omit it and set `pool_size` for an Incus-managed loop file.
-2. Not possible any more: no refresh can be started (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
+2. Not possible any more: nothing makes a base snapshot (see [Refresh the base snapshot](#refresh-the-base-snapshot)).
 
 Host preparation allows DHCP requests from the task bridge and DNS to its host address through UFW, as well as forwarded VM traffic. The input rules use the catalog names `orbit:task-vms-dhcp`, `orbit:task-vms-dns-tcp` and `orbit:task-vms-dns-udp`, visible with `firewall:list --managed`. A [container host](#prepare-a-container-host) has the same three rules for its container bridge, as `orbit:task-containers-dhcp`, `orbit:task-containers-dns-tcp` and `orbit:task-containers-dns-udp`. Incus's own firewall allowances do not override UFW's input policy. Without these input rules, a host with default-deny input cannot give the base VM a DHCP lease, and cloud-init fails to install its SSH server.
 
@@ -1365,36 +1285,9 @@ Removing `containers`, or changing its `network` or `cidr`, withdraws only the t
 
 ### Limit fleet traffic on the hub
 
-This filter relies on the [Caddy guard](#refuse-task-vms-in-caddy). Reverb and the private Swamp Route share TCP 443 on the `websocket` Node with every other private Caddy site on that Node, such as `executor.orbit`, so an L4 rule cannot tell the sites apart. Run `task-vms:prepare-hub` only after you configure task VMs and rebuild Caddy on every Node that serves sites.
+Nothing converges the hub filter any more. The artisan command `task-vms:prepare-hub` and the kind `task_vm.hub_converge` are removed. A filter that an earlier run loaded (`inet orbit_task_vms` and its systemd unit on the VPN Node) stays until the task VM settings leave; it filters only the reserved range `task_vms.wireguard_range`, so traffic between other Nodes does not change. The VPN Node's managed UFW rules for that range still come from the firewall catalog (`firewall:list --managed`).
 
-Run `task-vms:prepare-hub` once, and again when a captured value changes. The command records a `task_vm.hub_converge` Operation and prints `Operation #<id>`; submission does not mean the filter is ready. Its native workflow runs on 209 and reaches the VPN Node through official SSH with the recorded host pins. No Swamp binary or worker is installed on the VPN Node.
-
-The workflow checks the complete nft ruleset with the hub's own `nft`. One step then writes the filter and its systemd unit, enables and restarts the unit, and lists the live chain. After the filter loads, UFW allows TCP 22 and 443 (the Route's TLS probe) from 209, and TCP 80 and 443 from each Cluster Router, one rule at a time.
-
-A native assert is the end check: every expected control and Router rule must be a line of the live chain. Only then does the Gateway record the hub ready, with the sources from its intent. A failed step leaves the Operation failed; a rerun writes and loads the same file again.
-
-The unit loads the table after `nftables.service` and before `wg-quick@orbit` starts. The tunnel pulls the unit in but does not depend on it, so a failed load never stops the fleet VPN. The nft transaction replaces only `inet orbit_task_vms`; unrelated firewall tables remain unchanged.
-
-The command takes every value from Gateway records and settings:
-
-- the reserved range from `task_vms.wireguard_range`;
-- the active209 control Node's recorded WireGuard address, for SSH on TCP22 only;
-- the VPN DNS address: the `vpn.dns_server` setting, or else the WireGuard address of the `vpn` Node;
-- the Node with the `gateway` role, and the Pi port `orbit.pi.port` (`ORBIT_PI_PORT`, default `3774`);
-- Reverb at `reverb.orbit`, which is TCP 443 on the Node with the `websocket` role; the Swamp Route uses that same Node and port;
-- the host and port of the model router guard (`TaskVmModelRoute::origin()`, port 8318);
-- every active Node with a recorded Router-role assignment in the dev Cluster, including a provisioning replacement until its assignment is withdrawn.
-
-The table filters only the reserved range. Its first rule passes every packet that has no address in the range, so traffic between other Nodes does not change. The range must be inside the WireGuard subnet, because every Node routes only the subnet through the tunnel. `TaskVmSettings` checks that. The command refuses a range that holds the address of a Node that is not the Node of a live task VM. It also refuses a missing dev Cluster, a model route that is not ready, and a guard origin whose host is not an IPv4 address outside the range.
-
-| Direction | Allowed |
-| --- | --- |
-| From task VMs | The Gateway API on TCP 443, the model router guard on TCP 8318, Reverb and the configured Swamp site on TCP 443, and DNS on port 53 of the VPN DNS address |
-| To task VMs | The Gateway on TCP 22 and the Pi port,209 on TCP22 only, and the dev Cluster’s Router-role Nodes on TCP 80/443 only |
-
-The 209 SSH and TLS probe rules and the Cluster Router web rules come from the same canonical definitions shown by `firewall:list --managed` on the VPN Node. A Router in another Cluster receives no rule for this range. Router web access grants neither SSH, Pi nor Vite-port access. Adding a UFW allow alone cannot override the earlier nft filter. The native hub convergence updates both managed surfaces. `firewall:list --live` reads the last completed native UFW inspection; an unreachable result does not prove current rules.
-
-The table accepts established traffic and drops all other traffic to or from the range. The WireGuard address allocator skips the range for other Nodes. Only `AllocateTaskVmAction` assigns addresses in it. A task VM Node has no access grants to other Nodes.
+The WireGuard address allocator skips the reserved range for other Nodes. A task VM Node has no access grants to other Nodes.
 
 ### Refuse task VMs in Caddy
 
@@ -1469,7 +1362,6 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.base_image_missing` | 409 | The host's project has no `orbit-task-base` image. No refresh can rebuild it any more |
 | `task_vm.topology_seed_missing` | 409 | The host has no topology seed for the base image of a medium or large VM. No refresh can rebuild it any more |
 | `task_vm.topology_seed_failed` | 502 | The topology seed build was refused. The error includes its bounded diagnostic |
-| `task_vm.image_refresh_held` | 409 | The host has an image refresh hold; clear it through `node:update` before an admission |
 | `task_vm.image_refresh_unavailable` | 409 | A refresh cannot start: the Gateway release has no commit |
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |
@@ -1486,7 +1378,7 @@ Publication deletes the VM and its workspace. No VM stays allocated for PR revie
 
 The [Git mirror](#the-mirror) needs repository-sized Gateway storage. A fresh workspace receives the full history of its selected branches, without tags. Fetch, pack, and push operations serialize per Project, with a 300-second lock wait. Operations that would send a credential to a VM require its group to end first.
 
-The hub filter fails open to keep the fleet VPN up. If a later `nftables.service` restart removes the table, run `task-vms:prepare-hub` again; its unit can still show active while the table is absent.
+The hub filter failed open to keep the fleet VPN up. Nothing loads it again: if an `nftables.service` restart removes the table, it stays absent, while its unit can still show active.
 
 ### Why task VMs work this way
 
