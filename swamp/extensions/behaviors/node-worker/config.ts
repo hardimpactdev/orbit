@@ -11,9 +11,9 @@ export type WorkerCredentials = {
     server_token: string;
 };
 export const Swamp = {
-    version: "20261103.000636.0-sha.db3f6373",
-    sha256: "6e0fe06f91f07f448b7972ebcbbc4fb994422a9712f8012966c0cc07a41c42a3",
-    bytes: 401301712,
+    version: "20261114.210101.0-sha.537e03d1",
+    sha256: "0171346a3588019a73a0e9d28e64447688ad87261e6eceb49b3febf6bd603da3",
+    bytes: 291967864,
     headroom: 256 * 1024 * 1024,
 };
 export const WorkerCaFile = "/usr/local/share/ca-certificates/orbit-root.crt";

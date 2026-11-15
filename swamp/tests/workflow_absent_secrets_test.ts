@@ -107,8 +107,8 @@ Deno.test("a container process:start, stop and restart read no `read` section, w
 });
 
 // The pinned Swamp runtime uses this CEL compiler and environment in createExtensionCelEnvironment:
-// https://github.com/swamp-club/swamp/blob/db3f6373/src/infrastructure/cel/cel_evaluator.ts
-// Native workflow validation checks argument names, but does not type-check deferred step expressions.
+// https://github.com/swamp-club/swamp/blob/537e03d1/src/infrastructure/cel/cel_evaluator.ts
+// Native workflow validation type-checks these expressions with runtime data as `dyn`; this test evaluates them with real receipt values.
 Deno.test("create finalization evaluates checkout, default and clone receipts with Swamp's CEL types", () => {
   const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-create.yaml", import.meta.url))) as Workflow;
   const finish = workflow.jobs.flatMap((job) => job.steps).find((step) => step.name === "finish")!;

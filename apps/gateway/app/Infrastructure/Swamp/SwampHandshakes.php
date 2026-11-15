@@ -15,7 +15,7 @@ use Throwable;
  * The Gateway's record of its own serve handshakes, shared by every PHP process on the Gateway host (PHP-FPM, Horizon, Artisan).
  *
  * Serve admits 50 WebSocket upgrades from one address in a fixed 60 s window that opens at the first upgrade after the last one
- * ended (src/serve/rate_limiter.ts at db3f6373), for every token together, and the Gateway is one address. The Gateway cannot see
+ * ended (src/serve/rate_limiter.ts at 537e03d1; the address burst is the same as at db3f6373), for every token together, and the Gateway is one address. The Gateway cannot see
  * where serve's window starts, so the ledger keeps the time of each handshake and counts the last `WindowSeconds`. A view read
  * connects only while that count is below `ViewShare`. Any 60 s window of serve then holds at most `ViewShare` views, so
  * `Limit - ViewShare` stay for priority callers whatever screens read. Priority callers always connect: serve decides for them.

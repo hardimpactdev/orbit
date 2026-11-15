@@ -2,7 +2,7 @@
  * The T3 registration steps of the create and the migrate, run by `swamp serve` with the grants a release loads
  * (apps/gateway/bin/render-swamp-grants), as the Gateway's principal `user:orbit-gateway`, on the release-pinned Swamp binary.
  *
- * Swamp names a sensitive field's vault key from the method name (data_writer.ts at db3f6373); the grant allows the Gateway's run to
+ * Swamp names a sensitive field's vault key from the method name (data_writer.ts at 537e03d1); the grant allows the Gateway's run to
  * write only `...-register-session-...` and `...-renew-session-...`. #3794 ran the create's registration as a new method, so its sessions
  * would have gone to `...-create_register-session-...`: refused by the grant, and not the key the Gateway reads (release 2086's
  * pre-check). This test takes each real step from its workflow, runs it under the enforced grants (a refused write of #3794's key is

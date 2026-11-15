@@ -81,7 +81,7 @@ async function stored(file: string, instanceId: number, ctx: Context, remove: bo
     }
     if (reply.gateway.token === reply.swamp.token) throw new Error("conn.response_invalid");
     // Swamp names a sensitive field's vault key from `<type>/<modelId>/<METHOD>/<spec>/<instance>/<field>` (data_writer.ts, pinned
-    // db3f6373), and the Gateway's grant allows only `...-register-session-...`: so every registration runs as method `register`.
+    // 537e03d1), and the Gateway's grant allows only `...-register-session-...`: so every registration runs as method `register`.
     const key = (name: string) =>
         `nckrtl-instance-t3-${modelId}-register-session-${name}-${instanceId}-token`;
     const handles = [];
