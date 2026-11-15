@@ -121,7 +121,7 @@ final readonly class TaskCopyLifecycle
             return;
         }
         if (in_array($group->status, TaskGroupStatus::active(), true)) {
-            app(TaskGroupEnding::class)->settle($group, [], 'tasks.cancel');
+            app(TaskGroupEnding::class)->settle($group, 'tasks.cancel');
 
             return;
         }

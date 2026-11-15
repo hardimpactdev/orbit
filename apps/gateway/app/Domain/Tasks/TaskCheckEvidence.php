@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\Projects\LifecyclePhase;
 use App\Models\AgentThread;
 use App\Models\Instance;
-use App\Models\ProjectLifecycleStep;
 use App\Models\Task;
 use App\Models\TaskCheck;
 use Illuminate\Support\Carbon;
@@ -94,19 +92,6 @@ final readonly class TaskCheckEvidence
             ->where('role', TaskThreadRole::Implementer->value)
             ->where('external_id', 'not like', AgentThread::PendingPrefix.'%')
             ->exists();
-    }
-
-    /** @return list<array{name: string, command: string, timeout_seconds: int}> */
-    public function baselineSetup(Task $group): array
-    {
-        return array_values(ProjectLifecycleStep::query()
-            ->where('project_id', $group->project_id)
-            ->where('phase', LifecyclePhase::Setup->value)
-            ->orderBy('position')
-            ->orderBy('id')
-            ->get()
-            ->map(static fn (ProjectLifecycleStep $step): array => ['name' => $step->name, 'command' => $step->command, 'timeout_seconds' => $step->timeout_seconds])
-            ->all());
     }
 
     public function recordSubtaskStart(Task $task): void

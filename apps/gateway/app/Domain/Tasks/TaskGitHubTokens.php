@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Domain\Tasks;
 
-use App\Domain\GitHub\GitHubAccessToken;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppStore;
@@ -21,9 +20,7 @@ use App\Models\Activity;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskVm;
 use App\Support\ValidatedData;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
@@ -53,18 +50,6 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         private SwampCommandStep $step,
     ) {}
 
-    /**
-     * The vault keys of the dependency configuration of one task VM, named at admission by the provision.
-     *
-     * @return array{composer:array{vault:string,key:string},npm:array{vault:string,key:string},token:array{vault:string,key:string}}
-     */
-    public static function dependencyAuth(TaskVm $vm): array
-    {
-        return ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-'.$vm->id],
-            'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-'.$vm->id],
-            'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-'.$vm->id]];
-    }
-
     /** @return array<string,array{vault:string,key:string}> */
     public function issue(Operation $operation, int $callerNodeId, string $runId, ?string $purpose = null): array
     {
@@ -85,8 +70,6 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         }
 
         return match ($purpose) {
-            'clone' => $this->clone($operation, $group, $callerNodeId, $runId),
-            'dependencies' => $this->dependencies($operation, $group, $callerNodeId, $runId),
             'publish' => $this->publish($operation, $group, $callerNodeId, $runId),
             'pull_request', 'dependency_merge' => $this->scoped($operation, $group->project, $callerNodeId, $runId, $purpose),
             default => throw $this->forbidden(),
@@ -145,19 +128,6 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     }
 
     /**
-     * A provision holds its workspace in its own intent.
-     *
-     * @return array<string,mixed>
-     */
-    private function provisionIntent(Operation $operation): array
-    {
-        return match ($operation->kind) {
-            'tasks.provision' => $operation->input,
-            default => throw $this->forbidden(),
-        };
-    }
-
-    /**
      * The Git authorization header of a read of the Project repository, written to the vault key an admission named.
      *
      * @param  array<string,mixed>  $reference
@@ -168,69 +138,6 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
         $git = $this->reads->for($group->project->repository_url, $group->project->source_access);
 
         return $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $git->isEmpty() ? '' : $git->variables['GIT_CONFIG_VALUE_0']);
-    }
-
-    /** @return array<string,array{vault:string,key:string}> */
-    private function clone(Operation $operation, Task $group, int $callerNodeId, string $runId): array
-    {
-        $intent = $this->provisionIntent($operation);
-        $repository = ValidatedData::object($intent['workspace'] ?? [])['repository'] ?? null;
-        $reference = $intent['git_authorization'] ?? null;
-        if (! is_string($repository) || $repository !== $group->project->repository_url || ($intent['project_id'] ?? null) !== $group->project_id || ! is_array($reference)) {
-            throw $this->forbidden();
-        }
-        $copy = $this->writeClone($group, ValidatedData::object($reference));
-        $this->record($operation, 'Issued the scoped clone credential of a Task workspace.', $callerNodeId, $runId, $repository, [['contents' => 'read']]);
-
-        return ['git_authorization' => $copy];
-    }
-
-    /**
-     * The Composer and npm configuration of the setup steps: a read token that covers the private packages of the installation.
-     * The token exists in the vault, then in two 0600 files of the setup account, and the workflow removes them.
-     *
-     * @return array<string,array{vault:string,key:string}>
-     */
-    private function dependencies(Operation $operation, Task $group, int $callerNodeId, string $runId): array
-    {
-        $intent = $this->provisionIntent($operation);
-        $references = ValidatedData::object($intent['dependency_auth'] ?? []);
-        $repository = GitHubRepository::fromOrigin($group->project->repository_url);
-        if (($intent['project_id'] ?? null) !== $group->project_id || $repository === null
-            || array_any(['composer', 'npm', 'token'], static fn (string $member): bool => ! is_array($references[$member] ?? null))) {
-            throw $this->forbidden();
-        }
-        try {
-            $token = $this->access->dependencyToken($repository);
-        } catch (GitHubApiException) {
-            // A repository the App does not cover: setup runs without private access.
-            $token = null;
-        }
-        // `http-basic`, not `github-oauth`: Composer refuses an OAuth token with a character outside [A-Za-z0-9._], and the installation token
-        // has more (a JWT after `ghs_`). GitHub takes `x-access-token` and the token as basic credentials.
-        $values = ['composer' => $token === null ? '{}' : json_encode(['http-basic' => ['github.com' => ['username' => 'x-access-token', 'password' => $token]]], JSON_THROW_ON_ERROR),
-            // No empty value: a vault put needs content, and a comment is a valid `.npmrc`.
-            'npm' => $token === null ? "# no private access\n" : '//npm.pkg.github.com/:_authToken='.$token."\n",
-            // The token alone, for the step that revokes it. The placeholder makes that revoke a harmless refusal.
-            'token' => $token ?? 'no-token-minted'];
-        $copies = [];
-        try {
-            foreach ($values as $member => $value) {
-                $reference = ValidatedData::object($references[$member]);
-                $copies[$member] = $this->step->executionCopy(ValidatedData::string($reference['vault']), ValidatedData::string($reference['key']), $value);
-            }
-        } catch (\Throwable $exception) {
-            // The workflow revokes the token after its mint step succeeds; a failed copy ends the mint step, so the token is revoked here.
-            if ($token !== null && ! app(GitHubApi::class)->revokeInstallationToken(new GitHubAccessToken($token, gmdate(DATE_ATOM, time() + 3600)))) {
-                Log::warning('operation.github_token_revoke_failed');
-            }
-            throw $exception;
-        }
-        if ($token !== null) {
-            $this->record($operation, 'Issued the read token of the setup steps of a Task workspace.', $callerNodeId, $runId, $repository->owner.'/'.$repository->name, [['contents' => 'read']]);
-        }
-
-        return $copies;
     }
 
     /** @return array<string,array{vault:string,key:string}> */

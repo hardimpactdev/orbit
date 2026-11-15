@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Target design (agreed with Nick, 2026-11-07): a task VM and its identity are disposable; the release frees its place. Orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it.
+  %% Target design: orchestrator 2026-11-08: keeping approved work is a precondition of the cancel, not a step of it. 2026-11-15: the task VMs and their release are removed (docs/reference/old-paths.md); a cancel starts no run.
   %% Orchestrator 2026-11-13: a task copy ends through its Instance destroy. Orchestrator 2026-11-14: work that only the copy holds, or a copy that cannot be read, refuses the cancel unless the caller discards it; the cancel is recorded under the group lock, in one transaction with the destroy's admission, after the destroy's reads. A commit a publish pushed counts as on origin.
   %% status: draft
   %% command: task:cancel
@@ -7,17 +7,10 @@ sequenceDiagram
   autonumber
   %% lane GW icon=gateway pill=intent tone=blue
   %% lane GH icon=server pill=target tone=purple
-  %% lane SW icon=workflow pill=executes tone=green
-  %% lane H icon=server pill=target tone=amber
-  %% lane HUB icon=server pill=target tone=purple
   participant GW as Gateway<br/>Laravel API
   participant GH as GitHub<br/>repository
-  participant SW as Swamp<br/>serve on Node 209
-  participant H as Task VM host<br/>Incus over ssh
-  participant HUB as VPN hub<br/>over ssh
-  Note over GW: Check before any change<br/>VM free · cancellable
+  Note over GW: Check before any change<br/>cancellable
   %%> Requirements:
-  %%> - no Operation is open on the group's task VM, such as a resume or an earlier release; otherwise HTTP 409 `operation.target_busy`, naming it
   %%> - the group is cancellable; otherwise `tasks.not_cancellable`
   %%> - every refusal here and in the next step comes before the cancel stops running work, so a refused cancel changes nothing
   GW->>GH: Compare the task branch<br/>approved...task-42
@@ -25,10 +18,10 @@ sequenceDiagram
   %%> - resolves the group's latest approved commit: the latest commit Orbit reviewed (ADR 0203), or else the commit of the latest approval
   %%> - reads origin's task branch head and compares it with that commit, with a `contents: read` token
   %%> - only when GitHub answers that the branch does not exist (404) and the group's pull request merged does that pull request's head stand in; the pull request is read with a `pull_requests: read` token
-  %%> - skipped when the group has no approval, or holds no workspace and no task VM
+  %%> - skipped when the group has no approval, or holds no workspace
   GH-->>GW: Branch reaches it
   %%> Result:
-  %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `task:publish` first, which resumes a parked VM
+  %%> - otherwise the cancel refuses with HTTP 409 `tasks.approved_work_unpublished`, names the commit and the branch, and admits nothing: run `task:publish` first
   %%> - every other outcome refuses the same way: a GitHub read that fails, a branch that is gone without a merged pull request
   alt the task owns a task copy
     Note over GW: Read the copy's workspace<br/>one bounded read
@@ -52,31 +45,13 @@ sequenceDiagram
     %%> - the cancel is recorded as succeeded at once (R1); its result names the destroy Operation and holds the workspace read
     %%> - the destroy runs as every Instance destroy does; when it succeeds, a task that still runs and its open subtasks are `cancelled`, and the task lets go of the copy; a `failed` task stays `failed`
     %%> - when it fails, the task runs on and keeps the copy; the next cancel admits the destroy again; a stopped or half-removed copy may read `unknown`, so that cancel may need the discard
-  else no VM and no workspace
+  else no task copy and no workspace
     Note over GW: End the task at admission<br/>R1: no run
     %%> When:
-    %%> - the task holds no task VM and no workspace, such as a `todo` task or one that waits for a place; its waiting Operation is cancelled first
+    %%> - the task holds no workspace, such as a `todo` task or one whose task VM was removed; its open Operations are cancelled first
+    %%> - a task that still holds a workspace that is no task copy (a task VM workspace) refuses with HTTP 409 `tasks.workspace_ownership_refused`: nothing can release it any more
     %%> Result:
     %%> - in the admission transaction, the task and its open subtasks are `cancelled` and the Operation is recorded as succeeded; no Swamp run starts (R1)
+    %%> - an old `task_vms` row of the task stays as it is (history until the table goes)
     %%> - the HTTP 202 already carries the succeeded Operation, so `task:show` reads `cancelled` from then on
-  else the task holds a VM
-    Note over GW: Admit the release<br/>stop work · VM reserved
-    %%> What it does:
-    %%> - cancellation takes precedence over the group's capacity wait or running task; cancel that task before acquiring its group lock for cleanup
-    %%> - stops the group's running work, then, in one transaction, locks and re-reads the VM, refuses if an Operation opened on it meanwhile, and marks it `releasing`, so no later resume starts it
-    %%> Result:
-    %%> - the run carries only the release; it pushes nothing and never starts a parked VM
-    %%> - a start that Swamp refuses fails the cancel and marks the VM `failed`, so the reservation goes and another cancel reserves it again
-    GW->>SW: Start run, full intent<br/>operation-task-cancel
-    SW->>H: Delete the VM<br/>and its seed clone
-    %%> What it does:
-    %%> - one host phase: `incus delete --force`, the seed clone and the identity volume; a few seconds
-    SW->>HUB: Remove the hub peer<br/>wg set remove · peer file
-    %%> Runs beside the step before it: Swamp starts both at once.
-    %%> What it does:
-    %%> - the VM's peer leaves the WireGuard hub; the Pi token goes with the VM. There is no model key to revoke: the fixed key stays with the guard, for every other VM
-    SW-->>GW: Run succeeded<br/>place free
-    Note over GW: Delete the Node record<br/>target under 10 s
-    %%> Result:
-    %%> - the Node, its role and its Process go; the place is free for the next task start
   end

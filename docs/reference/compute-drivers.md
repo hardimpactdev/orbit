@@ -437,9 +437,9 @@ Tracking a live PPA would make it a second owner of Git, and an exact APT versio
 
 ## Task VMs
 
-A host may have a [`containers` setting](/reference/node-settings#task-container-fields) with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes the setting. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
+The task VM lifecycle is removed: no claim, resume or release runs, and every task runs in a [task copy](/reference/tasks#task-copy) ([old paths](/reference/old-paths#the-pi-task-loop)). This section describes what old `task_vms` rows, the Node settings and the Swamp workflows still hold until they go.
 
-Publication releases the task VM. Later work claims a fresh task place and restores its published branch. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
+A host may have a [`containers` setting](/reference/node-settings#task-container-fields) with separate container places and a placement switch. They were built for a separate task container runtime, which ADR 0250 dropped: tasks move into [Instance containers](/reference/development-containers#tasks-in-an-instance-container), and [the plan](/solutions/development-container-runtime#pr-17-remove-task-vms-the-pi-server-and-the-task-container-setting) removes the setting. Task VMs are [off in the live fleet](/reference/old-paths#off-in-the-live-fleet). Before that, every task group ran on a task VM.
 
 A task VM is an Ubuntu 26.04 VM on an Incus host. It is a copy of the [base snapshot](#the-base-vm-and-its-snapshot) of its host, which the removed base refresh converged to the recipe and which holds the `app-dev` tool set. The Gateway creates it for one group, enrolls it as an `app-dev` Node, and destroys it when the group ends. After enrollment, the group uses the normal Instance and task paths, pinned to that Node. Task VMs run only on the Incus hosts Beast and Shark. When neither host has capacity, the group waits.
 
@@ -508,29 +508,17 @@ The Node `tvm-<id>` has user `orbit`, role `app-dev`, the dev Cluster, and the r
 
 ### Release a task VM
 
-An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on the VM's disk, so Orbit deletes no checkout in the guest. A task start's VM goes with its group through one path, the release `task_vm.slot_release` (chart `docs/cli/task/vm-release.mmd`). `task:cancel` and `task:complete` admit it only when origin already has the latest approved commit, under the shared [removal rule](/reference/tasks#cancel-a-stuck-task); `task:cancel` runs the release as the last step of its own run. Publication of an open group admits it too; the group stays open.
-
-Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM is released as it is: the release deletes a stopped VM too, and nothing starts it. Release admission locks the VM row and refuses while a resume is open.
-
-The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace and ends its `removal_failure` request, clears the keys of the identity and records the VM `destroyed`. A release that fails leaves the VM `failed`; the next cancel releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
-
-A VM of the old pool has no place number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release. Rows the old pool left in `destroying` were recorded `destroyed`.
-
-The release deletes by name, so it releases only a task VM name: `<host>-tvm-<n>` for place n, under the host name it had when the place was taken, or `tvm-<id>` for the old pool. Its seed clone is `<name>-seed` or `<name>-topology-seed`. Any other name, such as a base VM or a seed, refuses with `task_vm.release_refused`. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
-
-A `ready` VM that is absent from its Incus host keeps its row and its reviewed work. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`. Cancel or complete its group to release it.
-
-Keep a host's `settings.task_vms` until all its task VMs are `destroyed`, because the release needs the settings. Node removal refuses live task VMs and configured hosts. Clear the host setting after draining it. Removing a host also deletes its destroyed VM rows.
+No release runs any more: `task_vm.slot_release` left the registry with the task VM lifecycle. An old row keeps its state. A cancel of a group without a task copy ends it at admission with no run; a group that still holds a task VM workspace refuses the cancel with `tasks.workspace_ownership_refused`, and its complete asks for `removal_failure` assistance ([A task VM workspace](/reference/tasks#a-task-vm-workspace)). Old release Operations stay as history ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 ### Place task VMs
 
-Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied places, records a new VM, and queues its creation after commit. `TaskVmSlotPool` selects the active host with the most free places. Hosts with equal capacity use their configuration order.
+Placement is serialized by the Gateway's SQLite transaction. The claim checks for an existing VM, counts occupied places, records a new VM, and queues its creation after commit. The removed slot pool selected the active host with the most free places. Hosts with equal capacity use their configuration order.
 
 Every host has two independent fixed pools, configured with `task_places` and `ci_places`. Each live VM holds one place in its admitted pool until deletion is confirmed, including failed or stopped VMs. Task provision used the task pool. Base-refresh proofs use the CI pool. A [`proof:run`](/cli/proof/run#the-run) takes no VM place: it runs in copies of the proof Project's default, and its shards, budgets and verdicts are described there.
 
 The capacity migration sets existing Beast and Shark hosts to two task and two CI places, and Sabre to zero task and two CI places. It removes `max_vms`, `task_max_vms` and `ci_only` while preserving other Node settings.
 
-No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout, so the slot pool still refuses a group of another Project with `task_vm.project_unsupported`. `task:status` still shows each host's places and their holders ([Task places](/reference/tasks#task-places)). Lowering a pool size deletes no VM.
+No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout, `task:status` still shows each host's places and their holders ([Task places](/reference/tasks#task-places)). Lowering a pool size deletes no VM.
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
@@ -656,15 +644,7 @@ A failed phase leaves finished work in place. A rerun skips each phase whose dig
 
 ### Park and resume
 
-Park, resume and release share one task VM name rule: a task VM is `<host>-tvm-<n>` for place n, using the host name it had when created; an old-pool VM without a place number is `tvm-<id>`. Any other name is refused before provider work.
-
-New task work never parks a VM for review. Publication deletes it. A stored parked VM from earlier work may still resume or be released; it holds its admitted place until deletion is confirmed.
-
-A requested workspace operation admits `task_vm.resume`. It clears stop proof and starts one native run. On an Incus host the run starts the VM, and a VM that already runs counts as started. Incus's own agent wait follows, bounded to 120 seconds. A `ready` VM that a workspace operation found stopped also gets 209's authorized key, its TCP 22 rule and `sshd` back, through `incus exec` on the host.
-
-The run then reads `orbit-agent` and the Pi capabilities over the guest's recorded host key pin, and a native `assert` checks both. A guest without a recorded host key is refused at admission. The run prints no result: a succeeded run records `ready`, and a failed run projects `task_vm.resume_failed`, which fails a parked VM with its error evidence.
-
-Parking retains the disk, workspace and sessions. It releases CPU and memory. It retains the provider's allocated VM count; Swamp's maintenance execution slots are separate.
+No VM parks or resumes any more: `task_vm.resume` and the Artisan command `task-vms:resume` are removed, and no admission wakes a VM. A `parked` row stays as it is. Old resume Operations stay as history.
 
 ### Sweep task VM hosts
 
@@ -697,7 +677,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The one task VM job left is `ReleaseTaskVmSlot`, the release of a slot whose start did not pass. It runs on the Gateway's `tasks` queue; the `task-vms` queue and its supervisor are removed ([Gateway queue](/reference/gateway-queue#queues)).
+No task VM job is left: `ReleaseTaskVmSlot` is removed with the release, and the `task-vms` queue and its supervisor went before it ([Gateway queue](/reference/gateway-queue#queues)).
 
 Provisioning, enrollment, runtime preparation, resume, destruction, parking and internal removal keep their existing synchronous implementations and tests. Their replacement Operations remain inert until their parents declare the required `node.add`, `node.remove` and Process children and those owning admissions are registered. Merely registering a Node or Process kind does not activate an incomplete parent. Admission refuses with `operation.kind_unavailable` before it records intent or changes the VM.
 
@@ -1137,7 +1117,7 @@ The `fleet` phase of the common converge (`swamp/ansible/tasks/task-vm-fleet.yml
 
 The phase builds the fleet (`task-vm-fleet-build.yml`) only when it is not complete. That is a base VM that never held a fleet, or one whose build stopped half way, also after all three containers existed. A converge on a complete fleet, and every task start, skip the build and create, delete or restart no container. No other kind builds a fleet.
 
-The values come from the converge intent of the Gateway, `TaskVmConvergeInput`, which takes them from `TaskVmNestedFleet`:
+The values came from the converge intent of the Gateway, `TaskVmConvergeInput` (removed with the claim), which took them from `TaskVmNestedFleet`:
 
 - the names of the containers and of the network;
 - the address, MAC, memory and TLD of each container;
@@ -1306,7 +1286,6 @@ The reserved range must always be a private network. As soon as task VMs are ena
 | `task_vm.image_refresh_failed` | 502 | A refresh run failed. The Operation names the failed step |
 The build row records the step and error |
 | `task_vm.parked` | 409 | The group's task VM is `parked`. Orbit starts it, and the work runs once it is `ready` |
-| `task_vm.resume_timeout` | 504 | A `parked` VM did not become ready before its fixed 9-minute resume deadline |
 | `task_vm.vm_missing` | 502 | The sweep found a `ready` or `parked` task VM gone from its host |
 | `task_vm.git_credential_refused` | 409 | A command that carries a GitHub credential was about to reach a task VM or an `incus` command. See [Git on a task VM](#git-on-a-task-vm) |
 

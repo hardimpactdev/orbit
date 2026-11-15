@@ -101,7 +101,7 @@ final class OperationBudgetTable
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.
         'tasks.sync' => 360,
-        // Both ending kinds run the release of the task VM (task_vm.slot_release) after Route withdrawal and Project teardown. Their history
+        // Both ending kinds ran the release of the task VM (task_vm.slot_release, removed) after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: the former VM destroy bound of 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the
         // workspace Route withdrawal, whose only fixed wait is the 31 s DNS grace; the rest is margin. Replace with the 14-day p95 once

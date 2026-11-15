@@ -19,13 +19,14 @@ use Illuminate\Support\Sleep;
 uses(LazilyRefreshDatabase::class);
 
 /*
- * The task VM image refresh and the hub converge left the registry, and so did every kind of the Pi task loop: the prep run, its
- * corrections, the build, the review round, the maintenance run, the package install, the repository script, the idle save and the
- * Pi turn (docs/reference/old-paths.md). Their old Operations stay in the database as history: lists and
+ * The task VM image refresh, the hub converge, the resume and the slot release left the registry, and so did every kind of the Pi
+ * task loop: the prep run, its corrections, the build, the review round, the maintenance run, the package install, the repository
+ * script, the idle save and the Pi turn (docs/reference/old-paths.md). Their old Operations stay in the database as history: lists and
  * shows render them, the release's idle guard does not wait for them, and the reconcile pass ends an open one by its cancel request
  * or its budget, as for every retired kind.
  */
 const REMOVED_TASK_VM_KINDS = ['task_vm.image_refresh' => 'task_vm_host', 'task_vm.hub_converge' => 'node_firewall',
+    'task_vm.resume' => 'task_vm', 'task_vm.slot_release' => 'task_vm',
     'tasks.prep' => 'task_group', 'tasks.prep_fix' => 'task_group', 'tasks.build' => 'task_group', 'tasks.review_round' => 'task_group',
     'tasks.maintenance' => 'task_group', 'tasks.package' => 'task_group', 'tasks.script' => 'task_group', 'tasks.idle_save' => 'task_group',
     'tasks.turn' => 'task_group'];
@@ -57,7 +58,7 @@ it('has no registry entry, chart or budget for the removed kinds, and no artisan
         ->and(OperationBudgetTable::SecondsByKind)->not->toHaveKey($kind)
         ->and(glob(base_path('../../docs/cli/*/*.mmd')))->not->toBeEmpty()
         ->and($charts)->toBe([])
-        ->and(array_keys(Artisan::all()))->not->toContain('task-vms:prepare-hub')->not->toContain('task-vms:image-builds')->not->toContain('task-vms:list-image-builds');
+        ->and(array_keys(Artisan::all()))->not->toContain('task-vms:prepare-hub')->not->toContain('task-vms:resume')->not->toContain('task-vms:image-builds')->not->toContain('task-vms:list-image-builds');
 })->with(array_keys(REMOVED_TASK_VM_KINDS));
 
 it('lists and shows an old Operation of a removed kind in every terminal state', function (string $kind, OperationStatus $status): void {

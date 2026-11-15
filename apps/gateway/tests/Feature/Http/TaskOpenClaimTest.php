@@ -45,14 +45,15 @@ $calls = [
     'sync' => [fn (Task $group, Task $subtask): array => ["/api/v1/tasks/{$group->id}/sync", []]],
 ];
 
-it('refuses work on a group whose provision still waits or runs with tasks.not_provisioned and the provision Operation', function (Closure $call, OperationStatus $status): void {
-    $provision = provision_operation($this->group, $status);
+// No task VM claim starts any more (docs/reference/old-paths.md). An old `tasks.provision` Operation that is still open holds its group as
+// every open Operation does: other work answers `operation.target_busy` until the reconcile pass ends it. A check needs a task copy first.
+it('refuses work on a group whose old VM claim still waits or runs', function (Closure $call, OperationStatus $status): void {
+    provision_operation($this->group, $status);
     [$uri, $body] = $call($this->group, $this->subtask);
 
     $this->withServerVariables(['REMOTE_ADDR' => $this->gateway->wireguard_ip])->withHeader('Idempotency-Key', 'manual-1')->postJson($uri, $body)
         ->assertStatus(409)
-        ->assertJsonPath('error.code', 'tasks.not_provisioned')
-        ->assertJsonPath('error.details.operation_id', $provision->id);
+        ->assertJsonPath('error.code', str_ends_with($uri, '/check') ? 'tasks.no_workspace' : 'operation.target_busy');
 })->with($calls)->with([
     'waiting for a place' => [OperationStatus::Waiting],
     'running' => [OperationStatus::Running],
@@ -62,7 +63,7 @@ it('refuses every other admission through the shared group gate', function (stri
     $provision = provision_operation($this->group, OperationStatus::Waiting);
 
     expect(fn () => app(TaskOperations::class)->start($this->group, $kind, [], static function (): void {}, 'test', null))
-        ->toThrow(fn (ResourceOperationException $refusal) => expect([$refusal->errorCode, $refusal->details])->toBe(['tasks.not_provisioned', ['operation_id' => $provision->id]]));
+        ->toThrow(fn (ResourceOperationException $refusal) => expect([$refusal->errorCode, $refusal->details])->toBe(['operation.target_busy', ['operation_id' => $provision->id]]));
 })->with(['tasks.copy_turn', 'tasks.check', 'tasks.publish']);
 
 it('returns a keyed replay before the refusal', function (): void {

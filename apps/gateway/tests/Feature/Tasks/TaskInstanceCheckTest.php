@@ -143,29 +143,8 @@ it('runs a container baseline without the setup steps, because the copied seed a
         ->and(TaskCheck::query()->sole()->kind)->toBe(TaskCheckKind::Baseline);
 });
 
-it('keeps every setup step in a task VM baseline', function (): void {
-    [$group, $subtask, $instance] = instanceCheckWorld();
-    instanceCheckSetupSteps($group);
-    $guest = Node::withoutEvents(fn (): Node => Node::query()->create([
-        'name' => 'tvm-599', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.138', 'public_ssh_port' => 22,
-        'wireguard_ip' => '10.44.0.138', 'user' => 'orbit', 'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key',
-    ]));
-    TaskVm::query()->create(['host_node_id' => $guest->id, 'node_id' => $guest->id, 'group_id' => $group->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-599',
-        'state' => TaskVmState::Ready, 'address' => '10.251.78.34', 'wireguard_ip' => '10.44.0.138', 'size' => TaskVmSize::Normal, 'pi_token' => str_repeat('q', 40)]);
-    $instance->update(['task_workspace_owner_id' => null]);
-    $workspace = Instance::query()->create(['project_id' => $group->project_id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
-        'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/proof/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
-    $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
-
-    $operation = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Baseline), 'test', null);
-
-    expect($operation->input['setup'])->toBe([
-        ['name' => 'install', 'command' => 'composer install --no-interaction', 'timeout_seconds' => 45],
-        ['name' => 'caches', 'command' => '@orbit/ci-caches', 'timeout_seconds' => 60],
-    ])->and($operation->input)->not->toHaveKey('workspace');
-});
-
-it('keeps the task VM check intent unchanged', function (): void {
+// The task VM check is removed with the task VMs (docs/reference/old-paths.md): a group whose workspace sat on a task VM has no task copy.
+it('refuses a check of a group whose workspace is on a task VM by name, and records no check row', function (TaskCheckKind $phase): void {
     [$group, $subtask, $instance] = instanceCheckWorld();
     $guest = Node::withoutEvents(fn (): Node => Node::query()->create([
         'name' => 'tvm-598', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64', 'public_ssh_host' => '10.44.0.137', 'public_ssh_port' => 22,
@@ -178,14 +157,11 @@ it('keeps the task VM check intent unchanged', function (): void {
         'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/proof/workspace', 'task_workspace_owner_id' => $group->id, 'status' => InstanceState::Active]);
     $group->update(['taskable_type' => $workspace->getMorphClass(), 'taskable_id' => $workspace->id]);
 
-    $operation = app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, TaskCheckKind::Handoff), 'test', null);
-
-    expect(array_keys($operation->input))->toBe(['subtask', 'phase', 'group_id', 'instance_id', 'node_id', 'checkout_path', 'ssr_port', 'check_id', 'command', 'setup',
-        'deliverables', 'base', 'message', 'repository', 'check_name', 'branch', 'ssh_execution', 'execution_secrets', 'admitted_at', 'run_budget_seconds'])
-        ->and($operation->input['node_id'])->toBe($guest->id)
-        ->and($operation->input['checkout_path'])->toBe('/home/orbit/apps/proof/workspace')
-        ->and(data_get($operation->input, 'ssh_execution.target.host'))->toBe('10.44.0.137');
-});
+    expect(fn () => app(TaskCheckIntent::class)->start($group->refresh(), new StartTaskCheckData($subtask->id, $phase), 'test', null))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect([$refusal->errorCode, $refusal->getMessage()])->toBe(['tasks.no_workspace', 'The group requires its task copy.']))
+        ->and($subtask->checks()->count())->toBe(0)
+        ->and(Operation::query()->where('kind', 'tasks.check')->exists())->toBeFalse();
+})->with([TaskCheckKind::Baseline, TaskCheckKind::Handoff]);
 
 it('projects the receipt of the Instance check as it projects a task VM check', function (): void {
     [$group, $subtask] = instanceCheckWorld();

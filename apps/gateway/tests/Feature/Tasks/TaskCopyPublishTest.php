@@ -371,17 +371,22 @@ it('keeps a long conflict through the stored step failure, with its code and its
         ->and($group->refresh()->pr_url)->toBeNull();
 });
 
-it('keeps the Swamp start fixture equal to the inputs a copy publish and a task VM publish start with', function (): void {
+it('keeps the Swamp start fixture equal to the inputs a copy publish starts with', function (): void {
     app()->instance(WebSocketClient::class, WorkflowStartIntents::vault());
     [$group, $check] = copyPublishWorld();
     $operation = app(TaskPublishIntent::class)->start($group, StartTaskPublishData::from(['check' => $check->id,
         'pull_request' => ['title' => 'Export orders', 'body' => 'Adds the export.']]), 'test', null);
     WorkflowStartIntents::match('publish_copy', app(DirectOperation::class)->workflowInputs($operation));
+});
+
+// The task VM publish is removed with the task VMs (docs/reference/old-paths.md): a group whose workspace sat on a task VM has no task copy.
+it('refuses a publish of a group whose workspace is on a task VM by name, and starts nothing', function (): void {
     [$vmGroup, $vmCheck] = vmPublishWorld();
-    $vm = app(TaskPublishIntent::class)->start($vmGroup, StartTaskPublishData::from(['check' => $vmCheck->id,
-        'pull_request' => ['title' => 'Export orders', 'body' => 'Adds the export.']]), 'test', null);
-    expect($vm->input)->not->toHaveKey('workspace');
-    WorkflowStartIntents::match('publish_vm', app(DirectOperation::class)->workflowInputs($vm));
+
+    expect(fn () => app(TaskPublishIntent::class)->start($vmGroup, StartTaskPublishData::from(['check' => $vmCheck->id,
+        'pull_request' => ['title' => 'Export orders', 'body' => 'Adds the export.']]), 'test', null))
+        ->toThrow(fn (ResourceOperationException $refusal) => expect([$refusal->errorCode, $refusal->getMessage()])->toBe(['tasks.no_workspace', 'The group requires its task copy.']))
+        ->and(Operation::query()->where('kind', 'tasks.publish')->exists())->toBeFalse();
 });
 
 /**

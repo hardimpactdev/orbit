@@ -21,8 +21,7 @@ sequenceDiagram
   Note over GW: Admit the sync<br/>group 42 · capture the intent
   %%> Requirements:
   %%> - your Node has an access grant to the Gateway
-  %%> - group 42 is open and external, with its own task VM workspace and a pushed branch `task-42`, or with its own task copy
-  %%> - a task VM runs; a parked VM is woken by the admission, which answers `tasks.vm_resuming`
+  %%> - group 42 is open and external, with its own task copy; a group without one gets `tasks.no_workspace`: task VM workspaces are removed, and the Gateway sends no task VM intent any more
   %%> - a task copy's container runs, else `tasks.instance_not_running`, and no copy turn of the group is unended, else `tasks.copy_turn_unended`
   %%> - no other task runs on group 42, so no check or publish; the Gateway holds one lock per group
   %%> What it does:

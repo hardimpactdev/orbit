@@ -23,7 +23,6 @@ use App\Domain\Releases\ReleaseAlertReceipt;
 use App\Domain\Releases\ReleaseAlertStep;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskVmAwake;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmState;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -192,7 +191,7 @@ it('holds task work and new task VMs off a host while its pass runs', function (
     Operation::query()->create(['kind' => 'fleet.reboot', 'target_type' => 'fleet', 'target_id' => 1, 'node_id' => null, 'status' => 'running',
         'input' => ['task_hosts' => [$this->beast->id]]]);
 
-    expect(fn () => TaskVmAwake::require($group))
+    expect(fn () => FleetReboot::refuseTaskWork($group))
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks.host_rebooting'))
         ->and(array_map(static fn (array $host): int => $host[1]->id, app(TaskVmCapacity::class)->activeHosts()))->not->toContain($this->beast->id);
 });

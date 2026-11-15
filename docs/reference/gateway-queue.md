@@ -30,7 +30,7 @@ Laravel Horizon runs seven queues on the connection with five supervisors. The `
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
-| `tasks` | 3 | Scheduled commands, an approved commit's publish, a new container's [workspace baseline](/reference/development-containers#workspace-work-state), and a task VM slot release. The Git mirror's lock keeps one push per Project at a time |
+| `tasks` | 3 | Scheduled commands, an approved commit's publish, and a new container's [workspace baseline](/reference/development-containers#workspace-work-state). The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
 | `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
@@ -73,7 +73,7 @@ The job runs the command in its own PHP process, as the scheduler did, so a comm
 
 The last five commands are Gateway self-maintenance. They keep the Gateway's own tables and Horizon metrics, touch no Node, and start no Swamp work. PLAN decision 9 (2026-11-01) keeps them in the Gateway: housekeeping of the Gateway's own tables is not orchestration. [Interrupted Activity finalization](/cli/activity#interrupted-requests) ends at most 500 records per run. `horizon:snapshot` records Horizon's dashboard metrics and runs only while the Gateway queue is set. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` delete records older than the [disk retention](/reference/gateway-recovery#disk-retention) cutoffs. Failed-job pruning and Activity cleaning also run while Tasks is disabled; batch pruning runs only while Tasks is enabled.
 
-The [task VM slot release](/reference/compute-drivers#jobs) and image reconciliation go to the same connection.
+Image reconciliation goes to the same connection.
 
 These commands stay in the scheduler and never go to the queue, also while it is set:
 
@@ -157,11 +157,11 @@ The key is `laravel_unique_job:` followed by the job class and its unique id, th
 
 ### The removed `task-vms` queue
 
-The release that removed the task VM runtime also removed the `task-vms` queue and its supervisor. Its jobs were the host sweep, the idle release, the observation of parked VMs and the slot release. The first three are gone; the slot release now runs on `tasks`. A slot release is queued only when a task VM start fails, and none starts.
+The release that removed the task VM runtime also removed the `task-vms` queue and its supervisor. Its jobs were the host sweep, the idle release, the observation of parked VMs and the slot release. All four are gone; the slot release left last, with the task VM lifecycle.
 
 The release drain waits only for running jobs. A job still waiting in the `task-vms` list when the release lands stays there, and no worker of the new release reads it. Each one is a periodic job that did nothing with no task VM: at most one sweep, one idle release and one observation, each held by its unique lock for at most 15 minutes. Losing them is safe. The list may be deleted by hand: `php artisan tinker --execute='app("redis")->connection("gateway")->del("queues:task-vms", "queues:task-vms:delayed", "queues:task-vms:reserved", "queues:task-vms:notify");'` as `orbit` in `/home/orbit/orbit/apps/gateway`.
 
-A switch back to the release before brings the supervisor back. It works what is left in the list with the older code, which has those classes. A slot release that the newer release queued on `tasks` is read by the older release's `tasks` workers, because the job class is the same.
+A switch back to the release before brings the supervisor back. It works what is left in the list with the older code, which has those classes. Nothing has queued a slot release since the task VM runtime was removed, so no worker of either release finds one.
 
 ### Jobs across releases
 

@@ -6,16 +6,13 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
-use App\Domain\Operations\DirectOperationStartRefusal;
-use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Support\ValidatedData;
 use Illuminate\Support\Facades\DB;
 
-/** A cancel that released the slot settles the group; anything less keeps it for another cancel. */
-final readonly class TaskCancelProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout
+/** The end of an old cancel run, which released a task VM: success settles the group. No cancel starts a run any more (R1 or a copy destroy). */
+final readonly class TaskCancelProjection implements DirectOperationProjection
 {
     public function input(Operation $operation): array
     {
@@ -39,29 +36,10 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
             }
             $result = ['group_id' => $group->id, 'instance_id' => $operation->input['instance_id'] ?? null, 'released' => $data['status'] === 'succeeded'];
             if ($data['status'] === 'succeeded') {
-                app(TaskGroupEnding::class)->settle($group, $operation->input, $operation->kind);
-            } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
-                $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
+                app(TaskGroupEnding::class)->settle($group, $operation->kind);
             }
 
             return app(DirectOperation::class)->project($operation, $data, $result);
         });
-    }
-
-    /** A start that Swamp refused or never took ran nothing: the VM that admission reserved is failed, so another cancel can reserve it again. */
-    public function refused(Operation $operation): void
-    {
-        $this->failed($operation, $operation->error_code);
-    }
-
-    public function timedOut(Operation $operation): void
-    {
-        $this->failed($operation, $operation->error_code);
-    }
-
-    /** Incomplete cleanup keeps the group and workspace for another cancel; only its captured VM cleanup fails. */
-    private function failed(Operation $operation, ?string $errorCode): void
-    {
-        app(TaskGroupEnding::class)->failed($operation->input, $errorCode);
     }
 }
