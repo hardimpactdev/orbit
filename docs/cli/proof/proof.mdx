@@ -42,7 +42,7 @@ A run that you cancel with Ctrl-C leaves the fleet as it is. The next proof rese
 
 Swamp locks each step's SSH behavior while the step runs, and a second run that needs the same lock waits 60 seconds and then fails. The steps act only inside the copy, so the steps that run there lock on the copy's Instance id, and proofs in two copies on one Node run side by side.
 
-While the run holds the task group, another operation on the group is refused with `operation.target_busy`. The turn of the agent that calls does not count: an agent can run `orbit proof` from inside its own turn. The operation has a budget of 50 minutes.
+While the run holds the task group, another operation on the group is refused with `operation.target_busy`. An open copy turn of the group holds it too, so a proof starts after the turn ended. The operation has a budget of 50 minutes.
 
 ## Verdicts
 

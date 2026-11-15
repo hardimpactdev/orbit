@@ -80,7 +80,6 @@ it('finishes a no-change maintenance group whose VM is gone at admission, and th
         'maintenance' => ['changed' => false, 'check_operation_id' => $check->id, 'stage' => 'tasks.check']]);
 
     $finish = app(TaskCancelIntent::class)->finishMaintenance($this->group);
-    // TaskMaintenanceContinuation records the next stage on the model it already holds.
     $this->group->update(['maintenance' => [...$this->group->maintenance, 'stage' => $finish->kind, 'operation_id' => $finish->id]]);
 
     expect($finish->kind)->toBe('tasks.maintenance_finish')

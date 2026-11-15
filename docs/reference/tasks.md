@@ -986,6 +986,8 @@ Swamp selects a subtask, role, brief and operation key for each turn. The Gatewa
 
 ### Fetch before a turn
 
+This section and [Turn receipt](#turn-receipt) describe the Pi turn on a task VM, which is removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop). A copy turn fetches nothing and writes no receipt ([chart](/cli/task/turn#in-a-task-copy)).
+
 A keyed turn fetches the default branch before it starts or sends agent work. The operation records its workspace and review baseline so recovery uses the same context.
 
 ### Turn receipt

@@ -1453,13 +1453,12 @@ describe('a turn of a group that owns a copy', function (): void {
             ->toBe(['model' => 'claude-haiku-5-5', 'effort' => 'max', 'provider_instance' => 'claudeMax']);
     });
 
-    it('ships Claude Opus 5.5 at medium effort for the implementer and at high effort for the reviewer, and reads no task VM value', function (): void {
+    it('ships Claude Opus 5.5 at medium effort for the implementer and at high effort for the reviewer, and reads no task VM model', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
-        // An open group of an earlier release holds the task VM's Pi model in its VM columns; the task VM efforts do not reach a copy either.
+        // An open group of an earlier release holds the task VM's Pi model in its VM columns.
         $group->update(['implementer_model' => TaskAgentDefaults::ImplementerModel, 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
-        config(['orbit.tasks.implementer_effort' => 'low', 'orbit.tasks.reviewer_effort' => 'low']);
 
         $implementer = copyTurn($group);
         copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));

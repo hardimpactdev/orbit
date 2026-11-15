@@ -63,7 +63,7 @@ it('refuses every other admission through the shared group gate', function (stri
 
     expect(fn () => app(TaskOperations::class)->start($this->group, $kind, [], static function (): void {}, 'test', null))
         ->toThrow(fn (ResourceOperationException $refusal) => expect([$refusal->errorCode, $refusal->details])->toBe(['tasks.not_provisioned', ['operation_id' => $provision->id]]));
-})->with(['tasks.turn', 'tasks.copy_turn', 'tasks.maintenance']);
+})->with(['tasks.copy_turn', 'tasks.check', 'tasks.publish']);
 
 it('returns a keyed replay before the refusal', function (): void {
     $sync = Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $this->group->id, 'node_id' => null,
