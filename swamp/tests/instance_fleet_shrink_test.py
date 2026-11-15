@@ -106,15 +106,134 @@ class FleetShrinkTest(unittest.TestCase):
         gateway, dev, prod = (self.disk(name) / 'var/cache/apt' for name in NAMES)
         # A symlinked parent, a symlinked archives folder and a symlinked package file.
         subprocess.run(['rm', '-rf', str(gateway)], check=True)
-        gateway.symlink_to(self.folder)
         (outside / 'apt').mkdir()
         (outside / 'apt/archives').symlink_to(outside)
+        gateway.symlink_to(outside / 'apt')
         subprocess.run(['rm', '-rf', str(dev / 'archives')], check=True)
         (dev / 'archives').symlink_to(outside)
         (prod / 'archives/linked.deb').symlink_to(outside / 'kept.deb')
-        self.shrink('run')
+        self.assertEqual(self.shrink('run')['shrink'], 'ran')
         self.assertEqual(sorted(str(path.relative_to(outside)) for path in outside.rglob('*.deb')), ['kept.deb', 'partial/kept.deb'])
         self.assertTrue((prod / 'archives/linked.deb').is_symlink())
+
+    def outer(self, relative):
+        """A file outside every root disk, on the same device, with the bytes, owner and mode of the shipped binary."""
+        path = self.folder / 'outer' / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(BINARY)
+        path.chmod(0o755)
+        return path
+
+    def listed(self, name, *relatives):
+        """Adds paths with the shipped binary's digest to the machine's rust-coreutils.md5sums."""
+        md5sums = self.disk(name) / 'var/lib/dpkg/info/rust-coreutils.md5sums'
+        md5sums.write_text(md5sums.read_text() + ''.join(f'{hashlib.md5(BINARY).hexdigest()}  {relative}\n' for relative in relatives))
+
+    def run_on_a_directory_pool(self):
+        self.driver = 'dir'
+        done = subprocess.run([sys.executable, '-I', '-c', SCRIPT.read_text(), 'run', str(self.record), str(self.pools), *NAMES], capture_output=True,
+                              text=True, check=False, env={'PATH': f'{self.bin}:/usr/bin:/bin', 'DRIVER': self.driver})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        return json.loads(done.stdout.splitlines()[-1]), done.stderr
+
+    def assertUnlinked(self, path):
+        self.assertEqual((path.lstat().st_nlink, path.read_bytes()), (1, BINARY), path)
+
+    def test_an_absolute_path_in_the_md5sums_never_reaches_a_file_outside_the_disk(self):
+        target = self.outer('absolute')
+        self.listed('nested-app-dev', str(target))
+        result, errors = self.run_on_a_directory_pool()
+        self.assertUnlinked(target)
+        self.assertEqual(result, {'shrink': 'ran', 'relinked': 9, 'dedupe': 'not_btrfs'})
+        self.assertIn('nested-app-dev: skipped 1 paths', errors)
+
+    def test_a_path_that_starts_with_two_slashes_is_absolute_too(self):
+        target = self.outer('two-slashes')
+        self.listed('nested-app-dev', '/' + str(target))
+        result, errors = self.run_on_a_directory_pool()
+        self.assertUnlinked(target)
+        self.assertEqual(result['relinked'], 9)
+        self.assertIn('nested-app-dev: skipped 1 paths', errors)
+
+    def test_a_path_that_cannot_be_linked_is_skipped_and_the_others_are_linked(self):
+        disk = self.disk('nested-app-dev')
+        (disk / 'usr/lib/cargo/bin/coreutils/.orbit-relink-ls').mkdir()
+        # A name that the temporary's prefix makes too long.
+        long = 'usr/lib/cargo/bin/coreutils/' + 'x' * 250
+        (disk / long).write_bytes(BINARY)
+        (disk / long).chmod(0o755)
+        self.listed('nested-app-dev', long)
+        # A line that is no UTF-8 and a path with a NUL byte are two more paths that are not there.
+        md5sums = disk / 'var/lib/dpkg/info/rust-coreutils.md5sums'
+        digest = hashlib.md5(BINARY).hexdigest().encode()
+        md5sums.write_bytes(md5sums.read_bytes() + digest + b'  usr/bin/\xff\n' + digest + b'  usr/bin/a\x00b\n')
+        result, errors = self.run_on_a_directory_pool()
+        self.assertEqual(result, {'shrink': 'ran', 'relinked': 8, 'dedupe': 'not_btrfs'})
+        self.assertIn('nested-app-dev: skipped 4 paths', errors)
+        self.assertTrue((disk / 'usr/lib/cargo/bin/coreutils/.orbit-relink-ls').is_dir())
+        self.assertEqual(self.links('nested-app-dev'), 3)
+
+    def test_a_dotdot_path_in_the_md5sums_never_reaches_a_file_outside_the_disk(self):
+        target = self.outer('dotdot')
+        self.listed('nested-app-dev', os.path.relpath(target, self.disk('nested-app-dev')))
+        # A `..` part that stays inside the disk is skipped too: one rule, no resolving.
+        self.listed('nested-app-prod', 'usr/lib/../lib/cargo/bin/coreutils/ls')
+        result, errors = self.run_on_a_directory_pool()
+        self.assertEqual(result['relinked'], 9)
+        self.assertUnlinked(target)
+        self.assertEqual(self.links('nested-app-dev'), 4)
+        self.assertIn('nested-app-prod: skipped 1 paths', errors)
+
+    def test_a_symlinked_folder_in_a_listed_path_is_not_followed(self):
+        target = self.outer('folder/ls')
+        (self.disk('nested-app-dev') / 'usr/lib/cargo/bin/outer').symlink_to(target.parent)
+        self.listed('nested-app-dev', 'usr/lib/cargo/bin/outer/ls')
+        self.assertEqual(self.run_on_a_directory_pool()[0]['relinked'], 9)
+        self.assertUnlinked(target)
+
+    def test_a_symlinked_folder_of_the_shipped_file_links_nothing_to_a_file_outside_the_disk(self):
+        target = self.outer('bin/coreutils')
+        disk = self.disk('nested-app-dev')
+        subprocess.run(['rm', '-rf', str(disk / 'usr/bin')], check=True)
+        (disk / 'usr/bin').symlink_to(target.parent)
+        self.assertEqual(self.run_on_a_directory_pool()[0]['relinked'], 6)
+        self.assertUnlinked(target)
+        for link in LINKS:
+            self.assertUnlinked(disk / link)
+
+    def test_a_symlinked_md5sums_or_dpkg_status_is_not_read(self):
+        outer = self.folder / 'outer'
+        outer.mkdir()
+        info = self.disk('nested-app-dev') / 'var/lib/dpkg/info/rust-coreutils.md5sums'
+        (outer / 'md5sums').write_bytes(info.read_bytes())
+        info.unlink()
+        info.symlink_to(outer / 'md5sums')
+        self.assertEqual(self.run_on_a_directory_pool()[0]['relinked'], 6)
+        status = self.disk('nested-app-prod') / 'var/lib/dpkg/status'
+        (outer / 'status').write_bytes(status.read_bytes())
+        status.unlink()
+        status.symlink_to(outer / 'status')
+        self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})
+
+    def test_a_symlinked_root_disk_fails_the_run_and_reaches_nothing_outside_the_pool(self):
+        disk = self.disk('nested-app-prod')
+        moved = self.folder / 'outer/rootfs'
+        moved.parent.mkdir()
+        disk.rename(moved)
+        disk.symlink_to(moved)
+        self.assertEqual(self.shrink('check'), {'due': False, 'reason': 'unreadable'})
+        self.assertEqual(self.shrink('run'), {'shrink': 'failed', 'relinked': 0, 'dedupe': 'failed'})
+        self.assertFalse(self.duperemove_log.exists())
+        self.assertEqual((moved / 'usr/bin/coreutils').stat().st_nlink, 1)
+        self.assertEqual(len(list((moved / 'var/cache/apt/archives').rglob('*.deb'))), 2)
+
+    def test_a_leftover_temporary_link_goes_and_its_path_is_linked(self):
+        # A run stopped between its link and its rename leaves the temporary.
+        folder = self.disk('nested-app-dev') / 'usr/lib/cargo/bin/coreutils'
+        os.link(self.disk('nested-app-dev') / 'usr/bin/coreutils', folder / '.orbit-relink-ls')
+        self.assertEqual(self.shrink('run')['relinked'], 9)
+        self.assertFalse(os.path.lexists(folder / '.orbit-relink-ls'))
+        self.assertEqual(self.links('nested-app-dev'), 4)
 
     def test_a_record_that_is_no_object_is_no_record(self):
         self.record.parent.mkdir(parents=True)
