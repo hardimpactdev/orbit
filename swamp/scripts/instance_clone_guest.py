@@ -449,7 +449,7 @@ def phase_main(phase, raw):
             )
         # The same CLI-only file as the container phase, such as PCOV for the Project's PHP: `php` and `frankenphp php-cli` (SAPI
         # name `cli`) read php-cli.ini, the FrankenPHP server (SAPI name `frankenphp`) never does. A Project without it has none.
-        cli_ini = c.get("php_cli_ini")
+        cli_ini = c["php_cli_ini"]
         if cli_ini is not None:
             write(PHP_CLI_INI, cli_ini)
         elif root(PHP_CLI_INI).is_file():

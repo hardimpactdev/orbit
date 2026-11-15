@@ -292,7 +292,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
     def phase(self, phase, container=None, private=None, commands=None, walk=False):
         container = container or {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                     "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/.env",
+                     "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/.env",
                      "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
         if phase in {"workspace", "checkout"}:
             # The Node pushes the mirror's branch in as a bundle before each workspace phase.
@@ -390,7 +390,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
         exclude = self.workspace / ".git/info/exclude"
         exclude.unlink(missing_ok=True)
         container = {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                     "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/apps/web/.env",
+                     "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/apps/web/.env",
                      "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
         (self.workspace / "apps/web").mkdir(parents=True)
         self.phase("checkout", container)
@@ -427,7 +427,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
     def seed_branch(self, task=False):
         """A clone of a new branch at the seed's commit: the Node pushes no bundle, so the container names none."""
         container = self.task_copy() if task else {"instance_id": 9, "workspace": "/srv/workspace", "branch": "fix-login",
-                                                   "expected_commit": self.expected, "php": None, "environment_file": "/srv/workspace/.env",
+                                                   "expected_commit": self.expected, "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/.env",
                                                    "units": [], "processes": [], "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}}}
         container.pop("bundle", None)
         container["branch"] = "fix-login"
@@ -455,7 +455,7 @@ class WorkspaceCheckoutTest(unittest.TestCase):
 
     def task_copy(self):
         return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                "bundle": "/tmp/proof.bundle", "php": None, "environment_file": "/srv/workspace/.env", "units": [], "processes": [],
+                "bundle": "/tmp/proof.bundle", "php": None, "php_cli_ini": None, "environment_file": "/srv/workspace/.env", "units": [], "processes": [],
                 "clone": {"t3": {"internal_port": 3773, "t3": "/opt/agent/bin/t3"}, "clean_workspace": True}}
 
     def default_tree(self):
@@ -642,7 +642,8 @@ class WorkspaceCheckoutTest(unittest.TestCase):
     # The workspace's two parts. A container with PHP, a web config, a unit and a Process with its own environment file.
     def full_container(self):
         return {"instance_id": 9, "workspace": "/srv/workspace", "branch": "proof", "expected_commit": self.expected,
-                "bundle": "/tmp/proof.bundle", "php": "/opt/runtime/php/8.5/bin/php", "environment_file": "/srv/workspace/.env",
+                "bundle": "/tmp/proof.bundle", "php": "/opt/runtime/php/8.5/bin/php",
+                "php_cli_ini": "extension=/opt/runtime/php/8.5/modules/pcov.so\n", "environment_file": "/srv/workspace/.env",
                 "web_config": {"path": "/etc/frankenphp/Caddyfile", "content": "site\n"},
                 "units": [{"name": "orbit-frankenphp.service", "content": "[Service]\n"}],
                 "processes": [{"name": "orbit-process-19.service", "id": 19, "content": "[Service]\n",
@@ -787,6 +788,7 @@ class CloneGuestTest(unittest.TestCase):
             "expected_commit": "abc",
             "instance_id": 9,
             "php": None,
+            "php_cli_ini": None,
             "clone": {"t3": {"internal_port": 3773}},
             "units": [],
             "processes": [],
@@ -942,6 +944,7 @@ class CloneGuestTest(unittest.TestCase):
             "expected_commit": "abc123",
             "instance_id": 9,
             "php": php,
+            "php_cli_ini": None if php is None else "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n",
             "units": [],
             "processes": [{"name": "orbit-process-vp-dev.service", "id": 19, "desired": desired}] if inactive else [],
             "clone": {
@@ -1254,6 +1257,7 @@ class CloneGuestTest(unittest.TestCase):
                 "instance_id": 9,
                 "bundle": "/tmp/proof.bundle",
                 "php": None,
+                "php_cli_ini": None,
                 "environment_file": "/srv/workspace/.env",
                 "units": [],
                 "processes": [],
@@ -1307,6 +1311,7 @@ class CloneGuestTest(unittest.TestCase):
                 "instance_id": 9,
                 "bundle": "/tmp/proof.bundle",
                 "php": None,
+                "php_cli_ini": None,
                 "environment_file": "/srv/workspace/.env",
                 "units": [],
                 "processes": [],
