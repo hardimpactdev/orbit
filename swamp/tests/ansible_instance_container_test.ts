@@ -1818,7 +1818,7 @@ Deno.test({
 });
 
 Deno.test({
-  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, and start repairs them without rerun changes",
+  name: "container PHP reads the shared 1G memory limit and PHP Data Bridge, only its CLI reads PCOV from php-cli.ini, start repairs both without rerun changes, and a Project without PHP loses php-cli.ini",
   ignore: !hasAnsible,
   fn() {
     const f = fixture();
@@ -1855,47 +1855,27 @@ Deno.test({
       assert(again.ok, again.output);
       assertEquals(again.changed, 0, again.output);
       assertEquals(tryRestarts().length, before + 1);
-    } finally {
-      f.cleanup();
-    }
-  },
-});
 
-Deno.test({
-  name: "container PHP CLI reads the CLI-only php-cli.ini with the Project's PCOV, a change restarts the running units, and a Project without it has no file",
-  ignore: !hasAnsible,
-  fn() {
-    const f = fixture();
-    const path = "/etc/orbit/php/php-cli.ini";
-    const file = `${f.folder}/containers/instance-7${path}`;
-    const pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n";
-    const tryRestarts = () =>
-      (f.state().systemctl ?? []).filter((call: string[]) => call[0] === "try-restart").map((call: string[]) => call.join(" "));
-    try {
-      const created = f.run("container");
-      assert(created.ok, created.output);
-      assertEquals(Deno.readTextFileSync(file), pcov);
-      assertEquals(f.state().files[path], { uid: "0", gid: "0", mode: "0644" });
-      const again = f.run("start");
-      assert(again.ok, again.output);
-      assertEquals(again.changed, 0, again.output);
+      // The CLI-only file holds the intent's PCOV line. A queue worker is a PHP CLI too: a repair restarts the running units.
+      const cliPath = "/etc/orbit/php/php-cli.ini";
+      const cli = `${rootfs}${cliPath}`;
+      const pcov = "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n";
+      assertEquals(Deno.readTextFileSync(cli), pcov);
+      assertEquals(f.state().files[cliPath], { uid: "0", gid: "0", mode: "0644" });
+      Deno.writeTextFileSync(cli, "extension=/tmp/other.so\n");
+      const cliRepaired = f.run("start");
+      assert(cliRepaired.ok, cliRepaired.output);
+      assertEquals(Deno.readTextFileSync(cli), pcov);
+      assertEquals(tryRestarts().slice(before + 1), ["try-restart --no-block orbit-*.service"]);
 
-      // A queue worker is a PHP CLI too: a repair restarts the running Orbit units.
-      let before = tryRestarts().length;
-      Deno.writeTextFileSync(file, "extension=/tmp/other.so\n");
-      const repaired = f.run("start");
-      assert(repaired.ok, repaired.output);
-      assertEquals(Deno.readTextFileSync(file), pcov);
-      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
-
+      // A Project without PHP loses Orbit's file, and the running units restart; a rerun changes nothing.
       f.container.php = null;
       f.container.php_cli_ini = null;
       f.write();
-      before = tryRestarts().length;
       const removed = f.run("start");
       assert(removed.ok, removed.output);
-      assertThrows(() => Deno.lstatSync(file));
-      assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
+      assertThrows(() => Deno.lstatSync(cli));
+      assertEquals(tryRestarts().slice(before + 2), ["try-restart --no-block orbit-*.service"]);
       const stable = f.run("start");
       assert(stable.ok, stable.output);
       assertEquals(stable.changed, 0, stable.output);
