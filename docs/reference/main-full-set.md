@@ -44,7 +44,7 @@ A separate serialized hosted caller uses the existing enrolled proof runner and 
 
 The main proof consumer passes the exclusive ancestor base and newest SHA to `proof:run`. Orbit unions each commit's selection and runs it on the newest tree. Its report names the covered interval and says `range_covered: true`; it does not claim to test each intermediate tree. The receipt's case and verdict fields stay unchanged.
 
-The nightly `--all` run checks every available kind at one pinned main SHA when this consumer is idle. Both receipts retain every returned case verdict and the exact tested SHA. They are independent of Required and releases.
+The nightly `--all` run is separately disabled by default. Set `ORBIT_MAIN_PROOF_NIGHTLY_ENABLED=true` as well as `ORBIT_MAIN_PROOF_ENABLED=true` to let it check every available kind at one pinned main SHA when this consumer is idle. With the nightly switch off, scheduled wakeups still drain waiting ranges. An explicit manual `full_set` request remains available. Both receipts retain every returned case verdict and the exact tested SHA. They are independent of Required and releases.
 
 ### One manual hosted proof
 

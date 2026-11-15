@@ -148,3 +148,5 @@ A coalesced CI receiver must select each waiting commit before taking the union:
 A coalesced proof range selects each intervening commit against its own first parent and then intersects case IDs with the tested tree. A net diff loses reverted inputs. Share variant expansion with batch admission, and refuse an incomplete history instead of claiming partial coverage.
 
 A manual hosted proof checks out trusted workflow code, passes the tested SHA only as data, and preserves the existing caller’s signal forwarding. A successful zero-case selection does not prove hosted execution.
+
+Give scheduled full sweeps their own default-off switch when rolling out an incremental consumer. Enabling range processing must not silently enable a longer nightly run.

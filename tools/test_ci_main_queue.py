@@ -350,6 +350,17 @@ class WorkflowTest(unittest.TestCase):
         run = subprocess.run([sys.executable, str(ROOT / 'tools/check_ci_workflow.py'), *paths], capture_output=True, text=True, timeout=90)
         self.assertEqual(0, run.returncode, run.stdout + run.stderr)
 
+    def test_nightly_all_requires_its_own_opt_in_without_disabling_range_wakeups(self):
+        import yaml
+        workflow = yaml.safe_load((ROOT / '.github/workflows/ci-main-proof.yml').read_text())
+        job = workflow['jobs']['claim']
+        step = next(step for step in job['steps'] if step.get('id') == 'claim')
+        self.assertEqual("${{ github.event.schedule == '17 3 * * *' && vars.ORBIT_MAIN_PROOF_NIGHTLY_ENABLED == 'true' }}", step['env']['NIGHTLY'])
+        self.assertNotIn('NIGHTLY_ENABLED', job['if'])
+        self.assertEqual("${{ inputs.full_set || false }}", step['env']['FULL_SET'])
+        self.assertIn({'cron': '*/10 * * * *'}, workflow['on']['schedule'])
+        self.assertIn({'cron': '17 3 * * *'}, workflow['on']['schedule'])
+
     def test_claim_is_uploaded_before_fixture_planning_and_report_before_checkpoint(self):
         import yaml
         workflow = yaml.safe_load((ROOT / '.github/workflows/ci-deferred.yml').read_text())

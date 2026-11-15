@@ -43,7 +43,7 @@ jobs:
       env:
         GH_TOKEN: ${{ github.token }}
         FULL_SET: ${{ inputs.full_set || false }}
-        NIGHTLY: ${{ github.event.schedule == '17 3 * * *' }}
+        NIGHTLY: ${{ github.event.schedule == '17 3 * * *' && vars.ORBIT_MAIN_PROOF_NIGHTLY_ENABLED == 'true' }}
       run: bin/ci-main-queue claim --consumer proof --output "$RUNNER_TEMP/main-queue-claim.json"
     - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
       if: steps.claim.outputs.has_work == 'true'
