@@ -1,4 +1,3 @@
-Following operation 1. Read it with: orbit operation:show 1
 Database running...
 
 ┌  Create database [app-parallel]

@@ -66,7 +66,9 @@ trait FollowsOperations
         );
         $handlers = [];
         $async = null;
-        $this->writeFollowedOperation($started->id);
+        if (! $started->terminal()) {
+            $this->writeFollowedOperation($started->id);
+        }
 
         try {
             if (function_exists('pcntl_async_signals') && function_exists('pcntl_signal_get_handler')) {

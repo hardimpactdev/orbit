@@ -218,6 +218,15 @@ it('times out sync with truthful pending status and no restart request', functio
         ->and($mock->getLastRequest())->toBeInstanceOf(SyncWebSocketAppsRequest::class);
 });
 
+it('names the followed sync Operation first, on stderr with --json', function (): void {
+    MockClient::global([SyncWebSocketAppsRequest::class => websocket_app_cli_response(202)]);
+    $tester = new CommandTester(app(Kernel::class)->all()['websocket:sync']);
+    $tester->execute(['--wait' => '0', '--json' => true], ['interactive' => false, 'capture_stderr_separately' => true]);
+    $id = json_decode($tester->getDisplay(true), true, flags: JSON_THROW_ON_ERROR)['id'];
+
+    expect($tester->getErrorOutput(true))->toBe("Following operation {$id}. Read it with: orbit operation:show {$id}\n");
+});
+
 it('requires consent for rotation before sending its typed request', function (): void {
     $mock = MockClient::global([RotateWebSocketAppRequest::class => websocket_app_cli_response(), ShowOperationRequest::class => websocket_app_cli_response(), '*/api/v1/realtime' => MockResponse::make(['data' => []])]);
     $tester = new CommandTester(app(Kernel::class)->all()['websocket:app:rotate']);
