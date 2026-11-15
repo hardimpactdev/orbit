@@ -742,9 +742,11 @@ The lock files are regular files owned by root that no group or other may write;
 
 The module's own time bounds add up to about 250 seconds with two PHP versions, inside the 300 seconds of its Ansible phase. The certificate folders of the withdrawn scopes go after the transaction.
 
-Each withdrawal reads what the Node holds under the lock. So two withdrawals of different Routes on one Node both land, in either order, and removals share their Nodes. The Gateway records a removal's hold in `route_withdrawal_holds`, beside other removals. It records a publisher's hold in `route_publication_holds`, alone. A removal waits while a publisher holds one of its Nodes, and a publisher waits while any removal holds one. Each take checks the other table in the same transaction.
+Each withdrawal reads what the Node holds under the lock. So two withdrawals of different Routes on one Node both land, in either order, and removals share their Nodes. A container clone's create whose publication is Caddy only shares them too: its site merges its own groups under the same lock ([publish a development site](#publish-a-development-site)). The Gateway records the hold of these shared writers in `route_withdrawal_holds`, side by side.
 
-At most four removals share one Node. A fifth waits in the Gateway, so the Node transactions that queue on the lock stay well inside its 30-second wait.
+It records any other publisher's hold in `route_publication_holds`, alone. A shared writer waits or defers while a publisher holds one of its Nodes, and a publisher waits while any shared writer holds one. Each take checks the other table in the same transaction.
+
+At most eight shared writers hold one Node. A ninth removal waits in the Gateway; a ninth create leaves its address to its completion. A publication holds the Node lock for about a quarter of a second and a withdrawal for a few seconds, so the transactions that queue on the lock stay well inside its 30-second wait.
 
 A removal gives its hold back right after its withdrawal held, not at its end; its later steps write no Caddy, PHP pool or DNS file. Create and clone still render Caddy and shared PHP input under their publication hold.
 
@@ -756,7 +758,7 @@ Only one operation publishes private Caddy, DNS, or Metrics configuration at a t
 
 Route writes also hold their Nodes (decided by the orchestrator, for Nick's review, 2026-11-06). When the Gateway admits a Route write (`route:create`, `route:update`, `route:destroy`, `route:target:set`, `instance:create`, `instance:complete`, `instance:destroy`, `instance:clone`, `instance:transfer`, `instance:migrate` or `instance:restore`), it records one hold for each Node that serves the Route's site, through Caddy or PHP. A removal (`instance:destroy`) shares its hold with other removals, as described above. The task keeps the hold until it reaches a terminal state, with two exceptions. A removal gives it back after its withdrawal, below. A container clone's create is the other.
 
-A container clone's create takes the hold only when every Node is free at its admission, and never waits. With a Node held, its intent carries no publication. Its completion then publishes the Route and holds the Nodes for its whole run, as before.
+A container clone's create takes the hold only when it can at its admission, and never waits. A create whose publication is Caddy only, with no PHP-FPM pool, private DNS record, Ingress site or LAN rule, takes a shared hold beside other shared writers. Any other create takes the Nodes alone. With a Node held by a publisher, an older waiting write on one of its Nodes, or eight shared writers on one Node, its intent carries no publication. Its completion then publishes the Route and holds the Nodes for its whole run, as before.
 
 A create that took the hold keeps it until its `clone-route` step ends. The Gateway sees that step succeed in the run's progress events. In one transaction it turns the Route `active` with its sites published and frees the Nodes; no step calls the Gateway. A failed step or a lost event keeps the hold until the create's terminal state.
 
@@ -805,7 +807,7 @@ A shell behavior locks per name, and Swamp keeps every definition and its data. 
 
 Measured on Beast on 2026-11-15 at load 16, with 143 site groups: `caddy validate` 0.14 to 0.21 seconds, and `systemctl reload caddy` 30 to 41 milliseconds; the reload signals Caddy, which loads the file after the call returns. So one publication holds the Node lock for about a quarter of a second.
 
-The Gateway still holds a clone create's Route Nodes alone in this release. A shared hold for creates comes in a later release, so that a rollback never runs the whole-file workflow beside a shared hold.
+The shared hold for Caddy-only creates came one release after this merge. In that first release the Gateway still held a create's Nodes alone, so a rollback, which loads the earlier Swamp workflows before it switches the Gateway back, never runs a whole-file `clone-route` beside a shared hold. A rollback of the shared hold lands on a Gateway that holds creates alone and reads their rows in `route_withdrawal_holds` as shared holds that exclude its publishers.
 
 ## Check Routes with Doctor
 
