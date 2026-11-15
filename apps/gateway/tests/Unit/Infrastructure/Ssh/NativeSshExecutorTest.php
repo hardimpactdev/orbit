@@ -11,11 +11,11 @@ use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshControlGroup;
 
 /** The ssh arguments of one command that runs in the control group the file names. */
-function sshArgumentsIn(string $group, bool $share = true): array
+function sshArgumentsIn(string $group, bool $share = true, ?string $home = null): array
 {
     // A short path: the socket directory must leave room for a Unix socket name.
-    $home = '/tmp/ssh'.bin2hex(random_bytes(4));
-    mkdir($home, 0700, true);
+    $home ??= '/tmp/ssh'.bin2hex(random_bytes(4));
+    is_dir($home) || mkdir($home, 0700, true);
     file_put_contents($home.'/cgroup', $group);
     $runner = new class implements ProcessRunner
     {
@@ -35,22 +35,44 @@ function sshArgumentsIn(string $group, bool $share = true): array
     return $runner->arguments;
 }
 
-it('runs a command on the shared connection of the Node outside Horizon', function (string $group): void {
-    $arguments = sshArgumentsIn($group);
+it('starts the shared connection of the Node only from PHP-FPM, whose control group outlives every request', function (): void {
+    $arguments = sshArgumentsIn("0::/system.slice/php8.5-fpm.service\n");
 
     expect($arguments)->toContain('ControlMaster=auto')->and($arguments)->toContain('ControlPersist=60s');
+});
+
+it('rides a running master or connects alone where the end of the control group kills a master started there', function (string $group): void {
+    $arguments = sshArgumentsIn($group);
+    $path = array_values(array_filter($arguments, static fn (string $argument): bool => str_starts_with($argument, 'ControlPath=')));
+
+    expect($arguments)->toContain('ControlMaster=no')
+        ->and($arguments)->not->toContain('ControlMaster=auto')
+        ->and(implode(' ', $arguments))->not->toContain('ControlPersist')
+        ->and($path)->toHaveCount(1)->and($path[0])->toEndWith('/mux/%C');
 })->with([
-    'a PHP-FPM pool' => ["0::/system.slice/php8.5-fpm.service\n"],
-    'the scheduler' => ["0::/system.slice/orbit-process-108-schedule-work.service\n"],
-    'a terminal session' => ["0::/user.slice/user-1000.slice/session-1.scope\n"],
+    'the runtime hibernator, a oneshot' => ["0::/system.slice/orbit-runtime-hibernator.service\n"],
+    'a transient unit of systemd-run' => ["0::/system.slice/run-u4711.service\n"],
+    'the scheduler, which a release restarts' => ["0::/system.slice/orbit-process-108-schedule-work.service\n"],
+    'artisan from an SSH shell' => ["0::/user.slice/user-1000.slice/session-1.scope\n"],
+    'an unknown control group' => [''],
 ]);
+
+it('rides the same socket that PHP-FPM starts', function (): void {
+    $home = '/tmp/ssh'.bin2hex(random_bytes(4));
+    $socket = static fn (array $arguments): array => array_values(array_filter($arguments,
+        static fn (string $argument): bool => str_starts_with($argument, 'ControlPath=')));
+    $master = $socket(sshArgumentsIn("0::/system.slice/php8.5-fpm.service\n", home: $home));
+
+    expect($master)->toHaveCount(1)
+        ->and($socket(sshArgumentsIn("0::/system.slice/orbit-runtime-hibernator.service\n", home: $home)))->toBe($master);
+});
 
 it('gives a command in the Horizon unit its own connection, so no master stays in the group that a release drains', function (): void {
     $arguments = sshArgumentsIn("0::/system.slice/orbit-process-154-horizon.service\n");
 
-    expect($arguments)->not->toContain('ControlMaster=auto')->and($arguments)->not->toContain('ControlPersist=60s');
+    expect(implode(' ', $arguments))->not->toContain('ControlMaster')->and($arguments)->not->toContain('ControlPersist=60s');
 });
 
 it('keeps a connection that asked for no sharing unshared', function (): void {
-    expect(sshArgumentsIn("0::/system.slice/php8.5-fpm.service\n", share: false))->not->toContain('ControlMaster=auto');
+    expect(implode(' ', sshArgumentsIn("0::/system.slice/php8.5-fpm.service\n", share: false)))->not->toContain('ControlMaster');
 });

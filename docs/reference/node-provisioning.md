@@ -813,15 +813,19 @@ Before each command that a process runs, on the Node or on the Gateway, the Gate
 
 ## SSH connections
 
-The Gateway runs every remote command as a channel on one shared OpenSSH connection per Node. The first command opens the connection. Later commands reuse it, and it closes after 60 idle seconds. A command on a shared connection takes about 18 ms, and a command on a new connection about 190 ms.
+The Gateway runs every remote command as a channel on one shared OpenSSH connection per Node. The first command from a web request opens the connection. Later commands reuse it, and it closes after 60 idle seconds. A command on a shared connection takes about 18 ms, and a command on a new connection about 190 ms.
 
 The sockets live in `ORBIT_HOME/ssh/mux`, and the directory has mode `0700`. Every Gateway process runs as the `orbit` user. So web requests, the scheduler, and commands share the same connections. Each socket name hashes the user, the Node address, and the port. A Node with a new address or port therefore gets a new connection at once.
+
+Only a PHP-FPM worker opens the shared connection. The connection's master stays in the control group of the process that opened it, and systemd kills that group when its unit ends. Such units are a oneshot like the [runtime hibernator](/reference/app-dev-runtime-hibernation), a transient `systemd-run` unit, the scheduler at a restart, and an SSH shell at logout. A command that runs on the master at that moment fails, and no packet reaches the Node.
+
+So every other process runs its command on an open shared connection, or opens its own connection when none is open. It never leaves a master behind. A stop or restart of PHP-FPM still ends the shared connections and the commands that run on them. A reload of PHP-FPM keeps them.
 
 - A dead Node ends its connection within about 10 seconds, through `ServerAliveInterval=5` and `ServerAliveCountMax=2`.
 - A key or host-key change on the Node applies when the connection closes.
 - When the socket path is too long for a Unix socket, or the directory cannot be created, each command opens its own connection.
-- A command that runs inside the Horizon unit opens its own connection. A release waits for that unit's control group to empty, and a shared master would stay in it.
-- When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes two warning lines to its stderr.
+- A command that runs inside the Horizon unit always opens its own connection. A release waits for that unit's control group to empty, and its jobs do not depend on a master in another group.
+- When a Node refuses another channel, OpenSSH opens a direct connection for that command and writes warning lines to its stderr.
 
 A reachability check always opens a new connection. The `--offline` probe of role and Node removal, and the Node probe of task cancellation use it. Doctor uses official Swamp SSH. File copies between Nodes for Instance transfer and clone use `scp` on their own connections.
 
