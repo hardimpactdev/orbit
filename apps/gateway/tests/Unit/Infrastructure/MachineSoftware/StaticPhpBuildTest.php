@@ -13,17 +13,18 @@ function staticPhpRecipe(callable $change): string
     return json_encode($recipe, JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
 }
 
-it('pins the static build of PHP 8.5 with the Node extensions less those a static binary cannot load', function (): void {
+it('pins the static build of PHP 8.5 with the Node extensions less ffi, and PCOV for the CLI only', function (): void {
     $recipe = new RecipeLoader()->source();
     $build = $recipe->instances->php['8.5'];
 
     expect($build->phpVersion)->toStartWith('8.5.')
         ->and($build->extensions)->toBe(array_values(array_diff($recipe->php('8.5')->extensions, ['ffi', 'pcov'])))
         ->and($build->extensions)->toContain('pdo_pgsql', 'redis', 'intl', 'zend opcache', 'opentelemetry')
+        ->and($build->cliExtensions)->toBe(['pcov'])
         ->and($build->url)->toContain("/static-php-{$build->phpVersion}-".substr($build->build, 0, 12).'/')
-        // Main published the build, so the recipe pins its archive and the runtime folder holds it.
-        ->and($build->artifact?->location)->toBe($build->url)
-        ->and($build->artifact?->digest)->toMatch('/\A[0-9a-f]{64}\z/');
+        // The glibc build is not published yet (ADR 0262): the recipe pins no archive, so the runtime folder holds no php/8.5
+        // until a second pull request records the published SHA-256.
+        ->and($build->artifact)->toBeNull();
 });
 
 it('reads a published build as an artifact pin, and one that is not published yet as none', function (): void {
@@ -59,6 +60,11 @@ it('refuses a static build pin that does not hold together', function (callable 
     'a URL that is not HTTPS' => [fn (object $section) => $section->versions->{'8.5'}->url = 'http://example.test/php.tar.gz', 'instances.php.versions.8.5.url: expected an HTTPS release URL.'],
     'a malformed digest' => [fn (object $section) => $section->versions->{'8.5'}->sha256 = 'latest', 'instances.php.versions.8.5.sha256: expected the published SHA-256'],
     'an exclusion that is no extension' => [fn (object $section) => $section->without = ['ffi', 'xdebug'], 'instances.php.without: [xdebug] are not PHP 8.5 extensions.'],
+    'a CLI-only extension that is no extension' => [fn (object $section) => $section->cli_extensions = ['pcov', 'xdebug'], 'instances.php.cli_extensions: [xdebug] are not PHP 8.5 extensions.'],
+    'a CLI-only extension that the build leaves out' => [fn (object $section) => $section->without = ['ffi', 'pcov'], 'instances.php.cli_extensions: [pcov] are also in instances.php.without.'],
+    'no CLI-only extension list' => [function (object $section): void {
+        unset($section->cli_extensions);
+    }, 'instances.php: expected exactly fields'],
     'a FrankenPHP channel' => [fn (object $section) => $section->frankenphp = 'latest', 'instances.php.frankenphp: expected an exact FrankenPHP release'],
     'a static-php-cli branch' => [fn (object $section) => $section->static_php_cli = 'v3', 'instances.php.static_php_cli: expected a full static-php-cli commit SHA.'],
     'an unknown key' => [fn (object $section) => $section->mirror = 'https://example.com', 'instances.php: expected exactly fields'],
