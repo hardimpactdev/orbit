@@ -171,8 +171,9 @@ class RangePlanTest(unittest.TestCase):
                 patch.object(deferred.full, 'build_plan', return_value={}) as build, \
                 patch.object(deferred.full, 'collect_current', return_value={'cases': ['new']}):
             result = deferred.build_range(A, B, [B])
+            population = build.call_args.args[2]('swamp/a.ts')
         self.assertEqual({'swamp/a.ts': None}, build.call_args.kwargs['requested'])
-        self.assertEqual({'cases': ['new']}, build.call_args.args[2]('swamp/a.ts'))
+        self.assertEqual({'cases': ['new']}, population)
         self.assertEqual([{'file': 'swamp/a.ts', 'case': 'old', 'reason': 'gone at tested SHA'}], result['gone_at_tested_sha'])
         self.assertFalse(result['empty_selection'])
 
@@ -188,6 +189,13 @@ class RangePlanTest(unittest.TestCase):
         self.assertEqual([('a.ts', 'renamed'), ('deleted.ts', 'deleted'), ('empty.ts', 'gone'), ('unknown.ts', None)],
                          [(row['file'], row['case']) for row in gone])
         self.assertTrue(all(row['reason'] == 'gone at tested SHA' for row in gone))
+
+    def test_last_case_removed_from_retained_file_is_gone_for_both_request_shapes(self):
+        for wanted in (None, ['old']):
+            with self.subTest(wanted=wanted):
+                kept, _, gone = q.deferred.current_requests({'a.ts': wanted}, {'a.ts': ['old']}, {'a.ts'}, lambda _file: {'cases': []})
+                self.assertEqual({}, kept)
+                self.assertEqual([{'file': 'a.ts', 'case': 'old', 'reason': 'gone at tested SHA'}], gone)
 
     def test_collection_failure_is_not_a_disappeared_case(self):
         with self.assertRaisesRegex(ValueError, 'broken import'):

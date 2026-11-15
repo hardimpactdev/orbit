@@ -105,9 +105,9 @@ def current_requests(requested, required_names, tracked, collect):
         if file not in populations:
             if not prior:
                 gone.append({'file': file, 'case': None, 'reason': 'gone at tested SHA'})
-        elif wanted is None:
+        elif wanted is None and live:
             kept[file] = None  # A whole-file request includes new live cases too.
-        elif selected := sorted(set(wanted) & live):
+        elif wanted is not None and (selected := sorted(set(wanted) & live)):
             kept[file] = selected
     return kept, populations, gone
 
@@ -135,7 +135,7 @@ def build_range(base, sha, commits):
     config, inventory = fixture_api.registry.load(ROOT)
 
     tracked = set(full.git('ls-tree', '-r', '--name-only', sha, '--', 'swamp').splitlines())
-    requested, populations, gone = current_requests(requested, required_names, tracked, full.collect_current)
+    requested, populations, gone = current_requests(requested, required_names, tracked, lambda file: full.collect_current(file, allow_empty=True))
     plan = full.build_plan(config, inventory, populations.__getitem__, fixture_api, requested=requested)
     plan.update(empty_selection=not requested, changed_paths=sorted(paths), historical_cases=required_names,
                 gone_at_tested_sha=gone)

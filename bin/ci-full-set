@@ -99,7 +99,7 @@ def covered_range(github, sha, run_id):
     return {'base': base, 'sha': sha, 'commits': commits}
 
 
-def collect_current(file):
+def collect_current(file, allow_empty=False):
     """Use the shared preload with a full-set import budget, without running bodies."""
     fixture_api = api()
     if file.endswith('.py'):
@@ -110,7 +110,7 @@ def collect_current(file):
                        cwd=fixture_api.gate.SWAMP, env={**os.environ, 'ORBIT_TEST_COLLECT': str(output)},
                        check=True, stdout=subprocess.DEVNULL, timeout=CEILING)
         cases = json.loads(output.read_text())
-    if not cases:
+    if not cases and not allow_empty:
         raise ValueError(file + ': fixture registered zero tests')
     return {'cases': cases}
 
