@@ -1145,6 +1145,17 @@ No publication step needs the running app. The site step skips the Route access 
 | `deferred` | The Route Nodes were held at admission, or a Node refused the merge of the site. The completion publishes the address. |
 | `failed` | The publication failed in the create, which still succeeds. The Route records `instance.create_route_failed`, and the completion publishes it again. |
 
+Beside `deferred`, `route_publication_reason` says why:
+
+| Reason | Meaning |
+| --- | --- |
+| `nodes_held` | At admission, a publisher that writes whole files held a Route Node; for a create that takes its Nodes alone, any writer held one. |
+| `share_cap` | At admission, eight shared writers held a Route Node. |
+| `waiter_first` | At admission, an older Route write waited for one of the Nodes, and goes first. |
+| `node_refused` | A Node refused the merge of the site in `clone-route`. The step's log names the Node's code, such as `caddy.publish_busy`. |
+
+The admission logs one info line, `Clone create deferred its Route publication`, with the reason and the shared writers on each Route Node; a Node refusal logs the same line when the create ends. Only the API result and the CLI's `--json` carry the reason: Conn and the web views read `route_publication` alone and show nothing new.
+
 A clone without a Route has no `route_publication`. A create that fails after `clone-route` succeeded keeps the address up; a publication that started and did not succeed is withdrawn by the create's `withdraw-route`, under the Nodes it still holds.
 
 The completion captures the Route again only when its sites are not published, because fleet state can change in between: a Cluster's Router, the stored environment, an Ingress firewall. If it refuses then, the projection records a failed `instance.complete` with that code, `failed_step: complete` and the recovery `instance:complete`; any other error at that point is recorded the same way with `operation.admission_failed`. The create still succeeds and names that completion, so Conn, the failure alerts and a task copy see an ordinary failed completion.

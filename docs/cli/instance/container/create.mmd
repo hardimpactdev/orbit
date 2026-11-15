@@ -41,6 +41,7 @@ sequenceDiagram
   %%> Route Nodes:
   %%> - free (no publisher holds a serving Node and none waits for one; for a Caddy-only create fewer than eight shared writers, for any other no shared writer): the create takes them in this transaction and publishes the address; a Caddy-only publication (no PHP pool, DNS record, Ingress site or LAN rule) takes a shared hold, any other takes them alone
   %%> - held: the create never waits; its intent carries no publication, and the completion publishes the address as before
+  %%> - the admission records why (`nodes_held`, `share_cap` or `waiter_first`) and logs one info line with it and the shared writers on each Node
   %%> - the decision is one insert per Node into the hold tables in one transaction: Caddy-only creates admitted together all publish; of two other creates admitted together, exactly one takes the Nodes
   %%> - a retained create retry records the Project's current development Processes in this admission transaction; changed definitions update their records, removed definitions remove theirs
   %%> - each Process takes its desired state from the default's copy of the same definition: stopped on the default stays stopped (installed, not started, startable by `process:start`); failed, absent or running runs
@@ -180,6 +181,7 @@ sequenceDiagram
     %%> Result:
     %%> - the user can pair with T3 and work; the Processes, the database and a nested fleet follow in the completion
     %%> - `route_publication`: `published` (the address answers TLS), `deferred` (the Route Nodes were held at admission, or a Node refused the merge of the site: the completion publishes) or `failed` (the completion publishes again); absent without a Route
+    %%> - `route_publication_reason` beside `deferred` only: `nodes_held`, `share_cap`, `waiter_first` (at admission) or `node_refused` (in `clone-route`); the API result and `--json` carry it, no screen shows it
     %%> - "fully set up" is only the Instance's `status: active`, which a succeeded completion sets ([instance:complete](docs/cli/instance/complete.mmd))
     %%> - the result's `processes_stopped` names the Processes the completion installs but leaves stopped, as on the default
     %%> - the receipt includes when T3 answered and when its sessions passed

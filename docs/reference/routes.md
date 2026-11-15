@@ -719,6 +719,14 @@ The Gateway's Route publication hold orders writers during normal work. A Node h
 
 A withdrawal (`route-withdraw-node`, the Route withdrawal of a development removal and of a failed development create or completion) is one Node-local transaction in one Ansible phase. Swamp checks the captured states and writes the merge plan. On the Node, `orbit_route_withdraw` takes an exclusive lock on `/etc/caddy/.orbit-publish.lock` when the Node serves Routes, and on `/run/lock/orbit-dnsmasq.lock` when it holds private DNS. The Gateway's private DNS publication takes the same lock.
 
+`route-withdraw` visits a Node that serves the Route, holds a withdrawn certificate scope, or holds private DNS lines or catalog values of the Route. The Gateway captures only the DNS lines and catalog values that differ between the four states, and equal states are one artifact.
+
+So a Route under its Cluster's TLD ([records a TLD already answers](/reference/private-dns#records-a-tld-already-answers)) captures one DNS state four times. The withdrawal does not visit the private DNS Node for it: the transaction would write nothing there. A Route that has a line there is visited: a name outside every TLD, a Node-scoped Route on the Router, a site on another Node, or a site while a Router change runs.
+
+A line that an older render wrote, and that the current render does not hold, stays either way: a withdrawal takes back only the lines its states change. The next whole private DNS publication removes it.
+
+The Node steps take one of 16 names per Node: `route-withdraw-compose-<node>-<slot>`, `route-withdraw-apply-<node>-<slot>` and `route-withdraw-cleanup-<node>-<slot>`, where the slot is the withdrawn Route's ID modulo 16 (`none` without a Route). The proof step takes `forward-result-0-<slot>`. Swamp keeps every behavior definition and its data, so names per Route would grow its catalog without end. Two withdrawals in one slot on one Node run one after the other on that name's lock, as two clone creates in one slot do; each keeps its own run folder and step outputs.
+
 It takes each with util-linux `flock` and waits at most 30 seconds for both together. Then it refuses with `caddy.publish_busy` or `dns.publish_busy`; any other `flock` failure refuses with `route.publish_lock_failed`. Both leave every file as it was. Under the locks, these steps run:
 
 1. It reads the Caddyfile and the pool files. It reads the private DNS files last, right before it writes them.
@@ -746,7 +754,7 @@ Each withdrawal reads what the Node holds under the lock. So two withdrawals of 
 
 It records any other publisher's hold in `route_publication_holds`, alone. A shared writer waits or defers while a publisher holds one of its Nodes, and a publisher waits while any shared writer holds one. Each take checks the other table in the same transaction.
 
-At most eight shared writers hold one Node, and at most four of them are removals. A removal over either cap waits in the Gateway; a create over the cap leaves its address to its completion. A publication holds the Node lock for about a quarter of a second and a withdrawal for a few seconds, so the transactions that queue on the lock stay well inside its 30-second wait.
+At most eight shared writers hold one Node, and at most four of them are removals. A removal over either cap waits in the Gateway; a create over the cap leaves its address to its completion, and its result says `route_publication_reason: share_cap` ([the address during the create](/reference/development-containers#the-address-during-the-create)). A publication holds the Node lock for about a quarter of a second and a withdrawal for a few seconds, so the transactions that queue on the lock stay well inside its 30-second wait.
 
 A removal gives its hold back right after its withdrawal held, not at its end; its later steps write no Caddy, PHP pool or DNS file. Create and clone still render Caddy and shared PHP input under their publication hold.
 
