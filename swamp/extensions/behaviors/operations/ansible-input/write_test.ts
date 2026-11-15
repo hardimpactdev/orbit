@@ -81,8 +81,13 @@ async function cloneInput(nested = false) {
 async function execute(argv: string[], stdin = "", env: Record<string, string> = {}) {
     const child = new Deno.Command(argv[0], { args: argv.slice(1), stdin: "piped", stdout: "piped", stderr: "piped", env }).spawn();
     const writer = child.stdin.getWriter();
-    await writer.write(new TextEncoder().encode(stdin));
-    await writer.close();
+    try {
+        await writer.write(new TextEncoder().encode(stdin));
+        await writer.close();
+    } catch (error) {
+        // A command that refuses before it reads its stdin closes the pipe; its exit and stderr are the outcome.
+        if (!(error instanceof Deno.errors.BrokenPipe)) throw error;
+    }
     return await child.output();
 }
 
@@ -282,6 +287,11 @@ Deno.test("the shipped launcher stages a launch copy's public part and gives the
             assertEquals(new TextDecoder().decode(refused.stderr).trim(), "instance.clone_input_failed");
             await execute(clean);
         }
+        // The launcher has no stage-only mode any more: `stage` without a phase, given the public part alone as the old stage step
+        // sent it, stages nothing and names the stage.
+        const bare = await execute(argv.slice(0, -1), outputs.stage_json, env);
+        assertEquals([bare.code, new TextDecoder().decode(bare.stderr).trim()], [1, "instance.clone_input_failed"]);
+        await assertRejects(() => Deno.stat(outputs.clone_private), Deno.errors.NotFound);
         await execute(argv, value, env);
         const again = await execute(argv, value, env);
         assertEquals(new TextDecoder().decode(again.stderr).trim(), "instance.clone_input_failed");
