@@ -2861,7 +2861,7 @@ Step 10 of ADR 0250 moves production Instances into containers on `app-prod` Nod
 
 - The `app-prod` role installs the container setup and the runtime folder, not PHP-FPM. It installs no agent folder.
 - A production container has only the user `orbit`: no T3, no agent and no model route.
-- A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0262](/decisions/0262-build-container-php-on-glibc-with-a-cli-only-pcov)).
+- A production container gets no `php-cli.ini`, so its PHP never loads PCOV ([ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov)).
 - FrankenPHP serves it once it has proved itself in development, by the criteria of the plan's [production gate](/solutions/development-container-runtime#production-gate).
 - Production containers never sleep. Schedules stay native Swamp schedules that run their command in the container as `orbit`; the per-minute Laravel scheduler runs inside it.
 - Existing production checkouts are migrated, as development checkouts are.

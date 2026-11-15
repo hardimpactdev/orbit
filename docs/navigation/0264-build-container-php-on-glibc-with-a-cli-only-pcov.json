@@ -3,9 +3,9 @@
     {
       "tab": "Decisions",
       "group": "Records",
-      "order": 262,
+      "order": 264,
       "pages": [
-        "decisions/0262-build-container-php-on-glibc-with-a-cli-only-pcov"
+        "decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov"
       ]
     }
   ]

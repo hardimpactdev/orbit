@@ -320,7 +320,7 @@ The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orb
 
 ### Static PHP build
 
-The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same static extensions. The same build gives the CLI-only extensions as shared files, which only the PHP CLI loads. No published release ships both binaries from one build, so Orbit builds them. [ADR 0262](/decisions/0262-build-container-php-on-glibc-with-a-cli-only-pcov) moves the build from musl to glibc and adds the CLI-only PCOV.
+The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same static extensions. The same build gives the CLI-only extensions as shared files, which only the PHP CLI loads. No published release ships both binaries from one build, so Orbit builds them. [ADR 0264](/decisions/0264-build-container-php-on-glibc-with-a-cli-only-pcov) moves the build from musl to glibc and adds the CLI-only PCOV.
 
 The recipe's `instances.php` section defines the builds:
 

@@ -358,7 +358,7 @@ describe('the shared folders', function (): void {
 
         // `vp` is no program of its part: the folder links it from the Vite+ home. PHP Data Bridge has no program: PHP reads its files.
         // `bunx` is Bun itself, which acts as `bunx` by the name it runs under. The browser's Debian packages give no program either.
-        // Main has not published the glibc static PHP build yet (ADR 0262), so the folder holds no `php/8.5` until its SHA-256 is pinned.
+        // Main has not published the glibc static PHP build yet (ADR 0264), so the folder holds no `php/8.5` until its SHA-256 is pinned.
         expect(array_keys($programs($plan['runtime'])))->toBe(['node', 'npm', 'npx', 'bun', 'bunx', 'deno', 'composer', 'rg'])
             ->and($programs($plan['runtime'])['bunx'])->toBe($programs($plan['runtime'])['bun'])
             ->and(array_keys($programs($plan['agent'])))->toBe(['t3', 'claude', 'codex'])

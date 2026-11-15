@@ -1,10 +1,10 @@
 ---
-title: "ADR 0262: Build container PHP on glibc with a CLI-only PCOV"
-sidebarTitle: "0262 Container PHP on glibc"
+title: "ADR 0264: Build container PHP on glibc with a CLI-only PCOV"
+sidebarTitle: "0264 Container PHP on glibc"
 description: "In progress. The containers' static PHP build moves from a fully static musl binary to a static-php-cli build that is static except glibc. It gives php and frankenphp as before, and adds PCOV as a shared pcov.so that only the PHP CLI loads, so Pest TIA and coverage work in a container. The FrankenPHP server and production never load PCOV."
 ---
 
-# ADR 0262: Build container PHP on glibc with a CLI-only PCOV
+# ADR 0264: Build container PHP on glibc with a CLI-only PCOV
 
 The runtime folder's [static PHP build](/reference/compute-drivers#static-php-build) moves from a fully static musl binary to a static-php-cli build that links everything statically except glibc. One build still gives `php` and `frankenphp`. PCOV comes from the same build as a shared `pcov.so` in the same folder part, and only the PHP CLI loads it. So Pest TIA and coverage work in a container, and the FrankenPHP server never loads PCOV.
 

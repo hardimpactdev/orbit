@@ -229,7 +229,7 @@ it('links the Project\'s php for every PATH in the container, and no version the
 });
 
 it('gives the Project\'s PHP CLI, and only the CLI, each CLI-only extension of its static build', function (): void {
-    // A recipe whose 8.5 build is published, so the case holds while the shipped pin waits for its SHA-256 (ADR 0262).
+    // A recipe whose 8.5 build is published, so the case holds while the shipped pin waits for its SHA-256 (ADR 0264).
     $recipe = json_decode((string) file_get_contents(resource_path('machine-software/recipe.json')), false, flags: JSON_THROW_ON_ERROR);
     $recipe->instances->php->versions->{'8.5'}->sha256 = str_repeat('a', 64);
     $home = sys_get_temp_dir().'/published-php-'.bin2hex(random_bytes(6));
