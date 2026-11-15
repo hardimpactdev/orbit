@@ -273,6 +273,7 @@ Every operation has the same fields, whatever its kind.
 | `created_at`, `started_at`, `finished_at` | ISO 8601 times. `started_at` is the first start |
 | `poll_after_seconds` | How long a polling client waits before its next read, or null once terminal. [Follow an operation by polling](#follow-an-operation-by-polling) gives the values |
 | `capacity_wait` | For an Operation on a task group that waits for a task place: `operation_id`, `position` and `holders`, as [Task places](/reference/tasks#task-places) defines. Null otherwise |
+| `hold_wait_reason` | For a Route write or a removal that waits in the Gateway: why, as [One Route write per Node](#one-route-write-per-node) lists. Null otherwise |
 
 A cancelled operation has an `error_code` only when a rollback superseded it: `operation.superseded`.
 
@@ -515,6 +516,10 @@ The kinds are `instance.create`, `instance.complete`, `instance.destroy`, `insta
 `instance.destroy` shares its Nodes with other removals ([coordinate publication](/reference/routes#coordinate-publication)) and gives them back sooner: when its Route is withdrawn. The step `Release the Route Nodes` runs after `Withdraw the Route` has succeeded and held, and calls `operation:direct:route-release`.
 
 The later steps change only what belongs to the removed Instance: its Process units, teardown steps in its checkout, hibernation files, source, databases, container, ACL, UFW rules by comment, mail state, asleep marker and repository mirror. None writes a Caddyfile, a PHP pool file or a DNS record. The Route is `retiring` with `sites_published` false since admission, so a create or clone that renders after the release leaves out its site and PHP pool.
+
+A removal's container steps take one of 64 names per Node, by its Instance's ID modulo 64 ([Native order](/reference/instance-removal#native-order)). They run after the removal gave its Nodes back, and a removal without a Route holds none. So a removal waits, with `hold_nodes` in its state, while an older removal of the same Instance slot on its Node is still open, or has timed out without a confirmed stop. The wait ends when that removal ends. While it waits for its slot, it claims no Node: a newer write on its Route Nodes is not held back by it.
+
+A waiting Route write or removal keeps why it waits in `hold_wait_reason`: `nodes_held` (a publisher holds a Node), `waiter_first` (an older write goes first), `removal_cap` (four removals hold the Node), `removal_slot` (a removal of the same withdrawal slot holds the Node), `instance_slot` (an older removal of the same Instance slot is open), or `share_cap`. A read returns it while the write waits.
 
 A refused or failed call does not fail the run; the terminal status frees the Nodes then. The Operation result carries `route_hold_released` and `route_hold_release_status` (the HTTP status, `0` when the Gateway was not reached). A run whose withdrawal did not hold keeps its Nodes to the end. So does a run that an older Gateway release started, whose workflow has no release step.
 

@@ -725,7 +725,7 @@ So a Route under its Cluster's TLD ([records a TLD already answers](/reference/p
 
 A line that an older render wrote, and that the current render does not hold, stays either way: a withdrawal takes back only the lines its states change. The next whole private DNS publication removes it.
 
-The Node steps take one of 16 names per Node: `route-withdraw-compose-<node>-<slot>`, `route-withdraw-apply-<node>-<slot>` and `route-withdraw-cleanup-<node>-<slot>`. The slot is the withdrawn Route's ID modulo 16, or `none` without a Route. The proof step takes `forward-result-0-<slot>`. Swamp keeps every behavior definition and its data, so names per Route would grow its catalog without end.
+The Node steps take one of 16 names per Node: `route-withdraw-input-<node>-<slot>`, `route-withdraw-compose-<node>-<slot>`, `route-withdraw-apply-<node>-<slot>` and `route-withdraw-cleanup-<node>-<slot>`. The slot is the withdrawn Route's ID modulo 16, or `none` without a Route. The proof step takes `forward-result-0-<slot>` and the result step `route-mutation-phase-<slot>`. Swamp keeps every behavior definition and its data, so names per Route would grow its catalog without end.
 
 Swamp fails a step that waits 60 seconds for a name another run holds. So two removals of one slot never share a Node: the second waits in the Gateway, as a removal over the cap does, until the first has withdrawn. The restore of a failed clone create is not kept apart from a removal of its slot on the same Node. The two run one after the other on that name's lock, and the later one fails if it waits 60 seconds. Each run keeps its own run folder and step outputs.
 
