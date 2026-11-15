@@ -132,11 +132,67 @@ it('refuses every task VM command by the same name and records nothing', functio
     expect(Operation::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 })->with([
-    'prep' => ['/prep', ['command' => 'firewall:deny']],
-    'prep-fix' => ['/prep-fix', ['corrections' => 'Fix the chart.']],
     'package' => ['/package', ['manager' => 'composer', 'package' => 'acme/private']],
     'script' => ['/script', ['subtask' => 1, 'script' => 'bin/test', 'args' => []]],
 ]);
+
+// `task:prep` and `task:prep-fix` are removed with the Pi task loop (docs/reference/old-paths.md): no route, no MCP tool.
+it('has no prep or prep-fix route: a call answers 404 and records nothing', function (string $suffix, array $body): void {
+    SwampNodeFixture::ensure();
+    Queue::fake();
+    $this->parent->update(['status' => TaskGroupStatus::Running]);
+    $this->withHeader('Idempotency-Key', 'pi.'.trim($suffix, '/'))->postJson('/api/v1/tasks/'.$this->parent->id.$suffix, $body)
+        ->assertNotFound();
+    expect(Operation::query()->count())->toBe(0)
+        ->and(collect(app('router')->getRoutes()->getRoutes())->map->getName()->filter()->values()->all())
+        ->not->toContain('task:prep')->not->toContain('task:prep-fix');
+    Queue::assertNothingPushed();
+})->with([
+    'prep' => ['/prep', ['command' => 'firewall:deny']],
+    'prep-fix' => ['/prep-fix', ['corrections' => 'Fix the chart.']],
+]);
+
+// Groups that the Pi loop left in its stages, such as a `todo` group and a `waiting_for_review` group whose pull request merged,
+// still read, list, cancel and complete after their kinds left the registry.
+function piLoopGroup(Project $project, TaskGroupStatus $status, array $fields = []): Task
+{
+    $group = Task::topLevel()->create(['project_id' => $project->id, 'title' => 'Prep', 'brief' => 'Brief', 'status' => $status, ...$fields]);
+    $group->tasks()->create(['position' => 1, 'title' => 'Spec', 'brief' => 'Draft the spec', 'status' => TaskStatus::Completed,
+        'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
+    foreach (['tasks.prep' => 'succeeded', 'tasks.prep_fix' => 'failed', 'tasks.build' => 'cancelled', 'tasks.review_round' => 'failed'] as $kind => $state) {
+        Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => null, 'status' => $state,
+            'input' => ['command' => 'firewall:deny'], 'started_at' => now()->subDays(7), 'finished_at' => now()->subDays(7)]);
+    }
+
+    return $group;
+}
+
+it('reads, lists and cancels a todo group whose runs are all of the removed Pi loop kinds', function (): void {
+    $group = piLoopGroup($this->project, TaskGroupStatus::Todo);
+
+    $this->getJson('/api/v1/tasks/'.$group->id)->assertOk()->assertJsonPath('data.status', 'todo');
+    expect(array_column($this->getJson('/api/v1/tasks?project_id='.$this->project->id)->assertOk()->json('data'), 'id'))->toContain($group->id);
+    $this->getJson('/api/v1/tasks/status')->assertOk();
+    $this->getJson('/api/v1/operations?kind=tasks.prep')->assertOk()->assertJsonPath('data.0.kind', 'tasks.prep');
+
+    SwampNodeFixture::ensure();
+    Queue::fake();
+    $cancel = $this->withHeader('Idempotency-Key', 'pi-cancel')->postJson('/api/v1/tasks/'.$group->id.'/cancel');
+
+    // The old rows hold no lock: the group ends and the cancel run is admitted.
+    $cancel->assertAccepted()->assertJsonPath('data.kind', 'tasks.cancel');
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Cancelled);
+});
+
+it('completes a waiting-for-review group of the Pi loop whose pull request merged', function (): void {
+    $group = piLoopGroup($this->project, TaskGroupStatus::WaitingForReview, ['orchestration' => 'external', 'watched_pr_number' => 3275,
+        'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/3275', 'watched_pr_completion' => 'merged']);
+
+    $this->getJson('/api/v1/tasks/'.$group->id)->assertOk()->assertJsonPath('data.status', 'waiting_for_review');
+    $this->postJson('/api/v1/tasks/'.$group->id.'/complete')->assertSuccessful();
+
+    expect($group->refresh()->status)->toBe(TaskGroupStatus::Completed);
+});
 
 it('filters children by status and rejects fields from the other create level', function (): void {
     $this->getJson('/api/v1/tasks?parent_id='.$this->parent->id.'&status=completed')->assertOk()->assertJsonCount(0, 'data');

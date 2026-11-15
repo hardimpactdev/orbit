@@ -61,10 +61,6 @@ Route::middleware([
 
         Route::post('tasks/{task}/sync', [TaskGroupsController::class, 'sync'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:sync');
-        Route::post('tasks/{task}/prep', [TaskGroupsController::class, 'prep'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:prep');
-        Route::post('tasks/{task}/prep-fix', [TaskGroupsController::class, 'prepFix'])
-            ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:prep-fix');
         Route::post('tasks/{task}/dependency-merge', [DependencyBatchMergeController::class, 'store'])
             ->whereNumber('task')->middleware(RequireTaskLevel::class.':parent')->name('task:dependency-merge');
         Route::post('tasks/{task}/pr-ready', [TaskPullRequestController::class, 'ready'])

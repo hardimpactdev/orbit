@@ -26,8 +26,8 @@ sequenceDiagram
   %%> - the command and its family
   %%> - the vault key names of the push token, never a token
   %%> Built or not:
-  %%> - built: `task:prep` admits the run and Swamp runs it as the workflow `operation-task-prep`
-  %%> - built: the mode of the run, `manual` or `automatic`, is the review mode of the Task group (`task:create --review`), captured in the intent at admission
+  %%> - not built: `task:prep` ran this stage on a task VM; it is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop) and comes back on task copies
+  %%> - not built: the mode of the run, `manual` or `automatic`, is the review mode of the Task group (`task:create --review`), captured in the intent at admission
   %%> Decided by the orchestrator, for Nick's review:
   %%> - the mode is part of the admitted intent, not a Swamp input: the run is the same in both modes and only the Gateway projection differs, so the Gateway records the mode once and Swamp learns nothing it does not use
   Note over SW: Child workflows<br/>provision · turn · publish
@@ -97,8 +97,8 @@ sequenceDiagram
   %%> - pushes the branch whose first commit holds the chart, page and cases of one command and nothing else
   %%> - opens the PR as a draft; it stays a draft until stage 4
   %%> - this is the one PR of the command: code and runnable proof cases join it later, and no separate docs PR exists
-  %%> Built:
-  %%> - the run opens the PR with the child workflow of `task:publish --draft`, so the App opens the spec PR
+  %%> Not built:
+  %%> - the run opened the PR with the child workflow of `task:publish --draft`; it is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
   Note over GH: Docs checks only<br/>no VM job
   %%> Why:
   %%> - the spec commit changes documentation only, so CI runs the docs checks and never the proof CI; the proof CI starts with the code
@@ -140,8 +140,8 @@ sequenceDiagram
       %%> - the prep group claims a fresh task place: the author agent gets the review as its prompt and applies it as a new commit, the runner plan and a review round check it, and the App pushes it to the same draft PR
       %%> - the group then releases its VM again
       %%> Built or not:
-      %%> - built: `task:prep-fix`, with the review of the owner as its input (`docs/cli/task/prep-fix.mmd`)
-      %%> - built: the gate check admits this run when the owner requests changes on the current head of a spec whose build has not started; it detects the approval too, which starts the build (below)
+      %%> - not built: `task:prep-fix`, with the review of the owner as its input, is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
+      %%> - not built: the gate check admits this run when the owner requests changes on the current head of a spec whose build has not started; it detects the approval too, which starts the build (below)
       %%> Decided by the orchestrator, for Nick's review:
       %%> - only a request for changes on the current head starts corrections; a comment review does not, because it may be a note and not a request
       %%> - the corrections are the review text and the inline comments of the owner, cut at the 40,000 characters that `task:prep-fix` takes, with a note when they were cut; a review with no text points to the review
@@ -168,7 +168,7 @@ sequenceDiagram
     GW->>SW: Start the build<br/>gate check · approved head
     %%> What it does:
     %%> - the gate check (reads only, every minute) sees the approval on the head of the draft PR of a prep group whose spec is done
-    %%> - the Gateway records the approval, appends the implementation subtask, moves the group to `running` and admits one run, `tasks.build` (`docs/cli/task/build.mmd`)
+    %%> - the Gateway records the approval, appends the implementation subtask, moves the group to `running` and admits one run that builds; the Pi run `tasks.build` is removed with the Pi task loop (docs/reference/old-paths.md#the-pi-task-loop)
     %%> - the subtask has a fixed brief that names the approved chart, page and cases and the approved head; its runner-plan command deliverable must pass; handoff runs the configured Project check once, before the deliverables; a Project without a check command also gets a Project-check review deliverable
     %%> Never:
     %%> - acts on a group that has started its build (it has a build subtask), or on a head other than the approved one; a push after the approval needs a new approval

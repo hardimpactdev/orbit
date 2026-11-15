@@ -14,8 +14,6 @@ use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskCheckAction;
 use App\Actions\Tasks\StartTaskPackageAction;
-use App\Actions\Tasks\StartTaskPrepAction;
-use App\Actions\Tasks\StartTaskPrepFixAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
 use App\Actions\Tasks\StartTaskScriptAction;
@@ -46,8 +44,6 @@ use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
 use App\Http\Requests\Tasks\StartTaskPackageRequest;
-use App\Http\Requests\Tasks\StartTaskPrepFixRequest;
-use App\Http\Requests\Tasks\StartTaskPrepRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
 use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
@@ -111,28 +107,6 @@ final class TaskGroupsController extends Controller
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($task, CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
-    }
-
-    /** Prepare the spec of one command on a task VM. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
-    #[StartsOperation(OperationKinds::TasksPrep, requiresKey: true)]
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function prep(StartTaskPrepRequest $request, Task $task, StartTaskPrepAction $action): JsonResponse
-    {
-        $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
-    }
-
-    /** Apply the owner's review to a prep group on its task VM. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
-    #[StartsOperation(OperationKinds::TasksPrepFix, requiresKey: true)]
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function prepFix(StartTaskPrepFixRequest $request, Task $task, StartTaskPrepFixAction $action): JsonResponse
-    {
-        $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
 
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }

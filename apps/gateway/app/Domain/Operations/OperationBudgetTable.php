@@ -94,20 +94,6 @@ final class OperationBudgetTable
         // No run yet. One package manager run, bounded to 900 s by its step, plus the write and the removal of the configuration.
         // Replace with the 14-day p95 after the first success.
         'tasks.package' => 1500,
-        // No run yet. The publish step mints its own token, so the one-hour life of a token no longer bounds the run:
-        // provision (about 300 s), a draft turn, three reviews and two fixes of about 10 min each. Prep runs of 43 to 90 min
-        // are expected (Nick, 2026-11-06), so 105 min. Replace with the 14-day p95 after the first success.
-        'tasks.prep' => 6300,
-        // No run yet. Basis: the task VM resume (about 90 s), one author turn of about 10 minutes, two review rounds of about 4
-        // minutes with the runner plans, and one fix of 4 minutes, so about 25 minutes, x 1.5, rounded to 45 minutes. The push token
-        // is minted when the push step starts, so the hour of an installation token does not limit this run.
-        // Replace with the 14-day p95 after the first success.
-        'tasks.prep_fix' => 2700,
-        // No run yet. Basis: the task VM resume (about 90 s), a reviewer turn (p95 933 s), the comment (about 30 s), and in rounds 1 and 2
-        // an author turn bounded by the 3,600 s of `tasks.turn`, the local check (520 s, one run) and the push (about 60 s), so about 5,200 s,
-        // rounded to 6,300 s (105 min) as for a prep run. The comment and the push mint their tokens when they start.
-        // Replace with the 14-day p95 after the first success.
-        'tasks.review_round' => 6300,
         // The history of the kind held short reviewer and consult turns: its longest run of 12 minutes x 1.5 gave 18 minutes, and the first
         // implementation turn of group 3517 (operation 11737, firewall:allow) ended at that bound while the author was still working.
         // An author turn writes code, runs the Pest suite of its deliverables and fixes what the Project check finds. One hour; the
@@ -120,10 +106,6 @@ final class OperationBudgetTable
         // Git commands of up to 20 s (the settle's restore, a reviewer's set-up and restore: 320 s) and the SSH set-up, rounded to 76 minutes.
         // Replace with the longest run x 1.5 once the history holds turns.
         'tasks.copy_turn' => 4560,
-        // No run yet. Basis: the task VM resume (about 90 s), the sync of the refs (about 2 minutes) and the first implementer turn, which
-        // the one-hour bound of `tasks.turn` limits, so 1 hour and 5 minutes, rounded to 75 minutes. Replace with the 14-day p95 after the
-        // first success.
-        'tasks.build' => 4500,
         // No run yet. Basis: a bare clone of one branch and a fetch of another (about 60 s for this repository), one bundle, one copy
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.

@@ -27,7 +27,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 
 /**
- * Mints a task token when the step that needs it runs, never at admission. A prep run reaches its publish step 43 to 90 minutes
+ * Mints a task token when the step that needs it runs, never at admission. A publish step can run long
  * after admission, a provision can wait for capacity before it clones, and an installation token lives one hour. The admitted intent
  * holds only vault key names; the Gateway writes the values here and returns the descriptors.
  *
@@ -39,7 +39,7 @@ use Illuminate\Support\Str;
  * - `dependencies` writes the Composer `auth.json` and the `.npmrc` of the setup steps: a read token of the installation, or an empty configuration,
  *   and the token alone for the step that revokes it.
  * - `publish` writes the write token for the pull request and its Git authorization header.
- * - `pull_request` writes the write token of one pull request step: ready, merge, or the comment of a review round.
+ * - `pull_request` writes the write token of one pull request step: ready or merge.
  * - `dependency_merge` writes the write and read tokens of a dependency batch squash.
  * - no purpose, for a `tasks.check` handoff, writes the write token, the Checks read token and the Git authorization header of its CI wait.
  */
@@ -179,7 +179,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     }
 
     /**
-     * A provision holds its workspace in its own intent. A prep run holds the intent of its provision child.
+     * A provision holds its workspace in its own intent.
      *
      * @return array<string,mixed>
      */
@@ -187,7 +187,6 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     {
         return match ($operation->kind) {
             'tasks.provision', 'tasks.package' => $operation->input,
-            'tasks.prep' => ValidatedData::object($operation->input['provision'] ?? []),
             default => throw $this->forbidden(),
         };
     }
@@ -272,10 +271,9 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     /** @return array<string,array{vault:string,key:string}> */
     private function publish(Operation $operation, Task $group, int $callerNodeId, string $runId): array
     {
-        // A publish holds the token names in its own intent; a prep run, a prep fix and a review round hold them in the intent of their publish step.
+        // A publish holds the token names in its own intent.
         [$name, $references, $members] = match ($operation->kind) {
             'tasks.publish' => [$operation->input['repository'] ?? null, $operation->input['execution_secrets'] ?? null, ['github_token', 'git_authorization']],
-            'tasks.prep', 'tasks.prep_fix', 'tasks.review_round' => [ValidatedData::object($operation->input['publish'] ?? [])['repository'] ?? null, $operation->input['publish_secrets'] ?? null, ['github_token', 'git_authorization']],
             default => throw $this->forbidden(),
         };
         $repository = GitHubRepository::fromOrigin($group->project->repository_url);
@@ -309,7 +307,7 @@ final readonly class TaskGitHubTokens implements NativeGitHubTokenIssuer
     {
         $write = ['contents' => 'write', 'pull_requests' => 'write'];
         $grants = match ([$purpose, $operation->kind]) {
-            ['pull_request', 'tasks.pr_ready'], ['pull_request', 'tasks.review_round'] => ['write_token' => ['pull_requests' => 'write']],
+            ['pull_request', 'tasks.pr_ready'] => ['write_token' => ['pull_requests' => 'write']],
             ['pull_request', 'tasks.pr_merge'], ['pull_request', 'project.pr_merge'] => ['write_token' => $write],
             // The read token comes first: a failure after it leaves the token with the least authority.
             ['dependency_merge', 'tasks.dependency_merge'] => ['read_token' => ['contents' => 'read', 'pull_requests' => 'read', 'checks' => 'read', 'actions' => 'read'],

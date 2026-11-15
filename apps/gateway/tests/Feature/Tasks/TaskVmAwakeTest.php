@@ -124,7 +124,7 @@ it('leaves an ended group and a group that another operation holds to their own 
     TaskVmAwake::require($group);
 
     $group->update(['status' => TaskGroupStatus::Running]);
-    Operation::query()->create(['kind' => 'tasks.prep_fix', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1, 'status' => OperationStatus::Running, 'input' => []]);
+    Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1, 'status' => OperationStatus::Running, 'input' => []]);
     TaskVmAwake::require($group);
 
     expect(Operation::query()->where('kind', 'task_vm.resume')->count())->toBe(0);

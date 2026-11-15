@@ -18,8 +18,6 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGitHubTokens;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskPrepFixIntent;
-use App\Domain\Tasks\TaskPrepIntent;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -116,16 +114,14 @@ function pushOperation(string $kind, array $input = [], OperationStatus $status 
     $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Push', 'brief' => 'Push it', 'status' => TaskGroupStatus::Running]);
     $names = ['github_token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()],
         'git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-publish-token-'.fake()->uuid()]];
-    $input = $input + (in_array($kind, ['tasks.prep', 'tasks.review_round'], true)
-        ? ['publish' => ['repository' => 'hardimpactdev/orbit'], 'publish_secrets' => $names]
-        : ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => $names]);
+    $input = $input + ['repository' => 'hardimpactdev/orbit', 'execution_secrets' => $names];
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
         'status' => $status, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => $input]);
 
     return [$operation, $names];
 }
 
-/** @return array{0:Operation,1:array{vault:string,key:string}} a provision, or a prep run whose provision child holds the intent */
+/** @return array{0:Operation,1:array{vault:string,key:string}} a provision, which holds the intent itself */
 function cloneOperation(string $kind, array $overrides = [], string $source = 'github_app'): array
 {
     $project = Project::query()->firstOrCreate(['slug' => 'orbit'], ['name' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => '.']);
@@ -134,10 +130,7 @@ function cloneOperation(string $kind, array $overrides = [], string $source = 'g
     $reference = ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-'.fake()->numberBetween(1, 900)];
     $intent = [...['project_id' => $project->id, 'git_authorization' => $reference, 'workspace' => ['repository' => $project->repository_url]], ...$overrides];
     $operation = Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => SwampNodeFixture::Id,
-        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => match ($kind) {
-            'tasks.prep' => ['provision' => $intent],
-            default => $intent,
-        }]);
+        'status' => OperationStatus::Running, 'state' => ['swamp_run_id' => TOKEN_RUN], 'input' => $intent]);
 
     return [$operation, $reference];
 }
@@ -153,7 +146,7 @@ it('mints the push token of a publish when its step asks, and writes it only und
         ->toBe([['orbit-control-inputs', $names['github_token']['key'], 'push-token-value'],
             ['orbit-control-inputs', $names['git_authorization']['key'], 'AUTHORIZATION: basic '.base64_encode('x-access-token:push-token-value')]])
         ->and(json_encode($copies))->not->toContain('push-token-value');
-})->with(['a publish' => ['tasks.publish'], 'a prep run' => ['tasks.prep'], 'a review round' => ['tasks.review_round']]);
+})->with(['a publish' => ['tasks.publish']]);
 
 it('mints the push token of an idle save with contents write only, so a save cannot add or change a workflow', function (): void {
     $scoped = [];
@@ -175,7 +168,7 @@ it('mints the clone credential of a workspace when the clone step asks, and only
 
     expect($copies)->toBe(['git_authorization' => $reference])
         ->and(tokenPuts($socket))->toBe([['orbit-control-inputs', $reference['key'], 'Authorization: Basic '.base64_encode('x-access-token:read-token-value')]]);
-})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
+})->with(['a provision' => ['tasks.provision']]);
 
 it('writes the clone header of a sync run as the Gateway starts it, and refuses a step that asks for it', function (): void {
     $socket = tokenWorld();
@@ -191,10 +184,9 @@ it('writes the clone header of a sync run as the Gateway starts it, and refuses 
 it('writes the Composer and npm configuration of the setup steps from one read token, and nothing else', function (string $kind): void {
     $socket = tokenWorld();
     [$operation] = cloneOperation($kind);
-    $intent = $kind === 'tasks.prep' ? 'provision' : null;
     $references = ['composer' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-composer-7'], 'npm' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-npm-7'], 'token' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-deps-token-7']];
     $input = $operation->input;
-    $intent === null ? $input['dependency_auth'] = $references : $input[$intent]['dependency_auth'] = $references;
+    $input['dependency_auth'] = $references;
     $operation->forceFill(['input' => $input])->save();
 
     $copies = app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, 'dependencies');
@@ -205,7 +197,7 @@ it('writes the Composer and npm configuration of the setup steps from one read t
             ['orbit-control-inputs', 'task-provision-deps-npm-7', "//npm.pkg.github.com/:_authToken=deps-token-value\n"],
             ['orbit-control-inputs', 'task-provision-deps-token-7', 'deps-token-value'],
         ]);
-})->with(['a provision' => ['tasks.provision'], 'a prep run' => ['tasks.prep']]);
+})->with(['a provision' => ['tasks.provision']]);
 
 it('writes the same configuration for a package install, whose intent holds the key names itself', function (): void {
     $socket = tokenWorld();
@@ -298,7 +290,6 @@ it('mints the write token of a pull request step when the step asks, with the pe
         ->and($grants[0]->permissions)->toBe($permissions);
 })->with([
     'ready' => ['tasks.pr_ready', ['pull_requests' => 'write']],
-    'review round comment' => ['tasks.review_round', ['pull_requests' => 'write']],
     'merge' => ['tasks.pr_merge', ['contents' => 'write', 'pull_requests' => 'write']],
 ]);
 
@@ -375,13 +366,26 @@ it('reports a step token the App cannot mint as an unreadable GitHub', function 
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->errorCode)->toBe('tasks_pr.github_unreadable'));
 });
 
-it('lets a publish and a prep run ask for a token at the numeric Operation mint', function (string $kind): void {
+it('lets a publish ask for a token at the numeric Operation mint', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind)['github_token_issuer'])->toBe(TaskGitHubTokens::class);
-})->with(['tasks.publish', 'tasks.prep', 'tasks.package', 'tasks.dependency_merge', 'tasks.prep_fix', 'tasks.pr_ready', 'tasks.pr_merge', 'tasks.review_round']);
+})->with(['tasks.publish', 'tasks.package', 'tasks.dependency_merge', 'tasks.pr_ready', 'tasks.pr_merge']);
 
-it('gives a sync run, a build run, a task start, a cancel and a proof run no token mint: the Gateway writes the read tokens of the first two, a task start reads the public repository, origin has a cancel\'s approved work, and a proof copy already holds its checkout', function (string $kind): void {
+it('gives a sync run, a task start, a cancel and a proof run no token mint: the Gateway writes the read token of a sync, a task start reads the public repository, origin has a cancel\'s approved work, and a proof copy already holds its checkout', function (string $kind): void {
     expect(app(DirectOperation::class)->definition($kind))->not->toHaveKey('github_token_issuer');
-})->with(['tasks.sync', 'tasks.build', 'tasks.provision', 'tasks.cancel', 'proof.command']);
+})->with(['tasks.sync', 'tasks.provision', 'tasks.cancel', 'proof.command']);
+
+// The prep run, its corrections, the build and the review round are removed with the Pi task loop (docs/reference/old-paths.md).
+it('mints no token for an old run of a removed Pi loop kind and writes nothing', function (string $kind, string $purpose): void {
+    $socket = tokenWorld();
+    [$operation] = pushOperation($kind, ['publish' => ['repository' => 'hardimpactdev/orbit'], 'provision' => ['git_authorization' => ['vault' => 'orbit-control-inputs', 'key' => 'task-provision-git-4']]]);
+
+    expect(app(DirectOperation::class)->definition($kind))->toBeNull()
+        ->and(fn () => app(TaskGitHubTokens::class)->issue($operation, SwampNodeFixture::Id, TOKEN_RUN, $purpose))->toThrow(ResourceOperationException::class)
+        ->and(tokenPuts($socket))->toBe([]);
+})->with([
+    'a prep publish' => ['tasks.prep', 'publish'], 'a prep clone' => ['tasks.prep', 'clone'], 'a prep fix publish' => ['tasks.prep_fix', 'publish'],
+    'a review round publish' => ['tasks.review_round', 'publish'], 'a review round comment' => ['tasks.review_round', 'pull_request'], 'a build clone' => ['tasks.build', 'clone'],
+]);
 
 it('lets a check ask for its tokens at the same mint, and refuses a purpose it does not hold', function (): void {
     tokenWorld();
@@ -449,13 +453,13 @@ it('fails with the publish code when the App is not installed on the repository'
         ->toThrow(fn (ResourceOperationException $exception) => expect($exception->getMessage())->toContain('cannot publish'));
 });
 
-// A prep run reaches its publish step 43 to 90 minutes after admission, a provision can wait for capacity before it clones, and an installation token lives one hour.
-arch('the admission of a publish, a prep run and a provision mints nothing and writes no vault value for a repository credential')
-    ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class, TaskProvisionIntent::class])
+// A publish step can run long after admission, a provision can wait for capacity before it clones, and an installation token lives one hour.
+arch('the admission of a publish and a provision mints nothing and writes no vault value for a repository credential')
+    ->expect([TaskPublishIntent::class, TaskProvisionIntent::class])
     ->not->toUse([RepositoryPullRequestAccess::class, RepositoryReadAccess::class, GitHubApi::class]);
 
-arch('the admission of a publish, of a prep run and of its corrections does not itself write a vault value')
-    ->expect([TaskPublishIntent::class, TaskPrepIntent::class, TaskPrepFixIntent::class])
+arch('the admission of a publish does not itself write a vault value')
+    ->expect([TaskPublishIntent::class])
     ->not->toUse([SwampCommandStep::class]);
 
 arch('the admission of a pull request step, a dependency merge and a cancel mints no token')

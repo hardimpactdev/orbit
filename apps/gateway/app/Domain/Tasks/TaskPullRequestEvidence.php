@@ -15,7 +15,6 @@ use App\Domain\GitHub\RequiredCheckState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskReviewRound;
 
 /** Read-only evidence for the ready and merge steps. The Gateway reads GitHub here and changes nothing on it. */
 final readonly class TaskPullRequestEvidence
@@ -39,17 +38,6 @@ final readonly class TaskPullRequestEvidence
         return $target;
     }
 
-    /** A review round needs a pull request out of draft, with a green merge check on the exact head. */
-    public function round(Task $group, string $head): TaskPullRequestTarget
-    {
-        $target = $this->target($group, $head);
-        if ($target->pull->draft) {
-            throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);
-        }
-
-        return $target;
-    }
-
     public function merge(Task $group, string $head): TaskPullRequestTarget
     {
         // Before any GitHub read: a task copy's pull request is never Orbit's to merge.
@@ -58,26 +46,7 @@ final readonly class TaskPullRequestEvidence
         if ($target->pull->draft) {
             throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft; take it out of draft first.', 409);
         }
-        if ($group->review_mode === TaskReviewMode::Automatic) {
-            $passed = TaskReviewRound::query()->where('task_group_id', $group->id)->where('head_sha', $head)->where('verdict', TaskReviewRoundVerdict::Pass->value)->exists();
-
-            return $passed ? $target : throw new ResourceOperationException('tasks_pr.approval_missing', 'No review round passed this head.', 409, details: ['state' => 'round_missing']);
-        }
         $this->requireApproval($target, $head);
-
-        return $target;
-    }
-
-    /** The approval of a spec: the open pull request is a draft on the exact head, and in manual mode the latest review of the reviewer approves it. */
-    public function build(Task $group, string $head): TaskPullRequestTarget
-    {
-        $target = $this->target($group, $head, checks: false);
-        if (! $target->pull->draft) {
-            throw new ResourceOperationException('tasks_pr.not_draft', 'The pull request is not a draft, so the spec is not waiting for approval.', 409);
-        }
-        if ($group->review_mode === TaskReviewMode::Manual) {
-            $this->requireApproval($target, $head);
-        }
 
         return $target;
     }
@@ -95,7 +64,7 @@ final readonly class TaskPullRequestEvidence
         }
     }
 
-    private function target(Task $group, string $head, bool $checks = true): TaskPullRequestTarget
+    private function target(Task $group, string $head): TaskPullRequestTarget
     {
         $group->loadMissing('project');
         $project = $group->project;
@@ -107,7 +76,7 @@ final readonly class TaskPullRequestEvidence
             throw new ResourceOperationException('tasks_pr.no_pull_request', 'The group needs a published pull request.', 409);
         }
 
-        return $this->read($project, $repository, $number, $head, $checks);
+        return $this->read($project, $repository, $number, $head);
     }
 
     /**
@@ -121,7 +90,7 @@ final readonly class TaskPullRequestEvidence
         if (! $repository instanceof GitHubRepository) {
             throw new ResourceOperationException('tasks_pr.no_pull_request', 'The Project needs a GitHub repository.', 409);
         }
-        $target = $this->read($project, $repository, $number, $head, checks: true);
+        $target = $this->read($project, $repository, $number, $head);
         if ($target->pull->draft) {
             throw new ResourceOperationException('tasks_pr.draft', 'The pull request is still a draft.', 409);
         }
@@ -135,7 +104,7 @@ final readonly class TaskPullRequestEvidence
         return $target;
     }
 
-    private function read(Project $project, GitHubRepository $repository, int $number, string $head, bool $checks): TaskPullRequestTarget
+    private function read(Project $project, GitHubRepository $repository, int $number, string $head): TaskPullRequestTarget
     {
         try {
             $pull = $this->github->pullRequest($this->access->reviewsToken($repository), $repository, $number);
@@ -144,9 +113,6 @@ final readonly class TaskPullRequestEvidence
             }
             if ($pull->headSha !== $head) {
                 throw new ResourceOperationException('tasks_pr.head_moved', 'The pull request head is not the admitted head.', 409);
-            }
-            if (! $checks) {
-                return new TaskPullRequestTarget($repository, $number, $pull);
             }
             $name = $project->mergeCheckName();
             $token = $name === null ? null : $this->access->checksToken($repository);

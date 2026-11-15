@@ -43,13 +43,7 @@ final readonly class OperationKinds
     /** The turn of a task that runs in a copy of its Project's default Instance (docs/cli/task/turn.mmd). */
     public const string TasksCopyTurn = 'tasks.copy_turn';
 
-    public const string TasksPrep = 'tasks.prep';
-
-    public const string TasksPrepFix = 'tasks.prep_fix';
-
     public const string TasksSync = 'tasks.sync';
-
-    public const string TasksBuild = 'tasks.build';
 
     public const string TasksPrReady = 'tasks.pr_ready';
 
@@ -57,8 +51,6 @@ final readonly class OperationKinds
 
     /** The merge of a pull request that no Task group watches; it targets its Project. */
     public const string ProjectPrMerge = 'project.pr_merge';
-
-    public const string TasksReviewRound = 'tasks.review_round';
 
     public const string ProofRun = 'proof.run';
 

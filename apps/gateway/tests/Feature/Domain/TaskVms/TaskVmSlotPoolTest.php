@@ -5,15 +5,12 @@ declare(strict_types=1);
 use App\Actions\Tasks\RemoveTaskWorkspaceAction;
 use App\Actions\TaskVms\StartTaskVmResumeAction;
 use App\Actions\TaskVms\WakeTaskVmAction;
-use App\Data\Tasks\StartTaskPrepData;
-use App\Data\Tasks\StartTaskPrepFixData;
 use App\Domain\Certificates\LeafCertificateSigner;
 use App\Domain\Gateway\GatewayQueue;
 use App\Domain\GitHub\GitHubApi;
 use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
-use App\Domain\GitHub\GitHubCheckRun;
 use App\Domain\GitHub\GitHubCommitComparison;
 use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubPullRequest;
@@ -35,25 +32,16 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\RemoteBranchHeads;
 use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskAssistance;
-use App\Domain\Tasks\TaskBuildIntent;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskCancelProjection;
 use App\Domain\Tasks\TaskCapacityException;
-use App\Domain\Tasks\TaskCheckKind;
-use App\Domain\Tasks\TaskCheckStatus;
 use App\Domain\Tasks\TaskCommentType;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskIdleSave;
 use App\Domain\Tasks\TaskIdleSaveProjection;
-use App\Domain\Tasks\TaskPrepFixIntent;
-use App\Domain\Tasks\TaskPrepIntent;
 use App\Domain\Tasks\TaskProvisionIntent;
-use App\Domain\Tasks\TaskRemoteBranch;
-use App\Domain\Tasks\TaskReviewMode;
-use App\Domain\Tasks\TaskReviewRoundIntent;
-use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskVmIdleRelease;
 use App\Domain\Tasks\TaskVmReentry;
@@ -83,14 +71,12 @@ use App\Infrastructure\Swamp\SwampDispatch;
 use App\Infrastructure\Swamp\SwampWorkerKnownHostsInput;
 use App\Infrastructure\Tasks\Pi\PiConnection;
 use App\Jobs\TaskVms\ReleaseTaskVmSlot;
-use App\Models\AgentThread;
 use App\Models\Cluster;
 use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskCheck;
 use App\Models\TaskComment;
 use App\Models\TaskVm;
 use App\Models\TaskVmImageBuild;
@@ -903,78 +889,6 @@ function slotPoolClaimServices(): void
     test()->beforeApplicationDestroyed(fn () => File::deleteDirectory($home));
 }
 
-it('claims a fresh VM at the published head for a build or a fix after release', function (bool $fix): void {
-    Queue::fake();
-    [, $project] = slotPoolHost();
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $group = slotPoolGroup($project);
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_state' => 'open',
-        'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
-    $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Completed,
-        'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
-    Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
-        'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
-    $head = str_repeat('a', 40);
-    app()->instance(RemoteBranchHeads::class, new readonly class($head) implements RemoteBranchHeads
-    {
-        public function __construct(private string $head) {}
-
-        public function head(Project $project, string $branch): string
-        {
-            return $this->head;
-        }
-    });
-    $operation = $fix
-        ? app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null)
-        : app(TaskBuildIntent::class)->start($group, $head, 'test', null);
-    expect($operation->status)->toBe(OperationStatus::Queued)
-        ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
-        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task')
-        ->and($operation->input)->not->toHaveKey('resume');
-    $projection = app(DirectOperation::class)->projection($operation);
-    $operation->update(['status' => OperationStatus::Failed, 'error_code' => 'swamp.start_refused']);
-    $projection->refused($operation);
-    Queue::assertPushed(ReleaseTaskVmSlot::class, 1);
-})->with([false, true]);
-
-it('claims a fresh VM and new author session for a review round at the published head', function (): void {
-    Queue::fake();
-    [, $project] = slotPoolHost();
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    $head = str_repeat('a', 40);
-    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'gate', 'gate', 'hardimpactdev', 'organization', 'https://github.com/apps/gate', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($head): void {
-        $github->shouldReceive('repositoryInstallation')->andReturn(7);
-        $github->shouldReceive('repositoryReviewsToken', 'repositoryChecksToken')->andReturn('read-token');
-        $github->shouldReceive('pullRequest')->andReturn(new GitHubPullRequest(GitHubPullRequestState::Open, true, 'clean', $head, 'main', draft: false, authorLogin: 'orbit-app[bot]'));
-        $github->shouldReceive('checkRuns')->andReturn([new GitHubCheckRun('Required checks', 'success', null, status: 'completed', headSha: $head, appSlug: 'github-actions')]);
-    }));
-    $project->update(['source_access' => 'github_app', 'merge_check' => 'Required checks', 'review_and_merge' => true]);
-    $group = slotPoolGroup($project);
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'review_mode' => TaskReviewMode::Automatic,
-        'watched_pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_number' => 1,
-        'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
-    $subtask = $group->tasks()->create(['title' => 'Build', 'brief' => 'Build', 'position' => 1, 'status' => TaskStatus::Running,
-        'deliverables' => [['id' => 'build', 'type' => 'review', 'description' => 'Build it.']]]);
-    $check = TaskCheck::query()->create(['task_id' => $subtask->id, 'kind' => TaskCheckKind::Handoff, 'status' => TaskCheckStatus::Passed,
-        'pid' => 1, 'process_started' => 'x', 'head_before' => $head, 'tree_before' => str_repeat('b', 40),
-        'head_after' => $head, 'commit_sha' => $head, 'tree_after' => str_repeat('b', 40), 'exit_code' => 0, 'started_at' => now(), 'finished_at' => now()]);
-    Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $group->id,
-        'input' => ['subtask' => $subtask->id, 'phase' => 'handoff', 'check_id' => $check->id], 'status' => OperationStatus::Succeeded,
-        'result' => ['outcome' => 'passed', 'check_id' => $check->id, 'commit' => $head, 'head' => $head, 'tree' => str_repeat('b', 40),
-            'ci' => ['state' => 'passed', 'commit' => $head, 'branch' => TaskRemoteBranch::handoff($group), 'check_name' => 'Required checks']]]);
-
-    $operation = app(TaskReviewRoundIntent::class)->start($group, $head, 'test', null);
-
-    expect($operation->status)->toBe(OperationStatus::Queued)
-        ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $head, 'branch' => 'task-'.$group->id])
-        ->and($operation->input['fix']['new_session'])->toBeTrue()
-        ->and($operation->input['review']['new_session'])->toBeTrue()
-        ->and(TaskVm::forGroup($group)?->capacity_pool)->toBe('task');
-});
-
 /** A trusted four-batch CI proof on the host fixture, without a real Swamp submission. */
 function slotPoolCiProofWorld(int $places, bool $casesOnly = false): Node
 {
@@ -1080,7 +994,7 @@ it('keeps one recorded base per runtime, so a newer container base never replace
 });
 
 /** One Operation on the group that ended this many minutes ago, or that is still open when $open is set. */
-function idleGroupOperation(Task $group, TaskVm $place, int $minutesAgo, bool $open = false, string $kind = 'tasks.build'): Operation
+function idleGroupOperation(Task $group, TaskVm $place, int $minutesAgo, bool $open = false, string $kind = 'tasks.sync'): Operation
 {
     $at = now()->subMinutes($minutesAgo);
 
@@ -1374,43 +1288,6 @@ it('stops saving after three failed saves in a row, asks for assistance, and sav
     expect(app(TaskVmIdleRelease::class)->release())->toBe([$place->id]);
 });
 
-it('claims a fresh VM at the idle save for a fix after the idle release, and a build refuses it', function (bool $fix): void {
-    Queue::fake();
-    [, $project] = slotPoolHost();
-    slotPoolSweepWorld();
-    slotPoolClaimServices();
-    [$head, $saved] = [str_repeat('a', 40), str_repeat('c', 40)];
-    app(GitHubAppStore::class)->put(new GitHubAppCredentials(4242, 'read', 'read', 'hardimpactdev', 'organization', 'https://github.com/apps/read', 'unused'));
-    app()->instance(GitHubApi::class, Mockery::mock(GitHubApi::class, function (MockInterface $github) use ($head): void {
-        $github->shouldReceive('repositoryInstallation')->andReturn(7);
-        $github->shouldReceive('repositoryReadToken')->andReturn('contents-read');
-        $github->shouldReceive('branchHead')->andReturn(str_repeat('c', 40));
-        $github->shouldReceive('compareCommits')->andReturn(new GitHubCommitComparison(GitHubComparisonStatus::Ahead, $head, $head));
-    }));
-    idleTaskBranch($head);
-    $group = slotPoolGroup($project);
-    $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_state' => 'open',
-        'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra', 'idle_saved_commit' => $saved]);
-    $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Completed,
-        'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
-    Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
-        'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
-
-    if (! $fix) {
-        expect(fn () => app(TaskBuildIntent::class)->start($group, $head, 'test', null))
-            ->toThrow(fn (ResourceOperationException $refused) => expect($refused->errorCode)->toBe('tasks.idle_save_pending'));
-        expect(TaskVm::forGroup($group))->toBeNull();
-
-        return;
-    }
-    $operation = app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null);
-
-    expect($operation->status)->toBe(OperationStatus::Queued)
-        ->and($operation->input['provision']['workspace'])->toMatchArray(['start_commit' => $saved, 'branch' => 'task-'.$group->id])
-        // The VM's converge checks the task branch out at the saved commit.
-        ->and(data_get($operation->input, 'provision.intent.converge.checkout'))->toMatchArray(['commit' => $saved, 'branch' => 'task-'.$group->id]);
-})->with(['a fix' => [true], 'a build' => [false]]);
-
 it('schedules no task VM image refresh, and offers no artisan command that starts one', function (): void {
     Artisan::call('schedule:list');
 
@@ -1465,57 +1342,6 @@ describe('nested-fleet Projects', function (): void {
             ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe(['tasks.copy_source_unavailable', 409]));
         expect($rows())->toBe($before)->and($group->refresh()->status)->toBe(TaskGroupStatus::Todo)->and($group->taskable_id)->toBeNull();
     })->with(['free place' => [2], 'full pool' => [0]]);
-
-    it('refuses a prep run before any thread, place or wait', function (int $places) use ($rows, $refused, $flag): void {
-        Queue::fake();
-        [, $project] = slotPoolHost(taskPlaces: $places);
-        slotPoolSweepWorld();
-        slotPoolClaimServices();
-        app()->instance(TaskStartCommit::class, new class implements TaskStartCommit
-        {
-            public function resolve(Project $project): string
-            {
-                return str_repeat('a', 40);
-            }
-        });
-        $group = slotPoolGroup($project);
-        $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Todo,
-            'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
-        $flag($project);
-        $before = [...$rows(), 'threads' => AgentThread::query()->count()];
-        $refused(fn () => app(TaskPrepIntent::class)->start($group, new StartTaskPrepData('firewall:deny', null, null), 'test', null));
-        expect([...$rows(), 'threads' => AgentThread::query()->count()])->toBe($before);
-    })->with(['free place' => [2], 'full pool' => [0]]);
-
-    it('refuses a build or a fix after release', function (bool $fix) use ($rows, $refused, $flag): void {
-        Queue::fake();
-        [, $project] = slotPoolHost();
-        slotPoolSweepWorld();
-        slotPoolClaimServices();
-        $group = slotPoolGroup($project);
-        $group->update(['status' => TaskGroupStatus::WaitingForReview, 'pr_url' => 'https://github.com/hardimpactdev/orbit/pull/1', 'watched_pr_state' => 'open',
-            'implementer_model' => 'gpt-6.1-sol', 'reviewer_model' => 'gpt-6-astra']);
-        $group->tasks()->create(['title' => 'Spec', 'brief' => 'Draft', 'position' => 1, 'status' => TaskStatus::Completed,
-            'deliverables' => [['id' => 'spec', 'type' => 'review', 'description' => 'The spec is right.']]]);
-        Operation::query()->create(['kind' => 'tasks.prep', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1,
-            'status' => OperationStatus::Succeeded, 'input' => ['command' => 'firewall:deny', 'draft' => ['thread_id' => 999]]]);
-        $head = str_repeat('a', 40);
-        app()->instance(RemoteBranchHeads::class, new readonly class($head) implements RemoteBranchHeads
-        {
-            public function __construct(private string $head) {}
-
-            public function head(Project $project, string $branch): string
-            {
-                return $this->head;
-            }
-        });
-        $flag($project);
-        $before = $rows();
-        $refused(fn () => $fix
-            ? app(TaskPrepFixIntent::class)->start($group, new StartTaskPrepFixData('Apply the owner review.'), 'test', null)
-            : app(TaskBuildIntent::class)->start($group, $head, 'test', null));
-        expect($rows())->toBe($before);
-    })->with([false, true]);
 
     it('refuses a direct re-entry capture before it takes a place', function () use ($rows, $refused, $flag): void {
         [, $project] = slotPoolHost();
