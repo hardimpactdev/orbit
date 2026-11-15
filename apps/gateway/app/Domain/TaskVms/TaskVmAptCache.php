@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Domain\TaskVms;
 
+use App\Domain\Instances\InstanceFleetGateway;
 use App\Models\Node;
-use Symfony\Component\HttpFoundation\IpUtils;
 
 /**
  * The package cache of a task VM: stock `apt-cacher-ng`, which the task VM role runs and opens on the nested bridge only
@@ -20,6 +20,8 @@ final readonly class TaskVmAptCache
     /**
      * The cache a Node reads through (its apt runs and the Ubuntu snapshot indexes): the task VM's, at its bridge address, for a Node inside the nested
      * subnet. Null for any other Node. The e2e harness never hands out that subnet (apps/e2e HostCapacity), so no other Node can be inside it.
+     * The nested fleet of an Instance container has the same subnet and no cache: its Gateway (InstanceFleetGateway) names none, and its Nodes
+     * read apt through the egress proxy that their fleet file names.
      */
     public static function for(Node $node): ?string
     {
@@ -29,7 +31,7 @@ final readonly class TaskVmAptCache
     /** The same value for a machine by its address, as the fleet phase names its nested Gateway before that Node exists. */
     public static function forAddress(string $address): ?string
     {
-        return IpUtils::checkIp($address, TaskVmNestedFleet::Subnet)
+        return TaskVmNestedFleet::holds($address) && ! InstanceFleetGateway::holds()
             ? 'http://'.explode('/', TaskVmNestedFleet::Bridge)[0].':'.self::Port
             : null;
     }

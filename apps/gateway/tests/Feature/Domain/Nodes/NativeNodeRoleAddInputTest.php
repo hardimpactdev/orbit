@@ -15,7 +15,11 @@ use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
-beforeEach(fn () => SwampNodeFixture::ensure());
+beforeEach(function (): void {
+    SwampNodeFixture::ensure();
+    // A Gateway without the marker of an Instance fleet, whatever machine runs the suite.
+    config(['instances.fleet_marker' => sys_get_temp_dir().'/orbit-no-instance-fleet-'.getmypid()]);
+});
 
 it('retains dedicated status pools when the same Node also publishes shared PHP configuration', function (): void {
     Http::preventStrayRequests();
@@ -44,8 +48,12 @@ it('retains dedicated status pools when the same Node also publishes shared PHP 
     Http::assertNothingSent();
 });
 
-it('names the package cache of the task VM for a Node of a nested fleet and for its exporter, and none for any other Node', function (string $host, ?string $proxy): void {
+it('names the package cache of the task VM for a Node of a nested fleet and for its exporter, and none for any other Node', function (string $host, ?string $proxy, bool $instanceFleet = false): void {
     Http::preventStrayRequests();
+    $marker = tempnam(sys_get_temp_dir(), 'orbit-instance-fleet-');
+    if ($instanceFleet) {
+        config(['instances.fleet_marker' => $marker]);
+    }
     $make = static fn (string $name, string $ip, string $host): Node => Node::withoutEvents(static fn (): Node => Node::query()->create([
         'name' => $name, 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
         'wireguard_ip' => $ip, 'public_ssh_host' => $host, 'user' => 'orbit',
@@ -64,12 +72,15 @@ it('names the package cache of the task VM for a Node of a nested fleet and for 
             'fleet' => [['node_id' => $node->id, 'worker' => false, 'selected' => true]]]];
 
     $intent = app(NativeNodeRoleAddInput::class)->capture($node, $assignment, $snapshot, [], new Operation)['intent'];
+    unlink($marker);
 
     expect($intent)->toHaveKey('apt_proxy')
         ->and($intent['apt_proxy'])->toBe($proxy)
         ->and($intent['exporters'][0]['apt_proxy'])->toBe($proxy);
 })->with([
-    'a nested app-dev Node' => ['10.232.2.12', 'http://10.232.2.1:3142'],
+    'a nested app-dev Node of a task VM' => ['10.232.2.12', 'http://10.232.2.1:3142'],
+    // The play then removes the cache file; apt reads the egress proxy from the fleet's own file.
+    'a nested app-dev Node of an Instance fleet' => ['10.232.2.12', null, true],
     'a Node on the network of its host' => ['10.251.78.178', null],
     'a Node with a public address' => ['85.9.211.193', null],
 ]);

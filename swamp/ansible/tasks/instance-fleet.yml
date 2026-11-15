@@ -102,6 +102,12 @@
     fleet_unit_environment: |
       [Service]
       Environment={{ intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | map('regex_replace', '^(.*)$', '"\1"') | join(' ') }}
+    # The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): the Gateway reads it and names no task VM
+    # package cache for its Nodes (TaskVmAptCache).
+    fleet_marker_files:
+      - path: /etc/orbit/instance-fleet
+        content: |
+          # Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).
     fleet_unit_files: >-
       {%- set out = [] -%}
       {%- for unit in ['orbit-swamp-serve.service', 'orbit-swamp-worker@.service'] -%}
@@ -110,11 +116,12 @@
       {{ out }}
     # A nested Node's base converge runs apt and downloads the agent over SSH, where the `environment.*` keys do not reach: apt reads
     # its proxy from its own file, and sudo and SSH sessions read /etc/environment. Both name the egress proxy; /etc/environment has
-    # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file replaces the task VM package cache that
-    # the image names, which no Instance runs (a role add through the nested Gateway writes it back; the next refresh that reads the
-    # files replaces it: one whose files moved, one that converges, or one that retakes `base`).
+    # the same NO_PROXY, so the fleet's names and networks stay off the proxy. The apt file is the fleet's own: Orbit's Node plays
+    # own `90orbit-package-cache` (the task VM package cache, swamp/ansible/tasks/apt-proxy.yml) and never touch this one. It sorts
+    # after that file, so its proxy wins over a cache file that an older role add left; the next role add or role converge through
+    # the nested Gateway removes that file, because the marker above makes the Gateway name no cache.
     fleet_egress_files:
-      - path: /etc/apt/apt.conf.d/90orbit-package-cache
+      - path: /etc/apt/apt.conf.d/95orbit-nested-egress
         content: |
           Acquire::http::Proxy "{{ intent.fleet.proxy.HTTP_PROXY }}";
           Acquire::https::Proxy "{{ intent.fleet.proxy.HTTPS_PROXY }}";
@@ -143,7 +150,7 @@
           {{ fleet_checkout_device | combine({'club-key': {'type': 'disk', 'source': fleet_club_folder,
              'path': fleet_club_mount, 'required': 'false', 'shift': 'false'}}) }}
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"
-        files: "{{ fleet_unit_files + fleet_egress_files + fleet_size_files }}"
+        files: "{{ fleet_unit_files + fleet_marker_files + fleet_egress_files + fleet_size_files }}"
       app-dev:
         devices: "{{ fleet_checkout_device | combine(fleet_apparmor_device) }}"
         config: "{{ fleet_idmap | combine(fleet_autostart, fleet_environment) }}"

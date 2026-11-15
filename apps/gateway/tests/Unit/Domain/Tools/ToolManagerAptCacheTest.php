@@ -6,6 +6,9 @@ use App\Domain\Tools\ToolManagerIntent;
 use App\Domain\Tools\ToolManagerName;
 use App\Models\Node;
 
+// A Gateway without the marker of an Instance fleet, whatever machine runs the suite.
+beforeEach(fn () => config(['instances.fleet_marker' => sys_get_temp_dir().'/orbit-no-instance-fleet-'.getmypid()]));
+
 it('reads the Ubuntu snapshot through the package cache of the task VM for a nested Node', function (): void {
     $node = new Node(['platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.232.2.12']);
 
@@ -27,3 +30,15 @@ it('names no package cache for every other Node', function (?string $host): void
     'the next subnet' => '10.232.3.12',
     'no address' => null,
 ]);
+
+it('reads the Ubuntu snapshot through the Node\'s own apt settings on the nested Gateway of an Instance fleet', function (): void {
+    $marker = tempnam(sys_get_temp_dir(), 'orbit-instance-fleet-');
+    config(['instances.fleet_marker' => $marker]);
+    $node = new Node(['platform' => 'linux', 'user' => 'orbit', 'public_ssh_host' => '10.232.2.12']);
+
+    try {
+        expect(app(ToolManagerIntent::class)->nativeInput($node, ToolManagerName::Composer)['apt'])->not->toHaveKey('proxy');
+    } finally {
+        unlink($marker);
+    }
+});

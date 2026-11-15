@@ -2167,7 +2167,8 @@ A file rule is owned: the refresh writes the whole file where it differs, root-o
 | A read-only disk device that shows `N` at `/sys/module/apparmor/parameters/enabled`, from `/etc/orbit/apparmor-off` | `nested-app-dev`, `nested-app-prod` | `docker run` fails without it: Docker's own profile cannot load two levels below the host |
 | `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` in the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service`, one `Environment=` line | `nested-gateway` | Swamp verifies a new Club key at Swamp Club, and the fleet reaches the internet only through the Node's [egress proxy](#egress-and-dns) |
 | The same proxy settings as `environment.*` keys in the inner Incus. `NO_PROXY` is `localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24` | All three | A nested Node downloads the agent and packages; fleet names stay off the proxy. PHP's HTTP clients may not match `10.45.0.1` to its range |
-| The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/90orbit-package-cache`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
+| The egress files: the egress proxy for apt in `/etc/apt/apt.conf.d/95orbit-nested-egress`, and the same proxy settings, `NO_PROXY` included, in `/etc/environment` after the image's `PATH` line | All three | A Node's base converge runs apt and downloads the agent over SSH with sudo. See below the table |
+| The marker `/etc/orbit/instance-fleet` | `nested-gateway` | The nested Gateway names no task VM package cache for its Nodes. See below the table |
 | The size files: `APT::Keep-Downloaded-Packages "false";` in `/etc/apt/apt.conf.d/91orbit-nested-package-files`, and `SystemMaxUse=64M` in `/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf` | All three | Every nested root disk is in every copy. See below the table |
 | `security.nesting=true` and a memory limit | All three | Docker runs in them |
 | `boot.autostart=true` | All three | They start with the outer container, also after a restore of its seed. With `false`, the start still starts them, and the refresh writes `true` |
@@ -2179,7 +2180,18 @@ The cost: while `raw.dnsmasq` is set, the inner Incus runs the inner bridge's dn
 
 Incus restarts the bridge's dnsmasq when the key changes, so only the refresh writes it, with the fleet stopped. A start only compares. A copy whose seed lacks the key starts as before. A bridge that cannot be read is refused with `instance.container_fleet_drift`.
 
-The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The apt file replaces the task VM package cache that the image names. No Instance runs that cache. A role add through the nested Gateway still writes the cache back. The next refresh that reads the fleet files replaces it: one whose files moved, one that converges, or one that retakes `base`. The refresh writes both files before the converge.
+The `environment.*` keys reach only `incus exec`. SSH and sudo sessions read `/etc/environment` instead, so the egress files give the base converge its proxy. The refresh writes both files before the converge.
+
+The fleet has the subnet of a task VM's nested fleet, but no Instance runs the task VM's package cache. These rules keep apt on the egress proxy:
+
+- **Its own file.** The fleet's apt file is `95orbit-nested-egress`. The Node plays own only `90orbit-package-cache`, the [task VM package cache](/reference/node-provisioning#role-prerequisites).
+- **Its order.** The fleet's file sorts after the cache file. So its proxy wins over a cache file that the image or an older role add left.
+- **The marker.** The nested Gateway reads `/etc/orbit/instance-fleet` and gives its Nodes no `apt_proxy`.
+- **The cleanup.** A Node play without `apt_proxy` removes `90orbit-package-cache`: the role add, the role converge (`node:role:add --converge`), the enrollment and the exporter.
+- **A whole converge.** `node:converge` leaves `90orbit-package-cache` in place. The fleet's file still wins.
+- **Tool setup.** It reads the snapshot with the Node's own apt settings.
+
+A fleet seed made before these rules gains both files at the next refresh: the files' digest moved, so the refresh writes them and retakes `base`.
 
 The size files keep the nested root disks small. `apt-get` keeps each package file by default, about 70 to 135 MiB per machine, and the egress proxy serves them again. The journal cap file sorts after `orbit-retention.conf` (256 MiB), which the nested Gateway's role writes, so its cap wins. journald applies it at the start after `base`. A real Node gets neither file and keeps its role's settings.
 
@@ -2645,7 +2657,7 @@ The fleet rules:
 - The AppArmor-off device is on the nested `app-dev` and `app-prod`.
 - `boot.autostart=true` is on the three nested containers.
 - The egress proxy settings are `environment.*` keys on the three nested containers, and the drop-in `50-inner-fleet-proxy.conf` for `orbit-swamp-serve.service` and `orbit-swamp-worker@.service` in the nested Gateway.
-- The egress files are on the three nested containers: the apt proxy file `/etc/apt/apt.conf.d/90orbit-package-cache` and `/etc/environment` with the same proxy settings.
+- The egress files are on the three nested containers: the apt proxy file `/etc/apt/apt.conf.d/95orbit-nested-egress` and `/etc/environment` with the same proxy settings.
 
 The refresh writes an egress file that differs on the running fleet, before the converge of the nested Nodes. The rules then find it in place.
 

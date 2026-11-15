@@ -6,7 +6,7 @@
       "files": {
         "/etc/wireguard/wg-nested.key": "operator-private-key",
         "/run/orbit-club/swamp-club-api-key": "club-key-value-that-never-leaves-the-file",
-        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"a57748880260f7cf921b2590f397d3753df583207898bba9ccd83d3f5ad47a40\",\"converge_app_prod\":\"983306bc5d78658b1aec598c7a6bb16377c8992230ab4cb7cd820b327a5b4eb7\",\"converge_gateway\":\"5802723b793f6c6c6c1d66d8b159ef95ac96c356b23e5159936d3dc4ab900cbc\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"rules\":\"c2259a22c916e79ac3088e656c2c739602ef903d3cb310482b9c2296374f2fa4\",\"tokens\":\"@TOKENS@\"}"
+        "/var/lib/orbit/fleet-refresh.json": "{\"code\":\"0260324f1c5ffa66e0849bd1b30673a9f34d06989500327f22cb400fd02241a4\",\"converge_app_dev\":\"a57748880260f7cf921b2590f397d3753df583207898bba9ccd83d3f5ad47a40\",\"converge_app_prod\":\"983306bc5d78658b1aec598c7a6bb16377c8992230ab4cb7cd820b327a5b4eb7\",\"converge_gateway\":\"5802723b793f6c6c6c1d66d8b159ef95ac96c356b23e5159936d3dc4ab900cbc\",\"converged_app_dev\":\"@CONVERGED@\",\"converged_app_prod\":\"@CONVERGED@\",\"converged_gateway\":\"@CONVERGED@\",\"grants\":\"b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa\",\"rules\":\"451047bd0a4c895fd86bd7e02d47b714bda50d0f432324ed4451630d5d48f142\",\"tokens\":\"@TOKENS@\"}"
       },
       "modes": {
         "/var/lib/orbit/fleet-refresh.json": "root:root 0644"
@@ -64,7 +64,8 @@
         "files": {
           "/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
-          "/etc/apt/apt.conf.d/90orbit-package-cache": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
+          "/etc/orbit/instance-fleet": "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n",
+          "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n"
@@ -122,7 +123,8 @@
             "files": {
               "/etc/systemd/system/orbit-swamp-serve.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/systemd/system/orbit-swamp-worker@.service.d/50-inner-fleet-proxy.conf": "[Service]\nEnvironment=\"HTTP_PROXY=http://10.253.0.1:3128\" \"HTTPS_PROXY=http://10.253.0.1:3128\" \"http_proxy=http://10.253.0.1:3128\" \"https_proxy=http://10.253.0.1:3128\" \"NO_PROXY=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\" \"no_proxy=localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
-              "/etc/apt/apt.conf.d/90orbit-package-cache": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
+              "/etc/orbit/instance-fleet": "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n",
+              "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n"
@@ -185,7 +187,7 @@
           }
         },
         "files": {
-          "/etc/apt/apt.conf.d/90orbit-package-cache": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
+          "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n"
@@ -240,7 +242,7 @@
               }
             },
             "files": {
-              "/etc/apt/apt.conf.d/90orbit-package-cache": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
+              "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n"
@@ -298,7 +300,7 @@
           }
         },
         "files": {
-          "/etc/apt/apt.conf.d/90orbit-package-cache": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
+          "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
           "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
           "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
           "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n"
@@ -353,7 +355,7 @@
               }
             },
             "files": {
-              "/etc/apt/apt.conf.d/90orbit-package-cache": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
+              "/etc/apt/apt.conf.d/95orbit-nested-egress": "Acquire::http::Proxy \"http://10.253.0.1:3128\";\nAcquire::https::Proxy \"http://10.253.0.1:3128\";\n",
               "/etc/environment": "PATH=\"/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games:/usr/local/games:/snap/bin\"\nHTTP_PROXY=\"http://10.253.0.1:3128\"\nHTTPS_PROXY=\"http://10.253.0.1:3128\"\nhttp_proxy=\"http://10.253.0.1:3128\"\nhttps_proxy=\"http://10.253.0.1:3128\"\nNO_PROXY=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\nno_proxy=\"localhost,127.0.0.1,::1,.orbit,10.45.0.1,10.45.0.0/24,10.232.2.0/24\"\n",
               "/etc/apt/apt.conf.d/91orbit-nested-package-files": "APT::Keep-Downloaded-Packages \"false\";\n",
               "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n"
@@ -430,7 +432,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
-      "rules": "c2259a22c916e79ac3088e656c2c739602ef903d3cb310482b9c2296374f2fa4",
+      "rules": "451047bd0a4c895fd86bd7e02d47b714bda50d0f432324ed4451630d5d48f142",
       "tokens": "@TOKENS@"
     },
     "code": {
@@ -442,7 +444,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "3e570ac3341366ec573092da6c3c9c1ee0b9e120a4f2cfb9076a9b7947379dd2",
-      "rules": "c2259a22c916e79ac3088e656c2c739602ef903d3cb310482b9c2296374f2fa4",
+      "rules": "451047bd0a4c895fd86bd7e02d47b714bda50d0f432324ed4451630d5d48f142",
       "tokens": "@TOKENS@"
     },
     "swamp": {
@@ -454,7 +456,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
-      "rules": "c2259a22c916e79ac3088e656c2c739602ef903d3cb310482b9c2296374f2fa4",
+      "rules": "451047bd0a4c895fd86bd7e02d47b714bda50d0f432324ed4451630d5d48f142",
       "tokens": "@TOKENS@"
     },
     "agent": {
@@ -466,7 +468,7 @@
       "converged_app_prod": "@CONVERGED@",
       "converged_gateway": "@CONVERGED@",
       "grants": "b5e9a012d24574b20f4e70a9ea870edeaa41c90fc7dd2f4ea2c0ee0bdb7759fa",
-      "rules": "c2259a22c916e79ac3088e656c2c739602ef903d3cb310482b9c2296374f2fa4",
+      "rules": "451047bd0a4c895fd86bd7e02d47b714bda50d0f432324ed4451630d5d48f142",
       "tokens": "@TOKENS@"
     }
   }

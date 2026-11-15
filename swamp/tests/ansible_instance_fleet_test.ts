@@ -40,12 +40,18 @@ const sizeFiles = {
   "/etc/apt/apt.conf.d/91orbit-nested-package-files": 'APT::Keep-Downloaded-Packages "false";\n',
   "/etc/systemd/journald.conf.d/zz-orbit-nested-journal.conf": "[Journal]\nSystemMaxUse=64M\n",
 };
-const egress = { "/etc/apt/apt.conf.d/90orbit-package-cache": aptFile, "/etc/environment": environmentFile };
+/** The fleet's own apt file: Orbit's Node plays own `90orbit-package-cache` and never touch it. */
+const aptPath = "/etc/apt/apt.conf.d/95orbit-nested-egress";
+const egress = { [aptPath]: aptFile, "/etc/environment": environmentFile };
 /** Every file the fleet rules own in each nested container: the egress files, then the size files. */
 const owned = { ...egress, ...sizeFiles };
-/** Each file rule in the order the rules read it: the nested Gateway's drop-ins, then the owned files of each container. */
+/** The marker of the nested Gateway of an Instance fleet (InstanceFleetGateway::Marker): its Nodes get no task VM package cache. */
+const marker = "/etc/orbit/instance-fleet";
+const markerFile = "# Managed by Orbit: this Gateway leads the nested fleet of an Instance container (docs/reference/development-containers.md#fleet-rules).\n";
+/** Each file rule in the order the rules read it: the nested Gateway's drop-ins and marker, then the owned files of each container. */
 const fileRules: [string, string][] = [
   ...units.map((unit): [string, string] => ["nested-gateway", unit]),
+  ["nested-gateway", marker],
   ...names.flatMap((name) => Object.keys(owned).map((path): [string, string] => [name, path])),
 ];
 /** The inner bridge as the seed's first fleet has it, and with its rule: its dnsmasq has no upstream. */
@@ -66,7 +72,7 @@ function ruled() {
   containers["nested-app-prod"].devices["apparmor-off"] = apparmor;
   for (const name of names) containers[name].config["raw.idmap"] = idmap;
   for (const name of names) Object.assign(containers[name].config, environment);
-  containers["nested-gateway"].files = Object.fromEntries(units.map((unit) => [unit, dropIn]));
+  containers["nested-gateway"].files = { ...Object.fromEntries(units.map((unit) => [unit, dropIn])), [marker]: markerFile };
   for (const name of names) containers[name].files = { ...(containers[name].files ?? {}), ...owned };
   return containers;
 }
@@ -855,8 +861,8 @@ Deno.test({
       for (const name of names) {
         const want = structuredClone(live[name]);
         want.config["boot.autostart"] = "true";
-        // The live fleet was built before the egress files; they are owned rules, which the refresh writes.
-        want.files = { ...(want.files ?? {}), ...owned };
+        // The live fleet was built before the egress files and the marker; they are owned rules, which the refresh writes.
+        want.files = { ...(want.files ?? {}), ...(name === "nested-gateway" ? { [marker]: markerFile } : {}), ...owned };
         assertEquals(state[name].devices, want.devices, name);
         assertEquals(state[name].files ?? {}, want.files ?? {}, name);
         const keys = ["raw.idmap", "boot.autostart", ...Object.keys(environment)];
@@ -883,7 +889,7 @@ Deno.test({
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const egressWrites = names.flatMap((name) => Object.keys(owned).map((path) => push(name, path)));
+      const egressWrites = names.flatMap((name) => [...(name === "nested-gateway" ? [marker] : []), ...Object.keys(owned)].map((path) => push(name, path)));
       assertEquals(writes(calls).filter((call) => !/ (stop|snapshot) /.test(call)),
         [...egressWrites, ...names.map((name) => `incus config set ${name} boot.autostart=true`)]);
       assert(calls.indexOf(egressWrites.at(-1)!) < calls.findIndex((call) => call.includes("/converge ")), calls.join("\n"));
@@ -1574,7 +1580,8 @@ const sha256 = (text: string) => createHash("sha256").update(text).digest("hex")
 /** A time as the record keeps the oldest token's creation: `YYYYMMDDHHMMSS`, UTC. */
 const tokenMark = (milliseconds: number) => new Date(milliseconds).toISOString().slice(0, 19).replace(/[^0-9]/g, "");
 /** The fleet files in the order the rules list them, as the refresh's `rules` digest reads them. */
-const fleetFiles = fileRules.map(([container, path]) => ({ container, path, content: units.includes(path) ? dropIn : owned[path as keyof typeof owned] }));
+const fleetFiles = fileRules.map(([container, path]) => ({ container, path,
+  content: units.includes(path) ? dropIn : path === marker ? markerFile : owned[path as keyof typeof owned] }));
 /**
  * The record a passed refresh of the fixture's default inputs writes, with `converged` at the given time (seconds) and the oldest
  * token made at `tokens` (a day ago by default, as the fake's tokens are).
@@ -1907,20 +1914,20 @@ Deno.test({
   fn() {
     const f = refreshedOnce();
     try {
-      // A role add through the nested Gateway wrote the task VM cache back into app-prod; then a release reloads the grants, which
-      // changes the nested Gateway's disk. The files' digest did not move and no converge is due.
+      // A hand edit changed the fleet's apt file in app-prod; then a release reloads the grants, which changes the nested Gateway's
+      // disk. The files' digest did not move and no converge is due.
       f.change((state) => {
-        state.containers["nested-app-prod"].files["/etc/apt/apt.conf.d/90orbit-package-cache"] = "Acquire::http::Proxy \"http://10.232.2.1:3142\";\n";
+        state.containers["nested-app-prod"].files[aptPath] = "Acquire::http::Proxy \"http://10.232.2.1:3142\";\n";
         state.grantsChanged = 1;
         state.digests = { "apps/gateway": "a1", swamp: "e2" };
       });
       const refreshed = f.run("refresh");
       assert(refreshed.ok, refreshed.output);
       const calls = f.calls();
-      const write = push("nested-app-prod", "/etc/apt/apt.conf.d/90orbit-package-cache");
+      const write = push("nested-app-prod", aptPath);
       assert(calls.indexOf(write) >= 0 && calls.indexOf(write) < calls.findIndex((call) => call.startsWith(parts.stop)), calls.join("\n"));
       assertEquals(f.refreshed()?.base_containers, names);
-      assertEquals(f.state().containers["nested-app-prod"].snapshots.base.files["/etc/apt/apt.conf.d/90orbit-package-cache"], aptFile);
+      assertEquals(f.state().containers["nested-app-prod"].snapshots.base.files[aptPath], aptFile);
     } finally {
       f.cleanup();
     }
