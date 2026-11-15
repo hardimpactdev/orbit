@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Instances\Deployment\InstanceDeployExecutionCopies;
 use App\Infrastructure\Swamp\SwampScheduleWorkflows;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -52,7 +53,10 @@ final readonly class ContainerDestroyExecutionCopies
                     $keys[] = 'database-destroy-owned-'.ValidatedData::integer($database['intent_id']).'-'.ValidatedData::integer($server['server_id']).'-'.$batch;
                 }
             }
-            if (in_array($operation->kind, ['instance.create', 'instance.deploy'], true)) {
+            if ($operation->kind === 'instance.deploy') {
+                $keys = [...$keys, ...InstanceDeployExecutionCopies::keys($operation)];
+            }
+            if ($operation->kind === 'instance.create') {
                 foreach (['credential', 'processes'] as $suffix) {
                     $keys[] = 'development-deploy-operation-'.$operation->id.'-'.$suffix;
                 }

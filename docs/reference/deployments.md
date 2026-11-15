@@ -7,7 +7,7 @@ covers:
   - apps/gateway/app/Infrastructure/Instances/{DevelopmentCheckoutProgram,ProductionApplicationPaths,ProductionWebRootProgram}.php
   - apps/agent/src/commands/{production,production_tests,production_home,production_home_tests,deploy_step,dev_deploy,dev_deploy_tests}.rs
   - apps/gateway/app/Http/{Controllers/Api/{InstanceDeploymentsController,InstanceDeployStepsController,InstanceReleasesController,InstanceRollbacksController,ProjectDevelopmentDeployStepsController},Requests/Projects/*ProjectDevelopmentDeployStepRequest}.php
-  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
+  - apps/gateway/{app/{Models/{InstanceDeployment,InstanceDeployStep,ProjectDevelopmentDeployStep},Data/Instances/InstanceDeploymentData,Console/Commands/PruneInstanceDeployCopiesCommand}.php,database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_01_05_000000_add_caller_node_id_to_instance_deployments}.php}
   - swamp/extensions/behaviors/{automatic-deploy/**,operations/development-deploy/**}
   - packages/php-sdk/src/{Requests/Projects/*DevelopmentDeployStep*,Responses/{Projects/*DevelopmentDeployStep*,Deployments/InstanceDeploymentResponse}}.php
 ---
@@ -250,6 +250,20 @@ One native run on Node 209 then runs the [chart](/cli/instance/deploy)'s steps o
 A development default runs its own steps in the same workflow; [Native development deployment](#native-development-deployment) lists them.
 
 When the operation ends, `result` holds `deployment_id`, `release`, `selected_release`, and `commit`. A failed operation names the step in `failed_step` and the deployment's error code in `error_code`, such as `deployment.step_failed`. A failed deploy step is named `before_activation.<step>` or `after_activation.<step>`. A container default's step that waited 60 seconds for a Swamp behavior lock that another run held, and so never ran, fails with `instance.deploy_lock_timeout` whatever its step; deploy again. Its long steps lock a behavior of their own Instance, so deployments of two defaults on one Node never wait for each other on them. A production result also counts the failed cleanups in `warnings`.
+
+### Execution copies
+
+A deploy hands its private material to the run as named vault execution copies in `orbit-control-inputs`. A development or container default's deploy writes `development-deploy-operation-<id>-credential`, `-processes` and `-step-<index>` for each admitted step. A production deploy writes `instance-deploy-operation-<id>-credential` and `-step-<index>`. Its Process environments go to `process-parent-operation-<id>-node-<node>-member-<process>` copies. The Gateway resolves their Node only when the run starts, so these copies are not yet deleted.
+
+When the deploy ends, the Gateway deletes the copies named after the deploy alone: after success, failure or cancel, a refused start, a cancel before the run and an unreadable result. A timed-out deploy keeps them while its run may still read them:
+
+- A deploy that holds its Instance keeps them until the shared reader settles it: with Swamp's terminal, or as `unproven` after the 60-minute hold limit.
+- A checkout default's deploy holds nothing. It keeps them until Swamp has confirmed the cancel.
+- When that confirmation never comes, the reconciler stops forwarding the cancel after 60 minutes. The prune command below then counts the run as lost.
+
+A delete that fails leaves the deploy's end as it is and logs `Deploy execution copies could not be deleted`.
+
+`php artisan orbit:instance-deploy-copies-prune` deletes the copies of every ended deploy that are left: the copies of deploys from before this rule, and those of a failed delete. A deploy has ended when its status is terminal. A timed-out deploy has ended only when the rule above releases its copies. Add `--dry-run` to count the deploys and key names first. The command reads no value; a key that is gone counts as deleted.
 
 ### The rollback operation
 
