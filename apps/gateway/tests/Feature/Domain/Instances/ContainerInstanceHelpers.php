@@ -87,11 +87,17 @@ function workspaceReader(?string $answer = null): object
         /** @var list<array{arguments: list<string>, level: int}> */
         public array $calls = [];
 
+        /** The first calls that fail as a lost connection does, before the answer. */
+        public int $lost = 0;
+
         public function __construct(public ?string $answer) {}
 
         public function execute(SshConnection $connection, RemoteCommand $command): CommandResult
         {
             $this->calls[] = ['arguments' => $command->arguments, 'level' => DB::transactionLevel()];
+            if (count($this->calls) <= $this->lost) {
+                return new CommandResult(255, '', 'ssh: connect to host 10.44.0.7 port 22: Connection timed out', 2000, false);
+            }
 
             return $this->answer === null ? new CommandResult(1, '', '', 5, false) : new CommandResult(0, $this->answer, '', 5, false);
         }

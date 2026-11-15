@@ -19,6 +19,8 @@ use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Support\ValidatedData;
 use Illuminate\Support\Facades\File;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Sleep;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Throwable;
 
@@ -38,6 +40,12 @@ final readonly class ContainerWorkspaceRead
     private const int ReadBytes = 65536;
 
     private const int RecordBytes = 1_048_576;
+
+    /**
+     * The pauses before the second and third baseline read. A clone's create fails when its baseline cannot be read, and Horizon
+     * reads it on a connection of its own: one lost connect, such as a dropped SYN on the WireGuard path, must not fail the create.
+     */
+    public const array BaselineRetrySeconds = [1, 3];
 
     public function __construct(private SshExecutor $ssh, private SshKeyProvider $keys, private KnownHostsStore $hosts) {}
 
@@ -79,8 +87,21 @@ final readonly class ContainerWorkspaceRead
         if ($runtime === null) {
             return null;
         }
-        $answer = $this->decode($this->execute($instance, ['record', $runtime->incus_project, $runtime->container_name], null, self::RecordBytes));
-        if ($answer === null || ! is_array($answer['heads'] ?? null)) {
+        $answer = null;
+        foreach ([0, ...self::BaselineRetrySeconds] as $try => $pause) {
+            if ($pause > 0) {
+                Sleep::for($pause)->seconds();
+            }
+            $result = $this->execute($instance, ['record', $runtime->incus_project, $runtime->container_name], null, self::RecordBytes);
+            $answer = $this->decode($result);
+            if ($answer !== null && is_array($answer['heads'] ?? null)) {
+                break;
+            }
+            Log::warning('A workspace baseline read failed.', ['instance_id' => $instance->id, 'try' => $try + 1,
+                'tries' => count(self::BaselineRetrySeconds) + 1, ...self::failure($result), 'reason' => $answer['reason'] ?? null]);
+            $answer = null;
+        }
+        if ($answer === null) {
             return null;
         }
         $oids = static fn (mixed $values): array => array_values(array_filter(is_array($values) ? $values : [],
@@ -138,13 +159,28 @@ final readonly class ContainerWorkspaceRead
                 maxOutputBytes: $bytes, timeout: 4,
             ));
         } catch (Throwable $error) {
-            return $error instanceof ProcessTimedOutException || $error->getPrevious() instanceof ProcessTimedOutException ? 'timeout' : null;
+            return $error instanceof ProcessTimedOutException || $error->getPrevious() instanceof ProcessTimedOutException
+                ? 'timeout' : $error::class.': '.mb_strcut($error->getMessage(), 0, 500);
         }
     }
 
     /**
+     * What a failed read's SSH call returned, for the log: its exit code and the end of its stderr, `timeout`, or the error it threw.
+     *
+     * @return array<string, mixed>
+     */
+    private static function failure(CommandResult|string|null $result): array
+    {
+        return match (true) {
+            $result instanceof CommandResult => ['exit_code' => $result->exitCode, 'stderr' => mb_strcut(trim($result->stderr), -500),
+                'stdout_bytes' => strlen($result->stdout)],
+            default => ['error' => $result ?? 'no connection'],
+        };
+    }
+
+    /**
      * An answer of the reader, an unknown answer with `timeout` when the SSH call or the outer bound (exit 124) ran out,
-     * or null for every other failure.
+     * or null for every other failure, such as the error text of a call that threw.
      *
      * @return array<string, mixed>|null
      */
