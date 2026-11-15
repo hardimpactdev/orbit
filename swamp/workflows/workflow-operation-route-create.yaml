@@ -120,10 +120,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-probe-209-" + ("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(self.probe.node_id) }}'
+      behaviorName: '${{ ("route-probe-209-" + ("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(self.probe.node_id)).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "route-probe-209-" + ("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(self.probe.node_id) }}'
+        name: '${{ ("route-probe-209-" + ("route_id" in inputs.intent ? string(inputs.intent.route_id) : "none") + "-" + string(self.probe.node_id)).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.probe_ssh.target.user }}'
