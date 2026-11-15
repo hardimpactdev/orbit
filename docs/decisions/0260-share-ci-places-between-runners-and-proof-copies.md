@@ -20,6 +20,7 @@ Open:
 
 - How Orbit keeps the limit when a runner takes a job by itself: count the busy runners and start a proof copy only in a free place, or stop runner services while a proof holds their places.
 - The CPU and memory of a proof copy while it runs cases. The count per Node is checked against it before rollout.
+- What Sabre and Shark need to host a proof copy. A copy is an Instance created from a seed, and today they carry only the `ci-runner` role.
 
 ## Context
 
@@ -45,15 +46,17 @@ Each CI Node has one place count. A place runs one runner job or one proof copy:
 
 A count changes when a full Node's CPU pressure shows room or contention, not from memory limits.
 
+The count is the Node's `ci_places`. It replaces the setting of that name from the task VM era and the proof's `proof.copies` limit. Task copies do not use CI places; Beast's 2 places come on top of the copy places that its task groups use, so the reservation of the last two copy places for task groups no longer concerns the proof.
+
 Runners carry one shared label and no host label. A workflow never names a host. The private repositories' jobs run in this pool.
 
 ### A proof uses every free place
 
-`proof:run` places its shards on free places across all CI Nodes, up to one shard per free place, instead of at most `proof.copies` copies on the default's Node. The balance of whole batches by measured time stays. With 12 free places, 44 minutes of batches take about 4 minutes plus copy start-up. A batch stays on one copy, so the longest batch sets the floor.
+`proof:run` places its shards on free places across all CI Nodes, up to one shard per free place, instead of at most `proof.copies` copies on the default's Node. The balance of whole batches by measured time stays. With 12 free places, 44 minutes of batches run in about 4 minutes, plus start-up: today copies start one at a time, 20 seconds apart. A batch stays on one copy, so the longest batch sets the floor. The workflow job that calls Orbit runs on the host-level proof runner, which holds no place.
 
 Each CI Node keeps its own seed of the proof Project's default. The refresh after each release, which already refreshes the nested-fleet default ([Development containers](/reference/development-containers#refresh-after-a-release)), refreshes the seed on every CI Node. A copy starts from its own Node's seed.
 
-Proof copies are CI work, not development. The exclusion of Sabre from Orbit development placement stays.
+Proof copies are CI work, not development.
 
 ### Orbit shows what each place is doing
 
@@ -68,11 +71,12 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 ### Build order
 
 1. Remove the `sabre` label from workflows and runners; one shared label on every runner.
-2. Measure a proof copy under load, then record the place count per Node.
-3. Keep a proof seed on each CI Node, refreshed after each release.
-4. Change `proof:run` to place shards on free places across CI Nodes, with the agreed way to keep the limit. Its chart changes first, in that pull request.
-5. Build the runner view in the Gateway and the web app.
-6. Absorb this ADR into [Node provisioning](/reference/node-provisioning#ci-runner-role), [proof:run](/cli/proof/run) and [Implementation loop](/reference/implementation-loop#ci).
+2. Measure a proof copy under load, then record each Node's `ci_places`.
+3. Let Sabre and Shark host proof copies.
+4. Keep a proof seed on each CI Node, refreshed after each release.
+5. Change `proof:run` to place shards on free places across CI Nodes, with the agreed way to keep the limit. Its chart changes first, in that pull request.
+6. Build the runner view in the Gateway and the web app.
+7. Absorb this ADR into [Node provisioning](/reference/node-provisioning#ci-runner-role), [proof:run](/cli/proof/run) and [Implementation loop](/reference/implementation-loop#ci).
 
 ## Rejected alternatives
 
@@ -88,6 +92,7 @@ Orbit reads the runner containers on each CI Node for their state, version and b
 - Private repositories and Orbit's proof compete for the same places.
 - Each CI Node stores a seed of the proof container and refreshes it after each release.
 - Beast's runner containers take no jobs; Beast gives its 2 places to proof copies.
+- Shark becomes a CI-only Node, like Sabre: it no longer takes task work.
 
 ## Affects
 
