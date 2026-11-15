@@ -54,6 +54,7 @@ use App\Domain\Tasks\TaskCopyLifecycle;
 use App\Domain\Tasks\TaskCopyStart;
 use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskCopyTurnProjection;
+use App\Domain\Tasks\TaskGroupDone;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
@@ -1419,6 +1420,32 @@ describe('a turn of a group that owns a copy', function (): void {
             // T3 issues its own session inside the copy: no vault key, no token.
             ->and(app(DirectOperation::class)->definition('tasks.copy_turn'))->not->toHaveKey('execution_copies')
             ->and(json_encode($turn->input, JSON_THROW_ON_ERROR))->not->toContain('vault')->not->toContain('token')->not->toContain('session');
+    });
+
+    it('moves the current subtask from todo to running at the turn\'s admission, and never completes it', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $subtask = $group->tasks()->firstOrFail();
+        expect($subtask->status)->toBe(TaskStatus::Todo);
+
+        $implementer = copyTurn($group);
+        expect($subtask->refresh()->status)->toBe(TaskStatus::Running);
+        copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
+        $review = copyTurn($group, ['role' => 'reviewer', 'check' => copyCandidate($group)->id]);
+        copyTurnEnded($review, 'succeeded', copyTurnDone('mcp:2'));
+
+        // A done reviewer turn leaves the subtask running: only the caller completes it (docs/reference/tasks.md#subtask-status-in-a-task-copy).
+        expect($subtask->refresh()->status)->toBe(TaskStatus::Running)
+            ->and(app(TaskGroupDone::class)->check($group->refresh()))->toBeNull();
+    });
+
+    it('leaves the subtask todo when the turn is refused', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+
+        expect(copyRefusal(fn () => copyTurn($group, ['role' => 'reviewer', 'check' => 1])))->toBe('tasks.commit_not_checked 422')
+            ->and($group->tasks()->firstOrFail()->status)->toBe(TaskStatus::Todo);
     });
 
     it('admits a tasks.copy_turn in the copy of a plain container Project, in that copy\'s own Incus project', function (): void {

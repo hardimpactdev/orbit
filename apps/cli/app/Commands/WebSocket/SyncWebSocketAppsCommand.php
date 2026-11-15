@@ -43,6 +43,9 @@ final class SyncWebSocketAppsCommand extends WebSocketAppCommand
         }
         $deadline = microtime(true) + $wait;
         $operation = $this->send($connector, new SyncWebSocketAppsRequest($this->operationKey()), OperationResponse::class);
+        if ($operation instanceof OperationResponse && ! $operation->terminal()) {
+            $this->writeFollowedOperation($operation->id);
+        }
         while ($operation instanceof OperationResponse && ! $operation->terminal() && microtime(true) < $deadline) {
             Sleep::sleep(min(1, max(0, $deadline - microtime(true))));
             $operation = $this->send($connector, new ShowOperationRequest($operation->id), OperationResponse::class);

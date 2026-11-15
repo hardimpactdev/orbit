@@ -4,21 +4,16 @@ declare(strict_types=1);
 
 namespace App\Commands\Instances;
 
-use App\Commands\Concerns\FollowsOperations;
+use App\Commands\Concerns\WaitsForActiveInstance;
 use App\Commands\GatewayCommand;
-use App\Data\GatewayProfile;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
-use Orbit\Sdk\GatewayConnector;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
-use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
-use Orbit\Sdk\Responses\Instances\InstanceResponse;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
 final class CreateInstanceCommand extends GatewayCommand
 {
-    use FollowsOperations;
+    use WaitsForActiveInstance;
 
     #[\Override]
     protected $signature = 'instance:create
@@ -85,63 +80,12 @@ HELP;
         if (! $operation instanceof OperationResponse) {
             return self::FAILURE;
         }
-        $code = $this->followOperation($connector, $profile, $operation, 'Create Instance', 'Instance creation');
-        $created = $this->followedOperation;
-        if ($this->option('wait-active') !== true || $code !== self::SUCCESS || ! $created instanceof OperationResponse) {
-            return $code;
-        }
 
-        return $this->waitActive($connector, $profile, $created);
+        return $this->followCreate($connector, $profile, $operation, 'Create Instance', 'Instance creation');
     }
 
-    /** The create's result names the clone's completion; the human summary names it too. */
-    protected function writeOperationResult(OperationResponse $operation): void
+    protected function waitsForActive(): bool
     {
-        $completion = self::completionId($operation);
-        if ($completion !== null) {
-            $this->writeHumanMessage("Completion: {$completion}");
-            if ($this->option('wait-active') !== true) {
-                $this->writeHumanMessage("Active when it succeeds: orbit operation:show {$completion}");
-            }
-        }
-    }
-
-    /** With --wait-active, the JSON is the completion's when there is one: the last Operation the command follows. */
-    protected function writesOperationJson(OperationResponse $operation): bool
-    {
-        return $this->option('wait-active') !== true || $operation->kind !== 'instance.create' || self::completionId($operation) === null;
-    }
-
-    /** "Fully set up" is only the Instance's `active` status (docs/cli/instance/create.mdx#fully-set-up). */
-    private function waitActive(GatewayConnector $connector, GatewayProfile $profile, OperationResponse $created): int
-    {
-        $completion = self::completionId($created);
-        if ($completion !== null) {
-            $started = $this->send($connector, new ShowOperationRequest($completion), OperationResponse::class);
-            if (! $started instanceof OperationResponse) {
-                return self::FAILURE;
-            }
-            $code = $this->followOperation($connector, $profile, $started, 'Complete Instance', 'Instance completion');
-            if ($code !== self::SUCCESS) {
-                return $code;
-            }
-        }
-        $instance = $this->send($connector, new ShowInstanceRequest($created->targetId), InstanceResponse::class);
-        if (! $instance instanceof InstanceResponse) {
-            return self::FAILURE;
-        }
-        if ($instance->status === 'active') {
-            return self::SUCCESS;
-        }
-        $this->writeHumanMessage("Instance {$instance->id} is {$instance->status}, not active.");
-
-        return self::FAILURE;
-    }
-
-    private static function completionId(OperationResponse $operation): ?int
-    {
-        $id = $operation->result['completion_operation_id'] ?? null;
-
-        return $operation->kind === 'instance.create' && is_int($id) ? $id : null;
+        return $this->option('wait-active') === true;
     }
 }

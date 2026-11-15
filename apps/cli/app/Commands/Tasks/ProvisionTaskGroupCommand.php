@@ -4,25 +4,29 @@ declare(strict_types=1);
 
 namespace App\Commands\Tasks;
 
-use App\Commands\Concerns\FollowsOperations;
+use App\Commands\Concerns\WaitsForActiveInstance;
 use App\Repositories\GatewayConfigRepository;
 use App\Services\GatewayConnectorFactory;
 use Orbit\Sdk\Requests\Tasks\StartTaskRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
-/** Starts a `tasks.provision` operation and follows it until it ends. Ctrl-C stops following, not provisioning. */
+/**
+ * Starts a task as a copy of its Project's default Instance and, unless --no-wait, waits until the copy is `active`: the same wait as
+ * `instance:create --wait-active`. Ctrl-C stops following, not the start.
+ */
 final class ProvisionTaskGroupCommand extends TaskCommand
 {
-    use FollowsOperations;
+    use WaitsForActiveInstance;
 
     #[\Override]
     protected $signature = 'task:start
         {task? : Numeric Task ID}
         {--idempotency-key= : Reuse a key to retry this operation start}
+        {--no-wait : Return when the create of the copy ends, before the copy is active}
         {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Provision the VM and workspace of an external task group.';
+    protected $description = 'Start a task as a copy of its Project\'s default Instance, and wait until the copy is active.';
 
     public function handle(GatewayConfigRepository $repository, GatewayConnectorFactory $connectors): int
     {
@@ -48,7 +52,12 @@ final class ProvisionTaskGroupCommand extends TaskCommand
         $operation = $this->send($connector, new StartTaskRequest($groupId, is_string($key) ? $key : null), OperationResponse::class);
 
         return $operation instanceof OperationResponse
-            ? $this->followOperation($connector, $profile, $operation, "Provision task group [{$groupId}]", 'Provision')
+            ? $this->followCreate($connector, $profile, $operation, "Provision task group [{$groupId}]", 'Provision')
             : self::FAILURE;
+    }
+
+    protected function waitsForActive(): bool
+    {
+        return $this->option('no-wait') !== true;
     }
 }

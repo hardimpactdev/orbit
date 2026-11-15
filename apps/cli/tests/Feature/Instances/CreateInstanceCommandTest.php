@@ -13,11 +13,8 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Instances\CreateInstanceRequest;
 use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
-use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
-use Orbit\Sdk\Requests\Realtime\ShowRealtimeRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
-use Saloon\Http\PendingRequest;
 use Saloon\Http\Request;
 use Symfony\Component\Console\Tester\CommandTester;
 
@@ -133,26 +130,6 @@ describe('instance:create database server', function (): void {
         ]);
     });
 });
-
-/**
- * A clone's create that names its completion, the completion with `$completionStatus`, and the Instance with `$instanceStatus`.
- *
- * @return array<class-string, mixed>
- */
-function clone_create_responses(string $completionStatus, string $instanceStatus): array
-{
-    $create = instance_operation_payload('instance.create', ['instance_id' => 5, 'ready' => true, 'commit' => str_repeat('a', 40), 'completion_operation_id' => 902]);
-    $completion = instance_operation_payload('instance.complete', ['instance_id' => 5, 'ready' => $completionStatus === 'succeeded'],
-        ['id' => 902, 'status' => $completionStatus, ...($completionStatus === 'failed' ? ['failed_step' => 'clone-check', 'error_code' => 'instance.container_process_inactive'] : [])]);
-    $meta = ['request_id' => instance_request_id()];
-
-    return [
-        CreateInstanceRequest::class => MockResponse::make(['data' => $create, 'meta' => $meta], 202),
-        ShowRealtimeRequest::class => MockResponse::make([], 503),
-        ShowOperationRequest::class => static fn (PendingRequest $request): MockResponse => MockResponse::make(['data' => str_ends_with($request->getUrl(), '/902') ? $completion : $create, 'meta' => $meta]),
-        ShowInstanceRequest::class => MockResponse::make(['data' => [...instance_payload(), 'status' => $instanceStatus], 'meta' => $meta]),
-    ];
-}
 
 describe('instance:create of a container clone', function (): void {
     it('ends at the create by default and names the completion in its result', function (): void {
