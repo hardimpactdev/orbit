@@ -216,7 +216,7 @@ export async function register(raw: z.input<typeof RegisterArgs>, ctx: Context) 
 
 export const behavior = {
     type: "@nckrtl/instance-t3",
-    version: "2026.11.15.2",
+    version: "2026.11.15.3",
     resources: {
         session: { schema: Stored, lifetime: "infinite", garbageCollection: 10 },
         terminal: { schema: Terminal, lifetime: "infinite", garbageCollection: 10 },
