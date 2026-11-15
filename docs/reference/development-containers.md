@@ -1073,6 +1073,12 @@ On a throwaway clone (2026-11-14, load 12-31), T3's unit started 0.35-0.43 s aft
 
 The model environment reaches only the copy step, on its one SSH stdin. The T3 step's stdin is the workspace's private JSON; its agent part finds the model environment in place and fails without it. The Gateway writes the run's Git credential line, the line `#orbit-model-environment`, and the model environment into one execution copy, `instance-create-clone-<operation>`. The copy step's `git_credential` reference names it. Git's credential store skips the frame line and the rest. An Instance's destroy deletes the copy with the create's other copies, also after a failed or cancelled create.
 
+The Gateway also writes a clone's stage copy, `instance-create-stage-<operation>`, and sends the launcher `swamp/scripts/instance_clone_launch.py` as the intent's `clone_launcher`. The stage copy's first line is one line of public JSON: the launcher, the clone script and its helpers from the Gateway release's `swamp/` folder, the run's container intent and the SSH account. The rest is the clone copy's private text.
+
+The scripts take about 187 KB, more than one command argument may hold, so they cross the copy step's one SSH stdin, framed in one vault value. Its reference is `clone_stage`. The destroy deletes it with the clone copy. The workflow reads it from the release after the one whose Gateway first writes it; until then the `input` and `clone-input` steps stage the scripts.
+
+Once the workflow reads it, a clone runs the scripts of the Gateway release that admitted it. A release loads Swamp before its Gateway switches, so a create admitted just before a release runs the older scripts on the newer workflow. A change to the clone script's phases, its argument list, or the lines and timings that `finish` reads must work across that one release: the newer workflow and result reader must accept what the older scripts do and print.
+
 The T3 step does not start a T3 that runs. It starts T3 when T3 does not run, for example on a retry over a copy that an earlier attempt started.
 
 A failed create stops its copy, and a retry writes the model environment again into a copy that is not running. Only a copy that a release before 2065 started and that still runs holds none: its retry fails in the agent part with `instance.container_agent_failed`; remove it with `instance:destroy` and create it again.

@@ -551,13 +551,14 @@ final readonly class SwampCommandStep
     }
 
     /** @param array<string,mixed> $run
-     * @param  array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector
+     * @param  array{job:string,step:string,fallback?:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string}  $selector
      * @return array<string,mixed>
      */
     private function terminalOutput(array $run, array $selector, bool $requireOutput = false): array
     {
         $stdout = null;
         $selected = null;
+        $fallback = null;
         $selectedName = $selector['step'];
         $jobs = $run['jobs'] ?? [];
         if (! is_array($jobs)) {
@@ -582,12 +583,21 @@ final readonly class SwampCommandStep
                         $stdout = $this->artifactStdout($selector['data'], $step);
                     }
                     $selected ??= $step['status'] ?? null;
+                } elseif (isset($selector['fallback']) && ($step['name'] ?? null) === $selector['fallback']) {
+                    $fallback = $step;
                 } elseif (in_array($step['name'] ?? null, $selector['alternatives'] ?? [], true) && ($step['status'] ?? 'skipped') !== 'skipped') {
                     // The alternative that ran is the end check.
                     $selected = $step['status'];
                     $selectedName = ValidatedData::string($step['name']);
                 }
             }
+        }
+        // The fallback reports only when the reporting step was skipped: then its status and its stdout are the result.
+        if ($fallback !== null && $selected === 'skipped' && ($fallback['status'] ?? 'skipped') !== 'skipped') {
+            $outputs = $fallback['outputs'] ?? [];
+            $stdout = is_array($outputs) ? ($outputs['stdout'] ?? null) : null;
+            $selected = $fallback['status'];
+            $selectedName = ValidatedData::string($fallback['name']);
         }
         $result = [];
         // A kind without a result-reporting step reads Swamp's own run data; its named end check must have succeeded.

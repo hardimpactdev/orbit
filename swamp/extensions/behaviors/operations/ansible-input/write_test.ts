@@ -237,6 +237,47 @@ Deno.test("real clone launch preserves stdin and cleanup works after an early co
     }
 });
 
+// The Gateway's stage copy (CloneStage): one public JSON line, then the clone copy's private text. The launcher the Gateway sends
+// stages the line and runs the container part with only the private text, in one SSH dispatch.
+Deno.test("the shipped launcher stages a stage copy's first line and gives the container part only the private text", async () => {
+    const { folder, outputs } = await cloneInput();
+    const launcher = JSON.parse(outputs.clone_payload).launcher as string;
+    const argv = ["timeout", "300", "python3", "-c", launcher, outputs.clone_private, "stage", "container"];
+    const clean = ["rm", "-rf", "--", outputs.clone_private];
+    try {
+        assertEquals(launcher, await Deno.readTextFile(asset("scripts/instance_clone_launch.py")));
+        await Deno.writeTextFile(folder + "/incus",
+            '#!/bin/sh\n[ "$(cat "$CLONE_PRIVATE/git-credential")" = fixture-private-credential ] || exit 8\nexit 7\n',
+            { mode: 0o700 });
+        const env = { PATH: folder + ":" + Deno.env.get("PATH"), CLONE_PRIVATE: outputs.clone_private };
+        const failed = await execute(argv, outputs.clone_payload + "\nfixture-private-credential\n", env);
+        // The fake Incus saw the credential line alone: exit 7, not 8.
+        assertEquals(failed.code, 1);
+        assert(new TextDecoder().decode(failed.stderr).includes("instance.container_container_failed: command incus exited 7"));
+        assertEquals((await Deno.stat(outputs.clone_private)).mode! & 0o777, 0o700);
+        for (const name of ["input.json", "launch.py", "clone.py"]) {
+            assertEquals((await Deno.stat(outputs.clone_private + "/" + name)).mode! & 0o777, 0o600);
+            assertEquals((await Deno.readTextFile(outputs.clone_private + "/" + name)).includes("fixture-private-credential"), false);
+        }
+        assertEquals(JSON.parse(await Deno.readTextFile(outputs.clone_private + "/input.json")), JSON.parse(outputs.clone_payload));
+        // A later phase runs from the staged folder, as clone-t3 does.
+        assertEquals((await execute(clean)).code, 0);
+        // A copy without its JSON line, with a line that is no stage, or a second launch on a staged folder names the stage.
+        for (const stdin of ["fixture-private-credential\n", "{}\nfixture-private-credential\n", "[]\nfixture-private-credential\n"]) {
+            const refused = await execute(argv, stdin, env);
+            assertEquals(refused.code, 1);
+            assertEquals(new TextDecoder().decode(refused.stderr).trim(), "instance.clone_input_failed");
+            await execute(clean);
+        }
+        await execute(argv, outputs.clone_payload + "\nfixture-private-credential\n", env);
+        const again = await execute(argv, outputs.clone_payload + "\nfixture-private-credential\n", env);
+        assertEquals(new TextDecoder().decode(again.stderr).trim(), "instance.clone_input_failed");
+    } finally {
+        await execute(clean);
+        await Deno.remove(folder, { recursive: true });
+    }
+});
+
 
 Deno.test("workflow command and inline script templates keep 16 KiB of budget headroom", async () => {
     let largest = { path: "", bytes: 0 };

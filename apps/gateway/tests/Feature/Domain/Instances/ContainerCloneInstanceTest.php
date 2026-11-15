@@ -11,6 +11,7 @@ use App\Domain\DatabaseConnections\DatabaseConnectionEnvProjection;
 use App\Domain\DatabaseConnections\DatabaseDriver;
 use App\Domain\DatabaseServers\DatabaseStatements;
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\CloneStage;
 use App\Domain\Instances\ContainerInstanceDestroy;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\Environment\DevelopmentCreateEnvironment;
@@ -425,6 +426,64 @@ it('frames the model environment after the credential line on the copy step stdi
         ->and(json_encode($run['intent']))->not->toContain('placeholder-model-key')
         // The clone's run reads only the framed copy: no second copy of the credential line.
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-git-credential-'.$operation->id);
+});
+
+it('frames the release scripts in one stage copy: the public line, then the clone copy\'s private text, and sends its launcher', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
+    $vault = vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    $swamp = base_path('../../swamp');
+    $framed = collect($vault->puts)->firstWhere('key', 'instance-create-clone-'.$operation->id);
+    $staged = collect($vault->puts)->firstWhere('key', 'instance-create-stage-'.$operation->id);
+    [$line, $private] = explode("\n", $staged['value'], 2);
+    $payload = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
+    expect($run['execution_secrets']['clone_stage'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-stage-'.$operation->id])
+        // Every old key stays: a workflow of the release before reads them.
+        ->and($run['execution_secrets']['git_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-clone-'.$operation->id])
+        ->and($private)->toBe($framed['value'])
+        ->and($line)->not->toContain('placeholder-model-key')
+        ->and($run['intent']['clone_launcher'])->toBe(file_get_contents($swamp.'/scripts/instance_clone_launch.py'))
+        ->and($payload['launcher'])->toBe($run['intent']['clone_launcher'])
+        ->and($payload['script'])->toBe(file_get_contents($swamp.'/scripts/instance_clone.py'))
+        ->and($payload['guest'])->toBe(file_get_contents($swamp.'/scripts/instance_clone_guest.py'))
+        ->and($payload['network'])->toBe(file_get_contents($swamp.'/ansible/instance_network.py'))
+        ->and($payload['container'])->toBe($run['intent']['container'])
+        ->and($payload['account'])->toBe($run['intent']['ssh_execution']['target']['user'])
+        ->and($payload['bundle'])->toBe([
+            'node_services' => file_get_contents($swamp.'/ansible/instance_node_services.py'),
+            'machine_name' => file_get_contents($swamp.'/ansible/instance_machine_name.py'),
+            'mail' => file_get_contents($swamp.'/ansible/instance_mail.py'),
+            'bridge' => file_get_contents($swamp.'/ansible/instance_bridge.py'),
+            'node' => file_get_contents($swamp.'/ansible/instance_node_runtime.py'),
+        ]);
+});
+
+it('gives a nested-fleet stage the nested network program and the Club key script', function (): void {
+    $swamp = base_path('../../swamp');
+    $payload = json_decode(new CloneStage()->payload(['instance_id' => 7, 'allowed_devices' => ['eth0'], 'club_key' => ['available' => true]], 'orbit'),
+        true, flags: JSON_THROW_ON_ERROR);
+    $plain = json_decode(new CloneStage()->payload(['instance_id' => 7], 'orbit'), true, flags: JSON_THROW_ON_ERROR);
+
+    expect($payload['network'])->toBe(explode('if __name__ == "__main__":', file_get_contents($swamp.'/ansible/instance_network.py'), 2)[0]
+        .file_get_contents($swamp.'/ansible/instance_nested.py'))
+        ->and($payload['bundle']['club_key'])->toBe(file_get_contents($swamp.'/ansible/instance_nested_club_key.sh'))
+        ->and($plain['bundle'])->not->toHaveKey('club_key')
+        ->and(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->not->toContain("\n");
+});
+
+it('gives a container default and a checkout create no stage copy and no launcher', function (): void {
+    $node = containerDefaultNode();
+    $operation = containerCreate(containerDefaultProject(), $node, 'default');
+    $vault = vaultReadingSocket([]);
+
+    $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
+
+    expect($run['execution_secrets'])->not->toHaveKey('clone_stage')
+        ->and($run['intent'])->not->toHaveKey('clone_launcher')
+        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-create-stage-'.$operation->id);
 });
 
 describe('a clone of a default with a Valkey target', function (): void {

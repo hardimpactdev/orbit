@@ -34,7 +34,7 @@ final readonly class ContainerDestroyExecutionCopies
                 }
             }
             if ($operation->kind === 'instance.create') {
-                foreach (['instance-create-environment-input-', 'instance-create-environment-testing-', 'instance-create-model-', 'instance-create-processes-', 'instance-create-clone-'] as $prefix) {
+                foreach (['instance-create-environment-input-', 'instance-create-environment-testing-', 'instance-create-model-', 'instance-create-processes-', 'instance-create-clone-', 'instance-create-stage-'] as $prefix) {
                     $keys[] = $prefix.$operation->id;
                 }
             }

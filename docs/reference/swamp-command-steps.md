@@ -84,6 +84,8 @@ Missing, mismatched or unreadable history leaves the Operation unchanged and rai
 
 Queued projection explicitly fails on permanent or unexpected errors, including a stale binding or missing Operation; unlimited attempts apply only to the delayed transport retry, never automatic exception retries. Direct invocation still raises the error. Terminal reads reuse the admission connection owner's endpoint-and-authority matching within one job. A failed request drops the connection; replies still match the exact request ID.
 
+A result-reporting declaration may name one `fallback` step of the same job. When `step` was skipped, the fallback's status and its stdout are the result. When `step` ran, the fallback is not read. `instance.create` reads `finish`, or `clone-register` when a ready clone skipped `finish`. A native declaration takes no `fallback`.
+
 ### Read Swamp's run data instead of a result step
 
 Flow-tighten rule 14 removes the step that reports a result. A kind without one declares `terminal_result` with `native => true`; `job` and `step` name its real end check, for example `['job' => 'settings', 'step' => 'Check owner and mode', 'native' => true]`. The same single history read then gives the family projector:

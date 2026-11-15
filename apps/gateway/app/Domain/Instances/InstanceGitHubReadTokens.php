@@ -69,7 +69,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
      *
      * @return array{vault:string,key:string}
      */
-    public function start(Operation $operation, string $beside = ''): array
+    public function start(Operation $operation, string $beside = '', string $stage = ''): array
     {
         if ((ValidatedData::object($operation->input['direct_provisioning'] ?? [])['already_active'] ?? false) === true) {
             $reference = self::reference($operation);
@@ -78,7 +78,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
         }
         $authority = $this->repository($operation);
 
-        return $this->copy($operation, $authority['repository'], fn (): bool => $this->repository($operation->refresh()) === $authority, $beside);
+        return $this->copy($operation, $authority['repository'], fn (): bool => $this->repository($operation->refresh()) === $authority, $beside, $stage);
     }
 
     /**
@@ -144,11 +144,12 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
 
     /**
      * `$beside`, when given, is the private text of a clone's `clone-container` stdin, which its one credential copy holds after the line.
+     * `$stage`, when given, is a clone's public stage line (CloneStage): its stage copy holds that line, then the clone copy's text.
      *
      * @param  \Closure(): bool  $unchanged
      * @return array{vault:string,key:string}
      */
-    private function copy(Operation $operation, string $origin, \Closure $unchanged, string $beside = ''): array
+    private function copy(Operation $operation, string $origin, \Closure $unchanged, string $beside = '', string $stage = ''): array
     {
         $credential = $this->mint($origin);
         try {
@@ -161,7 +162,12 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
             $copy = $this->step->executionCopy($reference['vault'], $reference['key'], json_encode(['github_token' => $token], JSON_THROW_ON_ERROR));
             // A clone's run reads only the framed copy, so the line goes into that one alone.
             $framed = $beside === '' ? $line : self::cloneReference($operation);
-            $this->step->executionCopy($framed['vault'], $framed['key'], ($token === null ? '' : 'https://x-access-token:'.$token."@github.com\n").$beside);
+            $private = ($token === null ? '' : 'https://x-access-token:'.$token."@github.com\n").$beside;
+            $this->step->executionCopy($framed['vault'], $framed['key'], $private);
+            if ($stage !== '') {
+                $staged = CloneStage::reference($operation);
+                $this->step->executionCopy($staged['vault'], $staged['key'], $stage."\n".$private);
+            }
 
             return $copy;
         } catch (\Throwable $exception) {

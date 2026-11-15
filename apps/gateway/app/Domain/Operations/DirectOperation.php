@@ -152,10 +152,10 @@ final readonly class DirectOperation
             && ! array_any($map, static fn (mixed $value): bool => ! is_string($value) || preg_match('/\A[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+\z/D', $value) !== 1);
     }
 
-    /** @return array{job:string,step:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string} */
+    /** @return array{job:string,step:string,fallback?:string,alternatives?:list<string>,captures?:array<string,array{job:string,step:string,field?:string,artifact?:string}>,native?:true,data?:string} */
     private static function terminalResult(mixed $selector): array
     {
-        if (! is_array($selector) || array_diff(array_keys($selector), ['job', 'step', 'alternatives', 'captures', 'native', 'data']) !== []
+        if (! is_array($selector) || array_diff(array_keys($selector), ['job', 'step', 'fallback', 'alternatives', 'captures', 'native', 'data']) !== []
             || (array_key_exists('data', $selector) && (! is_string($selector['data']) || preg_match('/\A[a-z][a-z0-9_.-]*\z/D', $selector['data']) !== 1))
             || (array_key_exists('native', $selector) && $selector['native'] !== true)
             || ! is_string($selector['job'] ?? null) || ! is_string($selector['step'] ?? null)
@@ -167,6 +167,12 @@ final readonly class DirectOperation
         if (! is_array($alternatives) || ! array_is_list($alternatives) || count($alternatives) > 4 || ($alternatives !== [] && ($selector['native'] ?? null) !== true)
             || array_any($alternatives, static fn (mixed $name): bool => ! is_string($name) || trim($name) === '' || strlen($name) > 256 || preg_match('/[\x00-\x1f\x7f]/', $name) === 1)) {
             throw new LogicException('Terminal alternatives need fixed native step names.');
+        }
+        // A reporting step of the same job that writes the result when `step` is skipped (a ready clone's `clone-register`).
+        $fallback = $selector['fallback'] ?? null;
+        if ($fallback !== null && (! is_string($fallback) || trim($fallback) === '' || strlen($fallback) > 256 || preg_match('/[\x00-\x1f\x7f]/', $fallback) === 1
+            || ($selector['native'] ?? null) === true || $fallback === $selector['step'])) {
+            throw new LogicException('A terminal fallback needs one fixed reporting step name.');
         }
 
         $captures = $selector['captures'] ?? [];
@@ -184,7 +190,7 @@ final readonly class DirectOperation
             $normalizedCaptures[$name] = [...self::terminalResult(['job' => $capture['job'] ?? null, 'step' => $capture['step'] ?? null]), ...(isset($capture['field']) ? ['field' => $capture['field']] : []), ...(isset($capture['artifact']) ? ['artifact' => $capture['artifact']] : [])];
         }
 
-        return ['job' => $selector['job'], 'step' => $selector['step'], ...(isset($selector['data']) ? ['data' => $selector['data']] : []), ...($alternatives !== [] ? ['alternatives' => $alternatives] : []), ...($normalizedCaptures !== [] ? ['captures' => $normalizedCaptures] : []),
+        return ['job' => $selector['job'], 'step' => $selector['step'], ...($fallback !== null ? ['fallback' => $fallback] : []), ...(isset($selector['data']) ? ['data' => $selector['data']] : []), ...($alternatives !== [] ? ['alternatives' => $alternatives] : []), ...($normalizedCaptures !== [] ? ['captures' => $normalizedCaptures] : []),
             // `native: true`: no result-reporting step; the projector gets Swamp's run data keyed by step name.
             ...(array_key_exists('native', $selector) ? ['native' => true] : [])];
     }

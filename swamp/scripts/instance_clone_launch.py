@@ -1,5 +1,6 @@
 """Stage release-bound clone inputs once; keep large files off the SSH command."""
 
+import io
 import json
 import os
 import runpy
@@ -7,23 +8,34 @@ import sys
 from pathlib import Path
 
 
+def stage(folder, payload):
+    os.umask(0o077)
+    folder.mkdir(mode=0o700)
+    (folder / "input.json").write_text(json.dumps(payload))
+    (folder / "launch.py").write_text(payload["launcher"])
+    (folder / "clone.py").write_text(payload["script"])
+
+
 def main():
     folder = Path(sys.argv[1])
     phase = sys.argv[2]
     try:
-        if phase == "stage":
+        if phase == "stage" and len(sys.argv) > 3:
+            # The stage copy (docs/reference/development-containers.md#create): its first line is public release assets, the rest
+            # the clone copy's private text. Stage the line, then run the named phase with only the private text on its stdin.
+            line, _, private = sys.stdin.read().partition("\n")
+            payload = json.loads(line)
+            stage(folder, payload)
+            phase = sys.argv[3]
+            sys.stdin = io.StringIO(private)
+        elif phase == "stage":
             # This dispatch carries public release assets, never vault values.
-            payload = json.load(sys.stdin)
-            os.umask(0o077)
-            folder.mkdir(mode=0o700)
-            (folder / "input.json").write_text(json.dumps(payload))
-            (folder / "launch.py").write_text(payload["launcher"])
-            (folder / "clone.py").write_text(payload["script"])
+            stage(folder, json.load(sys.stdin))
             print(json.dumps({"phase": phase, "changed": True}))
             return
         else:
             payload = json.loads((folder / "input.json").read_text())
-    except (OSError, ValueError, KeyError):
+    except (OSError, ValueError, KeyError, TypeError):
         print("instance.clone_input_failed", file=sys.stderr)
         raise SystemExit(1) from None
     script = folder / "clone.py"

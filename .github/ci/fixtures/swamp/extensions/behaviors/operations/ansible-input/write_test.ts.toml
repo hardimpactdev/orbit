@@ -1,5 +1,5 @@
 order = 1410
-source_sha256 = "60ee1442dfa2e1ea9c1a8699b2e5c6a084ad32cad7d1cd6574a269abb36442af"
+source_sha256 = "ef0aa23954211a04d4f19350d5ec480f540b25cf4acedc9b74e373901f82c514"
 cases = [
   "the full intent reaches a private file beyond the environment size limit",
   "an intent write refuses paths outside its run folder",
@@ -7,6 +7,7 @@ cases = [
   "the fleet reboot finalizer reports a fixed error when private callback inputs cannot be parsed",
   "real clone commands stay below 32 KiB with a large Gateway intent",
   "real clone launch preserves stdin and cleanup works after an early container failure",
+  "the shipped launcher stages a stage copy's first line and gives the container part only the private text",
   "workflow command and inline script templates keep 16 KiB of budget headroom",
   "nested clone input ships the composed pre-start policy and keeps the normal program unchanged",
   "a plain clone gets the same clone part bytes as before the move",
@@ -14,7 +15,7 @@ cases = [
   "an intent without a clone container gets the empty clone part",
 ]
 file = "swamp/extensions/behaviors/operations/ansible-input/write_test.ts"
-cost = 11 # ESTIMATE: eleven command-boundary cases completed in 0.54 s locally; one second per case
+cost = 12 # ESTIMATE: twelve command-boundary cases completed in 0.6 s locally; one second per case
 inputs = [
   "swamp/extensions/behaviors/operations/ansible-input/write.ts",
   "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts",
