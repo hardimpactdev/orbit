@@ -1,5 +1,5 @@
 order = 850
-source_sha256 = "0d8ea1a7bb7628bc951839f225cef7419526be6b38f6a9d6407d0113f60a62a4"
+source_sha256 = "b6c4c077a4d8fd322ca446b956503858ca99996b68b0c3575160f0c19b0b5987"
 cases = [
   "pinned complete: a normal clone with a Route runs every step and ends ready",
   "pinned complete: a dead unit fails the check with its receipt and withdraws the Route",
@@ -8,6 +8,8 @@ cases = [
   "pinned complete: a cancel during server-database-fill stops it within 10 s, withdraws the Route and removes the private folder",
   "pinned complete: a cancel during clone-fleet stops it within 10 s, withdraws the Route and removes the private folder",
   "pinned complete: a clone whose create published its address runs no Route step and withdraws nothing",
+  "pinned complete: the services step reads the real-size one-line copy through vault.get; a two-part copy fails with Regular expression too large",
+  "pinned complete: the services step refuses a copy without the release scripts",
 ]
 file = "swamp/tests/instance_complete_native_test.ts"
 cost = 30
@@ -21,4 +23,13 @@ inputs = [
   "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/scripts/instance_clone_launch.py",
+  "swamp/scripts/instance_clone.py",
+  "swamp/scripts/instance_clone_guest.py",
+  "swamp/ansible/instance_network.py",
+  "swamp/ansible/instance_node_services.py",
+  "swamp/ansible/instance_machine_name.py",
+  "swamp/ansible/instance_mail.py",
+  "swamp/ansible/instance_bridge.py",
+  "swamp/ansible/instance_node_runtime.py",
 ]

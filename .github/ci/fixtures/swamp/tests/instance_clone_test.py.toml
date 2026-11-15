@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "cb6ba2de808f0842d44e6e0bd49ee1883875b27923a049de6581cf4ed7a87c8e"
+source_sha256 = "7a7d29bca1bc8dc79044c2a87d4ac11f849bd98b51287e313515b3bbb6692fc3"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -91,6 +91,13 @@ cases = [
   "test_services_install_the_node_helper_and_pass_only_the_process_files",
   "test_workspace_still_passes_the_whole_value_in_one_guest_call",
   "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt",
+  "test_services_of_the_release_before_read_the_process_files_of_the_new_completion_copy",
+  "test_complete_runs_the_services_then_the_check_in_one_phase_and_passes_only_the_process_files",
+  "test_complete_keeps_a_dead_units_receipt_as_its_output_and_ends_0",
+  "test_complete_ends_0_without_a_check_line_when_the_check_fails_otherwise",
+  "test_complete_fails_on_a_failed_services_part_and_never_runs_the_check",
+  "test_the_completion_copy_stages_the_scripts_and_gives_the_services_only_the_process_files",
+  "test_a_copy_without_its_private_text_fails_before_any_command",
   "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
   "test_the_same_key_changes_nothing",
   "test_a_key_written_while_the_inner_incus_was_not_ready_says_so",
