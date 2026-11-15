@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\ReadTaskSwampRunsAction;
 use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\DevelopmentInstanceCreateProjection;
 use App\Domain\Instances\InstanceRuntimePowerState;
@@ -10,113 +11,33 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
+use App\Domain\Tasks\SwampRunReader;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
-use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampDispatch;
+use App\Infrastructure\Swamp\SwampHandshakes;
+use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Sleep;
-use Illuminate\Support\Str;
+use Tests\Support\HandshakeCountingServe;
 use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
 require_once __DIR__.'/../../Domain/Instances/ContainerInstanceHelpers.php';
-
-/**
- * Serve's handshake limit as its source sets it (src/serve/rate_limiter.ts at db3f6373): 50 WebSocket upgrades from one address in a
- * fixed 60 s window, all tokens together, a refused one answered 429 with the rest of the window as Retry-After. Every Gateway
- * connect reaches serve through its local TLS proxy as the one address 10.44.0.2. It answers vault.put, vault.read-secret and
- * workflow.run like serve, and counts every upgrade by token.
- */
-final class HandshakeCountingServe implements WebSocketClient
-{
-    public const int Limit = 50;
-
-    public const int WindowSeconds = 60;
-
-    public function __construct(private int $limit = self::Limit, private int $windowSeconds = self::WindowSeconds) {}
-
-    /** @var array<string, int> */
-    public array $connects = [];
-
-    public int $refused = 0;
-
-    /** @var list<array<string,mixed>> */
-    public array $frames = [];
-
-    private int $inWindow = 0;
-
-    private ?int $windowEnds = null;
-
-    private bool $open = false;
-
-    public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
-    {
-        $now = now()->getTimestamp();
-        if ($this->windowEnds === null || $now > $this->windowEnds) {
-            [$this->windowEnds, $this->inWindow] = [$now + $this->windowSeconds, 0];
-        }
-        $this->connects[$endpoint->bearerToken] = ($this->connects[$endpoint->bearerToken] ?? 0) + 1;
-        if (++$this->inWindow > $this->limit) {
-            $this->refused++;
-            throw new WebSocketException('refused', 429, retryAfterSeconds: max(1, $this->windowEnds - $now));
-        }
-        $this->open = true;
-    }
-
-    public function send(array $message): void
-    {
-        if (! $this->open) {
-            throw new WebSocketException('not connected');
-        }
-        $this->frames[] = $message;
-    }
-
-    public function receive(float $timeoutSeconds): array
-    {
-        $frame = end($this->frames);
-        if ($frame === false) {
-            return [];
-        }
-        $data = ['vaultName' => $frame['payload']['vaultName'] ?? 'orbit-control-inputs',
-            'secretKey' => $frame['payload']['secretKey'] ?? $frame['payload']['key'] ?? '', 'vaultType' => 'local_encryption'];
-
-        return match ($frame['type']) {
-            'vault.put' => [['type' => 'vault.put', 'id' => $frame['id'], 'payload' => ['data' => $data]]],
-            'vault.read-secret' => [['type' => 'vault.read-secret', 'id' => $frame['id'], 'payload' => ['data' => [...$data, 'value' => 'gateway-session']]]],
-            'workflow.run' => [['type' => 'event', 'id' => $frame['id'], 'event' => ['kind' => 'started',
-                'workflowName' => $frame['payload']['workflowIdOrName'], 'runId' => (string) Str::uuid()]]],
-            default => [],
-        };
-    }
-
-    public function close(): void
-    {
-        $this->open = false;
-    }
-
-    public function isConnected(): bool
-    {
-        return $this->open;
-    }
-
-    public function total(): int
-    {
-        return array_sum($this->connects);
-    }
-}
 
 beforeEach(function (): void {
     Queue::fake();
@@ -305,3 +226,56 @@ it('fails an admitted vault.sync when serve still refuses its copy, and never wa
     'a queue worker waits once' => [true, 1],
     'a web request never waits' => [false, 0],
 ]);
+
+/** Completes a clone create as its run's end does, so its completion is admitted. */
+function handshakeFinishCreate(Operation $create): void
+{
+    $create->refresh()->forceFill(['state' => [...$create->state, 'swamp_run_id' => 'run-'.$create->id]])->save();
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), [
+        'status' => 'succeeded', 'run_id' => 'run-'.$create->id, 'started_at' => now()->toIso8601String(), 'finished_at' => now()->toIso8601String(),
+        'result' => ['ready' => true, 'instance_id' => $create->target_id, 'commit' => str_repeat('c', 40), 't3' => [
+            'environment_id' => 'env-'.$create->id, 'server_version' => '0.1.7', 'expires_at' => '2026-12-10T10:00:00.000Z',
+            'gateway_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-gateway-1-token'],
+            'swamp_session' => ['vault' => 'orbit-control-inputs', 'key' => 'nckrtl-instance-t3-model-register-session-swamp-1-token']]]]);
+}
+
+it('starts clone creates and their completions at once after 46 screen reads in ten seconds', function (): void {
+    $node = containerDefaultNode();
+    $defaults = [handshakeDefault($node, 'reads-one'), handshakeDefault($node, 'reads-two')];
+    $serve = new HandshakeCountingServe;
+    $serve->answer = static fn (array $frame): ?array => $frame['type'] === 'workflow.run.search'
+        ? ['type' => 'workflow.run.search', 'id' => $frame['id'], 'payload' => ['data' => ['results' => []], 'total' => 0]] : null;
+    app()->instance(WebSocketClient::class, $serve);
+    app()->instance(SwampRunReader::class, new WebSocketSwampRunReader($serve, 'swamp.test', 'read-token', '/test/ca.pem'));
+    $ran = [];
+    runQueuedStarts($ran);
+    $this->travel(HandshakeCountingServe::WindowSeconds + 1)->seconds();
+    $serve->connects = [];
+
+    // A screen or a loop reads 46 task groups inside ten seconds, as the dependency loop of 15 November read 46 Projects.
+    $answers = [];
+    foreach (range(1, 46) as $index) {
+        $group = Task::query()->create(['title' => 'Group '.$index, 'brief' => 'Read it', 'status' => TaskGroupStatus::Running]);
+        $answers[] = app(ReadTaskSwampRunsAction::class)->execute($group)->availability;
+        if ($index % 5 === 0) {
+            $this->travel(1)->seconds();
+        }
+    }
+    $reads = $serve->connects['read-token'] ?? 0;
+
+    $creates = array_map(fn (Instance $default): Operation => containerCreate($default->project, $node, 'feature'), $defaults);
+    runQueuedStarts($ran);
+    array_map(handshakeFinishCreate(...), $creates);
+    runQueuedStarts($ran);
+
+    // Reads stop at the view share; the rest answer today's `unavailable` without touching serve. Before, all 46 connected and
+    // the second create's completion met serve's 429 and was deferred.
+    expect($reads)->toBe(SwampHandshakes::ViewShare)
+        ->and(array_count_values($answers))->toBe(['available' => SwampHandshakes::ViewShare, 'unavailable' => 46 - SwampHandshakes::ViewShare])
+        ->and($serve->refused)->toBe(0)
+        ->and($serve->connects['run-token'])->toBe(6);
+    foreach ([...$creates, ...Operation::query()->where('kind', 'instance.complete')->get()] as $operation) {
+        expect($operation->refresh()->state['swamp_run_id'])->toBeString()
+            ->and($operation->state['start_deferrals'] ?? null)->toBeNull();
+    }
+});

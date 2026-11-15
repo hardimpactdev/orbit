@@ -100,7 +100,7 @@ final readonly class SwampScheduleWorkflows
             throw $this->unavailable();
         }
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, SwampCaller::Schedule);
 
             return $requests();
         } catch (ResourceOperationException $exception) {

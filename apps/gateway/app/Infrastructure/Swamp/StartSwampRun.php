@@ -286,7 +286,7 @@ final readonly class StartSwampRun
         $socket = $this->socket;
         try {
             $connecting = ($this->clock)();
-            [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket);
+            [$socket, $shared] = $dispatch->socket($endpoint, 15, $this->socket, SwampCaller::Start);
             $phases['connect_ms'] = $this->milliseconds($connecting);
             $stage = 'send';
             $sending = ($this->clock)();

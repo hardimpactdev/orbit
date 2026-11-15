@@ -9,7 +9,6 @@ use App\Data\Tasks\TaskSwampRunsData;
 use App\Data\Tasks\TaskSwampStepData;
 use App\Domain\Tasks\SwampRunReader;
 use App\Infrastructure\Activity\CommandActivityInputSanitizer;
-use App\Infrastructure\Swamp\SwampReadBudget;
 use App\Models\Task;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
@@ -22,7 +21,6 @@ final readonly class ReadTaskSwampRunsAction
     public function __construct(
         private SwampRunReader $reader,
         private CommandActivityInputSanitizer $sanitizer,
-        private SwampReadBudget $budget,
     ) {}
 
     public function execute(Task $group): TaskSwampRunsData
@@ -35,9 +33,6 @@ final readonly class ReadTaskSwampRunsAction
             return $previous;
         }
         try {
-            if (! $this->budget->take('task-group:'.$group->id, 5)) {
-                throw new RuntimeException('The Swamp read budget is spent.');
-            }
             $snapshot = $this->reader->read($group->id);
             $runs = array_map($this->run(...), array_slice($snapshot['runs'], 0, 5));
             $result = new TaskSwampRunsData('available', now()->toIso8601String(), $runs, $snapshot['truncated'] || count($snapshot['runs']) > 5);

@@ -44,7 +44,7 @@ final readonly class SwampSchedulePublisher
         try {
             // Match the JSON data representation used by the real socket.
             $expectedInputs = json_decode(json_encode($inputs, JSON_THROW_ON_ERROR), true, 512, JSON_THROW_ON_ERROR);
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, SwampCaller::Schedule);
             $this->socket->send(['type' => 'workflow.trigger.set', 'id' => $id,
                 'payload' => ['workflowName' => $name, 'schedule' => $schedule, 'inputs' => $inputs === [] ? (object) [] : $inputs]]);
             $deadline = microtime(true) + 30;

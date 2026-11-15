@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests;
 
 use App\Domain\RemotePrograms\RemoteProgramRunner;
+use App\Infrastructure\Swamp\SwampHandshakes;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Testing\CachedState;
@@ -39,6 +40,12 @@ abstract class TestCase extends BaseTestCase
         TestDatabaseGuard::register($app);
         $app->make(Kernel::class)->bootstrap();
         $app->instance(RemoteProgramRunner::class, new FakeRemoteProgramRunner);
+        // Each test gets its own handshake ledger: parallel test processes and earlier tests must not share a serve window.
+        $ledger = sys_get_temp_dir().'/orbit-test-swamp-handshakes/'.getmypid().'-'.bin2hex(random_bytes(6)).'.json';
+        $app->instance(SwampHandshakes::class, new SwampHandshakes($ledger));
+        $this->beforeApplicationDestroyed(static function () use ($ledger): void {
+            @unlink($ledger);
+        });
         $app['config']->set('swamp.ssh_public_key',
             'ssh-ed25519 '.base64_encode(pack('N', 11).'ssh-ed25519'.pack('N', 32).str_repeat('t', 32)));
 

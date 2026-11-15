@@ -32,7 +32,7 @@ The view links the open whole-project batch PR and its task group when known. PR
 
 Inventory becomes stale after 26 hours, after a failed source refresh, or when its known source commit differs from the selected source. A running attempt is visible alongside the prior successful report. Failed refreshes keep that report's original commit and time.
 
-PR lookup evidence expires after five minutes. Gateway refresh caching lasts at most 60 seconds and never resets observation times. If Swamp is unreachable or returns invalid data, the Gateway shows the last validated evidence as stale. Without previous evidence it shows unavailable. An error never becomes an empty successful inventory.
+PR lookup evidence expires after five minutes. Gateway refresh caching lasts at most 60 seconds and never resets observation times. If Swamp is unreachable or returns invalid data, the Gateway shows the last validated evidence as stale. Without previous evidence it shows unavailable. A dependency read is a view of the [handshake ledger](/reference/swamp-command-steps#handshake-ledger): when Operations need the rest of serve's window, it answers the same stale or unavailable shape with HTTP 200 and a `Retry-After` header. One refresh reads the stale indexes of all Projects on one connection. An error never becomes an empty successful inventory.
 
 ## Native feature retirement
 

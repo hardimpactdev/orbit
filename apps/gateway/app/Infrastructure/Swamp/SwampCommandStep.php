@@ -17,6 +17,7 @@ use App\Domain\Schedules\ScheduleFires;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Jobs\Operations\FillNativeRunStepTimes;
 use App\Models\Operation;
 use App\Support\ValidatedData;
 use Carbon\CarbonImmutable;
@@ -296,8 +297,10 @@ final readonly class SwampCommandStep
      *
      * @param  array<string,mixed>  $run
      */
-    private function fillStepTimes(Operation $operation, string $runId, array $run): void
+    private function fillStepTimes(Operation $operation, string $runId, array $run, bool $retry = true): void
     {
+        $handshakes = app(SwampHandshakes::class);
+        $refusals = $handshakes->refusals();
         try {
             $recorded = $this->recordedSteps($run);
             foreach ($this->nestedRuns($runId, is_string($run['startedAt'] ?? null) ? $run['startedAt'] : '') as $nested) {
@@ -318,8 +321,32 @@ final readonly class SwampCommandStep
                 app(OperationStore::class)->change($current, ['state' => $state]);
             });
         } catch (Throwable $exception) {
+            if ($retry && $handshakes->refusals() > $refusals) {
+                // Serve refused a read with 429: read the times again once its window has ended.
+                FillNativeRunStepTimes::dispatch($operation->id, $runId)->delay($handshakes->retryDelay());
+                Log::info('The step times of a finished run are read again after the serve window.', ['operation_id' => $operation->id, 'delay_seconds' => $handshakes->retryDelay()]);
+
+                return;
+            }
             Log::warning('The step times of a finished run were not recorded.', ['operation_id' => $operation->id, 'exception_type' => $exception::class]);
         }
+    }
+
+    /** The one later read of a finished run's step times, after serve refused the first with 429. */
+    public function retryStepTimes(int $operationId, string $runId): void
+    {
+        $operation = Operation::query()->find($operationId);
+        if ($operation === null) {
+            return;
+        }
+        try {
+            $run = $this->history($runId);
+        } catch (Throwable $exception) {
+            Log::warning('The step times of a finished run were not recorded.', ['operation_id' => $operationId, 'exception_type' => $exception::class]);
+
+            return;
+        }
+        $this->fillStepTimes($operation, $runId, $run, retry: false);
     }
 
     /**
@@ -785,7 +812,7 @@ final readonly class SwampCommandStep
     {
         $id = bin2hex(random_bytes(16));
         try {
-            $socket = $connection->socket($endpoint, 15, $this->socket);
+            $socket = $connection->socket($endpoint, 15, $this->socket, SwampCaller::Reconcile);
             $socket->send(['type' => $type, 'id' => $id, 'payload' => $arguments]);
             $deadline = microtime(true) + 30;
             while ($socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {

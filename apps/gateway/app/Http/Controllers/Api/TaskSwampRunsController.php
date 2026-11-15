@@ -8,6 +8,7 @@ use App\Actions\Tasks\ReadTaskSwampRunsAction;
 use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
+use App\Infrastructure\Swamp\SwampHandshakes;
 use App\Models\Task;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -17,9 +18,9 @@ final class TaskSwampRunsController extends Controller
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function show(Request $request, Task $task, ReadTaskSwampRunsAction $action): JsonResponse
     {
-        return response()->json([
+        return app(SwampHandshakes::class)->announce(response()->json([
             'data' => $action->execute($task)->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
-        ])->header('Cache-Control', 'no-store');
+        ])->header('Cache-Control', 'no-store'));
     }
 }

@@ -105,7 +105,7 @@ final class SwampRunSubscriber
                 if (! is_string($address) || $address === '' || ! is_string($ca) || $ca === '' || ! is_string($token) || $token === '') {
                     return;
                 }
-                $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 0.5);
+                app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 0.5, SwampCaller::Subscriber);
                 $this->connectedAt = ($this->clock)();
             }
             foreach ($this->following as $operationId => $entry) {

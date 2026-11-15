@@ -75,15 +75,15 @@ final class SwampDispatch
      *
      * @return array{0: WebSocketClient, 1: bool}
      */
-    public function socket(WebSocketEndpoint $endpoint, float $timeoutSeconds, WebSocketClient $own): array
+    public function socket(WebSocketEndpoint $endpoint, float $timeoutSeconds, WebSocketClient $own, SwampCaller $caller): array
     {
         if ($this->depth === 0) {
-            $own->connect($endpoint, $timeoutSeconds);
+            app(SwampHandshakes::class)->connect($own, $endpoint, $timeoutSeconds, $caller);
 
             return [$own, false];
         }
 
-        return [app(SwampConnection::class)->socket($endpoint, $timeoutSeconds, $own), true];
+        return [app(SwampConnection::class)->socket($endpoint, $timeoutSeconds, $own, $caller), true];
     }
 
     /** Closes the shared connection, after a request on it failed or when the dispatch ends. */

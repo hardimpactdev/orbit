@@ -35,7 +35,7 @@ final readonly class CancelSwampRun
         }
         $id = bin2hex(random_bytes(16));
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 15, SwampCaller::Cancel);
             $this->socket->send(['type' => 'workflow.cancel', 'id' => $id, 'payload' => ['runId' => $run, 'reason' => 'Orbit Operation cancellation requested']]);
             $deadline = microtime(true) + self::ReplySeconds;
             while ($this->socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {

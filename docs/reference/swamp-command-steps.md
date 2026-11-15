@@ -27,7 +27,7 @@ Serve rate-limits requests and WebSocket handshakes per client and answers `429`
 
 The execution copies that one transaction admits share a single WebSocket, because serve matches each reply to its request by `id`. After every copy is acknowledged, the Gateway queues the native starts on its `operation-starts` queue and answers admission without waiting for them. Children of a proof use the [spaced start sequence](/reference/operations#direct-swamp-starts).
 
-Each start job opens one connection. Its run-time execution copies and its `workflow.run` share it, and it closes when the start ends: serve streams every event of the run to the socket that started it, and `workflow.run` has no detach. So one start costs one handshake, plus one for each read on the read token that building its inputs makes. A clone create costs three: its start, the completion's read of the T3 session, and the completion's start. A request that fails closes its connection, and the next request opens a new one.
+Each start job opens one connection. Its run-time execution copies and its `workflow.run` share it, and it closes when the start ends: serve streams every event of the run to the socket that started it, and `workflow.run` has no detach. So one start costs one handshake, plus one for each read on the read token that building its inputs makes. A start is a priority caller of the [handshake ledger](#handshake-ledger), so screen reads never take its place in serve's window. A clone create costs three: its start, the completion's read of the T3 session, and the completion's start. A request that fails closes its connection, and the next request opens a new one.
 
 Serve may drop the shared connection after a copy's reply and before `workflow.run`, for example when it restarts. Then the start cannot prove that serve did not receive its frame, so it stays `swamp.start_uncertain` and is not deferred.
 
@@ -43,7 +43,23 @@ Every Gateway WebSocket client also tries a refused `429` handshake again after 
 
 A wait for the rest of serve's minute is longer, so the Gateway keeps its own connection rate low instead, and a workflow start refused that way is queued again ([Direct Swamp starts](/reference/operations#direct-swamp-starts)). Batches use one connection: an Instance removal deletes all its execution copies (about 50) with `deleteSecrets` over one WebSocket, one `vault.delete` after another.
 
-Reads that only refresh what a caller sees take a connection from one Gateway-wide read budget: at most 20 per minute, and one per subject per interval. Operation shows use recorded state and make no Swamp request. A task group's Swamp runs are read at most every five seconds. A read the budget refuses answers from recorded state. The rest of serve's minute stays for admissions, execution copies and the shared observers.
+### Handshake ledger
+
+The Gateway counts its own serve handshakes in one ledger that every PHP process on the Gateway host shares: PHP-FPM, Horizon workers and Artisan. Every Swamp connection goes through `SwampHandshakes::connect()` with the name of its caller (`SwampCaller`). The ledger mirrors serve's window: a window opens at the first handshake after the last one ended and lasts 61 seconds, serve's 60 plus a margin for clock drift.
+
+Only two callers are views: the dependency read behind `project:dependencies:show` and `instance:dependencies:show`, and a task group's Swamp runs (`task:swamp-runs`). Every other caller has priority: starts, execution copies, cancels, schedules, the event observer, the reads that settle a finished run, schedule inspection and release steps. A priority caller always connects and is counted; serve decides.
+
+A view connects only while the window holds fewer than 20 handshakes. So 30 of serve's 50 stay for priority callers, about ten clone creates with their reads, whatever screens, scripts or loops read. A view that does not connect makes no request. Its route answers HTTP 200 in the shape it has today: `stale` with the last validated data, or `unavailable` without it, and adds a `Retry-After` header with the seconds until a view may read again. A dependency read keeps that hold, so the polls inside the wait answer the same without trying.
+
+When serve refuses any handshake with `429`, the ledger marks the window full until its `Retry-After`. That stops views only; priority callers still try.
+
+The ledger is one JSON file, `ORBIT_HOME/cache/swamp-handshakes/ledger.json`, outside every release folder, guarded by `flock`. The lock covers one read and one write of that small file, never a network call. If the lock is not free within 50 milliseconds, the file cannot be opened or written, or anything else fails, the caller connects as if there were no ledger, and the process logs one warning. A file that is not valid JSON or is larger than 8 KiB is replaced. A window end later than one window from now is cut to one window. During a release, a worker of the old code does not count for a few seconds; a rollback to code without the ledger ignores the file.
+
+The first handshake of a new minute logs `Swamp handshakes per minute` with the counts of the minute before: `run` and `read` by token, `by_caller` as `<token>:<caller>`, and `views_refused`. The log never names a token.
+
+Operation shows use recorded state and make no Swamp request. A task group's Swamp runs are read at most every five seconds.
+
+A dependency read uses one connection for its index and its report. When it refreshes a stale index, it also reads, on that same connection, the default-branch index of every other Project whose cached index is older than 60 seconds, at most 200. So a loop or a screen over all Projects costs one handshake a minute. A Project without an index, or with an invalid one, then waits 30 seconds before its own read tries again, as after a failed read.
 
 Map each named variable with one whole native expression under `task.inputs.env`:
 

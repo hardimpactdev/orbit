@@ -7,6 +7,8 @@ namespace App\Infrastructure\Tasks;
 use App\Domain\Tasks\SwampRunReader;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\SwampCaller;
+use App\Infrastructure\Swamp\SwampHandshakes;
 use App\Support\ValidatedData;
 use RuntimeException;
 
@@ -18,6 +20,7 @@ final readonly class WebSocketSwampRunReader implements SwampRunReader
         private string $address,
         #[\SensitiveParameter] private string $token,
         private string $caPath,
+        private SwampCaller $caller = SwampCaller::TaskRuns,
     ) {}
 
     public function read(int $groupId): array
@@ -27,7 +30,7 @@ final readonly class WebSocketSwampRunReader implements SwampRunReader
         }
         $deadline = microtime(true) + 5.0;
         try {
-            $this->socket->connect(new WebSocketEndpoint($this->address, 443, 'swamp.orbit', '/', $this->caPath, $this->token), 2.0);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($this->address, 443, 'swamp.orbit', '/', $this->caPath, $this->token), 2.0, $this->caller);
             $search = $this->request('workflow.run.search', ['inputs' => ['group' => (string) $groupId], 'limit' => 5], $deadline);
             $data = $search['data'] ?? null;
             $results = is_array($data) ? ($data['results'] ?? null) : null;

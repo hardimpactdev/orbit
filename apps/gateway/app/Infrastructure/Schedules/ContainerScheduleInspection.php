@@ -13,7 +13,9 @@ use App\Domain\Schedules\ScheduleTrigger;
 use App\Domain\Shared\ResourceOperationException;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
+use App\Infrastructure\Swamp\SwampCaller;
 use App\Infrastructure\Swamp\SwampCommandStep;
+use App\Infrastructure\Swamp\SwampHandshakes;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Infrastructure\Swamp\SwampVaultExecutionCopy;
 use App\Models\Schedule;
@@ -73,7 +75,7 @@ final readonly class ContainerScheduleInspection
             $this->unavailable();
         }
         try {
-            $this->socket->connect(new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 10);
+            app(SwampHandshakes::class)->connect($this->socket, new WebSocketEndpoint($address, 443, 'swamp.orbit', '/', $ca, $token), 10, SwampCaller::Inspection);
             $this->socket->send(['type' => 'workflow.run', 'id' => $id, 'payload' => [
                 'workflowIdOrName' => 'operation-process-container', 'inputs' => [
                     'operation_id' => 0, 'node_id' => $target->node->id, 'kind' => 'schedule.inspect',

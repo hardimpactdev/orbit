@@ -26,12 +26,12 @@ final class SwampConnection
 
     private ?CarbonImmutable $lastActive = null;
 
-    public function socket(WebSocketEndpoint $endpoint, float $timeoutSeconds, WebSocketClient $own): WebSocketClient
+    public function socket(WebSocketEndpoint $endpoint, float $timeoutSeconds, WebSocketClient $own, SwampCaller $caller): WebSocketClient
     {
         $key = $this->key($endpoint);
         if (! $this->holds($endpoint)) {
             $this->release();
-            $own->connect($endpoint, $timeoutSeconds);
+            app(SwampHandshakes::class)->connect($own, $endpoint, $timeoutSeconds, $caller);
             [$this->shared, $this->sharedKey] = [$this->tracked($own), $key];
         }
         $this->lastActive = Date::now()->toImmutable();
