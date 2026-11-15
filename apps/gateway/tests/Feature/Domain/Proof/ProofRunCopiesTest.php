@@ -118,6 +118,13 @@ function copyProofSource(): object
             return ['swamp/proof/firewall/allow.cases.yaml'];
         }
 
+        public ?array $history = null;
+
+        public function history(string $base, string $head): ?array
+        {
+            return $this->history;
+        }
+
         public function range(string $from, string $to): ?ProofCommitRange
         {
             return null;

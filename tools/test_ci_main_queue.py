@@ -291,15 +291,37 @@ class ProofScopeTest(unittest.TestCase):
     def receipt(self):
         return {'commit': C, 'outcome': 'passed', 'result': {'cases': [{'command': 'node:list', 'case': 'list', 'verdict': 'passed'}]}}
 
-    def test_current_api_receipt_never_claims_range_coverage(self):
-        result = p.report(claim('proof', 'newest-only'), self.receipt())
+    def test_exact_range_receipt_links_every_commit_to_one_report(self):
+        receipt = {**self.receipt(), 'base': claim('proof', 'range')['base']}
+        result = p.report(claim('proof', 'range'), receipt)
         self.assertTrue(result['passed'])
-        self.assertFalse(result['range_covered'])
+        self.assertTrue(result['range_covered'])
         self.assertEqual([B], result['not_individually_tested'])
         github = Mock(repo='hardimpactdev/orbit')
         with patch.dict(q.publish.__globals__, validate_claim=Mock()):
-            q.publish(github, claim('proof', 'newest-only'), result, 'report')
-        self.assertEqual(['failure', 'success'], [call.args[2]['state'] for call in github.request.call_args_list[:2]])
+            q.publish(github, claim('proof', 'range'), result, 'report')
+        self.assertEqual(['success', 'success'], [call.args[2]['state'] for call in github.request.call_args_list[:2]])
+
+    def test_absent_or_wrong_range_base_is_not_coverage(self):
+        for base in (None, C):
+            result = p.report(claim('proof', 'range'), {**self.receipt(), 'base': base})
+            self.assertFalse(result['passed'])
+            self.assertFalse(result['range_covered'])
+            self.assertEqual('range not covered', result['selection'])
+
+    def test_run_passes_range_base_and_clears_it_for_nightly(self):
+        with tempfile.TemporaryDirectory() as folder:
+            request = Path(folder) / 'claim.json'
+            output = Path(folder) / 'receipt.json'
+            for mode in ('range', 'all'):
+                request.write_text(json.dumps(claim('proof', mode)))
+                argv = ['ci-main-proof', 'run', '--claim', str(request), '--output', str(output)]
+                with patch.object(sys, 'argv', argv), patch.object(subprocess, 'run', return_value=Mock(returncode=0)) as run:
+                    self.assertEqual(0, p.main())
+                env = run.call_args.kwargs['env']
+                self.assertEqual(C, env['PROOF_SHA'])
+                self.assertEqual(claim('proof', mode)['base'] if mode == 'range' else '', env['PROOF_BASE'])
+                self.assertEqual(str(mode == 'all').lower(), env['PROOF_ALL'])
 
     def test_nightly_requires_all_eight_kinds_and_keeps_nonpassing_case(self):
         self.assertFalse(p.report(claim('proof'), self.receipt(), 'failure')['passed'])

@@ -45,6 +45,22 @@ afterEach(function (): void {
 });
 
 describe('proof:run', function (): void {
+    it('sends a typed range base while following the unchanged result', function (): void {
+        $mock = proof_run_gateway([proof_run_operation('passed')]);
+
+        expect(Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--base' => str_repeat('a', 40), '--json' => true, '--no-interaction' => true]))->toBe(0);
+        $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all()['base'] === str_repeat('a', 40));
+        expect(proof_run_json_output()['result']['commit'])->toBe(PROOF_RUN_SHA);
+    });
+
+    it('refuses an invalid or conflicting range base before a request', function (string $base, bool $all): void {
+        $mock = proof_run_gateway([proof_run_operation('passed')]);
+
+        expect(Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--base' => $base, '--all' => $all, '--json' => true, '--no-interaction' => true]))->toBe(1)
+            ->and(Artisan::output())->toContain('proof.base_invalid');
+        $mock->assertNotSent(RunProofRequest::class);
+    })->with([['main', false], [str_repeat('a', 40), true]]);
+
     it('follows a passing proof and prints each case with its verdict, the VM and the receipt', function (bool $json): void {
         $mock = proof_run_gateway([proof_run_running(), proof_run_operation('passed')]);
 

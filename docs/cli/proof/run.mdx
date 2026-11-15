@@ -18,7 +18,7 @@ covers:
 ---
 
 ```bash
-orbit proof:run <commit> [--all] [--report-only] [--keep-failed] [--idempotency-key=KEY] [--json]
+orbit proof:run <commit> [--base=SHA | --all] [--report-only] [--keep-failed] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -29,6 +29,7 @@ The selection list maps the CLI, Gateway, SDK and native execution files for `no
 
 | Option | Default | Meaning |
 | --- | --- | --- |
+| `--base=SHA` | none | Prove the union selected by every commit after this ancestor through `commit`, on the `commit` tree. Cannot be combined with `--all`. |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
 | `--report-only` | off | Record reporting intent. Capacity waits and pool eligibility are the same with or without this flag. |
 | `--keep-failed` | off | Has no effect on a proof in copies: every run removes its copy. |
@@ -41,7 +42,7 @@ orbit proof:run 0123456789abcdef0123456789abcdef01234567
 
 In a terminal, an omitted commit is asked for with a text prompt. A noninteractive or `--json` call that omits it is refused with `proof.commit_invalid`, and so is a value that is not a full lowercase SHA. A refused call sends no request.
 
-The command takes the commit and nothing else. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
+Orbit selects the cases from the commit and optional ancestor base. The calling Node needs an access grant to the Gateway Node. Continuous integration calls it for every change to command code; see [the proof CI](/reference/feature-flow#the-proof-ci).
 
 Built so far: the trust check, the case selection, the run in copies and the verdict of each case. The CI job `proof-run` is part of Required checks. Today it starts no proof: the repository variable `ORBIT_PROOF_ENABLED` is unset ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)). A failed case or missing verdict fails it. Capacity waits never pass as a proof. Not built yet: the receipt store.
 
@@ -56,6 +57,10 @@ Orbit proves only code that it can trust. The commit must be the head of a branc
 ## Which cases run
 
 Orbit lists the files that differ between the commit and its merge base with `main`, and maps each path to commands with the selection list in the commit. A code change runs the command’s whole cases file. A change only to its cases selects added or changed entries and users of changed fixtures, vars or batch setup. The runner expands and compares both definitions. Changes to the runner, selection code or selection list disable narrowing for every selected command. Tooling alone selects no commands. Unknown fixture keys select the whole file. CI publishes its exact base/head result, and Orbit reads it; a missing or invalid result runs the whole file. Deleted entries select nothing. `--all` and an incomplete file list run every case. A selection-list change alone selects nothing. [Choose the cases](/reference/feature-flow#choose-the-cases) holds the mapping rule.
+
+With `--base`, Orbit first verifies that the full lowercase SHA is an ancestor of the tested commit. It selects each intervening commit against that commit's first parent, with that commit's selection list, and unions the selections. Changes that are later reverted still select their cases. Only the newest tree executes, and only the newest exact SHA must pass trust. This does not prove every intermediate tree.
+
+A whole-file selection runs every current case of that file. Narrow selections union case ids, retaining those still present at the tested SHA. Removed files and ids are listed as uncovered with `gone at tested SHA`; they do not fail the proof. The case receipt format stays the same. An equal base and commit selects nothing. Missing or non-ancestor bases are refused; an incomplete history read cannot pass.
 
 When only paths that need no proof changed, such as documentation and charts, the command succeeds with `Skipped — nothing to prove (proof.nothing_to_prove)`. It starts nothing. A path that matches no line of the selection list is refused with `proof.path_unmapped`, so a new kind of file never passes unproven by accident. Paths that are marked as having no case yet, and commands without a cases file, are listed as uncovered in the result and do not fail the run.
 
@@ -142,6 +147,8 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | Code | Meaning |
 | --- | --- |
 | `proof.run_interrupted` | Native execution stopped with inconclusive coverage, without a completed failure taking precedence. |
+| `proof.base_invalid` | The range base is not a full lowercase SHA, or it is combined with `--all`. |
+| `proof.base_not_ancestor` | The base is missing from the repository or is not an ancestor of the tested commit. |
 | `proof.commit_invalid` | The commit is missing or is not a full lowercase SHA, and the CLI cannot prompt. |
 | `proof.commit_not_found` | The Orbit repository has no such commit. |
 | `proof.commit_untrusted` | The commit is not the head of a branch of the Orbit repository, nor the head of an open pull request with the label `run-proofs` and a maintainer's approval of exactly that commit. |

@@ -144,3 +144,5 @@ Fixture intents must include the fields their Gateway producer always sends, eve
 A proof CLI timeout does not settle its Operation. Cancel and confirm settlement or stop admission of later cases in that batch, retaining an explicit receipt for each unrun case. Account for CLI waits separately from setup and assertion budgets, and preserve product timing assertions.
 
 A coalesced CI receiver must select each waiting commit before taking the union: a net diff loses reverted inputs and historical deferrals. Publish every commit link before advancing a durable answer marker, and keep a failed run’s claim so a collector can report missing work. Intersect the union with the tested tree and report removed names as gone, without failing the run. Never call newest-only proof selection range coverage.
+
+A coalesced proof range selects each intervening commit against its own first parent and then intersects case IDs with the tested tree. A net diff loses reverted inputs. Share variant expansion with batch admission, and refuse an incomplete history instead of claiming partial coverage.

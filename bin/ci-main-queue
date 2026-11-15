@@ -132,7 +132,7 @@ def queue_range(github, consumer, sha, context=None, origin=None):
 def claim_work(github, consumer, sha, run_id, full_set=False, base=None, nightly=False):
     recover(github, consumer, run_id)
     checkpoint, commits = queue_range(github, consumer, sha)
-    mode, advance = 'deferred' if consumer == 'fixtures' else 'newest-only', True
+    mode, advance = 'deferred' if consumer == 'fixtures' else 'range', True
     context = CONTEXTS[consumer]
     if base:
         checkpoint = full.git('rev-parse', base + '^{commit}')

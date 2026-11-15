@@ -143,6 +143,17 @@ class MainConsumerTest(unittest.TestCase):
                 proof.run(SHA, 'key', 'orbit', all_cases=all_cases)
             self.assertEqual(all_cases, '--all' in start.call_args.args[0])
 
+    def test_range_sends_ancestor_and_newest_without_all(self):
+        child = Mock(returncode=0)
+        child.communicate.return_value = ('{}', None)
+        base = 'a' * 40
+        with patch.object(proof.subprocess, 'Popen', return_value=child) as start, patch.object(proof.signal, 'signal'):
+            proof.run(SHA, 'key', 'orbit', base=base)
+        self.assertEqual(['orbit', 'proof:run', SHA, '--base', base, '--json', '--idempotency-key', 'key'], start.call_args.args[0])
+        with self.assertRaises(ValueError):
+            proof.run(SHA, 'key', 'orbit', base=base, all_cases=True)
+
+
 
 class CapacityReportTest(unittest.TestCase):
     def capacity(self):
