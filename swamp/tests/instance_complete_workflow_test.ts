@@ -1,7 +1,9 @@
 import { assertEquals } from "jsr:@std/assert@1.0.19";
+import { parse } from "jsr:@std/yaml@1.0.12";
 import { behavior } from "../extensions/behaviors/operations/instance-dev-command/assets.ts";
 import { completeResult } from "../extensions/behaviors/operations/instance-dev-command/complete_result.ts";
-import { failures, levelsOf, type Outcome, type Ran, runWorkflow } from "./_support/swamp_workflow.ts";
+import { swampExpression } from "./_support/swamp_expression.ts";
+import { environment, failures, levelsOf, type Outcome, type Ran, runWorkflow } from "./_support/swamp_workflow.ts";
 
 /** The clone completion (docs/cli/instance/complete.mmd) on the pinned engine's levels, with the real `finish` receipt. */
 const workflow = "workflow-operation-instance-complete.yaml";
@@ -140,4 +142,16 @@ Deno.test("a completion of a Route its create published carries no Route: no Rou
   // A completion that captured the Route (the create's Nodes were held, or its publication failed) withdraws it on its own failure.
   const fallback = run(routed, { "route-csr-0": { outputs: { sign: { stdout: "pem" } } }, route: { status: "failed", duration: 6 } });
   assertEquals([receipt(fallback).failed_step, receipt(fallback).error_code, fallback["withdraw-route"].status], ["route", "instance.create_route_failed", "succeeded"]);
+});
+
+Deno.test("copies of a nested-fleet default started at once take their own fleet step name: 64 per Node, never one per Node", () => {
+  // Swamp fails a step that waits 60 s for a name another run holds; one name per Node failed two of four copies (Operations 24033 and 24034).
+  const doc = parse(Deno.readTextFileSync(new URL(`../workflows/${workflow}`, import.meta.url))) as { jobs: { steps: { name: string; task: { behaviorName: string } }[] }[] };
+  const expression = swampExpression(doc.jobs.flatMap((job) => job.steps).find((step) => step.name === "clone-fleet")!.task.behaviorName);
+  const name = (nodeId: number, instanceId: number) =>
+    String(environment.evaluate(expression, { inputs: { node_id: nodeId, intent: { ...routed, instance_id: instanceId, fleet: { seed: "e" } } } }));
+  // The four copies of 18:13Z, on Node 209: four names.
+  assertEquals([3319, 3320, 3321, 3322].map((id) => name(209, id)), ["ic-clone-fleet-209-55", "ic-clone-fleet-209-56", "ic-clone-fleet-209-57", "ic-clone-fleet-209-58"]);
+  // A bounded pool: 1000 Instances on one Node give 64 names, so Swamp's catalog does not grow with every copy.
+  assertEquals(new Set(Array.from({ length: 1000 }, (_, i) => name(209, i + 1))).size, 64);
 });
