@@ -59,11 +59,16 @@
     swap_opened_paths: "{{ swap_opened.stdout_lines | map('replace', swap_cgroup ~ '/', '') | list }}"
 
 - name: Record the opened inner cgroups
-  when: swap == 'open'
+  when: swap == 'open' and swap_opened_paths | length > 0
   ansible.builtin.copy:
-    content: "{{ (swap_opened_paths + ['']) | join('\n') if swap_opened_paths else '' }}"
+    content: "{{ (swap_opened_paths + ['']) | join('\n') }}"
     dest: "{{ swap_record }}"
     mode: "0600"
+
+# A sleep that opened no inner cgroup leaves no record: a plain clone's wake takes the Node's fast resume, which never removes one.
+- name: Remove a record left from before
+  when: swap == 'open' and swap_opened_paths | length == 0
+  ansible.builtin.file: { path: "{{ swap_record }}", state: absent }
 
 - name: Read the swap record
   when: swap in ['close', 'count']

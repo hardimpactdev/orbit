@@ -206,6 +206,17 @@ Deno.test({ name: "a freeze opens swap for the container, pauses it and pushes i
     assertEquals(frozen.calls.filter((call) => call !== "query"), ["pause"]);
 } });
 
+Deno.test({ name: "a freeze that opens no inner cgroup leaves no swap record and removes one left from before", ignore: !available, async fn() {
+    // A plain clone's wake takes the Node's fast resume, which never removes a record: so the freeze writes none.
+    const plain = await part("freeze", { marker: true, inner: { "system.slice/polkit.service/memory.swap.max": "33554432", "init.scope/memory.swap.max": "max" } });
+    assert(plain.ok, plain.output);
+    assertEquals([plain.result, plain.status, plain.record], [{ sleep: "frozen", swap_subtree: 0 }, "Frozen", null]);
+
+    const stale = await part("freeze", { marker: true, record: "lxc.payload.nested-gateway/memory.swap.max\n" });
+    assert(stale.ok, stale.output);
+    assertEquals([stale.result, stale.status, stale.record], [{ sleep: "frozen", swap_subtree: 0 }, "Frozen", null]);
+} });
+
 Deno.test({ name: "a freeze whose memory stays in RAM (swap is full) resumes and stops the container instead", ignore: !available, async fn() {
     const full = await part("freeze", { marker: true, anonAfter: 300 * 1048576 });
     assert(full.ok, full.output);

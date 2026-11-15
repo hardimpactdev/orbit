@@ -1381,7 +1381,7 @@ Incus writes `memory.swap.max = 0` for every Instance container from `limits.mem
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
-So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. It records the inner cgroups it opened in `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, one path below the container's cgroup per line, and their count in its result as `swap_subtree`. Each resume by a wake's run, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record.
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. When it opened at least one inner cgroup, it records them in `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, one path below the container's cgroup per line; when it opened none, it writes no record and removes one left from before. Its result counts them as `swap_subtree`. Each resume by a wake's run, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record.
 
 The sleep makes the record's folder first: `/dev/shm` is empty after a Node's reboot. A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them.
 
@@ -1389,7 +1389,7 @@ The record is written from what the walk opened before any later step can fail, 
 
 A short-lived unit, such as `systemd-hostnamed.service`, can end while the container sleeps, and its cgroup goes with it; the resume skips that path and never fails on it. In practice only the container's own cgroup and the three inner payload roots matter.
 
-The Node's wake script closes only the container's own cgroup, and changing it would need an `app-dev` converge. So the Gateway skips [the Node's resume](#the-node-resumes-a-frozen-container) for a nested-fleet Instance and for any Instance whose last sleep has `swap_subtree` above 0; those wakes take the run. A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. A plain clone has no inner cgroup with 0, so its record is empty.
+The Node's wake script closes only the container's own cgroup, and changing it would need an `app-dev` converge. So the Gateway skips [the Node's resume](#the-node-resumes-a-frozen-container) for a nested-fleet Instance and for any Instance whose last sleep has `swap_subtree` above 0; those wakes take the run. A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. A plain clone has no inner cgroup with 0, so its sleep leaves no record, and the Node's resume has none to remove.
 
 Measured on a nested-fleet default on 2026-11-14, before this rule:
 
