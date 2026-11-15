@@ -10,7 +10,7 @@ import { parse } from "jsr:@std/yaml@1";
 const repo = new URL("../../", import.meta.url);
 const list = JSON.parse(Deno.readTextFileSync(new URL("swamp/ansible/fleet-converge-inputs.json", repo))) as {
   inputs: string[];
-  cut_imports: { file: string; import: string; methods: string[]; guard?: string }[];
+  cut_imports: { file: string; import: string; methods: string[] }[];
   cut: { file: string; include: string; guard: string }[];
 };
 const read = (path: string) => Deno.readTextFileSync(new URL(path, repo));
@@ -45,7 +45,7 @@ function methodBlocks(lines: string[]) {
 
 /**
  * A cut import holds when every use of its imported names in the behavior file lies in one of its `methods`, the converge workflow
- * calls none of those methods or every use sits on a line with the `guard`, and the import line is still there.
+ * calls none of those methods, and the import line is still there.
  */
 function checkCutImport(cut: (typeof list.cut_imports)[number]) {
   const source = read(cut.file);
@@ -58,10 +58,8 @@ function checkCutImport(cut: (typeof list.cut_imports)[number]) {
   const names = lines[line].match(/\{([^}]*)\}/)![1].split(",").map((name) => name.trim()).filter(Boolean);
   const blocks = methodBlocks(lines);
   const called = calledMethods();
-  if (cut.guard === undefined) {
-    const overlap = cut.methods.filter((method) => called.includes(method));
-    assertEquals(overlap, [], `the converge workflow now calls ${overlap.join(", ")}: ${cut.import} is no longer a cut import`);
-  }
+  const overlap = cut.methods.filter((method) => called.includes(method));
+  assertEquals(overlap, [], `the converge workflow now calls ${overlap.join(", ")}: ${cut.import} is no longer a cut import`);
   let uses = 0;
   lines.forEach((text, index) => {
     if (index === line || /^ {8}[A-Za-z]+: \{$/.test(text)) return;
@@ -70,11 +68,6 @@ function checkCutImport(cut: (typeof list.cut_imports)[number]) {
       uses++;
       const block = blocks.find((entry) => index > entry.from && index < entry.to);
       assert(block && cut.methods.includes(block.name), `${cut.file}:${index + 1}: ${name} is used outside ${cut.methods.join(", ")}`);
-      // The use follows the guard's `?` directly, so it is the guarded branch, not the other one.
-      if (cut.guard !== undefined) {
-        const guarded = new RegExp(`${cut.guard.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*(?:await\\s+)?${name}\\(`);
-        assert(guarded.test(text), `${cut.file}:${index + 1}: ${name} is used without the guard ${cut.guard}`);
-      }
     }
   });
   assert(uses > 0, `${cut.file}: nothing uses the cut import ${cut.import}`);
@@ -261,7 +254,7 @@ function reached() {
     files.add(module);
     const source = read(module);
     for (const [, relative] of source.matchAll(/^\s*(?:import|export)\b[^;]*?from\s+"(\.{1,2}\/[^"]+)"/gm)) {
-      // A cut import: used only by methods a converge never runs, or only under a guard a base intent never meets.
+      // A cut import: used only by methods a converge never runs.
       if (list.cut_imports.some((cut) => cut.file === module && cut.import === relative)) continue;
       modules.push(new URL(relative, new URL(module, repo)).pathname.slice(repo.pathname.length));
     }
@@ -315,18 +308,16 @@ Deno.test("the list holds only files a base converge reads, each exists, ships i
   assert(manifest.includes("  - ansible/fleet-converge-inputs.json\n"), "the list ships with the refresh");
 });
 
-Deno.test("each cut import is used only by methods a converge never runs, or only under its guard", () => {
+Deno.test("each cut import is used only by methods a converge never runs", () => {
   assert(list.cut_imports.length > 0);
   for (const cut of list.cut_imports) checkCutImport(cut);
   assertEquals(calledMethods().sort(), ["convergeInput", "convergeResult", "write"], "the converge workflow's ansible-input methods");
 });
 
-Deno.test("a cut import fails when the converge workflow calls its method or a use leaves its guard", () => {
-  const cut = list.cut_imports.find((entry) => entry.guard === undefined)!;
+Deno.test("a cut import fails when the converge workflow calls its method or a use leaves its methods", () => {
+  const cut = list.cut_imports.find((entry) => entry.import === "./fleet_reboot_result.ts")!;
   assertThrows(() => checkCutImport({ ...cut, methods: [...cut.methods, "convergeResult"] }), Error, "the converge workflow now calls convergeResult");
-  const guarded = list.cut_imports.find((entry) => entry.guard !== undefined)!;
-  assertThrows(() => checkCutImport({ ...guarded, guard: guarded.guard + " never" }), Error, "without the guard");
-  assertThrows(() => checkCutImport({ ...guarded, methods: ["convergeInput"] }), Error, "is used outside convergeInput");
+  assertThrows(() => checkCutImport({ ...cut, methods: ["composeRole"] }), Error, "is used outside composeRole");
 });
 
 Deno.test("the converge workflow's Node plays lock a behavior per Node, so the refresh starts the inner Nodes side by side", () => {

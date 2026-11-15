@@ -1,10 +1,10 @@
 order = 1490
-source_sha256 = "a1bc117b7e7ae5cbd990685166a22fa3b70107a6635b8c606d3a6b9e8c3015cf"
+source_sha256 = "3853c2746fde469e561c503b2a3bf766002579d1e9349b06ca16f4d2de8b6f14"
 cases = [
   "every file a nested Node's base converge reads is in the converge digest's list",
   "the list holds only files a base converge reads, each exists, ships in the manifest, and each cut still guards its include",
-  "each cut import is used only by methods a converge never runs, or only under its guard",
-  "a cut import fails when the converge workflow calls its method or a use leaves its guard",
+  "each cut import is used only by methods a converge never runs",
+  "a cut import fails when the converge workflow calls its method or a use leaves its methods",
   "the converge workflow's Node plays lock a behavior per Node, so the refresh starts the inner Nodes side by side",
   "the refresh hashes the listed inputs and the inner Gateway's base intent digests",
   "a module counts when a reached task calls it, with every module_utils file it imports; an uncalled one does not",
@@ -21,7 +21,6 @@ inputs = [
   "swamp/ansible/tasks/instance-fleet-refresh.yml",
   "swamp/manifest.yaml",
   "swamp/extensions/behaviors/operations/ansible-input/write.ts",
-  "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts",
   "swamp/extensions/behaviors/operations/ansible-input/fleet_reboot_result.ts",
   "swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts",
   "swamp/ansible/operation-node-converge.yml",

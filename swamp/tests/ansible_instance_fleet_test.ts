@@ -1145,10 +1145,10 @@ Deno.test({
       const before = structuredClone(f.state().containers);
       const written = JSON.parse(f.state().outer.files[record]);
       // A test, another workflow, two modules of the converge's behavior that no converge runs, and the Route modules that no base converge
-      // task calls (releases 2079, 2083, 2087) changed, so the `swamp` tree did: none of them is a converge input (the clone part, the
+      // task calls (releases 2079, 2083, 2087) changed, so the `swamp` tree did: none of them is a converge input (the role plans only composeRole uses, the
       // redaction only the fleet reboot's result uses, `library/` and `module_utils/`), but the grants follow `swamp`.
       f.change((state) => state.digests = { "apps/gateway": "a1", swamp: "e1", "swamp/tests": "f9", "swamp/workflows/workflow-operation-instance-deploy-direct.yaml": "f8",
-        "swamp/extensions/behaviors/operations/ansible-input/clone_payload.ts": "f7", "swamp/extensions/behaviors/_lib/public_output.ts": "f6",
+        "swamp/extensions/behaviors/operations/ansible-input/role_add_plans.ts": "f7", "swamp/extensions/behaviors/_lib/public_output.ts": "f6",
         "swamp/ansible/library/orbit_route_site.py": "f5", "swamp/ansible/library/orbit_route_withdraw.py": "f4", "swamp/ansible/module_utils/orbit_route_withdraw.py": "f3",
         "swamp/ansible/library/": "f2", "swamp/ansible/module_utils/": "f1" });
       const again = f.run("refresh");

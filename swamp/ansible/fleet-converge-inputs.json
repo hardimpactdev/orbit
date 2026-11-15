@@ -40,14 +40,6 @@
       "methods": [
         "composeRole"
       ]
-    },
-    {
-      "file": "swamp/extensions/behaviors/operations/ansible-input/write.ts",
-      "import": "./clone_payload.ts",
-      "methods": [
-        "write"
-      ],
-      "guard": "container?.clone ?"
     }
   ],
   "cut": [

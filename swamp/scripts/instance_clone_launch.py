@@ -20,24 +20,20 @@ def main():
     folder = Path(sys.argv[1])
     phase = sys.argv[2]
     try:
-        if phase == "stage" and len(sys.argv) > 3:
-            # The launch copy (docs/reference/development-containers.md#create): one JSON line, `stage` the public release assets,
-            # `private` the clone copy's text. Stage the first, then run the named phase with only the private text on its stdin.
+        if phase == "stage":
+            # A launch copy (docs/reference/development-containers.md#create, #complete-a-clone): one JSON line, `stage` the public
+            # release assets, `private` the run's private text. Stage the first, then run the named phase with only the private text
+            # on its stdin.
+            phase = sys.argv[3]
             launch = json.loads(sys.stdin.read())
             payload, private = launch["stage"], launch["private"]
             if not isinstance(private, str):
                 raise ValueError("private")
             stage(folder, payload)
-            phase = sys.argv[3]
             sys.stdin = io.StringIO(private)
-        elif phase == "stage":
-            # This dispatch carries public release assets, never vault values.
-            stage(folder, json.load(sys.stdin))
-            print(json.dumps({"phase": phase, "changed": True}))
-            return
         else:
             payload = json.loads((folder / "input.json").read_text())
-    except (OSError, ValueError, KeyError, TypeError):
+    except (OSError, ValueError, KeyError, TypeError, IndexError):
         print("instance.clone_input_failed", file=sys.stderr)
         raise SystemExit(1) from None
     script = folder / "clone.py"

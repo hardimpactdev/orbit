@@ -38,7 +38,7 @@ Migration carries missing directories, including empty link targets, with their 
 
 Migration checks remote source access before quiesce using the Node's existing Git transport. Its temporary fetch credential is mode 0600 and is removed after success, refusal or timeout; no source token enters the container.
 
-Clone creation stages its release's helpers once in a private folder for the run. Later phases run the launcher by path, keeping scripts and intent off the SSH command. Cleanup removes the folder even when staging or the first clone phase fails.
+Clone creation stages its release's helpers once in a private folder for the run, from the Gateway's one-line launch copy. Later phases run the launcher by path, keeping scripts and intent off the SSH command. A clone's completion stages the same helpers from its own copy in its one Node step. Cleanup removes the folder even when staging or the first clone phase fails.
 
 Convergence and the container phase use the [verified atomic helper install](/reference/development-containers#prepare-a-node). A checksum mismatch keeps the installed helper; a symlink at either install path refuses replacement.
 

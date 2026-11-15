@@ -9,17 +9,19 @@ const copy = (key: string) => ({ vault: "orbit-control-inputs", key });
 const secrets = { process_environments: copy("instance-complete-processes-1") };
 const databaseSecrets = { ...secrets, server_database_create: copy("database-create-intent-4"), server_database_check: copy("database-create-owner-4"),
   server_valkey_create: copy("database-create-intent-5"), server_valkey_check: copy("database-create-owner-5") };
-const plain = { instance_id: 8, container: { clone: { source: "instance-7" }, project: "orbit-instances" }, database: null, server_database: null,
+const plain = { instance_id: 8, clone_launcher: "print('launcher')", container: { clone: { source: "instance-7" }, project: "orbit-instances" }, database: null, server_database: null,
   server_valkey: null, route: null, route_mutations: null };
 const routed = { ...plain, route: { leaf_indexes: [0] }, route_mutations: { artifacts: {}, restore: {} } };
 const serverDatabase = { node_id: 5, intent: { ssh_execution: { target: { host: "10.0.0.5", user: "orbit", port: 22, host_keys: [] }, identity_file: "/k" },
   owner_client: ["psql"] }, fill: ["docker", "exec"] };
 const withDatabase = { ...routed, server_database: serverDatabase, server_valkey: { ...serverDatabase, fill: null } };
-const checked = { stdout: '{"phase": "check", "changes": []}', exitCode: 0 };
+// The completion's one Node step prints the services line, then the check's outcome, and ends 0 unless the services part failed.
+const servicesLine = '{"phase": "services", "changes": []}';
+const checked = { stdout: servicesLine + '\n{"phase": "check", "changes": []}', exitCode: 0 };
 const dead = { error_code: "instance.container_process_inactive", process_failure: { process_id: 41, unit: "orbit-process-41-worker.service", state: "failed" } };
 
 function run(intent: Record<string, unknown>, outcomes: Record<string, Outcome>): Record<string, Ran> {
-  return runWorkflow(workflow, "instance.complete", intent, { "clone-check": { duration: 1.7, outputs: checked }, ...outcomes }, (step, cel) => {
+  return runWorkflow(workflow, "instance.complete", intent, { "clone-services": { duration: 3, outputs: checked }, ...outcomes }, (step, cel) => {
     const values = Object.fromEntries(Object.entries(step.task.inputs!).map(([key, value]) => [key, cel(value)]));
     const result = completeResult(intent, behavior.methods.complete_result.arguments.parse(values));
     return { outputs: { ready: result.ready, stdout: result.stdout } };
@@ -32,11 +34,10 @@ Deno.test("the completion's jobs and steps sit in the levels the plan names, by 
   assertEquals(jobs, [["input"], ["complete", "publication"], ["result"]]);
   const sorted = (levels: string[][]) => levels.map((level) => [...level].sort());
   assertEquals(sorted(steps.complete), [
-    ["clone-input", "database-snapshot", "server-database", "server-valkey"],
-    ["clone-fleet", "database-install", "server-database-check", "server-valkey-check"],
+    ["clone-fleet", "database-snapshot", "server-database", "server-valkey"],
+    ["database-install", "server-database-check", "server-valkey-check"],
     ["database-cleanup", "server-database-fill"],
     ["clone-services"],
-    ["clone-check"],
   ]);
   assertEquals(sorted(steps.publication), [["route-csr"], ["route"]]);
   assertEquals(sorted(steps.result), [["clone-private-cleanup", "finish"], ["cleanup", "withdraw-route"], ["accepted"]]);
@@ -49,19 +50,28 @@ Deno.test("a plain clone, a clone with a database and a nested-fleet clone read 
   assertEquals(failures(workflow, { execution_secrets: secrets, intent: { ...routed, database: { ssh_execution: {} } } }), []);
 });
 
-Deno.test("a plain clone starts the services when the stage ends, checks them, and is ready", () => {
-  // Seconds from the plan: stage 2.0, services 6, check 1.7, Route 1.3 + 11.5.
-  const ran = run(routed, { "clone-input": { duration: 2 }, "clone-services": { duration: 6 }, "route-csr-0": { duration: 1.3, outputs: { sign: { stdout: "pem" } } },
-    route: { duration: 11.5 } });
-  assertEquals(ran["clone-services"].start, ran["clone-input"].end);
-  assertEquals(ran["clone-check"].start, ran["clone-services"].end);
-  // The Route job runs beside the container steps from the start.
-  assertEquals(ran["route-csr-0"].start, ran["clone-input"].start);
-  for (const name of ["clone-fleet", "database-install", "server-database", "withdraw-route"]) assertEquals(ran[name].status, "skipped", name);
-  assertEquals([ran.finish.outputs!.ready, ran.accepted.status, ran["clone-private-cleanup"].status, ran.cleanup.status], [true, "succeeded", "succeeded", "succeeded"]);
+Deno.test("a plain clone runs one Node step from the run's start, writes no run folder, and is ready", () => {
+  const ran = run(plain, { "clone-services": { duration: 3, outputs: checked } });
+  // No input step and no run folder: the step stages the release scripts from the completion's one copy.
+  assertEquals([ran.input.status, ran.cleanup.status], ["skipped", "skipped"]);
+  assertEquals(ran["clone-services"].start, 0);
+  assertEquals(ran.finish.start, ran["clone-services"].end);
+  for (const name of ["clone-fleet", "database-install", "server-database", "withdraw-route", "route"]) assertEquals(ran[name].status, "skipped", name);
+  assertEquals([ran.finish.outputs!.ready, ran.accepted.status, ran["clone-private-cleanup"].status], [true, "succeeded", "succeeded"]);
   assertEquals(receipt(ran).failed_step, undefined);
+});
+
+Deno.test("a clone whose Route the create deferred writes the run folder for the Route child, publishes beside the Node step and cleans up", () => {
+  // Seconds from the plan: input 0.85, services 3, Route 1.3 + 11.5.
+  const ran = run(routed, { input: { duration: 0.85 }, "clone-services": { duration: 3, outputs: checked },
+    "route-csr-0": { duration: 1.3, outputs: { sign: { stdout: "pem" } } }, route: { duration: 11.5 } });
+  assertEquals([ran.input.status, ran.cleanup.status], ["succeeded", "succeeded"]);
+  assertEquals(ran["clone-services"].start, ran.input.end);
+  // The Route job runs beside the Node step from the input's end.
+  assertEquals(ran["route-csr-0"].start, ran.input.end);
+  assertEquals([ran.finish.outputs!.ready, ran.accepted.status, ran["withdraw-route"].status], [true, "succeeded", "skipped"]);
   // The result job waits for the longer of the two lines: the Route.
-  assertEquals(ran.finish.start, Math.max(ran["clone-check"].end, ran.route.end));
+  assertEquals(ran.finish.start, Math.max(ran["clone-services"].end, ran.route.end));
 });
 
 Deno.test("a clone with a database starts the services only after the fill and the Valkey check", () => {
@@ -78,7 +88,7 @@ Deno.test("a nested-fleet clone starts its fleet before the services; a failed f
   assertEquals([ran["clone-fleet"].status, ran["clone-services"].start], ["succeeded", ran["clone-fleet"].end]);
   assertEquals(ran.finish.outputs!.ready, true);
   const failed = run(fleet, { "clone-fleet": { status: "failed", duration: 40 }, "route-csr-0": { outputs: { sign: { stdout: "pem" } } } });
-  assertEquals([failed["clone-services"].status, failed["clone-check"].status], ["skipped", "skipped"]);
+  assertEquals(failed["clone-services"].status, "skipped");
   assertEquals([receipt(failed).failed_step, receipt(failed).error_code], ["fleet", "instance.create_fleet_failed"]);
   assertEquals([failed["withdraw-route"].status, failed.accepted.status], ["succeeded", "failed"]);
   // The fleet phase's own code and why come from the run's result file.
@@ -92,11 +102,11 @@ Deno.test("a nested-fleet clone starts its fleet before the services; a failed f
 Deno.test("each failure names its step and code, and a published Route is withdrawn", () => {
   const signed = { "route-csr-0": { outputs: { sign: { stdout: "pem" } } } };
   const cases: [string, Record<string, unknown>, Record<string, Outcome>, string, string][] = [
+    // A services failure, a failed stage and the step's outer timeout fail the step: the workspace.
     ["services", routed, { "clone-services": { status: "failed" } }, "workspace", "instance.create_workspace_failed"],
-    ["stage", routed, { "clone-input": { status: "failed" } }, "workspace", "instance.create_workspace_failed"],
-    ["dead unit", routed, { "clone-check": { outputs: { stdout: JSON.stringify(dead), exitCode: 1 } } }, "check", "instance.container_process_inactive"],
-    ["check", routed, { "clone-check": { outputs: { stdout: "", exitCode: 1 } } }, "check", "instance.complete_check_failed"],
-    ["check timeout", routed, { "clone-check": { status: "failed" } }, "check", "instance.complete_check_failed"],
+    // The check's outcome is the step's output: a dead unit's receipt, or no check line on any other failure.
+    ["dead unit", routed, { "clone-services": { outputs: { stdout: servicesLine + "\n" + JSON.stringify(dead), exitCode: 0 } } }, "check", "instance.container_process_inactive"],
+    ["check", routed, { "clone-services": { outputs: { stdout: servicesLine, exitCode: 0 } } }, "check", "instance.complete_check_failed"],
     ["database", withDatabase, { "server-database-fill": { status: "failed" } }, "database", "instance.create_database_failed"],
     ["Route", routed, { route: { status: "failed" } }, "route", "instance.create_route_failed"],
   ];
@@ -107,11 +117,11 @@ Deno.test("each failure names its step and code, and a published Route is withdr
     assertEquals(ran["withdraw-route"].status, "succeeded", label);
     assertEquals([ran.accepted.status, ran["clone-private-cleanup"].status, ran.cleanup.status], ["failed", "succeeded", "succeeded"], label);
     if (label === "dead unit") assertEquals(result.process_failure, dead.process_failure);
-    if (label === "database") assertEquals([ran["clone-services"].status, ran["clone-check"].status], ["skipped", "skipped"]);
+    if (label === "database") assertEquals(ran["clone-services"].status, "skipped");
   }
-  // An early Route failure never stops the container steps: the services start and the check runs.
-  const early = run(routed, { "route-csr-0": { status: "failed", duration: 0.5 }, "clone-input": { duration: 2 } });
-  assertEquals([early["clone-services"].status, early["clone-check"].status], ["succeeded", "succeeded"]);
+  // An early Route failure never stops the Node step.
+  const early = run(routed, { "route-csr-0": { status: "failed", duration: 0.5 } });
+  assertEquals(early["clone-services"].status, "succeeded");
   assertEquals([receipt(early).failed_step, early["withdraw-route"].status], ["route", "succeeded"]);
   // A clone without a Route has nothing to withdraw.
   const bare = run(plain, { "clone-services": { status: "failed" } });
@@ -120,12 +130,12 @@ Deno.test("each failure names its step and code, and a published Route is withdr
 
 Deno.test("a completion of a Route its create published carries no Route: no Route step, no withdrawal on a failed check (D3)", () => {
   // Guards: `inputs.intent.route == null` skips `route`, and the CSR's forEach list is empty.
-  const ran = run(plain, { "clone-input": { duration: 2 }, "clone-services": { duration: 6 } });
+  const ran = run(plain, { "clone-services": { duration: 6, outputs: checked } });
   assertEquals([ran.route.status, "route-csr-0" in ran, ran["withdraw-route"].status], ["skipped", false, "skipped"]);
-  assertEquals(ran.finish.start, ran["clone-check"].end);
+  assertEquals(ran.finish.start, ran["clone-services"].end);
   assertEquals(ran.finish.outputs!.ready, true);
   // A dead unit fails the completion; the address the create published stays up (502) until a retry or a removal.
-  const failed = run(plain, { "clone-check": { duration: 1.7, outputs: { stdout: JSON.stringify(dead), exitCode: 1 } } });
+  const failed = run(plain, { "clone-services": { duration: 3, outputs: { stdout: servicesLine + "\n" + JSON.stringify(dead), exitCode: 0 } } });
   assertEquals([failed.finish.outputs!.ready, receipt(failed).failed_step, failed["withdraw-route"].status], [false, "check", "skipped"]);
   // A completion that captured the Route (the create's Nodes were held, or its publication failed) withdraws it on its own failure.
   const fallback = run(routed, { "route-csr-0": { outputs: { sign: { stdout: "pem" } } }, route: { status: "failed", duration: 6 } });

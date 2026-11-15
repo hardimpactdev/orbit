@@ -1270,12 +1270,14 @@ The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob
 
 | Job | Steps by level |
 | --- | --- |
-| `input` | the intent |
-| `complete` | stage the folder, and the database starts · the Valkey user, the database check, the fleet start · the fill · `clone-services` · `clone-check` |
+| `input` | the intent, only for a Route the create did not publish or a nested fleet; a plain clone skips it |
+| `complete` | the database starts, the Valkey user, the fleet start · the database check · the fill · `clone-services` |
 | `publication` | the CSRs · the Route create child, only when the input captured the Route |
 | `result` | `finish` and the private-folder cleanup · `withdraw-route` on failure, and the run-folder cleanup · `accepted` |
 
-`clone-services` runs the `services` part of the workspace phase: PHP settings, file rights, Process files, web config, the Node store and the units. It refuses when the checkout mark names another Instance. It writes no tracked file, so the user's work in the checkout stays as it is. `clone-check` runs the `check` phase. A dead unit gives `instance.container_process_inactive`; the phase prints its `process_failure` receipt as its output, and the step keeps that output, because the step accepts the phase's refusal exit and `finish` reads the receipt from it.
+`clone-services` is the completion's one Node step. It runs `python3 -c <clone_launcher> <private folder> stage complete`: the launcher stages the copy's `stage` and runs the `complete` phase with only `private` on its stdin.
+
+The phase runs the `services` part of the workspace phase: PHP settings, file rights, Process files, web config, the Node store and the units. It refuses when the checkout mark names another Instance. It writes no tracked file, so the user's work in the checkout stays as it is. Then it runs the `check`. A dead unit gives `instance.container_process_inactive`: the phase prints its `process_failure` receipt as its output and ends 0, and `finish` reads the receipt from it. The step's outer bound is 185 seconds: 115 for the services, 55 for the check, and the stage.
 
 Success turns the Route `active`, then the Instance `active` with `provisioning_step=active` and `first_setup_pending=false`, in one transaction. A failed or cancelled run withdraws a Route that it published. An address the create published stays up and answers 502 until a retry or `instance:destroy`, which withdraws it; a retry that succeeds keeps it as it is. The run keeps the clone `source_resolved` with `failed_step` and `error_code`. The runtime stays `running` and the Conn environment stays registered, so the user keeps the thread. The result's `recovery.retry.command` is `instance:complete`; `instance:destroy` removes the clone as for a failed create.
 
@@ -2377,15 +2379,14 @@ A file list cannot follow the Gateway code that builds an intent: through its mo
 
 The list leaves out four include groups of the playbook: roles, software, Tools and the network. Each runs only when the intent selects roles, Tools or a network, and a base intent never does. The cover test fails when the guard of such an include changes.
 
-The list also leaves out three imports of the behavior file, `write.ts`. A converge never runs their code:
+The list also leaves out two imports of the behavior file, `write.ts`. A converge never runs their code:
 
 | Import | Why a converge never runs it |
 | --- | --- |
 | `fleet_reboot_result.ts`, with `_lib/public_output.ts` | Only the `fleetRebootResult` method uses it, and the converge workflow does not call that method |
 | `role_add_plans.ts`, with the route and Tool setup plans it imports | Only the `composeRole` method uses it, and the converge workflow does not call that method |
-| `clone_payload.ts` | Only a clone intent runs it (`container?.clone`); a base intent has no `container` |
 
-The cover test fails when the converge workflow calls such a method, when an imported name is used outside its method, or when a use of `clone_payload.ts` leaves its guard. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
+The cover test fails when the converge workflow calls such a method, or when an imported name is used outside its method. Before this cut, two refreshes on 14 November 2026 converged the three Nodes for nothing (Operations 21867 and 22223, 120 s and 108 s, no task changed): one for a change in `public_output.ts`, one for a line in the clone part of `write.ts`.
 
 The record holds each Node's digest as `converge_<role>` (`converge_gateway`, `converge_app_dev`, `converge_app_prod`). A digest that cannot be read makes all three converge and is not recorded, so the next refresh runs them too. The record also holds `converged_<role>`, the time of each Node's last converge. When that is more than 7 days old, that Node converges whatever the digests say. This guards against an input that no digest covers, such as a package of the inner image.
 

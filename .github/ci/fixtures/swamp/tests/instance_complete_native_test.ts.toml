@@ -1,5 +1,5 @@
 order = 850
-source_sha256 = "6f8f09c5766c61d0702f2311ffabf3380bcfcdc735ba530e6bf1039b37add2f9"
+source_sha256 = "be44a4631f4e3c5081a96713b8e568e572004441aa59167cae3abdbf3f9d4119"
 cases = [
   "pinned complete: a normal clone with a Route runs every step and ends ready",
   "pinned complete: a dead unit fails the check with its receipt and withdraws the Route",
