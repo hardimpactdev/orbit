@@ -665,7 +665,7 @@ describe('the address of a copy (docs/reference/development-containers.md#the-ad
             ->and(app(NativeDevelopmentInstanceInput::class)->create($operation)['intent']['route'])->toBeNull();
     });
 
-    it('publishes the address of a web-serving nested-fleet task copy in its create when the Node is free; copies started together publish one and defer the rest', function (): void {
+    it('publishes the address of a web-serving nested-fleet task copy in its create when the Node is free; copies started together share the Node and each publish', function (): void {
         swampVaultStandIn();
         $this->mock(LeafCertificateSigner::class)->shouldReceive('rootCertificate')->andReturn('root-certificate');
         config(['orbit.tasks.copies_max' => 3]);
@@ -678,15 +678,14 @@ describe('the address of a copy (docs/reference/development-containers.md#the-ad
         $second = startCopy(copyGroup($default->project));
         $third = startCopy(copyGroup($default->project));
 
-        expect(DB::table('route_publication_holds')->pluck('operation_id')->all())->toBe([$first->id])
-            ->and($first->input['route_id'])->not->toBeNull()
-            ->and($first->input)->toHaveKey('route_create')
-            ->and(app(NativeDevelopmentInstanceInput::class)->create($first)['intent']['route'])->toBe($first->input['route_create']);
-        foreach ([$second, $third] as $deferred) {
-            expect($deferred->refresh()->status)->not->toBe(OperationStatus::Waiting)
-                ->and($deferred->input['route_id'])->not->toBeNull()
-                ->and($deferred->input)->not->toHaveKey('route_create')
-                ->and(RoutePublicationHolds::nodes($deferred))->toBe([]);
+        // Caddy-only copies merge their own site under the Node lock, so they share the Node (docs/reference/routes.md#coordinate-publication).
+        expect(DB::table('route_publication_holds')->count())->toBe(0)
+            ->and(DB::table('route_withdrawal_holds')->orderBy('operation_id')->pluck('operation_id')->all())->toBe([$first->id, $second->id, $third->id]);
+        foreach ([$first, $second, $third] as $copy) {
+            expect($copy->refresh()->status)->not->toBe(OperationStatus::Waiting)
+                ->and($copy->input['route_id'])->not->toBeNull()
+                ->and($copy->input)->toHaveKey('route_create')
+                ->and(app(NativeDevelopmentInstanceInput::class)->create($copy)['intent']['route'])->toBe($copy->input['route_create']);
         }
         // The copy is a nested-fleet clone: its Club key comes in the same run as its publication.
         $run = app(NativeDevelopmentInstanceInput::class)->create($first);

@@ -29,6 +29,26 @@ final readonly class ClonePublication
     }
 
     /**
+     * A clone's create whose publication writes no shared file but the Caddyfile: no PHP-FPM pool, private DNS record, Ingress site or LAN
+     * rule. Its `clone-route` merges its own Caddy groups under the Node lock (docs/reference/routes.md#publish-a-development-site), so it
+     * shares its Route Nodes with removals and other such creates.
+     */
+    public static function sharesNodes(Operation $operation): bool
+    {
+        if (! self::takesFreeNodesOnly($operation)) {
+            return false;
+        }
+        $plan = ValidatedData::object($operation->input['route_create']);
+        foreach (['php_files', 'dns', 'ingress', 'lan'] as $list) {
+            if (($plan[$list] ?? []) !== []) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * A step of the clone create's publication: its job `publication`, or a child run's step, which only `clone-route-csr` and
      * `clone-route` start in a clone's create.
      *
