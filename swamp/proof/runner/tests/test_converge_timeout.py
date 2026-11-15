@@ -160,6 +160,29 @@ class ConvergeTimeoutTest(unittest.TestCase):
         self.assertIn('receipt: disk full', results[0]['failed'])
         self.assertEqual(results[1]['verdict'], 'unrun')
 
+    def test_disk_full_keeps_timeout_and_all_waiting_verdicts_on_stdout(self):
+        def invoke(argv, **kwargs):
+            if argv[-1] == 'shift':
+                return subprocess.CompletedProcess(argv, 0, 'false', '')
+            raise subprocess.TimeoutExpired(argv, kwargs['timeout'])
+
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / 'converge.cases.yaml'
+            source.write_text(HEADER + 'cases:\n' + case('times-out') + case('later') + case('last'))
+            out = io.StringIO()
+            with patch.object(fleet, 'from_environment', return_value=transport()), patch.object(fleet.subprocess, 'run', invoke), \
+                    patch.object(Path, 'write_text', side_effect=OSError('disk full')), \
+                    contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+                code = runner.main(['batch', 'fresh-fleet', '--file', str(source), '--evidence', directory])
+            results = {row['id']: row for row in map(json.loads, out.getvalue().splitlines())}
+        self.assertEqual(code, 1)
+        self.assertEqual(set(results), {'times-out', 'later', 'last'})
+        self.assertEqual(results['times-out']['verdict'], 'failed')
+        self.assertIn('600 seconds', str(results['times-out']['failed']))
+        for name in ('later', 'last'):
+            self.assertEqual(results[name]['verdict'], 'unrun')
+            self.assertIn('receipt: disk full', results[name]['failed'])
+
     def test_a_stopped_batch_drains_already_running_cases_without_starting_waiters(self):
         cases = [test_parallel.SchedulerTest.case('timeout', 'app-dev'), test_parallel.SchedulerTest.case('active', 'app-prod'), test_parallel.SchedulerTest.case('waiting', 'gateway')]
         barrier = threading.Barrier(2, timeout=2)

@@ -355,7 +355,10 @@ def command_batch(args):
     results = []
     for case, result in schedule(cases, limit, work):
         if result.get('blocked_by'):
-            stopped_receipt(root, case, result, discovery)
+            try:
+                stopped_receipt(root, case, result, discovery)
+            except OSError as error:
+                result['failed'].append(f'receipt: {error}')
         results.append(result)
     print('\n'.join(verdict_lines(results)), flush=True)
     verdicts = {result['verdict'] for result in results}
