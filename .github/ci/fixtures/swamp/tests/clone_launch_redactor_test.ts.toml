@@ -1,9 +1,9 @@
 order = 1510
-source_sha256 = "d4089dc68660a4c9dab7a20306f14581eb46628a375f167c5a949e5ed54cee87"
+source_sha256 = "a1b3f16b755f6ccf6ee63430575b6e91f862f9d9406fd3d491fd6da48b5ee9b4"
 cases = [
   "the launch copy is one line under its cap, and Swamp's redactor registers and masks it as a plain string",
   "release 2079's two-part stage copy is what broke 2080: its first redact throws Regular expression too large",
-  "the bare token and model key are masked alone only because the create reads them as values of their own",
+  "Swamp masks only the whole launch copy: a token or model key that appears alone stays for the script's own redaction",
 ]
 file = "swamp/tests/clone_launch_redactor_test.ts"
 cost = 3 # ESTIMATE: 3 cases in 0.02 s locally after the pinned module download; one second per case
@@ -22,4 +22,4 @@ inputs = [
 [case_costs]
 "the launch copy is one line under its cap, and Swamp's redactor registers and masks it as a plain string" = 1
 "release 2079's two-part stage copy is what broke 2080: its first redact throws Regular expression too large" = 1
-"the bare token and model key are masked alone only because the create reads them as values of their own" = 1
+"Swamp masks only the whole launch copy: a token or model key that appears alone stays for the script's own redaction" = 1

@@ -1,11 +1,12 @@
 import { z } from "npm:zod@4.4.3";
+import { CreateArgs, createResult, removeRun } from "../instance-dev-command/result.ts";
 
 /**
  * The registration step of a container clone (docs/reference/development-containers.md#t3-registration-and-pairing).
- * The `register` phase of
- * instance-container.yml wrote the container's reply into the run folder: the served environment, the two sessions it issued as
- * `agent`, and T3's answer to each session at `/api/auth/session`. This step makes the checks of `POST /conn/environments`,
- * stores both sessions as native sensitive fields, and returns only their vault keys. The Gateway records the server from that.
+ * `clone-t3` wrote the container's reply into the clone's private folder: the served environment, the two sessions it issued as
+ * `agent`, and T3's answer to each session at `/api/auth/session`; `clone-session-copy` brought it to `t3_file`. This step makes the
+ * checks of `POST /conn/environments`, stores both sessions as native sensitive fields, removes the copy on every path, and returns
+ * the create's result with only their vault keys: a ready clone skips `finish` (docs/cli/instance/container/create.mmd).
  */
 const Session = z.object({
     token: z.string().min(1).max(16384),
@@ -32,11 +33,7 @@ const Stored = z.object({
         vaultName: "orbit-control-inputs",
     }),
 }).strict();
-const Terminal = z.object({ stdout: z.string() });
-const Args = z.object({
-    instance_id: z.number().int().positive(),
-    folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
-});
+const Terminal = z.object({ stdout: z.string(), ready: z.boolean().optional(), removed: z.boolean().optional() });
 type Context = {
     modelId: string;
     writeResource(spec: string, name: string, data: unknown): Promise<unknown>;
@@ -54,15 +51,28 @@ function check(session: { status: number; body: string }): z.infer<typeof Authen
     }
 }
 
-export async function register(args: z.infer<typeof Args>, ctx: Context) {
+/** The run folder of a migrate's registration, which holds `t3.json`. */
+const Args = z.object({
+    instance_id: z.number().int().positive(),
+    folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
+});
+
+/**
+ * Reads and checks one T3 reply and stores both sessions as native sensitive fields; returns the server with only their vault keys.
+ * A refused check throws its `conn.*` code before anything is stored.
+ */
+async function stored(file: string, instanceId: number, ctx: Context, remove: boolean) {
     const modelId = z.string().uuid().parse(ctx.modelId);
     let reply: z.infer<typeof Reply>;
     let environment: z.infer<typeof Environment>;
     try {
-        reply = Reply.parse(JSON.parse(await Deno.readTextFile(`${args.folder}/t3.json`)));
+        reply = Reply.parse(JSON.parse(await Deno.readTextFile(file)));
         environment = Environment.parse(JSON.parse(reply.environment));
     } catch {
         throw new Error("conn.response_invalid");
+    } finally {
+        // The copy holds both session tokens: it goes on every path, before any check can refuse.
+        if (remove) await Deno.remove(file).catch(() => undefined);
     }
     const gateway = check(reply.gateway);
     check(reply.swamp);
@@ -71,25 +81,42 @@ export async function register(args: z.infer<typeof Args>, ctx: Context) {
     }
     if (reply.gateway.token === reply.swamp.token) throw new Error("conn.response_invalid");
     const key = (name: string) =>
-        `nckrtl-instance-t3-${modelId}-register-session-${name}-${args.instance_id}-token`;
+        `nckrtl-instance-t3-${modelId}-register-session-${name}-${instanceId}-token`;
     const handles = [];
     for (const name of ["gateway", "swamp"] as const) {
-        handles.push(
-            await ctx.writeResource("session", `${name}-${args.instance_id}`, {
-                token: reply[name].token,
-            }),
-        );
+        handles.push(await ctx.writeResource("session", `${name}-${instanceId}`, { token: reply[name].token }));
     }
-    const result = {
+    const server = {
         environment_id: environment.environmentId,
         server_version: environment.serverVersion,
         expires_at: gateway.expiresAt,
         gateway_session: { vault: "orbit-control-inputs", key: key("gateway") },
         swamp_session: { vault: "orbit-control-inputs", key: key("swamp") },
     };
-    handles.push(
-        await ctx.writeResource("terminal", "terminal", { stdout: JSON.stringify(result) }),
-    );
+    return { handles, server };
+}
+
+/** A migrate's registration (workflow-operation-instance-migrate.yaml): the server's receipt, from the run folder's `t3.json`. */
+export async function register(args: z.infer<typeof Args>, ctx: Context) {
+    const { handles, server } = await stored(`${args.folder}/t3.json`, args.instance_id, ctx, false);
+    handles.push(await ctx.writeResource("terminal", "terminal", { stdout: JSON.stringify(server) }));
+    return { dataHandles: handles };
+}
+
+/**
+ * A clone create's registration, which also builds the create's result from the same inputs as `finish` (one YAML anchor,
+ * `create_inputs`), so a ready clone skips `finish` (docs/cli/instance/container/create.mmd). It removes the copied `t3.json` on
+ * every path, and a ready result's run folder.
+ */
+export async function createRegister(raw: z.input<typeof CreateArgs>, ctx: Context) {
+    const args = CreateArgs.parse(raw);
+    const instanceId = z.number().int().positive().parse(args.intent.instance_id);
+    const { handles, server } = await stored(z.string().parse(args.t3_file), instanceId, ctx, true);
+    const container = args.container === null ? null : { ...args.container, register: "succeeded", server: JSON.stringify(server) };
+    const value = createResult(args.intent, { ...args, container, club_key_file: null, t3_part: null });
+    // The copy again: a failed unlink above leaves `removed` false, so the cleanup step runs.
+    const removed = value.ready ? await removeRun(args.folder, args.t3_file) : false;
+    handles.push(await ctx.writeResource("terminal", "terminal", { stdout: value.stdout, ready: value.ready, removed }));
     return { dataHandles: handles };
 }
 
@@ -167,7 +194,7 @@ export async function renew(args: z.infer<typeof RenewArgs>, ctx: Context) {
 
 export const behavior = {
     type: "@nckrtl/instance-t3",
-    version: "2026.11.13.1",
+    version: "2026.11.15.1",
     resources: {
         session: { schema: Stored, lifetime: "infinite", garbageCollection: 10 },
         terminal: { schema: Terminal, lifetime: "infinite", garbageCollection: 10 },
@@ -175,9 +202,15 @@ export const behavior = {
     methods: {
         register: {
             description:
-                "Check a clone's T3 reply and store its Gateway and Swamp sessions as native sensitive fields",
+                "Check a moved container's T3 reply and store its Gateway and Swamp sessions as native sensitive fields",
             arguments: Args,
             execute: register,
+        },
+        create_register: {
+            description:
+                "Check a clone's T3 reply, store its Gateway and Swamp sessions as native sensitive fields, and return the create's result",
+            arguments: CreateArgs,
+            execute: createRegister,
         },
         renew: {
             description:

@@ -138,14 +138,14 @@ function cloneMint(array $stage): array
         fn (): bool => true, "#orbit-model-environment\nORBIT_MODEL_KEY=placeholder\n", $stage)];
 }
 
-it('writes a private repository\'s bare token as its own copy beside the one-line launch copy', function (): void {
+it('writes a private repository\'s token only into the clone copy and the one-line launch copy', function (): void {
     [, , $mint] = cloneMint(['script' => 'print(1)']);
 
     $mint();
 
     $puts = collect($this->sourceSocket->frames)->mapWithKeys(fn (array $frame): array => [$frame['payload']['key'] => $frame['payload']['value']]);
     $launch = json_decode($puts['instance-create-launch-31'], true, flags: JSON_THROW_ON_ERROR);
-    expect($puts['instance-create-redact-token-31'])->toBe('fixture_token')
+    expect($puts->keys()->sort()->values()->all())->toBe(['instance-create-clone-31', 'instance-create-launch-31', 'instance-git-operation-31'])
         ->and($puts['instance-create-launch-31'])->not->toContain("\n")
         ->and($launch)->toBe(['stage' => ['script' => 'print(1)'],
             'private' => "https://x-access-token:fixture_token@github.com\n#orbit-model-environment\nORBIT_MODEL_KEY=placeholder\n"])

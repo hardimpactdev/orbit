@@ -2,8 +2,9 @@
  * The clone's launch copy against Swamp's own redactor at the pinned release. Swamp registers every value a run reads with
  * `vault.get`; a value with a newline becomes one regular expression, which V8 refuses for a line of about 32 KB (release 2080 failed
  * every clone create at clone-container with "Regular expression too large"). The launch copy is one line
- * (apps/gateway/app/Domain/Instances/CloneStage.php), and the bare token and model key are values of their own, because the redactor
- * masks a value only as a whole.
+ * (apps/gateway/app/Domain/Instances/CloneStage.php). The redactor masks a value only as a whole: a token inside the copy is not
+ * masked when it appears alone, so the clone script's own redaction keeps it out of a failure detail (instance_clone_test.py
+ * CopyStepRedactionTest).
  */
 import { assert, assertEquals, assertThrows } from "jsr:@std/assert@1";
 import { SecretRedactor } from "https://raw.githubusercontent.com/swamp-club/swamp/db3f6373207cc41235d2334f19a7901b2b84620f/src/domain/secrets/secret_redactor.ts";
@@ -39,13 +40,9 @@ Deno.test("release 2079's two-part stage copy is what broke 2080: its first reda
     assertThrows(() => redactor.redact("step output"), SyntaxError, "Regular expression too large");
 });
 
-Deno.test("the bare token and model key are masked alone only because the create reads them as values of their own", () => {
+Deno.test("Swamp masks only the whole launch copy: a token or model key that appears alone stays for the script's own redaction", () => {
     const alone = `fatal: could not read from https://x-access-token:${token}@github.com; key ${modelKey}`;
-    const launchOnly = new SecretRedactor();
-    launchOnly.addSecret(launch);
-    assert(launchOnly.redact(alone).includes(token) && launchOnly.redact(alone).includes(modelKey));
-    const withBare = new SecretRedactor();
-    for (const value of [launch, token, modelKey]) withBare.addSecret(value);
-    const masked = withBare.redact(alone);
-    assertEquals([masked.includes(token), masked.includes(modelKey)], [false, false]);
+    const redactor = new SecretRedactor();
+    redactor.addSecret(launch);
+    assert(redactor.redact(alone).includes(token) && redactor.redact(alone).includes(modelKey));
 });

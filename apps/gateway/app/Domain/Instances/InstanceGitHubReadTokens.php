@@ -146,7 +146,7 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
     /**
      * `$beside`, when given, is the private text of a clone's `clone-container` stdin, which its one credential copy holds after the line.
      * `$stage`, when given, is a clone's public stage (CloneStage::payload): its one-line launch copy holds it beside the clone copy's
-     * text, and the bare token gets its own copy, so Swamp masks the token wherever it appears alone.
+     * text.
      *
      * @param  \Closure(): bool  $unchanged
      * @param  array<string,mixed>|null  $stage
@@ -170,8 +170,6 @@ final readonly class InstanceGitHubReadTokens implements NativeGitHubTokenIssuer
             if ($stage !== null) {
                 $launch = CloneStage::reference($operation);
                 $this->step->executionCopy($launch['vault'], $launch['key'], CloneStage::value($stage, $private));
-                $bare = CloneStage::tokenReference($operation);
-                $this->step->executionCopy($bare['vault'], $bare['key'], $token ?? CloneStage::NoToken);
             }
 
             return $copy;
