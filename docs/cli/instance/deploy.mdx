@@ -57,6 +57,12 @@ A container default refreshes its [Project source facts at the deployed commit](
 
 <div className="flow-at" data-chart="instance/deploy"></div>
 
+### Production in containers (planned)
+
+This flow is planned by [ADR 0263](/decisions/0263-run-production-releases-in-hot-live-and-old-containers) and not built. Hot, a clone of live's release snapshot, builds and migrates the commit while live serves. When hot is ready, one Caddy reload switches the Routes to it, the work moves to it, and the previous live becomes old. See [Production containers](/reference/production-containers#deploy).
+
+<div className="flow-at" data-chart="instance/container/deploy-production"></div>
+
 ## Errors
 
 | Code | Meaning |

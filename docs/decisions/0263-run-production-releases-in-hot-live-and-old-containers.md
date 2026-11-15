@@ -89,7 +89,7 @@ Release containers and the storage volume use the Incus name of the Instance, [`
 
 The first release of an Instance has no live snapshot, so its hot launches from the image: a cold hot. The same flow moves an existing checkout production Instance with [`instance:migrate`](/cli/instance/migrate). It copies the home's shared paths into the storage volume first, then builds a cold hot at the commit that `current` selects, switches the Routes from PHP-FPM to the container and stops the host Processes, timers and pool. Each native Schedule keeps firing in the home until the migration ends; then the Gateway rewrites its workflow for the live link, as an Instance transfer does. The home stays, unserved, until the next successful deploy removes it with the production account. There is no other way to move, and a checkout production Instance can no longer deploy after its move.
 
-The planned charts are `docs/cli/instance/container/deploy-production.mmd`, `docs/cli/instance/container/rollback-production.mmd` and `docs/cli/instance/container/create-production.mmd` (the first release container, after a clone or for a migrated checkout), and a change of `docs/cli/instance/auto-deploy.mmd`.
+The planned charts are `docs/cli/instance/container/deploy-production.mmd`, `docs/cli/instance/container/rollback-production.mmd`, `docs/cli/instance/container/create-production.mmd` (a clone, whose first deploy builds the first release container) and `docs/cli/instance/container/migrate-production.mmd` (a checkout), and a change of `docs/cli/instance/auto-deploy.mmd`.
 
 ### 2. Hot is a clone of live's release snapshot
 
@@ -159,17 +159,85 @@ FrankenPHP serves every release container, in classic mode, from the runtime fol
 
 ### 10. Next steps
 
-The build follows the [container runtime plan](/solutions/development-container-runtime#production-instances) after the production gate. A first order, each one PR with its proof:
+The build follows the [container runtime plan](/solutions/development-container-runtime#production-instances) after the production gate. The planned charts in part 1 are the specification of each command. The [production containers](/reference/production-containers) page links here and holds no copy of this list.
 
-1. Charts, pages and cases of the planned production charts.
-2. A container branch of the `app-prod` role and the production image, with no agent.
-3. The records: `release_state`, the storage volume and the live link.
-4. `instance:clone` and the first release container on a fixture production Project.
-5. The hot deploy with readiness, switch and handover, and the automatic tick on it.
-6. Rollback to old.
-7. `instance:migrate` for a production checkout, then each production Instance, one at a time, and the removal of PHP-FPM from the role.
+#### Build subtasks
 
-The live proof runs on a fixture production Project before the first real production Project moves. Subtask 2 of this task group writes the detailed list and the proof plan.
+Each subtask is one PR of a task group that follows this one, in this order. Each one adds its errors, Pest tests and documentation, and moves its chart from planned to built.
+
+1. **Production Node and image.** The container branch of the `app-prod` role: Incus, the pool, `orbit-instances`, the bridge and the runtime folder with the static glibc PHP. The production image has the user `orbit` only, no agent and no model route.
+   - Removes: nothing yet. PHP-FPM stays for checkouts until subtask 9.
+   - Proof: converge a fixture `app-prod` Node twice, with no change the second time. Launch the image and check its users, and that PHP loads no PCOV.
+2. **Records.** `release_state` with at most one row per state, `runtime_version`, the storage volume of an Instance, and the Caddy site of a production Route that imports the upstream file.
+   - Removes: nothing.
+   - Proof: Gateway Pest tests of the constraints, the admission reads and the projections.
+3. **Clone.** `instance:clone` records the Instance, creates the storage volume with the `503` upstream file, publishes the preview Route and accepts a container candidate.
+   - Removes: the home preparation of a clone, the checkout candidate rule and the Node timers that a clone installs.
+   - Proof: Pest tests and the cases of `create-production`; a clone of the fixture Project.
+4. **Hot deploy.** The capacity check, a warm or cold hot, the source and `.env`, the before steps, disabled units, the release snapshot, readiness, switch, handover, after steps and retire, with the `deployment.*` codes. Build requirement: no before step writes compiled views or caches into a shared path.
+   - Removes: nothing yet. The home branch of the deploy workflow stays for checkouts until subtask 9, listed in [old paths](/reference/old-paths).
+   - Proof: Pest tests and the cases of `deploy-production`; the first and second deploys of the fixture.
+5. **Work on live.** A native Schedule fire reads the live link; `process:*` acts on live; a per-minute scheduler is a container timer, enabled only in live.
+   - Removes: production Node timers, and `restart_on_deploy` for container Instances.
+   - Proof: Pest tests of the Schedule workflow and the Process commands; a fixture deploy in which each Schedule fires once a minute.
+6. **Automatic tick.** The tick's deployed commit is live's commit, and its deploy is the hot deploy. `deployment.node_capacity` gets a retry time and never counts toward a block.
+   - Removes: nothing.
+   - Proof: Pest tests of the policy inputs and the retry rule; the capacity case on the fixture.
+7. **Rollback.** `instance:rollback` returns to old, with no `--release`.
+   - Removes, for container Instances: the `release` argument, the `current` swap and the PHP-FPM refresh of a rollback, and the home scan of `instance:release:list`.
+   - Proof: Pest tests and the cases of `rollback-production`; a rollback and a forward rollback on the fixture.
+8. **Migrate a production checkout.** `instance:migrate` for a checkout production Instance, and the last copy and home removal in the first deploy after it. Build requirements:
+   - Every copy after the first copies only files that the volume lacks or holds in an older version, and deletes none.
+   - The last copy runs only after the native Schedules fire in live.
+   - Removes: nothing yet.
+   - Proof: Pest tests and the cases of `migrate-production`; the migration case of the live proof.
+9. **Remove the checkout path.** After the last production Instance has moved: the home branch of the deploy and rollback workflows, PHP-FPM in the `app-prod` role, the production account, the release layout marker and their old-paths entries.
+   - Removes: the whole checkout production path.
+   - Proof: CI; a converge of the fixture Node shows no PHP-FPM, and no workflow names `current`.
+
+The [live proof](#live-proof-on-a-fixture-production-project) runs after subtask 8 and before any real production Instance moves. A defect it finds is fixed in the subtask that owns it.
+
+#### Live proof on a fixture production Project
+
+The fixture is a small Laravel app, cloned to production on a fixture `app-prod` Node with `instance:clone`. It has:
+
+- a queue worker Process, such as Horizon, and a job that writes its id and release name;
+- the Laravel scheduler as a per-minute container timer, and one native cron Schedule; each fire writes its time and release name;
+- an upload form that writes into `storage`, and Passport keys made only when missing;
+- a PostgreSQL database on a Database server, with one migration per case;
+- a page that subscribes to a channel on the shared Reverb, and an event that the worker broadcasts.
+
+During every case, a load loop sends a request to the health path and to one page every 100 ms through the public Route, and records each status. The loop also holds one request that takes 10 seconds across each switch.
+
+| Case | What it does | What it measures | Passes when |
+| --- | --- | --- | --- |
+| First release | The first deploy after the clone: a cold hot | The deploy time | The Route serves the commit; the Schedules get their triggers |
+| Warm deploy | A deploy of a commit with no dependency change | Clone time, time to the first new response, failed requests | No failed request; the 10-second request ends `200` on the previous live; the new commit serves after the switch |
+| Dependency change | A commit that changes `composer.lock` and the npm lock file | The deploy time, and the files that hot's before steps wrote in the storage volume | Live serves its old dependencies until the switch; hot's steps wrote no compiled view or cache into the volume |
+| Expand migration | A commit that adds a nullable column and code that uses it | Failed requests during the migration | Live serves through the migration with no failed request |
+| Failed migration | A commit whose migration fails | The outcome | `deployment.step_failed`; hot is removed; live serves with no failed request; the tick blocks the commit |
+| Failed readiness | A commit whose health path answers `500` | The outcome | `deployment.not_ready`; hot is removed; live serves unchanged |
+| Capacity refusal | The memory limit set above the Node's free memory, then set back | The tick's results | `deployment.node_capacity` with nothing made; the commit is not blocked; the tick deploys it after the limit is set back |
+| Rollback and forward | `instance:rollback`, then `instance:rollback` again | Time to the first response of each release, failed requests | Each switch has no failed request; the workers and timers run only in the new live; automatic deploys are paused and the commit is blocked |
+| Node reboot | A reboot of the Node between deploys | The containers and units after the boot | Only live starts, with its Processes and timers; old stays stopped |
+| One fire | Every case above, read from the fire records | Fires per Schedule per minute | Each Schedule fired once each minute: no minute twice and none skipped, except while the Node rebooted |
+| Jobs across the switch | Jobs dispatched without pause through a deploy and a rollback | Jobs run, and the drain time | Every job ran once; the drain ended within 120 s |
+| Uploads survive | An upload before a deploy, one in hot's time and one after a rollback | The files in the volume | Every upload reads back from live after each deploy and rollback; the Passport keys did not change |
+| WebSocket | The page stays open through a deploy | Reconnect time, and the event after the switch | The client reconnects by itself and gets the event |
+| Checkout migration | A second fixture Instance runs as a checkout with uploads and both Schedules. `instance:migrate` moves it; then it deploys once | Failed requests, the volume, the fires | No failed request; every upload is in the volume; a file that live changed keeps live's version; one fire a minute; the deploy removes the home |
+| Disk | The pool's used space after five warm deploys and a cold hot | Used space per release | A removed release frees its dataset once no clone depends on it |
+
+The proof passes when every case passes in one run, in this order, on one build. A failed case is fixed in its subtask, and the whole run repeats. No case waits for a soak window or an approval.
+
+#### Real production Projects
+
+After the proof passes, the real production Projects move one at a time, each with `instance:migrate`: hauzer first, then mealou.
+
+- **Before the move.** Every migration since the Project's last release follows expand and contract. The move builds the commit that the checkout serves, so the code does not change.
+- **Rollback ready.** A failure before the switch leaves the checkout serving. After the move, the first deploy keeps the moved release as old, so `instance:rollback` returns to it in seconds. Until that deploy there is no old, and a fault after the switch is fixed forward with a deploy; the home stays on the Node.
+- **One test.** After the move and after its first deploy, the Project's health path and its main page answer through the Route, and its workers and Schedules run in live.
+
+mealou moves after hauzer's first container deploy passed. Neither waits for a window.
 
 ## Rejected alternatives
 

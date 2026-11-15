@@ -2,7 +2,8 @@ sequenceDiagram
   %% Production policy only. Development uses the independent Gateway precheck in container/deploy-default.mmd; this schedule and its persisted pause are never changed by that tick.
   %% Target design: DECISIONS 3 (automatic deploy = Gateway-published native schedule, no POST back), R1-R2, ADR 0244, behavior names by target. Replaces instance.policy_event. docs/reference/deployments.md#automatic-deployments.
   %% Tightened: flow-tighten 2026-11-02, rules 3, 5 (no per-minute Node read: the schedule inputs carry the deployed commit, and the Gateway republishes them on each deploy).
-  %% status: reviewed
+  %% Target design, production containers (ADR 0263, docs/reference/production-containers.md#deploy): the deployed commit is live's commit, and a fire's deploy is the hot deploy of container/deploy-production.mmd. A capacity refusal gets a retry time and never counts toward blocking a commit.
+  %% status: draft
   %% command: instance:auto-deploy:enable · Automatic deploys
   %% kind: instance.auto_deploy
   autonumber
@@ -37,7 +38,7 @@ sequenceDiagram
   %%> - publishes one native Swamp schedule for Instance 42
   %%> Inputs:
   %%> - branch, `merge_check`, blocked commits, retry times
-  %%> - the deployed commit; the Gateway republishes the inputs after each deploy or rollback
+  %%> - the deployed commit: live's commit; the Gateway republishes the inputs after each deploy or rollback
   %%> - vault key names for the read token; the Gateway keeps the token fresh in the vault
   %%> Why:
   %%> - the run has everything it needs; it never calls the Gateway
@@ -58,9 +59,9 @@ sequenceDiagram
     %%> - never deploys a red or pending commit
     %%> - compares with the deployed commit from the inputs; no SSH to the production Node each minute
     alt a newer green commit
-      SW->>N: Deploy the pinned commit<br/>deploy-42 · prepare … check
+      SW->>N: Deploy the pinned commit<br/>deploy-42 · hot … retire
       %%> What it does:
-      %%> - the same steps as `instance:deploy`, pinned to the commit
+      %%> - the hot deploy of `instance:deploy`, pinned to the commit: hot builds and migrates it while live serves, then the Routes switch to it
       %%> - behavior `deploy-42`: one lock per Instance, so a manual deploy and a fire never overlap
       SW-->>GW: Fire ended<br/>result, commit, deployment
       %%> Returns:
@@ -70,9 +71,18 @@ sequenceDiagram
       %%> - a deployment history row with origin `automatic`
       %%> - one Activity entry `auto_deploy.<result>` when the result changes
       %%> - a release alert for a failed deploy, a stalled commit or a pause
-      %%> On failure:
-      %%> - the commit is blocked, or gets a retry time (10, then 20 minutes)
       %%> - the Gateway republishes the schedule with the new inputs
+      alt the deploy failed
+        Note over GW: Block or retry the commit<br/>retry 10, then 20 minutes
+        %%> Result:
+        %%> - a failure in a deploy step or later counts toward blocking the commit; an earlier failure gets a retry time
+      else Node lacked capacity
+        Note over GW: Set a retry time<br/>deployment.node_capacity
+        %%> Why it never blocks:
+        %%> - the cause is the Node, not the commit; live serves unchanged
+        %%> Alert:
+        %%> - a commit that waits 30 minutes raises the stalled-commit alert
+      end
     else nothing to deploy
       SW-->>GW: Fire ended<br/>up_to_date or gate_pending
       %%> Result:

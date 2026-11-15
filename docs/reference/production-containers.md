@@ -160,11 +160,11 @@ FrankenPHP serves every release container in classic mode, from the runtime fold
 
 ## First release and migration
 
-The planned chart `docs/cli/instance/container/create-production.mmd` covers both ways to the first release container.
+Two planned charts cover the two ways to the first release container: `docs/cli/instance/container/create-production.mmd` for a clone and `docs/cli/instance/container/migrate-production.mmd` for a checkout.
 
 ### After a clone
 
-[`instance:clone`](/reference/instance-cloning) records the production Instance, its environment, its Process and Schedule copies, its preview Route and its storage volume. It makes no container. With `--sqlite-source-path`, the clone writes the seeded database into the volume as `database.sqlite`, and the rendered `.env` names `/srv/shared/database.sqlite`. The first deploy builds a cold hot and switches the Routes to it.
+[`instance:clone`](/reference/instance-cloning) records the production Instance, its environment, its Process and Schedule copies, its preview Route and its storage volume. It makes no container. It writes the Instance's upstream file with a `503` answer, so the preview Route's site serves before the first release. With `--sqlite-source-path`, the clone writes the seeded database into the volume as `database.sqlite`, and the rendered `.env` names `/srv/shared/database.sqlite`. The first deploy builds a cold hot and switches the Routes to it. The Gateway sets the triggers of the native Schedules when that deploy records a live release.
 
 ### A checkout production Instance
 
@@ -175,11 +175,11 @@ The planned chart `docs/cli/instance/container/create-production.mmd` covers bot
 3. It builds hot at the commit that `current` selects, as a deploy does. The steps see the copied files, such as existing Passport keys.
 4. It checks hot as ready and switches the Routes to it.
 5. It disables and stops the host Processes, Node timers and PHP-FPM pool. Then it enables and starts the new live's Processes and timers.
-6. It copies the changes again, without deleting a file in the volume.
+6. It copies the changes again: only files that the volume lacks or holds in an older version. It deletes no file in the volume, because live already writes there.
 
 Each native Schedule keeps firing in the home until the run ends. Then the Gateway rewrites its workflow for the live link and sets its trigger again, as an [Instance transfer](/reference/schedules#execution) does. No fire is skipped and none runs twice.
 
-The home stays unserved until the next successful deploy removes it and the production account.
+The home stays unserved until the next successful deploy. That deploy runs after the native Schedules fire in live, so nothing writes into the home any more. It copies the shared paths a last time, by the rule of step 6, and then removes the home, its stopped PHP-FPM pool and the production account.
 
 ## Failures
 
@@ -192,6 +192,10 @@ The failed boundary decides what serves.
 | Handover, an `after_activation` step or retire | The new live | Is live |
 
 A failed migration keeps what it changed. A failure in a deploy step or later blocks the commit for the automatic tick. A failure before the deploy steps is retried with backoff, and only `deployment.node_capacity` never counts toward the block.
+
+## Build and live proof
+
+[ADR 0263 part 10](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#10-next-steps) lists the build subtasks and the live-proof plan on a fixture production Project.
 
 ## Errors
 
