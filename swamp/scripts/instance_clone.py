@@ -169,7 +169,7 @@ def main():
     account = sys.argv[4]
     folder = Path(sys.argv[5])
     phase = sys.argv[-1]
-    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "t3", "cleanup"}:
+    if phase not in {"container", "club-key", "workspace", "checkout", "services", "check", "complete", "t3", "cleanup"}:
         raise ValueError("instance.clone_phase_invalid")
     name = container["name"]
     project = ["incus", "--project", container["project"]]
@@ -177,8 +177,12 @@ def main():
     # The Club key script's own word, which the club-key phase prints for the Operation's result.
     club_outcome = None
     # The T3 step runs the checkout too, so the checkout's own bound holds there as well.
-    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services", "t3"} else None
+    workspace_deadline = time.monotonic() + 115 if phase in {"workspace", "checkout", "services", "complete", "t3"} else None
     secret = sys.stdin.read()
+    if phase == "services":
+        # The completion's one copy also holds the release scripts (docs/reference/development-containers.md#complete-a-clone). The
+        # phase keeps only the Process files, so a failure's redaction weighs them alone, not every script line.
+        secret = json.dumps({"processes": json.loads(secret)["processes"]})
     # Seconds per part of this phase, printed with its result; names only (docs/reference/development-containers.md#create).
     timings = {}
 
@@ -1022,6 +1026,22 @@ def main():
         return
     elif phase == "check":
         print(json.dumps(inside("check", "")))
+        return
+    elif phase == "complete":
+        # The completion's one step on the Node (docs/reference/development-containers.md#complete-a-clone): the services part, then
+        # the check, in one dispatch. A services failure fails the phase, as its own step did. The check's outcome is the output: its
+        # own line on a pass, the dead unit's public receipt (printed by `inside`), or no line on any other failure. The phase then
+        # ends 0, so the step keeps that output; `finish` reads it as it read the check step's (complete_result.ts checkOutcome).
+        print(json.dumps(inside("services", json.dumps({"processes": json.loads(secret)["processes"]}))), flush=True)
+        # The check gets its own bound, as its own step had: slow services never leave it without time.
+        workspace_deadline = time.monotonic() + 55
+        try:
+            print(json.dumps(inside("check", "")))
+        except PhaseFailure as error:
+            print(error.line + (":\n" + error.detail if error.detail else ""), file=sys.stderr)
+        except Exception as error:  # noqa: BLE001 - the check's code line only, as the command boundary prints it.
+            message = str(error)
+            print(message if message.startswith("instance.") and "\n" not in message else "instance.container_check_failed", file=sys.stderr)
         return
     elif phase in {"workspace", "checkout"}:
         print("\n".join(checkout(phase, secret)))

@@ -1856,7 +1856,7 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
              "merge": {"own": ["DB_DATABASE"], "drop": [], "guard": []}}
     EVIDENCE = {"error_code": "instance.container_process_inactive", "process_failure": {"unit": "orbit-process-1.service"}}
 
-    def phase(self, phase, fail=False, mirror=True, rev_parse=0):
+    def phase(self, phase, fail=False, mirror=True, rev_parse=0, stdin=None):
         account = pwd.getpwuid(os.getuid())
         calls = []
 
@@ -1866,7 +1866,15 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
                 # The Node's mirror lacks the branch (1), or Git fails on it (any other code).
                 return subprocess.CompletedProcess(argv, rev_parse, "", "PRIVATE-STDERR")
             member = argv[argv.index("python3") + 3] if "python3" in argv else None
-            if member is not None and fail:
+            # `fail`: every guest call fails with a dead unit's receipt; a member name fails only that call, and `"check-incus"` fails
+            # the check as Incus itself does, with no receipt.
+            if member is not None and fail == "services-detail" and member == "services":
+                return subprocess.CompletedProcess(argv, 1, "", "Traceback (most recent call last):\n"
+                                                   "subprocess.CalledProcessError: Command returned non-zero exit status 1.\n"
+                                                   "Job for php-fpm.service failed because the control process exited with error code.\n")
+            if member is not None and fail == "check-incus" and member == "check":
+                return subprocess.CompletedProcess(argv, 1, "", "Error: Instance is not running PRIVATE-STDERR")
+            if member is not None and (fail is True or fail == member):
                 return subprocess.CompletedProcess(argv, 1, json.dumps(self.EVIDENCE), "instance.container_process_inactive\n")
             if member in {"checkout", "workspace"}:
                 return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "changes": [], "environment": {}, "commit": "first"}), "")
@@ -1883,7 +1891,8 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder, (
             patch("sys.argv", [str(SCRIPT), json.dumps(container), "guest", NETWORK_CHECK.read_text(), account.pw_name, folder,
                                json.dumps({"node": "node-helper-source"}), phase])
-        ), patch("sys.stdin", io.StringIO(json.dumps(self.VALUE) if phase != "check" else "")), patch("subprocess.run", command), \
+        ), patch("sys.stdin", io.StringIO(stdin if stdin is not None else json.dumps(self.VALUE) if phase != "check" else "")), \
+                patch("subprocess.run", command), \
                 patch("os.chown"), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
             try:
                 runpy.run_path(str(SCRIPT), run_name="__main__")
@@ -1958,6 +1967,103 @@ class WorkspacePartsPhaseTest(unittest.TestCase):
         self.assertEqual((code, guest, pushed, json.loads(output)), (0, [("check", "")], [], {"phase": "check", "changes": []}))
         code, _, _, output, error = self.phase("check", fail=True)
         self.assertEqual((code, json.loads(output), error), (1, self.EVIDENCE, "instance.container_process_inactive\n"))
+
+    def test_services_of_the_release_before_read_the_process_files_of_the_new_completion_copy(self):
+        # On the release that first frames the completion's one copy, its workflow still stages from the input step and gives the whole
+        # copy to `services`, which reads its top-level `processes`; a completion in flight across that release or a rollback is safe.
+        processes = self.VALUE["processes"]
+        copy = json.dumps({"stage": {"script": SCRIPT.read_text()}, "private": json.dumps({"processes": processes}), "processes": processes})
+        code, guest, _, output, error = self.phase("services", stdin=copy)
+        self.assertEqual((code, error, guest), (0, "", [("services", {"processes": processes})]))
+        self.assertEqual(json.loads(output), {"phase": "services", "changes": []})
+
+    def test_services_keep_a_failures_detail_when_the_copy_also_holds_the_release_scripts(self):
+        # Redaction drops every stderr line that shares a value with the secret: the scripts must not be part of it.
+        processes = self.VALUE["processes"]
+        copy = json.dumps({"stage": {"script": SCRIPT.read_text(), "guest": NETWORK_CHECK.read_text()},
+                           "private": json.dumps({"processes": processes}), "processes": processes})
+        code, _, _, _, error = self.phase("services", fail="services-detail", stdin=copy)
+        self.assertEqual(code, 1)
+        self.assertEqual(error, "instance.container_services_failed: command incus exited 1 (incus exec instance-proof python3 guest services):\n"
+                                "Traceback (most recent call last):\n"
+                                "subprocess.CalledProcessError: Command returned non-zero exit status 1.\n"
+                                "Job for php-fpm.service failed because the control process exited with error code.\n")
+
+    def test_complete_runs_the_services_then_the_check_in_one_phase_and_passes_only_the_process_files(self):
+        # The completion's one step (docs/reference/development-containers.md#complete-a-clone): its stdin is the copy's private text.
+        code, guest, pushed, output, error = self.phase("complete", stdin=json.dumps({"processes": self.VALUE["processes"]}))
+        self.assertEqual((code, error, pushed), (0, "", []))
+        self.assertEqual(guest, [("services", {"processes": self.VALUE["processes"]}), ("check", "")])
+        self.assertEqual([json.loads(line) for line in output.splitlines()],
+                         [{"phase": "services", "changes": []}, {"phase": "check", "changes": []}])
+
+    def test_complete_keeps_a_dead_units_receipt_as_its_output_and_ends_0(self):
+        # A failed step keeps no output, so the receipt crosses only when the phase ends 0; `finish` turns it into the check's failure.
+        code, guest, _, output, error = self.phase("complete", fail="check", stdin=json.dumps({"processes": self.VALUE["processes"]}))
+        self.assertEqual((code, [member for member, _ in guest]), (0, ["services", "check"]))
+        self.assertEqual([json.loads(line) for line in output.splitlines()], [{"phase": "services", "changes": []}, self.EVIDENCE])
+        self.assertEqual(error, "instance.container_process_inactive\n")
+
+    def test_complete_ends_0_without_a_check_line_when_the_check_fails_otherwise(self):
+        code, _, _, output, error = self.phase("complete", fail="check-incus", stdin=json.dumps({"processes": self.VALUE["processes"]}))
+        self.assertEqual((code, [json.loads(line) for line in output.splitlines()]), (0, [{"phase": "services", "changes": []}]))
+        self.assertTrue(error.startswith("instance.container_check_failed: command incus exited 1"), error)
+
+    def test_complete_fails_on_a_failed_services_part_and_never_runs_the_check(self):
+        code, guest, _, output, error = self.phase("complete", fail="services", stdin=json.dumps({"processes": self.VALUE["processes"]}))
+        self.assertEqual((code, [member for member, _ in guest], output), (1, ["services"], ""))
+        self.assertTrue(error.startswith("instance.container_services_failed"), error)
+
+
+class CompletionCopyLaunchTest(unittest.TestCase):
+    """The completion's one copy (CloneStage::completion) through the real launcher: `stage` stages the public part, and the `complete`
+    phase reads only `private`, the Process files. The copy's top-level `processes` is what the workflow of the release before reads."""
+
+    PROCESSES = {"/etc/orbit/processes/1/a.env": "QUEUE=private-q\nSECOND=private-two\n"}
+
+    def launch(self, value):
+        launcher = (SCRIPT.parent / "instance_clone_launch.py").read_text()
+        account = pwd.getpwuid(os.getuid())
+        container = {"name": "instance-proof", "project": "orbit-instances", "branch": "proof", "php": None, "mirror": "/nowhere",
+                     "clone": {"seed_commit": "c" * 40}, "instance_id": 8}
+        stage = {"launcher": launcher, "script": SCRIPT.read_text(), "container": container, "guest": "guest",
+                 "network": NETWORK_CHECK.read_text(), "account": account.pw_name, "bundle": {"node": "node-helper-source"}}
+        frame = value(stage)
+        calls = []
+
+        def command(argv, **kwargs):
+            calls.append((argv[argv.index("python3") + 3] if "python3" in argv else None, kwargs.get("input")))
+            member = argv[argv.index("python3") + 3] if "python3" in argv else None
+            return subprocess.CompletedProcess(argv, 0, json.dumps({"phase": member, "changes": []}), "")
+
+        output, error = io.StringIO(), io.StringIO()
+        code = 0
+        with tempfile.TemporaryDirectory() as parent:
+            folder = Path(parent) / "orbit-clone-8-run"
+            with patch("sys.argv", ["launch.py", str(folder), "stage", "complete"]), patch("sys.stdin", io.StringIO(frame)), \
+                    patch("subprocess.run", command), patch("os.chown"), contextlib.redirect_stdout(output), contextlib.redirect_stderr(error):
+                try:
+                    runpy.run_path(str(SCRIPT.parent / "instance_clone_launch.py"), run_name="__main__")
+                except SystemExit as result:
+                    code = result.code
+            staged = sorted(path.name for path in folder.iterdir()) if folder.exists() else []
+        return code, calls, output.getvalue(), error.getvalue(), staged
+
+    def test_the_completion_copy_stages_the_scripts_and_gives_the_services_only_the_process_files(self):
+        def value(stage):
+            private = json.dumps({"processes": self.PROCESSES}, separators=(",", ":"))
+            return json.dumps({"stage": stage, "private": private, "processes": self.PROCESSES}, separators=(",", ":"))
+
+        self.assertNotIn("\n", value({"script": SCRIPT.read_text()}))
+        code, calls, output, error, staged = self.launch(value)
+        self.assertEqual((code, error, staged), (0, "", ["clone.py", "input.json", "launch.py"]))
+        self.assertEqual([member for member, _ in calls if member], ["services", "check"])
+        self.assertEqual(json.loads(next(content for member, content in calls if member == "services")), {"processes": self.PROCESSES})
+        self.assertEqual([json.loads(line)["phase"] for line in output.splitlines()], ["services", "check"])
+
+    def test_a_copy_without_its_private_text_fails_before_any_command(self):
+        code, calls, output, error, _ = self.launch(lambda stage: json.dumps({"stage": stage, "processes": self.PROCESSES}))
+        self.assertEqual((code, calls, output, error), (1, [], "", "instance.clone_input_failed\n"))
 
 
 class ClubKeyPhaseTest(unittest.TestCase):

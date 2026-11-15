@@ -2,7 +2,9 @@
  * Runs the real `operation-instance-complete` workflow on the release-pinned Swamp binary. Every machine step is a local shell stub that
  * records its name; the Route and its withdrawal are stub child workflows; `finish` is the real `complete_result` behavior, and
  * `accepted` the real assert. It proves the guards, the levels and the result expressions as the engine evaluates them for a normal
- * clone, and that a dead unit, a failed Route and a cancel withdraw the Route.
+ * clone, and that a dead unit, a failed Route and a cancel withdraw the Route. `clone-services` keeps its real stdin expression: the engine
+ * reads the completion's one copy (CloneStage::completion) in its real size and shape through vault.get and registers it with the run's
+ * redactor, as on a Node; a two-part copy fails there, as release 2080's did.
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
@@ -11,7 +13,7 @@ import { Swamp } from "../extensions/behaviors/node-worker/config.ts";
 
 const binary = Deno.env.get("ORBIT_SWAMP_PROOF_BINARY");
 type RecordValue = Record<string, unknown>;
-type Mode = "success" | "dead-unit" | "route-failure" | "cancel" | "published";
+type Mode = "success" | "dead-unit" | "route-failure" | "cancel" | "published" | "two-part";
 /** The long completion steps a cancel must stop: the services, the database fill and the fleet start. */
 const LONG = ["clone-services", "server-database-fill", "clone-fleet"] as const;
 type Long = typeof LONG[number];
@@ -24,6 +26,28 @@ const exists = (path: string) => {
         return false;
     }
 };
+// The completion's one copy in its real size and shape (CloneStage::completion): the real release files as `stage`, the Process files as
+// `private` and again as `processes`. An environment file has several lines; JSON keeps the copy on one.
+const read = (path: string) => Deno.readTextFileSync(new URL(`../${path}`, import.meta.url));
+const processes = { "/etc/orbit/processes/41/worker.env": "QUEUE_CONNECTION=database\nAPP_KEY=base64:" + "k".repeat(44) + "\nDB_PASSWORD=" + "p".repeat(32) + "\n" };
+const stage = { launcher: read("scripts/instance_clone_launch.py"), script: read("scripts/instance_clone.py"), container: { instance_id: 8 },
+    guest: read("scripts/instance_clone_guest.py"), network: read("ansible/instance_network.py"), account: "orbit",
+    bundle: { node_services: read("ansible/instance_node_services.py"), machine_name: read("ansible/instance_machine_name.py"),
+        mail: read("ansible/instance_mail.py"), bridge: read("ansible/instance_bridge.py"), node: read("ansible/instance_node_runtime.py") } };
+const copy = JSON.stringify({ stage, private: JSON.stringify({ processes }), processes });
+// What the services step's stand-in receives: the value the engine resolved through vault.get, as the SSH stdin would. It reads the
+// copy as the services part of each workflow does: the top-level `processes` (staged from the input step) and `stage` with `private`.
+const sink = `import { z } from "npm:zod@4.4.3";
+export const behavior = { type: "@orbit-test/complete-sink", version: "2026.11.15.1",
+    resources: { terminal: { schema: z.object({ stdout: z.string() }), lifetime: "infinite", garbageCollection: 10 } },
+    methods: { take: { description: "Take the completion copy", arguments: z.object({ copy: z.string() }),
+        execute: async (args: { copy: string }, ctx: { writeResource(s: string, n: string, d: unknown): Promise<unknown> }) => {
+            const value = JSON.parse(args.copy);
+            if (typeof value.processes !== "object" || typeof value.stage?.script !== "string" || typeof value.private !== "string"
+                || JSON.stringify(JSON.parse(value.private).processes) !== JSON.stringify(value.processes)) throw new Error("not a completion copy");
+            return { dataHandles: [await ctx.writeResource("terminal", "terminal", { stdout: JSON.stringify({ phase: "services", changes: [] }) })] };
+        } } } };
+`;
 const receipt = '{"error_code":"instance.container_process_inactive","process_failure":{"process_id":41,"unit":"orbit-process-41-worker.service","state":"failed"}}';
 
 async function fixture(mode: Mode, slow: Long = "clone-services") {
@@ -37,8 +61,20 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
     assert(text(version.stdout).includes(Swamp.version), "Use the release-pinned Swamp binary for this proof.");
     const initialized = await call("repo", "init", folder, "--tool", "none", "--no-vault");
     assert(initialized.ok, initialized.stderr + initialized.stdout);
+    const vault = await call("vault", "create", "local_encryption", "orbit-control-inputs");
+    assert(vault.ok, vault.stderr + vault.stdout);
+    // The Gateway's copy, put through stdin as its frame does. two-part: a copy with newlines, which one RegExp breaks (release 2080).
+    const value = mode === "two-part" ? JSON.stringify(stage) + "\n" + JSON.stringify({ processes }) : copy;
+    const writer = new Deno.Command(binary!, { args: ["vault", "put", "orbit-control-inputs", "instance-complete-processes-1", "--json"], cwd: folder,
+        ...auth, stdin: "piped", stdout: "piped", stderr: "piped" }).spawn();
+    const stream = writer.stdin.getWriter();
+    await stream.write(new TextEncoder().encode(value));
+    await stream.close();
+    const stored = await writer.output();
+    assert(stored.success, text(stored.stderr));
     const models = `${folder}/extensions/models`;
-    Deno.mkdirSync(models, { recursive: true });
+    Deno.mkdirSync(`${models}/complete-sink`, { recursive: true });
+    Deno.writeTextFileSync(`${models}/complete-sink/mod.ts`, sink);
     for (const name of ["assets.ts", "complete_result.ts", "migrate_result.ts", "result.ts"]) {
         Deno.copyFileSync(new URL(`../extensions/behaviors/operations/instance-dev-command/${name}`, import.meta.url), `${models}/${name}`);
     }
@@ -55,7 +91,6 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
     const workflow = parse(Deno.readTextFileSync(new URL("../workflows/workflow-operation-instance-complete.yaml", import.meta.url))) as RecordValue;
     workflow.id = created.id;
     workflow.name = created.name;
-    delete workflow.vaults;
     delete workflow.labels;
     for (const job of workflow.jobs as RecordValue[]) {
         for (const step of job.steps as RecordValue[]) {
@@ -68,6 +103,13 @@ async function fixture(mode: Mode, slow: Long = "clone-services") {
             }
             if (name === "route" || name === "withdraw-route") {
                 step.task = { type: "workflow", workflowIdOrName: child.name, inputs: { phase: name } };
+                continue;
+            }
+            // A cancel cuts a running command, as it cuts the real SSH step; that case keeps the command stand-in below.
+            if (name === "clone-services" && mode !== "cancel") {
+                const real = (step.task as RecordValue).inputs as RecordValue;
+                step.task = { type: "behavior", behaviorType: "@orbit-test/complete-sink", behaviorName: "complete-clone-services", methodName: "take",
+                    inputs: { copy: real.stdin } };
                 continue;
             }
             let run = `printf '%s\\n' '${name}' >> '${folder}/calls'; touch '${folder}/${name}'`;
@@ -224,6 +266,23 @@ Deno.test({ name: "pinned complete: a clone whose create published its address r
         for (const name of ["clone-input", "clone-services", "clone-check", "finish", "accepted"]) assertEquals(stub(steps, name), "succeeded", name);
         assertEquals([stub(steps, "route"), stub(steps, "withdraw-route"), "route-csr-0" in steps], ["skipped", "skipped", false]);
         assertEquals(result(steps).ready, true);
+    } finally {
+        f.cleanup();
+    }
+} });
+
+Deno.test({ name: "pinned complete: the services step reads the real-size one-line copy through vault.get; a two-part copy fails with Regular expression too large", ignore: !binary, async fn() {
+    // The copy this release's Gateway frames is one line of about 195 KB; Swamp masks it as one plain string.
+    assert(!copy.includes("\n") && copy.length > 150_000, String(copy.length));
+    const f = await fixture("two-part");
+    try {
+        const done = await execute(f, false);
+        assert(!done.success, text(done.stdout) + text(done.stderr));
+        const steps = await f.steps();
+        assertEquals(stub(steps, "clone-services"), "failed");
+        assert(JSON.stringify(steps["clone-services"]).includes("Regular expression too large"), JSON.stringify(steps["clone-services"]).slice(0, 400));
+        // As in release 2080, the broken redactor fails every later step of the run too: nothing ends the completion ready.
+        assertEquals([stub(steps, "clone-check"), stub(steps, "finish"), stub(steps, "accepted")], ["skipped", "failed", "skipped"]);
     } finally {
         f.cleanup();
     }

@@ -1254,7 +1254,17 @@ A task copy is a clone like any other, so it gets the same. So does a clone in t
 
 The Gateway admits it for a container clone that is `source_resolved`, has its starting commit and has a registered T3 server; it takes the Instance lock. Anything else refuses with `instance.complete_unavailable` and changes nothing.
 
-The input is the create's admitted database plan and Processes. A Route whose sites are not published gets a publication captured again from the current site catalog: its Nodes were held at the create's admission, its publication failed in the create, or an earlier completion failed to publish it. The run has its own private folder and its own vault copy of the workspace value, so it never reads the create's folder.
+The input is the create's admitted database plan and Processes. A Route whose sites are not published gets a publication captured again from the current site catalog: its Nodes were held at the create's admission, its publication failed in the create, or an earlier completion failed to publish it. The run has its own private folder and its own vault copy, so it never reads the create's folder.
+
+The Gateway frames that copy, `instance-complete-processes-<operation>`, when the run starts. It is ONE line of JSON, as the create's [launch copy](#create) is, because Swamp turns a vault value with a newline into one regular expression:
+
+- `stage`: the release scripts, the run's container intent and the SSH account, the same public part as the create's launch copy.
+- `private`: the Process environment files as `{"processes": ...}`, the text the services part reads.
+- `processes`: the same files again, for a workflow that stages the scripts from its `input` step and gives the whole copy to `services`.
+
+A copy over 1 MiB refuses the completion with `instance.complete_launch_too_large` before its run starts. The run's intent carries the launcher program (`clone_launcher`).
+
+The clone script's `complete` phase runs the services part and then the check in one dispatch. A services failure fails the phase. The check's outcome is its output: its own line, a dead unit's receipt, or no line. The phase then ends 0, so the step keeps that output.
 
 The run's levels, from [Swamp shape](https://github.com/hardimpactdev/orbit/blob/main/swamp/docs/swamp-shape.md):
 

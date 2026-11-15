@@ -1,5 +1,5 @@
 order = 830
-source_sha256 = "cb6ba2de808f0842d44e6e0bd49ee1883875b27923a049de6581cf4ed7a87c8e"
+source_sha256 = "3498a713f5c94332a9ca6cc00e84cf622f3769a4411897c6177f49b8d88c7416"
 cases = [
   "test_legacy_new_branch_still_uses_seed_without_selection",
   "test_a_new_branch_at_the_seeds_commit_reads_no_network_and_makes_no_mirror",
@@ -91,6 +91,14 @@ cases = [
   "test_services_install_the_node_helper_and_pass_only_the_process_files",
   "test_workspace_still_passes_the_whole_value_in_one_guest_call",
   "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt",
+  "test_services_of_the_release_before_read_the_process_files_of_the_new_completion_copy",
+  "test_services_keep_a_failures_detail_when_the_copy_also_holds_the_release_scripts",
+  "test_complete_runs_the_services_then_the_check_in_one_phase_and_passes_only_the_process_files",
+  "test_complete_keeps_a_dead_units_receipt_as_its_output_and_ends_0",
+  "test_complete_ends_0_without_a_check_line_when_the_check_fails_otherwise",
+  "test_complete_fails_on_a_failed_services_part_and_never_runs_the_check",
+  "test_the_completion_copy_stages_the_scripts_and_gives_the_services_only_the_process_files",
+  "test_a_copy_without_its_private_text_fails_before_any_command",
   "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check",
   "test_the_same_key_changes_nothing",
   "test_a_key_written_while_the_inner_incus_was_not_ready_says_so",
@@ -113,6 +121,7 @@ inputs = [
   "swamp/ansible/shape-gate-requirements.txt",
   "swamp/scripts/instance_clone.py",
   "swamp/scripts/instance_clone_guest.py",
+  "swamp/scripts/instance_clone_launch.py",
 ]
 
 # Local unprivileged Git fixture: 1.02 s total; two seconds per case is a conservative CI estimate.
@@ -139,7 +148,7 @@ inputs = [
   "test_nic_check_refuses_a_nic_without_filters_with_exit_2_and_exempts_a_nic_without_its_own_address" = 2
   "test_clone_refuses_a_copy_without_filters_with_the_filters_code_before_start" = 2
   "test_nested_guard_refuses_a_nic_without_filters_with_the_filters_code" = 2
-  "test_the_three_holders_of_the_nic_filters_are_equal" = 2
+  "test_the_three_holders_of_the_nic_filters_are_equal" = 1 # 2026-11-15: 0.001 s measured locally
   "test_a_check_source_without_literal_filters_refuses_the_copy_with_a_named_code" = 2
   "test_guest_and_node_command_names_stay_in_sync" = 2
   "test_preserves_only_the_guest_command_and_exit_code" = 2
@@ -155,18 +164,26 @@ inputs = [
   "test_clone_node_target_is_fatal_before_workspace_and_strips_inherited_enablement" = 2
   "test_clone_target_failure_receipt_keeps_public_identity_and_bounds_tool_output" = 2
   "test_clone_of_a_default_with_a_node_service_target_strips_it_on_the_first_try_and_on_a_retry" = 2
-  "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check" = 2
+  "test_delivers_the_key_only_as_the_scripts_stdin_after_the_tmpfs_check" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
   "test_names_a_failed_delivery_without_its_output" = 2
   "test_nested_clone_starts_only_with_exactly_the_written_config_and_devices" = 2
   "test_nested_guard_admits_the_live_shape_of_the_first_nested_container" = 2
-  "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value" = 2
+  "test_refuses_a_run_that_is_not_a_tmpfs_before_it_passes_the_value" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
   "test_refuses_without_a_vault_copy_or_value_and_runs_nothing" = 2
-  "test_the_same_key_changes_nothing" = 2
+  "test_the_same_key_changes_nothing" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
   "test_a_key_written_while_the_inner_incus_was_not_ready_says_so" = 2
-  "test_checkout_pushes_the_bundle_and_passes_only_the_env_half" = 2
-  "test_services_install_the_node_helper_and_pass_only_the_process_files" = 2
-  "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 2
-  "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 2
+  "test_checkout_pushes_the_bundle_and_passes_only_the_env_half" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
+  "test_services_install_the_node_helper_and_pass_only_the_process_files" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
+  "test_workspace_still_passes_the_whole_value_in_one_guest_call" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
+  "test_check_reads_no_private_input_and_passes_a_dead_units_code_and_receipt" = 1 # 2026-11-15: 0.005 s measured locally, mocked subprocesses
+  "test_services_of_the_release_before_read_the_process_files_of_the_new_completion_copy" = 1
+  "test_complete_runs_the_services_then_the_check_in_one_phase_and_passes_only_the_process_files" = 1
+  "test_complete_keeps_a_dead_units_receipt_as_its_output_and_ends_0" = 1
+  "test_complete_ends_0_without_a_check_line_when_the_check_fails_otherwise" = 1
+  "test_complete_fails_on_a_failed_services_part_and_never_runs_the_check" = 1
+  "test_services_keep_a_failures_detail_when_the_copy_also_holds_the_release_scripts" = 1
+  "test_the_completion_copy_stages_the_scripts_and_gives_the_services_only_the_process_files" = 1
+  "test_a_copy_without_its_private_text_fails_before_any_command" = 1
   "test_agents_nss_store_names_the_trust_module_in_a_copy_without_one_before_its_first_start" = 2
   "test_a_seed_store_without_the_entry_gets_it_appended_and_a_store_with_it_is_left_alone" = 2
   "test_a_copy_without_home_agent_gets_no_nss_store" = 2
