@@ -1,7 +1,11 @@
 order = 1481
-source_sha256 = "fc07a34fc9ada2138b4e78bbd4f2f4b68be752e203ddd65efe7edc3351772382"
+source_sha256 = "3a655bbb0344eb9a582afce0bb072cde4080c68b92d920579e3e17b0c5cba95c"
 cases = [
   "test_the_shipped_links_are_linked_again_and_a_second_run_changes_nothing",
+  "test_the_package_files_in_apt_archives_go_and_the_lock_stays",
+  "test_the_cache_removal_follows_no_symlink_out_of_the_disk",
+  "test_a_record_that_is_no_object_is_no_record",
+  "test_a_record_of_an_older_rule_is_due_once",
   "test_a_file_that_differs_from_the_shipped_one_is_never_replaced",
   "test_without_duperemove_only_the_relink_runs_and_the_shrink_stays_due",
   "test_a_changed_package_makes_it_due_and_a_directory_pool_skips_the_dedupe",
@@ -9,7 +13,7 @@ cases = [
   "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record",
 ]
 file = "swamp/tests/instance_fleet_shrink_test.py"
-cost = 6
+cost = 10
 # The file it reads: the shrink of the nested root disks, run as shipped.
 inputs = [
   "swamp/ansible/instance_fleet_shrink.py",
@@ -21,3 +25,7 @@ inputs = [
 "test_a_changed_package_makes_it_due_and_a_directory_pool_skips_the_dedupe" = 1
 "test_a_check_that_cannot_read_is_not_due_and_a_failed_run_writes_no_record" = 1
 "test_a_failed_dedupe_fails_the_run_writes_no_record_and_stays_due" = 1
+"test_the_package_files_in_apt_archives_go_and_the_lock_stays" = 1
+"test_a_record_of_an_older_rule_is_due_once" = 1
+"test_the_cache_removal_follows_no_symlink_out_of_the_disk" = 1
+"test_a_record_that_is_no_object_is_no_record" = 1

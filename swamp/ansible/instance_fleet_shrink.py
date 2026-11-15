@@ -5,7 +5,7 @@ The fleet refresh runs it as root in the Instance container: `python3 -I -c <thi
 in its `base` window, with the three containers stopped, their old `base` deleted and before the new one is taken, so the new `base`
 and the seed hold the small form.
 
-Two parts:
+Three parts, in this order:
 - Relink. Ubuntu's rust-coreutils ships one binary as 116 hardlinks: `/usr/bin/coreutils` and its 115 links in
   `/usr/lib/cargo/bin/coreutils/`. In the first nested fleet they were 116 separate copies, 1.26 GiB per machine. RELINK names each
   package and the one file it ships with links. Only the files of that package that dpkg records with that file's digest are
@@ -13,13 +13,16 @@ Two parts:
   links of that file. Other files of one digest, such as the package's empty locale files, are separate files in the package and stay.
   Each is replaced atomically by a link to the file (a new link beside it, then a rename over it), so no reader ever finds the path
   missing or partial.
+- Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
+  91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. No path that leaves the disk through
+  a symlink is followed.
 - Dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent (the kernel
   compares the bytes before it shares them, so a file never changes). It needs a btrfs pool and the `duperemove` package, which
-  instance_shape_tools.py keeps in the container; without it only the relink runs.
+  instance_shape_tools.py keeps in the container; without it the first two parts run.
 
 It costs nothing when nothing changed: the record holds the sha256 of each machine's dpkg status, and `check` is due only when the
-record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when both parts
-ran, so a run without duperemove is due again at the next refresh. A check that cannot read (`unreadable`) is not due.
+record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when the dedupe ran
+too (or the pool is no btrfs pool), so a run without duperemove is due again at the next refresh. A check that cannot read (`unreadable`) is not due.
 
 It never fails: its last line on standard output is one JSON object. `check`: {"due": true|false, "reason": "record"|"packages"|
 "current"|"unreadable"}. `run`: {"shrink": "ran"|"relinked"|"failed", "relinked": <files>, "dedupe": "ran"|"missing"|"not_btrfs"|"failed"}.
@@ -38,7 +41,10 @@ from pathlib import Path
 # Each package and the file it ships with links: every file of the package with that file's digest is one of them (see the docstring).
 RELINK = {'rust-coreutils': 'usr/bin/coreutils'}
 # A new rule changes this, so every record is stale once.
-RULE = '1'
+RULE = '2'
+# Caches of a nested container that the shrink empties: apt's downloaded package files. apt keeps no new ones (the fleet file
+# 91orbit-nested-package-files); the egress proxy serves them again when apt needs one.
+CACHES = ('var/cache/apt/archives',)
 
 
 def rootfs(pools, name):
@@ -56,9 +62,10 @@ def state(disks):
 
 def read_record(record):
     try:
-        return json.loads(Path(record).read_text())
+        recorded = json.loads(Path(record).read_text())
     except (OSError, ValueError):
         return None
+    return recorded if isinstance(recorded, dict) else None
 
 
 def md5sums(disk, package):
@@ -100,16 +107,30 @@ def relink(disk):
     return replaced
 
 
+def empty_caches(disk):
+    """Remove the package files in each cache folder of `disk`, following no symlink."""
+    for cache in CACHES:
+        for folder in (disk / cache, disk / cache / 'partial'):
+            if any(part.is_symlink() for part in [folder, *folder.parents] if disk in part.parents) or not folder.is_dir():
+                continue
+            for path in folder.iterdir():
+                if path.name.endswith('.deb') and path.is_file() and not path.is_symlink():
+                    path.unlink()
+
+
 def check(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
     recorded = read_record(record)
-    reason = 'record' if recorded is None else 'packages' if recorded != state(disks) else 'current'
+    # A record of an older rule is no record of this one.
+    reason = 'record' if recorded is None or recorded.get('rule') != RULE else 'packages' if recorded != state(disks) else 'current'
     return {'due': reason != 'current', 'reason': reason}
 
 
 def run(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
     replaced = sum(relink(disk) for disk, _ in disks.values())
+    for disk, _ in disks.values():
+        empty_caches(disk)
     if not all(btrfs for _, btrfs in disks.values()):
         dedupe = 'not_btrfs'
     elif shutil.which('duperemove') is None:
