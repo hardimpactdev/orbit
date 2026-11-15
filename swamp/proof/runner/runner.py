@@ -9,6 +9,7 @@ import argparse
 import concurrent.futures
 import datetime
 import json
+import subprocess
 import sys
 import time
 from pathlib import Path
@@ -23,6 +24,10 @@ BATCHES = Path(__file__).resolve().parents[1] / 'batches.yaml'
 LINE_LIMIT = 1000
 
 
+class ConvergeTimeout(Exception):
+    """The CLI stopped waiting; its Operation may still hold the fleet."""
+
+
 class Run:
     """The state of one case: bound names, the rules the case made, the baseline of `unchanged` and the evidence."""
 
@@ -33,10 +38,21 @@ class Run:
         self.names, self.rules, self.baseline, self.sources = {}, {}, {}, {}
         self.log, self.calls, self.acted, self.timings = [], 0, time.time(), {}
         self.shimmed, self.background = set(), []
+        self.converge_wait = 0.0
         self.evidence.mkdir(parents=True, exist_ok=True)
 
     def cli(self, args, form='json', node=None):
-        result = self.fleet.cli(args, form=form, **({'node': node} if node else {}))
+        timeout = self.fleet.cli_timeout(args)
+        started = time.monotonic()
+        try:
+            result = self.fleet.cli(args, timeout=timeout, form=form, **({'node': node} if node else {}))
+        except subprocess.TimeoutExpired as error:
+            if args and args[0] == 'node:converge':
+                raise ConvergeTimeout(f'node:converge CLI timed out after {error.timeout} seconds; Operation may still be running; batch stopped') from error
+            raise
+        finally:
+            if timeout == fleet_module.COPY_CONVERGE_SECONDS and args and args[0] == 'node:converge':
+                self.converge_wait += time.monotonic() - started
         return self.keep(result, 'json' if form == 'json' else 'txt')
 
     def cli_tty(self, args, script):
@@ -104,7 +120,7 @@ def run_steps(run, items, section, failures, deadline):
 
 def _run_steps(run, items, section, failures, deadline):
     for index, step in enumerate(items):
-        if time.time() > deadline:
+        if time.time() > deadline + run.converge_wait:
             raise steps.Infra('the case timeout passed')
         started = time.time()
         resolved = run.resolve(step.args)
@@ -128,6 +144,7 @@ def execute(case, fleet, spec, evidence, negative=False):
     deadline = started + case.timeout
     run = Run(fleet, spec, evidence, case.node, case)
     failures, verdict, cause = [], 'passed', None
+    stop_batch = False
     try:
         if negative and (not case.negative or len(case.stages) > 1):
             raise steps.NotBuilt('negative needs a case with a negative key and one stage')
@@ -149,6 +166,9 @@ def execute(case, fleet, spec, evidence, negative=False):
                 verdict, cause, failures = 'failed', 'assertion', [f'negative: did not fail: {kept}' if kept else 'negative: must_fail names no expectation']
         elif failures:
             verdict, cause = 'failed', 'assertion'
+    except ConvergeTimeout as error:
+        verdict, cause, failures = 'failed', 'infrastructure', failures + [str(error)]
+        stop_batch = True
     except steps.Unrun as error:
         verdict, cause, failures = 'unrun', 'precondition', [f'setup: {error}']
     except Exception as error:  # a step that could not run is a failed case, never a pass
@@ -158,6 +178,8 @@ def execute(case, fleet, spec, evidence, negative=False):
     except Exception as error:  # the next restore removes what is left
         failures.append(f'cleanup: {error}')
     result = {'id': case.id, 'verdict': verdict, 'secs': round(time.time() - started, 1)}
+    if stop_batch:
+        result['stop_batch'] = True
     if negative:
         result['negative'] = True
     if cause:
@@ -215,13 +237,31 @@ def command_replay(args):
 
 def run_case(case, fleet, spec, root, negative=False, discovery=0):
     """Run one case and write its receipt under `root/<case id>/<time>`. Returns the result."""
-    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-    evidence = Path(root) / case.id / stamp
+    evidence = case_evidence(root, case)
     result, receipt = execute(case, fleet, spec, evidence, negative)
     receipt['phase_secs']['discover'] = discovery
-    (evidence / 'receipt.json').write_text(json.dumps(receipt, indent=2, default=str))
+    try:
+        (evidence / 'receipt.json').write_text(json.dumps(receipt, indent=2, default=str))
+    except OSError as error:
+        if not result.get('stop_batch'):
+            raise
+        # Losing the receipt must not lose the stop: its Operation can still hold the fleet.
+        result['failed'].append(f'receipt: {error}')
     print('evidence ' + str(evidence), file=sys.stderr)
     return result
+
+
+def case_evidence(root, case):
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+    return Path(root) / case.id / stamp
+
+
+def stopped_receipt(root, case, result, discovery):
+    evidence = case_evidence(root, case)
+    evidence.mkdir(parents=True, exist_ok=True)
+    receipt = {**result, 'summary': case.summary, 'steps': [], 'phase_secs': {'discover': discovery}, 'names': {}, 'sources': {}}
+    (evidence / 'receipt.json').write_text(json.dumps(receipt, indent=2))
+    print('evidence ' + str(evidence), file=sys.stderr)
 
 
 def command_case(args):
@@ -255,15 +295,26 @@ def schedule(cases, limit, work):
     with others go first, in file order; the ones that run alone follow. A case waits for its Node lock, and the next that can start goes on."""
     waiting = [case for case in cases if case.lock != 'all'] + [case for case in cases if case.lock == 'all']
     running = {}
+    stopped_by = None
     with concurrent.futures.ThreadPoolExecutor(limit) as pool:
         while waiting or running:
+            if stopped_by:
+                for case in waiting:
+                    yield case, {'id': case.id, 'verdict': 'unrun', 'cause': 'infrastructure', 'secs': 0,
+                                 'blocked_by': stopped_by, 'failed': [f'batch stopped after {stopped_by}: converge CLI timed out; Operation may still be running']}
+                waiting.clear()
+                if not running:
+                    break
             for case in list(waiting):
                 if len(running) < limit and may_start(case, list(running.values())):
                     waiting.remove(case)
                     running[pool.submit(work, case)] = case
             done, _ = concurrent.futures.wait(running, return_when=concurrent.futures.FIRST_COMPLETED)
             for future in done:
-                yield running.pop(future), future.result()
+                case, result = running.pop(future), future.result()
+                if result.get('stop_batch'):
+                    stopped_by = case.id
+                yield case, result
 
 
 def verdict_lines(results):
@@ -301,7 +352,11 @@ def command_batch(args):
         except Exception as error:  # a case whose receipt cannot be written is a failed case, never a pass
             return {'id': case.id, 'verdict': 'failed', 'cause': 'infrastructure', 'secs': 0, 'failed': [f'{type(error).__name__}: {error}']}
 
-    results = [result for _, result in schedule(cases, limit, work)]
+    results = []
+    for case, result in schedule(cases, limit, work):
+        if result.get('blocked_by'):
+            stopped_receipt(root, case, result, discovery)
+        results.append(result)
     print('\n'.join(verdict_lines(results)), flush=True)
     verdicts = {result['verdict'] for result in results}
     return 1 if 'failed' in verdicts else 2 if 'unrun' in verdicts else 0

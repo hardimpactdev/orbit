@@ -36,6 +36,9 @@ class FakeBackground:
 
 
 class FakeFleet:
+    def cli_timeout(self, args):
+        return 240
+
     def __init__(self):
         self.nodes = {name: {'instance': 'vm-' + name, 'node_id': NODE_IDS[name], 'bridge': BRIDGE[name]} for name in BRIDGE}
         self.ufw = {name: [('22/tcp', 'ALLOW', 'Anywhere', 'orbit:ssh'), ('Anywhere', 'ALLOW', '10.232.2.0/24', 'proof-network')] for name in BRIDGE}
