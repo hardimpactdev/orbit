@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 211,
+ "maxUnreviewed": 209,
  "nativeDataMethods": {
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
@@ -629,9 +629,6 @@
    "snapshot_after_head": "unreviewed",
    "snapshot_before_head": "unreviewed"
   },
-  "operation-task-vm-hub-converge": {
-   "Check the new ruleset": "unreviewed"
-  },
   "operation-task-vm-resume": {
    "Read the guest state": "unreviewed",
    "Wait for the guest agent": "read-only"
@@ -814,10 +811,6 @@
   },
   "task-nested-ready": {
    "Wait for Doctor": "read-only"
-  },
-  "task-vm-image-ansible": {
-   "Read the guest address": "read-only",
-   "Read the guest host key": "unreviewed"
   },
   "task-vm-workspace": {
    "account": "read-only",

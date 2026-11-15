@@ -68,8 +68,8 @@ class PlanningTest(unittest.TestCase):
             actual = [case for unit in result['units'] if unit['unit'] == file for case in unit['cases']]
             self.assertCountEqual(actual, cases)
 
-    def test_egress_budget_deferral_keeps_every_python_case_in_receiver(self):
-        file = 'swamp/tests/ansible_task_vm_host_egress_test.py'
+    def test_python_budget_deferral_keeps_every_python_case_in_receiver(self):
+        file = 'swamp/tests/ansible_wireguard_hub_lan_test.py'
         _, configured, _ = self.api.configuration()
         fixture = configured[file]
         self.assertTrue(fixture['after_merge'])

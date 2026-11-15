@@ -6,7 +6,6 @@ import re
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 import yaml
 
@@ -97,13 +96,13 @@ class TaskVmRoleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             (folder / 'intent.json').write_text(json.dumps(intent(nested={'subnet': '10.232.2.0/24', 'interface': 'nested'})))
-            builder.build(folder, 'task_vm.image_refresh')
+            builder.build(folder, 'tasks.provision')
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             self.assertEqual(host['ansible_host'], '10.252.7.9')
             self.assertEqual(host['ansible_ssh_private_key_file'], '/role/identity')
             self.assertNotIn('ansible_ssh_common_args', host)
             self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n')
-            self.assertIn('"kind": "task_vm.image_refresh"', (folder / 'vars.yml').read_text())
+            self.assertIn('"kind": "tasks.provision"', (folder / 'vars.yml').read_text())
             for name in ['inventory.yml', 'vars.yml', 'known_hosts']:
                 self.assertEqual((folder / name).stat().st_mode & 0o777, 0o600)
 
@@ -123,7 +122,7 @@ class TaskVmRoleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             folder = Path(folder)
             (folder / 'intent.json').write_text(json.dumps(intent(jump=jump)))
-            builder.build(folder, 'task_vm.image_refresh')
+            builder.build(folder, 'tasks.provision')
             host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
             arguments = host['ansible_ssh_common_args']
             self.assertIn('ProxyCommand=', arguments)
@@ -131,19 +130,6 @@ class TaskVmRoleTest(unittest.TestCase):
             self.assertIn('StrictHostKeyChecking=yes', arguments)
             self.assertIn(f'UserKnownHostsFile={folder}/known_hosts', arguments)
             self.assertEqual((folder / 'known_hosts').read_text(), '10.252.7.9 ssh-ed25519 vm\n[192.0.2.5]:2222 ssh-ed25519 host\n')
-
-    def test_a_guest_of_an_incus_host_takes_its_address_and_key_from_the_run(self):
-        jump = {'identity_file': '/role/identity', 'target': {'host': '192.0.2.5', 'port': 22, 'user': 'nckrtl', 'host_keys': ['ssh-ed25519 host']}}
-        placeholder = intent(jump=jump)
-        placeholder['ssh']['target'] = {'host': '', 'user': 'orbit', 'port': 22, 'host_keys': []}
-        with tempfile.TemporaryDirectory() as folder:
-            folder = Path(folder)
-            (folder / 'intent.json').write_text(json.dumps(placeholder))
-            with mock.patch.dict(os.environ, {'ORBIT_TARGET_HOST': '10.251.78.50\n', 'ORBIT_TARGET_KEY': 'ssh-ed25519 guest root@guest\n'}):
-                builder.build(folder, 'task_vm.image_refresh')
-            host = json.loads((folder / 'inventory.yml').read_text())['all']['children']['task_vm']['hosts']['vm']
-            self.assertEqual(host['ansible_host'], '10.251.78.50')
-            self.assertEqual((folder / 'known_hosts').read_text(), '10.251.78.50 ssh-ed25519 guest root@guest\n192.0.2.5 ssh-ed25519 host\n')
 
     def test_every_condition_of_the_role_is_a_string(self):
         # A plain YAML scalar with a colon and a space parses as a mapping, and Ansible refuses it: "Conditional expressions must be strings".

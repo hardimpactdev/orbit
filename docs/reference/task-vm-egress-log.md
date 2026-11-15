@@ -7,7 +7,7 @@ description: "How Orbit records, log only, which outside hosts a task VM connect
 
 A task VM can reach any public address. The bridge ACL `orbittask0-egress` drops private ranges and allows the rest. Step 1 records which outside hosts task VMs really use. Step 2 derives an allowlist from that record and enforces it through a proxy outside the VM. Step 1 blocks nothing.
 
-Three changes build it: the host part, the agent fact, and the Gateway table with `orbit task:egress`. The command has its own page, [`task:egress`](/cli/task/egress).
+Three changes built it: the host part (removed), the agent fact, and the Gateway table with `orbit task:egress`. The command has its own page, [`task:egress`](/cli/task/egress).
 
 ## How it works
 
@@ -45,7 +45,7 @@ Two other sources stay out of step 1.
 
 ## Host setup
 
-One Ansible part, tagged `egress-log`, sets up all of it. Each piece uses a stock tool. The part adds no rule that drops or rewrites traffic.
+One Ansible part, tagged `egress-log`, set up all of it; it is removed ([Running the host part](#running-the-host-part)). This section says what a host that ran it has. Each piece used a stock tool. The part added no rule that drops or rewrites traffic.
 
 1. **DNS log.** The part adds `log-queries=extra` and `log-facility=/var/log/orbit/dnsmasq-<network>.log` to `raw.dnsmasq` on the bridge. It keeps any line already there.
 2. **Connection log.** The part loads an `nftables` table `orbit_egress` of the family `inet`. Its forward chain has the policy `accept`. Its rules only return or log.
@@ -67,9 +67,7 @@ A kernel without `/proc/net/nf_conntrack` is the reason for the `nftables` rule.
 
 ## Running the host part
 
-The host part is built. It is the tag `egress-log` of `swamp/ansible/task-vm-host.yml`. The [base snapshot refresh](/reference/compute-drivers#refresh-the-base-snapshot) runs it as its first step, `Log egress`, in a job of its own. Nothing starts that refresh any more: its release step, daily schedule and artisan commands are removed, so no host gets it this way ([off in the live fleet](/reference/old-paths#off-in-the-live-fleet)).
-
-The step runs before the base is touched. Only a safety check fails the refresh: rules that do not load, a bridge with IPv6, or an ACL that lost its drop rule. Every other check prints a warning with its code in the Swamp run log, and the refresh goes on, because a log-only failure must not block the base refresh. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. [Log task VM egress](/reference/compute-drivers#log-task-vm-egress) lists the checks. The part writes these files on the host:
+The host part is removed. It was the tag `egress-log` of `swamp/ansible/task-vm-host.yml`, and only the removed base snapshot refresh ran it ([Refresh the base snapshot](/reference/compute-drivers#refresh-the-base-snapshot)). No host gets the setup any more. A host that ran it keeps these, until an operator removes them:
 
 | File | Content |
 | --- | --- |
@@ -78,6 +76,8 @@ The step runs before the base is touched. Only a safety check fails the refresh:
 | `/var/log/orbit/task-egress.log` | One raw kernel line for each new flow |
 | `/var/log/orbit/dnsmasq-<network>.log` | The DNS queries of the bridge |
 | `/etc/logrotate.d/orbit-egress` | The rotation of both logs |
+| `/etc/systemd/system/orbit-egress-log.service` | The oneshot unit that loads the table at boot: disable it and delete the file |
+| `raw.dnsmasq` of each `orbittask*` bridge | The two log lines; while set, Incus runs that dnsmasq without AppArmor (`AppArmorDisabledDueToRawDnsmasq`): remove the two lines, or unset the key |
 
 A connection line reads `<time> <host> kernel: [<kernel time>] orbit-egress IN=<bridge> OUT=<nic> MACSRC=<src MAC> MACDST=<dst MAC> MACPROTO=<type> SRC=<VM address> DST=<outside address> ... PROTO=<tcp|udp> SPT=<port> DPT=<port>`. The agent reads `IN=`, `MACSRC=`, `SRC=`, `DST=`, `PROTO=` and `DPT=`. Older kernels print one `MAC=<dst MAC>:<src MAC>:<type>` field instead of the three `MAC` fields; the agent reads the source MAC from that form too.
 

@@ -9,7 +9,7 @@ covers:
   - "{bin/{php-build,git-build-watch}}"
   - apps/gateway/{config/task_vms.php,resources/task-vms/**,database/migrations/2026_12_03_000000_allow_cold_recipe_image_rebuilds.php}
   - apps/gateway/database/migrations/{2027_01_29_000001_drop_upcloud_task_vm_support,2027_02_01_000001_migrate_task_vm_host_pools,2027_02_02_000000_add_task_vm_runtime}.php
-  - swamp/workflows/{workflow-task-vm-image-ansible,workflow-operation-task-vm-image-refresh,workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
+  - swamp/workflows/{workflow-task-nested-apply,workflow-task-nested-ready,workflow-proof-fleet-restore}.yaml
 ---
 
 # Compute drivers
@@ -1121,72 +1121,13 @@ The snapshot of the seed is taken with the snapshot of the VM, and a task start 
 
 #### Log task VM egress
 
-Orbit records which outside hosts task VMs and task containers connect to. The log only records. It blocks nothing, and the [egress ACL](#prepare-an-incus-host) of each bridge stays as it is. Each task VM host sets it up on its VM bridge and, on a [container host](#prepare-a-container-host), on its container bridge too. The [base snapshot refresh](#refresh-the-base-snapshot) runs the setup as its first step, `Log egress`.
-
-The Ansible part `egress-log` of `swamp/ansible/task-vm-host.yml` takes the bridge names from `host.network` and `host.containers.network` of the refresh intent. The table, the unit, the rsyslog rule and the rotation file are host-wide, so one run covers both bridges. It sets up four things:
-
-- The nftables table `inet orbit_egress` in `/etc/orbit/egress-log.nft`. The oneshot unit `orbit-egress-log.service` loads it at boot. A changed file reloads the rules.
-- The rsyslog rule `/etc/rsyslog.d/19-orbit-egress.conf`. It writes the kernel lines of the table to `/var/log/orbit/task-egress.log` and keeps them out of syslog and `kern.log`.
-- The `raw.dnsmasq` setting of each bridge, which makes its dnsmasq write the DNS queries to `/var/log/orbit/dnsmasq-<bridge>.log`.
-- The rotation file `/etc/logrotate.d/orbit-egress` for the connection log and each DNS log: daily, seven files, and at most 200 MB.
-
-With one bridge the rules name it, as `iifname "orbittask0"`. With two they name a set, as `iifname { "orbittask0", "orbittaskc0" }`. A host without containers keeps the same file, so its refresh reloads nothing.
-
-The table has one base chain on the `forward` hook, after the firewall, with the policy `accept`. Its three rules match a new connection from a bridge to an outside address, other than the ranges the egress ACL drops. The first rule returns when the set `seen` already holds the connection. The set holds the VM address, the outside address, the protocol and the port for ten minutes, so a repeat within that time adds no line.
-
-The second rule returns for a source address above 50 new connections a second, with a burst of 200. The limit is per source address, in the set `flood`. A VM that scans cannot flood the kernel log, rsyslog and the disk, and it loses only its own log lines. The `counter` of the rule counts them. The rule never loses traffic, because `return` ends the chain and the policy accepts. The third rule logs the connection with `log prefix "orbit-egress " flags ether` and then adds it to the set.
-
-Only new connections are logged (`ct state new`). A long-lived connection gives one line when it starts and no line after. The log comes before the add, so a full set repeats lines and loses no connection. The table never drops, rejects or changes a packet. The host has no `conntrack` tool and no connection table in `/proc`, so the log does not read the connection tracker.
-
-A connection line is the raw kernel message with the time, the host name and the tag in front. The `MAC=` field holds the destination MAC, the source MAC and the type, so the source MAC names the VM.
-
-```text
-2026-11-07T20:31:02.123456+01:00 shark kernel: [12345.678901] orbit-egress IN=orbittask0 OUT=enp5s0 MAC=aa:aa:aa:aa:aa:aa:bb:bb:bb:bb:bb:bb:08:00 SRC=10.252.7.5 DST=93.184.216.34 LEN=60 PROTO=TCP SPT=41234 DPT=443
-```
-
-The DNS log uses the `log-queries=extra` format of dnsmasq: the serial number of the query, the client address and port, the record type, the name and the answer. It is our own file. The file `dnsmasq.<bridge>.log` in `/var/log/incus` holds the stderr of dnsmasq, and Incus truncates it at every start. dnsmasq appends to our file, so a restart of the bridge's dnsmasq loses nothing.
-
-The agent reads both logs as other users, without a capability, so the part makes them world-readable. The folder `/var/log/orbit` has mode 0755. The part creates both log files before they are used, because rsyslog and dnsmasq keep the mode of a file that exists. The connection log has mode 0644.
-
-The DNS log is `root:root` with mode 0664. dnsmasq starts as root and changes a file of group root without the group write bit to mode 0660 and owner `incus`, which would take away the world-read bit. With mode 0664 only the owner changes. The part sets no owner on the DNS log, so a rerun does not change it back. The dnsmasq leases and host files are already readable and stay untouched.
-
-The `raw.dnsmasq` setting is the only way to switch on query logging, and it has a cost. While it is set, Incus starts the bridge's dnsmasq without its AppArmor profile. dnsmasq still runs as the unprivileged user `incus`. Incus shows the warning `AppArmorDisabledDueToRawDnsmasq` for the bridge, so `incus warning list` will show it. Unsetting `raw.dnsmasq` reverses the change.
-
-The command `incus network set` runs the whole setup of the bridge again: the firewall rules of the network, then a kill and a start of dnsmasq. The first run of the part therefore reconfigures each bridge once, and running VMs lose DNS for about a second. Run it when no provision is running. A rerun finds the lines and sets nothing. The part never restarts Incus.
-
-The value is merged. The part keeps every line of the operator and adds `log-queries=extra` and `log-facility=<file>` only when a line is missing. When the operator already logs to another file, the part leaves the setting alone and warns.
-
-Only a safety check fails the part, and with it the refresh. An observation check records a warning with its code, and the refresh goes on, because a log-only failure must not block the base refresh. A failure of the host itself still fails the part: Incus down, SSH lost, or `nft` missing. Each Incus and systemd task has a timeout, so a hung task fails or warns and does not hold the refresh.
-
-Each setup item is a block of its own with its own rescue: the connection log, the log files, the rsyslog rule, the log rotation and the DNS log. A failure in one block cannot skip another. The connection log comes first.
-
-A rescued failure keeps the part green. The part prints each warning in Ansible's log before the safety checks, with the error text of the failed tool.
-
-The end checks, such as `egress.config_missing`, only print `WARNING` lines in that log. An operation does not carry the log of a step, so a rescued failure is visible only in the Swamp run log of the refresh, which Swamp keeps for about 30 minutes, and as an `egress` fact with no rows. The agent reads an absent or empty log file as empty, so a missing rsyslog rule gives a fact that is present and has no rows, not a missing fact.
-
-To check a host, run `ls /etc/rsyslog.d/19-orbit-egress.conf /etc/logrotate.d/orbit-egress` and `incus network get <network> raw.dnsmasq --project default`.
-
-AppArmor confines `rsyslogd` to `/etc/rsyslog.conf` and `/etc/rsyslog.d/**`, even for `-N1`. The rsyslog rule is therefore not checked with `validate:` on a temporary file. When the content differs, the part stages the rule as `/etc/rsyslog.d/19-orbit-egress.conf.new`, a name that rsyslog does not include. It runs `rsyslogd -N1 -f` on that path and then copies the file to its name. It removes the staged file in every case, also when the rule is unchanged and a crash left the file. A rule that fails the check never replaces the old rule.
-
-| Check | Result |
-|---|---|
-| The rules load (`nft -c` before the file is replaced) | Fails the part |
-| Each bridge still has `ipv6.address=none` (`egress.bridge_dual_stack`) | Fails the part |
-| Each bridge keeps its ACL, and its first rule drops the private ranges (`egress.acl_changed`) | Fails the part |
-| The table, its set, the dedupe return and the accepting base chain exist, with no verdict that drops or rewrites (`egress.rules_missing`) | Warns |
-| The `raw.dnsmasq` value of each bridge holds both lines (`egress.dnsmasq_unset`, also for a foreign log file) | Warns |
-| rsyslog and `orbit-egress-log.service` are active (`egress.service_inactive`) | Warns |
-| Others can read every log and enter the folder, and each DNS log has mode 0664 (`egress.log_unreadable`) | Warns |
-| An action of the log setup failed (`egress.setup_failed`) | Warns |
-| The rsyslog rule or the log rotation file is missing (`egress.config_missing`) | Warns |
-
-The `Log egress` step runs before the base VM is touched. A failed safety check fails the refresh and starts no rollback. To run only this part, start the workflow `task-vm-host-phase` with `tags: egress-log` and the intent of a refresh.
+The host part that logged task VM egress is removed with the base snapshot refresh, its only caller. [Task VM egress log](/reference/task-vm-egress-log#running-the-host-part) lists the files that a host which ran it keeps.
 
 #### Refresh the base snapshot
 
 No refresh of a base snapshot exists any more. The kind `task_vm.image_refresh`, its intent and projection, and the artisan command `task-vms:image-builds` are removed; its triggers went before them. It is replaced by the [refresh after a release](/reference/development-containers#refresh-after-a-release), which updates the default Instance of each nested-fleet Project. A recorded base snapshot stays the base of a task start until the rest of the task VM path leaves.
 
-The workflow `operation-task-vm-image-refresh` and its children stay in Swamp one release longer, and nothing starts them ([old paths](/reference/old-paths)). Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
+The workflows `operation-task-vm-image-refresh` and `operation-task-vm-hub-converge` and their children `task-vm-image-ansible`, `task-vm-host-phase` and `task-vm-candidate-proof` are removed from Swamp, one release after the Gateway stopped starting them. So are the host parts `egress-log` and `host-clean` of `swamp/ansible/task-vm-host.yml`. The parts `host-prepare` and `base-*` stay while tests of shared files load them; nothing runs them. Old Operations of the kind stay as history: `operation:list` and `operation:show` show them, and an open one ends at its budget or on a cancel request ([kinds that left the registry](/reference/operations#kinds-that-left-the-registry)).
 
 The Node column `image_refresh_hold` and `orbit node:update NODE --image-refresh-hold` / `--no-image-refresh-hold` remain until the task VM settings leave. Nothing reads the hold.
 

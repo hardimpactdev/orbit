@@ -1,5 +1,5 @@
 order = 610
-source_sha256 = "660277578d9da80844e58536e256c311337418d4f7f1eb015ae134fee2e728d8"
+source_sha256 = "099023298c7cba488370f9d07af19db24b6898aea4e3f11d3a85d3a97f5201c5"
 cases = [
   "test_every_phase_is_one_tag_and_the_recipe_is_always_resolved",
   "test_the_nested_gateway_restarts_and_redelivers_only_for_what_changed",
@@ -9,7 +9,6 @@ cases = [
   "test_a_task_vm_is_reached_directly",
   "test_a_task_vm_with_its_identity_is_reached_over_wireguard_and_not_through_its_host",
   "test_a_guest_is_reached_through_its_host_with_both_pinned_keys",
-  "test_a_guest_of_an_incus_host_takes_its_address_and_key_from_the_run",
   "test_every_condition_of_the_role_is_a_string",
   "test_every_package_download_retries_with_the_tool_and_no_shell",
   "test_the_wait_for_a_new_server_is_for_an_image_only",

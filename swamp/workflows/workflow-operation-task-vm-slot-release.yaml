@@ -11,7 +11,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [task_vm.slot_release, tasks.cancel, task_vm.image_refresh]}
+    kind: {type: string, enum: [task_vm.slot_release, tasks.cancel]}
     intent:
       type: object
       properties:

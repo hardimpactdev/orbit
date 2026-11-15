@@ -5,7 +5,7 @@ import shlex
 import sys
 from pathlib import Path
 
-TASK_VM_KINDS = ('task_vm.image_refresh', 'tasks.provision', 'task_vm.nested_ready', 'tasks.idle_save')
+TASK_VM_KINDS = ('tasks.provision', 'task_vm.nested_ready', 'tasks.idle_save')
 SSH_EXECUTION_KINDS = ('task_vm.nested_ready', 'tasks.idle_save')
 
 
@@ -35,9 +35,6 @@ def build_task_vm(folder, kind):
     # The readiness and idle save intents name their connection ssh_execution; the other task VM intents name it ssh.
     ssh = intent['ssh_execution' if kind in SSH_EXECUTION_KINDS else 'ssh']
     target = dict(ssh['target'])
-    # A guest of an Incus host has no address or host key when the Gateway admits the run; the run reads both from the host.
-    if os.environ.get('ORBIT_TARGET_HOST'):
-        target.update(host=os.environ['ORBIT_TARGET_HOST'].strip(), host_keys=[os.environ['ORBIT_TARGET_KEY'].strip()])
     known = set(known_host_lines(target))
     host = {'ansible_host': target['host'], 'ansible_user': target['user'], 'ansible_port': target['port'],
             'ansible_ssh_private_key_file': ssh['identity_file']}

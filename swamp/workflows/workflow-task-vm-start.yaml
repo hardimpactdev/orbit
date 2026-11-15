@@ -12,7 +12,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tasks.provision, task_vm.image_refresh]}
+    kind: {type: string, enum: [tasks.provision]}
     intent: {type: object}
     # The slot's identity and the claim's Pi token and model file, as vault names and keys, never the values.
     execution_secrets:

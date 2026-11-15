@@ -233,7 +233,7 @@ Migration remains after-merge-only: its declared work needs twelve shards, above
 
 The native migration fixture also forces advisory mail failure and malformed receipts for defaults and clones, proving that Route cutover and retirement succeed without rollback. Its account gate uses Swamp's upstream [throwaway credential fixture](https://github.com/swamp-club/swamp/blob/db3f6373/integration/auth_gate_fixture.ts), with no real credential or fleet call. Native create, complete and migration fixtures create their run folders directly under `/tmp`, as the production folder schema requires. Verify them through `bin/ci-units run`: its per-unit `TMPDIR` must not move those folders below another directory.
 
-The task VM host egress Python file is also after-merge-only: it repeatedly reached the 180-second PR ceiling, including run 43102509039. Python files run as whole units; the full-set receiver retains every case until measured case splitting makes PR admission possible. These explicit deferrals do not fail Required checks.
+The WireGuard hub LAN Python file is also after-merge-only: it costs 167 seconds and cannot be sliced. Python files run as whole units; the full-set receiver retains every case. These explicit deferrals do not fail Required checks.
 
 The Instance host updates file runs after merge only. Across 24 PR observations per case, the runtime update reached 166.761 seconds and the Squid rollback reached 152.639 seconds, leaving about 7% and 15% of the 180-second ceiling. Both cases already run alone and require an initial converge followed by a changed-input converge. All four cases remain in Main full set; restoring PR coverage requires a measured faster fixture that preserves those transitions.
 

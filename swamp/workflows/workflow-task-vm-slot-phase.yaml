@@ -9,7 +9,7 @@ inputs:
   properties:
     operation_id: {type: integer, minimum: 1}
     node_id: {type: integer, minimum: 1}
-    kind: {type: string, enum: [tasks.provision, tasks.cancel, task_vm.slot_release, task_vm.image_refresh]}
+    kind: {type: string, enum: [tasks.provision, tasks.cancel, task_vm.slot_release]}
     intent: {type: object}
     tags: {type: string, minLength: 1}
   required: [operation_id, node_id, kind, intent, tags]
