@@ -10,6 +10,7 @@ use App\Domain\Processes\ProcessRuntime;
 use App\Domain\Routes\RoutePublication;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\SourceControl\ApplicationDirectory;
+use App\Domain\Tasks\TaskCopyKey;
 use App\Domain\TaskVms\TaskVmConfig;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Infrastructure\MachineSoftware\InstanceFolders;
@@ -400,14 +401,17 @@ final readonly class InstanceContainer
 
     /**
      * The placeholder model key and the model origin for T3's unit, which hands them to Claude Code and Codex. It goes to the run
-     * through the vault: the key is fixed, but it is still a key.
+     * through the vault: the key is fixed, but it is still a key. A task copy also gets a new copy key and the origin of its Orbit
+     * routes on the same forwarder (docs/reference/development-containers.md#the-copy-key); writing it replaces the copy's older key.
      */
     public function modelEnvironment(InstanceRuntime $runtime, string $key): string
     {
         $origin = 'http://'.Ipv4Subnet::from(ValidatedData::string(Node::query()->whereKey($runtime->node_id)->value('instance_bridge')))->usableRange()[0]
             .':'.InstanceHostIntent::ModelForwarderPort;
+        $copy = Instance::query()->whereKey($runtime->instance_id)->value('task_workspace_owner_id') === null ? ''
+            : 'ORBIT_COPY_KEY='.TaskCopyKey::mint($runtime)."\nORBIT_COPY_API={$origin}".TaskCopyKey::Path."\n";
 
-        return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\nORBIT_MODEL_KEY={$key}\n"
+        return "ANTHROPIC_BASE_URL={$origin}\nANTHROPIC_AUTH_TOKEN={$key}\nORBIT_MODEL_KEY={$key}\n{$copy}"
             ."CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1\nDISABLE_TELEMETRY=1\nDISABLE_ERROR_REPORTING=1\n";
     }
 

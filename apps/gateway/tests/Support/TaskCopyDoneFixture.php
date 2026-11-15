@@ -24,15 +24,20 @@ use App\Models\TaskCheck;
 
 /**
  * A task copy whose work is done (docs/reference/tasks.md#when-the-work-is-done): its one subtask completed after a reviewer turn on
- * exactly its passed handoff check, which recorded the given mode. Tests then break one clause at a time.
+ * exactly its passed handoff check, which recorded the given mode, and that turn sent the pull request text
+ * (docs/reference/tasks.md#the-reviewers-pull-request-text). Tests then break one clause at a time.
  */
 final class TaskCopyDoneFixture
 {
     public const string Commit = 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
+    public const string Title = 'Export the board as CSV';
+
+    public const string Body = 'Adds a CSV export of the board.';
+
     public function __construct(public Task $group, public Task $subtask, public TaskCheck $check, public Instance $instance, public AgentThread $reviewer, public Operation $turn) {}
 
-    public static function make(?TaskPrMode $recorded = TaskPrMode::PrWhenDone): self
+    public static function make(?TaskPrMode $recorded = TaskPrMode::PrWhenDone, bool $text = true): self
     {
         // A second world in one test gets its own Node, address and Project.
         $n = Project::query()->where('slug', 'like', 'trial%')->count();
@@ -58,6 +63,9 @@ final class TaskCopyDoneFixture
             'runtime_key' => 'instance:'.$instance->id, 'external_id' => 'reviewer-thread', 'role' => 'reviewer', 'model' => 'claude', 'effort' => 'high']);
         $group->update(['reviewer_agent_thread_id' => $reviewer->id]);
         $turn = self::reviewerTurn($group, $subtask, $reviewer, self::Commit, now()->subMinutes(2));
+        if ($text) {
+            $check->update(['pr_title' => self::Title, 'pr_body' => self::Body, 'pr_text_operation_id' => $turn->id]);
+        }
         $subtask->update(['status' => TaskStatus::Completed]);
 
         return new self($group->refresh(), $subtask->refresh(), $check, $instance, $reviewer, $turn);

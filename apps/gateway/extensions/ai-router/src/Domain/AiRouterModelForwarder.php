@@ -6,8 +6,10 @@ namespace Orbit\Extensions\AiRouter\Domain;
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
+use App\Domain\Tasks\TaskCopyKey;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleShape;
+use App\Infrastructure\Nodes\NodeAgentFootprint;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Support\ValidatedData;
@@ -38,18 +40,33 @@ final readonly class AiRouterModelForwarder
     /** The oneshot unit that loads the table early at boot, before WireGuard, Docker and Incus; stopping it deletes the table. */
     public const string TableUnit = 'orbit-ai-router-forwarder-table.service';
 
+    /** The Orbit routes of a task copy, under {@see TaskCopyKey::Path}: each one exact path, sent to `/api/v1/copy/<route>`. */
+    public const array OrbitRoutes = ['whoami', 'pull-request'];
+
     /** The origin containers on the Node call. */
     public function origin(string $address): string
     {
         return 'http://'.$address.':'.self::Port;
     }
 
-    public function caddyfile(string $address, string $guardOrigin): string
+    /**
+     * Every path goes to the guard, but the two Orbit routes of a task copy (/reference/ai-router#orbit-routes-for-task-copies): each
+     * exact path goes to its one fixed Gateway path, over HTTPS to the Gateway's WireGuard address, trusting only the Orbit root
+     * certificate the Node agent holds. No other path of the Gateway API is reachable. The copy's own key decides at the Gateway.
+     */
+    public function caddyfile(string $address, string $guardOrigin, string $gatewayAddress): string
     {
         $port = self::Port;
+        $routes = '';
+        foreach (self::OrbitRoutes as $route) {
+            $routes .= "\thandle ".TaskCopyKey::Path."/{$route} {\n\t\trewrite * /api/v1/copy/{$route}\n"
+                ."\t\treverse_proxy https://{$gatewayAddress} {\n\t\t\theader_up Host {$gatewayAddress}\n"
+                ."\t\t\ttransport http {\n\t\t\t\ttls_trust_pool file ".NodeAgentFootprint::CertificatePath."\n\t\t\t}\n\t\t}\n\t}\n";
+        }
 
         return <<<CADDY
-            # Managed by Orbit: the ai-router container model forwarder (/reference/ai-router#container-model-forwarder). No key: the guard decides.
+            # Managed by Orbit: the ai-router container model forwarder (/reference/ai-router#container-model-forwarder). No key: the guard decides,
+            # and for the two Orbit routes of a task copy the Gateway does.
             {
             	admin off
             	persist_config off
@@ -58,7 +75,9 @@ final readonly class AiRouterModelForwarder
 
             http://:{$port} {
             	bind {$address}
-            	reverse_proxy {$guardOrigin}
+            {$routes}	handle {
+            		reverse_proxy {$guardOrigin}
+            	}
             }
 
             CADDY;

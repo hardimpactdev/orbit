@@ -775,11 +775,11 @@ A container holds only a placeholder key, in `/home/agent/.config/orbit/model.en
 
 The model key does not tell one container from another: every container holds the same placeholder. So a [task copy](/reference/tasks#task-copy) gets one more key of its own, the copy key. It is the only way a copy calls Orbit, and Orbit uses it only for the [reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text).
 
-- The Gateway makes a random key each time it writes a task copy's model environment: at the copy's create, and again when a migrate writes it. It stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
-- The key goes into the copy in `model.env`, the same `0600` file of `agent` as the placeholder, as `ORBIT_COPY_KEY`. Beside it, `ORBIT_COPY_API` holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both to Claude Code and Codex. The app user `orbit` cannot read them.
-- A clone that is not a task copy gets no copy key, and no `ORBIT_COPY_*` line.
-- The copy's destroy deletes its runtime record, so the key ends with the copy.
-- The copy holds no other credential for Orbit and no Git token.
+The Gateway makes a random key each time it writes a task copy's model environment. It does so at the copy's create, and again when a migrate writes the file. It stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
+
+The key goes into `model.env` as `ORBIT_COPY_KEY`. This is the same `0600` file of `agent` that holds the placeholder. `ORBIT_COPY_API` in the same file holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both values to Claude Code and Codex. The app user `orbit` cannot read them.
+
+A clone that is not a task copy gets no copy key and no `ORBIT_COPY_*` line. The copy's destroy deletes its runtime record, so the key ends with the copy. The copy holds no other credential for Orbit and no Git token.
 
 A call reaches the Gateway only through the [forwarder's Orbit routes](/reference/ai-router#orbit-routes-for-task-copies). The Gateway accepts it only when both of these hold:
 
@@ -2848,7 +2848,8 @@ Each Node records its Instance bridge, as [Nodes](#nodes) describes. Each contai
 The database keeps these rules:
 
 - A Node's container, bridge address and T3 port each belong to one runtime.
-- A runtime keeps its Node, container, address, port, container server and clone source; only the versions, the power state and the copy key hash change.
+- A runtime keeps its Node, container, address, port, container server and clone source.
+- A runtime changes only its versions, its power state and its copy key hash.
 - A runtime records its container server, `t3` or `conn`, exactly when it has a T3 port.
 - A clone source is the Instance named `default` of the same Project on the same Node, and runs in a container.
 - A default with clones keeps its runtime and its name.

@@ -1217,7 +1217,7 @@ curl -sS -H "Authorization: Bearer $ORBIT_COPY_KEY" \
 
 The request also takes JSON, `{"title": "...", "body": "..."}`. It names no group, check or commit: the key names the copy, and the copy names its group. The Gateway accepts it only when all of these hold:
 
-- The copy's group is open and has no pull request.
+- The copy's group is open and has no pull request. Otherwise `tasks.group_closed` (409).
 - A turn of the group's reviewer thread runs now, on a checked commit. Otherwise `tasks.pr_text_not_reviewer_turn` (409).
 - That turn's check is still an eligible candidate of the current subtask. Otherwise `tasks.commit_not_checked` (422).
 - The Project is released for copy publish, as [Task copy](#task-copy) describes. Otherwise `tasks.copy_publish_held` (409).

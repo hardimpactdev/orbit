@@ -38,6 +38,9 @@ use Illuminate\Support\Carbon;
  * @property Carbon $started_at
  * @property Carbon|null $finished_at
  * @property TaskPrMode|null $pr_mode the group's mode when this handoff check passed ([Task group modes](/reference/tasks#where-the-mode-comes-from))
+ * @property string|null $pr_title the reviewer's pull request title on this check ([The reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text))
+ * @property string|null $pr_body the reviewer's pull request body on this check
+ * @property int|null $pr_text_operation_id the reviewer turn that sent the title and the body
  */
 #[ObservedBy([TaskBroadcastObserver::class])]
 final class TaskCheck extends Model
@@ -46,6 +49,7 @@ final class TaskCheck extends Model
     protected $fillable = [
         'task_id', 'task_comment_id', 'kind', 'failed_step', 'status', 'pid', 'process_started', 'head_before', 'tree_before',
         'head_after', 'tree_after', 'exit_code', 'changed_paths', 'output', 'deliverable_evidence', 'commit_sha', 'pushed_at', 'started_at', 'finished_at', 'pr_mode',
+        'pr_title', 'pr_body', 'pr_text_operation_id',
     ];
 
     /** @return BelongsTo<Task, $this> */
@@ -67,6 +71,7 @@ final class TaskCheck extends Model
             'status' => TaskCheckStatus::class,
             'pr_mode' => TaskPrMode::class,
             'pid' => 'integer',
+            'pr_text_operation_id' => 'integer',
             'exit_code' => 'integer',
             'changed_paths' => 'array',
             'deliverable_evidence' => 'array',

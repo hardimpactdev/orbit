@@ -25,7 +25,7 @@ orbit task:create [title] [--project=ID | --parent=ID] [--deliverables=FILE] [--
 | `--reviewer-model=MODEL` | Project's, else Gateway's | The reviewer's model in a task copy. |
 | `--reviewer-effort=LEVEL` | Project's, else Gateway's | The reviewer's effort in a task copy. |
 | `--pr-mode=MODE` | the Project's, else the Gateway's | What Orbit does once the work of a task in a task copy is done. `review_before_pr`: it waits for `task:publish <task>`. `pr_when_done`: it opens a ready pull request by itself. Any other value returns `task.pr_mode_invalid`. `task:show` returns the mode as `pr_mode` with its source. See [Task group modes](/reference/tasks#task-group-modes). |
-| `--issue=NUMBER` | none | The GitHub issue of the Project's repository that the task works on. The pull request of its task copy then closes it: Orbit adds `Closes #NUMBER` when the reviewer's body does not close it. A number from 1 up; anything else returns `validation.failed` on `issue`. `task:show` returns it as `issue`. See [Closes the issue](/reference/tasks#closes-the-issue). |
+| `--issue=NUMBER` | none | The GitHub issue of the Project's repository that the task works on. The pull request of its task copy then closes it: Orbit adds `Closes #NUMBER` when the reviewer's body does not close it. A number from 1 up; anything else returns `task.issue_invalid`, and the API answers `validation.failed` on `issue`. `task:show` returns it as `issue`. See [Closes the issue](/reference/tasks#closes-the-issue). |
 | `--current-recipe` | off | The task needs the current machine recipe. Its VM waits for the current recipe image and never starts from a fallback image. See [Image fallback](/reference/compute-drivers#image-fallback). |
 
 ```bash
@@ -45,6 +45,7 @@ The CLI does not prompt for the status, the subtasks, or the notification. After
 | `tasks.no_subtasks` | `--status=todo` without subtasks. |
 | `tasks.subtask_deliverables_missing` | `--status=todo` while a subtask has no deliverables. |
 | `task.pr_mode_invalid` | `--pr-mode` is not `review_before_pr` or `pr_when_done`. The API answers `validation.failed` on `pr_mode`. |
+| `task.issue_invalid` | `--issue` is not a number from 1 up. |
 | `task.agent_invalid` | An agent option is empty. |
 | `validation.failed` | A provider or effort the task copy does not offer, or a model that is no model name. |
 

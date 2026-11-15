@@ -57,6 +57,7 @@ final class CreateTaskGroupRequest extends FormRequest
             'orchestration' => ['sometimes', 'string', Rule::enum(TaskOrchestration::class)],
             'review' => ['sometimes', 'string', Rule::enum(TaskReviewMode::class)],
             'pr_mode' => ['sometimes', 'string', Rule::enum(TaskPrMode::class)],
+            'issue' => ['sometimes', 'integer:strict', 'min:1', 'max:2147483647'],
             'preview' => ['sometimes', 'boolean:strict'],
             'current_recipe' => ['sometimes', 'boolean:strict'],
             ...TaskCopyAgent::rules(),
@@ -93,6 +94,7 @@ final class CreateTaskGroupRequest extends FormRequest
                     'orchestration',
                     'review',
                     'pr_mode',
+                    'issue',
                     'preview',
                     'current_recipe',
                     ...TaskCopyAgent::fields(),
@@ -133,6 +135,7 @@ final class CreateTaskGroupRequest extends FormRequest
             review: TaskReviewMode::from($this->string('review', TaskReviewMode::Manual->value)->toString()),
             agents: TaskCopyAgent::provided($this->validated()),
             prMode: is_string($this->validated('pr_mode')) ? TaskPrMode::from($this->validated('pr_mode')) : null,
+            issue: is_int($this->validated('issue')) ? $this->validated('issue') : null,
         );
     }
 

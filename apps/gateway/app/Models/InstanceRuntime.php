@@ -38,6 +38,7 @@ use LogicException;
  * @property Carbon|null $idle_watch_started_at
  * @property string|null $inner_volume
  * @property int|null $idmap_size
+ * @property string|null $agent_key_hash the SHA-256 hash of a task copy's key for Orbit (TaskCopyKey); null for every other container
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  * @property-read Instance $instance
@@ -67,6 +68,10 @@ final class InstanceRuntime extends Model
         'inner_volume',
         'idmap_size',
     ];
+
+    /** @var list<string> */
+    #[\Override]
+    protected $hidden = ['agent_key_hash'];
 
     /** A container gets a guest address of its Node's bridge; the bridge keeps the first usable address. */
     protected static function booted(): void

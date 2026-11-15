@@ -62,7 +62,7 @@ function whenDoneEndPublish(Task $group, string $code = TaskDonePublication::Loc
     return $operation;
 }
 
-it('publishes the done check of a pr_when_done group by itself, as a ready pull request with Orbit\'s title and body', function (): void {
+it('publishes the done check of a pr_when_done group by itself, as a ready pull request with the reviewer\'s title and body', function (): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
 
@@ -74,11 +74,10 @@ it('publishes the done check of a pr_when_done group by itself, as a ready pull 
         ->and($operation->triggered_by)->toBe('gateway:pr-when-done')
         ->and($operation->input['check'])->toBe($world->check->id)
         ->and($operation->input['commit'])->toBe(TaskCopyDoneFixture::Commit)
-        ->and(data_get($operation->input, 'pull_request.title'))->toBe('Add the export')
+        // The reviewer's text alone: no brief, no subtask list, no check id of Orbit's own.
+        ->and(data_get($operation->input, 'pull_request.title'))->toBe(TaskCopyDoneFixture::Title)
         ->and(data_get($operation->input, 'pull_request.draft'))->toBeFalse()
-        ->and(data_get($operation->input, 'pull_request.body'))->toContain('Export the board as CSV.')
-        ->and(data_get($operation->input, 'pull_request.body'))->toContain('- Write the export')
-        ->and(data_get($operation->input, 'pull_request.body'))->toContain('Checked commit `'.TaskCopyDoneFixture::Commit.'`, handoff check '.$world->check->id.'.')
+        ->and(data_get($operation->input, 'pull_request.body'))->toBe(TaskCopyDoneFixture::Body)
         ->and(isset($operation->input['workspace']))->toBeTrue()
         ->and(app(OperationIdempotency::class)->key)->toBeNull();
 });
@@ -291,22 +290,56 @@ it('keeps the validation error for a release of a group without a task copy', fu
         });
 });
 
-it('cuts a long brief so the pull request body stays within the publish limit', function (): void {
+it('closes the group\'s issue: Closes #n at the end of the reviewer\'s body, unless the body closes it already', function (?int $issue, string $sent, string $published): void {
     $world = TaskCopyDoneFixture::make();
-    Task::topLevel()->whereKey($world->group->id)->update(['brief' => str_repeat('é', 70000)]);
+    $world->group->update(['issue_number' => $issue]);
+    $world->check->update(['pr_body' => $sent]);
 
-    $body = ValidatedData::string(data_get(TaskDonePublication::for($world->group->refresh(), $world->check)->pull_request, 'body'));
+    expect(data_get(TaskDonePublication::for($world->group->refresh(), $world->check->refresh())->pull_request, 'body'))->toBe($published);
+})->with([
+    'an issue' => [9, "Keeps every field.\n", "Keeps every field.\n\nCloses #9"],
+    'closed already' => [9, "Keeps every field.\n\nFixes #9", "Keeps every field.\n\nFixes #9"],
+    'closed in other words' => [9, 'Resolves: #9 at last', 'Resolves: #9 at last'],
+    'another issue named' => [9, 'Closes #90', "Closes #90\n\nCloses #9"],
+    'no issue' => [null, 'Keeps every field.', 'Keeps every field.'],
+]);
 
-    expect(mb_strlen($body))->toBeLessThanOrEqual(65536)
-        ->and($body)->toContain('…')
-        ->and($body)->toEndWith('Checked commit `'.TaskCopyDoneFixture::Commit.'`, handoff check '.$world->check->id.'.')
-        ->and(Validator::make(['check' => $world->check->id, 'pull_request' => ['title' => 'Add the export', 'body' => $body]], (new StartTaskPublishRequest)->rules())->passes())->toBeTrue();
+it('keeps the longest reviewer body with its closing line within the publish limit', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['issue_number' => 2147483647]);
+    $world->check->update(['pr_body' => str_repeat('é', TaskDonePublication::ReviewerBodyLimit)]);
+
+    $text = TaskDonePublication::for($world->group->refresh(), $world->check->refresh())->pull_request;
+
+    expect(ValidatedData::string(data_get($text, 'body')))->toEndWith('Closes #2147483647')
+        ->and(Validator::make(['check' => $world->check->id, 'pull_request' => $text], (new StartTaskPublishRequest)->rules())->passes())->toBeTrue();
+});
+
+it('waits for the reviewer\'s text: the tick admits and stores nothing, and the release refuses tasks.pr_text_missing', function (): void {
+    $world = TaskCopyDoneFixture::make(text: false);
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+
+    expect(whenDoneTick())->toBe([['group' => $world->group->id, 'check' => $world->check->id, 'result' => 'waiting', 'code' => 'tasks.pr_text_missing', 'operation' => null]])
+        ->and($world->group->refresh()->publish_refusal)->toBeNull()
+        ->and(fn () => app(StartTaskPublishAction::class)->execute($world->group->refresh(), new StartTaskPublishData, 'person', null))
+        ->toThrow(function (ResourceOperationException $exception): void {
+            expect($exception->errorCode)->toBe('tasks.pr_text_missing')->and($exception->status)->toBe(409);
+        });
+    expect(whenDonePublishes($world->group))->toBe(0);
+});
+
+it('counts only the text of the reviewer thread\'s newest turn: a later turn on the same check that sent none leaves the group waiting', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone]);
+    TaskCopyDoneFixture::reviewerTurn($world->group, $world->subtask, $world->reviewer, TaskCopyDoneFixture::Commit, now()->subMinute());
+
+    expect(whenDoneTick()[0]['code'])->toBe('tasks.pr_text_missing')->and(whenDonePublishes($world->group))->toBe(0);
 });
 
 /** A lock that runs `$between` first, as another request would just before the admission takes the lock. */
 function whenDoneLockWith(Closure $between): void
 {
-    app()->instance(TaskExecutionLock::class, new class($between) implements TaskExecutionLock
+    app()->instance(TaskExecutionLock::class, new readonly class($between) implements TaskExecutionLock
     {
         public function __construct(private Closure $between) {}
 
