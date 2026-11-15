@@ -9,7 +9,7 @@ covers:
   - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_06_000000_add_image_refresh_hold_to_nodes_table,2027_02_24_000000_drop_task_container_ci_places}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeCommand}.php
-  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeRequest}.php
+  - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Responses/Nodes/CiSettings,Requests/Nodes/UpdateNodeRequest,Requests/Nodes/CiPlacesInput}.php
 ---
 
 # Node settings
