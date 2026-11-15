@@ -52,6 +52,7 @@ sequenceDiagram
       SW->>N: Start the fleet<br/>clone-fleet · Ansible
       %%> What it does:
       %%> - starts the nested containers and waits for Doctor and the three agents
+      %%> - runs under `ic-clone-fleet-<node>-<instance id % 64>`, one of 64 names per Node; copies started at once start their fleets side by side, because Swamp fails a step that waits 60 s for a name another run holds
       %%> On failure:
       %%> - `failed_step: fleet` with the fleet phase's code
     end
