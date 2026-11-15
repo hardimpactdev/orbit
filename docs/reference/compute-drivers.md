@@ -528,7 +528,7 @@ No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Ta
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 
-A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task and CI places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
+A host with a [`containers` setting](/reference/node-settings#task-container-fields) also has container task places. Each live row records its runtime, `vm` or `container`, and holds a place of that runtime only, so container places never count against VM places. Normal placement takes container places only while `task_vms.container_placement` is on, and then only on a host with a recorded container base. The setting is off by default, so a host's task VMs keep their task groups. A base refresh takes a VM CI place. The host keeps one recorded base per runtime.
 
 Every new VM copies the base and has the Large profile: 6 vCPU, 12 GiB of memory and a 60 GiB disk. VM size does not multiply its capacity charge.
 
@@ -950,7 +950,7 @@ The system file sets up the kernel and Incus side of the host.
 - **SCTP.** The `sctp` module cannot load, as described below.
 - **Kernel modules.** `wireguard`, `overlay` and `br_netfilter` go in `/etc/modules-load.d/orbit-task-containers.conf` and load now. A container cannot load a module itself.
 - **Sysctls.** `/etc/sysctl.d/60-orbit-task-containers.conf` holds the floors in the table below. They apply now.
-- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + containers.ci_places + 1) × 101,000,000` IDs: one isolated range per place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
+- **Subordinate IDs.** Root's range in `/etc/subuid` and `/etc/subgid` must hold `(containers.task_places + 1) × 101,000,000` IDs: one isolated range per task container place and one for the base. A smaller range fails the phase with both numbers and changes nothing.
 - **ZFS ARC.** It sizes the ARC cap, which never rises. See [the ARC cap](#the-arc-cap-of-a-container-host) below.
 
 A host without Incus gets `incus`, `incus-base` and `incus-client` from the recipe's [pinned packages](#incus-lts-packages-and-upgrades). They are the packages of its architecture, checked by SHA-256. The package's `db:Status-Status` must be `installed`; a hold does not cause a reinstall, and config files left after removal do not count as installed. A host with Incus must run a server on the recipe's line, such as 7.0. The inner Incus of the base uses the same line. The phase never upgrades a running Incus.
