@@ -1827,7 +1827,7 @@ These hold until a T3 server gives Swamp a full-access MCP session:
 - **No stop of a cut turn.** Orbit stops only a run that asks, through T3's own RPC. A turn cut by its bound may go on in the container.
 - **Message text only.** The transcript holds the user and assistant messages, redacted and bounded to 256 KiB. It holds no tool names or states.
 - **No token metrics.** The CLI reports no token use. The thread's metrics stay null.
-- **No consult and no caller's model.** Both are refused with `tasks.copy_turn_unsupported`.
+- **No consult and no caller's model.** Both were options of the removed Pi turn; a request with either answers `validation.failed` on that field.
 
 ### Hold after a turn that may still run
 
@@ -1853,7 +1853,7 @@ The threads and roles, thread state, provider errors, token metrics, retries and
 
 Each subtask gets a new implementer thread, and its first review a new reviewer thread. A consult uses the reviewer thread. Titles, the composed prompt, Orbit's fixed instructions, the [turn receipt](/reference/tasks#turn-receipt) and the reviewer's reset after its turn stay as for Pi. The Orbit thread row records the driver `t3`, the T3 thread id as its external id, and the Instance's Node.
 
-A new thread takes any model the model router serves for Codex or Claude Code. Claude runs through Claude Code, Anthropic's own application, so the `t3` driver does not refuse it; `tasks.model_refused` stays a refusal of the `pi` driver. The role defaults and effort settings stay.
+A new thread takes any model the model router serves for Codex or Claude Code. Claude runs through Claude Code, Anthropic's own application, so the `t3` driver does not refuse it. The role defaults and effort settings stay.
 
 ### Thread state
 

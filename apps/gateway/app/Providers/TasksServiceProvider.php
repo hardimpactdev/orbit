@@ -7,7 +7,6 @@ namespace App\Providers;
 use App\Console\Commands\FileProblemsCommand;
 use App\Console\Commands\TaskPublishWhenDoneCommand;
 use App\Console\Commands\TaskPullRequestGateCommand;
-use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\BriefCoverageLabeler;
 use App\Domain\Tasks\DeliverablePathRepository;
 use App\Domain\Tasks\LocalTaskSettleMetricsCollector;
@@ -23,7 +22,6 @@ use App\Domain\Tasks\TaskPullRequestReviewWatcher;
 use App\Domain\Tasks\TaskPullRequestUpdater;
 use App\Domain\Tasks\TaskPullRequestWatcher;
 use App\Domain\Tasks\TaskSettleMetricsCollector;
-use App\Domain\Tasks\TaskTurnFetchNotice;
 use App\Domain\Tasks\TaskWorkspaceDiffReader;
 use App\Domain\Tasks\TaskWorkspaceStateReader;
 use App\Domain\TaskVms\TaskVmModelRoute;
@@ -37,12 +35,10 @@ use App\Infrastructure\Tasks\JevBriefCoverageLabeler;
 use App\Infrastructure\Tasks\LaravelAiTaskBriefCoverage;
 use App\Infrastructure\Tasks\NativeDeliverablePathRepository;
 use App\Infrastructure\Tasks\NativeTaskExecutionLock;
-use App\Infrastructure\Tasks\Pi\PiDriver;
 use App\Infrastructure\Tasks\RemoteTaskCheckRunner;
 use App\Infrastructure\Tasks\RemoteTaskWorkspaceStateReader;
 use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Models\Task;
-use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Route;
@@ -108,12 +104,10 @@ final class TasksServiceProvider extends ExtensionServiceProvider
 
         parent::register();
 
-        $this->app->bind(AgentDriverRegistry::class, fn (Application $app): AgentDriverRegistry => new AgentDriverRegistry([$app->make(PiDriver::class)]));
         $this->app->singleton(TaskExecutionLock::class, static fn (): TaskExecutionLock => new NativeTaskExecutionLock(
             rtrim(Config::string('orbit.home'), '/').'/locks/task-execution',
         ));
         $this->app->singleton(TaskBroadcasts::class);
-        $this->app->singleton(TaskTurnFetchNotice::class);
     }
 
     public function boot(): void

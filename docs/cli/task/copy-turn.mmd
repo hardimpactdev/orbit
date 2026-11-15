@@ -1,5 +1,6 @@
 sequenceDiagram
   %% Target design (orchestrator, 2026-11-13, plan A; 2026-11-14 one ongoing thread per role, continued by default, effort per role through T3 provider instances; 2026-11-14 provider, model and effort per role from the group, the Project or the Gateway, checked against the copy's offer): a turn of a task that runs in a copy of its Project's default Instance. Swamp runs T3's own CLI in the copy as agent; stock T3 accepts only full-access MCP sessions it issues itself, so no T3 session leaves the container. The implementer and the reviewer each keep one T3 thread that later turns continue. 2026-11-14: a question ends the turn: Orbit stores it, then stops the run through the stock T3 server's own RPC, and the answer comes as the next turn.
+  %% Orchestrator 2026-11-15 (step 5, S-Pi b): the Pi turn on a task VM is removed with the Pi task loop; this is the only turn of task:turn.
   %% status: draft
   %% command: task:turn
   %% kind: tasks.copy_turn
@@ -19,20 +20,20 @@ sequenceDiagram
   %%> - `orbit task:turn SUBTASK --role=reviewer --prompt="Review the checked commit." --check=CHECK`
   Note over GW: Admit the turn<br/>owned copy · subtask · role thread
   %%> What it does:
-  %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`; every other group takes the task VM turn (`turn.mmd`). A nested-fleet group without a copy refuses here with `tasks.no_workspace`
-  %%> - composes the prompt as for a task VM turn: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit
+  %%> - a group that owns a task copy, or whose Project has `nested_fleet` on, turns in its copy as `tasks.copy_turn`. Task VMs are removed: every other group answers `tasks.vm_runtime_removed` (422), and nothing is recorded. A nested-fleet group without a copy refuses here with `tasks.no_workspace`
+  %%> - composes the prompt: the title, brief and deliverables of the subtask, then the caller's prompt. A reviewer's prompt also names the checked commit
   %%> - an implementer's prompt says how to ask: with the question tool; a question ends the turn, and the answer comes as the next turn
   %%> - a turn that continues a thread whose last turn asked quotes that question, each with its options, before the caller's prompt: the prompt is the answer
   %%> - without `--thread`, the turn continues its role's thread: the implementer's thread of the current subtask, or the group's reviewer thread, when it is a `t3` thread of this copy. A role with no such thread starts one. `--thread=new` starts a new one; `--thread=ID` must name the thread the turn would continue
   %%> - a new thread takes the role's provider, model and effort, each from the group, else the Project's default, else the Gateway's `ORBIT_TASKS_COPY_<ROLE>_PROVIDER`, `_MODEL` and `_EFFORT` (shipped: `claude`, `claude-opus-5-5`, `medium` for the implementer and `high` for the reviewer)
   %%> - the provider and the effort name the T3 provider instance that carries the effort, as `claudeMedium`; the thread records the driver `t3`, the copy's Node, the model, the effort and that instance
   %%> - a continued thread keeps its model and effort: T3 keeps the thread's provider instance
-  %%> - a reviewer turn names the subtask's checked candidate with `--check`, as on a task VM; the commit goes into the turn
+  %%> - a reviewer turn names the subtask's checked candidate with `--check`; the commit goes into the turn
   %%> - the intent names the copy's container, the T3 command, whether the turn starts or continues its thread, the provider instance and model, the candidate, the 3,600 s bound and a title that names the Orbit thread; no credential and no vault key
   %%> Requirements:
   %%> - the group owns its copy and the copy is `active`; otherwise `tasks.no_workspace` or `tasks.copy_not_ready`, and nothing is recorded
   %%> - the copy's last completion did not fail; otherwise `tasks.copy_completion_failed` with its Operation, failed step, error code and the retry `orbit instance:complete ID`, and nothing is recorded
-  %%> - an implementer or reviewer turn with no caller's model; a consult or `--model` answers `tasks.copy_turn_unsupported`
+  %%> - the role is `implementer` or `reviewer`, and the request names no model: the role `consult` and a `model` were options of the removed Pi turn, and either answers `validation.failed` (422) on that field
   %%> - `--thread=ID` names the role's thread that the turn would continue; otherwise `tasks.thread_role_mismatch`
   %%> - a reviewer's check is the subtask's checked candidate; otherwise `tasks.commit_not_checked`
   %%> - a new thread's provider and effort name a provider instance that Orbit writes into the copy's T3 settings: `claude` at `low`, `medium`, `high`, `xhigh` or `max`. Otherwise `tasks.copy_turn_unoffered` (422) with what the copy offers in `details.offered`, and nothing is recorded. Orbit owns this list, so the check reads nothing in the copy

@@ -475,15 +475,15 @@ describe('task:check', function (): void {
 it('follows a turn operation and preserves its typed input in JSON', function (): void {
     $seen = [];
     $mock = cli_deploy_gateway([
-        cli_operation(['kind' => 'tasks.turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => ['receipt' => ['outcome' => 'ready_for_review'], 'thread' => 9], 'poll_after_seconds' => null]),
-    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.turn', 'target_type' => 'task_group']);
+        cli_operation(['kind' => 'tasks.copy_turn', 'target_type' => 'task_group', 'status' => 'succeeded', 'result' => ['receipt' => ['outcome' => 'ready_for_review'], 'thread' => 9], 'poll_after_seconds' => null]),
+    ], $seen, TurnTaskRequest::class, ['kind' => 'tasks.copy_turn', 'target_type' => 'task_group']);
 
-    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--model' => 'chosen', '--idempotency-key' => 'turn.c1', '--json' => true]))->toBe(0);
+    expect(Artisan::call('task:turn', ['task' => '18', '--role' => 'implementer', '--prompt' => 'Do the work.', '--thread' => 'new', '--idempotency-key' => 'turn.c1', '--json' => true]))->toBe(0);
     $output = json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR);
     expect($output['result']['receipt']['outcome'])->toBe('ready_for_review');
     $mock->assertSent(static fn ($request): bool => $request instanceof TurnTaskRequest
         && $request->headers()->get('Idempotency-Key') === 'turn.c1'
-        && json_decode((string) $request->body(), true) === ['role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new', 'model' => 'chosen']);
+        && json_decode((string) $request->body(), true) === ['role' => 'implementer', 'prompt' => 'Do the work.', 'thread' => 'new']);
 });
 
 it('sends no thread when --thread is omitted, so a task copy continues the role\'s thread', function (): void {

@@ -36,16 +36,15 @@ final readonly class TaskOperations
      * @param  array<string, mixed>  $input
      * @param  Closure(Task): void  $validate
      * @param  null|Closure(Task): array<string,mixed>  $intent
-     * @param  list<string>  $except  kinds that do not hold the group for this admission, such as the turn of the caller
      */
-    public function start(Task $group, string $kind, array $input, Closure $validate, string $triggeredBy, ?string $requestId, ?Closure $intent = null, array $except = []): Operation
+    public function start(Task $group, string $kind, array $input, Closure $validate, string $triggeredBy, ?string $requestId, ?Closure $intent = null): Operation
     {
-        if (($replay = $this->admitTarget($group, $kind, $except)) !== null) {
+        if (($replay = $this->admitTarget($group, $kind)) !== null) {
             return $replay;
         }
 
-        $admit = function () use ($group, $kind, $input, $validate, $triggeredBy, $requestId, $intent, $except): Operation {
-            if (($replay = $this->admitTarget($group, $kind, $except)) !== null) {
+        $admit = function () use ($group, $kind, $input, $validate, $triggeredBy, $requestId, $intent): Operation {
+            if (($replay = $this->admitTarget($group, $kind)) !== null) {
                 return $replay;
             }
             $group->refresh();
@@ -62,16 +61,14 @@ final readonly class TaskOperations
 
     /**
      * Returns a keyed replay, refuses a busy target, or admits a new start.
-     *
-     * @param  list<string>  $except
      */
-    private function admitTarget(Task $group, string $kind, array $except = []): ?Operation
+    private function admitTarget(Task $group, string $kind): ?Operation
     {
         if (($replay = $this->idempotency->replay($kind)) !== null) {
             return $replay;
         }
         TaskProvisionPending::refuse($group);
-        $holder = $this->holders($group, $except)->first();
+        $holder = $this->holders($group)->first();
         if ($holder instanceof Operation) {
             // The holder may have appeared after the replay read.
             return $this->idempotency->replay($kind)
@@ -137,14 +134,11 @@ final readonly class TaskOperations
             });
     }
 
-    /**
-     * @param  list<string>  $except
-     * @return Builder<Operation>
-     */
-    private function holders(Task $group, array $except = []): Builder
+    /** @return Builder<Operation> */
+    private function holders(Task $group): Builder
     {
         return Operation::query()->where('target_type', OperationKinds::TaskGroupTarget)->where('target_id', $group->id)
-            ->whereIn('kind', array_values(array_diff(array_keys(app(DirectOperation::class)->definitions()), $except)))
+            ->whereIn('kind', array_keys(app(DirectOperation::class)->definitions()))
             ->whereNotIn('status', OperationStatus::terminalValues());
     }
 }

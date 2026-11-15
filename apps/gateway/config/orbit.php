@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-$implementerEffort = env('ORBIT_TASKS_IMPLEMENTER_EFFORT');
-$reviewerEffort = env('ORBIT_TASKS_REVIEWER_EFFORT');
 // A copy turn agent key that is unset or empty keeps its shipped default.
 $copyAgent = static function (string $key, string $default): string {
     $value = env($key);
@@ -101,11 +99,6 @@ return [
         // Comma-separated GitHub logins requested as reviewers after a task pull request is opened or reused.
         // Unset or empty requests no one. The pull request author is omitted at request time.
         'review_request_logins' => (string) env('ORBIT_TASKS_REVIEW_REQUEST_LOGINS', ''),
-        'implementer_agent_driver' => env('ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER', 'pi'),
-        'reviewer_agent_driver' => env('ORBIT_TASKS_REVIEWER_AGENT_DRIVER', 'pi'),
-        // Effort for new task VM threads. Existing threads keep their stored value.
-        'implementer_effort' => $implementerEffort === null || $implementerEffort === '' ? 'medium' : $implementerEffort,
-        'reviewer_effort' => $reviewerEffort === null || $reviewerEffort === '' ? 'high' : $reviewerEffort,
         // The Gateway's agent of a new thread in a task copy, per role: the last fallback after the group and the Project
         // (TaskCopyAgent). The provider and the effort pick the copy's T3 provider instance.
         'copy_agents' => [

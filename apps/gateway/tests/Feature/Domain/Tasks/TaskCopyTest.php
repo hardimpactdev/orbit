@@ -9,6 +9,7 @@ use App\Actions\Operations\FailUnreadableResultAction;
 use App\Actions\Tasks\CompleteTaskGroupAction;
 use App\Actions\Tasks\ReadAgentThreadAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
+use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StopTaskSubtaskAction;
 use App\Data\Tasks\AgentThreadData;
 use App\Data\Tasks\StartTaskCheckData;
@@ -58,7 +59,6 @@ use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskPublishIntent;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskThreadRole;
-use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Infrastructure\Processes\CommandResult;
@@ -1351,7 +1351,7 @@ function copyTurn(Task $group, array $change = []): Operation
     Instance::query()->find($group->refresh()->taskable_id)?->runtime?->update(['power_state' => InstanceRuntimePowerState::Running]);
     $subtask = $group->tasks()->firstOrFail();
 
-    return app(TaskTurnIntent::class)->start($group->refresh(), TaskTurnData::from([
+    return app(StartTaskTurnAction::class)->execute($group->refresh(), TaskTurnData::from([
         'subtask' => $subtask->id, 'role' => 'implementer', 'prompt' => 'Run Doctor and commit a note.', ...$change,
     ]), 'test', null);
 }
@@ -1453,13 +1453,12 @@ describe('a turn of a group that owns a copy', function (): void {
             ->toBe(['model' => 'claude-haiku-5-5', 'effort' => 'max', 'provider_instance' => 'claudeMax']);
     });
 
-    it('ships Claude Opus 5.5 at medium effort for the implementer and at high effort for the reviewer, and reads no task VM value', function (): void {
+    it('ships Claude Opus 5.5 at medium effort for the implementer and at high effort for the reviewer, and reads no task VM model', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
-        // An open group of an earlier release holds the task VM's Pi model in its VM columns; the task VM efforts do not reach a copy either.
+        // An open group of an earlier release holds the task VM's Pi model in its VM columns.
         $group->update(['implementer_model' => TaskAgentDefaults::ImplementerModel, 'reviewer_model' => TaskAgentDefaults::ReviewerModel]);
-        config(['orbit.tasks.implementer_effort' => 'low', 'orbit.tasks.reviewer_effort' => 'low']);
 
         $implementer = copyTurn($group);
         copyTurnEnded($implementer, 'succeeded', copyTurnDone('mcp:1'));
@@ -1676,13 +1675,65 @@ describe('a turn of a group that owns a copy', function (): void {
         $group = copyGroup(copySource()->project);
         finishedCopy($group, startCopy($group));
         $idempotency = app(OperationIdempotency::class);
-        $start = fn (): Operation => $idempotency->under('tasks.turn', 'turn-key', 'fingerprint', fn (): Operation => copyTurn(Task::topLevel()->findOrFail($group->id)));
+        $start = fn (): Operation => $idempotency->under('tasks.copy_turn', 'turn-key', 'fingerprint', fn (): Operation => copyTurn(Task::topLevel()->findOrFail($group->id)));
 
         $first = $start();
 
         expect($start()->id)->toBe($first->id)->and($first->idempotency_key)->toBe('turn-key')
             ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1);
     });
+
+    // The API path of every copy turn: `task:turn` with an Idempotency-Key. A retry gets the same Operation; the same key with another
+    // body is a conflict. The consult role and `model` were options of the removed Pi turn: a request with either is refused on that field.
+    it('replays a turn sent twice through the API with one key, and refuses another body under that key', function (): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        Instance::query()->find($group->refresh()->taskable_id)?->runtime?->update(['power_state' => InstanceRuntimePowerState::Running]);
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        $subtask = $group->tasks()->firstOrFail();
+        $body = ['role' => 'implementer', 'prompt' => 'Run Doctor and commit a note.'];
+
+        $first = $this->withHeader('Idempotency-Key', 'turn-api')->postJson("/api/v1/tasks/{$subtask->id}/turn", $body)
+            ->assertStatus(202)->assertJsonPath('data.kind', 'tasks.copy_turn')->json('data.id');
+        $this->withHeader('Idempotency-Key', 'turn-api')->postJson("/api/v1/tasks/{$subtask->id}/turn", $body)
+            ->assertStatus(202)->assertJsonPath('data.id', $first);
+        $this->withHeader('Idempotency-Key', 'turn-api')->postJson("/api/v1/tasks/{$subtask->id}/turn", [...$body, 'prompt' => 'Another turn.'])
+            ->assertStatus(409)->assertJsonPath('error.code', 'operation.idempotency_conflict');
+
+        expect(Operation::query()->where('kind', 'tasks.copy_turn')->pluck('id')->all())->toBe([$first])
+            ->and(Operation::query()->findOrFail($first)->idempotency_key)->toBe('turn-api')
+            ->and(AgentThread::query()->where('task_group_id', $group->id)->count())->toBe(1);
+    });
+
+    // The bodies are the SDK fixtures `tasks/task-turn/consult-refused` and `model-refused`: what an older CLI or SDK gets.
+    it('refuses the consult role and a model of the caller on that field, and records nothing', function (array $change, string $field, string $fixture): void {
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $gateway = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'gateway', 'status' => 'active', 'platform' => 'linux',
+            'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
+        $gateway->roles()->create(['role' => RoleName::Gateway, 'status' => 'active']);
+        $this->withServerVariables(['REMOTE_ADDR' => '10.44.0.2']);
+        $subtask = $group->tasks()->firstOrFail();
+        $before = Operation::query()->count();
+
+        $body = $this->withHeader('Idempotency-Key', 'turn-pi-option')->postJson("/api/v1/tasks/{$subtask->id}/turn", ['role' => 'implementer', 'prompt' => 'Go.', 'thread' => 'new', ...$change])
+            ->assertStatus(422)->assertJsonPath('error.code', 'validation.failed')->assertJsonStructure(['error' => ['details' => [$field]]])->json();
+        expect(Operation::query()->count())->toBe($before)
+            ->and(AgentThread::query()->count())->toBe(0);
+
+        $recorded = ['schema' => 1, 'request' => 'Orbit\\Sdk\\Requests\\Tasks\\TurnTaskRequest', 'route' => 'POST /api/v1/tasks/{task}/turn', 'status' => 422, 'body' => $body];
+        $path = base_path("../../packages/php-sdk/fixtures/tasks/task-turn/{$fixture}.json");
+        if (getenv('ORBIT_FIXTURES') === 'record') {
+            file_put_contents($path, json_encode($recorded, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR)."\n");
+        }
+        expect($recorded)->toBe(json_decode((string) file_get_contents($path), true, flags: JSON_THROW_ON_ERROR));
+    })->with([
+        'a consult' => [['role' => 'consult'], 'role', 'consult-refused'],
+        'a model of the caller' => [['model' => 'claude-sonnet-5-5'], 'model', 'model-refused'],
+    ]);
 
     it('is refused by name and records nothing before the copy is active, or for what a copy turn does not do yet', function (Closure $arrange, array $change, string $refusal): void {
         $group = copyGroup(copySource()->project);
@@ -1697,9 +1748,7 @@ describe('a turn of a group that owns a copy', function (): void {
         'a copy not fully set up' => [function (Task $group, Operation $create): void {
             finishedCopy($group, $create)->update(['status' => InstanceState::Reserved]);
         }, [], 'tasks.copy_not_ready 409'],
-        'a consult' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'consult'], 'tasks.copy_turn_unsupported 422'],
         'a reviewer turn on no checked candidate' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['role' => 'reviewer', 'check' => 1], 'tasks.commit_not_checked 422'],
-        'a model of the caller' => [fn (Task $group, Operation $create) => finishedCopy($group, $create), ['model' => 'claude-sonnet-5-5'], 'tasks.copy_turn_unsupported 422'],
     ]);
 
     it('refuses a turn, a check and a publish while the copy\'s completion failed, and each is only not ready while a retry runs', function (): void {

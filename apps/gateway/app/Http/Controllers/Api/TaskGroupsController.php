@@ -13,10 +13,8 @@ use App\Actions\Tasks\DestroyTaskAction;
 use App\Actions\Tasks\ListTaskGroupsAction;
 use App\Actions\Tasks\ShowTaskGroupAction;
 use App\Actions\Tasks\StartTaskCheckAction;
-use App\Actions\Tasks\StartTaskPackageAction;
 use App\Actions\Tasks\StartTaskProvisionAction;
 use App\Actions\Tasks\StartTaskPublishAction;
-use App\Actions\Tasks\StartTaskScriptAction;
 use App\Actions\Tasks\StartTaskSyncAction;
 use App\Actions\Tasks\StartTaskTurnAction;
 use App\Actions\Tasks\StoreTaskCommentAction;
@@ -43,9 +41,7 @@ use App\Http\Requests\Tasks\ListTaskCommentsRequest;
 use App\Http\Requests\Tasks\ListTaskGroupsRequest;
 use App\Http\Requests\Tasks\ShowTaskGroupRequest;
 use App\Http\Requests\Tasks\StartTaskCheckRequest;
-use App\Http\Requests\Tasks\StartTaskPackageRequest;
 use App\Http\Requests\Tasks\StartTaskPublishRequest;
-use App\Http\Requests\Tasks\StartTaskScriptRequest;
 use App\Http\Requests\Tasks\StartTaskTurnRequest;
 use App\Http\Requests\Tasks\StoreTaskCommentRequest;
 use App\Http\Requests\Tasks\UpdateTaskGroupRequest;
@@ -72,8 +68,8 @@ final class TaskGroupsController extends Controller
         ], 201);
     }
 
-    /** Starts tasks.turn and answers 202 with the queued operation. */
-    #[StartsOperation(OperationKinds::TasksTurn, maxJsonBytes: PHP_INT_MAX)]
+    /** Starts a turn in the group's task copy, `tasks.copy_turn`, and answers 202 with the queued operation. */
+    #[StartsOperation(OperationKinds::TasksCopyTurn, maxJsonBytes: PHP_INT_MAX)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function turn(StartTaskTurnRequest $request, Task $task, StartTaskTurnAction $action): JsonResponse
     {
@@ -114,28 +110,6 @@ final class TaskGroupsController extends Controller
     #[StartsOperation(OperationKinds::TasksPublish)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function publish(StartTaskPublishRequest $request, Task $task, StartTaskPublishAction $action): JsonResponse
-    {
-        $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
-    }
-
-    /** Install a private package in a task VM workspace. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
-    #[StartsOperation(OperationKinds::TasksPackage, requiresKey: true)]
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function package(StartTaskPackageRequest $request, Task $task, StartTaskPackageAction $action): JsonResponse
-    {
-        $requestId = $request->attributes->getString('orbit.request_id');
-        $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);
-
-        return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
-    }
-
-    /** Run a tracked repository script in a task VM workspace. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
-    #[StartsOperation(OperationKinds::TasksScript, requiresKey: true)]
-    #[RequiresNodeAccess(ServingNode::Gateway)]
-    public function script(StartTaskScriptRequest $request, Task $task, StartTaskScriptAction $action): JsonResponse
     {
         $requestId = $request->attributes->getString('orbit.request_id');
         $operation = $action->execute($task, $request->payload(), CallerName::fromRequest($request), $requestId === '' ? null : $requestId);

@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace App\Actions\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\AgentDriverException;
-use App\Domain\Tasks\AgentDriverRegistry;
 use App\Domain\Tasks\TaskCheckException;
 use App\Domain\Tasks\TaskCheckRunner;
 use App\Domain\Tasks\TaskCheckStatus;
-use App\Domain\Tasks\TaskCopyTurn;
 use App\Domain\Tasks\TaskOperations;
 use App\Domain\Tasks\TaskStatus;
 use App\Models\AgentThread;
@@ -21,7 +18,6 @@ use App\Models\Task;
 final readonly class StopTaskSubtaskAction
 {
     public function __construct(
-        private AgentDriverRegistry $drivers,
         private TaskCheckRunner $checks,
     ) {}
 
@@ -43,9 +39,10 @@ final readonly class StopTaskSubtaskAction
     }
 
     /**
-     * Interrupts the subtask's acting thread and cancels its running checks. A thread of a copy turn (driver `t3`) has no interrupt: its
-     * turn is a `tasks.copy_turn` Operation, so the caller must first end the group's open Operations ({@see TaskOperations::cancelOpen()}),
-     * as task:complete does. The copy's destroy ends a T3 run that outlived its Operation.
+     * Cancels the subtask's running checks. Its acting thread has no interrupt here. A thread of a copy turn (driver `t3`) runs its
+     * turn as a `tasks.copy_turn` Operation, so the caller must first end the group's open Operations ({@see TaskOperations::cancelOpen()}),
+     * as task:complete does; the copy's destroy ends a T3 run that outlived its Operation. A thread of the removed Pi task loop
+     * (driver `pi`) ran on a task VM, which is gone with its Pi server, so nothing of it runs.
      */
     public function execute(Task $group, Task $task): void
     {
@@ -54,15 +51,6 @@ final readonly class StopTaskSubtaskAction
         }
 
         $group = $group->fresh() ?? $group;
-        $thread = $this->actingThread($group, $task);
-        if ($thread instanceof AgentThread && $thread->driver !== TaskCopyTurn::Driver) {
-            try {
-                $this->drivers->get($thread->driver)->interrupt($thread);
-            } catch (AgentDriverException $exception) {
-                throw $this->stopFailed($exception->getMessage());
-            }
-        }
-
         $instance = $group->fresh()?->taskable;
         foreach ($task->checks()->where('status', TaskCheckStatus::Running->value)->orderBy('id')->get() as $check) {
             if ($check->pid < 1 || trim($check->process_started) === '') {

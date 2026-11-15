@@ -110,7 +110,7 @@ sequenceDiagram
       %%> - the findings hold eligible updates
       %%> Result:
       %%> - task group #812 with one package group, for one pull request
-      %%> - the Gateway admits `tasks.provision` for it; Pi turns then run in its task VM (driver `pi`)
+      %%> - the Gateway admits `tasks.provision` for it, which starts its task copy; no maintenance run follows, because the Pi task loop is removed
       %%> Not admitted:
       %%> - a group while Project 4 has an open maintenance task group or unfinished work, from the Gateway's own records
     end

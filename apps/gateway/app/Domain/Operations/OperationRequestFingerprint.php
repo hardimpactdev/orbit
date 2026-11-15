@@ -20,16 +20,17 @@ final readonly class OperationRequestFingerprint
     /** @param array<string, mixed> $parameters */
     public function make(?Node $caller, ?string $command, array $parameters, #[\SensitiveParameter] string $content, StartsOperation $start): string
     {
-        // Public selectors changed; retries still identify the original logical operation.
+        // Public selectors changed; retries still identify the original logical operation. The turn route's kind was `tasks.turn`
+        // until the Pi turn left (docs/reference/old-paths.md); a copy turn's key keeps the fingerprint it had under that kind.
         if (str_starts_with($command ?? '', 'task:') && str_starts_with($start->kind, 'tasks.')) {
             $task = $parameters['task'] ?? null;
             if ($task instanceof Task) {
-                $parameters = ['group' => in_array($start->kind, ['tasks.check', 'tasks.turn'], true) ? $task->parent_id : $task->id];
+                $parameters = ['group' => in_array($start->kind, ['tasks.check', 'tasks.copy_turn'], true) ? $task->parent_id : $task->id];
                 $command = 'tasks:'.substr($command, 5);
                 if ($command === 'tasks:start') {
                     $command = 'tasks:provision';
                 }
-                if (in_array($start->kind, ['tasks.check', 'tasks.turn'], true)) {
+                if (in_array($start->kind, ['tasks.check', 'tasks.copy_turn'], true)) {
                     try {
                         $input = json_decode($content, flags: JSON_THROW_ON_ERROR);
                         if ($input instanceof stdClass && ! property_exists($input, 'subtask')) {

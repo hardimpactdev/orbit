@@ -88,7 +88,7 @@ it('cancels a group only for the Operation that owns it', function (string $kind
         ->and(Operation::query()->where('kind', 'tasks.cancel')->count())->toBe(0);
 })->with([
     'a proof.run that targets a node with the id of a group' => ['proof.run', 'node'],
-    'a script of the group' => ['tasks.script', 'task_group'],
+    'a sync of the group' => ['tasks.sync', 'task_group'],
     'a proof.command that targets something else' => ['proof.command', 'node'],
 ]);
 
@@ -99,7 +99,7 @@ it('names the proof run as the caller of a cancel', function (): void {
 it('does not touch the group when another operation is cancelled', function (): void {
     Queue::fake();
     $proof = proofRunning();
-    $other = Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
+    $other = Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $proof->target_id, 'node_id' => $proof->node_id,
         'input' => [], 'state' => [], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
 
     app(CancelOperationAction::class)->execute($other);

@@ -91,16 +91,7 @@ final class OperationBudgetTable
         // No run yet. Basis: the VM step of tasks.provision (about 160 s, op 11752), "Converge once" (about 60 s at the pins, 3,300 s at
         // its bound) and the stop (130 s at its bound), rounded up to one hour. Replace with the 14-day p95 after the first successes.
         'tasks.provision' => 3900,
-        // No run yet. One package manager run, bounded to 900 s by its step, plus the write and the removal of the configuration.
-        // Replace with the 14-day p95 after the first success.
-        'tasks.package' => 1500,
-        // The history of the kind held short reviewer and consult turns: its longest run of 12 minutes x 1.5 gave 18 minutes, and the first
-        // implementation turn of group 3517 (operation 11737, firewall:allow) ended at that bound while the author was still working.
-        // An author turn writes code, runs the Pest suite of its deliverables and fixes what the Project check finds. One hour; the
-        // `observe` step of `operation-task-turn` ends 5 minutes earlier (3,300 seconds) so the snapshots and the receipt still run.
-        // Replace with the longest run x 1.5 once the history holds author turns.
-        'tasks.turn' => 3600,
-        // No run yet. Basis: the agent's turn in a task copy, which its own step bounds at 3,600 s (the bound of `tasks.turn`), and
+        // No run yet. Basis: the agent's turn in a task copy, which its own step bounds at 3,600 s, and
         // the Ansible phase around it, which `timeout 4400` bounds: the kill grace (30 s), six T3 or helper calls of up to 60 s (the
         // settle's list, the list of a continued turn, the question's read and stop, the list and show after the turn: 6 minutes), sixteen
         // Git commands of up to 20 s (the settle's restore, a reviewer's set-up and restore: 320 s) and the SSH set-up, rounded to 76 minutes.
@@ -110,9 +101,6 @@ final class OperationBudgetTable
         // and one fetch over WireGuard (about 30 s), so about 2 minutes, x 3 for a slow GitHub, rounded to 6 minutes. Replace with the
         // 14-day p95 after the first success.
         'tasks.sync' => 360,
-        // No run yet. Basis: the bounds of its own steps: the Ansible phase (240 s), the import (60 s), the push (60 s) and 60 s for the
-        // intent, the mint and the cleanup, so 7 minutes. Replace with the 14-day p95 after the first success.
-        'tasks.idle_save' => 420,
         // Both ending kinds run the release of the task VM (task_vm.slot_release) after Route withdrawal and Project teardown. Their history
         // came from cancels with no VM, so the derived budget timed out real cleanups at 300 s (ops 6725, 6727, 6728).
         // Basis: the former VM destroy bound of 2,700 s + teardown cap 540 s (LifecycleStep::MaxTotalTimeoutSeconds) + 660 s for the

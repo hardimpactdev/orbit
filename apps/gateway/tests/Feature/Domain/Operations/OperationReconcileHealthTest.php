@@ -56,12 +56,12 @@ function reconcileHealthNode(string $name = 'gateway', int $address = 1): Node
 
 function reconcileHealthOperation(Node $node, int $target = 42): Operation
 {
-    return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $target, 'node_id' => $node->id,
-        'input' => ['run_budget_seconds' => 1800], 'status' => OperationStatus::Running, 'attempts' => 1,
+    return Operation::query()->create(['kind' => 'tasks.sync', 'target_type' => 'task_group', 'target_id' => $target, 'node_id' => $node->id,
+        'input' => [], 'status' => OperationStatus::Running, 'attempts' => 1,
         'started_at' => now()->subMinutes(3), 'state' => ['swamp_run_id' => sprintf('ea55ab37-bcbe-4459-81dc-cbb397e7%04d', $target)]]);
 }
 
-/** The bound task-script history shape used by NativeRunCancellationTest::reconcileSocket. */
+/** The bound task-sync history shape used by NativeRunCancellationTest::reconcileSocket. */
 function reconcileHealthRun(Operation $operation, string $status = 'failed'): array
 {
     return ['id' => $operation->state['swamp_run_id'], 'workflowName' => app(DirectOperation::class)->definition($operation->kind)['workflow'], 'status' => $status,

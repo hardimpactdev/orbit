@@ -2,12 +2,13 @@
 
 declare(strict_types=1);
 
+use App\Actions\Tasks\StartTaskTurnAction;
 use App\Data\Tasks\TaskTurnData;
+use App\Domain\Extensions\ExtensionStore;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskTurnIntent;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\TaskVms\TaskVmProviderKind;
 use App\Domain\TaskVms\TaskVmSize;
@@ -48,15 +49,16 @@ function turnWorld(): array
     return [$group, $subtask];
 }
 
-// A turn on a task VM, implementer or consult, is refused by the removed runtime's name, even for a group whose VM row is still there.
+// A turn of a group without a task copy is refused by the removed runtime's name, even for a group whose VM row is still there.
 it('refuses a task VM turn by name before it records a thread or an Operation', function (string $role, ?string $thread): void {
     [$group, $subtask] = turnWorld();
+    app(ExtensionStore::class)->set('tasks', true);
     Queue::fake([StartAdmittedSwampRun::class]);
 
-    expect(fn () => app(TaskTurnIntent::class)->start($group, new TaskTurnData($subtask->id, $role, 'Only this turn.', $thread), 'test', null))
+    expect(fn () => app(StartTaskTurnAction::class)->execute($group, new TaskTurnData($subtask->id, $role, 'Only this turn.', $thread), 'test', null))
         ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe([TaskVmRemoved::Code, 422]));
     expect(Operation::query()->count())->toBe(0)
         ->and(AgentThread::query()->count())->toBe(0)
         ->and($subtask->refresh()->implementer_agent_thread_id)->toBeNull();
     Queue::assertNothingPushed();
-})->with(['implementer' => ['implementer', 'new'], 'consult' => ['consult', 'new'], 'no thread named' => ['implementer', null]]);
+})->with(['implementer' => ['implementer', 'new'], 'no thread named' => ['implementer', null]]);

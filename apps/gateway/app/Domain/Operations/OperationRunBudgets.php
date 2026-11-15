@@ -29,7 +29,7 @@ final class OperationRunBudgets
      *
      * @var list<string>
      */
-    private const array CapturedKinds = [OperationKinds::TasksScript, OperationKinds::TasksCheck];
+    private const array CapturedKinds = [OperationKinds::TasksCheck];
 
     /** @var array<string,int>|null One observer pass, never a cross-request cache. */
     private static ?array $history = null;
@@ -43,16 +43,6 @@ final class OperationRunBudgets
         } finally {
             self::$history = $previous;
         }
-    }
-
-    /**
-     * What the admission of a `tasks.script` captures in `input.run_budget_seconds`: the budget of the history. The workflow sets
-     * it as the time limit of each of its SSH steps, so a step against a VM that is gone ends with the Operation. The Gateway does
-     * not re-read the history after admission.
-     */
-    public static function scriptBudget(): int
-    {
-        return self::historySeconds(OperationKinds::TasksScript);
     }
 
     public static function seconds(Operation $operation): int

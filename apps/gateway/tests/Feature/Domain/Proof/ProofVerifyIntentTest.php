@@ -97,7 +97,7 @@ describe('orbit proof admission', function (): void {
         expect($refusal->errorCode)->toBe('tasks.group_missing')->and($refusal->status)->toBe(404)->and(Operation::query()->count())->toBe(0);
     });
 
-    it('is not held by the turn of the caller, but is by any other operation on the group', function (): void {
+    it('is held by any open operation on the group, a copy turn too, but not by an old row of the removed Pi turn', function (): void {
         [$mini, $group, $instance] = verifyCopy();
         $held = fn (string $kind): Operation => Operation::query()->create(['kind' => $kind, 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $instance->node_id,
             'status' => OperationStatus::Running, 'input' => []]);
@@ -107,6 +107,11 @@ describe('orbit proof admission', function (): void {
         expect($refusal->errorCode)->toBe('operation.target_busy')->and(Operation::query()->where('kind', 'proof.verify')->count())->toBe(0);
 
         Operation::query()->where('kind', 'tasks.check')->delete();
+        $held('tasks.copy_turn');
+        $refusal = verifyRefused(fn () => app(ProofVerifyIntent::class)->start($mini, 'firewall:allow', $group->id, 'mini', null));
+        expect($refusal->errorCode)->toBe('operation.target_busy');
+
+        Operation::query()->where('kind', 'tasks.copy_turn')->delete();
         $held('tasks.turn');
         verifyGroup($mini, $group);
         expect(Operation::query()->where('kind', 'proof.verify')->count())->toBe(1);

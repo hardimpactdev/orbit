@@ -89,8 +89,6 @@ final readonly class TaskCheckProjection implements DirectOperationProjection
                 }
             }
 
-            app(TaskMaintenanceContinuation::class)->apply($projected);
-
             return $projected;
         });
     }

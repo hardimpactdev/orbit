@@ -96,13 +96,12 @@ Every task group is external. Swamp owns its lifecycle. The Gateway refuses a su
 A task runs only in a [task copy](#task-copy): a copy of its Project's default container Instance. Task VMs are removed. Every entry that would admit a task VM answers HTTP 422 `tasks.vm_runtime_removed` before it records anything:
 
 - `task:start` of a task whose Project has no default container Instance and no `nested_fleet` flag;
-- a turn of a group that owns no copy, also with the `consult` role;
-- `tasks.package` and `tasks.script` through their routes;
+- a turn of a group that owns no copy;
 - a `proof:run` run of a proof Project without a container default.
 
 The message says what to do: `Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.` The CLI prints it, and Conn and the API show it with the code. No admission waits for a task place any more.
 
-`task:prep`, `task:prep-fix`, the build and the review round of the Pi task loop are removed ([old paths](/reference/old-paths#the-pi-task-loop)). Their routes are gone, so a call answers HTTP 404, and the MCP tools `task-prep` and `task-prep-fix` are gone from the catalogue. The [gate check](#gate-check) starts neither a build, nor corrections, nor a review round. Their old Operations stay as history.
+The Pi task loop is removed ([old paths](/reference/old-paths#the-pi-task-loop)): `task:prep`, `task:prep-fix`, the build, the review round, the maintenance run, the package install, the repository script, the idle save and the Pi turn. The routes `prep`, `prep-fix`, `package` and `script` are gone, so a call answers HTTP 404, and the MCP tools `task-prep`, `task-prep-fix`, `task-package` and `task-script` are gone from the catalogue. The [gate check](#gate-check) starts neither a build, nor corrections, nor a review round. Their old Operations stay as history.
 
 #### Release a task VM for review
 
@@ -130,7 +129,7 @@ The profile, the dependency files, the Project setup, the copy of its output and
 
 When the workspace has a Route or Process definitions, three steps run between setup and the check. `Bind the workspace keys` puts the guest's pinned host key into the captured children; `Route the workspace` runs the `operation-route-create` child. It runs between `Hold the Route Nodes` and `Release the Route Nodes`, which hold the Route-serving Nodes for that step only ([Coordinate publication](/reference/routes#coordinate-publication)). A hold that stays busy for two minutes fails the receipt with `failed_step` `route`. `Create, start Processes` runs one `operation-process-create` child per definition. The check merges their outcomes into the receipt; a failed child sets `tasks.provision_failed` with `failed_step` `bind`, `route` or `processes`. `Accept the workspace` fails the run on any receipt error code.
 
-The group lifecycle after provision stays in separate keyed operations (`tasks.check`, `tasks.turn`, `tasks.publish` and `tasks.cancel`), each with its own receipt and time budget.
+The group lifecycle after provision stays in separate keyed operations (`tasks.check`, the turn, `tasks.publish` and `tasks.cancel`), each with its own receipt and time budget.
 
 A step on Node 209 first asks the Gateway for the clone credential (`operation:direct:github-token` with `purpose: clone`). The Gateway writes a read-only Git authorization header to the vault key that admission named, or an empty value for a repository that needs none. Admission mints nothing, because the VM step before the clone can wait for capacity for longer than the hour that an installation token lives.
 
@@ -175,43 +174,7 @@ A waiting Operation on a group, and `task:show` of its group, return `capacity_w
 
 #### Release an idle task VM
 
-Since task VMs are removed, no schedule runs the idle release.
-
-This section owns the rule. A task VM holds its place only while its group works. Between two steps, such as a build and the driver's check, the VM stays for the next step. A group whose task-pool VM is `ready`, that has no active Operation, and whose last Operation other than an idle save ended more than 30 minutes ago gives its place back. An idle release never loses work: it saves the workspace to origin first. The idle release admits `tasks.idle_save` for such a group ([chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/idle-save.mmd)). The group keeps its status, subtasks and threads.
-
-Thirty minutes is longer than the pause of a driver that is working, and short enough that a stalled driver does not starve the task queue. Group 4118 held a place for hours after its build while preps waited.
-
-The save runs only when the next claim can use it:
-
-- Origin must have the task branch, because the next claim starts from it or from the save. A group that never pushed keeps its VM.
-- Origin's task branch must reach the group's latest approved commit, as for [cancel](#cancel-a-stuck-task). Until `task:publish` pushes that commit, the group keeps its VM.
-- An open Operation on the VM itself, such as a resume, keeps the VM.
-- A `parked` VM gets its resume admitted. A later pass saves it once it runs.
-
-The save is one Ansible phase on the VM. It commits the workspace changes that Git tracks or would track as `Save the idle workspace`, by Orbit, checks that the workspace is clean, and bundles the head. Node 209 pushes that commit to the save branch `task-<id>-idle`, which holds only the latest save. A failed read, commit or bundle fails the whole save, so nothing is pushed.
-
-The push token is minted when the push runs and never reaches the VM. It has `contents: write` only. GitHub runs the `push` workflows that a pushed commit defines, so a save that adds or changes a file under `.github/workflows/` is refused with `tasks.workflows_permission` rather than pushed with a broader token. The workflows on `main` and the repository rulesets do not cover the save branch.
-
-The save holds what the next claim restores: the committed workspace. It does not hold files that `.gitignore` excludes, the content of a nested Git repository (a clean one is saved as a gitlink, a dirty one fails the save), stashes, other local branches, or the Pi session of the VM. The save commit stays in the workspace, also when the push or the release does not follow, and the next turn continues on top of it.
-
-The Gateway records the saved commit on the group, then admits the [release](/reference/compute-drivers#release-a-task-vm) of the VM, as publication does. A failed save keeps the VM. It is no activity of the group, so the next pass saves again. After three saves in a row that fail, are cancelled or are interrupted, the idle release stops for that group.
-
-A save refused for changing a workflow stops the idle release at once, because a retry changes nothing; a turn and a publish carry that work. The group then asks for `failure` assistance, and the VM keeps its place. The driver's next Operation starts the count again.
-
-The next claim compares the save with the head it would start from: the task branch head for a turn.
-
-| The save | Turn |
-| --- | --- |
-| Holds work beyond the head | Starts from the save |
-| Is in the head, or is the head | Starts from the head |
-| Has moved apart from the head | Refuses with `tasks.idle_save_diverged` (409) |
-| Cannot be compared | Refuses with `tasks.idle_save_unreadable` (503) |
-| Its branch is gone and the head holds it | Starts from the head |
-| Its branch is gone and the head lacks it | Refuses with `tasks.idle_save_missing` (409) |
-
-A turn that starts from the save continues where the group stopped. A diverged save stays on `task-<id>-idle`, and the next save cannot overwrite it. Merge that branch into the task branch, with `-s ours` to drop the save, then try again. An unreadable comparison starts nothing; try again. For a missing save, push the commit that `details.saved_commit` names to `task-<id>-idle` again, or merge it into the task branch, and try again. When that commit is lost, cancel the group. Delete a save branch only after its group ended.
-
-A check or a publish needs the fresh workspace first and returns `tasks.no_workspace` until a turn claims it. The save branch stays on origin after the group ends, and a person deletes it then.
+The idle release and its save, `tasks.idle_save`, are removed with the task VMs. A task copy stays until its group ends, so its work needs no save. The columns `idle_saved_commit` and `idle_saved_at` stay on old groups; nothing reads them. A save branch `task-<id>-idle` that an old save pushed stays on origin until a person deletes it.
 
 #### Keep command output out of run history
 
@@ -279,75 +242,21 @@ The result retains `outcome`, `deliverables`, `check_id`, `commit`, `head`, `tre
 
 #### Run a tracked repository script
 
-Task VMs are removed: this command answers the [refusal](#task-runtime) before it records anything. The text below describes the run as it was.
-
-`POST /api/v1/tasks/{task}/script` starts `tasks.script`. Send `{ "subtask": 123, "script": "scripts/dependencies", "args": ["routine"] }` with a required `Idempotency-Key`. The group must be external and open, with a provisioned task VM and the current open subtask. The Gateway records the owned VM, checkout and literal arguments, then starts `operation-task-script`. Swamp owns placement and execution. The script does not create a check, agent turn, commit, or dependency record.
-
-A script captures its run budget at admission: the history of the kind (see [Native run budgets](/reference/operations#native-run-budgets)). Every SSH step of the workflow ends at that budget. When the Gateway times the script out, it asks Swamp to cancel the run. Ending the group asks Swamp again for any run of the group that outlived its timeout.
-
-`script` is a relative repository path with no empty, `.` or `..` components. HEAD must track it as an executable file (mode `100755`); `git ls-tree` reads that mode before anything runs. Swamp then snapshots the whole workspace and runs the script with the admitted literal arguments. It does not inherit Gateway or worker dispatch credentials.
-
-Arguments are strings, not shell source. There is no caller command, environment, working directory, or interpreter field. Do not put secrets in arguments. The script runs from the repository root with the task account's tools and no Gateway credentials. Repository code owns its commands and version policy.
-
-Read the normal operation endpoint until it ends. A completed script returns `{ outcome, exit_code, output, output_truncated, changed, head, tree }`. `outcome` is `passed` for exit zero and `failed` for nonzero; both are successful operation completions. `output` is the combined stdout and stderr, as a redacted tail of whole lines, at most 16 KiB. `output_truncated` reports discarded output. `changed` compares HEAD and the whole-workspace tree before and after execution. These results are not check evidence or approval; run the existing handoff check before publishing.
-
-Each task group has its own VM and workspace. The run intent carries the workspace path, and every step uses that path. Steps add no ownership tokens, leases or cross-step locks. Native history owns step completion and recovery.
-
-Script runs receive their complete public intent from the Gateway. A worker on Node 209 uses official `@swamp/ssh` to reach the VM's admitted WireGuard address and stored SSH host key. Plain task VMs need no Swamp binary or worker. Every step on the VM is one official `@swamp/ssh exec` argument list; no step copies a script to the VM.
-
-The steps read the entrypoint mode, take the workspace snapshots and run the program as `env -C <checkout> COMPOSER_NO_INTERACTION=1 ORBIT_CHECK_PROCESSES=1 [INERTIA_SSR_PORT=… INERTIA_SSR_URL=…] ./<entrypoint> [args…]` in the SSH account's environment.
-
-A snapshot runs `git read-tree HEAD`, `git add --all` and `git write-tree` against a temporary index at `/tmp/orbit-task-index-<run>`, and `git rev-parse HEAD`; the real index is untouched, and a best-effort step removes the temporary index. TypeScript on Node 209 refuses an unavailable entrypoint before the program runs, and shapes the public result.
-
-The program's output stays out of native history ([command output](#keep-command-output-out-of-run-history)). The Gateway captures the public producer output through the shared subscriber in its terminal history read. Native `assert` checks execution availability; a nonzero script exit keeps its successful Operation completion. No shell step prints the result again, and execution steps make no Gateway requests.
-
-Cancellation uses native Swamp cancel and official SSH session teardown. It does not track or confirm remote descendant termination. A remaining process is removed by normal group cleanup or VM destruction. Native resume does not repeat a successful execution step when later evidence collection resumes. An unavailable tracked executable fails as `tasks.script_unavailable`. Execution keeps its existing limit of one hour; native SSH owns its timeout and connection handling. Repository programs receive no operational credentials.
+`tasks.script` ran a tracked repository script in a task VM workspace. It is removed with the Pi task loop: the route `POST /api/v1/tasks/{task}/script` answers HTTP 404, and the MCP tool `task-script` is gone. No `orbit` command ever started it.
 
 #### Install a private package
 
-Task VMs are removed: this command answers the [refusal](#task-runtime) before it records anything. The text below describes the run as it was.
-
-`POST /api/v1/tasks/{task}/package` starts `tasks.package` with `{ manager, package }` and an `Idempotency-Key`. `manager` is `composer` or `npm`. `package` is a name with an optional version constraint, such as `acme/ui:^1.2` or `@acme/ui@2.1.0`; it starts with a letter, a digit or `@`, so it is never an option. The MCP tool is `task-package`. There is no `orbit` command.
-
-An agent that cannot resolve a private package ends its turn `blocked` with the package as its question. That is assistance, and nothing else happens. The orchestrator decides, starts this install, and resolves the assistance.
-
-Admission needs an open external group with its owned task VM workspace and refuses other active work on the group. It records the request and names the vault keys of the dependency configuration. It mints no token. The run asks the Gateway for a read token (`purpose: dependencies`), writes the Composer and npm configuration of the task account from it, runs one `composer require --no-scripts` or `npm install --ignore-scripts` in the checkout, and removes both files. The package is `$0` of a fixed command, so no shell parses it.
-
-The package manager changes the manifest and the lock file in the workspace; nothing is committed. A failed install, or a failed removal, fails the run with `tasks.package_failed`. The removal step also revokes the token, so a command that echoed it holds a dead one. The result names the outcome in `dependency_token`: `revoked`, `none` (GitHub answered 401) or `unrevoked` with the reason. An `unrevoked` token does not fail the run. A cancelled run keeps the files until the token expires or `task:cancel` removes the VM.
+`tasks.package` installed a private package in a task VM workspace. It is removed with the Pi task loop: the route `POST /api/v1/tasks/{task}/package` answers HTTP 404, and the MCP tool `task-package` is gone. No `orbit` command ever started it.
 
 #### Run an external turn
 
-`task:turn <task> --role=implementer|reviewer|consult --prompt=TEXT [--thread=new|ID]` starts `tasks.turn` through `POST /api/v1/tasks/{task}/turn`. Without `--thread`, a [task copy](#task-copy) turn continues the role's thread. A group that owns no copy gets the [refusal](#task-runtime) of the removed task VMs; the rest of this section describes the task VM turn as it was. Optional `--model` selects a new thread's model. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs.
+`task:turn <task> --role=implementer|reviewer --prompt=TEXT [--thread=new|ID] [--check=ID]` starts a turn through `POST /api/v1/tasks/{task}/turn`. The turn runs in the group's [task copy](#task-copy) as `tasks.copy_turn` ([chart](/cli/task/turn#in-a-task-copy)). Without `--thread`, it continues the role's thread. `--check=ID` is required for a reviewer turn. The CLI follows the operation and accepts `--idempotency-key` and `--json`; the PHP SDK and generated MCP tool expose the same inputs. A group that owns no copy gets the [refusal](#task-runtime) of the removed task VMs.
 
-While a group's `tasks.provision` Operation waits for a place or runs, the group is not provisioned. Every other admission on it then returns HTTP 409 `tasks.not_provisioned`. That covers a turn, a check, a publish, a script, a package install, a sync, a maintenance run and a proof on the group's VM. `details.operation_id` names that Operation; follow it and repeat the call once it succeeds. Any other open Operation on the group still returns `operation.target_busy`.
+The role `consult` and the field `model` were options of the Pi turn on a task VM, which is removed with the Pi task loop. A request with either answers HTTP 422 `validation.failed` on that field and records nothing. The route's Operation kind for an `Idempotency-Key` is `tasks.copy_turn`; a retry keeps the fingerprint it had before.
 
-A parked VM is woken by the admission of a turn, a check, a publish or a script, which returns HTTP 409 `tasks.vm_resuming`; repeat the call once the VM runs. While a [fleet reboot](/reference/gateway-recovery#fleet-reboot) pass drains the VM's host, the same admissions return HTTP 409 `tasks.host_rebooting` and start nothing; repeat the call after the pass. The resume is its own Operation and does not take the Idempotency-Key of the call, so a keyed call can be repeated with the same key.
+While a group's `tasks.provision` Operation waits for a place or runs, the group is not provisioned. Every other admission on it then returns HTTP 409 `tasks.not_provisioned`. `details.operation_id` names that Operation; follow it and repeat the call once it succeeds. Any other open Operation on the group still returns `operation.target_busy`.
 
-The Gateway admits the request and starts the native `operation-task-turn` workflow. A missing workspace returns HTTP 409 `tasks.no_workspace`. A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. A worker on Node 209 runs the turn. The full intent supplies the group's VM workspace path and admitted SSH target; official SSH performs each workspace action. Pi API actions run on Node 209 with the existing vault-backed VM token. Swamp owns cancellation and the Pi session without adding a cross-step lock.
-
-Pi HTTP actions run as bounded native curl commands on the Swamp worker. curl reads the Pi token from its own environment, never from argv, and redirects fail. The worker needs only `sh`, `curl` and `awk`: `awk` keeps at most 1 MiB of recent stream events in the run's private worker directory. The terminal reader returns available usage, nullable cost, and at most 256 KiB of recent redacted transcript entries. A marker names omitted history.
-
-Receipt and diff files are downloaded to the same directory, and TypeScript readers redact them with the repository redaction rule before they enter native history. Parser errors can quote private input, so a failed step reports only one fixed code, such as `tasks.pi_event_invalid` or `tasks.difference_invalid`.
-
-The final `outcome` step uses a native assert over the typed turn result after required cleanup. The Gateway captures the complete public output of `shape_result` in the same terminal history read, without a shell step that prints it again. A failed Pi turn retains its public evidence and refusal code. A later cleanup failure keeps the Operation failed while retaining the completed Pi observation on the thread.
-
-| Input | Rule |
-| --- | --- |
-| `thread` | `new`, or a thread of this group with the same role. A consult uses a reviewer thread. Another thread returns 422 `tasks.thread_role_mismatch` |
-| `model` | Only for a new thread; a continued thread returns 422 `tasks.model_fixed`. Claude returns 422 `tasks.model_refused`. A model unavailable on the VM fails the operation with `model.unavailable` |
-| `check` | An [eligible checked candidate](#check-an-external-group) for this subtask, including hosted CI when required; otherwise 422 `tasks.commit_not_checked`. HEAD must equal its commit, or 409 `tasks.head_moved` |
-
-Separate native steps capture workspace evidence, create `.git/orbit` and remove an earlier `receipt.json` with pinned `@swamp/ssh exec` argv, create or continue the Pi session, send the turn with key `operation-{id}`, and observe one Pi event stream. The turn copies no file to the task VM. The session attaches to the subtask and appears on the board. Orbit supplies only its fixed instructions: no fetch or push by the agent, a read-only reviewer, the [turn receipt](#turn-receipt) schema, and the workspace MCP configuration. Orbit adds no rubric, reminder, or nudge.
-
-The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
-
-When the turn ends, Swamp returns its receipt and measurements. The Gateway projects thread state and metrics without acting on the receipt outcome. A `blocked` receipt starts no consult and creates no question or assistance. No receipt produces `receipt: null` and `receipt_error: null`. A receipt that breaks the [schema](#turn-receipt) produces `receipt: null` and one fixed `receipt_error`; the turn itself still succeeds. The result includes the receipt's outcome, summary, deliverable confirmations, question and cause; the thread ID and final state; HEAD and the full working-tree hash before and after the turn; token metrics, nullable cost, and the recorded transcript.
-
-After a reviewer turn, Orbit records the checkout difference, resets to the check's commit, and removes untracked files. The result includes the removed difference and the state after reset. A consult is read-only but keeps the implementer's uncommitted tree: Orbit records its difference and never resets it.
-
-A Pi restart leaves the turn `working` while Durable resumes it. Durable retries transient provider errors inside that turn; the Gateway retries none. A crash loop at Durable's restart limit or an exhausted provider retry budget ends the thread and operation `failed`, with the error in the result. Orbit raises no assistance for the external group. New task VMs need the [Durable artifact pin](/reference/pi-server#roll-out-a-new-binary).
-
-Direct turn cancellation uses native Swamp cancellation and official SSH session teardown. It does not prove that the Pi session or remote descendants stopped. Normal group cleanup or VM destruction removes remaining work. A failed or disconnected Pi stream takes the separate interrupt action once before collecting a failed result. Native resume reuses completed steps, including the keyed message send; it adds no Gateway poller or ownership machinery.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission puts the title, brief and deliverables of the subtask in front of the prompt of the caller, for every role, and records that text as the admitted prompt. A composed prompt over 100000 characters returns 422 `tasks.prompt_too_large`.
 
 #### Publish an external group
 
@@ -530,7 +439,6 @@ The task and subtask operations return these errors.
 | `tasks.not_provisioned` | 409 | Other work on a group while its `tasks.provision` Operation waits or runs. `details.operation_id` names it |
 | `tasks.subtask_not_running` | 409 | A subtask cancel that the rules above do not permit |
 | `tasks.subtask_interrupt_failed` | 502 | Orbit could not stop the implementer or the check |
-| `tasks.agent_driver_unavailable` | 409 | The configured agent driver is unknown. No task is stored |
 | `tasks.agent_transcript_unavailable` | 409 | A transcript request for a stored `t3` task thread. The row stays, and no stream opens |
 | `tasks.github_app_required` | 422 | Create for a Project with `source_access: gh_cli`. No task is stored |
 | `validation.failed` | 422 | An invalid field, such as a deliverable or a position outside the `todo` subtasks |
@@ -831,7 +739,7 @@ A resolution clears group assistance only when its kind, question, and reason ma
 
 ### Behavior names
 
-The local and data steps of `tasks.script` and `tasks.check` are named by the task VM: the name ends in the address of the VM (its WireGuard address). Addresses come from a bounded pool and are reused, so the set of names stays fixed. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
+The local and data steps of `tasks.check` on a task VM were named by the task VM: the name ends in the address of the VM (its WireGuard address). Addresses come from a bounded pool and are reused, so the set of names stays fixed. Swamp keeps one data lock per behavior name. A fixed name would make runs on different VMs wait for each other, and a long step such as the `observe` step of a turn would hold the lock for the whole stream.
 
 The SSH steps keep their node id. An SSH definition holds the host keys and the identity of one VM, and the address returns to the pool for the next VM, so a name on the address would rewrite that definition. The Node id of a task VM is never reused.
 
@@ -1028,13 +936,9 @@ Orbit reserves the thread row before it starts the conversation, so the opening 
 
 ### Drivers
 
-A driver translates Orbit's thread operations for one agent runtime. A turn in a task VM runs on the `pi` driver. A turn in a [task copy](#task-copy) runs on T3 instead: Swamp runs stock `t3 thread start` or `t3 thread send` in the copy as user `agent`, and the thread records the driver `t3`. When the turn's projection commits, the copy's T3 thread and its title go to the [Conn thread index](/reference/conn#thread-index), so a device lists it at once. The Project's [`nested_fleet`](/reference/projects#nested-fleet-setting) setting chooses between the two.
+A turn runs in a [task copy](#task-copy) on T3: Swamp runs stock `t3 thread start` or `t3 thread send` in the copy as user `agent`, and the thread records the driver `t3`. When the turn's projection commits, the copy's T3 thread and its title go to the [Conn thread index](/reference/conn#thread-index), so a device lists it at once. A caller never supplies a runtime URL. A thread takes its [copy turn agent](#copy-turn-agents).
 
-`ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER` and `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` select the driver of each role on a task VM, and both default to `pi`. Every new task stores those values, a task copy's too. The Gateway registers `pi` and no other task-agent driver, and a copy turn does not use the registry. Any other value, `t3` included, returns `tasks.agent_driver_unavailable` and stores no task.
-
-A managed task whose stored driver is not `pi` does not start or resume an agent turn. A task copy stores `pi`, and its `t3` threads do not use the driver registry: a copy turn starts or continues them with T3's own CLI. A caller never supplies a runtime URL. An unsupported operation fails explicitly. [Task agents run on Pi](#task-agents-run-on-pi) explains why.
-
-A task VM thread takes its effort from `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT` in the Gateway's `.env`, default `medium` and `high`, and its model from the task's `implementer_model` or `reviewer_model`. The Gateway reads the effort when it creates a thread, so a change applies to the next thread of every open task; an existing thread keeps its stored `effort`. A thread in a [task copy](#task-copy) takes its [copy turn agent](#copy-turn-agents) instead.
+The `pi` driver ran turns on task VMs and is removed with the Pi task loop. Threads of old groups keep the driver `pi` and stay readable. A completion or cancel of such a group interrupts nothing, because the task VM and its Pi server are gone. A new task still stores `pi` in its `implementer_agent_driver` and `reviewer_agent_driver` columns, which nothing reads; the Gateway reads none of `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER`, `ORBIT_TASKS_IMPLEMENTER_EFFORT` or `ORBIT_TASKS_REVIEWER_EFFORT`.
 
 ### Copy turn agents
 
@@ -1081,6 +985,8 @@ Swamp records a redacted transcript with each terminal turn result. The Gateway 
 Swamp selects a subtask, role, brief and operation key for each turn. The Gateway performs that turn and records its thread and receipt. It never routes the next turn or interprets a receipt as permission to start other work.
 
 ### Fetch before a turn
+
+This section and [Turn receipt](#turn-receipt) describe the Pi turn on a task VM, which is removed with the [Pi task loop](/reference/old-paths#the-pi-task-loop). A copy turn fetches nothing and writes no receipt ([chart](/cli/task/turn#in-a-task-copy)).
 
 A keyed turn fetches the default branch before it starts or sends agent work. The operation records its workspace and review baseline so recovery uses the same context.
 
@@ -1222,7 +1128,7 @@ Each line of the summary and of a part's output is at most 300 bytes. A longer l
 
 ## Review a subtask
 
-Swamp can request a reviewer turn through `tasks.turn`. The Gateway records the turn's output without approving a subtask, appending findings work, starting another reviewer or publishing a PR.
+Swamp can request a reviewer turn through `task:turn`. The Gateway records the turn's output without approving a subtask, appending findings work, starting another reviewer or publishing a PR.
 
 ### Reviewer outcomes
 
@@ -1599,8 +1505,6 @@ These Gateway environment keys configure the extension.
 
 | Environment key | Meaning |
 | --- | --- |
-| `ORBIT_TASKS_IMPLEMENTER_AGENT_DRIVER`, `ORBIT_TASKS_REVIEWER_AGENT_DRIVER` | The drivers of new tasks. Both default to `pi`. Any other value is `tasks.agent_driver_unavailable` |
-| `ORBIT_TASKS_IMPLEMENTER_EFFORT`, `ORBIT_TASKS_REVIEWER_EFFORT` | The effort of new task VM threads, default `medium` and `high`; a task copy does not read them. See [Drivers](#drivers) for when changes apply |
 | `ORBIT_TASKS_COPY_IMPLEMENTER_PROVIDER`, `ORBIT_TASKS_COPY_IMPLEMENTER_MODEL`, `ORBIT_TASKS_COPY_IMPLEMENTER_EFFORT`, and the same three for `REVIEWER` | The Gateway's [copy turn agent](#copy-turn-agents) of each role, the last fallback after the task and the Project. Defaults: `claude`, `claude-opus-5-5`, and `medium` for the implementer or `high` for the reviewer |
 | `ORBIT_TASKS_GITHUB_REVIEWERS` | Trusted reviewer account IDs per repository, `owner/repo:id,id;owner/repo:id`. Unset or empty trusts no one. See [Trusted GitHub feedback](#trusted-github-feedback) |
 | `ORBIT_TASKS_REVIEW_REQUEST_LOGINS` | Comma-separated GitHub logins requested as reviewers when a task pull request is opened or reused. Unset or empty requests no one. The pull request author is skipped |
@@ -1781,13 +1685,15 @@ The thread spent the tokens, so the split lives there. A total alone does not sh
 
 ### Task agents run on Pi
 
+This section is history. Task VMs and the Pi task loop are removed, and every turn runs in a task copy on T3 ([Drivers](#drivers)).
+
 Host T3 task threads ran as the operator's Unix user and had that user's full access. Pi task agents run as a dedicated `orbit-agent` account. The operator approved that split on 2026-10-01. T3 Code stays installed as the operator's own tool.
 
 Anthropic permits Claude subscription credentials only in its own applications, also when a proxy such as CLIProxyAPI relays them. Task agents therefore cannot use Claude, and they do not keep a second runtime to reach it. One driver, Pi, owns implementers and reviewers on a task VM. A task copy runs its implementer and reviewer turns with T3's own CLI as `agent`, as [Swamp drives T3](/reference/development-containers#swamp-drives-t3) describes. This serves [one way, one name](/mission#principles) and [no exceptions and no legacy](/mission#principles).
 
 Keeping T3 as a selectable driver would keep two restart rules, two metric paths, and two archive paths. Pi owns restart recovery and reports usage on its sessions. Swamp has no T3 metric collector or thread archive.
 
-Each role keeps its driver setting, with a `pi` default, because deployment selects Pi explicitly. A different configured driver fails before a new task is stored.
+Each role kept its driver setting, with a `pi` default, because deployment selected Pi explicitly.
 
 Finishing an open T3 task turn would preserve the second runtime, so a managed task that records a driver other than `pi` never starts or resumes an agent turn. The operator cancels or replaces it. Deleting its thread row, metrics, or `t3_*` columns would erase the record of work that already ran, so that history stays. A transcript request returns HTTP 409 `tasks.agent_transcript_unavailable` rather than contacting T3. Pi session files stay on the Node; Orbit keeps their thread rows and metrics too.
 
@@ -1832,9 +1738,7 @@ A lost merge reply fails the operation. A fresh admission for the same PR and he
 
 ## Native Pi turns
 
-Swamp runs task turns on the Swamp role worker and reaches the task VM over SSH. The Gateway admits the group, current subtask, role, model and session, then starts `operation-task-turn`. It records the returned thread state, workspace identities and token metrics. It does not send Pi messages, wait for turns or acquire workspace execution leases. Swamp's native workflow owns placement, locking, cancellation and recovery.
-
-Pi writes and reviews code inside the VM. Swamp clears the old receipt, then sends the prompt and receipt schema with a stable Pi submission key and consumes the Pi event stream until the turn ends. A resumed step uses the same session and submission key. Git snapshots use a temporary index, include untracked files and leave the real index unchanged. The turn trusts the admitted workspace. Reviewer changes are captured and the candidate is restored with Git reset and clean before the result returns. VM provision, readiness and enrollment belong to the task VM workflows.
+Pi turns on task VMs, `tasks.turn` with the workflow `operation-task-turn`, are removed with the Pi task loop. A turn runs in a task copy as [`tasks.copy_turn`](/cli/task/turn#in-a-task-copy).
 
 ### Internal container workspace phases
 

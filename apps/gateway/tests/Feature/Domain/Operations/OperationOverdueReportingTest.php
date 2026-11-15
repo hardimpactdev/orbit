@@ -30,7 +30,7 @@ function overdueReportingOperation(bool $bound = true, int $target = 42): Operat
         'public_ssh_host' => '10.44.0.2', 'wireguard_ip' => '10.44.0.2', 'user' => 'orbit']));
     $node->roles()->firstOrCreate(['role' => 'gateway'], ['status' => 'active']);
 
-    return Operation::query()->create(['kind' => 'tasks.script', 'target_type' => 'task_group', 'target_id' => $target, 'node_id' => $node->id,
+    return Operation::query()->create(['kind' => 'tasks.check', 'target_type' => 'task_group', 'target_id' => $target, 'node_id' => $node->id,
         'input' => ['run_budget_seconds' => 900], 'status' => OperationStatus::Running, 'attempts' => $bound ? 1 : 0,
         'sequence' => 1, 'lock_key' => 'task_group:'.$target, 'started_at' => now(), 'current_step' => 'work',
         'state' => $bound ? ['swamp_run_id' => 'ea55ab37-bcbe-4459-81dc-cbb397e7d870'] : []]);
@@ -138,8 +138,8 @@ it('forwards all cancellations before sixteen slow webhook deliveries', function
         $operation = overdueReportingOperation(target: $target);
         $run = (string) Str::uuid();
         $operation->update(['state' => ['swamp_run_id' => $run]]);
-        $runs[$run] = ['id' => $run, 'workflowName' => 'operation-task-script', 'status' => 'running',
-            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.script'],
+        $runs[$run] = ['id' => $run, 'workflowName' => 'operation-task-check', 'status' => 'running',
+            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.check'],
             'startedAt' => now()->toISOString(), 'completedAt' => null, 'jobs' => []];
     }
     $this->travel(16)->minutes();
@@ -213,10 +213,7 @@ it('keeps the native task timeout floor after a quick success', function (string
         'started_at' => now()->subHour()->subSeconds(56), 'finished_at' => now()->subHour()]);
 
     expect(OperationRunBudgets::historySeconds($kind))->toBe(900);
-    if ($kind === 'tasks.script') {
-        expect(OperationRunBudgets::scriptBudget())->toBe(900);
-    }
-})->with(['tasks.script', 'tasks.check']);
+})->with(['tasks.check']);
 
 it('records overdue_since through the existing failed API response', function (): void {
     $this->travelTo(new DateTimeImmutable('2026-11-11T10:00:00Z'));

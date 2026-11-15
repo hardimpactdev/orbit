@@ -6,22 +6,16 @@ use App\Actions\Tasks\ArchiveAgentTranscriptsAction;
 use App\Domain\Instances\InstanceSourceLayout;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskInsights;
-use App\Domain\Tasks\TaskTurnProjection;
 use App\Infrastructure\AgentView\CacheAgentStateView;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\Ssh\KnownHostsStore;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
-use App\Infrastructure\Swamp\SwampCommandStep;
-use App\Infrastructure\Swamp\SwampConnection;
-use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
 use App\Models\AgentThread;
 use App\Models\Instance;
 use App\Models\Node;
@@ -168,32 +162,6 @@ it('serves the recorded transcript and current activity through JSON and the boa
     Http::assertNothingSent();
 })->with([false, true])->with([false, true]);
 
-it('records terminal cost, transcript, subtask deltas and clears observation errors only once', function (): void {
-    [$group, $thread, $operation, $first, $second] = recordedTaskWorld();
-    $thread->update(['observation_error' => 'Old failure']);
-    $result = ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 140, 'input_tokens' => 100, 'cached_input_tokens' => 10, 'output_tokens' => 30, 'model_calls' => 2, 'peak_context_tokens' => 80, 'cost_usd' => 0.75], 'transcript' => [['id' => 'new', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Turn result', 'at' => '']]];
-    $data = ['run_id' => 'recorded-turn', 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['turn' => json_encode($result, JSON_THROW_ON_ERROR)]];
-    $projection = app(TaskTurnProjection::class);
-    $projection->apply($operation, $data);
-    $projection->apply($operation, $data);
-    expect($thread->refresh()->cost_usd)->toBe(0.75)->and($thread->observation_error)->toBeNull()->and($thread->tokens)->toBe(140);
-    expect($first->refresh()->tokens)->toBe(60);
-    expect($second->refresh()->tokens)->toBe(80);
-    $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Turn result')->assertJsonPath('data.state', 'done');
-    Http::assertNothingSent();
-});
-
-it('preserves usage after a failed continuation without a terminal usage report and exposes recorded cost in insights', function (): void {
-    [$group, $thread, $operation, , $second] = recordedTaskWorld();
-    TaskTurnProjection::recordThread($group->id, $thread->id, ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 140, 'input_tokens' => 100, 'cost_usd' => 0.75]]);
-    $operation->update(['status' => OperationStatus::Succeeded]);
-    TaskTurnProjection::recordThread($group->id, $thread->id, ['state' => 'failed']);
-    expect($thread->refresh()->tokens)->toBe(140)->and($thread->input_tokens)->toBe(100)->and($thread->cost_usd)->toBe(0.75);
-    $group->update(['status' => TaskGroupStatus::Failed, 'ended_at' => now()]);
-    $this->getJson('/api/v1/task-insights')->assertOk()->assertJsonPath('data.current.tokens', 160)->assertJsonPath('data.current.cost_usd', 0.95);
-    Http::assertNothingSent();
-});
-
 it('keeps recorded line counts when the workspace observation is stale or truncated', function (bool $stale): void {
     [$group] = recordedTaskWorld();
     AgentThread::query()->where('task_group_id', $group->id)->get()->each(fn (AgentThread $thread) => $thread->update(['external_id' => 'pending:'.$thread->id]));
@@ -208,15 +176,6 @@ it('keeps recorded line counts when the workspace observation is stale or trunca
     Http::assertNothingSent();
 })->with([false, true]);
 
-it('replaces a known cost with null when a terminal report contains unpriced usage', function (): void {
-    [$group, $thread, , , $second] = recordedTaskWorld();
-    $thread->update(['cost_usd' => 0.75]);
-    TaskTurnProjection::recordThread($group->id, $thread->id, ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 150, 'cost_usd' => null]]);
-    expect($thread->refresh()->cost_usd)->toBeNull();
-    expect($second->refresh()->tokens)->toBe(90);
-    Http::assertNothingSent();
-});
-
 it('derives activity from nested thread references of any open operation', function (string $kind): void {
     [$group, $thread, $operation] = recordedTaskWorld();
     $operation->update(['kind' => $kind, 'input' => ['turns' => [['intent' => ['thread_id' => $thread->id]]]]]);
@@ -225,173 +184,14 @@ it('derives activity from nested thread references of any open operation', funct
     Http::assertNothingSent();
 })->with(['tasks.copy_turn', 'tasks.check', 'future.operation']);
 
-it('clears legacy copied subtask totals and records only later deltas', function (): void {
-    [$group, $thread, , $first, $second] = recordedTaskWorld();
+it('clears legacy copied subtask totals', function (): void {
+    [$group, , , $first, $second] = recordedTaskWorld();
     $group->update(['tokens' => 120]);
     $first->update(['tokens' => 100]);
     $second->update(['tokens' => 100]);
     $migration = require database_path('migrations/2027_01_31_000000_clear_copied_subtask_token_totals.php');
     $migration->up();
     expect($first->refresh()->tokens)->toBeNull()->and($second->refresh()->tokens)->toBeNull()->and($group->refresh()->tokens)->toBe(120);
-    TaskTurnProjection::recordThread($group->id, $thread->id, ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 140]]);
-    expect($first->refresh()->tokens)->toBeNull()->and($second->refresh()->tokens)->toBe(40);
-});
-
-it('records a completed child while its parent is running and deduplicates parent replay', function (string $kind, bool $artifact): void {
-    [$group, $thread, $operation, , $second] = recordedTaskWorld();
-    $root = '986bc349-54dc-4dea-9f22-76e3353d1cb0';
-    $child = '986bc349-54dc-4dea-9f22-76e3353d1cb1';
-    $intent = ['group_id' => $group->id, 'thread_id' => $thread->id];
-    $operation->update(['kind' => $kind, 'input' => ['turn' => $intent], 'state' => ['swamp_run_id' => $root]]);
-    $result = ['state' => 'done', 'subtask' => $second->id, 'metrics' => ['tokens' => 140, 'cost_usd' => 0.75],
-        'transcript' => [['id' => 'child', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Child ended before parent', 'at' => '']]];
-    $workflow = app(DirectOperation::class)->definition($kind)['workflow'];
-    $histories = [
-        $root => ['id' => $root, 'workflowName' => $workflow, 'status' => 'running', 'startedAt' => now()->subMinute()->toISOString(),
-            'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => $kind]],
-        $child => ['id' => $child, 'workflowName' => 'operation-task-turn', 'status' => 'succeeded', 'completedAt' => now()->toISOString(),
-            'inputs' => ['intent' => $intent], 'jobs' => [['name' => 'turn', 'steps' => [
-                ['name' => 'shape_result', 'status' => 'succeeded', 'outputs' => ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]],
-                ['name' => 'outcome', 'status' => 'succeeded'],
-            ]]]],
-    ];
-    $dataId = '9bbf19aa-d4a5-405e-9a43-901fb585a812';
-    if ($artifact) {
-        unset($histories[$child]['jobs'][0]['steps'][0]['outputs']);
-        $histories[$child]['jobs'][0]['steps'][0]['dataArtifacts'] = [['dataId' => $dataId, 'name' => 'result', 'version' => 22]];
-    }
-    $socket = recordedTurnSocket($root, $child, $histories);
-    app()->instance(WebSocketClient::class, $socket);
-    app(SwampConnection::class)->release();
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => '/tmp/unused-test-ca', 'swamp.read_token' => 'fixture-read-token']);
-    try {
-        $reader = app(SwampCommandStep::class);
-        $selector = app(DirectOperation::class)->definition($kind)['terminal_result'];
-        if ($artifact) {
-            expect(fn () => $reader->projectTerminal($operation, ['id' => $root], $selector))->toThrow(ResourceOperationException::class);
-            expect($operation->refresh()->state['native_children'] ?? [])->toBe([]);
-            expect($thread->refresh()->tokens)->toBe(100);
-            $socket->artifactRows = [['id' => $dataId, 'name' => 'result', 'version' => 23, 'content' => ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]]];
-            expect(fn () => $reader->projectTerminal($operation, ['id' => $root], $selector))->toThrow(ResourceOperationException::class);
-            expect($operation->refresh()->state['native_children'] ?? [])->toBe([]);
-            $socket->artifactRows[0]['version'] = 22;
-        }
-        expect(fn () => $reader->projectTerminal($operation, ['id' => $root], $selector))->toThrow(SwampTerminalReadUnavailable::class);
-        expect($operation->refresh()->state['native_children'][$child])->toBeTrue();
-        if ($artifact) {
-            expect($socket->queries)->toHaveCount(3);
-            expect($socket->queries[0]['predicate'])->toBe('id == "'.$dataId.'" && version == 22');
-        }
-        expect($operation->refresh()->status)->toBe(OperationStatus::Running);
-        expect($thread->refresh()->tokens)->toBe(140);
-        expect($second->refresh()->tokens)->toBe(80);
-        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Child ended before parent');
-        TaskTurnProjection::recordTurn($operation, $thread->id, [...$result, 'metrics' => ['tokens' => 180]]);
-        TaskTurnProjection::recordTurn($operation, $thread->id, $result);
-        expect($thread->refresh()->tokens)->toBe(180)->and($second->refresh()->tokens)->toBe(120);
-        Http::assertNothingSent();
-    } finally {
-        app(SwampConnection::class)->release();
-    }
-})->with(['tasks.copy_turn', 'tasks.check'])->with([false, true]);
-
-it('keeps the previous transcript when native cancellation skips finalization', function (bool $expired): void {
-    [$group, $thread, $operation] = recordedTaskWorld();
-    $root = '986bc349-54dc-4dea-9f22-76e3353d1cc0';
-    $operation->update(['state' => ['swamp_run_id' => $root, ...($expired ? ['native_timeout' => []] : [])],
-        'input' => ['group_id' => $group->id, 'thread_id' => $thread->id],
-        'started_at' => $expired ? now()->subHours(2) : now()->subMinute(), 'dispatched_at' => $expired ? now()->subHours(2) : now()->subMinute(),
-        'status' => $expired ? OperationStatus::Failed : OperationStatus::Running,
-        'error_code' => $expired ? 'operation.timed_out' : null, 'lock_key' => 'task-group:'.$group->id]);
-    $result = ['state' => 'failed', 'transcript' => [['id' => 'partial', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Saved before disconnect', 'at' => '']]];
-    $history = ['id' => $root, 'workflowName' => 'operation-task-turn', 'status' => 'cancelled',
-        'startedAt' => now()->subHours(2)->toISOString(), 'completedAt' => now()->toISOString(),
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.turn', 'intent' => $operation->input],
-        'jobs' => [['name' => 'turn', 'steps' => [['name' => 'shape_result', 'status' => 'succeeded', 'outputs' => ['result_json' => json_encode($result, JSON_THROW_ON_ERROR)]]]]]];
-    $socket = new class($history) implements WebSocketClient
-    {
-        private ?array $frame = null;
-
-        private bool $open = false;
-
-        public function __construct(private array $history) {}
-
-        public function connect(WebSocketEndpoint $endpoint, float $timeoutSeconds): void
-        {
-            $this->open = true;
-        }
-
-        public function send(array $message): void
-        {
-            $this->frame = $message;
-        }
-
-        public function receive(float $timeoutSeconds): array
-        {
-            $frame = $this->frame;
-            $this->frame = null;
-            if ($frame === null) {
-                return [];
-            }
-
-            return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => ['data' => $frame['type'] === 'workflow.run.search' ? ['results' => []] : $this->history]]];
-        }
-
-        public function close(): void
-        {
-            $this->open = false;
-        }
-
-        public function isConnected(): bool
-        {
-            return $this->open;
-        }
-    };
-    app()->instance(WebSocketClient::class, $socket);
-    app(SwampConnection::class)->release();
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
-    try {
-        $reader = app(SwampCommandStep::class);
-        $selector = app(DirectOperation::class)->definition('tasks.turn')['terminal_result'];
-        $reader->projectTerminal($operation, ['id' => $root], $selector);
-        expect($thread->refresh()->tokens)->toBe(100);
-        expect($operation->refresh()->status)->toBe($expired ? OperationStatus::Failed : OperationStatus::Cancelled);
-        expect($operation->lock_key)->toBeNull();
-        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Recorded answer')->assertJsonPath('data.state', 'done');
-        Http::assertNothingSent();
-    } finally {
-        app(SwampConnection::class)->release();
-    }
-})->with([false, true]);
-
-it('loads a root turn capture from its recorded result artifact before projecting', function (): void {
-    [$group, $thread, $operation] = recordedTaskWorld();
-    $root = '986bc349-54dc-4dea-9f22-76e3353d1cd0';
-    $dataId = '9bbf19aa-d4a5-405e-9a43-901fb585a813';
-    $operation->update(['state' => ['swamp_run_id' => $root], 'input' => ['group_id' => $group->id, 'thread_id' => $thread->id]]);
-    $result = ['state' => 'done', 'metrics' => ['tokens' => 140], 'transcript' => [['id' => 'root', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Large recorded result', 'at' => '']]];
-    $history = ['id' => $root, 'workflowName' => 'operation-task-turn', 'status' => 'succeeded',
-        'startedAt' => now()->subMinute()->toISOString(), 'completedAt' => now()->toISOString(),
-        'inputs' => ['operation_id' => $operation->id, 'node_id' => $operation->node_id, 'kind' => 'tasks.turn'],
-        'jobs' => [['name' => 'turn', 'steps' => [
-            ['name' => 'shape_result', 'status' => 'succeeded', 'dataArtifacts' => [['dataId' => $dataId, 'name' => 'result', 'version' => 22]]],
-            ['name' => 'outcome', 'status' => 'succeeded'],
-        ]]]];
-    $socket = recordedTurnSocket($root, null, [$root => $history]);
-    $socket->artifactRows = [['id' => $dataId, 'name' => 'result', 'version' => 22, 'content' => json_encode(['result_json' => json_encode($result, JSON_THROW_ON_ERROR)], JSON_THROW_ON_ERROR)]];
-    app()->instance(WebSocketClient::class, $socket);
-    app(SwampConnection::class)->release();
-    config(['swamp.address' => 'swamp.test', 'swamp.ca_path' => __FILE__, 'swamp.read_token' => 'fixture-read-token']);
-    try {
-        app(SwampCommandStep::class)->projectTerminal($operation, ['id' => $root], app(DirectOperation::class)->definition('tasks.turn')['terminal_result']);
-        expect($operation->refresh()->status)->toBe(OperationStatus::Succeeded);
-        expect($thread->refresh()->tokens)->toBe(140);
-        expect($socket->queries[0]['predicate'])->toBe('id == "'.$dataId.'" && version == 22');
-        $this->getJson('/api/v1/tasks/'.$group->id.'/agents/'.$thread->id)->assertOk()->assertJsonPath('data.entries.0.text', 'Large recorded result');
-        Http::assertNothingSent();
-    } finally {
-        app(SwampConnection::class)->release();
-    }
 });
 
 it('breaks insights down by the model of each task\'s first implementer thread, and counts a task without one as Unknown', function (): void {
