@@ -80,9 +80,13 @@ function transform(task: Task, folder: string): Task {
     if (task.name === "Set the folder owners and modes" && command) {
         command.argv = "{{ item if item[0] != 'chown' else ['true'] }}";
     }
-    // The probe needs root and the host's own /proc; the fixture reports every primitive as missing.
+    // The probe needs root and the host's own /proc; the fixture writes a manifest without support, as the helper would.
     if (task.name === "Probe the kernel primitives of the power helper" && command) {
-        command.argv = ["echo", '{"capabilities": {"process_madvise": false}}'];
+        command.argv = [
+            "sh",
+            "-c",
+            `echo '{"supported": false}' > /var/lib/orbit/hibernation/capabilities.json && echo '{"capabilities": {}}'`,
+        ];
     }
     return task;
 }
