@@ -1083,7 +1083,22 @@ contexts:
       stdout_lines:
       - /srv/workspace/.git/orbit-deploy-steps/done/install-root:3333333333333333333333333333333333333333333333333333333333333333
       - /srv/workspace/.git/orbit-deploy-steps/done/broken:short
+  # The swamp role's runtime input: its three worker slots.
+  swamp-workers:
+    rt:
+      swamp:
+        workers: [a, b, c]
 cases:
+- file: tasks/role-swamp.yml
+  task: Check Swamp units
+  field: loop
+  context: swamp-workers
+  expected:
+  - orbit-swamp-serve.service
+  - orbit-swamp-worker-renewal.timer
+  - orbit-swamp-worker@a.service
+  - orbit-swamp-worker@b.service
+  - orbit-swamp-worker@c.service
 - file: tasks/task-vm-fleet.yml
   task: Reconcile the nested Swamp grants
   field: changed_when
@@ -2459,10 +2474,6 @@ non_command_output:
   task: Remove a LAN SSH rule of an earlier hub LAN address
   field: vars.wanted
   reason: Transforms admitted firewall arguments; the observed rule is covered separately.
-- file: tasks/role-swamp.yml
-  task: Check Swamp units
-  field: loop
-  reason: Builds service names from admitted worker slots.
 - file: tasks/task-container-host-system.yml
   task: Install Incus from the recipe
   field: vars.container_incus_debs
