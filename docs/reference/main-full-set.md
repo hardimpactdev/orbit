@@ -18,7 +18,7 @@ The plan installs pinned PyYAML before checking its workflow policy, then loads 
 
 Saved hashes never block this run. Saved costs guide packing; new cases use the table's default estimate. A failed collector runs the whole file instead and names the collection error. Python fixtures run as files. The runner installs the pinned Ansible tools and collections and supplies the pinned Swamp and FrankenPHP binaries after checking their archive checksums. Missing dependencies fail by name.
 
-Python fixtures preserve the interpreter's runtime environment, including `LD_LIBRARY_PATH` from setup-python, while overriding their fixture-specific variables. Container deployment fixtures supply the Gateway's required `steps` list. The mint-order check evaluates copy-only secret reads on the copy path and still rejects an actual GitHub key read before its mint.
+Python fixtures preserve the interpreter's runtime environment, including `LD_LIBRARY_PATH` from setup-python, while overriding their fixture-specific variables. Container deployment fixtures supply the Gateway's required `steps` list. The mint check evaluates which secret a step reads when it runs in a copy and still rejects a GitHub key read before its mint.
 
 Worker-renewal cases use individual hosted costs and are split into bounded units. Costs for censored or unrun cases remain explicit estimates until a complete hosted receipt replaces them; none is removed from the full set.
 
