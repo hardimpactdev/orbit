@@ -1851,10 +1851,6 @@ Deno.test({
       assertEquals(setting("memory_limit"), "1G");
       assertEquals(setting("auto_prepend_file"), bridge);
       assertEquals(tryRestarts().slice(before), ["try-restart --no-block orbit-*.service"]);
-      const again = f.run("start");
-      assert(again.ok, again.output);
-      assertEquals(again.changed, 0, again.output);
-      assertEquals(tryRestarts().length, before + 1);
 
       // The CLI-only file holds the intent's PCOV line. A queue worker is a PHP CLI too: a repair restarts the running units.
       const cliPath = "/etc/orbit/php/php-cli.ini";
@@ -1868,7 +1864,8 @@ Deno.test({
       assertEquals(Deno.readTextFileSync(cli), pcov);
       assertEquals(tryRestarts().slice(before + 1), ["try-restart --no-block orbit-*.service"]);
 
-      // A Project without PHP loses Orbit's file, and the running units restart; a rerun changes nothing.
+      // A Project without PHP loses Orbit's file, and the running units restart; a rerun changes nothing and restarts nothing.
+      // The first build's rerun shows the same for a Project with PHP.
       f.container.php = null;
       f.container.php_cli_ini = null;
       f.write();
@@ -1879,6 +1876,7 @@ Deno.test({
       const stable = f.run("start");
       assert(stable.ok, stable.output);
       assertEquals(stable.changed, 0, stable.output);
+      assertEquals(tryRestarts().length, before + 3);
     } finally {
       f.cleanup();
     }
