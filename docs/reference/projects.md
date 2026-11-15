@@ -63,6 +63,7 @@ A Project stores these fields. API responses, the SDK, and CLI JSON use the same
 | `root` | Repository-relative web root that Instances inherit, such as `public` or `apps/site/public`. It is not the checkout path or the Laravel application directory. |
 | `nested_fleet` | Boolean, default false. While on, the Project's Instances are containers in the nested Incus project, which only `instance:create` makes; do not enable it on a real Project. See [Nested fleet setting](#nested-fleet-setting). |
 | `task_check` | Optional command that task baselines and handoffs run. It defaults to null for every type. See [Project check](/reference/tasks#project-check). |
+| `default_auto_deploy` | Boolean, default true. Whether each new commit of the default branch deploys the Project's container default by itself. See [Automatic development defaults](/reference/deployments#automatic-development-defaults). |
 | `task_workspace_routed` | Boolean, default true. Whether newly created task workspaces get a Route. See [Task workspace routing](#task-workspace-routing). |
 | `review_and_merge` | Boolean, default false. Whether Orbit reviews every push of the Project's tasks, reviews incoming pull requests, and merges reviewed green heads. See [Review and merge](/reference/tasks#review-and-merge). |
 | `merge_check` | The check run that must pass on each [handoff commit](/reference/tasks#handoff-ci) and on a head before Orbit merges it, such as `Required checks`. Null by default; the flow needs it. |
@@ -165,7 +166,7 @@ Change the code in the web app, or send `PATCH /api/v1/projects/{project}` with 
 
 ## Update a Project
 
-Use `project:update` when an existing Project must change its display name, type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, review and merge, or the task agent defaults. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
+Use `project:update` when an existing Project must change its display name, type, slug, repository access URL, source access, default branch, relative web root, task check, task workspace routing, the automatic deploy of its container default, review and merge, or the task agent defaults. The Gateway API accepts `PATCH /api/v1/projects/{project}` with those same fields, including `task_workspace_routed` and `default_auto_deploy`. The PHP SDK sends `UpdateProjectRequest` to that path. Omitted fields stay unchanged; send `task_check: null` to clear the task check. The CLI and the MCP `project-update` tool accept the same fields. The [Update lifecycle](#update-lifecycle) defines source reconciliation. The API, SDK, CLI, activity, Doctor, and validation contracts expose no `main_branch` or `--main-branch` name.
 
 ```bash
 orbit project:update 3 --repository=https://github.com/acme/site.git --default-branch=stable
@@ -185,6 +186,7 @@ orbit project:update 14 --source-access=gh_cli --default-branch=main
 | `root` and `--root` | Changes the effective root of every Instance without its own root. Orbit reprojects the runtime of each such Instance that has a Route. |
 | `task_check` and `--task-check` | Sets the command that task baselines and handoffs run. Send null or `--clear-task-check` to run no check. |
 | `task_workspace_routed` and `--task-workspace-routed=true\|false` | Sets routing for future task workspaces. Existing workspaces keep their recorded mode and Routes. |
+| `default_auto_deploy` and `--default-auto-deploy=true\|false` | Applies from the next minute's check. Off: a new commit no longer deploys the container default; a deploy that runs keeps running. On: the next check deploys the head when the seed is behind. |
 | `merge_check` and `--merge-check=NAME` | Names the check that must pass before Orbit merges, and on each handoff commit. Send null or `--clear-merge-check` to clear it. |
 | `task_implementer_*` and `--task-implementer-*` | Set the implementer defaults of the Project's [copy turn agents](/reference/tasks#copy-turn-agents). Send null or `--clear-task-implementer-agent` to clear them. |
 | `task_reviewer_*` and `--task-reviewer-*` | The same for the reviewer. |

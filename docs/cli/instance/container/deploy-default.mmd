@@ -1,6 +1,5 @@
 sequenceDiagram
-  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Swamp's policy finds the commit when its shared producer is active; the Gateway admits the deployment and records its result. When the charts move into place, this becomes the development branch of the deploy chart. The default of a nested-fleet Project deploys after each Gateway release instead, with its inner fleet: container/fleet-refresh.mmd.
-  %% Delivered state, 2026-11-11: the independent development tick (#3331) was reverted. Development auto-deploy stays in the shared automatic-deploy producer and depends on its policy setting. A Gateway release does not deploy development defaults. A clone starts at the last successfully deployed seed; instance:deploy on the container default explicitly refreshes it. The independent container-default policy remains the target.
+  %% Target design, container runtime (ADR 0250 step 3, docs/reference/development-containers.md#the-default-instance): the automatic development deployment of docs/reference/deployments.md, in the default Instance's container. Each new commit of the default branch deploys the container default once: the Gateway checks the branch head before it starts development policy; Swamp keeps the retry and admission state. The default of a nested-fleet Project never takes this path: it deploys after each Gateway release, with its inner fleet: container/fleet-refresh.mmd. When the charts move into place, this becomes the development branch of the deploy chart.
   %% status: draft
   %% command: none · automatic deployment policy
   %% kind: instance.deploy
@@ -13,9 +12,20 @@ sequenceDiagram
   participant SW as Swamp<br/>policy · execution
   participant N as app-dev Node<br/>reached over ssh
   participant C as Container<br/>default Instance
-  Note over SW: Policy tick finds a commit<br/>native schedule
-  %%> What it does:
-  %%> - Swamp's automatic deployment policy reads the default branch head and the checks, as it does today; it owns discovery, backoff and the retry limit
+  loop every minute
+    Note over GW: Check eligible defaults<br/>recorded placement and seed
+    %%> What it does:
+    %%> - selects only active container defaults with active app-dev placement whose Project has default_auto_deploy on and no nested fleet, using the automatic admission eligibility rule
+    %%> - skips a default whose last policy result is commit_failed for this head, so a failed commit starts no run
+    %%> - reads each eligible Project's default branch once through the cached source reader; no environment-template refresh
+    alt seed matches branch head
+      Note over GW: Nothing to deploy<br/>no Swamp run
+    else default is behind
+      GW->>SW: Run development policy<br/>only the selected Instance IDs
+      %%> What it does:
+      %%> - shares the retained behavior identity and development state; keeps pending admissions, backoff and retry limits
+      %%> - never discovers or admits production work; the production schedule and its pause stay unchanged
+      %%> - one deploy at a time: an open Operation on the default reports deploying or busy; the next run takes the newest head
   SW->>GW: Admit the deployment<br/>instance:deploy-automatic
   %%> What it does:
   %%> - the Gateway admits `instance.deploy` for that exact commit, with the Instance lock and a repository read token in the vault
@@ -88,4 +98,6 @@ sequenceDiagram
     %%> Result:
     %%> - a step that waited 60 s for a behavior lock and never ran records `instance.deploy_lock_timeout`, not the step's own code
     %%> - no new seed snapshot is taken, so clones keep starting at the last commit that deployed; Swamp's policy retries after its backoff
+  end
+  end
   end

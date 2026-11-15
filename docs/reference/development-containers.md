@@ -27,7 +27,7 @@ covers:
 
 Every development Instance runs in one unprivileged Incus system container on its `app-dev` Node. The container holds the Instance's checkout, its app and Processes, and, except in the default Instance, a T3 server with Claude Code and Codex. It has no WireGuard identity, no roles and no Node record. Orbit reaches it from its Node with `incus`, and users reach it through its Route and its T3 server.
 
-Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch. Clones start from its last successfully deployed seed, with that seed's dependencies installed. See the [delivered automatic-deployment state](/reference/deployments#automatic-development-defaults). The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
+Every new Instance is a ZFS clone of the Project's default Instance on the Node, and its database is a clone of the default Instance's database. The default Instance is the only one built from scratch, and it deploys each new commit of the default branch [by itself](/reference/deployments#automatic-development-defaults), so clones start at the current default branch with its dependencies installed. A nested-fleet default deploys after each release instead. The default Instance never runs T3, so each clone starts T3 for the first time and gets its own T3 identity.
 
 A task runs in such a container too. There is no separate task container: the same container has two [drivers](#drivers), a user in Conn and Swamp for a task. A Project may turn on a [nested fleet](#nested-fleet), which Orbit needs for its command proofs.
 
@@ -915,13 +915,13 @@ A stale projection mark is repaired only for an active default on an active app-
 
 All Routes targeting the Instance must be active and published, with no failure, placement transition, replacement or target-set change. No unfinished Instance or Route publication and no retained publication hold may remain. A non-web Project without a Route counts as complete.
 
-After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Automatic deployment depends on the [shared producer and policy setting](/reference/deployments#automatic-development-defaults). Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. A step with [inputs](/reference/deployments#step-inputs) is skipped when they and its command are as at its last passed run in the workspace; its record is in the workspace's `.git/orbit-deploy-steps`, so a clone keeps it with the files it describes. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
+After that, [`instance:deploy`](/cli/instance/deploy) explicitly deploys the default branch. Each new commit of the default branch also deploys it [by itself](/reference/deployments#automatic-development-defaults), unless the Project turned `default_auto_deploy` off. Orbit pushes the new commit in, checks it out, and runs the development deploy steps in the container. A step with [inputs](/reference/deployments#step-inputs) is skipped when they and its command are as at its last passed run in the workspace; its record is in the workspace's `.git/orbit-deploy-steps`, so a clone keeps it with the files it describes. Before that snapshot, a Node/Vite default converts an old shared Node store once as `orbit`, without restarting a Process.
 
 A converted store replaces the same-commit seed too: an immutable old snapshot cannot inherit a later filesystem change. Until this explicit deploy, clones of an old seed still convert their own store correctly.
 
 After a deployment passes, Orbit stops the default's Processes for a moment and takes the snapshot `seed-<commit>`. It retakes the snapshot at the same commit too, so a clone gets the default's current caches and built files. Clones copy from that snapshot, so they never see files half written. The [deploy chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/instance/container/deploy-default.mmd) has the steps. The default Instance runs no T3 and no agent: a thread always starts in a new Instance.
 
-A default sleeps like any other development container: after one idle window with no traffic, the [idle sleep](#sleep-and-wake) freezes it and its memory goes to swap. A visit to its Route, a deployment, or [`instance:wake`](/cli/instance/wake) wakes it. A clone or task copy does not wake it: the copy comes from the seed snapshot, which needs no running container.
+A default sleeps like any other development container: after one idle window with no traffic, the [idle sleep](#sleep-and-wake) freezes it and its memory goes to swap. A visit to its Route, a deployment, or [`instance:wake`](/cli/instance/wake) wakes it. After an automatic deployment it may sleep again at the next sweep. A clone or task copy does not wake it: the copy comes from the seed snapshot, which needs no running container.
 
 #### A retake keeps the seed
 
@@ -1483,7 +1483,7 @@ An Instance sleeps only when no row of this table keeps it awake. The sweep chec
 | `watch_starting`, `watching` | The sweep has not yet watched it for one idle window. |
 | `http_active` | Its Route's access log changed within the window. |
 | `woke_recently` | A wake of it ended within the window; for a nested-fleet clone, also the [start](#a-stopped-nested-fleet-clone-starts) a wake takes. |
-| `deployed_recently` | A deployment of it ended within the window. A release refresh resumes a nested-fleet default; it gets a full window before the next freeze. |
+| `deployed_recently` | A deployment of it ended within the window. A release refresh resumes a nested-fleet default; it gets a full window before the next freeze. An [automatic deployment](/reference/deployments#automatic-development-defaults) does not count: a new commit alone keeps no default awake. |
 | `t3_unreadable` | Its T3 server cannot be read. |
 | `t3_turn_running` | A turn runs, or a run waits for a delegated thread or a background task. |
 | `t3_active` | Its newest user message, turn end, or request that waits for the user is within the window. |
@@ -1565,7 +1565,7 @@ The [agent development servers](#agent-development-servers) site on port 444 has
 
 **What wakes an Instance.** A visit to its Route, a deployment of it, and [`instance:wake`](/cli/instance/wake). A default with no visitor stays asleep until one of them comes. A clone or task copy of an asleep default does not wake it: the copy comes from the seed snapshot. A deployment that starts or resumes the container removes the asleep marker once its `start` part passed (the container runs and its units are active; there is no web probe), so the Route serves the app again; its result records `power_state` `running`.
 
-The end of a deployment counts as activity, like the end of a wake: the Instance stays awake with `deployed_recently` for one idle window, then sleeps when nothing else keeps it awake.
+The end of a deployment counts as activity, like the end of a wake: the Instance stays awake with `deployed_recently` for one idle window, then sleeps when nothing else keeps it awake. An automatic deployment of a default is the exception: it does not count, so the default sleeps again at the next sweep when nothing else keeps it awake.
 
 **While asleep.** Schedules run only while the container runs (decided 2026-11-12): Schedules in the container do not run, and a scheduler or queue Process in a sleeping container waits until the wake. A Process that must keep running gets `keep_alive`, which keeps the whole container awake. At the resume, systemd timers that came due during the freeze run at once. Other Operations that need the running container refuse it with `process.target_inactive` or `schedule.target_inactive`. Env, mail and Node service updates and the task workspace read `power_state`. Process and Schedule work on the Node refuses a container that is not `Running`, and Incus reports a frozen one as `Frozen`.
 
