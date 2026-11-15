@@ -15,6 +15,7 @@ Check this page before you build on something. Each row is code that still runs,
 | --- | --- | --- |
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` key prefixes in the create's declared copies, the Gateway grants, the create workflow's input pattern and `ContainerDestroyExecutionCopies` | The one-line launch copy `instance-create-launch-<operation>`; the bare copies are not written | When no Instance created on release 2079 or 2084 is left (the destroy deletes their copies) |
 | The `<name>-topology-seed` clone name in `TaskVmSlotRuns::seedClone` for VMs without a place number | Every start's VM has a place and a `<name>-seed` clone | When no VM of the old pool (`tvm-610`, `tvm-663`) is live |
+| The kind `task_vm.image_refresh`: `TaskVmImageRefreshIntent`, its projection, the workflow `operation-task-vm-image-refresh` and its children. Nothing starts it since its release step, daily schedule and artisan commands were removed | The [refresh after a release](/reference/development-containers#refresh-after-a-release) of the nested-fleet default Instance | One release after the release without its triggers, with the task VM lifecycle kinds |
 | `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
 | The `certificate`, `pi_port`, `control_ip` and `gateway_ip` of a task start identity: the CA files and the three `identity.env` lines (`ORBIT_PI_PORT`, `ORBIT_CONTROL_IP`, `ORBIT_GATEWAY_IP`) a task start still writes | The boot phase of the base converge (`boot.trust`) bakes the CA and the firewall into the base; the `orbit-identity` unit mounts its own share | When both hosts' bases are refreshed after the boot phase merged |
 | The project names in `TaskVmHostLeftovers::RetiredProjects` (`orbit-baselines`, `orbit-measure-nr`) and `ImageProjects` (`orbit-proto`) | Nothing: the refresh's `host-clean` phase removes them from every host | When no task VM host has them |
@@ -33,7 +34,7 @@ This section describes the live Orbit fleet, not the code. On 13 November 2026 t
 
 | Part | Comes back as |
 | --- | --- |
-| Task VMs (0 task places on every host) and their image refresh (held on every host) | Tasks that start from the Orbit container's snapshot |
+| Task VMs (0 task places on every host) and their image refresh (held on every host, and nothing starts it) | Tasks that start from the Orbit container's snapshot |
 | Proof CI in a VM (the repository variable `ORBIT_PROOF_ENABLED` is unset) | Proof on a copy of that snapshot |
 | Automatic deploys of development Instances | One deploy per new commit, for container defaults only |
 | The nightly fleet reboot (`ORBIT_FLEET_REBOOT=false`) | The same pass, after one safe test |

@@ -698,7 +698,7 @@ Serve and each worker also run with their own `TMPDIR` in their state directory,
 
 A new Swamp release reaches serve and its workers through the role, with one restart in a quiet moment.
 
-1. Merge the pin change in the recipe and the other pins. Each task VM host then refreshes its base snapshot.
+1. Merge the pin change in the recipe and the other pins. No task VM host refreshes its base snapshot from it: the refresh has no trigger any more.
 2. Converge the role: `orbit node:role:add <node> swamp --converge`. Nothing restarts; the running processes keep their release.
 3. When `operation:list --status=running` is empty, restart serve, which drains in-flight runs, then all three workers: `systemctl restart orbit-swamp-serve`, then `systemctl restart orbit-swamp-worker@a orbit-swamp-worker@b orbit-swamp-worker@c`. Each worker waits for serve's `/ready` before it connects.
 4. Check that each process runs the pinned file (`readlink /proc/<pid>/exe`).

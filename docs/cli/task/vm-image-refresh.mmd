@@ -20,7 +20,7 @@ sequenceDiagram
   %%> - a CI-only host permits its own refresh proof, pinned to that host; Sabre refresh proves on Sabre and never spills onto another host
   %%> - one run per host; a host with a refresh open keeps it, and a second admission returns it; no commit waits behind it
   alt host has an image refresh hold
-    Note over GW: Skip held host<br/>skipped:operator_hold
+    Note over GW: Refuse held host<br/>task_vm.image_refresh_held
     %%> Result:
     %%> - an admission, including --from-stock, refuses with task_vm.image_refresh_held; no Operation is created or queued
     %%> - the host keeps serving its last promoted snapshot; an admitted refresh is unchanged

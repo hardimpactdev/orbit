@@ -3,7 +3,7 @@ title: "Compute drivers"
 description: "Incus task VMs for every Project."
 covers:
   - apps/gateway/{app/{Domain/TaskVms,Infrastructure/TaskVms,Jobs/TaskVms,Actions/TaskVms,Domain/Compute}/**}
-  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php,Console/Commands/ResolvesTaskVmHostNode.php}
+  - apps/gateway/app/{Models/TaskVm.php,Models/TaskVmImageBuild.php,Console/Commands/*ImageBuildsCommand.php,Console/Commands/PrepareTaskVmHubCommand.php}
   - apps/gateway/{app/Infrastructure/MachineSoftware/**,app/Console/Commands/MachineRecipeCommand.php,resources/machine-software/**,resources/remote/task-vms/**}
   - .github/workflows/{php-build-mirror,git-build-watch}.yml
   - "{bin/{php-build,git-build-watch}}"
@@ -314,7 +314,7 @@ Sury keeps only its newest build in its pool, so keep the recipe on Sury's newes
 The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orbit:machine-recipe --validate` to check a bump by hand. Recipe pins change only through reviewed manual edits. After merge:
 
 1. The [mirror](#the-recipe-artifact-mirror) workflow publishes the new files.
-2. Each task VM host [refreshes its base snapshot](#refresh-the-base-snapshot).
+2. No task VM host refreshes its base snapshot any more: the refresh has no trigger ([refresh the base snapshot](#refresh-the-base-snapshot)).
 3. The next [PHP step](/reference/php-runtime#php-build) of an Instance brings its versions to the recipe.
 4. Hosted CI installs the new build in its next run. See [runner updates](/reference/implementation-loop#one-php-build-in-ci) for the pre-merge operator steps.
 
