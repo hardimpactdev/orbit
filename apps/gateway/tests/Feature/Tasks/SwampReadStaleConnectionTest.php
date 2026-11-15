@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
+use App\Infrastructure\Swamp\SwampCaller;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampConnection;
 use App\Infrastructure\Swamp\SwampTerminalReadUnavailable;
@@ -127,7 +128,7 @@ it('shares one connection between jobs that follow each other within the idle ag
 it('counts a received frame as activity on the kept connection', function (): void {
     $socket = staleSocket();
     $endpoint = new WebSocketEndpoint('swamp.test', 443, 'swamp.orbit', '/', '/tmp/ca.pem', 'read-token');
-    $kept = app(SwampConnection::class)->socket($endpoint, 15, $socket);
+    $kept = app(SwampConnection::class)->socket($endpoint, 15, $socket, SwampCaller::Reconcile);
     $kept->send(['type' => 'workflow.history.get', 'id' => 'a', 'payload' => []]);
     $this->travel(SwampConnection::IdleSeconds - 1)->seconds();
     expect($kept->receive(1.0))->not->toBe([]);

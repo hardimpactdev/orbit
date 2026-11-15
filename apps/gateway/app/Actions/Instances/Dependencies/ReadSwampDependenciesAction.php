@@ -13,8 +13,8 @@ use App\Data\Instances\Dependencies\DependencySourceData;
 use App\Domain\Instances\Dependencies\DependencyReadFailure;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Instances\Dependencies\SwampDependencyReadException;
-use App\Infrastructure\Swamp\SwampHandshakes;
 use App\Infrastructure\Swamp\SwampReadBusy;
+use App\Infrastructure\Swamp\SwampViewWait;
 use App\Models\Instance;
 use App\Models\InstanceDeployment;
 use App\Models\Project;
@@ -157,7 +157,10 @@ final readonly class ReadSwampDependenciesAction
     private function refreshDue(Project $current): void
     {
         $due = [];
-        foreach (Project::query()->whereKeyNot($current->id)->whereNotNull('default_branch')->orderBy('id')->limit(self::RefreshLimit)->get() as $project) {
+        foreach (Project::query()->whereKeyNot($current->id)->whereNotNull('default_branch')->orderBy('id')->get() as $project) {
+            if (count($due) >= self::RefreshLimit) {
+                break;
+            }
             $branch = $project->default_branch;
             if (! is_string($branch) || $branch === '') {
                 continue;
@@ -175,7 +178,7 @@ final readonly class ReadSwampDependenciesAction
             try {
                 $index = $this->decode->index($json ?? throw new SwampDependencyReadException(DependencyReadFailure::Invalid), $project->id, self::repository($project), $ref);
             } catch (Throwable) {
-                // No index, or not a valid one: that Project waits the usual delay, as if its own read had failed.
+                // Serve answered: no index, or not a valid one. That Project waits the usual delay, as if its own read had failed.
                 Cache::put($key.':retry', true, self::RetryDelaySeconds);
 
                 continue;
@@ -225,7 +228,7 @@ final readonly class ReadSwampDependenciesAction
     {
         $hold = Cache::get($key);
         if (is_int($hold)) {
-            app(SwampHandshakes::class)->deferView($hold - now()->getTimestamp());
+            app(SwampViewWait::class)->note($hold - now()->getTimestamp());
         }
 
         return $hold === null;

@@ -3,16 +3,21 @@
 declare(strict_types=1);
 
 use App\Actions\Instances\Dependencies\ReadSwampDependenciesAction;
+use App\Actions\Tasks\ReadTaskSwampRunsAction;
 use App\Domain\Instances\Dependencies\SwampDependencyReader;
 use App\Domain\Projects\ProjectType;
+use App\Domain\Tasks\SwampRunReader;
+use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Dependencies\WebSocketSwampDependencyReader;
 use App\Infrastructure\Swamp\SwampCaller;
 use App\Infrastructure\Swamp\SwampHandshakes;
 use App\Infrastructure\Swamp\SwampReadBusy;
+use App\Infrastructure\Tasks\WebSocketSwampRunReader;
 use App\Models\Node;
 use App\Models\Project;
+use App\Models\Task;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -118,7 +123,8 @@ it('answers a screen read over the view share in today\'s shape, with Retry-Afte
     expect((int) $response->headers->get('Retry-After'))->toBeGreaterThan(0)->toBeLessThanOrEqual(SwampHandshakes::WindowSeconds)
         ->and($this->serve->connects)->toBe([]);
 
-    // The next poll inside that wait answers the same from the hold, and still names the wait.
+    // The next poll, a new request inside that wait, answers the same from the hold, and still names the wait.
+    app()->forgetScopedInstances();
     withServerVariables(['REMOTE_ADDR' => '10.44.0.2'])->get('/api/v1/projects/'.$project->id.'/dependencies', ['Accept' => 'application/json'])
         ->assertOk()->assertJsonPath('data.availability', $availability)->assertHeader('Retry-After');
     expect($this->serve->connects)->toBe([]);
@@ -180,16 +186,16 @@ it('replaces a corrupt or oversized ledger instead of reading it', function (str
     $state = json_decode((string) file_get_contents($path), true);
     unlink($path);
     rmdir(dirname($path));
-    expect($state['count'])->toBe(1)->and($state['callers'])->toBe(['read:dependencies' => 1]);
+    expect($state['times'])->toHaveCount(1)->and($state['callers'])->toBe(['read:dependencies' => 1]);
 })->with([
-    'not JSON' => ['{"count": 4'],
-    'oversized' => [json_encode(['ends' => 0, 'count' => 999, 'minute' => 0, 'callers' => ['x' => str_repeat('y', 9_000)], 'views_refused' => 0])],
+    'not JSON' => ['{"times": [4'],
+    'oversized' => [json_encode(['times' => array_fill(0, 30, 1.5), 'held_until' => 0, 'minute' => 0, 'callers' => ['x' => str_repeat('y', 9_000)], 'views_refused' => 0])],
 ]);
 
 it('never holds views longer than one window, whatever end the ledger names', function (): void {
     $path = sys_get_temp_dir().'/orbit-ledger-'.bin2hex(random_bytes(4)).'/ledger.json';
     mkdir(dirname($path));
-    file_put_contents($path, json_encode(['ends' => 99_999_999_999, 'count' => 50, 'minute' => 0, 'callers' => [], 'views_refused' => 0]));
+    file_put_contents($path, json_encode(['times' => array_fill(0, 30, 99_999_999_999.0), 'held_until' => 99_999_999_999, 'minute' => 0, 'callers' => [], 'views_refused' => 0]));
     app()->instance(SwampHandshakes::class, new SwampHandshakes($path));
 
     try {
@@ -228,7 +234,7 @@ it('keeps the count when two processes take handshakes at the same time', functi
     $state = json_decode((string) file_get_contents($path), true);
     unlink($path);
     rmdir(dirname($path));
-    expect($state['count'])->toBe(400)->and($state['callers'])->toBe(['run:start' => 400]);
+    expect($state['callers'])->toBe(['run:start' => 400]);
 });
 
 it('logs the handshakes of a minute by token and caller when the next minute begins', function (): void {
@@ -249,4 +255,77 @@ it('logs the handshakes of a minute by token and caller when the next minute beg
         'minute' => $minute, 'run' => 22, 'read' => 1,
         'by_caller' => ['read:reconcile' => 1, 'run:copy' => 1, 'run:start' => 21], 'views_refused' => 1,
     ]);
+});
+
+it('never lets views take more than their share of any serve window, wherever serve\'s window starts', function (): void {
+    $ledger = app(SwampHandshakes::class);
+    $views = [];
+    $view = function () use ($ledger, &$views): void {
+        try {
+            $ledger->connect($this->serve, readEndpoint(), 2, SwampCaller::Dependencies);
+            $views[] = now()->getTimestampMs() / 1000;
+        } catch (SwampReadBusy) {
+        }
+    };
+    $start = now()->getTimestampMs() / 1000;
+    // A start at 0 s and a cancel at 60.5 s; a view at 100 s; views from 121 s to 125 s; views again from 161 s to 170 s.
+    $ledger->connect($this->serve, readEndpoint('run-token'), 15, SwampCaller::Start);
+    $this->travel(60_500)->milliseconds();
+    $ledger->connect($this->serve, readEndpoint('run-token'), 15, SwampCaller::Cancel);
+    $this->travel(39_500)->milliseconds();
+    $view();
+    $this->travel(21)->seconds();
+    foreach (range(1, 25) as $index) {
+        $view();
+        if ($index % 5 === 0) {
+            $this->travel(1)->seconds();
+        }
+    }
+    $this->travel(161 - 126)->seconds();
+    foreach (range(1, 30) as $index) {
+        $view();
+        if ($index % 3 === 0) {
+            $this->travel(1)->seconds();
+        }
+    }
+
+    // Count views in every 60 s span that starts at a view: serve's window can start at any of them.
+    $worst = max(array_map(static fn (float $from): int => count(array_filter($views, static fn (float $at): bool => $at >= $from && $at < $from + 60)), $views));
+    expect($worst)->toBeLessThanOrEqual(SwampHandshakes::ViewShare)
+        ->and($views[0] - $start)->toEqual(100);
+});
+
+it('holds another Project only when serve answered for it, not when its answer did not come', function (): void {
+    $first = readProject($this->serve, 1);
+    $second = readProject($this->serve, 2);
+    $secondName = 'dependencies-v1-project-'.$second->id.'-'.hash('sha256', 'refs/heads/main');
+    $drop = true;
+    $this->serve->answer = static function (array $frame) use ($secondName, &$drop): ?bool {
+        return $drop && ($frame['payload']['dataName'] ?? null) === $secondName ? false : null;
+    };
+
+    expect(readDependencies($first))->toBe('available');
+    $drop = false;
+
+    // The lost answer leaves no hold: the second Project's own read asks serve and finds its index.
+    expect(readDependencies($second))->toBe('available')
+        ->and($this->serve->connects)->toBe(['read-token' => 2]);
+});
+
+it('reads a task group at most once in five seconds while its reads fail, whatever number of screens poll it', function (): void {
+    $serve = $this->serve;
+    $serve->answer = static fn (array $frame): ?array => $frame['type'] === 'workflow.run.search'
+        ? ['type' => 'error', 'id' => $frame['id'], 'payload' => ['message' => 'unavailable']] : null;
+    app()->instance(SwampRunReader::class, new WebSocketSwampRunReader($serve, 'swamp.test', 'read-token', '/test/ca.pem'));
+    $group = Task::query()->create(['title' => 'Group', 'brief' => 'Read it', 'status' => TaskGroupStatus::Running]);
+
+    $answers = [];
+    foreach (range(1, 3) as $_) {
+        $answers[] = app(ReadTaskSwampRunsAction::class)->execute($group)->availability;
+    }
+    $this->travel(5)->seconds();
+    $answers[] = app(ReadTaskSwampRunsAction::class)->execute($group)->availability;
+
+    expect($answers)->toBe(['unavailable', 'unavailable', 'unavailable', 'unavailable'])
+        ->and($serve->connects)->toBe(['read-token' => 2]);
 });

@@ -33,7 +33,7 @@ final class HandshakeCountingServe implements WebSocketClient
     /** @var array<string, string> data.get content by data name */
     public array $data = [];
 
-    /** @var (Closure(array<string,mixed>): (array<string,mixed>|null))|null */
+    /** @var (Closure(array<string,mixed>): (array<string,mixed>|false|null))|null false: serve never answers this request; null: as serve does */
     public ?Closure $answer = null;
 
     /** @var list<array<string,mixed>> */
@@ -76,7 +76,7 @@ final class HandshakeCountingServe implements WebSocketClient
         $answers = [];
         foreach ($this->unanswered as $frame) {
             $answer = $this->answerFor($frame);
-            if ($answer !== null) {
+            if (is_array($answer)) {
                 $answers[] = $answer;
             }
         }
@@ -102,9 +102,9 @@ final class HandshakeCountingServe implements WebSocketClient
 
     /**
      * @param  array<string,mixed>  $frame
-     * @return array<string,mixed>|null
+     * @return array<string,mixed>|false|null
      */
-    private function answerFor(array $frame): ?array
+    private function answerFor(array $frame): array|false|null
     {
         $custom = $this->answer === null ? null : ($this->answer)($frame);
         if ($custom !== null) {

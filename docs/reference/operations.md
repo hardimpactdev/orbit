@@ -482,7 +482,9 @@ Admission records the intent, the idempotency key and the target hold in one tra
 
 When the root run of an operation ends, the event observer queues the projection of that one operation on its own worker, `operations-prompt` ([Gateway queue](/reference/gateway-queue#queues)). It reads the run's history and projects the end at once, with the same code as the minute pass, also while a pass runs.
 
-The minute pass stays the retry: it projects an end that the prompt projection could not read, or that ended while the Gateway was down. When serve refused a read of the prompt projection with `429`, the job runs once more after serve's `Retry-After` plus one second, so the end does not wait for the next pass. When serve refuses the read of a finished run's step times with `429`, `FillNativeRunStepTimes` reads them once more after the same wait; before, those times were lost. The row lock and the terminal check of each projection make sure that an end is projected once, whichever of the two reads it first. The observer still asks for a pass at that end, for the sweeps that only a pass runs. The end of a child run asks for a pass only, which records the child's evidence.
+The minute pass stays the retry: it projects an end that the prompt projection could not read, or that ended while the Gateway was down. The row lock and the terminal check of each projection make sure that an end is projected once, whichever of the two reads it first. The observer still asks for a pass at that end, for the sweeps that only a pass runs. The end of a child run asks for a pass only, which records the child's evidence.
+
+When serve refused a read of the prompt projection with `429`, the job runs once more after serve's `Retry-After` plus one second, so the end does not wait for the next pass. When serve refuses the read of a finished run's step times with `429`, `FillNativeRunStepTimes` reads them once more after the same wait.
 
 Each kind has a run budget ([Native run budgets](#native-run-budgets)). When the budget ends first, the Gateway fails the operation with `operation.timed_out`. The Gateway never reruns a step itself.
 

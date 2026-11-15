@@ -12,7 +12,8 @@ interface SwampDependencyReader
 
     /**
      * The latest content of each named resource, read on the connection an earlier `read()` of this reader opened, never on a new one.
-     * A resource that is missing, invalid or not answered in time maps to null. Without an open connection the answer is empty.
+     * A resource that serve answered as missing or invalid maps to null. One not answered in time, or lost with the connection, is
+     * left out. Without an open connection the answer is empty.
      *
      * @param  list<string>  $dataNames
      * @return array<string, string|null>

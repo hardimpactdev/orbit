@@ -10,7 +10,7 @@ use App\Http\Authorization\RequiresNodeAccess;
 use App\Http\Authorization\ServingNode;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\DependencyResultsRequest;
-use App\Infrastructure\Swamp\SwampHandshakes;
+use App\Infrastructure\Swamp\SwampViewWait;
 use App\Models\Instance;
 use Illuminate\Http\JsonResponse;
 
@@ -21,7 +21,7 @@ final class InstanceDependenciesController extends Controller
     {
         abort_unless($instance->status === InstanceState::Active && ! $instance->removalMember()->exists(), 409);
 
-        return app(SwampHandshakes::class)->announce(response()->json([
+        return app(SwampViewWait::class)->announce(response()->json([
             'data' => $action->execute($instance->project, $instance, $request->source(), $request->integer('packages_page', 1), $request->integer('findings_page', 1))->toArray(),
             'meta' => ['request_id' => $request->attributes->getString('orbit.request_id')],
         ])->header('Cache-Control', 'no-store'));

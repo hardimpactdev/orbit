@@ -76,7 +76,6 @@ final class WebSocketSwampDependencyReader implements SwampDependencyReader
         try {
             foreach (array_values(array_unique($dataNames)) as $dataName) {
                 $pending[$this->request($socket, $dataName, null)] = $dataName;
-                $contents[$dataName] = null;
             }
             while ($pending !== [] && $socket->isConnected() && ($remaining = $deadline - microtime(true)) > 0) {
                 foreach ($socket->receive(min(0.2, $remaining)) as $message) {
@@ -89,7 +88,8 @@ final class WebSocketSwampDependencyReader implements SwampDependencyReader
                     try {
                         $contents[$dataName] = $this->content($message, $dataName, null, $maxBytes);
                     } catch (SwampDependencyReadException) {
-                        // A Project without a current index, or an invalid one: its own read finds out.
+                        // Serve answered without a valid index.
+                        $contents[$dataName] = null;
                     }
                 }
             }
