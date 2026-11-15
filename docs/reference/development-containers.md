@@ -2540,7 +2540,7 @@ After a restore, the run starts the restored fleet and waits for readiness. If t
 | An update, not a rebuild | The image variant's tools change only with a new image |
 | The next release waits | A release waits up to 600 seconds for open `instance.deploy` Operations before it loads Swamp, then fails with `gateway.release_busy`. Cancel an open refresh before the next release |
 
-It replaces the release trigger and the daily run of the [task VM refresh](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-image-refresh.mmd) for the nested-fleet path, and calls neither; [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
+It replaces the release trigger and the daily run of the task VM refresh for the nested-fleet path; that refresh and its kind `task_vm.image_refresh` are removed; [Old paths](/reference/old-paths) says when those go. A Project has one default Instance in the whole fleet today, so the refresh runs on the Node that holds it.
 
 What stops during a refresh:
 

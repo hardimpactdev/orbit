@@ -125,7 +125,7 @@ The Gateway tracks each direct Operation's budget from `started_at`, including n
 
 An explicit kind budget wins and stays fixed until a maintainer changes the table. Long-running kinds use measured or provisional constants; measured rows use the 14-day p95 of successful runs, rounded up to the next five minutes.
 
-For example, `task_vm.image_refresh` has 10,800 seconds and `node.converge` 3,900 seconds. A kind without a successful run gets an explicit budget only from the measured work of a real run. For example, `cluster.router_set` and `cluster.router_unset` have 3,900 seconds. That is 1.5 times the 2,417 seconds of work in their only run, rounded up to five minutes. A maintainer must update the fixed row after measuring successful runs. The create fallback is 60 seconds when no captured phase budget exists. Clients cannot choose the captured budget.
+For example, `instance.migrate` has 5,700 seconds and `node.converge` 3,900 seconds. A kind without a successful run gets an explicit budget only from the measured work of a real run. For example, `cluster.router_set` and `cluster.router_unset` have 3,900 seconds. That is 1.5 times the 2,417 seconds of work in their only run, rounded up to five minutes. A maintainer must update the fixed row after measuring successful runs. The create fallback is 60 seconds when no captured phase budget exists. Clients cannot choose the captured budget.
 
 `tasks.cancel` and `tasks.maintenance_finish` also have 3,900 seconds, derived from the work they compose: the former VM destroy bound of 2,700 seconds, the 540-second Project teardown cap, and 660 seconds for the workspace Route withdrawal. Withdrawal's only fixed wait is the 31-second DNS grace, so most of that allowance is deliberate margin until real runs are measured. Their history came from cancels with no VM to destroy and was too short for real cleanup.
 
@@ -137,7 +137,7 @@ That holds the turn's own bound of 3,600 seconds and the 30-second kill grace. I
 
 `proof.run` has no execution budget of its own: its children and the watchdog end it. Its execution duration starts at admission; its 7,200-second admission allowance starts at creation. Waiting for the working proof, an earlier parent or a copy place consumes that allowance, and the proof reads `waiting` until admission; expiry fails with `proof.capacity_timeout`. See [proof admission](/cli/proof/run#the-run).
 
-`task_vm.image_refresh` has a provisional 10,800 seconds, the serial children of the run with margin. The provision of a task VM takes 3,900 seconds at its bound. The converge of a base from stock builds the nested fleet when the base has none. That takes 5,400 seconds at its bound and about 25 minutes in practice (the standalone fleet build, since removed, took 1,840 seconds as operation 11816). A VM at its pins converges in about a minute. Stopping and snapshotting the base and proving a fresh task start add time. A maintainer must update the provisional row after measuring successful runs.
+An open Operation of a kind that left the registry, such as the removed `task_vm.image_refresh` and `task_vm.hub_converge`, gets the history budget of its kind: it ends at that budget or on a cancel request ([retired kinds](#retired-kinds)).
 
 `tool.install` and `tool.update` have a provisional 1,500 seconds. A Tool write runs its bounded phases in turn: the [signed repository](/reference/tools#signed-apt-repositories) prepare (180 seconds), the candidate query (120 seconds) and the mutation (900 seconds). Measured brew installs took 471 to 578 seconds. A maintainer must update the provisional row once repository installs have native history.
 
@@ -352,6 +352,10 @@ Every task operation holds the group, so different kinds cannot overlap on it. A
 A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, ci }` under the [hosted handoff CI contract](/reference/tasks#check-an-external-group). Swamp owns review and merge policy. The input remains `{ subtask, phase }` with the existing optional key.
 
 `head` is the pre-commit check snapshot; `commit` is the candidate HEAD. Baseline/no-policy has `ci: null`. A required-CI handoff adds persisted handoff-push and hosted-CI-read steps after the existing commit step. Before push, state pins the branch and required check name; it retains CI evidence while waiting, so recovery cannot reinterpret a later Project edit. The terminal result carries that evidence. A failed code/workflow check ends `succeeded` with `outcome: failed`, not an operation failure. Consumers need `outcome: passed` and the shared checked-candidate eligibility rule, not just `status: succeeded` or a locally passed check.
+
+### Retired kinds
+
+A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them. The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard does not wait for one. Retired task VM kinds: `task_vm.image_refresh` and `task_vm.hub_converge`.
 
 ## Start an operation
 

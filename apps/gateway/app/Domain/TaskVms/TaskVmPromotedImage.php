@@ -67,12 +67,6 @@ final readonly class TaskVmPromotedImage
         return ['vm' => self::baseVm($host), 'seed' => self::baseSeed($host), 'snapshot' => $base['snapshot'], 'recipe_identity' => $base['recipe_identity']];
     }
 
-    /** Withdraws the host's recorded base of `$runtime`: no start copies it, and the next refresh of that runtime builds it as on a new host. */
-    public function withdraw(Node $host, TaskVmRuntime $runtime): void
-    {
-        TaskVmImageBuild::query()->where('host_node_id', $host->id)->where('runtime', $runtime)->whereNotNull('promoted_at')->update(['promoted_at' => null]);
-    }
-
     /** The host's latest promoted refresh of `$runtime`. A promoted image of the retired build is skipped, so it never replaces the base snapshot. */
     public function latest(Node $host, TaskVmRuntime $runtime): ?TaskVmImageBuild
     {

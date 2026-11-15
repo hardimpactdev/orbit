@@ -64,12 +64,13 @@ final readonly class ProofCopies
 
     /**
      * Whether a held run of a copy may start: `ready` when its copy is active, `pending` while the copy's create or completion runs,
-     * `failed` when the copy's completion failed or the copy is gone (a removal ends with the copy gone), or null for a run that proves on a task VM.
+     * `failed` when the copy's completion failed or the copy is gone (a removal ends with the copy gone), and for a run that is not in a
+     * copy: one admitted before the task VM proof path was removed, which nothing can start any more.
      */
-    public function state(Operation $run): ?string
+    public function state(Operation $run): string
     {
         if (! self::isCopyRun($run)) {
-            return null;
+            return 'failed';
         }
         $group = Task::topLevel()->with('taskable')->find(ValidatedData::integer($run->input['group_id']));
         if ($group === null || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
