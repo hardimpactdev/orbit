@@ -12,13 +12,19 @@ Three parts, in this order:
   relinked, and only those that are byte for byte the same regular file with the same owner and mode: the files the package ships as
   links of that file. Other files of one digest, such as the package's empty locale files, are separate files in the package and stay.
   Each is replaced atomically by a link to the file (a new link beside it, then a rename over it), so no reader ever finds the path
-  missing or partial.
+  missing or partial. The paths come from the nested container's own dpkg files, so each must stay inside its root disk (`inside`):
+  an absolute path, a `..` part or a symlink anywhere below the disk is skipped. Each machine's count of skipped paths goes to
+  standard error; the result counts only the paths it relinked.
 - Caches. The `.deb` files in each nested container's apt archives go (CACHES): apt keeps no new ones (the fleet file
   91orbit-nested-package-files), and the egress proxy serves a package again when apt needs it. No path that leaves the disk through
-  a symlink is followed.
+  a symlink is followed (`inside`).
 - Dedupe. `duperemove -dr` over the three root disks makes identical blocks of different files share one extent (the kernel
   compares the bytes before it shares them, so a file never changes). It needs a btrfs pool and the `duperemove` package, which
-  instance_shape_tools.py keeps in the container; without it the first two parts run.
+  instance_shape_tools.py keeps in the container; without it the first two parts run. Its arguments are the three root disks, named
+  by the outer side; a root disk that is a symlink fails the run, and duperemove's own walk follows no symlink.
+
+Every file it reads, links or removes in a root disk is found through `inside`: the nested container's root owns those files, and a
+stopped container cannot change them while the step runs.
 
 It costs nothing when nothing changed: the record holds the sha256 of each machine's dpkg status, and `check` is due only when the
 record is missing or a status differs (a package was installed, removed or upgraded). `run` writes the record only when the dedupe ran
@@ -36,7 +42,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # Each package and the file it ships with links: every file of the package with that file's digest is one of them (see the docstring).
 RELINK = {'rust-coreutils': 'usr/bin/coreutils'}
@@ -47,17 +53,43 @@ RULE = '2'
 CACHES = ('var/cache/apt/archives',)
 
 
+def inside(disk, relative, kind):
+    """`disk / relative` when the path stays inside `disk`: no absolute path, no `..` part, every part below `disk` a real folder (no
+    symlink, by lstat) and the last part of `kind` (stat.S_ISREG or stat.S_ISDIR). None otherwise, and when a part is missing."""
+    parts = PurePosixPath(relative).parts
+    if not parts or parts[0] == '/' or '..' in parts:
+        return None
+    path = disk
+    for index, part in enumerate(parts):
+        path = path / part
+        try:
+            mode = path.lstat().st_mode
+        except (OSError, ValueError):
+            return None
+        if not (kind if index == len(parts) - 1 else stat.S_ISDIR)(mode):
+            return None
+    return path
+
+
 def rootfs(pools, name):
     """The container's root disk in the inner Incus's pool, and whether that pool is btrfs."""
     instance = json.loads(subprocess.run(['incus', 'query', f'/1.0/instances/{name}'], capture_output=True, text=True, check=True).stdout)
     pool = instance['expanded_devices']['root']['pool']
     driver = json.loads(subprocess.run(['incus', 'query', f'/1.0/storage-pools/{pool}'], capture_output=True, text=True, check=True).stdout)['driver']
-    return Path(pools) / pool / 'containers' / name / 'rootfs', driver == 'btrfs'
+    disk = inside(Path(pools), f'{pool}/containers/{name}/rootfs', stat.S_ISDIR)
+    if disk is None:
+        raise ValueError(f'the root disk of {name} is no folder inside {pools}')
+    return disk, driver == 'btrfs'
 
 
 def state(disks):
     """The sha256 of each machine's dpkg status, with the rule's version."""
-    return {'rule': RULE, **{name: hashlib.sha256((disk / 'var/lib/dpkg/status').read_bytes()).hexdigest() for name, (disk, _) in disks.items()}}
+    def status(disk):
+        path = inside(disk, 'var/lib/dpkg/status', stat.S_ISREG)
+        if path is None:
+            raise ValueError(f'{disk}: the dpkg status is no file inside the root disk')
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+    return {'rule': RULE, **{name: status(disk) for name, (disk, _) in disks.items()}}
 
 
 def read_record(record):
@@ -69,14 +101,14 @@ def read_record(record):
 
 
 def md5sums(disk, package):
-    """dpkg's digests of the package's files, as paths in `disk`."""
+    """dpkg's digests of the package's files, with each path as dpkg records it (relative to `disk`)."""
     for name in (f'{package}.md5sums', f'{package}:amd64.md5sums'):
-        path = disk / 'var/lib/dpkg/info' / name
-        if path.is_file():
+        path = inside(disk, f'var/lib/dpkg/info/{name}', stat.S_ISREG)
+        if path is not None:
             for line in path.read_text().splitlines():
                 digest, _, relative = line.partition('  ')
                 if digest and relative:
-                    yield digest, disk / relative
+                    yield digest, relative
             return
 
 
@@ -87,34 +119,45 @@ def same_file(first, second):
 
 
 def relink(disk):
-    """Link the files that a package ships as links of one file back to that file; the number of paths it replaced."""
-    replaced = 0
+    """Link the files that a package ships as links of one file back to that file; the number of paths it replaced, and the number it
+    skipped because they are no regular file inside `disk`."""
+    replaced = skipped = 0
     for package, shipped in RELINK.items():
         digests = list(md5sums(disk, package))
-        first = disk / shipped
-        digest = next((digest for digest, path in digests if path == first), None)
-        if digest is None or not first.is_file() or first.is_symlink():
+        first = inside(disk, shipped, stat.S_ISREG)
+        digest = next((digest for digest, relative in digests if relative == shipped), None)
+        if digest is None or first is None:
             continue
-        for path in [path for each, path in digests if each == digest and path != first]:
-            if path.is_symlink() or not path.is_file() or path.lstat().st_ino == first.lstat().st_ino or not same_file(first, path):
+        for relative in [relative for each, relative in digests if each == digest and relative != shipped]:
+            path = inside(disk, relative, stat.S_ISREG)
+            if path is None:
+                skipped += 1
                 continue
+            if path.lstat().st_ino == first.lstat().st_ino or not same_file(first, path):
+                continue
+            # Its folder is inside the disk (above); a leftover of an earlier run goes, but a folder of that name is skipped.
             temporary = path.with_name('.orbit-relink-' + path.name)
-            if temporary.exists() or temporary.is_symlink():
+            try:
+                if stat.S_ISDIR(temporary.lstat().st_mode):
+                    skipped += 1
+                    continue
                 temporary.unlink()
-            os.link(first, temporary)
+            except FileNotFoundError:
+                pass
+            os.link(first, temporary, follow_symlinks=False)
             os.rename(temporary, path)
             replaced += 1
-    return replaced
+    return replaced, skipped
 
 
 def empty_caches(disk):
     """Remove the package files in each cache folder of `disk`, following no symlink."""
     for cache in CACHES:
-        for folder in (disk / cache, disk / cache / 'partial'):
-            if any(part.is_symlink() for part in [folder, *folder.parents] if disk in part.parents) or not folder.is_dir():
+        for folder in (inside(disk, cache, stat.S_ISDIR), inside(disk, f'{cache}/partial', stat.S_ISDIR)):
+            if folder is None:
                 continue
             for path in folder.iterdir():
-                if path.name.endswith('.deb') and path.is_file() and not path.is_symlink():
+                if path.name.endswith('.deb') and stat.S_ISREG(path.lstat().st_mode):
                     path.unlink()
 
 
@@ -128,7 +171,12 @@ def check(record, pools, names):
 
 def run(record, pools, names):
     disks = {name: rootfs(pools, name) for name in names}
-    replaced = sum(relink(disk) for disk, _ in disks.values())
+    replaced = 0
+    for name, (disk, _) in disks.items():
+        relinked, skipped = relink(disk)
+        replaced += relinked
+        if skipped:
+            print(f'{name}: skipped {skipped} paths that are no regular file inside the root disk', file=sys.stderr)
     for disk, _ in disks.values():
         empty_caches(disk)
     if not all(btrfs for _, btrfs in disks.values()):
