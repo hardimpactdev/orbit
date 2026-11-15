@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Actions\Tasks\CreateTaskGroupAction;
+use App\Actions\Tasks\RunTaskPublishWhenDoneAction;
 use App\Data\Tasks\CreateTaskGroupData;
 use App\Data\Tasks\TaskGroupData;
 use App\Domain\Instances\InstanceContainer;
@@ -105,10 +106,11 @@ it('records the reviewer\'s text on the check of its running turn, and the publi
         ->assertStatus(202)->assertJsonPath('data', ['state' => 'recorded', 'check_id' => $world->check->id, 'operation_id' => $turn->id, 'opens' => 'when the group is done']);
     $turn->update(['status' => OperationStatus::Succeeded, 'result' => ['state' => 'done', 'ended' => true], 'finished_at' => now()]);
 
-    $text = TaskDonePublication::for($world->group->refresh(), $world->check->refresh())->pull_request;
+    app(RunTaskPublishWhenDoneAction::class)->execute();
 
-    expect($world->check->pr_text_operation_id)->toBe($turn->id)
-        ->and($text)->toBe(['title' => 'Keep every field', 'body' => "Type and website were lost.\n\nCloses #9", 'draft' => false]);
+    expect($world->check->refresh()->pr_text_operation_id)->toBe($turn->id)
+        ->and(Operation::query()->where('kind', OperationKinds::TasksPublish)->sole()->input['pull_request'])
+        ->toBe(['title' => 'Keep every field', 'body' => "Type and website were lost.\n\nCloses #9", 'draft' => false]);
 });
 
 it('refuses the text outside a running reviewer turn on the checked commit, for a held Project, an ended group and a bad title', function (Closure $arrange, array $text, int $status, string $code): void {
@@ -136,6 +138,7 @@ it('refuses the text outside a running reviewer turn on the checked commit, for 
         $w->group->update(['status' => TaskGroupStatus::Cancelled]);
     }, ['title' => 'T', 'body' => 'B'], 409, 'tasks.group_closed'],
     'a title of two lines' => [copyReviewerTurnRuns(...), ['title' => "T\nU", 'body' => 'B'], 422, 'validation.failed'],
+    'a body too long in UTF-16 code units' => [copyReviewerTurnRuns(...), ['title' => 'T', 'body' => str_repeat('😀', intdiv(TaskDonePublication::ReviewerBodyLimit, 2) + 1)], 422, 'validation.failed'],
     'a body too long' => [copyReviewerTurnRuns(...), ['title' => 'T', 'body' => str_repeat('b', TaskDonePublication::ReviewerBodyLimit + 1)], 422, 'validation.failed'],
 ]);
 

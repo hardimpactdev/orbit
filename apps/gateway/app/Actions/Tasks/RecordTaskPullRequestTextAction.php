@@ -31,7 +31,7 @@ final readonly class RecordTaskPullRequestTextAction
         return DB::transaction(function () use ($copy, $title, $body): TaskCheck {
             // The group's row lock orders this write with a turn's admission and a subtask's completion.
             $group = Task::topLevel()->with('project', 'taskable')->whereKey($copy->task_workspace_owner_id)->lockForUpdate()->first();
-            if (! $group instanceof Task || $group->pr_url !== null || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
+            if (! $group instanceof Task || $group->taskable_id !== $copy->id || $group->pr_url !== null || in_array($group->status, TaskGroupStatus::endedStatuses(), true)) {
                 throw new ResourceOperationException('tasks.group_closed', 'This task group has ended or has its pull request.', 409);
             }
             $turn = TaskGroupDone::reviewerTurn($group);

@@ -24,7 +24,6 @@ use App\Models\InstanceRuntime;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Support\ValidatedData;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Exceptions;
@@ -290,12 +289,11 @@ it('keeps the validation error for a release of a group without a task copy', fu
         });
 });
 
-it('closes the group\'s issue: Closes #n at the end of the reviewer\'s body, unless the body closes it already', function (?int $issue, string $sent, string $published): void {
+it('closes the group\'s issue: Closes #n at the end of the body, unless the body closes it already', function (?int $issue, string $sent, string $published): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['issue_number' => $issue]);
-    $world->check->update(['pr_body' => $sent]);
 
-    expect(data_get(TaskDonePublication::for($world->group->refresh(), $world->check->refresh())->pull_request, 'body'))->toBe($published);
+    expect(TaskDonePublication::closing($world->group->refresh(), $sent))->toBe($published);
 })->with([
     'an issue' => [9, "Keeps every field.\n", "Keeps every field.\n\nCloses #9"],
     'closed already' => [9, "Keeps every field.\n\nFixes #9", "Keeps every field.\n\nFixes #9"],
@@ -304,15 +302,27 @@ it('closes the group\'s issue: Closes #n at the end of the reviewer\'s body, unl
     'no issue' => [null, 'Keeps every field.', 'Keeps every field.'],
 ]);
 
+it('closes the issue in every publish with a text: the tick\'s with the reviewer\'s, and a person\'s with its own', function (): void {
+    $world = TaskCopyDoneFixture::make();
+    $world->group->update(['pr_mode' => TaskPrMode::PrWhenDone, 'issue_number' => 9]);
+
+    whenDoneTick();
+    $tick = Operation::query()->where('kind', OperationKinds::TasksPublish)->sole();
+    whenDoneEndPublish($world->group, 'tasks.push_failed');
+    $person = app(StartTaskPublishAction::class)->execute($world->group->refresh(),
+        new StartTaskPublishData($world->check->id, ['title' => 'By hand', 'body' => 'Written by a person.']), 'person', null);
+
+    expect(data_get($tick->input, 'pull_request.body'))->toBe(TaskCopyDoneFixture::Body."\n\nCloses #9")
+        ->and(data_get($person->input, 'pull_request.body'))->toBe("Written by a person.\n\nCloses #9");
+});
+
 it('keeps the longest reviewer body with its closing line within the publish limit', function (): void {
     $world = TaskCopyDoneFixture::make();
     $world->group->update(['issue_number' => 2147483647]);
-    $world->check->update(['pr_body' => str_repeat('é', TaskDonePublication::ReviewerBodyLimit)]);
+    $body = TaskDonePublication::closing($world->group->refresh(), str_repeat('é', TaskDonePublication::ReviewerBodyLimit));
 
-    $text = TaskDonePublication::for($world->group->refresh(), $world->check->refresh())->pull_request;
-
-    expect(ValidatedData::string(data_get($text, 'body')))->toEndWith('Closes #2147483647')
-        ->and(Validator::make(['check' => $world->check->id, 'pull_request' => $text], (new StartTaskPublishRequest)->rules())->passes())->toBeTrue();
+    expect($body)->toEndWith('Closes #2147483647')
+        ->and(Validator::make(['check' => $world->check->id, 'pull_request' => ['title' => 'T', 'body' => $body]], (new StartTaskPublishRequest)->rules())->passes())->toBeTrue();
 });
 
 it('waits for the reviewer\'s text: the tick admits and stores nothing, and the release refuses tasks.pr_text_missing', function (): void {

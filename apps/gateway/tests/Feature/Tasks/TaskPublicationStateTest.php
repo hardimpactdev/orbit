@@ -83,6 +83,11 @@ it('lists the waiting and the refused task copies under releases in task:status'
     expect($releases)->toBe([['id' => $world->group->id, 'project_id' => $world->group->project_id, 'project' => 'trial', 'project_code' => $world->group->project->code,
         'title' => 'Add the export', 'state' => 'waiting_for_release', 'check_id' => $world->check->id, 'commit' => TaskCopyDoneFixture::Commit, 'error_code' => null]]);
 
+    // A done group that waits for its reviewer's text is listed too: an older copy has no key and needs a person's publish.
+    $world->check->update(['pr_text_operation_id' => null]);
+    expect(data_get(app(ShowTasksStatusAction::class)->execute()->toArray(), 'releases.0.state'))->toBe('waiting_for_pr_text');
+    $world->check->update(['pr_text_operation_id' => $world->turn->id]);
+
     publicationPublish($world, OperationStatus::Failed, 'tasks.push_failed');
     expect(data_get(app(ShowTasksStatusAction::class)->execute()->toArray(), 'releases.0'))->toMatchArray(['state' => 'refused', 'error_code' => 'tasks.push_failed']);
 

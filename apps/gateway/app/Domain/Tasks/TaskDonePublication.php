@@ -40,10 +40,13 @@ final class TaskDonePublication
         $text = TaskGroupDone::prText($group, $check) ?? throw new ResourceOperationException(self::TextMissingCode,
             'The task group\'s work is done, but its reviewer sent no pull request text. A reviewer turn that approves the commit sends it.', 409);
 
-        return new StartTaskPublishData($check->id, ['title' => $text['title'], 'body' => self::closing($group, $text['body']), 'draft' => false]);
+        return new StartTaskPublishData($check->id, ['title' => $text['title'], 'body' => $text['body'], 'draft' => false]);
     }
 
-    /** The body, with `Closes #<issue>` at its end for a group that names its issue and whose body does not close it already. */
+    /**
+     * The body, with `Closes #<issue>` at its end for a group that names its issue and whose body does not close it already
+     * (docs/reference/tasks.md#closes-the-issue). Every publish with a pull request text applies it: the reviewer's and a person's.
+     */
     public static function closing(Task $group, string $body): string
     {
         $issue = $group->issue_number;

@@ -291,7 +291,7 @@ Each path matches exactly and is rewritten to its one fixed Gateway path, so no 
 
 The Gateway sees the request come from the Node's WireGuard address. That is not enough: these two routes do not accept a Node. Each needs the task copy's own [copy key](/reference/development-containers#the-copy-key), and the key must belong to a copy on that same Node. The rest of the Gateway API stays closed to these requests, because the forwarder never sends another path.
 
-A forwarder applied before this release has no Orbit routes. Apply it again on each agent Node, as below, after the Gateway release that serves the routes.
+A forwarder applied before this release has no Orbit routes. Apply it again on each agent Node, as below, after the Gateway release that serves the routes. The Caddyfile names the Gateway's WireGuard address, so apply it again on each agent Node also after the Gateway moves to another address.
 
 ### Apply or remove a forwarder
 
@@ -338,6 +338,7 @@ A removing run ends by checking that the router's Node answers SSH from the Node
 | `ai_router.guard_absent` | 409 | An applying run while the guard is not in place: no guard run yet, or `ai-router:task-guard --remove` took it off. Run `ai-router:task-guard` first |
 | `ai_router.node_invalid` | 422 | The Node is missing, inactive, not Linux, or has no WireGuard IPv4 address |
 | `ai_router.forwarder_refused` | 409 | The Node is the router's Node, or has the `swamp` or `vpn` role |
+| `ai_router.gateway_unaddressed` | 409 | The active Gateway has no WireGuard IPv4 address for the forwarder's [Orbit routes](#orbit-routes-for-task-copies) |
 | `validation.failed` | 422 | `--bridge` is not an interface name, or `--address` is not an IPv4 address |
 | `resource.not_found` | 404 | A removal for a Node that never had a forwarder run |
 | `operation.target_busy` | 409 | Another guard or forwarder run holds the guard |

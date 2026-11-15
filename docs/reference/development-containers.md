@@ -775,7 +775,7 @@ A container holds only a placeholder key, in `/home/agent/.config/orbit/model.en
 
 The model key does not tell one container from another: every container holds the same placeholder. So a [task copy](/reference/tasks#task-copy) gets one more key of its own, the copy key. It is the only way a copy calls Orbit, and Orbit uses it only for the [reviewer's pull request text](/reference/tasks#the-reviewers-pull-request-text).
 
-The Gateway makes a random key each time it writes a task copy's model environment. It does so at the copy's create, and again when a migrate writes the file. It stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
+The Gateway makes a random key each time it writes a task copy's model environment, at the copy's create. A task copy is never migrated: it already runs in a container. The Gateway stores only the key's SHA-256 hash, on the copy's runtime record. A new key replaces the hash, so the older key stops working.
 
 The key goes into `model.env` as `ORBIT_COPY_KEY`. This is the same `0600` file of `agent` that holds the placeholder. `ORBIT_COPY_API` in the same file holds `http://<bridge address>:8319/orbit/v1/copy`. T3 hands both values to Claude Code and Codex. The app user `orbit` cannot read them.
 

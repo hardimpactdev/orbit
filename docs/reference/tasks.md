@@ -1210,10 +1210,13 @@ The reviewer in the task copy writes the pull request: its title and its body. O
 The reviewer sends the text during its turn, from the copy, with its [copy key](/reference/development-containers#the-copy-key):
 
 ```bash
-curl -sS -H "Authorization: Bearer $ORBIT_COPY_KEY" \
-  -F 'title=Keep every field when an organisation is created' \
+. ~/.config/orbit/model.env
+curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" \
+  --form-string 'title=Keep every field when an organisation is created' \
   -F 'body=<pr-body.md' "$ORBIT_COPY_API/pull-request"
 ```
+
+The reviewer reads the key from the file, not from its environment: Codex can leave variables whose names hold `KEY` out of the shell it runs.
 
 The request also takes JSON, `{"title": "...", "body": "..."}`. It names no group, check or commit: the key names the copy, and the copy names its group. The Gateway accepts it only when all of these hold:
 
@@ -1221,7 +1224,7 @@ The request also takes JSON, `{"title": "...", "body": "..."}`. It names no grou
 - A turn of the group's reviewer thread runs now, on a checked commit. Otherwise `tasks.pr_text_not_reviewer_turn` (409).
 - That turn's check is still an eligible candidate of the current subtask. Otherwise `tasks.commit_not_checked` (422).
 - The Project is released for copy publish, as [Task copy](#task-copy) describes. Otherwise `tasks.copy_publish_held` (409).
-- The title has 1 to 256 characters on one line, and the body 1 to 60,000 characters. Otherwise `validation.failed` (422).
+- The title has 1 to 256 characters on one line, and the body 1 to 60,000 UTF-16 code units, as the publish step counts them. Otherwise `validation.failed` (422).
 
 Orbit records the text on that check, with the reviewer turn's Operation, and answers 202:
 
@@ -1237,7 +1240,7 @@ There is no fallback text. A group whose done check has no text waits in `waitin
 
 #### Closes the issue
 
-A group can name the GitHub issue it works on: [`task:create --issue=<number>`](/cli/task/create). The issue is in the Project's own repository. The publish then makes sure that the body closes it: when the reviewer's body has no `Closes #<number>`, `Fixes #<number>` or `Resolves #<number>` line, Orbit adds `Closes #<number>` at the end. GitHub closes the issue when the pull request merges. A group without an issue gets no such line.
+A group can name the GitHub issue it works on: [`task:create --issue=<number>`](/cli/task/create). The issue is in the Project's own repository. Every publish with a pull request text then makes sure that the body closes it, whoever wrote the text: the reviewer or a person with `task:publish --title --body`. When the body holds no `Closes #<number>`, `Fixes #<number>` or `Resolves #<number>`, in any form of these words, Orbit adds `Closes #<number>` at the end. A body that names such a word with that number anywhere, also in a code sample, counts as closing it. GitHub closes the issue when the pull request merges. A group without an issue gets no such line.
 
 ### Publication state
 
@@ -1261,7 +1264,7 @@ A group can name the GitHub issue it works on: [`task:create --issue=<number>`](
 | `refused` | A publish of the done check failed, was cancelled or was refused, by any caller. A [lock timeout](#a-refused-automatic-publish) counts after its last retry, or at once outside `pr_when_done` |
 | `published` | The group has its pull request |
 
-[`task:status`](/cli/task/status) lists every group in `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
+[`task:status`](/cli/task/status) lists every group in `waiting_for_pr_text`, `waiting_for_release` or `refused` under `releases`. These states are not board statuses: the group keeps its status.
 
 ### Release a waiting group
 

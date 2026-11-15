@@ -107,7 +107,6 @@ it('admits the Node at the guard and records a forwarder with no key, as one run
             ."\t\t\ttransport http {\n\t\t\t\ttls_trust_pool file /etc/orbit/agent/ca.pem\n")
         ->toContain("\thandle /orbit/v1/copy/pull-request {\n\t\trewrite * /api/v1/copy/pull-request\n")
         ->and(substr_count($intent['forwarder']['caddyfile'], 'reverse_proxy https://'))->toBe(2)
-        ->and($intent['forwarder']['caddyfile'])
         ->and($intent['forwarder']['firewall'])->toBe(['desired' => [
             ['ufw', 'allow', 'in', 'on', 'orbitc0', 'proto', 'tcp', 'from', 'any', 'to', '10.251.33.1', 'port', '8319', 'comment', 'orbit:ai-router-forwarder'],
         ], 'remove' => []])

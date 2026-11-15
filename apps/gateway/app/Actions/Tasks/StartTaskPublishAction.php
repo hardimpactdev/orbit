@@ -39,6 +39,12 @@ final readonly class StartTaskPublishAction
             $doneCheck = $check->id;
         }
 
+        // Every pull request text of a group that names its issue closes it, whoever wrote the text (docs/reference/tasks.md#closes-the-issue).
+        $text = $input->pull_request;
+        if ($text !== null) {
+            $input = new StartTaskPublishData($input->check, [...$text, 'body' => TaskDonePublication::closing($group, $text['body'])]);
+        }
+
         return $this->publish->start($group, $input, $triggeredBy, $requestId, $doneCheck, $byItself);
     }
 }

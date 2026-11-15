@@ -39,13 +39,13 @@ final readonly class ShowTasksStatusAction
             ->map(static fn (Task $group): TaskMergeData => TaskMergeData::fromModel($group))
             ->all());
 
-        // Task copy groups whose work is done but whose pull request waits for a person: released by `task:publish <group>`.
+        // Task copy groups whose work is done but whose pull request waits: for a person's `task:publish <group>`, or for the reviewer's text.
         $releases = [];
         $copies = Task::topLevel()->with('project', 'taskable')->whereNull('pr_url')->where('taskable_type', (new Instance)->getMorphClass())
             ->whereNotIn('status', TaskGroupStatus::endedStatuses())->orderBy('id')->get();
         foreach ($copies as $group) {
             $publication = TaskPublicationData::fromModel($group);
-            if ($publication !== null && in_array($publication->state, [TaskPublicationData::WaitingForRelease, TaskPublicationData::Refused], true)) {
+            if ($publication !== null && in_array($publication->state, [TaskPublicationData::WaitingForPrText, TaskPublicationData::WaitingForRelease, TaskPublicationData::Refused], true)) {
                 $releases[] = TaskReleaseData::fromPublication($group, $publication);
             }
         }

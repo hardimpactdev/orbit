@@ -39,10 +39,10 @@ final readonly class TaskCopyTurn
      * How a reviewer in a copy approves (docs/reference/tasks.md#the-reviewers-pull-request-text): it sends the pull request text through
      * its copy key. Orbit opens the pull request once the group is done; the copy holds no Git token.
      */
-    public const string PrTextRule = 'If you approve this commit, write its pull request: a title of one line and a body in Markdown. Send them '
-        .'before this turn ends: curl -sS -H "Authorization: Bearer $ORBIT_COPY_KEY" -F \'title=<the title>\' -F \'body=<pr-body.md\' '
-        .'"$ORBIT_COPY_API/pull-request". A second send replaces the text. Orbit opens the pull request with it once the work is done. '
-        .'If you do not approve, send nothing.';
+    public const string PrTextRule = 'If you approve this commit, write its pull request: a title of one line, and a body in Markdown in a file such as '
+        .'pr-body.md. Send them before this turn ends: . ~/.config/orbit/model.env && curl -sS --fail-with-body -H "Authorization: Bearer $ORBIT_COPY_KEY" '
+        .'--form-string "title=$TITLE" -F \'body=<pr-body.md\' "$ORBIT_COPY_API/pull-request" (set TITLE to the title first). A second send replaces the text. '
+        .'Orbit opens the pull request with it once the work is done. If you do not approve, send nothing.';
 
     public function __construct(private TaskOperations $operations, private TaskCheckedCandidate $candidates) {}
 
