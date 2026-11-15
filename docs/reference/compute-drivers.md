@@ -91,7 +91,7 @@ A part that pins its own artifact may leave `bin` out: it gives the folder files
 
 | Folder | Parts |
 | --- | --- |
-| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>` |
+| `runtime` | `node`, `bun` and `deno`, from the recipe's tools; `composer`, the release phar; `ripgrep`; `php-data-bridge`, with no program; `vite-plus`, the recipe's `vp-cli` release, whose `vp` runs from the folder's [Vite+ home](#the-vite-home). Each published [static PHP build](#static-php-build) adds `php/<version>`, with `bin/` and `modules/` |
 | `agent` | `t3`, the release tarball; `claude-code` and `codex`, the npm packages of the Linux x64 builds |
 
 #### The Vite+ home
@@ -320,7 +320,7 @@ The standalone recipe CLI uses `python3`, `gpg` and `gpgv`. Run `php artisan orb
 
 ### Static PHP build
 
-The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same extensions. No published release ships both binaries from one build, so Orbit builds them.
+The runtime folder of a [development container](/reference/development-containers#php) holds a static PHP CLI and FrankenPHP for each PHP version. Both come from one [static-php-cli](https://static-php.dev) build, so web requests and commands run the same PHP with the same static extensions. The same build gives the CLI-only extensions as shared files, which only the PHP CLI loads. No published release ships both binaries from one build, so Orbit builds them. [ADR 0262](/decisions/0262-build-container-php-on-glibc-with-a-cli-only-pcov) moves the build from musl to glibc and adds the CLI-only PCOV.
 
 The recipe's `instances.php` section defines the builds:
 
@@ -328,17 +328,18 @@ The recipe's `instances.php` section defines the builds:
 | --- | --- |
 | `static_php_cli` | The full static-php-cli commit that runs the build, on its `v3` line, which FrankenPHP's own static build uses |
 | `frankenphp` | The exact FrankenPHP release, such as `1.13.5` |
-| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` and `pcov`. A fully static musl binary cannot load shared code, and static-php-cli builds `pcov` only as a shared extension |
+| `without` | Extensions of the [PHP build](#php-build) that the static build leaves out: `ffi` |
+| `cli_extensions` | Extensions of the PHP build that the build makes shared, for the PHP CLI only: `pcov`. static-php-cli builds `pcov` only as a shared extension. The archive holds each as `modules/<name>.so`, and only the CLI loads it, through [`php-cli.ini`](/reference/php-runtime#container-php). An extension in this list is in neither `without` nor the static extensions |
 | `versions.<X.Y>.php_version` | The exact PHP release, such as `8.5.12`. It can differ from the Node pin's patch release for a while, because a new release needs a new build |
-| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the extension list, `tools/static-php/craft.yml` and `bin/static-php-build` |
+| `versions.<X.Y>.build` | The build id: a SHA-256 over the PHP release, FrankenPHP, the static-php-cli commit, the static and CLI-only extension lists, `tools/static-php/craft.yml` and `bin/static-php-build` |
 | `versions.<X.Y>.url` | The release asset `static-php-<php_version>-<build id prefix>-linux-x86_64.tar.gz` under the `static-php-<php_version>-<build id prefix>` release |
 | `versions.<X.Y>.sha256` | The asset's SHA-256, or `null` until main has published the build |
 
 static-php-cli resolves the sources of the libraries and PECL extensions when it builds, so two builds of one id can differ. The archive's `sources.json`, static-php-cli's download record, names each source's version and hash. The published SHA-256 is what fixes the bytes a Node installs.
 
-A build's extensions are its PHP version's `extensions` less `without`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
+A build's static extensions are its PHP version's `extensions` less `without` and less `cli_extensions`, so the Node build and the static build share one list. Today that is every extension Orbit's Laravel projects require, from their `composer.json` files and locks: `intl`, `exif`, `sodium`, `pcntl`, `sockets` and the rest, with `pdo_pgsql`, `pdo_mysql`, `pdo_sqlite`, `redis`, `igbinary`, `imagick`, `gd` and `opentelemetry`. Both binaries load OpenTelemetry, because they share one build; on a Node only PHP-FPM loads it. The section is not part of the [recipe identity](#recipe-identity): no Node profile or task image holds the static build.
 
-`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, as a fully static musl binary for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
+`tools/static-php/craft.yml` is the static-php-cli build definition. It builds the `cli` and `frankenphp` SAPIs together with ZTS, for the baseline x86_64 CPU, without static-php-cli's suggested extensions. Each binary links everything statically except glibc, and the build uses Ubuntu 26.04's glibc or an older one, so the binaries run in every container. It builds the `cli_extensions` as shared extensions. Its libraries give `gd` its image formats and `curl` HTTP/2 and HTTP/3. PHP reads its configuration from `/etc/orbit/php` and `/etc/orbit/php/conf.d`.
 
 `bin/static-php-build` runs the build:
 
@@ -346,16 +347,16 @@ A build's extensions are its PHP version's `extensions` less `without`, so the N
 | --- | --- |
 | `definition` | Prints each version's build id, release tag, asset and URL |
 | `verify-pins` | Fails when a recorded `build` or `url` is not the definition's |
-| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `build.json` and `sources.json` with a `SHA256SUMS` file |
-| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's extensions |
+| `build --version X.Y --output DIR` | Fetches the pinned static-php-cli and FrankenPHP sources, runs `spc craft`, and packs `bin/php`, `bin/frankenphp`, `modules/pcov.so` (one `modules/<name>.so` for each of the `cli_extensions`), `build.json` and `sources.json` with a `SHA256SUMS` file |
+| `check --version X.Y --bin DIR` | Fails unless both binaries report the pinned PHP release and load exactly the build's static extensions, and the CLI, given the `cli_extensions`, loads exactly the static extensions and those |
 
-The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
+The check is the Ansible module `orbit_static_php`. The [runtime folder](/reference/development-containers#shared-folders) holds each published build as the part `php/<version>`, unpacked to `php/<version>/bin` and `php/<version>/modules`, and its install runs the check on each one before the folder version is whole. A build whose `sha256` is still `null` is not in the folder. FrankenPHP runs its probe through `frankenphp php-cli`, and the CLI runs it with `php -n`: both must load exactly the static extensions. The CLI then runs the probe with `php -n` and `-d extension=<part>/modules/<name>.so` for each of the `cli_extensions`, and must load exactly the static extensions and those. FrankenPHP never loads a CLI-only extension. FrankenPHP's own SAPI module, such as `frankenphp-cli`, is not an extension, so the check leaves it out for FrankenPHP only.
 
 #### The static PHP workflow
 
 The `Static PHP build` workflow runs when the recipe, the build files or the workflow change. It requires every pin to name its definition. Compilation exceeds the [CI budget](/reference/implementation-loop#ci-budget), so a pull request only validates the pins. On main, a push or a manual run builds the versions whose release does not exist yet. The proof job keeps each archive it proved in the Actions cache under its build id, so a change to the proof alone does not build again.
 
-A proof job unpacks the archive, checks its SHA-256, refuses a binary that is not fully static, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`.
+A proof job unpacks the archive, checks its SHA-256, refuses a binary that needs any shared library other than glibc's own, or a glibc newer than Ubuntu 26.04's, and runs the extension check. It then runs `php -v`, `php -i`, `php -m` and `php -d memory_limit=1G`, installs the Gateway with Composer and its scripts, runs Artisan and Pest with `php -d memory_limit=1G vendor/bin/pest`, and serves the Gateway's `/up` with `frankenphp php-server`. With a `php-cli.ini` that loads the archive's `modules/pcov.so`, as a container has, it proves three things: `php -m` shows `pcov`, `pest --coverage` measures coverage, and a page that FrankenPHP serves with the same configuration shows no `pcov`.
 
 On main, from a push or a manual run, the publish job creates the release with the archive and `SHA256SUMS`. It never replaces a release: a published SHA-256 may already be pinned. Pull requests never build, prove or publish.
 
@@ -365,6 +366,8 @@ On main, from a push or a manual run, the publish job creates the release with t
 2. Run `bin/static-php-build definition`. Record each changed version's `build` and `url`, and set its `sha256` to `null`.
 3. The pull request's workflow validates the pins. After merge, main builds, proves and publishes the definition.
 4. A second pull request records the published SHA-256 from the release's `SHA256SUMS`. Only then can a Node install the build.
+
+Hold every release between the two pull requests. A build whose `sha256` is `null` is not in the runtime folder, so a release in that window removes `php/<version>` from the runtime folder of every container, and their `php` and FrankenPHP with it.
 
 ### Recipe identity
 
