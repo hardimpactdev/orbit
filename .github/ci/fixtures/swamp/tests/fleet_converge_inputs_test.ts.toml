@@ -1,5 +1,5 @@
 order = 1490
-source_sha256 = "836ca0cf539aab0af4cd7dd6a454ab8430ce07cfb14c6606fd393a3aad822aff"
+source_sha256 = "a1bc117b7e7ae5cbd990685166a22fa3b70107a6635b8c606d3a6b9e8c3015cf"
 cases = [
   "every file a nested Node's base converge reads is in the converge digest's list",
   "the list holds only files a base converge reads, each exists, ships in the manifest, and each cut still guards its include",
@@ -7,10 +7,16 @@ cases = [
   "a cut import fails when the converge workflow calls its method or a use leaves its guard",
   "the converge workflow's Node plays lock a behavior per Node, so the refresh starts the inner Nodes side by side",
   "the refresh hashes the listed inputs and the inner Gateway's base intent digests",
+  "a module counts when a reached task calls it, with every module_utils file it imports; an uncalled one does not",
+  "a file a reached task copies onto the Node counts; a copied folder or a templated src fails with its file and line",
+  "the walker fails with the file and line on what it cannot follow, and never drops a file",
+  "each family a base converge reads stays in the list, and no library module or module_utils file does",
 ]
 file = "swamp/tests/fleet_converge_inputs_test.ts"
-cost = 1 # ESTIMATE: six read-only cases completed in 0.05 s locally
+cost = 1 # ESTIMATE: ten read-only cases completed in 0.05 s locally
 inputs = [
+  "swamp/ansible/module_utils/*",
+  "swamp/ansible/library/*",
   "swamp/ansible/fleet-converge-inputs.json",
   "swamp/ansible/tasks/instance-fleet-refresh.yml",
   "swamp/manifest.yaml",

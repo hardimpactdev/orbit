@@ -2343,11 +2343,23 @@ The converge digest follows what a base converge of a nested Node reads, so a re
 
 | Input | What it holds |
 | --- | --- |
-| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and the imports a converge runs, the playbook and its task files, and the play's configuration and modules |
+| The `swamp` files that `swamp/ansible/fleet-converge-inputs.json` lists | The converge workflow, the `ansible-input` behavior and the imports a converge runs, the playbook, its task files and copied files, its configuration, and the modules a task calls |
 | The nested Gateway's digest of each Node's base intent | The agent pin and its configuration, the recipe, the kernel and update policies, the SSH target, the CLI plan and the [units of the Node's roles](/reference/node-provisioning#role-units-at-a-converge) |
 | The fleet intent | The fleet's names, layout, checkout and proxy |
 
 A cover test, `swamp/tests/fleet_converge_inputs_test.ts`, walks the playbook and the imports. It fails on a file that the list does not hold.
+
+A module in `swamp/ansible/library/` counts only when a task of the base converge names it. A `module_utils/` file counts only when such a module imports it. Every local module and util is named `orbit_<name>`, so none overrides one of Ansible's own, which the builtin tasks load. So a release that changes only a module of another play, such as a Route module, converges nothing.
+
+The skip never leaves an old module in the fleet. The nested Gateway mounts the container's checkout, so the next inner play loads the new module from it.
+
+The cover test fails, with the file and line, on what it cannot follow:
+
+- a dynamic include;
+- a templated module name;
+- a short module name that is not in `library/`;
+- a role or `include_vars`;
+- a copy of a folder or of a templated source onto a Node.
 
 After the migrate, the refresh runs `php artisan orbit:node-converge-digest --base gateway app-dev app-prod` in the nested Gateway. The command builds each intent as `node.converge` with `base: true` does. It admits no Operation, makes no execution copy and writes nothing.
 
