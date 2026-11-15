@@ -1,0 +1,15 @@
+order = 1501
+source_sha256 = "dd0cd6a5a64bcce8f0e8404dbc033d8cfbb97a941b2e5120d271cf723edfa200"
+cases = [
+  "each workflow step that writes a method-named sensitive field names a method that a Gateway write grant allows",
+]
+file = "swamp/extensions/behaviors/operations/sensitive_method_grants_test.ts"
+cost = 1 # 1 case in 0.09 s locally
+inputs = [
+  "swamp/config/gateway-workflow-grants.json",
+  "swamp/workflows",
+  "swamp/extensions/behaviors/operations",
+]
+
+[case_costs]
+"each workflow step that writes a method-named sensitive field names a method that a Gateway write grant allows" = 1

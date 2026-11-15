@@ -52,7 +52,7 @@ function check(session: { status: number; body: string }): z.infer<typeof Authen
 }
 
 /** The run folder of a migrate's registration, which holds `t3.json`. */
-const Args = z.object({
+export const Args = z.object({
     instance_id: z.number().int().positive(),
     folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
 });
@@ -80,6 +80,8 @@ async function stored(file: string, instanceId: number, ctx: Context, remove: bo
         throw new Error("conn.admin_scope_missing");
     }
     if (reply.gateway.token === reply.swamp.token) throw new Error("conn.response_invalid");
+    // Swamp names a sensitive field's vault key from `<type>/<modelId>/<METHOD>/<spec>/<instance>/<field>` (data_writer.ts, pinned
+    // db3f6373), and the Gateway's grant allows only `...-register-session-...`: so every registration runs as method `register`.
     const key = (name: string) =>
         `nckrtl-instance-t3-${modelId}-register-session-${name}-${instanceId}-token`;
     const handles = [];
@@ -97,7 +99,7 @@ async function stored(file: string, instanceId: number, ctx: Context, remove: bo
 }
 
 /** A migrate's registration (workflow-operation-instance-migrate.yaml): the server's receipt, from the run folder's `t3.json`. */
-export async function register(args: z.infer<typeof Args>, ctx: Context) {
+export async function migrateRegister(args: z.infer<typeof Args>, ctx: Context) {
     const { handles, server } = await stored(`${args.folder}/t3.json`, args.instance_id, ctx, false);
     handles.push(await ctx.writeResource("terminal", "terminal", { stdout: JSON.stringify(server) }));
     return { dataHandles: handles };
@@ -192,9 +194,27 @@ export async function renew(args: z.infer<typeof RenewArgs>, ctx: Context) {
     return { dataHandles: handles };
 }
 
+/**
+ * The one registration method, `register`: the method name is part of the sessions' vault keys, which the Gateway reads and its grant
+ * allows. A migrate passes `{instance_id, folder}`; a clone create passes the create's result inputs (`intent` among them). The
+ * arguments stay one object, so Swamp still knows each input's name.
+ */
+export const RegisterArgs = CreateArgs.partial().extend({
+    folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
+    instance_id: z.number().int().positive().optional(),
+}).superRefine((value, ctx) => {
+    const shape = value.intent === undefined ? Args : CreateArgs;
+    const parsed = shape.safeParse(value);
+    if (!parsed.success) for (const issue of parsed.error.issues) ctx.addIssue({ ...issue, code: "custom", message: issue.message });
+});
+
+export async function register(raw: z.input<typeof RegisterArgs>, ctx: Context) {
+    return raw.intent === undefined ? await migrateRegister(Args.parse(raw), ctx) : await createRegister(raw as z.input<typeof CreateArgs>, ctx);
+}
+
 export const behavior = {
     type: "@nckrtl/instance-t3",
-    version: "2026.11.15.1",
+    version: "2026.11.15.2",
     resources: {
         session: { schema: Stored, lifetime: "infinite", garbageCollection: 10 },
         terminal: { schema: Terminal, lifetime: "infinite", garbageCollection: 10 },
@@ -202,15 +222,9 @@ export const behavior = {
     methods: {
         register: {
             description:
-                "Check a moved container's T3 reply and store its Gateway and Swamp sessions as native sensitive fields",
-            arguments: Args,
+                "Check a T3 reply and store its Gateway and Swamp sessions as native sensitive fields; for a clone create, also return the create's result",
+            arguments: RegisterArgs,
             execute: register,
-        },
-        create_register: {
-            description:
-                "Check a clone's T3 reply, store its Gateway and Swamp sessions as native sensitive fields, and return the create's result",
-            arguments: CreateArgs,
-            execute: createRegister,
         },
         renew: {
             description:
