@@ -5,7 +5,6 @@ declare(strict_types=1);
 use App\Domain\Proof\ProofBatchProjection;
 use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofVerifyProjection;
-use App\Domain\Tasks\TaskGitHubTokens;
 
 return [
     // The Swamp workflow `proof-fleet-verify` proves one command in the task copy of a group, with the fleet it already has. Its `report` step
@@ -16,8 +15,8 @@ return [
     // copy, runs the Project's development deploy steps from their vault copies, proves the assigned batches through `proof-fleet-verify` and
     // leaves the copy's removal to the Gateway (ProofCommandProjection). Its `Report` step joins the verdict lines; the Gateway reads
     // it once, when the run ends. Each child that ends records its batch on the run as it ends (ProofBatchProjection::applyChild), for a
-    // run that reaches its budget. The task VM workflow `operation-proof-run` stays declared, and unused, until it leaves Swamp.
-    'proof.command' => ['workflow' => 'operation-proof-run', 'alternate_workflows' => ['operation-proof-run-copy'], 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true, 'github_token_issuer' => TaskGitHubTokens::class,
+    // run that reaches its budget.
+    'proof.command' => ['workflow' => 'operation-proof-run-copy', 'projection' => ProofCommandProjection::class, 'workflow_inputs' => true,
         'terminal_result' => ['job' => 'prove', 'step' => 'Report', 'native' => true, 'captures' => ['report' => ['job' => 'prove', 'step' => 'Report', 'field' => 'stdout', 'artifact' => 'result']]],
         'execution_copies' => [['vault' => 'orbit-control-inputs', 'key_pattern' => '^development-deploy-operation-[1-9][0-9]*-step-(?:[0-9]|[12][0-9]|3[01])$']]],
 ];

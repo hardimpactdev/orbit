@@ -82,37 +82,6 @@ Deno.test("restored fleets require checkout migration before every nested Gatewa
     );
 });
 
-Deno.test("renewed base snapshots check readiness only after the apply that migrates", async () => {
-    const prepare =
-        (await workflow("proof-fleet-verify")).jobs.find((job) =>
-            job.name === "prepare"
-        )!.steps;
-    const apply = named(prepare, "Re-mint the Swamp tokens");
-    const ready = named(prepare, "Check readiness");
-    const snapshot = named(prepare, "Take base again");
-    assertEquals(apply.task.workflowIdOrName, "task-nested-apply");
-    assertEquals(
-        ready.guard,
-        apply.guard,
-        "readiness must never run when the apply was skipped",
-    );
-    assertEquals(snapshot.guard, apply.guard);
-    const succeededOrSkipped = {
-        type: "or",
-        conditions: [{ type: "succeeded" }, { type: "skipped" }],
-    };
-    assertEquals(
-        ready.dependsOn?.find((dependency) => dependency.step === apply.name)
-            ?.condition,
-        succeededOrSkipped,
-    );
-    assertEquals(
-        snapshot.dependsOn?.find((dependency) => dependency.step === ready.name)
-            ?.condition,
-        succeededOrSkipped,
-    );
-});
-
 type Task = {
     name: string;
     block?: Task[];
@@ -172,12 +141,6 @@ Deno.test("the first fleet build and image snapshots follow migration", async ()
 
 for (
     const [label, flow, job, call] of [
-        [
-            "initial",
-            "proof-fleet-verify",
-            "prepare",
-            "Restore the base snapshot",
-        ],
         ["batch", "proof-fleet-verify-batch", "start", "restore"],
         [
             "replay",
@@ -185,7 +148,6 @@ for (
             "can-fail",
             "Restore the base snapshot",
         ],
-        ["final", "proof-fleet-verify", "finish", "Restore the clean fleet"],
     ]
 ) {
     Deno.test(`${label} restore calls the shared proof-fleet-restore workflow`, async () => {

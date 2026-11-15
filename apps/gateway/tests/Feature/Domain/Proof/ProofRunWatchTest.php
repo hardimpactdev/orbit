@@ -171,7 +171,7 @@ it('ends held children after a lost successor only when the proof is old and eve
     $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
     $answered = watchRun($proof, 'firewall:allow', OperationStatus::Failed, 'swamp.start_job_failed');
     $held = watchRun($proof, 'firewall:list', OperationStatus::Queued);
-    $held->update(['state' => ['swamp_start' => ['key' => 'operation:'.$held->id, 'workflow' => 'operation-proof-run'],
+    $held->update(['state' => ['swamp_start' => ['key' => 'operation:'.$held->id, 'workflow' => 'operation-proof-run-copy'],
         'proof_child_start' => ['not_before' => now()->subSeconds(900)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
     watchAged($held, 900, 299);
     expect(app(ProofRunWatch::class)->sweep())->toBe(0);
@@ -212,7 +212,7 @@ it('keeps the existing query count for proofs without holds while repairing held
 function watchStrandedHeld(Operation $proof, int $age = 90 * 86400): Operation
 {
     $child = watchRun($proof, 'firewall:allow', OperationStatus::Queued);
-    $child->update(['state' => ['swamp_start' => ['key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run'],
+    $child->update(['state' => ['swamp_start' => ['key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run-copy'],
         'proof_child_start' => ['not_before' => now()->subSeconds(20)->toISOString(), 'released_at' => null, 'advanced_at' => null]]]);
 
     return watchAged($child, $age);

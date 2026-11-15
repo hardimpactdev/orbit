@@ -1,10 +1,6 @@
 order = 1050
-source_sha256 = "f5e756e7a6f1742966877bd1b68cc861fa7ef699ddf65b87ea8fd7cba69a0c53"
+source_sha256 = "64a10b89742b6903e5239c2caf16e263e2dc32a4a85d371b107e720da33a86ad"
 cases = [
-  "the check is an assert that holds for the commit under proof, with or without the newline that git prints",
-  "the check fails for a clone of main, for an unreadable workspace and for a partial commit",
-  "the read lets an unreadable workspace reach the assert, and it reads the HEAD of the checkout of the pinned intent",
-  "no case runs before the check: the proof of the command depends on it succeeding, and the check on the read",
   "assigned batches use the old runner plan interface and filter its whole batch lines",
   "merge-base replay fails a flagged case that passes on base and rejects missing or infrastructure verdicts",
   "replay selection stays within the admitted batch and skips switching with no eligible cases",
@@ -22,6 +18,5 @@ inputs = [
   "swamp/proof/runner/runner.py",
   "swamp/proof/runner/spec.py",
   "swamp/tests/_support/swamp_workflow.ts",
-  "swamp/workflows/workflow-operation-proof-run.yaml",
   "swamp/workflows/workflow-proof-fleet-verify.yaml",
 ]

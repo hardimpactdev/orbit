@@ -15,7 +15,7 @@ Check this page before you build on something. Each row is code that still runs,
 | --- | --- | --- |
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` key prefixes in the create's declared copies, the Gateway grants, the create workflow's input pattern and `ContainerDestroyExecutionCopies` | The one-line launch copy `instance-create-launch-<operation>`; the bare copies are not written | When no Instance created on release 2079 or 2084 is left (the destroy deletes their copies) |
 | The `<name>-topology-seed` clone name in `TaskVmSlotRuns::seedClone` for VMs without a place number | Every start's VM has a place and a `<name>-seed` clone | When no VM of the old pool (`tvm-610`, `tvm-663`) is live |
-| The [task VM proof run](#the-task-vm-proof-run) | [`proof:run` in copies](/cli/proof/run#the-run) | One release after the Gateway's task VM proof branch went |
+| The merge-base replay pieces of the [task VM proof run](#the-task-vm-proof-run) | [`proof:run` in copies](/cli/proof/run#the-run), once it replays flagged cases | When the replay is ported to copies |
 | `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
 | The `certificate`, `pi_port`, `control_ip` and `gateway_ip` of a task start identity: the CA files and the three `identity.env` lines (`ORBIT_PI_PORT`, `ORBIT_CONTROL_IP`, `ORBIT_GATEWAY_IP`) a task start still writes | The boot phase of the base converge (`boot.trust`) bakes the CA and the firewall into the base; the `orbit-identity` unit mounts its own share | When both hosts' bases are refreshed after the boot phase merged |
 | [`instance:migrate`](/cli/instance/migrate), its kind `instance.migrate`, the workflow `operation-instance-migrate` and the playbook `instance-migrate.yml`; and checkout Instances on an `app-dev` Node, with their PHP-FPM pools | Every new Instance is a [container](/reference/development-containers); the command moves each checkout Instance into one | When the last checkout Instance has moved, with the switch of every `app-dev` Node ([PR 16](/solutions/development-container-runtime#pr-16-switch-every-app-dev-node)) |
@@ -29,14 +29,11 @@ The capacity model replaces the shared CI reserve, `task_max_vms`, resource-unit
 
 ## The task VM proof run
 
-The Gateway builds no task VM proof input any more, but these parts stay one release longer:
+The task VM proof run is removed: the workflow `operation-proof-run`, the task VM first restore, token re-mint and last restore of `proof-fleet-verify`, and the `proof.command` arm of `TaskGitHubTokens`. These parts stay until the merge-base replay is ported to copies:
 
-- the workflow `operation-proof-run`, which is still the `workflow` of the kind `proof.command`; the kind only starts `operation-proof-run-copy`;
-- its test `swamp/tests/proof_keep_failed_test.ts`;
-- the task VM restore and token steps of `proof-fleet-verify` and `proof-fleet-verify-batch`, with the restore handling of `ProofVerifyProjection`;
-- the `proof.command` arm of `TaskGitHubTokens`.
-
-The steps that replay flagged cases on the merge base stay until that replay is ported to copies.
+- the steps of `proof-fleet-verify` that replay flagged cases on the merge base (`Restore the head checkout`, the jobs `can-fail` and `can-fail-batches`);
+- the batch restore of `proof-fleet-verify-batch`;
+- the workflows `proof-fleet-restore`, `task-nested-apply` and `task-nested-ready`.
 
 ## Off in the live fleet
 

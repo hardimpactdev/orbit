@@ -1,13 +1,10 @@
 order = 1040
-source_sha256 = "506afce7cb00b322727ab8acdb8a0a628f46bd55dd23101d34249b814d972a03"
+source_sha256 = "8373d4035d214d1a3e285f8de62acce37a835fb281e793b8089784bfe0ca6452"
 cases = [
   "restored fleets require checkout migration before every nested Gateway API check",
-  "renewed base snapshots check readiness only after the apply that migrates",
   "the first fleet build and image snapshots follow migration",
-  "initial restore calls the shared proof-fleet-restore workflow",
   "batch restore calls the shared proof-fleet-restore workflow",
   "replay restore calls the shared proof-fleet-restore workflow",
-  "final restore calls the shared proof-fleet-restore workflow",
   "systemd boot and every required state mount gate apply",
   "late gateway state mounts pass after the boot wait and fail without it",
   "late app-dev state mounts pass after the boot wait and fail without it",

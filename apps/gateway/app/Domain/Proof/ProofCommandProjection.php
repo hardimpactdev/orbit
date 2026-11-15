@@ -8,7 +8,6 @@ use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
-use App\Domain\Operations\DirectOperationWorkflowChoice;
 use App\Domain\Operations\DirectOperationWorkflowInput;
 use App\Domain\Operations\OperationStore;
 use App\Infrastructure\Swamp\NativeRunResult;
@@ -22,7 +21,7 @@ use Illuminate\Support\Facades\DB;
  * terminal event: the verdict of each case, and the end of the task group, which is the destroy of its copy. No step calls the Gateway.
  * See docs/cli/proof/run.mmd.
  */
-final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowChoice, DirectOperationWorkflowInput
+final readonly class ProofCommandProjection implements DirectOperationProjection, DirectOperationStartRefusal, DirectOperationTimeout, DirectOperationWorkflowInput
 {
     /** The code of a run whose copy or fleet never got to run its cases. */
     public const string RunFailed = 'proof.run_failed';
@@ -31,15 +30,6 @@ final readonly class ProofCommandProjection implements DirectOperationProjection
     public const string WorkspaceCommitMismatch = 'proof.workspace_commit_mismatch';
 
     public function __construct(private ProofRunSettlement $settlement) {}
-
-    /**
-     * Every run proves in a copy: `operation-proof-run-copy`. The kind still declares the task VM workflow `operation-proof-run`, which
-     * no run starts any more, until that workflow leaves Swamp one release later.
-     */
-    public function workflow(Operation $operation): string
-    {
-        return 'operation-proof-run-copy';
-    }
 
     /** At the start of a run, each development deploy step's command goes to its vault key. */
     public function workflowInput(Operation $operation): array

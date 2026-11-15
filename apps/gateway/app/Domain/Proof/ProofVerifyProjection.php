@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\DB;
  */
 final readonly class ProofVerifyProjection implements DirectOperationProjection
 {
-    /** The code of a run whose cases all passed but whose last restore failed, so the VM keeps a dirty fleet. */
+    /** The code of a run whose cases all passed but whose workflow failed after them. */
     public const string RestoreFailed = 'proof.restore_failed';
 
     /** The inputs of the workflow: the intent as admitted. */
