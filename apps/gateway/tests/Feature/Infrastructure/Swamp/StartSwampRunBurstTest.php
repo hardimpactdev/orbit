@@ -43,7 +43,10 @@ final class BurstLimitedServe implements WebSocketClient
     /** @var list<array<string,mixed>>|null Serve's reply to a start it rejects, sent once with the start's id. */
     public ?array $rejection = null;
 
-    private bool $rejected = false;
+    /** Whether every start gets `$rejection`, as serve's admission gate answers each start while it boots or stops. */
+    public bool $rejectEveryStart = false;
+
+    private ?string $rejected = null;
 
     private int $inWindow = 0;
 
@@ -87,8 +90,9 @@ final class BurstLimitedServe implements WebSocketClient
             ]]]];
         }
         if ($this->rejection !== null) {
-            $reply = $this->rejected ? [] : array_map(static fn (array $message): array => ['id' => $frame['id']] + $message, $this->rejection);
-            $this->rejected = true;
+            $reply = $this->rejected === $frame['id'] || ($this->rejected !== null && ! $this->rejectEveryStart)
+                ? [] : array_map(static fn (array $message): array => ['id' => $frame['id']] + $message, $this->rejection);
+            $this->rejected = $frame['id'];
 
             return $reply;
         }
@@ -179,7 +183,7 @@ it('starts every Operation released at once although serve refuses part of the b
     foreach ($operations as $operation) {
         expect($operation->refresh()->status)->toBeIn([OperationStatus::Running, OperationStatus::Queued]);
     }
-    for ($round = 0; $round < StartSwampRun::MaxDeferrals && Operation::query()->where('status', OperationStatus::Queued)->exists(); $round++) {
+    for ($round = 0; $round < 3 && Operation::query()->where('status', OperationStatus::Queued)->exists(); $round++) {
         $this->travel(StartSwampRun::MaxDeferralSeconds)->seconds();
         runDueStarts($ran);
     }
@@ -220,14 +224,19 @@ it('queues a refused start again after Retry-After and sends it once when serve 
         ->and($serve->starts($operation->id))->toHaveCount(1);
 });
 
-it('fails a start for good after its last deferral, never having sent it', function (): void {
+it('fails a start for good once its deferral budget has passed, never having sent it', function (): void {
+    $this->freezeTime();
     [$operation] = burstCreates(1);
     $serve = new BurstLimitedServe(limit: 0, windowSeconds: 100_000);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
+    // Serve names a Retry-After past the longest wait, so every deferral waits 65 s: deferrals at 0, 65, ..., 390 s, then the
+    // attempt at 455 s is past the 420-second budget.
+    $deferrals = intdiv(StartSwampRun::DeferralBudgetSeconds - 1, StartSwampRun::MaxDeferralSeconds) + 1;
 
     runDueStarts($ran);
-    for ($round = 0; $round < StartSwampRun::MaxDeferrals; $round++) {
+    for ($round = 0; $round < $deferrals; $round++) {
+        expect($operation->refresh()->status)->toBe(OperationStatus::Queued);
         $this->travel(StartSwampRun::MaxDeferralSeconds)->seconds();
         expect(runDueStarts($ran))->toBe(1);
     }
@@ -236,9 +245,87 @@ it('fails a start for good after its last deferral, never having sent it', funct
         // The refused connection is an execution copy's or the start's own, so the failure names that step.
         ->and($operation->error_code)->toBeIn(['swamp.vault_sync_unavailable', 'swamp.start_unavailable'])
         ->and($operation->lock_key)->toBeNull()
-        ->and($operation->state['start_deferrals'])->toBe(StartSwampRun::MaxDeferrals)
+        ->and($operation->state['start_deferrals'])->toBe($deferrals)
         ->and($serve->starts($operation->id))->toBe([])
-        ->and(count(Queue::pushedJobs()[StartAdmittedSwampRun::class]))->toBe(1 + StartSwampRun::MaxDeferrals);
+        ->and(count(Queue::pushedJobs()[StartAdmittedSwampRun::class]))->toBe(1 + $deferrals);
+});
+
+// Serve's admission gate (537e03d1 serve_admission.ts; db3f6373 already sends `draining` from its run registry, with no
+// Retry-After): a start while serve boots or stops, answered before serve saves a run.
+dataset('serve admission refusals', [
+    'booting' => [['code' => 'not_ready', 'message' => 'Serve is starting; try again shortly', 'retryAfterSeconds' => 2], 5],
+    'stopping' => [['code' => 'draining', 'message' => 'Serve is shutting down; try again once it is back', 'retryAfterSeconds' => 5], 6],
+    'stopping, db3f6373' => [['code' => 'draining', 'message' => 'Serve is shutting down; try again once it is back'], 5],
+]);
+
+it('queues a start again that serve did not admit while it boots or stops, and sends it once serve admits it', function (array $error, int $delay): void {
+    $this->freezeTime();
+    [$operation] = burstCreates(1);
+    $serve = new BurstLimitedServe(limit: 100);
+    $serve->rejection = [['type' => 'error', 'error' => $error]];
+    app()->instance(WebSocketClient::class, $serve);
+    $ran = [];
+
+    runDueStarts($ran);
+    expect($operation->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->state['start_deferrals'])->toBe(1)
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull()
+        ->and($serve->starts($operation->id))->toHaveCount(1);
+    $pushed = Queue::pushedJobs()[StartAdmittedSwampRun::class];
+    expect(end($pushed)['job']->delay->getTimestamp() - now()->getTimestamp())->toBe($delay);
+
+    $serve->rejection = null;
+    $this->travel($delay)->seconds();
+    runDueStarts($ran);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Running)
+        ->and($operation->state['swamp_run_id'])->toBeString()
+        ->and($serve->starts($operation->id))->toHaveCount(2);
+})->with('serve admission refusals');
+
+it('fails a start as refused when serve keeps refusing it past the deferral budget, with a backoff that spares its handshakes', function (): void {
+    $this->freezeTime();
+    [$operation] = burstCreates(1);
+    $serve = new BurstLimitedServe(limit: 100);
+    $serve->rejection = [['type' => 'error', 'error' => ['code' => 'draining', 'message' => 'Serve is shutting down', 'retryAfterSeconds' => 5]]];
+    $serve->rejectEveryStart = true;
+    app()->instance(WebSocketClient::class, $serve);
+    $ran = [];
+    $waits = [];
+
+    runDueStarts($ran);
+    for ($elapsed = 0; $operation->refresh()->status === OperationStatus::Queued;) {
+        $pushed = Queue::pushedJobs()[StartAdmittedSwampRun::class];
+        $wait = end($pushed)['job']->delay->getTimestamp() - now()->getTimestamp();
+        $waits[] = $wait;
+        $elapsed += $wait;
+        $this->travel($wait)->seconds();
+        runDueStarts($ran);
+    }
+
+    // 6 (Retry-After plus one), 10, 20, 40, then 65 s: a drain of 5 minutes costs a waiting start 8 attempts, not one every 6 s.
+    expect($waits)->toBe([6, 10, 20, 40, 65, 65, 65, 65, 65, 65])
+        ->and($elapsed)->toBeGreaterThanOrEqual(StartSwampRun::DeferralBudgetSeconds)
+        ->and($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('swamp.start_refused')
+        ->and($operation->lock_key)->toBeNull()
+        ->and($operation->state['swamp_run_id'] ?? null)->toBeNull();
+});
+
+it('fails a start at once when serve refuses it for a reason other than its admission gate', function (): void {
+    [$operation] = burstCreates(1);
+    $serve = new BurstLimitedServe(limit: 100);
+    $serve->rejection = [['type' => 'error', 'error' => ['code' => 'global_cap', 'message' => 'Too many concurrent runs; wait for active runs to complete']]];
+    app()->instance(WebSocketClient::class, $serve);
+    $ran = [];
+
+    runDueStarts($ran);
+
+    expect($operation->refresh()->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('swamp.start_refused')
+        ->and($operation->state['start_deferrals'] ?? null)->toBeNull()
+        ->and(Queue::pushedJobs()[StartAdmittedSwampRun::class])->toHaveCount(1);
 });
 
 it('never queues a start again once serve may have accepted it', function (): void {
@@ -387,4 +474,32 @@ it('queues a start again when serve refuses the start\'s own connection after it
         ->and($operation->state['start_deferrals'])->toBe(1);
     $pushed = Queue::pushedJobs()[StartAdmittedSwampRun::class];
     expect(end($pushed)['job']->delay->getTimestamp() - now()->getTimestamp())->toBe(61);
+});
+
+it('counts one budget from the first deferral when a failed connection is followed by refusals of a booting serve', function (): void {
+    $this->freezeTime();
+    [$operation] = burstCreates(1);
+    // Serve is down: its listener refuses the connection, with no Retry-After.
+    $serve = new BurstLimitedServe(limit: 0, windowSeconds: 1);
+    app()->instance(WebSocketClient::class, $serve);
+    $ran = [];
+
+    runDueStarts($ran);
+    $first = now()->getTimestamp();
+    expect($operation->refresh()->state['start_deferred_since'])->toBe($first);
+    // Serve is back but never opens its gate.
+    $serve->limit = 100;
+    $serve->rejection = [['type' => 'error', 'error' => ['code' => 'not_ready', 'message' => 'Serve is starting', 'retryAfterSeconds' => 2]]];
+    $serve->rejectEveryStart = true;
+    while ($operation->refresh()->status === OperationStatus::Queued) {
+        expect($operation->state['start_deferred_since'])->toBe($first);
+        $pushed = Queue::pushedJobs()[StartAdmittedSwampRun::class];
+        $this->travel(end($pushed)['job']->delay->getTimestamp() - now()->getTimestamp())->seconds();
+        runDueStarts($ran);
+    }
+
+    expect($operation->status)->toBe(OperationStatus::Failed)
+        ->and($operation->error_code)->toBe('swamp.start_refused')
+        ->and(now()->getTimestamp() - $first)->toBeGreaterThanOrEqual(StartSwampRun::DeferralBudgetSeconds)
+        ->and(now()->getTimestamp() - $first)->toBeLessThan(StartSwampRun::DeferralBudgetSeconds + StartSwampRun::MaxDeferralSeconds);
 });
