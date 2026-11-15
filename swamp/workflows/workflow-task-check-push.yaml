@@ -1,5 +1,6 @@
 id: 550a0a41-b59c-5ae7-bce7-399ad0fa27ac
 name: task-check-push
+autoContinue: false
 description: Push a passed handoff candidate when CI is required, produce the check receipt and remove the scratch files.
 vaults:
 - orbit-control-inputs

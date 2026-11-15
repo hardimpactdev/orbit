@@ -1,5 +1,6 @@
 id: 1aa9bc3f-6c22-4b27-8742-e0a8620da06b
 name: operation-instance-environment
+autoContinue: false
 description: Write one Instance's Gateway-rendered .env (0640, group orbit-env) and .env.testing from the vault with the official file behavior, check them, and refresh a production runtime.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

@@ -1,5 +1,6 @@
 id: 067d6b1c-f0b8-4b5d-8d84-a73d2f4c9048
 name: operation-instance-rollback
+autoContinue: false
 description: 'Rule 22 rollback: select a retained production release with official cfgmgmt/link, reload its PHP-FPM, restart its Processes, and check the selection.'
 vaults: []
 queueTimeout: 30

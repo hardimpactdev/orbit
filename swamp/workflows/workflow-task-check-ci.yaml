@@ -1,5 +1,6 @@
 id: 4a2d9dd5-9f83-41d4-b8df-8e46367ed230
 name: task-check-ci
+autoContinue: false
 description: One bounded Checks observation per pending handoff at each native schedule tick.
 trigger:
   schedule: 0 * * * * *

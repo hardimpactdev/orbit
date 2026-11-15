@@ -1,5 +1,6 @@
 id: d2be694e-4085-427c-8492-37f72528d97b
 name: operation-node-role-relocate
+autoContinue: false
 description: Move gateway, websocket or metrics to another Node from 209 with pinned SSH argv, the metrics:enable workflow and the node:role:remove workflow; one native end check.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

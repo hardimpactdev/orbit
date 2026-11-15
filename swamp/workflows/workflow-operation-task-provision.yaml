@@ -1,5 +1,6 @@
 id: 11b8ed3f-1814-4165-80c9-8af59fe94c22
 name: operation-task-provision
+autoContinue: false
 description: >-
   Start a task VM for a task group (docs/cli/task/start.mmd) from full inputs on 209: a copy of the host's base snapshot with a clone
   of its seed, the identity the admission minted and the claim's Pi token and models file (the guard origin and the fixed model key), with

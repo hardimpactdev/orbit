@@ -1,5 +1,6 @@
 id: eeaaf23d-8fd2-5f7e-92c5-5619f1752423
 name: route-create-site
+autoContinue: false
 description: "route.create: one Node's certificate, web root, pools, site, awake marker and APP_URL as one Ansible phase, and its production environment file."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

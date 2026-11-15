@@ -1,5 +1,6 @@
 id: c1097e7d-de2c-5300-bf85-eea72ccef264
 name: instance-clone-database-snapshot
+autoContinue: false
 description: Snapshot the chosen SQLite file on the candidate Node with the backup API and copy it to 209.
 vaults:
 - orbit-control-inputs

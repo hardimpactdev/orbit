@@ -1,5 +1,6 @@
 id: 3e352398-69b5-5d9f-bde5-169d23c088ee
 name: cluster-router-select
+autoContinue: false
 description: "cluster.router_set: private DNS answers with the new Router, then the DNS grace."
 vaults: []
 queueTimeout: 30

@@ -1,5 +1,6 @@
 id: eefb6690-519c-4416-a89c-c43c1c34ec97
 name: project-routine
+autoContinue: false
 description: Select this week's routine from the admitted Project and task groups; the Gateway admits the group from the step output.
 inputs:
   type: object

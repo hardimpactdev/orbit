@@ -1,5 +1,6 @@
 id: f425dc3d-2d51-56b7-9e0a-656c7db6fcc0
 name: task-github-mint
+autoContinue: false
 description: Ask the Gateway for the GitHub token of the step that follows; the Gateway writes it to the vault key that admission named. Only the setup files of the dependencies purpose reach a VM.
 inputs:
   type: object

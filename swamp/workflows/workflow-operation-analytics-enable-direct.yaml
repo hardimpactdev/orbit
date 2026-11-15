@@ -1,5 +1,6 @@
 id: 38e1a160-f17b-4d31-b77c-36dfd78ed570
 name: operation-analytics-enable-direct
+autoContinue: false
 description: "Analytics enable in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

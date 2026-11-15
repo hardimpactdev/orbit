@@ -1,5 +1,6 @@
 id: 35a1f0ac-6649-407c-bba9-8e4e483a22d3
 name: operation-instance-start
+autoContinue: false
 description: Start a stopped nested-fleet clone, deliver its Club key, then start its inner fleet and wait for Doctor.
 queueTimeout: 10
 labels: {role: swamp}

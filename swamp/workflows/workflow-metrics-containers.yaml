@@ -1,5 +1,6 @@
 id: eff5f27f-10b6-47a1-9616-9ad5a21d3f80
 name: metrics-containers
+autoContinue: false
 description: Pull the pinned images and start the Prometheus and Grafana containers in their units, keeping the named data volumes; prove both answer.
 vaults: [default, orbit-control-inputs]
 inputs:

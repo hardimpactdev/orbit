@@ -223,6 +223,8 @@ final readonly class NativeSchedules
             'tags' => ['orbit_schedule_id' => $schedule->id, 'orbit_node_id' => (string) $target->node->id,
                 'orbit_target_type' => self::owner($schedule), 'orbit_target_id' => (string) $schedule->target_id],
             'vaults' => [self::Vault],
+            // A fire cut by a serve restart stays interrupted; serve never continues it on its own (swamp/docs/swamp-shape.md).
+            'autoContinue' => false,
             'queueTimeout' => 300,
             'jobs' => [['name' => 'fire', 'labels' => ['role' => 'swamp'], 'steps' => [[
                 'name' => 'Run the Schedule', 'labels' => ['role' => 'swamp'],

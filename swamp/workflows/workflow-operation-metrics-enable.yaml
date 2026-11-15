@@ -1,5 +1,6 @@
 id: 7398163d-b3e5-48dd-9b25-62cf89fe4c65
 name: operation-metrics-enable
+autoContinue: false
 description: metrics.enable from captured intent. Install Docker, write the configuration, start the containers, add the fleet exporters, then publish metrics.orbit.
 vaults: [default, orbit-control-inputs]
 inputs:

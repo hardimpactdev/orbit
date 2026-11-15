@@ -1,5 +1,6 @@
 id: ad81876c-b31c-4ea4-8930-e9468294471a
 name: operation-database-destroy
+autoContinue: false
 description: database:destroy from 209, one docker exec -i per batch; the admin password is the first stdin line of each, from the vault.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

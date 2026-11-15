@@ -1,5 +1,6 @@
 id: ae3bff71-8b73-4cad-8ef4-e8f206492c43
 name: route-certificate-publish
+autoContinue: false
 queueTimeout: 30
 description: 'One Node: a Node-made key and CSR per leaf, signed from 209, installed by official steps.'
 vaults: []

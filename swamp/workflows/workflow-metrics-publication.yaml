@@ -1,5 +1,6 @@
 id: 2f8f11ca-5e1e-4dcb-a3e3-392c7eafd19d
 name: metrics-publication
+autoContinue: false
 description: Publish metrics.orbit on the Gateway Node and its private DNS name, then prove the site answers with its Orbit certificate.
 inputs:
   properties:

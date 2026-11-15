@@ -1,5 +1,6 @@
 id: 2c34c217-ce35-4fde-87ca-1fe4fee45bc7
 name: task-command-run
+autoContinue: false
 description: Run one Schedule command on its Node as a transient systemd unit of the Schedule's user, through official SSH from 209; the command arrives from the vault on stdin.
 vaults:
 - orbit-control-inputs

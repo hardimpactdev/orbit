@@ -1,5 +1,6 @@
 id: e947ab58-40c6-405d-9c74-2c14210e4511
 name: operation-database-write
+autoContinue: false
 queueTimeout: 30
 description: database:query --write from 209, one client over official SSH; the Gateway builds its argv and reads the affected row count.
 vaults: [orbit-control-inputs]

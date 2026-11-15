@@ -1,5 +1,6 @@
 id: 6f0b7f0e-4d63-4c0a-9a43-2f6a1d7c5e21
 name: operation-instance-restore
+autoContinue: false
 description: instance:restore from 209; checks the planned databases, republishes the same Route through Route create, then clears this removal's fence journal rows.
 vaults:
 - orbit-control-inputs

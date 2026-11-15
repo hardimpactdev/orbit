@@ -1,5 +1,6 @@
 id: 279e920a-da77-4487-8029-e9c989f9112d
 name: operation-instance-sleep
+autoContinue: false
 description: Write the asleep marker of a development container, then freeze the container with its memory in swap.
 queueTimeout: 10
 labels: {role: swamp}

@@ -139,6 +139,8 @@ function workflow(
     return {
         id,
         name,
+        // A run cut by a serve restart stays interrupted (docs/swamp-shape.md, rule 6).
+        autoContinue: false,
         description:
             "Official resource removal and single-command SSH actions; retained user data, native end check.",
         vaults: ["orbit-control-inputs"],

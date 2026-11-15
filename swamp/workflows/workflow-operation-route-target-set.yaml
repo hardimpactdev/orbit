@@ -1,5 +1,6 @@
 id: ca5ceca0-f7da-4338-a1dd-196e06c64cd7
 name: operation-route-target-set
+autoContinue: false
 description: "Route target set in the chart's steps; Node work through official cfgmgmt and SSH behaviors (rule 22)."
 vaults: [orbit-control-inputs]
 queueTimeout: 30

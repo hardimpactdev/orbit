@@ -1,5 +1,6 @@
 id: 19bf171c-cf2a-4509-beb7-3373c29f19af
 name: cluster-router-prepare
+autoContinue: false
 description: 'Canonical Router prerequisites, Caddy package and owned firewall policy through official SSH.'
 vaults: []
 inputs:

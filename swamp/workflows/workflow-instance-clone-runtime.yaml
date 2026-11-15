@@ -1,5 +1,6 @@
 id: 330596d6-541a-5c1b-9b4b-11841084c558
 name: instance-clone-runtime
+autoContinue: false
 description: Install the clone's production Process and Schedule records through their shared create workflows; Processes
   stay stopped until the first deploy.
 vaults:

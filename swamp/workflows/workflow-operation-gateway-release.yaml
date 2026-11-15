@@ -1,5 +1,6 @@
 id: 1e788227-08e7-4c2a-b926-94a77a0edafa
 name: operation-gateway-release
+autoContinue: false
 description: Build, migrate and load one Gateway release on the Gateway Node, then hand over to it from the new commit's own definition.
 # Chart: docs/cli/gateway/release-deploy.mmd. The legacy runner's sequence (docs/reference/gateway-recovery.md#deploy-a-release):
 # prepare, guard, configuration, snapshot, migrate, swamp, then the promoter in the child run.

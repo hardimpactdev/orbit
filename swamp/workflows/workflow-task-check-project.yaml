@@ -1,5 +1,6 @@
 id: a6f064ae-6bbd-5d35-80fb-f1080170b6f6
 name: task-check-project
+autoContinue: false
 description: Run the Project check as one SSH exec argv in the checkout.
 vaults:
 - orbit-control-inputs

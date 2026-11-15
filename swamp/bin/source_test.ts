@@ -26,6 +26,13 @@ Deno.test("model IDs are unique", async () => {
         ids.add(id);
     }
 });
+// A run cut by a serve restart stays interrupted: serve never continues one on its own (docs/swamp-shape.md, rule 6).
+Deno.test("every workflow keeps an interrupted run interrupted", async () => {
+    for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
+        const workflow = parse(Deno.readTextFileSync(path.path)) as { autoContinue?: unknown };
+        assertEquals(workflow.autoContinue, false, path.path);
+    }
+});
 Deno.test("workflow queue bounds have measured per-kind budgets", async () => {
     for await (const path of expandGlob(`${ROOT}/workflows/*.yaml`)) {
         const workflow = yaml(path.path);

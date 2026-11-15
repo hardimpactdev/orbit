@@ -1,5 +1,6 @@
 id: 3f7c2a91-5d4e-4b8a-9c61-0e2f8d4b7a35
 name: operation-conn-environment-renew
+autoContinue: false
 description: Renew the Gateway's admin session on a container Instance's T3 server (docs/cli/conn/environment-renew.mmd). The session is issued in the container, proven over the recorded URL, stored, and its private copies removed on every path.
 vaults:
 - orbit-control-inputs

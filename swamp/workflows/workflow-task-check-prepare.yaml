@@ -1,5 +1,6 @@
 id: 4217c494-14b5-54e3-887e-92585108a445
 name: task-check-prepare
+autoContinue: false
 description: Build every check argv on 209 and prepare the run directories.
 vaults:
 - orbit-control-inputs

@@ -1,5 +1,6 @@
 id: 500bf0af-8b95-5538-8293-286e9666ddf9
 name: route-create-csr
+autoContinue: false
 description: "route.create: one leaf key and CSR on its Node."
 vaults: []
 queueTimeout: 30

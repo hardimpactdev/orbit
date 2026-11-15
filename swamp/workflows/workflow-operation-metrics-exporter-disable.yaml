@@ -1,5 +1,6 @@
 id: 2b47dd2e-5dde-4d21-94ed-365d1932d06d
 name: operation-metrics-exporter-disable
+autoContinue: false
 description: metrics.exporter_disable from captured intent. Prometheus stops scraping first, then the exporters, their package and their allows go.
 inputs:
   properties:

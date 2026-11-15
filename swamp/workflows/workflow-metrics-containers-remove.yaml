@@ -1,5 +1,6 @@
 id: e7367bae-c2b8-42f2-b0ab-ace4d565c4df
 name: metrics-containers-remove
+autoContinue: false
 description: Stop and remove the Prometheus and Grafana containers and their unit files; the named volumes stay.
 vaults: [default, orbit-control-inputs]
 inputs:

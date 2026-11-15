@@ -1,5 +1,6 @@
 id: 558dd201-76e5-4031-b64c-41ff74c403f9
 name: operation-conn-environment-restart
+autoContinue: false
 description: Restart an idle container's T3 server for its machine name (docs/cli/conn/environment-restart.mmd), then check inside the container that it answers with the name.
 queueTimeout: 30
 labels: {role: swamp}

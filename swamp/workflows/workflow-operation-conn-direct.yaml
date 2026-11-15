@@ -1,5 +1,6 @@
 id: 05fa3d80-677d-4927-a5a3-1f0b7aeddb13
 name: operation-conn-direct
+autoContinue: false
 description: Revoke old Gateway sessions through the typed native Conn revocation child.
 vaults:
 - orbit-control-inputs

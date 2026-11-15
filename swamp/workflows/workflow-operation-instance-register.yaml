@@ -1,5 +1,6 @@
 id: c0791777-2696-430c-a78e-97b9289a655f
 name: operation-instance-register
+autoContinue: false
 description: Adopt agent-verified source; run only the requested setup, Processes, Route and environment protection.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

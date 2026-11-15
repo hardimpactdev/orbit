@@ -1,5 +1,6 @@
 id: 9c1e34b9-9284-55ec-9c37-844e90c1a203
 name: task-check-setup
+autoContinue: false
 description: Run each baseline setup command in order as one SSH exec argv.
 vaults:
 - orbit-control-inputs

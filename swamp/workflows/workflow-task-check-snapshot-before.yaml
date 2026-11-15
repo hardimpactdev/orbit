@@ -1,5 +1,6 @@
 id: 15cad0c6-2ad6-5fa8-a443-1efc2460486a
 name: task-check-snapshot-before
+autoContinue: false
 description: Snapshot HEAD and the working tree on the run's own index.
 vaults:
 - orbit-control-inputs

@@ -1,5 +1,6 @@
 id: 4093f46d-9dd2-4e67-a151-dd5bb9addb0c
 name: operation-firewall-direct
+autoContinue: false
 description: Converge one admitted firewall rule from Node 209; each ufw change is one argv over official SSH.
 vaults: []
 queueTimeout: 30

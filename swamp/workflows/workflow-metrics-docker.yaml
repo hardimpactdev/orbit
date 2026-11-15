@@ -1,5 +1,6 @@
 id: 5b4345a1-1275-4443-a391-a69649f459b3
 name: metrics-docker
+autoContinue: false
 description: Install Docker on the Metrics Node and keep it running, with official behaviors.
 inputs:
   properties:

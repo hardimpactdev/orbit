@@ -1,5 +1,6 @@
 id: 7c1d4e2a-5b3f-4a8e-9d6c-2f1e0a9b8c74
 name: operation-proof-run-copy
+autoContinue: false
 description: >-
   Prove assigned whole batches of a commit in a copy of the proof Project's default Instance (docs/cli/proof/run.mmd), from full inputs
   on 209: bring the commit into the copy (the phase proof_checkout of instance-container.yml, then the Project's development deploy steps

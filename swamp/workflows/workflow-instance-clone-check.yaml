@@ -1,5 +1,6 @@
 id: e8b5f0f8-e494-54e6-ab01-148c1a7dbdba
 name: instance-clone-check
+autoContinue: false
 description: 'Check the clone on the Node: the checked-out commit and the account''s private .env.'
 vaults:
 - orbit-control-inputs

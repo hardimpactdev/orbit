@@ -1,5 +1,6 @@
 id: 5f38f2dd-af28-46ec-9ff0-8094ffd13208
 name: task-nested-ready
+autoContinue: false
 description: >-
   Check that the nested fleet of a task VM is ready, from the VM over the operator's WireGuard address and the API of the nested Gateway: after a bounded wait (120 s) for a healthy Doctor, every Node agent online, the operator known to the Gateway with its key, Doctor healthy. Used by the fleet start before it takes `base`, and by every restore of `base`.
 vaults: []

@@ -1,5 +1,6 @@
 id: 3f73b1d8-382f-558f-8439-148516e56543
 name: instance-clone-database-cleanup
+autoContinue: false
 description: Remove the SQLite snapshot and transfer files on the candidate Node, 209 and the app-prod Node; best effort.
 vaults:
 - orbit-control-inputs

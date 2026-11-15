@@ -1,5 +1,6 @@
 id: 94fadc48-712c-4cea-ace8-f84225653df1
 name: node-artifact-fetch
+autoContinue: false
 description: Download ordered candidates on transport failure, verify their checksum, then publish.
 vaults: []
 queueTimeout: 30

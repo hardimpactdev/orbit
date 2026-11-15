@@ -1,5 +1,6 @@
 id: 40402584-b11e-468f-b58e-0d7328a8e62c
 name: operation-database-read
+autoContinue: false
 queueTimeout: 30
 description: database:query and the catalog reads from 209, one client over official SSH; the Gateway builds its argv and shapes its output.
 vaults: [orbit-control-inputs]

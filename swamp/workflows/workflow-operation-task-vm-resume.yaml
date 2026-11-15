@@ -1,5 +1,6 @@
 id: de1b2603-fc9c-4054-91ec-3f51474109bb
 name: operation-task-vm-resume
+autoContinue: false
 description: Start one task VM from 209 over pinned SSH, converge 209's SSH access when it was ready, and assert its agent and Pi answer.
 queueTimeout: 60
 inputs:

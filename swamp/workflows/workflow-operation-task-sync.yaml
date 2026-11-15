@@ -1,5 +1,6 @@
 id: 4399a8db-b621-474a-8433-4cb1d7607947
 name: operation-task-sync
+autoContinue: false
 description: >-
   Bring the default branch and the task branch of an external group from origin into its task VM workspace in one run from full
   inputs on 209: a bare clone with a read token that exists only in the vault and in the environment of the clone, one bundle, an

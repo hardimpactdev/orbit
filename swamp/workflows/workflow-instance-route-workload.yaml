@@ -1,5 +1,6 @@
 id: e0784b8d-cf13-4d2d-a5b5-bc0d0046b9d3
 name: instance-route-workload
+autoContinue: false
 description: Prepare one captured workload through official SSH, file actions and validate-before-reload.
 vaults: []
 inputs:

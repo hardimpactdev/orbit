@@ -1,5 +1,6 @@
 id: 00fd4b62-f72a-4795-9924-a48704608c88
 name: operation-node-role-add
+autoContinue: false
 description: Apply role state in idempotent Ansible phases; keep signing, bootstrap and initialization native.
 vaults: [orbit-control-inputs]
 queueTimeout: 30

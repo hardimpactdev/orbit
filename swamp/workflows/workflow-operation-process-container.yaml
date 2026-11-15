@@ -1,5 +1,6 @@
 id: 6d0b7f4e-3c51-4a8e-9b1f-2e8c5d7a4f10
 name: operation-process-container
+autoContinue: false
 description: One Process of an Instance container through `incus exec` on its Node, the `process` tag of instance-container.yml. A child of process start, stop, restart and destroy, and migrated Schedule log reads.
 vaults:
 - orbit-control-inputs

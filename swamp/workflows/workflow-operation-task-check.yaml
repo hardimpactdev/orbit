@@ -1,5 +1,6 @@
 id: 21853e24-9096-4770-90e9-31c385c71e51
 name: operation-task-check
+autoContinue: false
 description: Native local check and CI admission as official SSH exec argv in the owned task VM workspace, or Ansible phases in a container Instance workspace; scheduled reads own later hosted CI observations.
 queueTimeout: 30
 vaults:

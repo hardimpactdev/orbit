@@ -1,5 +1,6 @@
 id: 819512a2-d200-44f6-a270-779480e2fcdb
 name: operation-fleet-rollout
+autoContinue: false
 description: One native fleet release DAG with ordered per-Node publication and bounded result projection.
 vaults: []
 inputs:

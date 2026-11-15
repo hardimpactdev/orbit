@@ -1,5 +1,6 @@
 id: 7d3c1e52-84a1-4f6b-9b0e-2c5a6f1d9e47
 name: route-withdraw
+autoContinue: false
 queueTimeout: 30
 labels: {role: swamp}
 description: "instance.destroy: withdraw a Route from every Node it touches, one plan and one Node-local transaction per Node, and prove every contribution."

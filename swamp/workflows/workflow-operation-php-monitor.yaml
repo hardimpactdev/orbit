@@ -1,5 +1,6 @@
 id: 553b2e77-c04d-4509-ac8c-2e25836822f6
 name: operation-php-monitor
+autoContinue: false
 description: Official file application, validation and reload with complete public intent.
 vaults: []
 inputs:

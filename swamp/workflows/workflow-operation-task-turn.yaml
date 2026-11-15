@@ -1,5 +1,6 @@
 id: d98239bb-4a95-4873-a3e1-6f7c5bdb76ab
 name: operation-task-turn
+autoContinue: false
 description: Run admitted Pi turns from Node 209 with official SSH workspace actions and public terminal projection.
 vaults:
 - orbit-control-inputs

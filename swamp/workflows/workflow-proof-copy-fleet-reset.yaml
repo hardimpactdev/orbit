@@ -1,5 +1,6 @@
 id: 52243c38-a4d0-4300-8ffb-5787c1927d5a
 name: proof-copy-fleet-reset
+autoContinue: false
 description: >-
   Reset the inner fleet of a task copy to `base` before a proof batch (docs/cli/proof/proof.mmd): the phase `fleet_reset` of
   instance-container.yml from the copy's Node, as root in the copy's container. It stops the three nested containers, restores `base`,

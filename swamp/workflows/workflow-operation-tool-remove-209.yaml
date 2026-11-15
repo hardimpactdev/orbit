@@ -1,5 +1,6 @@
 id: 5c48c4ee-452a-4dd5-8f14-5d3e1b681445
 name: operation-tool-remove-209
+autoContinue: false
 description: Native Tool removal through cfgmgmt and bounded SSH argv.
 vaults: []
 queueTimeout: 60

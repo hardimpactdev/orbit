@@ -1,5 +1,6 @@
 id: 2c943794-6f3b-4f27-8ac1-a06911a0f1ea
 name: node-private-dns
+autoContinue: false
 description: Install the private DNS listener release, units, records and catalog with official cfgmgmt and prove the loaded catalog.
 vaults: []
 queueTimeout: 30

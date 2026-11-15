@@ -1,5 +1,6 @@
 id: be0fb735-5420-4c04-aa82-b33a8a9ce8fa
 name: node-network-hub
+autoContinue: false
 description: Write the Gateway-rendered hub file and one file per peer with cfgmgmt, delete the removed Node's peer file and load them with wg syncconf over official SSH from 209; the hub private key never leaves the Node.
 vaults: []
 queueTimeout: 30

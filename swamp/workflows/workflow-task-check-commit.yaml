@@ -1,5 +1,6 @@
 id: 40dc14cf-5ec7-50a2-942c-f62e658ea10c
 name: task-check-commit
+autoContinue: false
 description: Commit a passed handoff candidate and pin it under the check-operations ref.
 vaults:
 - orbit-control-inputs

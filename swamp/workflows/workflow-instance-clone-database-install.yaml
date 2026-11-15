@@ -1,5 +1,6 @@
 id: a2418c05-68f1-58c9-aa57-f921c507fd16
 name: instance-clone-database-install
+autoContinue: false
 description: Copy the snapshot to the app-prod Node and install it as the account's private database.sqlite.
 vaults:
 - orbit-control-inputs

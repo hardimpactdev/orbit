@@ -1,5 +1,6 @@
 id: 6c413eaa-2e25-43c8-b146-f6c8e103c00d
 name: operation-instance-clone
+autoContinue: false
 description: Clone a candidate into a production Instance in the chart's steps, each a child workflow, and report one terminal result.
 vaults:
 - orbit-control-inputs

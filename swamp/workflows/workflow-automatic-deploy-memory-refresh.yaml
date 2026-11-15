@@ -1,5 +1,6 @@
 id: bcec502c-3772-4787-8655-c18a9b1d0b5c
 name: automatic-deploy-memory-refresh
+autoContinue: false
 labels: {role: swamp}
 queueTimeout: 30
 description: Write again, unchanged, automatic deploy policy memory older than a day, so data retention keeps it while the policy tick is paused.

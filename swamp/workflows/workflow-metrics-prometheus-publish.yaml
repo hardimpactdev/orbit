@@ -1,5 +1,6 @@
 id: fcc51ca8-6660-433c-9583-2eb1fbd86a59
 name: metrics-prometheus-publish
+autoContinue: false
 description: Validate the captured Prometheus configuration, publish it, reload Prometheus without a restart and prove the exporter target.
 inputs:
   properties:

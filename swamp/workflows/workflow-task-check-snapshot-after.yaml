@@ -1,5 +1,6 @@
 id: 6df24760-d4af-5764-afe8-2583fa6e97ef
 name: task-check-snapshot-after
+autoContinue: false
 description: Snapshot the checked tree, download the redacted command output and shape the local evidence.
 vaults:
 - orbit-control-inputs

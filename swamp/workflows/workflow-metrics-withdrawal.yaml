@@ -1,5 +1,6 @@
 id: 0c8b52b3-29cd-46d9-bffa-e2f9791605cd
 name: metrics-withdrawal
+autoContinue: false
 description: Withdraw metrics.orbit from the Gateway Node, its private DNS name and its certificate.
 inputs:
   properties:

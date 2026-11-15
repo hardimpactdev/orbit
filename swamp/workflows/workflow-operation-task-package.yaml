@@ -1,5 +1,6 @@
 id: deb99080-703b-5cdb-a825-33f7ed5b0d48
 name: operation-task-package
+autoContinue: false
 description: Install one private package in a task workspace. The dependency configuration exists on the VM only while the package manager runs.
 vaults:
 - orbit-control-inputs

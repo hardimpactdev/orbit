@@ -1,5 +1,6 @@
 id: dea5d024-3c16-4eb7-a576-2fda63a93872
 name: operation-instance-setup-direct
+autoContinue: false
 description: Run an Instance's admitted Project setup or teardown list in order over official SSH from 209, as the Instance account.
 vaults: []
 # The list totals at most 540 s.

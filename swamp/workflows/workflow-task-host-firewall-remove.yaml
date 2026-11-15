@@ -1,5 +1,6 @@
 id: 7fd1d6a7-48e9-477d-a6c4-0d09b9a9d2bd
 name: task-host-firewall-remove
+autoContinue: false
 description: Withdraw the owned task host INPUT rules and prove their absence with one Ansible phase.
 vaults:
 - orbit-control-inputs

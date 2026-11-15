@@ -1,5 +1,6 @@
 id: "b100f60c-b164-4036-8881-17e603ba3901"
 name: "operation-node-update"
+autoContinue: false
 description: "Withdraw retired task-host input rules and prepare a changed apps folder before saving Node settings."
 vaults: []
 queueTimeout: 30

@@ -1,5 +1,6 @@
 id: 0f7caec5-264b-42a9-afca-2f30e914c956
 name: node-proxy-canary
+autoContinue: false
 description: Use official SSH from Node209 to verify a light Node and separate disposable file actions.
 inputs:
   type: object

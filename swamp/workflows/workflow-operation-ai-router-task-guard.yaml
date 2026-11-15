@@ -1,5 +1,6 @@
 id: 6e1f4b0a-3c7d-4a52-9b8e-2f5d7c1a9e43
 name: operation-ai-router-task-guard
+autoContinue: false
 description: "ai_router.task_guard: the model router's task VM guard on its Node, applied or removed by Ansible, then proved to refuse a WireGuard member outside the task VM range."
 vaults:
 - orbit-control-inputs

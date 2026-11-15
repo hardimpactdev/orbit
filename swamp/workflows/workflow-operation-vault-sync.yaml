@@ -1,5 +1,6 @@
 id: 8f61a312-2b19-4ef7-92d5-39dff3d42380
 name: operation-vault-sync
+autoContinue: false
 description: Complete public intent, vault environment, one cipher action per native shell step.
 vaults:
 - orbit-control-inputs

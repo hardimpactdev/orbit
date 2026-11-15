@@ -1,5 +1,6 @@
 id: 4f76810d-dbbb-5b97-9ec5-ed68275ca7fc
 name: route-create-ingress
+autoContinue: false
 description: "route.create and route.update: the public site and ports on the Ingress."
 vaults: []
 queueTimeout: 30

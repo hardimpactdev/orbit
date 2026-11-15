@@ -1,5 +1,6 @@
 id: c3f7a915-2d84-4e1b-8a60-b5d9e4f18a33
 name: proof-fleet-verify
+autoContinue: false
 description: Run the proof cases of one command on the task VM, in batches, from Orbit's own Swamp over official SSH. One child per batch, one child per case, one report of the verdict lines.
 vaults: []
 queueTimeout: 30

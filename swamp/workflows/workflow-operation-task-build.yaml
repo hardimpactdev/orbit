@@ -1,5 +1,6 @@
 id: 95cc7494-16cf-46fa-915b-4074c9ad2699
 name: operation-task-build
+autoContinue: false
 description: >-
   Start the build of an approved prep group in one run from full inputs on 209: resume the task VM only when parked, sync the refs of the approved
   head into its workspace, and run the first implementer turn. The existing resume, sync and turn workflows run as children. No

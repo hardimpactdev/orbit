@@ -1,5 +1,6 @@
 id: a37dfa1b-1633-475f-90c7-dfd9c83008ca
 name: maintenance-projects
+autoContinue: false
 queueTimeout: 30
 description: Hourly tick of Project maintenance. It lists the Projects that this source configures, with the request keys of the fire; the Gateway selects the work from its own state.
 trigger:

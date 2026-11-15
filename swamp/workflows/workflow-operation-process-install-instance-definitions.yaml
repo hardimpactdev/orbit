@@ -1,5 +1,6 @@
 id: bc1df2c2-8453-4ea6-8858-46da046b337c
 name: operation-process-install-instance-definitions
+autoContinue: false
 description: Converge captured Process definitions through native child workflows on 209.
 vaults: [orbit-control-inputs]
 inputs:

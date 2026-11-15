@@ -1,5 +1,6 @@
 id: d58dd3f3-ed2f-44ad-bdce-128aa2399481
 name: operation-instance-transfer
+autoContinue: false
 description: Move one recorded development checkout through official SSH from 209 and the Process and Route children; the Gateway reads the outcome from the run.
 queueTimeout: 30
 vaults:

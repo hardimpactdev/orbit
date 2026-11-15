@@ -1,5 +1,6 @@
 id: 8d046126-3834-4176-a9a3-2006d475f92e
 name: node-caddy-package
+autoContinue: false
 description: Install the pinned Caddy package with official cfgmgmt unless the Node already meets the version floor.
 vaults: []
 queueTimeout: 30

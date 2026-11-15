@@ -1,5 +1,6 @@
 id: dc32f69a-523e-5c03-b850-1c03af924afa
 name: task-dependency-auth-remove
+autoContinue: false
 description: Delete the Composer and npm configuration of the task account that the write workflow created, revoke the token it held, and report what became of the token.
 vaults:
 - orbit-control-inputs

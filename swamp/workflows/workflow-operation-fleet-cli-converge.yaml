@@ -1,5 +1,6 @@
 id: 7afa4df6-21f7-40d7-9db5-ca0982ec0a0a
 name: operation-fleet-cli-converge
+autoContinue: false
 description: One native fleet release DAG with ordered per-Node publication and bounded result projection.
 vaults: []
 inputs:

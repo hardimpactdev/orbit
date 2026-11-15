@@ -1,5 +1,6 @@
 id: e19d0fb4-a5f0-4c86-89dd-de20bfc5f789
 name: metrics-configuration
+autoContinue: false
 description: Write the Metrics configuration, the Prometheus candidate checked by promtool before it is published, and the Grafana password from the vault.
 vaults: [default, orbit-control-inputs]
 inputs:
