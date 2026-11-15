@@ -116,3 +116,23 @@ it('migrates existing hosts to readable and updateable separate pool settings wi
             ->and($node->settings['apps']['path'])->toBe('/new/apps');
     }
 });
+
+it('drops containers.ci_places from stored host settings, keeps every other key, and runs again', function (): void {
+    $row = static fn (string $name, string $ip, ?array $settings): int => DB::table('nodes')->insertGetId(['name' => $name, 'status' => 'active', 'platform' => 'linux',
+        'architecture' => 'x86_64', 'public_ssh_host' => $ip, 'wireguard_ip' => $ip, 'user' => 'orbit',
+        'settings' => $settings === null ? null : json_encode($settings)]);
+    $host = $row('beast', '10.44.0.10', ['task_vms' => ['cidr' => '10.252.10.0/24', 'task_places' => 0, 'ci_places' => 2,
+        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'ci_places' => 1, 'network' => 'orbittaskc0']], 't3' => ['project' => 'orbit']]);
+    $vmOnly = $row('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 2]]);
+    $bare = $row('sabre', '10.44.0.12', null);
+    $migration = require database_path('migrations/2027_02_24_000000_drop_task_container_ci_places.php');
+
+    $migration->up();
+    $migration->up();
+
+    expect(Node::query()->findOrFail($host)->settings)->toBe(['task_vms' => ['cidr' => '10.252.10.0/24', 'task_places' => 0, 'ci_places' => 2,
+        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 1, 'network' => 'orbittaskc0']], 't3' => ['project' => 'orbit']])
+        ->and(Node::query()->findOrFail($vmOnly)->settings)->toBe(['task_vms' => ['cidr' => '10.252.20.0/24', 'task_places' => 1, 'ci_places' => 2]])
+        ->and(Node::query()->findOrFail($bare)->settings)->toBeNull()
+        ->and(NodeData::fromModel(Node::query()->findOrFail($host))->settings->task_vms->containers->task_places)->toBe(1);
+});

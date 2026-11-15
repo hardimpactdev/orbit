@@ -5,8 +5,8 @@ covers:
   - apps/gateway/app/Domain/Nodes/Storage/**
   - apps/gateway/app/{Actions/Nodes/UpdateNodeAction,Domain/Nodes/UpdateNodeResult,Domain/Nodes/NodeSettingsOperationCompletion,Domain/Nodes/NodeSettingsProjection,Providers/TaskVmServiceProvider}.php
   - apps/gateway/app/Infrastructure/Nodes/AgentNodeStorageRootPreparer.php
-  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData}.php
-  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_06_000000_add_image_refresh_hold_to_nodes_table}.php
+  - apps/gateway/app/Data/Nodes/{NodeSettingsData,NodeStorageAppsData,NodeTaskVmsData,NodeCiData}.php
+  - apps/gateway/database/migrations/{2026_12_03_000000_allow_cold_recipe_image_rebuilds,2027_02_05_000000_add_reboot_hold_to_nodes_table,2027_02_06_000000_add_image_refresh_hold_to_nodes_table,2027_02_24_000000_drop_task_container_ci_places}.php
   - apps/gateway/app/Http/Requests/Nodes/UpdateNodeRequest.php
   - apps/cli/app/{Support/NodeSettingOptions,Commands/Nodes/UpdateNodeCommand}.php
   - packages/php-sdk/src/{Responses/Nodes/NodeSettings,Responses/Nodes/TaskVmsSettings,Requests/Nodes/UpdateNodeRequest}.php
@@ -202,7 +202,7 @@ A change is a record. Orbit saves it at once and contacts no Node. `node:show` s
 
 Set the count from the CPU pressure of the full Node: all its places busy, together with any other work that the Node runs. Do not derive it from container memory limits. A Node with other work keeps its count small. It can set `proof_only` so that its few places serve proof copies only.
 
-`ci.places` replaces the CI places of the task container setting: `task_vms.containers` has no `ci_places` member. The [subordinate-ID demand](#nested-fleet-instance-hosting) counts `ci.places` in their place. The CI places of a task VM host, `task_vms.ci_places`, are a separate count of the task VM settings. They stay until task VMs are removed.
+`ci.places` replaces the CI places of the task container setting: `task_vms.containers` has no `ci_places` member. A database migration removed that member from every stored setting. The [subordinate-ID demand](#nested-fleet-instance-hosting) counts `ci.places` in their place. The CI places of a task VM host, `task_vms.ci_places`, are a separate count of the task VM settings. They stay until task VMs are removed.
 
 ## Derive the effective root
 

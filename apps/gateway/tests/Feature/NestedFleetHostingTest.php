@@ -75,11 +75,11 @@ function recordedNestedInstance(Project $project, Node $node, string $name = 'de
     return $instance->refresh();
 }
 
-/** Task VM host settings with VM places and two task and one CI container place. @return array<string, mixed> */
+/** Task VM host settings with VM places and two task container places. @return array<string, mixed> */
 function taskVms(int $taskPlaces, int $ciPlaces): array
 {
     return NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'task_places' => $taskPlaces, 'ci_places' => $ciPlaces,
-        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2, 'ci_places' => 1]], Ipv4Subnet::from('10.44.0.0/24'))->toArray();
+        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2]], Ipv4Subnet::from('10.44.0.0/24'))->toArray();
 }
 
 function otherProject(string $slug, bool $nested = false): Project
@@ -419,8 +419,18 @@ describe('a switched-on Node', function (): void {
         $node = containerDefaultNode();
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true,
             'task_vms' => taskVms(7, 5)]]);
-        expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + (2 + 1 + 1) * 101_000_000 + 2 * 101_000_000);
+        expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + (2 + 1) * 101_000_000 + 2 * 101_000_000);
     });
+
+    it('counts a Node\'s CI places from settings.ci, with or without task container places', function (bool $containers, int $places): void {
+        $node = containerDefaultNode();
+        $node->update(['settings' => [...$node->settings, 'nested_fleet' => true, 'ci' => ['places' => 3, 'proof_only' => false],
+            ...($containers ? ['task_vms' => taskVms(7, 5)] : [])]]);
+        expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + ($places + 1) * 101_000_000 + 2 * 101_000_000);
+    })->with([
+        'CI places only' => [false, 3],
+        'CI and task container places' => [true, 3 + 2],
+    ]);
 
     it('keeps recorded nested runtimes in the ID demand and the folder refresh after the switch is off', function (): void {
         $node = nestedSwitch(containerDefaultNode(), true);
