@@ -1140,7 +1140,7 @@ No publication step needs the running app. The site step skips the Route access 
 | Value | Meaning |
 | --- | --- |
 | `published` | The create published the address. The completion publishes nothing. |
-| `deferred` | The Route Nodes were held at admission, or a Node refused the merge of the site and changed nothing. The completion publishes the address. |
+| `deferred` | The Route Nodes were held at admission, or a Node refused the merge of the site. The completion publishes the address. |
 | `failed` | The publication failed in the create, which still succeeds. The Route records `instance.create_route_failed`, and the completion publishes it again. |
 
 A clone without a Route has no `route_publication`. A create that fails after `clone-route` succeeded keeps the address up; a publication that started and did not succeed is withdrawn by the create's `withdraw-route`, under the Nodes it still holds.

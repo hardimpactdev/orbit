@@ -231,6 +231,27 @@ class RoutePublishTest(unittest.TestCase):
         self.publish(plan(8, served=False))
         self.assertEqual(self.caddy.read_text(), caddyfile(*own(8)))
 
+    def test_the_check_refuses_a_foreign_change_a_header_change_and_a_reorder_on_its_own(self):
+        # The check works out the own groups from the plan, so a composition that went wrong is still caught.
+        value = plan(8)
+        for composed in (caddyfile(PRODUCTION.replace("443", "444"), *own(7), INGRESS, GATEWAY, *own(8)),
+                         caddyfile(PRODUCTION, *own(7), INGRESS, GATEWAY, *own(8), header=HEADER.replace("per_host", "per_ip")),
+                         caddyfile(INGRESS, PRODUCTION, *own(7), GATEWAY, *own(8)),
+                         caddyfile(PRODUCTION, *own(7), INGRESS, *own(8))):
+            with self.subTest(composed=composed[-60:]):
+                with self.assertRaises(MODULE.WithdrawFailure) as refusal:
+                    MODULE.check_published(value, self.live, composed)
+                self.assertEqual(refusal.exception.code, "route.publish_foreign_change")
+        MODULE.check_published(value, self.live, caddyfile(PRODUCTION, *own(7), INGRESS, GATEWAY, *own(8)))
+
+    def test_a_repeated_key_keeps_every_block_where_the_node_holds_it(self):
+        # An Instance with two Routes renders one key twice, sorted by domain: a production block of it may sit between them.
+        twin = own(7)[0].replace("i7.test", "z7.test")
+        self.caddy.write_text(caddyfile(own(7)[0], PRODUCTION, twin, GATEWAY))
+        self.live = self.caddy.read_text()
+        self.publish(plan(8))
+        self.assertEqual(self.caddy.read_text(), caddyfile(own(7)[0], PRODUCTION, twin, GATEWAY, *own(8)))
+
     def test_the_plan_comes_from_the_captured_publication_of_the_node(self):
         artifacts = [{"content": caddyfile(), "had_served_groups": True}, {"content": caddyfile(*own(8))}]
         row = {"node_id": 9, "serves_routes": True, **{name: {"caddy": 0} for name in ("before", "prepared", "withdrawn")}, "after": {"caddy": 1}}

@@ -220,8 +220,9 @@ class RouteSiteTest(unittest.TestCase):
         self.assertTrue((self.root / "awake").exists())
 
     def test_a_refused_merge_defers_and_marks_no_instance_awake(self):
-        for code in ["route.publish_foreign_change", "caddy.owned_revision_conflict", "caddy.global_revision_conflict",
-                     "caddy.publish_busy", "route.live_changed", "caddy.validation_failed", "caddy.publish_plan_missing"]:
+        for code in ["route.publish_foreign_change", "caddy.foreign_config", "caddy.current_config_missing", "caddy.publish_busy",
+                     "route.publish_lock_invalid", "route.publish_lock_failed", "route.file_not_utf8", "caddy.validation_failed",
+                     "route.live_changed", "caddy.reload_failed", "caddy.publish_plan_missing"]:
             with self.subTest(code=code):
                 (self.root / "awake").unlink(missing_ok=True)
                 result, _ = self.merged(code)

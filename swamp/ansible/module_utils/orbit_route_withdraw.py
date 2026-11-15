@@ -568,41 +568,69 @@ def _changed(states):
     return [key for key in keys if any(not _same(state.get(key, MISSING), states[0].get(key, MISSING)) for state in states)]
 
 
-def compose_publication(plan, current):
-    """The Route's own groups put into what the Node holds: each own group becomes its last captured state (added, replaced, or removed
-    when the last state lacks it). Every other group, its order and the global options stay as the Node holds them."""
-    states = [caddy_sections(state) for state in plan["chain"]]
-    owned = _changed([groups for _, groups in states])
+def _blocks(content):
+    """The global options and every site block in file order, each with its key; a key can repeat (an Instance with two Routes)."""
+    if not content.startswith(CADDY_HEADER) or "\0" in content:
+        raise WithdrawFailure("caddy.foreign_config")
+    matches = list(re.finditer(r"^# orbit: (\S+) ([^\r\n]+)\n", content, re.MULTILINE))
+    header = content[:matches[0].start() if matches else len(content)].rstrip("\n") + "\n"
+    blocks = []
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(content)
+        blocks.append((f"{match.group(1)}\0{match.group(2)}", content[match.start():end].rstrip("\n") + "\n"))
+    return header, blocks
+
+
+def _published_keys(plan):
+    """The Route's own groups: the keys its captured states change. Each must be a development site (Caddy source `app-dev`)."""
+    owned = _changed([caddy_sections(state)[1] for state in plan["chain"]])
     foreign = [key for key in owned if key.split("\0", 1)[0] != PUBLISHED_SOURCE]
     if foreign:
         raise WithdrawFailure("route.publish_foreign_change", "Caddy site " + foreign[0].replace("\0", " ") + " is not a development site")
+    return owned
+
+
+def compose_publication(plan, current):
+    """The Route's own groups put into what the Node holds: each own group becomes its last captured state, where its first block stood
+    (added at the end when new, removed when the last state lacks it). Every other block, their order and the global options stay as the
+    Node holds them."""
+    owned = _published_keys(plan)
+    last = caddy_sections(plan["chain"][-1])[1]
     if not current:
         if plan["had_served_groups"]:
             raise WithdrawFailure("caddy.current_config_missing")
-        current = states[-1][0]
-    header, groups = caddy_sections(current)
-    result, last = dict(groups), states[-1][1]
+        current = caddy_sections(plan["chain"][-1])[0]
+    header, blocks = _blocks(current)
+    result, placed = [], set()
+    for key, block in blocks:
+        if key not in owned:
+            result.append(block)
+        elif key not in placed:
+            placed.add(key)
+            result += last.get(key, [])
     for key in owned:
-        if key in last:
-            result[key] = last[key]
-        else:
-            result.pop(key, None)
-    blocks = [block for value in result.values() for block in value]
-    return header + ("\n" + "\n".join(blocks) if blocks else ""), owned
+        if key not in placed:
+            result += last.get(key, [])
+    return header + ("\n" + "\n".join(result) if result else ""), owned
 
 
-def check_published(current, composed, owned):
-    """Refuses with route.publish_foreign_change when a group outside the Route's own, their order or the global options would change.
-    Independent of the composition above."""
-    read = caddy_sections(current) if current else (None, {})
-    result = caddy_sections(composed)
-    for key in set(read[1]) | set(result[1]):
-        if key not in owned and read[1].get(key) != result[1].get(key):
-            raise WithdrawFailure("route.publish_foreign_change", "Caddy site " + key.replace("\0", " "))
-    if read[0] is not None and read[0] != result[0]:
-        raise WithdrawFailure("route.publish_foreign_change", "Caddy global options")
-    if [key for key in read[1] if key not in owned] != [key for key in result[1] if key not in owned]:
-        raise WithdrawFailure("route.publish_foreign_change", "Caddy site order")
+def check_published(plan, current, composed):
+    """Refuses with route.publish_foreign_change when a block outside the Route's own, their order or the global options would change.
+    It works out the own groups from the plan itself, independent of the composition above."""
+    owned = set(_published_keys(plan))
+    result = _blocks(composed)
+    if current:
+        read = _blocks(current)
+        if read[0] != result[0]:
+            raise WithdrawFailure("route.publish_foreign_change", "Caddy global options")
+        before = [(key, block) for key, block in read[1] if key not in owned]
+    else:
+        before = []
+    after = [(key, block) for key, block in result[1] if key not in owned]
+    if before != after:
+        index = next((i for i, (a, b) in enumerate(zip(before, after)) if a != b), min(len(before), len(after)))
+        key = (before if index < len(before) else after)[index][0]
+        raise WithdrawFailure("route.publish_foreign_change", "Caddy site " + key.replace("\0", " "))
 
 
 def publish(plan, run, *, root="/", wait=30, caddy_gid=None):
@@ -621,7 +649,7 @@ def publish(plan, run, *, root="/", wait=30, caddy_gid=None):
         caddy = _File(at("/etc/caddy/Caddyfile"), previous / "Caddyfile", (os.geteuid(), caddy_gid or os.getegid()), 0o640)
         current = caddy.text()
         composed, owned = compose_publication(plan, current)
-        check_published(current, composed, owned)
+        check_published(plan, current, composed)
         changed = composed.encode() != caddy.old
         kept = []
         if changed:
