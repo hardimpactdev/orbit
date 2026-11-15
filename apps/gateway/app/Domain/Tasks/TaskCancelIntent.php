@@ -89,7 +89,7 @@ final readonly class TaskCancelIntent
             }
 
             return DB::transaction(function () use ($group, $caller, $request, $kind): Operation {
-                $input = $this->capture($group, $kind, reserve: true);
+                $input = $this->capture($group, $kind);
                 // No VM and no workspace: nothing to release, so the group ends here and the Operation succeeds with no run (R1).
                 if ($input['task_vm_id'] === null && $input['instance_id'] === null) {
                     $operation = $this->start->record($kind, 'task_group', $group->id, SwampNode::id(), $input,
@@ -107,24 +107,12 @@ final readonly class TaskCancelIntent
     }
 
     /**
-     * The full input of the cancel of a proof's group, captured with its VM before the VM exists in the provider, for the one Swamp
-     * run that carries both. Starts no Operation. The Gateway projects the end of the group from this input when that run ends.
-     *
-     * @return array<string,mixed>
-     */
-    public function captureForProof(Task $group): array
-    {
-        return DB::transaction(fn (): array => $this->capture($group, 'tasks.cancel', reserve: false));
-    }
-
-    /**
      * The release of the group's slot. Nothing else ends: the claim ran no setup and published no Route, origin already has the approved
-     * work, and the delete of the task VM removes the task's files. An admitted cancel reserves the VM as a release does; a proof's capture
-     * runs before its VM exists and reserves nothing.
+     * work, and the delete of the task VM removes the task's files. An admitted cancel reserves the VM as a release does.
      *
      * @return array<string,mixed>
      */
-    private function capture(Task $group, string $kind, bool $reserve): array
+    private function capture(Task $group, string $kind): array
     {
         $group = Task::topLevel()->with(['project', 'taskable'])->lockForUpdate()->findOrFail($group->id);
         self::eligible($group, $kind);
@@ -134,7 +122,7 @@ final readonly class TaskCancelIntent
             || $workspace->task_workspace_owner_id !== $group->id || $workspace->node_id !== $slot->node_id)) {
             throw new ResourceOperationException('tasks.workspace_ownership_refused', 'Cancellation requires the exact workspace that the task VM holds.', 409);
         }
-        $release = $slot instanceof TaskVm ? ($reserve ? $this->slots->reserveRelease($slot) : $this->slots->release($slot)) : null;
+        $release = $slot instanceof TaskVm ? $this->slots->reserveRelease($slot) : null;
 
         return ['group_id' => $group->id, 'project_id' => $group->project_id, 'instance_id' => $workspace?->id, 'task_vm_id' => $slot?->id,
             ...$slot instanceof TaskVm ? ['node_id' => (int) $slot->host_node_id] : [], 'release' => $release];

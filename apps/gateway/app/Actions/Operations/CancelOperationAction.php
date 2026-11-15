@@ -12,7 +12,6 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\OperationStore;
 use App\Domain\Operations\RetiredOperationSettlement;
 use App\Domain\Proof\ProofRunSettlement;
-use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Operation;
@@ -62,13 +61,9 @@ final readonly class CancelOperationAction
         if (! $operation->status->terminal() && RetiredOperationSettlement::retired($operation)) {
             return app(RetiredOperationSettlement::class)->settle($operation);
         }
-        // A proof owns a task group with a VM for each of its runs; cancelling the proof without the groups would leave the VMs running.
+        // A proof owns a task group with a copy for each of its runs; cancelling the proof without the groups would leave the copies running.
         if ($operation->kind === OperationKinds::ProofRun && $operation->status === OperationStatus::Cancelled) {
             foreach (ProofRunSettlement::children($operation->id) as $run) {
-                // A run that kept its VM (`--keep-failed`) keeps it until its time is up.
-                if (ProofRunWatch::keeps($run)) {
-                    continue;
-                }
                 DB::afterCommit(static fn () => CancelProofGroup::dispatch($run->id));
             }
         }

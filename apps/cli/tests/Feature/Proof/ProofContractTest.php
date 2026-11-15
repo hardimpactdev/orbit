@@ -107,7 +107,7 @@ describe('proof verify contract', function (): void {
             );
         }
     })->with([
-        'proof/proof-verify/refused-no-task-vm',
+        'proof/proof-verify/refused-group-required',
         'proof/proof-verify/refused-wrong-project',
         'proof/proof-verify/refused-no-workspace',
         'proof/proof-verify/refused-target-busy',

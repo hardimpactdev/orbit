@@ -177,34 +177,15 @@ describe('proof:run', function (): void {
         $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all() === ['commit' => PROOF_RUN_SHA, 'report_only' => true]);
     });
 
-    it('sends keep_failed only when the VM of a failed run is to be kept', function (): void {
+    it('refuses --keep-failed by name and sends no request: every run in a copy removes its copy', function (): void {
         $mock = proof_run_gateway([proof_run_operation('passed')]);
 
-        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--json' => true]);
-
-        $mock->assertSent(static fn ($request): bool => $request instanceof RunProofRequest && $request->body()->all() === ['commit' => PROOF_RUN_SHA, 'keep_failed' => true]);
+        expect(Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--json' => true]))->toBe(1)
+            ->and(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error'])->toMatchArray(['code' => 'input.invalid', 'message' => 'The "--keep-failed" option does not exist.']);
+        $mock->assertNotSent(RunProofRequest::class);
     });
 
-    it('prints the VM that a failed run kept, with its group and the time it is destroyed', function (): void {
-        $failed = proof_run_operation('failed');
-        $kept = ['command' => 'firewall:allow', 'vm' => 'tvm-600', 'group_id' => 3832, 'keep_until' => '2026-11-07T11:00:00Z'];
-        proof_run_gateway([[...$failed, 'result' => [...$failed['result'], 'kept' => [$kept]]]]);
-
-        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--no-interaction' => true]);
-
-        expect(Artisan::output())->toContain('Kept VM: tvm-600 of firewall:allow, group 3832, destroyed after 2026-11-07T11:00:00Z');
-    });
-
-    it('prints a kept VM as released, with the time and the operation, once its group was cancelled', function (): void {
-        $failed = proof_run_operation('failed');
-        $kept = ['command' => 'firewall:allow', 'vm' => 'tvm-853', 'group_id' => 3905, 'keep_until' => '2026-11-07T11:00:00Z', 'released_at' => '2026-11-07T10:05:00Z', 'released_by' => 12632];
-        proof_run_gateway([[...$failed, 'result' => [...$failed['result'], 'kept' => [$kept]]]]);
-
-        Artisan::call('proof:run', ['commit' => PROOF_RUN_SHA, '--keep-failed' => true, '--no-interaction' => true]);
-
-        expect(Artisan::output())->toContain('Kept VM: tvm-853 of firewall:allow, group 3905, released at 2026-11-07T10:05:00Z (operation 12632)')->not->toContain('destroyed after');
-    });
-    it('prints both commits when the workspace of a VM was not at the commit under proof', function (string $found, string $printed): void {
+    it('prints both commits when the workspace of a copy was not at the commit under proof', function (string $found, string $printed): void {
         $failed = proof_run_operation('failed');
         proof_run_gateway([[...$failed, 'error_code' => 'proof.workspace_commit_mismatch', 'result' => [...$failed['result'],
             'workspace' => [['command' => 'firewall:list', 'expected' => str_repeat('a', 40), 'found' => $found]]]]]);
@@ -240,7 +221,7 @@ describe('proof:run', function (): void {
 
         $error = proof_run_json_output()['error'];
         expect($error['code'])->toBe('proof.commit_invalid')->and($error['details'])->toBe(['field' => 'commit']);
-        $mock->assertNothingSent();
+        $mock->assertNotSent(RunProofRequest::class);
     })->with([
         'seven characters' => ['0123456'],
         'upper case' => [strtoupper(PROOF_RUN_SHA)],
@@ -256,11 +237,11 @@ describe('proof:run', function (): void {
         expect(Artisan::call('proof:run', [...$options, '--json' => true]))->toBe(1);
 
         expect(proof_run_json_output()['error']['code'])->toBe('proof.commit_invalid');
-        $mock->assertNothingSent();
+        $mock->assertNotSent(RunProofRequest::class);
 
         expect(Artisan::call('proof:run', ['--no-interaction' => true]))->toBe(1)
             ->and(Artisan::output())->toContain('Name the commit by its full 40 or 64 character lowercase SHA.');
-        $mock->assertNothingSent();
+        $mock->assertNotSent(RunProofRequest::class);
     })->with([[[]], [['--no-interaction' => true]]]);
 
     it('renders each Gateway refusal as the one-line envelope and follows nothing', function (string $fixture, string $code, array $details): void {

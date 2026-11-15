@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "tasks.no_workspace",
-            "message": "The group requires its owned task VM workspace.",
+            "message": "The group has no task copy.",
             "details": {}
         }
     }

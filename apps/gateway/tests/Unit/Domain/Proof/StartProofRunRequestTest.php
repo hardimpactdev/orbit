@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Proof\StartProofRunData;
 use App\Http\Requests\Proof\StartProofRunRequest;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 const START_PROOF_SHA = '0123456789abcdef0123456789abcdef01234567';
 
@@ -38,23 +39,25 @@ it('maps report_only of the body to the data of the run, and leaves all and the 
     'both' => [['all' => true, 'report_only' => true], true, true],
 ]);
 
-it('maps keep_failed of the body to the data of the run, off unless it is given', function (array $body, bool $keepFailed): void {
-    expect(StartProofRunData::from(['commit' => START_PROOF_SHA, ...$body])->keepFailed)->toBe($keepFailed);
-})->with([
-    'not given' => [[], false],
-    'given' => [['keep_failed' => true], true],
-]);
+/** The body of a proof:run request as the request object reads it. */
+function startProofRunBody(array $body): array
+{
+    return StartProofRunRequest::create('/api/v1/proof/run', 'POST', content: json_encode($body, JSON_THROW_ON_ERROR))->validationData();
+}
 
-it('accepts keep_failed as a boolean only', function (mixed $value, bool $valid): void {
-    $rules = (new StartProofRunRequest)->rules();
+it('refuses keep_failed by name, whatever its value: an older CLI sends it for --keep-failed, and every run in a copy removes its copy', function (mixed $value): void {
+    try {
+        startProofRunBody(['commit' => START_PROOF_SHA, 'keep_failed' => $value]);
+        test()->fail('keep_failed was accepted.');
+    } catch (ValidationException $exception) {
+        expect($exception->errors())->toBe(['keep_failed' => ['keep_failed is removed: a proof runs in copies, and every run removes its copy. Run proof:run without --keep-failed.']]);
+    }
+})->with(['true' => true, 'false' => false]);
 
-    expect(Validator::make(['commit' => START_PROOF_SHA, 'keep_failed' => $value], $rules)->passes())->toBe($valid);
-})->with([
-    'true' => [true, true],
-    'false' => [false, true],
-    'a string' => ['yes', false],
-    'a number' => [1, false],
-]);
+it('reads a body without keep_failed as it always did, and lists no keep_failed rule in the contract', function (): void {
+    expect(startProofRunBody(['commit' => START_PROOF_SHA, 'report_only' => true]))->toBe(['commit' => START_PROOF_SHA, 'report_only' => true])
+        ->and(array_keys((new StartProofRunRequest)->rules()))->toBe(['commit', 'base', 'all', 'report_only']);
+});
 
 it('accepts report_only as a boolean only', function (mixed $value, bool $valid): void {
     $rules = (new StartProofRunRequest)->rules();

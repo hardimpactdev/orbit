@@ -1,1 +1,1 @@
-{"error":{"code":"tasks.no_workspace","message":"The group requires its owned task VM workspace.","request_id":null}}
+{"error":{"code":"tasks.no_workspace","message":"The group has no task copy.","request_id":null}}

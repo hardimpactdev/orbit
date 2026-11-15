@@ -6,7 +6,7 @@
     "body": {
         "error": {
             "code": "proof.wrong_project",
-            "message": "Proof cases exist only for the Orbit repository.",
+            "message": "Proof cases in a task copy need a Project with a nested fleet.",
             "details": {}
         }
     }

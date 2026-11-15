@@ -15,7 +15,6 @@ use App\Models\Operation;
 use App\Models\Task;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
-use Closure;
 use Illuminate\Support\Str;
 
 /**
@@ -32,17 +31,6 @@ final readonly class TaskProvisionIntent
         InstancePlacement::taskCopy($group->project()->firstOrFail());
 
         return app(TaskCopyStart::class)->start($group, $caller, $request);
-    }
-
-    /**
-     * The task VM admission is removed: the proof VM branch that still calls it gets the refusal of the removed runtime.
-     *
-     * @param  Closure(array<string,mixed>, Task, Instance, TaskVm): array<string,mixed>  $extend
-     * @param  array<string,mixed>  $capacityRequest
-     */
-    public function admit(Task $group, ?string $commit, string $kind, Closure $extend, string $caller, ?string $request, bool $ciPool = false, array $capacityRequest = []): never
-    {
-        throw TaskVmRemoved::refusal();
     }
 
     /** Claims a fresh workspace. Re-entry uses the published branch after the VM was deleted. Call in the admission transaction.

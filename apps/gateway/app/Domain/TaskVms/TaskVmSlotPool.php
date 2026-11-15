@@ -85,30 +85,6 @@ final readonly class TaskVmSlotPool
         }
     }
 
-    /** Free CI places under the same image and seed policy as take(). Call in the admission transaction. */
-    public function freeCiPlaces(): int
-    {
-        return array_sum(array_column($this->room(true, null, true, $this->runtimes()), 2));
-    }
-
-    /**
-     * Every CI place, free or taken, of the runtimes that placement takes, on the hosts whose base of that runtime a proof may use: the
-     * most places a proof can wait for. Task VM places only while container placement is off, both after the switch.
-     */
-    public function usableCiPlaces(): int
-    {
-        $places = 0;
-        foreach ($this->runtimes() as $runtime) {
-            foreach ($this->capacity->activeHosts() as [$location, $node]) {
-                if ($this->images->recorded($node, $location, $runtime) !== null && app(TaskVmSeedFloor::class)->allows($node->id)) {
-                    $places += $location->places($runtime, true);
-                }
-            }
-        }
-
-        return $places;
-    }
-
     /**
      * The runtimes whose places normal placement takes: task VMs, and task containers after the switch.
      *

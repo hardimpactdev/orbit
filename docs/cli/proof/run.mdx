@@ -18,7 +18,7 @@ covers:
 ---
 
 ```bash
-orbit proof:run <commit> [--base=SHA | --all] [--report-only] [--keep-failed] [--idempotency-key=KEY] [--json]
+orbit proof:run <commit> [--base=SHA | --all] [--report-only] [--idempotency-key=KEY] [--json]
 ```
 
 | Argument | Required | Meaning |
@@ -32,7 +32,6 @@ The selection list maps the CLI, Gateway, SDK and native execution files for `no
 | `--base=SHA` | none | Prove the union selected by every commit after this ancestor through `commit`, on the `commit` tree. Cannot be combined with `--all`. |
 | `--all` | off | Run every case, not only the cases that the commit selects. |
 | `--report-only` | off | Record reporting intent. Capacity waits and pool eligibility are the same with or without this flag. |
-| `--keep-failed` | off | Has no effect on a proof in copies: every run removes its copy. |
 | `--idempotency-key=KEY` | generated | Retry the same start with a permanent key. See [Start keys](/reference/operations#retry-a-start-with-a-key). |
 | `--json` | off | Print the final result as JSON, with the verdict of each case. |
 
@@ -99,7 +98,7 @@ This leaves room for unrelated Operations to start between children. The [admiss
 
 In each copy, the run first brings in the commit: one Ansible phase on the copy's Node fetches the commit by its SHA from the public Orbit repository through the copy's own network route, as `orbit`, and checks it out detached. A fetch that fails or takes more than 60 seconds fails the run by name; nothing retries. The phase then runs each of the Project's development deploy steps whose inputs changed since the seed, as a deployment does, so `vendor/` and the generated files belong to the commit. Orbit checks that the workspace is at the commit, then runs the copy's assigned batches in order. Before each batch the copy's inner fleet goes back to `base`, which restarts the nested Gateway on the checkout and migrates it forward, and the runner applies the checkout's Swamp grants and Ansible collections. So the fleet runs the code of the commit, not of the seed. Each batch runs its declared setup. A setup failure leaves missing cases unrun. Execution retries nothing.
 
-A proof in copies does not replay flagged cases on the merge base (`fails_on_base: true`): that replay runs only on a task VM.
+A proof does not replay flagged cases on the merge base (`fails_on_base: true`). Only the removed task VM run sent the replay its inputs; the replay comes back when it is ported to copies.
 
 Every run end removes its copy: Orbit cancels the run's group with discard, which destroys the copy. That holds after a pass, a failure, a cancel, a timeout, an interruption and a run that never started. A copy that an Operation still holds is asked again. After a Gateway restart the queued cancel runs, and the watchdog asks again for every group that still owns a copy.
 
@@ -151,6 +150,7 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.run_interrupted` | Native execution stopped with inconclusive coverage, without a completed failure taking precedence. |
 | `proof.base_invalid` | The range base is not a full lowercase SHA, or it is combined with `--all`. |
 | `proof.base_not_ancestor` | The base is missing from the repository or is not an ancestor of the tested commit. |
+| `validation.failed` | The request body is invalid. A body with `keep_failed` is refused by that field, whatever its value: the option kept the VM of a failed run, and every run in a copy removes its copy. An older CLI sends it for `--keep-failed`; this CLI has no such option and refuses it with `input.invalid` before any request. |
 | `tasks.vm_runtime_removed` | The proof Project has no default container Instance. Task VMs are removed, so a run has nowhere to prove. No case ran. |
 | `proof.commit_invalid` | The commit is missing or is not a full lowercase SHA, and the CLI cannot prompt. |
 | `proof.commit_not_found` | The Orbit repository has no such commit. |

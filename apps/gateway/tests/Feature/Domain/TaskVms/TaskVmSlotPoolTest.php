@@ -57,7 +57,6 @@ use App\Domain\Tasks\TaskStartCommit;
 use App\Domain\Tasks\TaskStatus;
 use App\Domain\Tasks\TaskVmIdleRelease;
 use App\Domain\Tasks\TaskVmReentry;
-use App\Domain\Tasks\TaskVmRemoved;
 use App\Domain\Tasks\TaskWorkspaceWaiting;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmContainers;
@@ -1105,14 +1104,12 @@ it('skips container places until the switch', function (): void {
     $pool = app(TaskVmSlotPool::class);
 
     expect(fn () => $pool->take(slotPoolGroup($project)))->toThrow(TaskCapacityException::class)
-        ->and(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class)
-        ->and(fn () => $pool->freeCiPlaces())->toThrow(TaskCapacityException::class);
+        ->and(fn () => $pool->take(slotPoolGroup($project), proof: true))->toThrow(TaskCapacityException::class);
 });
 
 it('takes container places after the switch on a host with a container base, and records their runtime', function (): void {
     [, $project] = containerPoolHost(placement: true);
     $pool = app(TaskVmSlotPool::class);
-    expect($pool->freeCiPlaces())->toBe(1);
 
     $task = $pool->take(slotPoolGroup($project));
     $ci = $pool->take(slotPoolGroup($project), proof: true);
@@ -1162,14 +1159,6 @@ it('keeps one recorded base per runtime, so a newer container base never replace
     expect($images->recorded($host, $location, TaskVmRuntime::Vm))->toBeNull()
         ->and($images->recorded($host, $location, TaskVmRuntime::Container)['snapshot'] ?? null)->toBe('c20261109120000');
 });
-
-it('counts the CI places a proof can wait for: VM places before the container switch, VM and container places after', function (bool $placement, int $places): void {
-    [$host, $project] = containerPoolHost(placement: $placement, ciPlaces: 2, containerCi: 3);
-    // A taken place still counts: it is a place the proof can wait for.
-    app(TaskVmSlotPool::class)->take(slotPoolGroup($project), proof: true);
-
-    expect(app(TaskVmSlotPool::class)->usableCiPlaces())->toBe($places);
-})->with(['before the switch' => [false, 2], 'after the switch' => [true, 5]]);
 
 /** One Operation on the group that ended this many minutes ago, or that is still open when $open is set. */
 function idleGroupOperation(Task $group, TaskVm $place, int $minutesAgo, bool $open = false, string $kind = 'tasks.build'): Operation
@@ -1643,20 +1632,6 @@ describe('nested-fleet Projects', function (): void {
         $flag($project);
         $before = $rows();
         $refused(fn () => DB::transaction(fn () => TaskVmReentry::capture($group, str_repeat('a', 40), continue: false)));
-        expect($rows())->toBe($before);
-    });
-
-    // The task VM admission of a proof command is removed: it answers that refusal before it claims a place.
-    it('refuses a CI proof command before it claims a CI place', function () use ($rows, $flag): void {
-        Queue::fake();
-        [, $project] = slotPoolHost();
-        slotPoolSweepWorld();
-        slotPoolClaimServices();
-        $group = slotPoolGroup($project);
-        $flag($project);
-        $before = $rows();
-        expect(fn () => app(TaskProvisionIntent::class)->admit($group, str_repeat('a', 40), 'proof.command', static fn (array $input): array => $input, 'test', null, ciPool: true))
-            ->toThrow(fn (ResourceOperationException $error) => expect([$error->errorCode, $error->status])->toBe([TaskVmRemoved::Code, 422]));
         expect($rows())->toBe($before);
     });
 

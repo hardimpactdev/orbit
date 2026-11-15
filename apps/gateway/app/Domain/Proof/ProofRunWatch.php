@@ -19,8 +19,6 @@ use Throwable;
  * The watchdog of `proof.run`, which has no Swamp run and so no other deadline. It ends a proof only when the request that admitted
  * it is gone, never because a run is slow: a proof either shows its runs, or ends with `proof.admission_interrupted`, and never sits at
  * `runs: []`. It also closes a proof whose runs have all ended.
- * It also ends the keep of a failed run (`proof:run --keep-failed`) when its 60 minutes are up, by cancelling the group of that run.
- * Operator proof children may wait in task admission; that wait is governed by its own capacity budget.
  */
 final readonly class ProofRunWatch
 {
@@ -36,22 +34,19 @@ final readonly class ProofRunWatch
      */
     public const int DispatchSilenceSeconds = 300;
 
-    /** The format of the times in the record of a kept VM; it sorts as text. */
-    public const string Time = 'Y-m-d\TH:i:s\Z';
-
     /** A run in a copy that ended this long ago and still has its copy gets its group's cancel again. */
     public const int CopyReleaseSeconds = 300;
 
-    /** A keep that is still open this many hours after its time is no longer asked to cancel. */
-    public const int KeptGiveUpHours = 24;
+    /** A run in a copy that ended this many hours ago is no longer asked to remove its copy. */
+    public const int CopyGiveUpHours = 24;
 
-    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement, private ProofKeptVms $kept) {}
+    public function __construct(private OperationStore $store, private ProofRunSettlement $settlement) {}
 
     /** @return int how many proofs it ended or settled */
     public function sweep(): int
     {
         $ended = 0;
-        // The kept VMs expire on every pass, whatever the watch of the proofs does.
+        // The copies of ended runs are released on every pass, whatever the watch of the proofs does.
         try {
             $open = Operation::query()->where(fn ($query) => $query->where(fn ($query) => $query->where('kind', OperationKinds::ProofRun)
                 ->whereIn('status', [OperationStatus::Queued, OperationStatus::Running, OperationStatus::Waiting])
@@ -74,44 +69,16 @@ final readonly class ProofRunWatch
                 }
             }
         } finally {
-            $this->expireKept();
             $this->releaseCopies();
         }
 
         return $ended;
     }
 
-    /** Whether the run kept its VM and the 60 minutes are not up: its group stays open. */
-    public static function keeps(Operation $run): bool
-    {
-        $until = is_array($run->result['kept'] ?? null) ? ($run->result['kept']['keep_until'] ?? null) : null;
-
-        return is_string($until) && $until > now()->utc()->format(self::Time);
-    }
-
-    /**
-     * Cancels the group of each kept VM (`proof:run --keep-failed`) when its time is up. The cancel is the one every run gets, with the trigger
-     * `proof-run`; it is asked for again every few minutes until the group and its VM are gone, so nobody has to come back. A keep that is
-     * still there a day after its time is left alone: something other than the time holds it, and the warning names the run.
-     */
-    private function expireKept(): void
-    {
-        $due = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereNotNull('result->kept')
-            ->whereBetween('result->kept->keep_until', [now()->utc()->subHours(self::KeptGiveUpHours)->format(self::Time), now()->utc()->format(self::Time)])->pluck('id');
-        foreach ($due as $id) {
-            try {
-                $this->kept->release(ValidatedData::integer($id));
-            } catch (Throwable $exception) {
-                // One run that cannot be cancelled must not hold the others.
-                report($exception);
-            }
-        }
-    }
-
     /**
      * Asks again for the cancel of each group whose run in a copy ended more than CopyReleaseSeconds ago and whose copy still exists
      * with no Operation on it: the cancel that the run's end queued was lost, for example in a Gateway restart, or gave up while the
-     * copy was busy. The cancel is keyed, and a group that has ended asks nothing. A run that ended more than KeptGiveUpHours ago is no
+     * copy was busy. The cancel is keyed, and a group that has ended asks nothing. A run that ended more than CopyGiveUpHours ago is no
      * longer asked for: something other than a lost cancel holds its copy, and the copy shows in the Instance list for an operator.
      */
     private function releaseCopies(): void
@@ -119,7 +86,7 @@ final readonly class ProofRunWatch
         $copies = Instance::query()->whereNotNull('task_workspace_owner_id')
             ->whereNotIn('id', Operation::query()->select('target_id')->where('target_type', 'instance')->whereNotIn('status', OperationStatus::terminalValues()));
         $runs = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereIn('status', OperationStatus::terminalValues())->where('input->copy', true)
-            ->whereBetween('finished_at', [now()->subHours(self::KeptGiveUpHours), now()->subSeconds(self::CopyReleaseSeconds)])
+            ->whereBetween('finished_at', [now()->subHours(self::CopyGiveUpHours), now()->subSeconds(self::CopyReleaseSeconds)])
             ->whereIn('target_id', $copies->select('task_workspace_owner_id'))->pluck('id');
         foreach ($runs as $id) {
             try {

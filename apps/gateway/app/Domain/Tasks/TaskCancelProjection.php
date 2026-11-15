@@ -9,7 +9,6 @@ use App\Domain\Operations\DirectOperationProjection;
 use App\Domain\Operations\DirectOperationStartRefusal;
 use App\Domain\Operations\DirectOperationTimeout;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Proof\ProofKeptVms;
 use App\Models\Operation;
 use App\Models\Task;
 use App\Support\ValidatedData;
@@ -41,8 +40,6 @@ final readonly class TaskCancelProjection implements DirectOperationProjection, 
             $result = ['group_id' => $group->id, 'instance_id' => $operation->input['instance_id'] ?? null, 'released' => $data['status'] === 'succeeded'];
             if ($data['status'] === 'succeeded') {
                 app(TaskGroupEnding::class)->settle($group, $operation->input, $operation->kind);
-                // A VM that a failed proof run kept (--keep-failed) is released now: the kept list says so.
-                app(ProofKeptVms::class)->released($operation, $group->id);
             } elseif (in_array($data['status'], ['failed', 'cancelled'], true)) {
                 $this->failed($operation, ValidatedData::nullableString($data['error_code'] ?? null));
             }
