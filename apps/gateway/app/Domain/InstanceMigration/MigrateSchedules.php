@@ -23,7 +23,7 @@ use App\Support\ValidatedData;
 final readonly class MigrateSchedules
 {
     /** Bare names the container runtime puts on the Schedule's PATH. */
-    private const array RuntimeNames = ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'];
+    private const RuntimeNames = ['php', 'node', 'bun', 'vp', 'composer', 'git', 'true', 'false', 'echo', 'printf'];
 
     public function __construct(private ScheduleTargetResolver $targets, private RecipeImageBuilds $recipes) {}
 

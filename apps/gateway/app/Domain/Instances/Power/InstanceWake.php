@@ -145,7 +145,7 @@ final readonly class InstanceWake extends InstancePower
             // A safety net for a Gateway worker that dies during the Node's resume: the run starts after the bound has long
             // passed. The job starts nothing once the Operation has ended or its run has started.
             $id = $operation->id;
-            DB::afterCommit(static fn () => Bus::dispatch(new StartAdmittedSwampRun($id)->delay(now()->addSeconds(self::SafetyNetSeconds))));
+            DB::afterCommit(static fn () => Bus::dispatch((new StartAdmittedSwampRun($id))->delay(now()->addSeconds(self::SafetyNetSeconds))));
         }
 
         return $operation;

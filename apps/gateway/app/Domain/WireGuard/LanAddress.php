@@ -15,8 +15,13 @@ final class LanAddress
         if (! is_string($address) || filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) === false) {
             return false;
         }
+        foreach (self::PrivateRanges as $range) {
+            if (Ipv4Subnet::from($range)->contains($address)) {
+                return true;
+            }
+        }
 
-        return array_any(self::PrivateRanges, fn ($range) => Ipv4Subnet::from($range)->contains($address));
+        return false;
     }
 
     public static function sameNetwork(?string $first, ?string $second): bool

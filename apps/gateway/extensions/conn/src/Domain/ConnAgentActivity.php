@@ -108,8 +108,13 @@ final readonly class ConnAgentActivity implements InstanceAgentActivity
         // fromShell read both lists and every thread as arrays.
         $threads = is_array($shell['threads']) ? $shell['threads'] : [];
         $archived = is_array($shell['archivedThreads'] ?? null) ? $shell['archivedThreads'] : [];
+        foreach ([...$threads, ...$archived] as $thread) {
+            if (is_array($thread) && is_array($thread['pendingRuntimeRequest'] ?? null)) {
+                return true;
+            }
+        }
 
-        return array_any([...$threads, ...$archived], fn ($thread) => is_array($thread) && is_array($thread['pendingRuntimeRequest'] ?? null));
+        return false;
     }
 
     /**

@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 use App\Domain\Extensions\ExtensionStore;
+use App\Domain\Instances\ContainerServer;
 use App\Domain\Instances\InstanceState;
 use App\Domain\Instances\Power\InstanceWake;
 use App\Domain\Nodes\RoleName;
@@ -95,12 +96,12 @@ function renewNode(int $index): Node
 }
 
 /** A clone with its own container and T3 server, whose Gateway session ends after `$days`. */
-function renewServer(Project $project, Node $node, string $name, float $days, bool $t3 = true): ConnEnvironment
+function renewServer(Project $project, Node $node, string $name, float $days, bool $t3 = true, ContainerServer $server = ContainerServer::T3): ConnEnvironment
 {
     $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $node->id, 'name' => $name, 'checkout_path' => '/srv/'.$name, 'status' => InstanceState::Active]);
     InstanceRuntime::query()->create(['node_id' => $node->id, 'power_state' => 'running', 'runtime_version' => 'test', 'agent_version' => 'test', 'instance_id' => $instance->id,
         'incus_project' => 'orbit-instances', 'container_name' => 'instance-'.$instance->id, 'bridge_address' => preg_replace('~0/24\z~', '', (string) $node->instance_bridge).($instance->id % 250 + 2),
-        't3_port' => $t3 ? 3800 + $instance->id : null]);
+        't3_port' => $t3 ? 3800 + $instance->id : null, 'container_server' => $t3 ? $server : null]);
     $environment = ConnEnvironment::query()->create(['environment_id' => 'env-'.$name, 'label' => 'tool / '.$name, 'url' => 'http://'.$node->wireguard_ip.':'.(3800 + $instance->id),
         'node_id' => $node->id, 'admin_session' => 'old-session-'.$name, 'admin_session_expires_at' => now()->addMinutes((int) round($days * 1440)), 'registered_at' => now()->subDays(23)]);
     $environment->forceFill(['instance_id' => $instance->id])->save();
@@ -149,6 +150,15 @@ it('renews a session that ended while the container was stopped, with no old ses
         ->and(json_encode($operation->input))->not->toContain('old-session-woken')
         ->and($operation->input['intent'])->toMatchArray(['instance_id' => $ended->instance_id, 'environment_id' => 'env-woken', 'url' => $ended->url,
             't3' => '/opt/orbit-agent/current/agent/bin/t3', 'container' => ['project' => 'orbit-instances', 'name' => 'instance-'.$ended->instance_id]]);
+});
+
+it('issues the session with the program of the container\'s recorded server: a Conn Server container renews through conn-server', function (): void {
+    $conn = renewServer($this->project, renewNode(1), 'conn', -1, server: ContainerServer::Conn);
+
+    $operation = Operation::query()->findOrFail(app(ConnRenewalSweep::class)->run()[0]);
+
+    expect($operation->target_id)->toBe($conn->id)
+        ->and($operation->input['intent']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/conn-server');
 });
 
 it('admits at most five per tick, the earliest end first and one per Node, when thirty fall due at once', function (): void {

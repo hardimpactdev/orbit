@@ -319,8 +319,12 @@ describe('a normal Node and a normal Instance stay byte-identical to main', func
             // The third change: T3's drop-in, so its start does not wait for `sysinit.target` (development-containers.md#t3-starts-with-the-copy).
             $expected['clone']['files'][] = ['path' => InstanceContainer::T3BootDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
                 'content' => "# Managed by Orbit.\n[Unit]\nDefaultDependencies=no\nAfter=nftables.service local-fs.target systemd-journald.socket systemd-sysctl.service\nConflicts=shutdown.target\nBefore=shutdown.target\n"];
+            // The fourth change: the drop-in that names the runtime's container server (development-containers.md#container-server).
+            $expected['clone']['files'][] = ['path' => InstanceContainer::ServerDropIn, 'before_start' => true, 'uid' => 0, 'gid' => 0, 'mode' => '0644',
+                'content' => "# Managed by Orbit.\n[Service]\nExecStart=\nExecStart=/opt/orbit-agent/current/agent/bin/t3 serve --host=0.0.0.0 --port=3773 --no-browser\n"];
             expect(array_column($actual['clone']['files'], 'before_start', 'path'))->toBe(['/etc/orbit/instance' => true,
-                '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true, InstanceContainer::T3BootDropIn => true]);
+                '/home/agent/.codex/config.toml' => true, '/home/agent/.claude.json' => true, '/home/agent/.t3/userdata/settings.json' => true, InstanceContainer::T3BootDropIn => true,
+                InstanceContainer::ServerDropIn => true]);
             expect(array_column($actual['clone']['boot_files'], 'path'))
                 ->toBe(['/etc/ld.so.conf.d/zz-orbit-browser.conf', '/etc/fonts/fonts.conf', '/etc/gitconfig', '/etc/ld.so.cache', '/usr/local/share/ca-certificates/orbit-managed-root-ca.crt',
                     '/home/agent/.pki/nssdb/pkcs11.txt', '/etc/systemd/system.conf.d/91-orbit-browsers.conf', '/etc/profile.d/91-orbit-browsers.sh',

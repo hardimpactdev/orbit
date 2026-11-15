@@ -272,7 +272,7 @@ One tick admits at most five renewals, the earliest end first. It admits at most
 
 #### How
 
-The run reaches the Node over its SSH account. In that Instance's own container, as `agent`, it issues a new `Orbit Gateway` session with `t3 auth session issue`. It needs no old session, so an ended session renews too.
+The run reaches the Node over its SSH account. In that Instance's own container, as `agent`, it issues a new `Orbit Gateway` session with `auth session issue` of the container's [recorded server](/reference/development-containers#container-server), `t3` or `conn-server`, whose store holds the sessions. It needs no old session, so an ended session renews too.
 
 A clone always gets its own session. The run names only that clone's container. It refuses a server that serves another environment id.
 
