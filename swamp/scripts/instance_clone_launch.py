@@ -21,10 +21,12 @@ def main():
     phase = sys.argv[2]
     try:
         if phase == "stage" and len(sys.argv) > 3:
-            # The stage copy (docs/reference/development-containers.md#create): its first line is public release assets, the rest
-            # the clone copy's private text. Stage the line, then run the named phase with only the private text on its stdin.
-            line, _, private = sys.stdin.read().partition("\n")
-            payload = json.loads(line)
+            # The launch copy (docs/reference/development-containers.md#create): one JSON line, `stage` the public release assets,
+            # `private` the clone copy's text. Stage the first, then run the named phase with only the private text on its stdin.
+            launch = json.loads(sys.stdin.read())
+            payload, private = launch["stage"], launch["private"]
+            if not isinstance(private, str):
+                raise ValueError("private")
             stage(folder, payload)
             phase = sys.argv[3]
             sys.stdin = io.StringIO(private)

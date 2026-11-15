@@ -4,23 +4,56 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances;
 
+use App\Domain\Shared\ResourceOperationException;
 use App\Models\Operation;
 use LogicException;
 
 /**
- * The release scripts a clone's `clone-container` stages on its Node, framed at admission in the clone's one stage copy: a step's
+ * The release scripts a clone's `clone-container` stages on its Node, framed at admission in the clone's one launch copy: a step's
  * stdin is one whole vault value, and the scripts are larger than one argument (docs/reference/development-containers.md#create).
- * The copy is one line of public JSON, then the private text of the clone copy (InstanceGitHubReadTokens::cloneReference). The
- * launcher writes the JSON into the clone's private folder and gives the clone script only the private text.
+ *
+ * The copy is ONE line of JSON: `stage` (the public scripts, the run's container intent and the SSH account) and `private` (the clone
+ * copy's text: the credential line and the model environment). Swamp registers every value a run reads with `vault.get` for
+ * redaction, and turns a value with a newline into one regular expression; V8 refuses one built from a line of about 32 KB
+ * (release 2080). A single line is matched as a plain string. The launcher stages `stage` and gives the clone script only `private`.
+ *
+ * Swamp masks a registered value only as a whole, so the bare GitHub token and the bare model key get their own copies, which the
+ * create reads so that either one is masked wherever it appears alone.
  */
 final readonly class CloneStage
 {
+    /** The largest launch copy: about five times today's 195 KB, far below what a vault value and a step's stdin carry. */
+    public const int MaxBytes = 1_048_576;
+
+    /** The token copy of a repository the Gateway fetches without a token: a word no output needs, which the redactor masks. */
+    public const string NoToken = 'orbit-no-github-token';
+
     public function __construct(private ?string $swamp = null) {}
 
     /** @return array{vault:string,key:string} */
     public static function reference(Operation $operation): array
     {
-        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-stage-'.$operation->id];
+        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-launch-'.$operation->id];
+    }
+
+    /**
+     * The bare GitHub read token of the run, or {@see NoToken}.
+     *
+     * @return array{vault:string,key:string}
+     */
+    public static function tokenReference(Operation $operation): array
+    {
+        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-redact-token-'.$operation->id];
+    }
+
+    /**
+     * The bare model key of the run.
+     *
+     * @return array{vault:string,key:string}
+     */
+    public static function modelReference(Operation $operation): array
+    {
+        return ['vault' => 'orbit-control-inputs', 'key' => 'instance-create-redact-model-'.$operation->id];
     }
 
     /** The public launcher, the program text of the step's `python3 -c`. */
@@ -30,19 +63,20 @@ final readonly class CloneStage
     }
 
     /**
-     * The public JSON line: the launcher, the clone script and its helpers, the run's container intent and the SSH account. A nested-fleet
+     * The public part: the launcher, the clone script and its helpers, the run's container intent and the SSH account. A nested-fleet
      * clone gets the nested network program and its Club key script.
      *
      * @param  array<string,mixed>  $container
+     * @return array<string,mixed>
      */
-    public function payload(array $container, string $account): string
+    public function payload(array $container, string $account): array
     {
         $network = $this->read('ansible/instance_network.py');
         if (self::present($container, 'allowed_devices')) {
             $network = explode('if __name__ == "__main__":', $network, 2)[0].$this->read('ansible/instance_nested.py');
         }
 
-        return json_encode([
+        return [
             'launcher' => $this->launcher(),
             'script' => $this->read('scripts/instance_clone.py'),
             'container' => $container,
@@ -58,7 +92,26 @@ final readonly class CloneStage
                 // Only a nested-fleet clone delivers its nested Gateway's Club key.
                 ...(self::present($container, 'club_key') ? ['club_key' => $this->read('ansible/instance_nested_club_key.sh')] : []),
             ],
-        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        ];
+    }
+
+    /**
+     * The launch copy's one line. A copy over {@see MaxBytes} refuses the create by name before its run starts.
+     *
+     * @param  array<string,mixed>  $payload
+     */
+    public static function value(array $payload, #[\SensitiveParameter] string $private): string
+    {
+        $value = json_encode(['stage' => $payload, 'private' => $private], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if (strlen($value) > self::MaxBytes) {
+            throw new ResourceOperationException('instance.clone_launch_too_large',
+                'The clone launch copy holds '.strlen($value).' bytes, more than the '.self::MaxBytes.' a create may send.', 409);
+        }
+        if (str_contains($value, "\n")) {
+            throw new LogicException('The clone launch copy must be one line.');
+        }
+
+        return $value;
     }
 
     /** @param array<string,mixed> $container */

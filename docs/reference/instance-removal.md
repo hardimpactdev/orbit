@@ -94,7 +94,7 @@ A removal from Conn while a clone's [completion](/cli/instance/complete) runs re
 
 A removal while the Instance's create runs is accepted from every caller: it records the create's cancel and is admitted `waiting` behind it ([Remove a clone whose create runs](/reference/conn#remove-a-clone-whose-create-runs)).
 
-Destroy also deletes each create's execution copies. A clone's create has two: one that holds its credential line and its model environment for the copy step, and its stage copy, which holds the release scripts before the same private text.
+Destroy also deletes each create's execution copies. A clone's create has four: the clone copy, with its credential line and model environment; the one-line launch copy, with the release scripts beside the same private text; and the bare token and the bare model key.
 
 Destroy also deletes migration execution copies, including the remote-read credential, and the create copies of the owned database and of the clone's own Valkey user, which hold their server and owner logins. It deletes the copies of each [completion](/cli/instance/complete) too: its Process files and its Route material.
 

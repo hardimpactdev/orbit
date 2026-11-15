@@ -428,7 +428,7 @@ it('frames the model environment after the credential line on the copy step stdi
         ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-git-credential-'.$operation->id);
 });
 
-it('frames the release scripts in one stage copy: the public line, then the clone copy\'s private text, and sends its launcher', function (): void {
+it('frames the release scripts in one single-line launch copy beside the clone copy\'s private text, and the bare token and model key', function (): void {
     $node = containerDefaultNode();
     $operation = containerCreate(seededDefault($node)->project, $node, 'feature');
     $vault = vaultReadingSocket([]);
@@ -436,15 +436,29 @@ it('frames the release scripts in one stage copy: the public line, then the clon
     $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
 
     $swamp = base_path('../../swamp');
-    $framed = collect($vault->puts)->firstWhere('key', 'instance-create-clone-'.$operation->id);
-    $staged = collect($vault->puts)->firstWhere('key', 'instance-create-stage-'.$operation->id);
-    [$line, $private] = explode("\n", $staged['value'], 2);
-    $payload = json_decode($line, true, flags: JSON_THROW_ON_ERROR);
-    expect($run['execution_secrets']['clone_stage'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-stage-'.$operation->id])
-        // Every old key stays: a workflow of the release before reads them.
-        ->and($run['execution_secrets']['git_credential'])->toBe(['vault' => 'orbit-control-inputs', 'key' => 'instance-create-clone-'.$operation->id])
-        ->and($private)->toBe($framed['value'])
-        ->and($line)->not->toContain('placeholder-model-key')
+    $put = static fn (string $prefix): ?array => collect($vault->puts)->firstWhere('key', $prefix.$operation->id);
+    $framed = $put('instance-create-clone-');
+    $launch = $put('instance-create-launch-');
+    $value = json_decode($launch['value'], true, flags: JSON_THROW_ON_ERROR);
+    $payload = $value['stage'];
+    $credential = strtok($framed['value'], "\n");
+    $reference = static fn (string $prefix): array => ['vault' => 'orbit-control-inputs', 'key' => $prefix.$operation->id];
+    // Swamp turns a vault value with a newline into one regular expression, which a 32 KB line breaks (release 2080): one line.
+    expect($launch['value'])->not->toContain("\n")
+        ->and(strlen($launch['value']))->toBeLessThan(CloneStage::MaxBytes)
+        ->and($run['execution_secrets']['clone_launch'])->toBe($reference('instance-create-launch-'))
+        ->and($run['execution_secrets']['clone_redact_token'])->toBe($reference('instance-create-redact-token-'))
+        ->and($run['execution_secrets']['clone_redact_model'])->toBe($reference('instance-create-redact-model-'))
+        // The multi-line stage copy of release 2079 is gone; every key that workflow reads stays.
+        ->and($put('instance-create-stage-'))->toBeNull()
+        ->and($run['execution_secrets'])->not->toHaveKey('clone_stage')
+        ->and($run['execution_secrets']['git_credential'])->toBe($reference('instance-create-clone-'))
+        ->and($value['private'])->toBe($framed['value'])
+        ->and(json_encode($payload))->not->toContain('placeholder-model-key')
+        // Swamp masks a value only as a whole: the bare token and the bare model key are values of their own.
+        ->and($put('instance-create-redact-model-')['value'])->toBe('placeholder-model-key')
+        ->and($put('instance-create-redact-token-')['value'])->toBe($credential === 'https://x-access-token:' ? CloneStage::NoToken
+            : (preg_match('~^https://x-access-token:(.+)@github\.com$~', (string) $credential, $token) === 1 ? $token[1] : CloneStage::NoToken))
         ->and($run['intent']['clone_launcher'])->toBe(file_get_contents($swamp.'/scripts/instance_clone_launch.py'))
         ->and($payload['launcher'])->toBe($run['intent']['clone_launcher'])
         ->and($payload['script'])->toBe(file_get_contents($swamp.'/scripts/instance_clone.py'))
@@ -461,11 +475,24 @@ it('frames the release scripts in one stage copy: the public line, then the clon
         ]);
 });
 
+it('refuses a launch copy over its cap by name, and never writes a copy with a newline', function (): void {
+    $payload = new CloneStage()->payload(['instance_id' => 7], 'orbit');
+
+    expect(fn () => CloneStage::value([...$payload, 'script' => str_repeat('x', CloneStage::MaxBytes)], 'private'))
+        ->toThrow(ResourceOperationException::class, 'more than the 1048576 a create may send')
+        ->and(CloneStage::value($payload, "line one\nline two\n"))->not->toContain("\n")
+        ->and(json_decode(CloneStage::value($payload, "line one\nline two\n"), true)['private'])->toBe("line one\nline two\n");
+    try {
+        CloneStage::value([...$payload, 'script' => str_repeat('x', CloneStage::MaxBytes)], 'private');
+    } catch (ResourceOperationException $refused) {
+        expect([$refused->errorCode, $refused->status])->toBe(['instance.clone_launch_too_large', 409]);
+    }
+});
+
 it('gives a nested-fleet stage the nested network program and the Club key script', function (): void {
     $swamp = base_path('../../swamp');
-    $payload = json_decode(new CloneStage()->payload(['instance_id' => 7, 'allowed_devices' => ['eth0'], 'club_key' => ['available' => true]], 'orbit'),
-        true, flags: JSON_THROW_ON_ERROR);
-    $plain = json_decode(new CloneStage()->payload(['instance_id' => 7], 'orbit'), true, flags: JSON_THROW_ON_ERROR);
+    $payload = new CloneStage()->payload(['instance_id' => 7, 'allowed_devices' => ['eth0'], 'club_key' => ['available' => true]], 'orbit');
+    $plain = new CloneStage()->payload(['instance_id' => 7], 'orbit');
 
     expect($payload['network'])->toBe(explode('if __name__ == "__main__":', file_get_contents($swamp.'/ansible/instance_network.py'), 2)[0]
         .file_get_contents($swamp.'/ansible/instance_nested.py'))
@@ -474,16 +501,16 @@ it('gives a nested-fleet stage the nested network program and the Club key scrip
         ->and(json_encode($payload, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE))->not->toContain("\n");
 });
 
-it('gives a container default and a checkout create no stage copy and no launcher', function (): void {
+it('gives a container default and a checkout create no launch copy, no bare secret copies and no launcher', function (): void {
     $node = containerDefaultNode();
     $operation = containerCreate(containerDefaultProject(), $node, 'default');
     $vault = vaultReadingSocket([]);
 
     $run = app(DevelopmentInstanceCreateProjection::class)->input($operation);
 
-    expect($run['execution_secrets'])->not->toHaveKey('clone_stage')
+    expect(array_intersect(array_keys($run['execution_secrets']), ['clone_launch', 'clone_redact_token', 'clone_redact_model', 'clone_stage']))->toBe([])
         ->and($run['intent'])->not->toHaveKey('clone_launcher')
-        ->and(collect($vault->puts)->pluck('key')->all())->not->toContain('instance-create-stage-'.$operation->id);
+        ->and(collect($vault->puts)->pluck('key')->filter(fn (string $key): bool => preg_match('~^instance-create-(?:launch|redact-token|redact-model|stage)-~', $key) === 1)->all())->toBe([]);
 });
 
 describe('a clone of a default with a Valkey target', function (): void {
