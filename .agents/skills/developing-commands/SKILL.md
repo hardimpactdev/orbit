@@ -146,3 +146,5 @@ A proof CLI timeout does not settle its Operation. Cancel and confirm settlement
 A coalesced CI receiver must select each waiting commit before taking the union: a net diff loses reverted inputs and historical deferrals. Publish every commit link before advancing a durable answer marker, and keep a failed run’s claim so a collector can report missing work. Intersect the union with the tested tree and report removed names as gone, without failing the run. Never call newest-only proof selection range coverage.
 
 A coalesced proof range selects each intervening commit against its own first parent and then intersects case IDs with the tested tree. A net diff loses reverted inputs. Share variant expansion with batch admission, and refuse an incomplete history instead of claiming partial coverage.
+
+A manual hosted proof checks out trusted workflow code, passes the tested SHA only as data, and preserves the existing caller’s signal forwarding. A successful zero-case selection does not prove hosted execution.

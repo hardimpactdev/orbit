@@ -1,0 +1,76 @@
+#!/usr/bin/env python3
+"""One explicitly dispatched hosted proof; no main queue or enable switches."""
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import runpy
+import subprocess
+import sys
+from urllib.parse import quote
+
+ROOT = Path(__file__).resolve().parents[1]
+PREFLIGHT = runpy.run_path(str(ROOT / 'bin/ci-proof-eligibility'))
+REPOSITORY = 'hardimpactdev/orbit'
+
+
+def check(env, github, root=ROOT):
+    if (env.get('GITHUB_REPOSITORY') != REPOSITORY or env.get('GITHUB_REF') != 'refs/heads/main'
+            or env.get('GITHUB_EVENT_NAME') != 'workflow_dispatch'):
+        raise ValueError('Manual proof must be dispatched from hardimpactdev/orbit main')
+    sha = env.get('PROOF_SHA', '')
+    if not re.fullmatch(r'[0-9a-f]{40}(?:[0-9a-f]{24})?', sha):
+        raise ValueError('PROOF_SHA must be a full lowercase commit SHA')
+    for actor in sorted({env['GITHUB_ACTOR'], env['GITHUB_TRIGGERING_ACTOR']}):
+        if not actor:
+            raise ValueError('Missing dispatch actor')
+        permission = github.get(f'collaborators/{quote(actor, safe="")}/permission', missing_permission=True)
+        if permission.get('permission') not in ('write', 'admin') and permission.get('role_name') not in ('write', 'maintain', 'admin'):
+            raise ValueError('Manual proof requires repository write access: ' + actor)
+    # checkout fetch-depth:0 fetches every repository branch. No target code is executed here.
+    branches = subprocess.check_output(['git', '-C', str(root), 'for-each-ref', '--format=%(refname)',
+                                       '--contains=' + sha, 'refs/remotes/origin/'], text=True, timeout=20).splitlines()
+    if not any(branch != 'refs/remotes/origin/HEAD' for branch in branches):
+        raise ValueError('The tested SHA is not reachable from a repository branch')
+    return sha
+
+
+def run(env, sha):
+    receipt = Path(env['PROOF_RECEIPT'])
+    child_env = {**env, 'PROOF_SHA': sha, 'PROOF_BASE': '', 'PROOF_ALL': 'false',
+                 'PROOF_STORE_RESULT': 'true', 'PROOF_CHECK_ELIGIBILITY': 'false'}
+    # The Gateway's trust refusal stays a failed proof, never a skipped preflight success.
+    # Run the existing caller in this process so its SIGINT/SIGTERM forwarding remains the cancellation owner.
+    os.environ.update(child_env)
+    try:
+        runpy.run_path(str(ROOT / 'bin/ci-proof-run'))['main']()
+    except SystemExit as ended:
+        if ended.code not in (None, 0):
+            if isinstance(ended.code, str):
+                print(ended.code, file=sys.stderr)
+            return ended.code if isinstance(ended.code, int) else 1
+    document = json.loads(receipt.read_text())
+    outcome = document.get('result') or {}
+    if document.get('commit') != sha or document.get('outcome') != 'passed' or outcome.get('outcome') != 'passed' or not outcome.get('cases'):
+        raise ValueError('Manual hosted proof needs passing case execution; nothing_to_prove is not proof')
+    return 0
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('command', choices=['check', 'run'])
+    args = parser.parse_args()
+    try:
+        sha = check(os.environ, PREFLIGHT['GitHub'](REPOSITORY))
+        if args.command == 'run':
+            return run(os.environ, sha)
+        print('Manual proof admitted to hosted caller: ' + sha + '. Gateway trust remains authoritative.')
+        return 0
+    except (ValueError, KeyError, OSError, subprocess.SubprocessError) as error:
+        print('Manual proof refused: ' + str(error), file=sys.stderr)
+        return 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

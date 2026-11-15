@@ -5,10 +5,8 @@ covers:
   - bin/ci-full-set
   - bin/ci-deferred
   - bin/ci-main-queue
-  - .github/workflows/ci-main-proof.yml
-  - .github/workflows/ci-main-report.yml
-  - .github/workflows/ci-deferred.yml
-  - .github/workflows/ci-full-set.yml
+  - bin/ci-proof-manual
+  - .github/workflows/ci-{proof-manual,main-proof,main-report,deferred,full-set}.yml
   - .github/actionlint.yaml
 ---
 
@@ -47,6 +45,12 @@ A separate serialized hosted caller uses the existing enrolled proof runner and 
 The main proof consumer passes the exclusive ancestor base and newest SHA to `proof:run`. Orbit unions each commit's selection and runs it on the newest tree. Its report names the covered interval and says `range_covered: true`; it does not claim to test each intermediate tree. The receipt's case and verdict fields stay unchanged.
 
 The nightly `--all` run checks every available kind at one pinned main SHA when this consumer is idle. Both receipts retain every returned case verdict and the exact tested SHA. They are independent of Required and releases.
+
+### One manual hosted proof
+
+`Manual copy proof` accepts one full lowercase commit SHA through `workflow_dispatch` on main. GitHub limits dispatch to repository writers. Before admission, the workflow also verifies write access for the original and rerunning actor and requires the SHA to be reachable from a branch of `hardimpactdev/orbit`. The Gateway still applies its exact-head trust rule. The runner checks out only the trusted main workflow commit; the tested code runs inside the proof copies.
+
+This entry reuses the enrolled proof caller and `bin/ci-proof-run`, with neither `--base` nor `--all`. It permits one executing manual workflow and does not cancel an active proof. The Gateway’s shared proof place still serializes case execution. It uploads the complete case result as `proof-receipt`, including failed runs. A zero-case `nothing_to_prove` answer fails this execution check. It writes no main queue checkpoint, enables no consumer, and gates no merge or release. Dispatch only after the orchestrator confirms the live release and says to start.
 
 ### Failure sweep on Beast
 
