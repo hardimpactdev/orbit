@@ -273,6 +273,17 @@ class RouteWithdrawTest(unittest.TestCase):
         self.assertEqual(json.loads(self.catalog.read_text()), {"records": {"shop.example": "10.44.0.7"}})
         self.assertEqual((self.previous / "orbit-records.conf").read_text(), records("i7.test", "shop.example"))
 
+    def test_a_failed_flock_refuses_by_name_and_touches_nothing(self):
+        live = self.caddy.read_text()
+
+        def run(argv, **kwargs):
+            return (1, "", "flock: bad file descriptor") if argv[0] == "flock" else Tools()(argv, **kwargs)
+
+        with self.assertRaises(WITHDRAW.WithdrawFailure) as refused:
+            WITHDRAW.withdraw(plan(7), run, root=str(self.root), wait=10)
+        self.assertEqual(refused.exception.code, "route.publish_lock_failed")
+        self.assertEqual(self.caddy.read_text(), live)
+
     def test_a_held_lock_times_out_with_publish_busy(self):
         lock = self.root / "etc/caddy/.orbit-publish.lock"
         descriptor = os.open(lock, os.O_RDWR | os.O_CREAT, 0o600)

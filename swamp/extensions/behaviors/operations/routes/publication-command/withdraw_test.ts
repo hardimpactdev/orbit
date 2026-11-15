@@ -685,8 +685,15 @@ Deno.test("the withdrawal names its Node steps by the withdrawn Route and Node, 
     const parent = await load("route-withdraw");
     const node = parent.find((step) => step.name === "withdraw_node")!.task.inputs!.intent!.publication!;
     const forward = parent.find((step) => step.name === "forward")!.task.behaviorName!;
-    for (const [routes, expected] of [[[{ route_id: 1150 }, { route_id: 1151 }], "1150"], [[], "none"]] as const) {
-        const context = { inputs: { side: "forward", intent: { route_mutations: { forward: { routes } } } }, self: { _index: 0, part: { node_id: 9 } } };
+    // A destroy (side forward) desires no Route, so its forward stage lists none; its restore stage lists the withdrawn Routes. A failed
+    // create (side restore) lists its prior Route there. Both name the steps by that Route.
+    const cases = [
+        ["forward", { forward: { routes: [] }, restore: { routes: [{ route_id: 1150 }, { route_id: 1151 }] } }, "1150"],
+        ["restore", { forward: { routes: [{ route_id: 77 }] }, restore: { routes: [{ route_id: 77 }] } }, "77"],
+        ["forward", { forward: { routes: [] }, restore: { routes: [] } }, "none"],
+    ] as const;
+    for (const [side, mutations, expected] of cases) {
+        const context = { inputs: { side, intent: { route_mutations: mutations } }, self: { _index: 0, part: { node_id: 9 } } };
         assertEquals(evaluate(node.route_id, context), expected);
         assertEquals(evaluate(forward, context), `forward-result-0-${expected}`);
     }
