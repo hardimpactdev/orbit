@@ -97,7 +97,7 @@ Withdrawal fixtures also check that publication stops when the live checksum dif
 | Main delivery checks | On main, require the selected jobs and fixture shards with the same capacity and result rules as PRs; a verified tree receipt reuses its passed fixtures |
 | Main fixture report | After selected main fixtures finish, report failure, cancellation or capacity to the CI summary and the causal merged PR; report publication never gates delivery |
 
-`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `pi`, `agent`, `proof`, `gateway-release`, `changes`, `swamp` and `fixtures`. These are the existing builds, Pest suites, static checks, contracts and selected fixture shards. It adds no test or build. `Start the CLI release` depends on this result.
+`Main delivery checks` depends exactly on `php`, `gateway-static`, `gateway-tests`, `cli`, `cli-static`, `cli-tests`, `sdk-static`, `sdk-tests`, `e2e-static`, `docs`, `api-reference`, `web`, `agent`, `proof`, `gateway-release`, `changes`, `swamp` and `fixtures`. These are the existing builds, Pest suites, static checks, contracts and selected fixture shards. It adds no test or build. `Start the CLI release` depends on this result.
 
 The release resolver verifies a successful delivery job on the exact SHA in this repository's `ci.yml` main push or manual run; it accepts neither a PR check with the same name nor a commit status. The run may still be running or finish red because publishing the fixture report failed; a failed selected fixture blocks delivery. Old commits without this result cannot be backfilled.
 
@@ -123,7 +123,7 @@ The Gateway Pest job installs Gateway and CLI dev Composer dependencies and rege
 
 The job downloads the recipe's Deno 2.9.8 artifact and checks its SHA-256 before extraction. It caches the archive and JSR/npm downloads and warms the firewall test imports before Pest. It downloads the recipe's Caddy 2.11.7 artifact, checks its SHA-512 before extraction and requires the executable and version before running tests. Missing Caddy fails setup. The real Caddy fixtures wait for every listener in the chain before sending their assertions; the echo server uses an ephemeral loopback admin port. SQLite stays in memory; no database or Redis service is started. The two privileged kernel cases remain in Gateway static analysis.
 
-Gateway static analysis checks `nft --version` before its two real-kernel cases. Pi checks `setfacl --version` and `getfacl --version` before its ACL tests and verifies passwordless access to `nobody`. When the tools work, both jobs skip apt. Missing tools use `bin/ci-runner-prerequisites`: a signed Ubuntu 26.04 main index from Azure, then `mirrors.edge.kernel.org` if needed. The fallback uses a separate DNS domain, so a Canonical DNS outage does not affect both attempts. Both indexes require signatures from the Ubuntu archive keyring.
+Gateway static analysis checks `nft --version` before its two real-kernel cases. When the tool works, the job skips apt. Missing tools use `bin/ci-runner-prerequisites`: a signed Ubuntu 26.04 main index from Azure, then `mirrors.edge.kernel.org` if needed. The fallback uses a separate DNS domain, so a Canonical DNS outage does not affect both attempts. Both indexes require signatures from the Ubuntu archive keyring.
 
 Each attempt uses private source and index files, a three-second connection timeout and no retries. An incomplete index update fails the attempt. Update and install share ten seconds for Azure and twenty seconds for the fallback. At the deadline, the helper kills the attempt's process group. It verifies the installed commands and fails if neither attempt supplies them. The job limits remain two minutes.
 
@@ -381,7 +381,7 @@ Rust CI caches the Cargo registry, Git dependencies and `apps/agent/target`. An 
 
 Run `bin/check-operation-kinds` to repeat the registry check locally. It uses the real Gateway container, loads every family declaration and resolves its PHP executor or Swamp completion and execution handlers plus its named transports. Any loading or resolution failure exits nonzero. CI supplies a public fixture encryption key and requires no Gateway database. Constructor dependencies defer resource reads until their first use. The check runs no Operation, reads no resource records and contacts no Node. Families register a kind only after the Gateway enforces its required contracts.
 
-The proof CI reports within the same CI run; [the proof CI](/reference/feature-flow#the-proof-ci) describes its execution. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Pi and Rust checks.
+The proof CI reports within the same CI run; [the proof CI](/reference/feature-flow#the-proof-ci) describes its execution. The required check name stays exactly `Required checks`. The branch ruleset and automatic Gateway release resolver depend on it. Its dependencies include the selected Rust check.
 
 Every checkout uses the immutable event commit, `github.sha`. On a pull request, this is the event's merge commit. A new push cancels the older run of that pull request or handoff branch. Each main commit has its own concurrency group, so an earlier main run cannot queue or cancel a newer release candidate.
 
@@ -407,7 +407,7 @@ Gateway Pest runs in one hosted job with four workers and no shards. Gateway sta
 
 ### Runner policy during the Swamp migration
 
-During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest, Pi and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
+During the Swamp migration, Orbit CI runs builds and static checks, plus selected Gateway, CLI and SDK Pest and Rust tests. Web unit tests stay local. Agents run the affected test suites locally before publishing a change and report their counts in the pull request. The test files remain the behavior specification.
 
 Sabre and Shark run CI runners in unprivileged Incus containers.
 
@@ -502,7 +502,7 @@ API ownership matching removes the shared `api/v1` prefix, so a Form Request use
 
 1. It runs `bin/docs-impact --gate` against the [start commit](/reference/tasks#start-commit). Without a merge base, this check fails.
 2. It checks the five Composer projects, as the next paragraph describes. [Projects run at the same time](#projects-run-at-the-same-time) explains how steps 2 to 5 share the machine.
-3. When the candidate changes `apps/web`, `docs/openapi.json`, or `apps/pi-server`, it adds the matching checks, as [Web and Pi server checks](#web-and-pi-server-checks) describes.
+3. When the candidate changes `apps/web` or `docs/openapi.json`, it adds the matching checks, as [Web app checks](#web-app-checks) describes.
 4. It checks generated API artifacts when their inputs change, as [Generated artifacts](#generated-artifacts) describes.
 5. When the candidate changes the Rust agent or the desktop app, it runs `cargo fmt --all -- --check` in the matching Rust project.
 
@@ -570,9 +570,9 @@ When `bin/ci-build-plan` selects CI's Generated contracts job, the gate runs the
 
 The gate checks the local candidate tree. CI runs the builds and static checks listed above on the PR merge tree. Test suites remain available for focused local verification.
 
-#### Web and Pi server checks
+#### Web app checks
 
-A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The build also requires nonempty `dist/index.html` and `dist/version.json`, as CI does. The generated-types check runs `openapi-typescript` from the web app’s `tools/api-types` workspace and writes its output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. On failure it prints a unified diff and says to run `cd apps/web && bun run types`. A change to `docs/openapi.json` alone runs the install and the generated-types check. A change under `apps/pi-server` runs `bun install --frozen-lockfile`, `bun run check`, and `bun run build` there. Its test files remain available locally. Rust formatting runs for changed Rust projects; the remaining Rust checks run only in CI.
+A change under `apps/web` runs `bun install --frozen-lockfile` in `apps/web`, then `bun run check`, `bun run build`, and a generated-types check in `apps/web`. The build also requires nonempty `dist/index.html` and `dist/version.json`, as CI does. The generated-types check runs `openapi-typescript` from the web app’s `tools/api-types` workspace and writes its output for `docs/openapi.json` to a temporary file and compares it with `src/api/schema.d.ts`. It does not change the working tree. On failure it prints a unified diff and says to run `cd apps/web && bun run types`. A change to `docs/openapi.json` alone runs the install and the generated-types check. Rust formatting runs for changed Rust projects; the remaining Rust checks run only in CI.
 
 A command whose program is missing fails with `<program>: required tool not found`. The generated-types check runs in a shell, so a tool that is missing there fails with exit code 127. The gate never skips a selected check.
 
@@ -664,7 +664,7 @@ A fixture unit whose fixture declares a host program in `host_programs` does not
 
 #### What it leaves to CI
 
-The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites. Nor does it run the web and Pi server checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
+The scoped check does not run Rector, the full PHPStan analysis or the Gateway, CLI and docs Pest suites. Nor does it run the web app checks, Rust formatting, the Generated contracts job, the Swamp shape fixtures outside the plan, or Swamp workflow validation. It also leaves out a fixture unit whose declared host program the copy lacks. It does not fix files: Pint runs with `--test`. CI runs all of these on the handoff commit.
 
 #### Its tests
 
@@ -772,9 +772,9 @@ The task gate and CI serve different scopes. The task gate runs `bin/review-chec
 
 The gate checks all five Composer projects whatever the candidate changes. Checking the changed project alone is a rejected alternative, because the other projects would then have no quality check before review. The gate runs at each handoff, before review. Running it only in the independent review is also rejected, because each deterministic failure would then cost a reviewer turn and a correction round before it reached the implementer.
 
-### Web and Pi server checks join the gate, Rust stays in CI
+### Web app checks join the gate, Rust stays in CI
 
-A change to the web app or the Pi server could pass the gate and then fail a required CI job. So the gate runs the same fast checks as those CI jobs when their paths change. Their test files remain available locally. Running every CI job for every subtask is a rejected alternative, because path selection keeps unrelated work fast. Rust cross-compilation is too slow for each handoff, so the Rust agent stays a CI check.
+A change to the web app could pass the gate and then fail a required CI job. So the gate runs the same fast checks as that CI job when its paths change. Its test files remain available locally. Running every CI job for every subtask is a rejected alternative, because path selection keeps unrelated work fast. Rust cross-compilation is too slow for each handoff, so the Rust agent stays a CI check.
 
 ### A missing tool fails the gate
 

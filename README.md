@@ -45,7 +45,6 @@ Orbit has nine projects. Each owns its dependencies and checks. The five PHP pro
 | `apps/web` | Fleet web app that calls the Gateway API | Bun |
 | `apps/desktop` | Tauri desktop shell for the web app | Bun, Cargo |
 | `apps/agent` | Outbound-only Linux agent on Nodes | Cargo |
-| `apps/pi-server` | Pi sessions for task agents | Bun |
 
 [Tech stack](docs/tech-stack.md) lists the frameworks each project uses.
 

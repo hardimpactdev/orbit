@@ -342,7 +342,7 @@ The Gateway treats an `ipados` Node as a peer it never contacts. It reuses the p
 
 ## Enroll through a jump host
 
-The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) use this: a task VM has only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
+The Gateway can enroll a Node that it reaches only through another Node. [Task VMs](/reference/compute-drivers#task-vms) used this: a task VM had only a private address on its Incus host's bridge. The jump is internal. `node:add` and the API have no field for it.
 
 The Node records the jump Node in `ssh_jump_node_id`. While the Node has no active role, SSH to its public address goes through an `ssh` hop to the jump Node, as `<managed user>@<WireGuard address>:22` of the jump Node. The hop uses the same key, pinned host keys, and strict options as the command. See [An explicit hop, not ProxyJump](#an-explicit-hop-not-proxyjump).
 

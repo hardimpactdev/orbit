@@ -333,7 +333,7 @@ Teardown is the operator's cleanup. Removal continues only after that cleanup su
 
 ### Task setup runs in the task check
 
-Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list inside the task check on the task VM, as the VM's managed user `orbit`, which also runs the agents. That user has sudo, so host-dependent setup and tests work. [One user for every task agent](/reference/pi-server#one-user-for-every-task-agent) explains why the VM needs no second user. Task teardown runs as the same user before the Gateway destroys the VM.
+Create-time setup runs as the managed user, before an agent uses the Instance. A task workspace skips that path. Its baseline runs the setup list inside the task check on the task VM, as the VM's managed user `orbit`, which also runs the agents. That user has sudo, so host-dependent setup and tests work. Task teardown runs as the same user before the Gateway destroys the VM.
 
 ### Gateway-owned baseline delivery
 

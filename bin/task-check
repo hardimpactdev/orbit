@@ -67,8 +67,8 @@ OUTPUT_LINES = 80
 SUMMARY_BYTES = 12 * 1024
 # The most bytes of one output or summary line; a longer line keeps its start and names its size.
 LINE_BYTES = 300
-NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web and Pi '
-                'server checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
+NOT_IN_CHECK = ('Not in this check: Rector, the full PHPStan analysis, the Gateway, CLI and docs Pest suites, web app '
+                'checks, Rust formatting, generated contracts, Swamp workflow validation. CI runs them.')
 DEFAULT_BUDGET = 270
 
 

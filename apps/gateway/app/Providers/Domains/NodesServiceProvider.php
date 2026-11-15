@@ -17,7 +17,6 @@ use App\Domain\Nodes\NodeRoleFollowUpReport;
 use App\Domain\Nodes\RoleBaselineConverger;
 use App\Domain\Nodes\Storage\NodeStorageRootPreparer;
 use App\Domain\Nodes\WorkerKnownHostsPublisher;
-use App\Domain\Operations\OperationSecretOutputStore;
 use App\Domain\Operations\OperationSecretSource;
 use App\Infrastructure\Nodes\AgentManagedUserAccountResolver;
 use App\Infrastructure\Nodes\AgentNodeStorageRootPreparer;
@@ -75,8 +74,7 @@ final class NodesServiceProvider extends ServiceProvider
     {
         $this->app->tag([NodeVpnConfigurationSource::class, NodeWorkerEnrollment::class], OperationSecretSource::class);
         $this->app->tag(NodeRoleRuntimeSource::class, OperationSecretSource::class);
-        $this->app->tag(NodeAgentHashSource::class, [OperationSecretSource::class, OperationSecretOutputStore::class]);
-        $this->app->tag(NodeWorkerEnrollment::class, OperationSecretOutputStore::class);
+        $this->app->tag(NodeAgentHashSource::class, OperationSecretSource::class);
         $this->app->singleton(
             NodeLocks::class,
             static fn ($app): NodeLocks => new NodeLocks(

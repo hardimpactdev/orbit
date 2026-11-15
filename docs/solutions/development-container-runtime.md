@@ -801,5 +801,5 @@ Each PR moves its part into these pages. The specification stays on [Instance co
 | [Node settings](/reference/node-settings), [Gateway environment](/reference/gateway-environment) | Task places per Node; the task container setting and `task_vms.container_placement` go | 7, 17 |
 | [App-dev runtime hibernation](/reference/app-dev-runtime-hibernation) | Whole-container sleep after one hour, the wake callers, no pruning, no sleep during a task | 13 |
 | [Old paths](/reference/old-paths) | `instance:migrate` and checkout Instances until the last one moves; the setup-step commands, `instance:register` and the seed values; task VMs and Pi | 15, 16, 17 |
-| [Pi server](/reference/pi-server) | Removed | 17 |
+| [Pi server](/reference/old-paths#the-pi-task-loop) | Removed | 17 |
 | [`instance:clone`](/cli/instance/clone), [`instance:deploy`](/cli/instance/deploy), [`instance:rollback`](/cli/instance/rollback) | Production Instances and releases in containers | 18 to 21 |

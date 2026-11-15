@@ -153,7 +153,6 @@ it('groups all five Composer projects, three Bun projects and action pins with a
         'composer:/apps/e2e',
         'composer:/packages/php-sdk',
         'bun:/apps/web',
-        'bun:/apps/pi-server',
         'bun:/apps/desktop',
         'github-actions:/',
         'github-actions:/.github/actions/*',

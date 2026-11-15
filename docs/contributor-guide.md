@@ -27,7 +27,7 @@ From the repository root, install the project dependencies:
 bin/bootstrap
 ```
 
-`bin/bootstrap` installs the five Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Pi server, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
+`bin/bootstrap` installs the five Composer projects and writes the Gateway's application key to `~/.orbit/gateway.app-key`, or to `$ORBIT_HOME/gateway.app-key` when `ORBIT_HOME` is set. It keeps a key that already exists. The web app, the Node agent, and the desktop app use Bun or Cargo; add `--with-bun` or `--with-rust` to install their locked dependencies too. [Bun and Rust projects](/reference/bun-and-rust-projects) shows how to install, run, and check them.
 
 Bootstrap also installs the repository's Git hooks through local `core.hooksPath`, including with `--dependencies-only`. The pre-push hook runs `bin/docs-impact --gate --base origin/main` and refuses a push when it fails. Fetch `origin/main` before preparing a push. Commit the impacted documentation and resolve the gate's findings before pushing again.
 
@@ -233,7 +233,7 @@ The interim, until Swamp's merge step is built: whoever opens a pull request squ
 
 Root `composer check` builds OpenAPI and the documentation outputs before running `bin/review-check`, so a task checkout checks artifacts from its current sources.
 
-The gate runs `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web and Pi server profiles. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
+The gate runs `composer check` in each of the five Composer projects, several projects at once. It runs no test suite. It checks the working tree as it is, uncommitted changes included, and writes a report under `<git-common-dir>/orbit-checks/<HEAD>/`. For changed paths it also checks generated OpenAPI and MCP artifacts, Rust formatting, and the web app profile. Artifact failures name the regeneration command. A missing tool fails its check. Orbit's Project task check runs this gate at every task handoff; CI omits the Project check for now. [The candidate gate](/reference/implementation-loop#the-candidate-gate) lists every check.
 
 Each project's `composer check` runs Rector and Pint in fix mode, then PHPStan. Commit the formatter edits with your change; no CI job checks style. The [feature delivery reference](/reference/implementation-loop#formatters-run-in-fix-mode) explains why. Pest, PHPStan, Rector, and Pint run in parallel. `bin/check-processes` derives their [process count](/reference/implementation-loop#parallel-processes) from available CPU and memory.
 
@@ -261,17 +261,17 @@ The CLI and E2E projects each keep one counted `ignoreErrors` entry for a Larast
 Manual updates take only releases that are at least three days old:
 
 - Composer: the `laravel/vet` plugin skips releases younger than `minimum-release-age` days, as each project's `vet.json` sets.
-- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 259200 seconds in `apps/web`, `apps/pi-server`, and `apps/desktop`.
+- Bun: `bunfig.toml` sets `install.minimumReleaseAge` to 259200 seconds in `apps/web` and `apps/desktop`.
 
 The wait applies only when Composer or Bun resolves a version. `composer install` and `bun install --frozen-lockfile` install the locked versions. Vet keeps no trust entries, so it prints a notice on each install.
 
 Update only the packages that you need, for example `composer update vendor/package --with-dependencies` or `bun update package`. Review the lockfile diff and run the checks.
 
-When updating Vite+ in web or Pi server, keep the `vite` alias on the same Vite+ core version. Match the `vitest` override and web's Playwright browser provider to the Vitest version in `vite-plus/dist/versions.js`. Remove overrides for Vitest packages absent from the new runner. Pi server also pins transitive `pi-ai` and `pi-agent-core` to its direct versions so runtime objects and branded types come from one copy.
+When updating Vite+ in web, keep the `vite` alias on the same Vite+ core version. Match the `vitest` override and web's Playwright browser provider to the Vitest version in `vite-plus/dist/versions.js`. Remove overrides for Vitest packages absent from the new runner.
 
-Dependabot holds routine `vite-plus` version updates in web and Pi server until it can move the core alias and runner overrides with them. Update that set together manually. Security updates remain enabled and must satisfy the same version alignment.
+Dependabot holds routine `vite-plus` version updates in web until it can move the core alias and runner overrides with them. Update that set together manually. Security updates remain enabled and must satisfy the same version alignment.
 
-Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs, E2E and the PHP SDK; Bun in web, Pi server and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
+Dependabot is the automatic updater. It covers Composer in CLI, Gateway, Docs, E2E and the PHP SDK; Bun in web and desktop; and GitHub Actions' full-SHA pins. Every entry in `.github/dependabot.yml` joins the daily multi-ecosystem group and sets `cooldown.default-days: 7`, so one daily pull request proposes releases that are at least seven days old. Security updates through Dependabot are not delayed. Enabling Dependabot security updates and GitHub's SHA-pinning policy is a separate operator step; repository files do not enable those settings.
 
 When a published advisory has a fix, link the CVE or GHSA advisory in the pull request, update the package, run `composer audit:dependencies` and the checks, and get a review. If the fixed release is younger than three days, add its exact package name to `minimum-release-age-exclude` in `vet.json`, or to `install.minimumReleaseAgeExcludes` in `bunfig.toml`. Remove the exclusion when the release is three days old.
 

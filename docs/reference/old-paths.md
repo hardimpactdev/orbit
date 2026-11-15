@@ -53,11 +53,17 @@ A task without a [task copy](/reference/tasks#task-copy) has no workspace that O
 
 `tasks.provision` stays registered as the request kind of `task:start`, with its vault patterns. No Operation of it starts. The rows of `task_vms` stay, and nothing changes them.
 
+### The Pi agent server
+
+The Pi agent server `apps/pi-server` is removed with its CI check, its Dependabot entry and its page. It ran Pi coding-agent sessions on a task VM, as the VM's one user `orbit`, with a token per VM. The decisions 0167 (resume a Pi turn after a server restart), 0168 (offload large Pi tool output) and 0193 (run task agents as a dedicated user) described it; their old paths lead here.
+
+No Node enrollment, certificate signing, VPN or worker material and no Process install accepts a `tasks.provision` Operation any more. A Node joins the fleet only through `node.add`.
+
+The machine recipe still pins the Pi build as the tool `pi` of the task VM profile `base`. It goes with the Swamp side of the task VM workflows, which reads it. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed.
+
 ### What stays
 
 Old Operations of all these kinds stay as history, as for every [kind that left the registry](/reference/operations#kinds-that-left-the-registry).
-
-The Pi agent server `apps/pi-server` is still in the code.
 
 The Swamp workflows of the removed kinds stay one release longer, because a rollback by one release still names them. Nothing starts them. The vault patterns `^task-vm-pi-token-[1-9][0-9]*$`, `^pr-comment-write-[a-f0-9-]{36}$` and `^task-provision-deps-(composer|npm|token)-[1-9][0-9]*$` stay declared on `tasks.provision` until the grants release after the Pi loop.
 

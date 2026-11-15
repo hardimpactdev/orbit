@@ -6,11 +6,9 @@ namespace App\Domain\Nodes;
 
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmEnrollmentOwner;
 use App\Infrastructure\AgentCommands\AgentDelivery;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
 
@@ -29,18 +27,6 @@ final readonly class NodeWireGuardInput
         return ['schema_version' => 1, 'executor_node_id' => $hub->id, 'hub_id' => $hub->id,
             'context_node_id' => $context->id, 'excluded_node_id' => $excludedNodeId,
             'agent_sha256' => app(AgentDelivery::class)->pin($hub)];
-    }
-
-    /** TaskVM parents use the existing Gateway SSH custody for a workerless hub.
-     * @return array{schema_version:1,executor_node_id:int,hub_id:int,context_node_id:int,excluded_node_id:int|null,agent_sha256:string}
-     */
-    public function captureForTaskVm(Node $context, Node $gateway, ?int $excludedNodeId = null): array
-    {
-        if (! self::gateway($gateway->id)) {
-            throw new ResourceOperationException('node.network_unsupported', 'Hub SSH execution requires the admitted active Gateway.', 422);
-        }
-
-        return [...$this->capture($context, $excludedNodeId), 'executor_node_id' => $gateway->id];
     }
 
     /** @param array{schema_version:1,executor_node_id:int,hub_id:int,context_node_id:int,excluded_node_id:int|null,agent_sha256:string} $cleanup
@@ -95,7 +81,7 @@ final readonly class NodeWireGuardInput
         if (! is_array($snapshot) || count($snapshot) !== 6 || ($snapshot['schema_version'] ?? null) !== 1
             || ! is_int($snapshot['executor_node_id'] ?? null)
             || ! is_int($snapshot['hub_id'] ?? null) || ! is_int($snapshot['context_node_id'] ?? null)
-            || ! in_array($operation->kind, ['node.add', 'tasks.provision'], true)
+            || $operation->kind !== 'node.add'
             || ! array_key_exists('excluded_node_id', $snapshot)
             || ($snapshot['excluded_node_id'] !== null && $snapshot['excluded_node_id'] !== $snapshot['context_node_id'])
             || ! is_string($snapshot['agent_sha256'] ?? null) || preg_match('/\A[a-f0-9]{64}\z/D', $snapshot['agent_sha256']) !== 1) {
@@ -111,20 +97,15 @@ final readonly class NodeWireGuardInput
         $participants = $operation->input['participant_node_ids'] ?? [];
         $bindings = $operation->input['private_bindings'] ?? [];
         $binding = is_array($bindings) ? ($bindings['configuration'] ?? null) : null;
-        $taskVmKind = $operation->kind === 'tasks.provision';
-        $vm = $taskVmKind ? TaskVmEnrollmentOwner::owned($operation) : null;
-        $taskVmContext = $vm !== null && $vm->node_id === $snapshot['context_node_id'] && $snapshot['excluded_node_id'] === null;
-        $contextMatches = $taskVmKind
-            ? $taskVmContext
-            : $operation->target_type === 'node' && $operation->target_id === $snapshot['context_node_id'];
+        $contextMatches = $operation->target_type === 'node' && $operation->target_id === $snapshot['context_node_id'];
         $enrollment = $operation->input['_enrollment'] ?? [];
-        $enrollmentContext = is_array($enrollment) && $operation->kind === 'node.add' && $operation->target_type === 'node'
+        $enrollmentContext = is_array($enrollment) && $operation->target_type === 'node'
             && $operation->target_id === $snapshot['context_node_id'] && $operation->node_id === $snapshot['executor_node_id']
             && ($enrollment['node_id'] ?? null) === $snapshot['context_node_id']
             && ($enrollment['executor_node_id'] ?? null) === $snapshot['executor_node_id']
             && $snapshot['excluded_node_id'] === null;
         if ($snapshot['executor_node_id'] !== $snapshot['hub_id']
-            && ((! $taskVmContext && ! $enrollmentContext) || ! self::gateway($snapshot['executor_node_id']))) {
+            && (! $enrollmentContext || ! self::gateway($snapshot['executor_node_id']))) {
             return null;
         }
         if (! $contextMatches || ! is_array($participants) || ! is_array($binding)

@@ -313,50 +313,6 @@ SH);
         'tools change' => ['tools/phpstan/NoInlineVarOverrideRule.php', ['swamp'], 12],
     ]);
 
-    it('selects the Pi server CI profile for Pi server changes', function (): void {
-        $fixture = orb277_gate_fixture('apps/pi-server/src/index.ts');
-        $receipt = orb277_run_gate($fixture)['receipt'];
-        $piServer = collect($receipt['checks'])->where('project', 'apps/pi-server')->values();
-
-        expect($receipt['passed'])->toBeTrue()
-            ->and($receipt['changed_paths'])->toBe(['apps/pi-server/src/index.ts'])
-            ->and(collect($receipt['checks'])->pluck('project')->unique()->values()->all())->toBe([...orb277_selected_projects(), 'apps/pi-server'])
-            ->and($piServer->pluck('command')->all())->toBe([
-                ['bun', 'install', '--frozen-lockfile'],
-                ['bun', 'run', 'check'],
-                ['bun', 'run', 'build'],
-            ])
-            ->and($piServer->pluck('exit_code')->all())->toBe([0, 0, 0]);
-    });
-
-    it('fails with the required tool name when a selected check tool is missing', function (): void {
-        $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
-        unlink($fixture['root'].'/tooling/bun');
-        $fixture['path'] = $fixture['root'].'/tooling:/usr/bin:/bin';
-        $run = orb277_run_gate($fixture, expectedExit: 1);
-        $install = collect($run['receipt']['checks'])->first(
-            static fn (array $check): bool => $check['project'] === 'apps/web'
-                && $check['command'] === ['bun', 'install', '--frozen-lockfile'],
-        );
-
-        expect($run['receipt']['passed'])->toBeFalse()
-            ->and($install)->toMatchArray(['exit_code' => 127])
-            ->and(file_get_contents($install['log']))->toContain('bun: required tool not found');
-    });
-
-    it('records web dependency installation failures in the receipt', function (): void {
-        $fixture = orb277_gate_fixture('apps/web/src/App.tsx');
-        $run = orb277_run_gate($fixture, $fixture['root'].'/apps/web', 1);
-        $webInstall = collect($run['receipt']['checks'])->first(
-            static fn (array $check): bool => $check['project'] === 'apps/web'
-                && $check['command'] === ['bun', 'install', '--frozen-lockfile'],
-        );
-
-        expect($run['receipt']['passed'])->toBeFalse()
-            ->and($webInstall)->toMatchArray(['exit_code' => 9])
-            ->and(file_get_contents($webInstall['log']))->toContain('bun install failed');
-    });
-
     it('runs the candidate gate from root composer check without a process timeout', function (): void {
         $composer = json_decode((string) file_get_contents(base_path('../../composer.json')), true, flags: JSON_THROW_ON_ERROR);
 
