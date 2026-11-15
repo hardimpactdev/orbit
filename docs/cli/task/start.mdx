@@ -45,10 +45,10 @@ The copy's agent gets the fixed task model key, as every clone does; the key is 
 Task VMs are removed. Orbit refuses the start of a task whose Project has no default container Instance with HTTP 422 `tasks.vm_runtime_removed` and records nothing: the task stays in Todo with no workspace, and no Operation exists. The CLI prints the message, and `--json` prints the code with it:
 
 ```text
-Task VMs are removed. A task runs only in a copy of its Project's default container Instance: give the Project a container default, then use task:start, task:turn, task:check and task:publish.
+Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.
 ```
 
-Give the Project a default container Instance with [`instance:create`](/cli/instance/create), then start the task again. Conn and the API show the same code and message. Every former task VM command answers the same refusal; see [Task runtime](/reference/tasks#task-runtime).
+Move a checkout default into a container with [`instance:migrate`](/cli/instance/migrate), or, for a Project without a default, create one with [`instance:create`](/cli/instance/create). Then start the task again. Conn and the API show the same code and message. Every former task VM command answers the same refusal; see [Task runtime](/reference/tasks#task-runtime).
 
 `--idempotency-key` reuses the same operation for a transport retry, also the `instance.create` of a task copy. Ctrl-C stops following and leaves the operation running. Use `task:cancel` to end the parent task.
 

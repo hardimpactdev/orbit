@@ -115,7 +115,7 @@ final class TaskGroupsController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    /** Prepare the spec of one command and open its draft pull request in one run. */
+    /** Prepare the spec of one command on a task VM. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
     #[StartsOperation(OperationKinds::TasksPrep, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function prep(StartTaskPrepRequest $request, Task $task, StartTaskPrepAction $action): JsonResponse
@@ -126,7 +126,7 @@ final class TaskGroupsController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
-    /** Apply the review of the owner to a parked prep group and push the corrections to its draft pull request. */
+    /** Apply the owner's review to a prep group on its task VM. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
     #[StartsOperation(OperationKinds::TasksPrepFix, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function prepFix(StartTaskPrepFixRequest $request, Task $task, StartTaskPrepFixAction $action): JsonResponse
@@ -147,6 +147,7 @@ final class TaskGroupsController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
+    /** Install a private package in a task VM workspace. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
     #[StartsOperation(OperationKinds::TasksPackage, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function package(StartTaskPackageRequest $request, Task $task, StartTaskPackageAction $action): JsonResponse
@@ -157,6 +158,7 @@ final class TaskGroupsController extends Controller
         return response()->json(['data' => OperationData::fromModel($operation)->toArray(), 'meta' => $this->meta($request)], 202);
     }
 
+    /** Run a tracked repository script in a task VM workspace. Task VMs are removed: it answers 422 tasks.vm_runtime_removed. */
     #[StartsOperation(OperationKinds::TasksScript, requiresKey: true)]
     #[RequiresNodeAccess(ServingNode::Gateway)]
     public function script(StartTaskScriptRequest $request, Task $task, StartTaskScriptAction $action): JsonResponse

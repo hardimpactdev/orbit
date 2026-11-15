@@ -116,7 +116,7 @@ it('refuses to start a group of a Project without a container default by name, a
     $this->postJson('/api/v1/tasks/'.$this->parent->id.'/start')
         ->assertUnprocessable()
         ->assertJsonPath('error.code', 'tasks.vm_runtime_removed')
-        ->assertJsonPath('error.message', "Task VMs are removed. A task runs only in a copy of its Project's default container Instance: give the Project a container default, then use task:start, task:turn, task:check and task:publish.");
+        ->assertJsonPath('error.message', "Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.");
     expect($this->parent->fresh()->status)->toBe(TaskGroupStatus::Todo)
         ->and($this->parent->fresh()->taskable_id)->toBeNull()
         ->and(Operation::query()->count())->toBe(0);

@@ -536,9 +536,7 @@ Each shard records its [run budget](/reference/operations#native-run-budgets) at
 
 The Gateway records the verdict lines of each batch on its shard as the batch ends. A shard that reaches its budget keeps the verdicts of the batches that ended; only the cases of the other batches are `unrun`.
 
-Every task VM copies the base, which carries only the proof Project's checkout. When a group of any other Project needs a new VM, admission refuses it with `task_vm.project_unsupported` before it checks the queue or a pool, so the refusal never becomes a wait.
-
-When the chosen pool is full, admission waits without allocating a VM, Node identity or workspace. `task:status` shows each host's places and their holders, and a waiting task shows its position in the queue ([Task places](/reference/tasks#task-places)). The wait ends after a two-hour admission budget with a clear timeout. Lowering a pool size deletes no VM; new claims wait until the pool has room.
+No entry admits a task VM any more: each answers `tasks.vm_runtime_removed` ([Task runtime](/reference/tasks#task-runtime)), and nothing waits for a place. Every task VM copied the base, which carried only the proof Project's checkout, so the slot pool still refuses a group of another Project with `task_vm.project_unsupported`. `task:status` still shows each host's places and their holders ([Task places](/reference/tasks#task-places)). Lowering a pool size deletes no VM.
 
 A task publishes its PR and releases its VM, workspace, keys and peer. An [idle](/reference/tasks#release-an-idle-task-vm) group releases its VM too. Later work claims a fresh place and restores the task branch from the base. See the [capacity model](/reference/command-development-pipeline#capacity-ideal-state).
 

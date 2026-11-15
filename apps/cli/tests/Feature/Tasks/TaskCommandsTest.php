@@ -1124,7 +1124,7 @@ describe('the pull request mode of a task group', function (): void {
 
 // Task VMs are removed: task:start of a Project without a container default prints the Gateway's refusal as one line, with no stack trace.
 it('prints the refusal of the removed task VMs for task:start, with its code in JSON and no stack trace', function (): void {
-    $message = "Task VMs are removed. A task runs only in a copy of its Project's default container Instance: give the Project a container default, then use task:start, task:turn, task:check and task:publish.";
+    $message = "Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.";
     MockClient::global([...gateway_fixture_mock(), StartTaskRequest::class => MockResponse::make([
         'status' => 422, 'error' => ['code' => 'tasks.vm_runtime_removed', 'message' => $message, 'details' => []], 'meta' => ['request_id' => 'req-vm'],
     ], 422, ['Content-Type' => 'application/json'])]);

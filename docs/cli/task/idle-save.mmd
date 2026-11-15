@@ -12,7 +12,7 @@ sequenceDiagram
   participant SW as Swamp<br/>serve on Node 209
   participant VM as Task VM<br/>reached over ssh
   participant GH as GitHub<br/>save branch
-  Note over GW: Find an idle group<br/>every five minutes
+  Note over GW: Find an idle group<br/>no schedule runs it
   %%> Who calls it:
   %%> - the idle release of a task VM; since task VMs are removed (docs/reference/tasks.md#task-runtime) no schedule runs it, and there is no command, route or MCP tool
   %%> Requirements:

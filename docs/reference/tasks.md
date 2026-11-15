@@ -100,7 +100,7 @@ A task runs only in a [task copy](#task-copy): a copy of its Project's default c
 - `tasks.prep`, `tasks.prep_fix`, `tasks.package` and `tasks.script` through their routes, and the build and review round that the [gate check](#gate-check) would start;
 - a `proof:run` run of a proof Project without a container default.
 
-The message says what to do: `Task VMs are removed. A task runs only in a copy of its Project's default container Instance: give the Project a container default, then use task:start, task:turn, task:check and task:publish.` The CLI prints it, Conn and the API show it with the code, and the gate check records the code as the step's result. No admission waits for a task place any more.
+The message says what to do: `Task VMs are removed. A task runs only in a copy of its Project's default Instance, and that default must be a container. Move a checkout default into a container with instance:migrate, or create a container default with instance:create; then start the task and work in its copy with task:turn, task:check and task:publish.` The CLI prints it, Conn and the API show it with the code, and the gate check records the code as the step's result. No admission waits for a task place any more.
 
 #### Release a task VM for review
 
