@@ -1,5 +1,5 @@
 order = 190
-source_sha256 = "83b6635c83d5ff45d000158ba11d1ec9c3602e4b82b7b9617dea6dd2379ca364"
+source_sha256 = "67eb43a8fa005175b6977d517c735cc55cf363a48e18b249a7c9b8c2574b2529"
 cases = [
   "native policy returns only the final production checkpoint handle",
   "live default discovers production, guards ownership, saves intent, admits and publishes exact Gateway shapes",

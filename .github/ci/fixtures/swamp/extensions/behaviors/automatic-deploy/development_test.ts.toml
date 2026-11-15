@@ -1,5 +1,5 @@
 order = 180
-source_sha256 = "e6d7e729af53a5e90f7cb9ce70b4a587673553b06cf138c23babbc95fe759e1f"
+source_sha256 = "9b6b484fd02ca91c9293b995233fa4e3ad4787c6e9fe8662ca0cdacaa9c97b66"
 cases = [
   "development policy admits only after Gateway ownership switches",
   "development policy returns only the final checkpoint handle",
@@ -20,6 +20,8 @@ cases = [
   "a default with no authoritative Route deploys even when its display Route is unrelated",
   "native-first deployment skips the old Gateway dev owner before reading new fields",
   "canonical Gateway refusal skips ambiguous app-dev plus app-prod placement",
+  "a passed deploy settles and the same run deploys the newer head once",
+  "a passed deploy whose seed the run did not see yet starts nothing",
 ]
 file = "swamp/extensions/behaviors/automatic-deploy/development_test.ts"
 cost = 4
