@@ -1405,6 +1405,7 @@ class CloneGuestTest(unittest.TestCase):
                 "instance_id": 9,
                 "bundle": "/tmp/proof.bundle",
                 "php": "/opt/orbit-runtime/current/php/8.5/bin/php",
+                "php_cli_ini": "extension=/opt/orbit-runtime/current/php/8.5/modules/pcov.so\n",
                 "environment_file": "/srv/workspace/.env",
                 "units": [unit],
                 "web_config": {"path": "/etc/orbit/frankenphp.Caddyfile", "content": ":8080 {\n    php_server\n}\n"},
@@ -1472,6 +1473,19 @@ class CloneGuestTest(unittest.TestCase):
                 x for x in phase.splitlines() if "container_php_ini_content:" in x
             )
             self.assertEqual(json.loads(line.split(":", 1)[1].strip()), written)
+            # The CLI-only file: root's, 0644, the intent's content; a repair restarts the running units, as a queue worker is a PHP CLI.
+            cli = base / "etc/orbit/php/php-cli.ini"
+            self.assertEqual(cli.read_text(), container["php_cli_ini"])
+            self.assertEqual(stat.S_IMODE(cli.stat().st_mode), 0o644)
+            cli.write_text("extension=/tmp/other.so\n")
+            self.assertIn(restart, workspace())
+            self.assertEqual(cli.read_text(), container["php_cli_ini"])
+            self.assertNotIn(restart, workspace())
+            # A Project whose PHP has no CLI-only file loses Orbit's file, and the running units restart.
+            container["php_cli_ini"] = None
+            self.assertIn(restart, workspace())
+            self.assertFalse(cli.exists())
+            self.assertNotIn(restart, workspace())
 
     def test_agent_preserves_unmanaged_json_and_identity_and_repairs_only_managed_keys(
         self,
