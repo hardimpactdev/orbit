@@ -19,6 +19,8 @@ inputs:
     node_id: {type: integer, minimum: 1}
     signed: {type: array, items: {type: string}}
     prepared: {type: string}
+    # A clone's create: the Route's own Caddy groups go into what the Node holds under the Node lock, not the whole rendered file.
+    merge: {type: boolean}
     execution_secrets:
       type: object
       additionalProperties:
@@ -49,6 +51,8 @@ jobs:
         path: '${{ "/tmp/orbit-ansible-" + run.id + "/intent.json" }}'
     # Site: the account, the Caddy access ACLs, links, PHP-FPM pools (written, tested, reloaded), the signed certificate and its
     # account copy, the trust store, the Caddyfile (written, validated, reloaded), the APP_URL lines and the awake markers of this Node.
+    # The module's own bounds (30 s certificate copy, 60 s trust store, in merge mode 30 s for the Node lock and 30 s per validate and
+    # reload, a reload again after a failed one) add up to 210 s, inside this phase's 240 s.
   - name: 'site'
     labels: {role: swamp}
     dependsOn:
@@ -57,10 +61,10 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-site-" + string(inputs.node_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-site-" + string(inputs.node_id) + (has(inputs.merge) && inputs.merge ? "-" + string(int(inputs.intent.route_id) % 16) : "")).split(".").join("-") }}'
       methodName: execute
       inputs:
-        run: timeout 170 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags site "$ORBIT_ANSIBLE/route-create-site.yml"
+        run: timeout 240 /opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, --tags site "$ORBIT_ANSIBLE/route-create-site.yml"
         env:
           ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
           ORBIT_ANSIBLE: '${{ has(inputs.admitted) && inputs.admitted.path != "" ? inputs.admitted.assets : steps.input.outputs.assets }}'
@@ -71,6 +75,7 @@ jobs:
           ANSIBLE_CONFIG: '${{ (has(inputs.admitted) && inputs.admitted.path != "" ? inputs.admitted.assets : steps.input.outputs.assets) + "/ansible.cfg" }}'
           ANSIBLE_SSH_ARGS: '${{ "-o ControlMaster=auto -o ControlPersist=60s -o IdentitiesOnly=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=/tmp/orbit-ansible-" + run.id + "/known_hosts" }}'
           ORBIT_PREPARED: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
+          ORBIT_ROUTE_MERGE: '${{ has(inputs.merge) && inputs.merge ? "1" : "" }}'
           ANSIBLE_FORCE_COLOR: '0'
           ANSIBLE_DISPLAY_FAILED_STDERR: '1'
     # A .env is group orbit-env, so the Node agent can report its key names.
@@ -120,7 +125,7 @@ jobs:
     task:
       type: behavior
       behaviorType: command/shell
-      behaviorName: '${{ ("route-site-cleanup-" + string(inputs.node_id)).split(".").join("-") }}'
+      behaviorName: '${{ ("route-site-cleanup-" + string(inputs.node_id) + (has(inputs.merge) && inputs.merge ? "-" + string(int(inputs.intent.route_id) % 16) : "")).split(".").join("-") }}'
       methodName: execute
       inputs:
         run: timeout 30 rm -rf -- "$ORBIT_RUN"

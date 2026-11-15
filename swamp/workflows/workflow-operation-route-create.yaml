@@ -14,6 +14,8 @@ inputs:
     signed: {type: array, items: {type: string}}
     # The Node whose web-root access and APP_URL the caller has already set (an Instance create does it in its checkout phase).
     prepared: {type: string}
+    # A clone's create: each site merges the Route's own Caddy groups under the Node lock (route-create-site).
+    merge: {type: boolean}
     # Existing admitted input may be reused read-only; the site child owns a separate scratch folder.
     admitted:
       type: object
@@ -104,6 +106,7 @@ jobs:
         signed: '${{ has(inputs.signed) ? inputs.signed : inputs.intent.leaf_indexes.map(i, steps["Sign the CSR-" + string(i)].outputs.sign.stdout) }}'
         prepared: '${{ has(inputs.prepared) ? inputs.prepared : "" }}'
         admitted: '${{ has(inputs.admitted) ? inputs.admitted : {"path": "", "assets": "", "field": ""} }}'
+        merge: '${{ has(inputs.merge) && inputs.merge }}'
     # From 209 to each serving Node and the Router on 443 with the Route domain as SNI; a failed chain fails the step.
   - name: 'Probe the site over TLS'
     labels: {role: swamp}
@@ -117,10 +120,10 @@ jobs:
     task:
       type: behavior
       behaviorType: '@swamp/ssh'
-      behaviorName: '${{ "route-probe-209-" + string(self.probe.node_id) }}'
+      behaviorName: '${{ ("route-probe-209-" + string(self.probe.node_id) + (has(inputs.merge) && inputs.merge ? "-" + string(int(inputs.intent.route_id) % 16) : "")).split(".").join("-") }}'
       methodName: exec
       globalArgs:
-        name: '${{ "route-probe-209-" + string(self.probe.node_id) }}'
+        name: '${{ ("route-probe-209-" + string(self.probe.node_id) + (has(inputs.merge) && inputs.merge ? "-" + string(int(inputs.intent.route_id) % 16) : "")).split(".").join("-") }}'
         transport:
           kind: ssh
           user: '${{ inputs.intent.probe_ssh.target.user }}'

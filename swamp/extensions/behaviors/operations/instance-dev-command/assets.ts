@@ -1,7 +1,7 @@
 import { z } from "npm:zod@4.4.3";
 import { CompletePhases, completeResult } from "./complete_result.ts";
 import { MigratePhases, migrateResult, writtenFailure } from "./migrate_result.ts";
-import { containerFailure, CreateArgs, createResult, removeRun, Step } from "./result.ts";
+import { containerFailure, CreateArgs, createResult, removeRun, routeDeferred, Step } from "./result.ts";
 const ObjectValue = z.record(z.string(), z.unknown());
 type Context = {
     writeResource(spec: string, name: string, value: unknown): Promise<unknown>;
@@ -29,7 +29,7 @@ async function resultFile(folder: string): Promise<unknown> {
 
 export const behavior = {
     type: "@nckrtl/instance-dev-command",
-    version: "2026.11.15.1",
+    version: "2026.11.15.2",
     resources: {
         result: { schema: ObjectValue, lifetime: "1d", garbageCollection: 10 },
     },
@@ -45,7 +45,8 @@ export const behavior = {
                 const file = container?.club_key != null && container.clone == null ? await resultFile(args.folder) : null;
                 // A failed clone T3 step leaves the part it was running in t3.json, which clone-session-copy brings to `t3_file`.
                 const t3_part = args.container?.t3 === "failed" ? await t3Part(args.t3_file ?? args.folder + "/t3.json") : null;
-                const value = createResult(args.intent, {...args, club_key_file: file, t3_part});
+                const route_deferred = await routeDeferred(args.intent, args.route, args.folder);
+                const value = createResult(args.intent, {...args, club_key_file: file, t3_part, route_deferred});
                 const result = JSON.parse(value.stdout);
                 if (!value.ready && ["container", "clone"].includes(result.failed_step)) {
                     // The phase owns redaction; preserve its public evidence in the Operation.

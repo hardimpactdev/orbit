@@ -54,10 +54,12 @@ sequenceDiagram
     %%> - `clone-route-input` writes the run folder and the playbooks that the site child reads, beside the CSR: a clone runs no `input` step
     %%> What it does:
     %%> - per leaf, the key and CSR on the Node and the signature (`clone-route-csr-<i>`); then the Route create children (`clone-route`): the site in the Node's Caddy, the private DNS, the Ingress edge of a public Route and the TLS probe
+    %%> - the site puts the Route's own Caddy groups into what the Node holds, under the Node lock; every other block, its order and the global options stay as the Node holds them (docs/reference/routes.md#publish-a-development-site); its Node steps take one of 16 names per Node (`route-site-<node>-<route id % 16>`)
     %%> - the site step skips the Route access and `APP_URL` (`prepared` names this Node): the copy's root disk does not exist yet, and `.env` comes with the checkout
     %%> - Caddy proxies to the bridge address reserved at admission; until the completion starts the units, the address answers TLS and then 502
     %%> On failure:
     %%> - both steps allow their failure, so the run and the create still succeed; `result.route_publication` is `failed`, the Route records `instance.create_route_failed`, and the completion publishes it again
+    %%> - a merge that a Node refuses changes no file there and marks the run folder: `route_publication` is `deferred`, no Route warning, and the completion publishes the address
     SW-->>GW: clone-route ended<br/>native progress event
     Note over GW: Route active, free Nodes<br/>one transaction
     %%> When:
@@ -177,7 +179,7 @@ sequenceDiagram
     %%> - a `route_publication` of `published` turns the Route `active` here too, when its progress event was lost; `failed` marks the Route `failed_step: native-create`, `instance.create_route_failed`
     %%> Result:
     %%> - the user can pair with T3 and work; the Processes, the database and a nested fleet follow in the completion
-    %%> - `route_publication`: `published` (the address answers TLS), `deferred` (the Route Nodes were held at admission: the completion publishes) or `failed` (the completion publishes again); absent without a Route
+    %%> - `route_publication`: `published` (the address answers TLS), `deferred` (the Route Nodes were held at admission, or a Node refused the merge of the site: the completion publishes) or `failed` (the completion publishes again); absent without a Route
     %%> - "fully set up" is only the Instance's `status: active`, which a succeeded completion sets ([instance:complete](docs/cli/instance/complete.mmd))
     %%> - the result's `processes_stopped` names the Processes the completion installs but leaves stopped, as on the default
     %%> - the receipt includes when T3 answered and when its sessions passed

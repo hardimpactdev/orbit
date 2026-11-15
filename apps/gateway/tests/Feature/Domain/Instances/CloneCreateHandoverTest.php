@@ -178,9 +178,11 @@ it('ends a clone\'s create at its thread: one transaction records T3 and the bas
         ->and(ConnEnvironment::query()->where('instance_id', $instance->id)->value('admin_session'))->toBe('gateway-session')
         ->and(Route::query()->findOrFail($operation->input['route_id'])->status->value)->toBe('pending')
         ->and(Process::query()->where('owner_id', $instance->id)->pluck('status')->all())->not->toContain(LifecycleStatus::Active)
-        // Only hex object ids and names enter the baseline, and it is older than the create's end, so than any pairing.
+        // Only hex object ids and names enter the baseline. It is recorded in the create's end transaction, before the completion it admits,
+        // so before any pairing; the run's own end time, recorded to the second, comes earlier.
         ->and($runtime->workspace_baseline)->toBe(['heads' => [str_repeat('a', 40)], 'stashes' => [], 'untracked' => ['notes.txt']])
-        ->and($runtime->workspace_baseline_at->lessThanOrEqualTo($operation->finished_at))->toBeTrue();
+        ->and($runtime->workspace_baseline_at->greaterThanOrEqualTo($operation->finished_at))->toBeTrue()
+        ->and($runtime->workspace_baseline_at->lessThanOrEqualTo(handoverCompletion($operation)->created_at))->toBeTrue();
     // One top-level transaction holds the end of the create, the T3 server, the baseline and the completion.
     expect(array_keys($written))->toEqualCanonicalizing(['create ended', 'T3 server', 'baseline', 'admitted instance.complete'])
         ->and(array_unique(array_values($written)))->toHaveCount(1);
@@ -611,6 +613,23 @@ it('keeps a create whose publication failed: the Route records it, the completio
     $retry = app(StartInstanceCompleteAction::class)->execute(Instance::query()->findOrFail($create->target_id));
     expect($retry->input)->toHaveKey('route_create')
         ->and(RoutePublicationHolds::nodes($retry))->toBe([$node->id]);
+});
+
+it('takes a merge that a Node refused as deferred: the Route is not marked failed, and the completion publishes it', function (): void {
+    $node = containerDefaultNode();
+    $create = handoverCreate(handoverDefault($node));
+    // The site step failed after its refusal; the run's result names the address deferred (route-create-site.yml, create_result).
+    handoverStep($create, 'publication', 'clone-route', 'step_failed', 1);
+    app(DevelopmentInstanceCreateProjection::class)->apply($create->refresh(), handoverPublished($create, 'deferred'));
+
+    $route = Route::query()->findOrFail($create->input['route_id']);
+    $completion = handoverCompletion($create);
+    expect($create->refresh()->status)->toBe(OperationStatus::Succeeded)
+        ->and($create->result['route_publication'])->toBe('deferred')
+        ->and([$route->status->value, $route->sites_published, $route->failed_step, $route->error_code])->toBe(['pending', false, null, null])
+        ->and(DB::table('route_publication_holds')->where('operation_id', $create->id)->exists())->toBeFalse()
+        ->and($completion->input)->toHaveKey('route_create')
+        ->and(RoutePublicationHolds::nodes($completion))->toBe([$node->id]);
 });
 
 it('frees the Nodes of a create cancelled before clone-route ended and leaves its Route unpublished', function (): void {

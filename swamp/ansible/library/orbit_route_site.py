@@ -27,6 +27,12 @@ options:
     type: list
     elements: str
     required: true
+  mutations:
+    description:
+      - The admitted intent's `route_mutations`. When given, the Caddyfile is not written whole: the Route's own groups go into what the
+        Node holds under the Node lock (orbit_route_withdraw.publish). A named refusal changes nothing and returns `deferred`.
+    type: dict
+    required: false
 author: Orbit
 """
 
@@ -39,7 +45,9 @@ def converge(
     root=Path("/"),
     account_lookup=pwd.getpwnam,
     group_lookup=grp.getgrnam,
+    publish=None,
 ):
+    """`publish(node_id)` is the merge mode: it returns the code of a named refusal, or None once the Route's groups are live."""
     account = account_lookup(intent["nodes"][str(node_id)]["account"])
     changed = False
 
@@ -167,7 +175,11 @@ def converge(
         # Complete this before any later failure, as the former flush_handlers did.
         run(["timeout", "60", "update-ca-certificates"])
     sites = selected("caddy")
-    if sites:
+    deferred = None
+    if sites and publish is not None:
+        deferred = publish(node_id)
+        changed = changed or deferred is None
+    elif sites:
         caddy_gid = group_lookup("caddy").gr_gid
         live = path("/etc/caddy/Caddyfile")
         fd, name = tempfile.mkstemp(prefix=".orbit-candidate-", dir=live.parent)
@@ -217,9 +229,12 @@ def converge(
             candidate.unlink(missing_ok=True)
         run(["timeout", "60", "systemctl", "reload", "caddy"])
         changed = True
+    if deferred is not None:
+        # Nothing serves the Route on this Node yet, so it marks no Instance awake; the completion publishes it.
+        return {"changed": changed, "deferred": deferred}
     for marker in selected("awake"):
         file(marker["path"], "", 0, 0, 0o644)
-    return {"changed": changed}
+    return {"changed": changed} if publish is None else {"changed": changed, "deferred": None}
 
 
 def main():
@@ -230,6 +245,7 @@ def main():
             "intent": {"type": "dict", "required": True},
             "node_id": {"type": "int", "required": True},
             "signed": {"type": "list", "elements": "str", "required": True},
+            "mutations": {"type": "dict", "required": False, "default": None},
         },
         supports_check_mode=False,
     )
@@ -249,6 +265,25 @@ def main():
                 + "."
             )
 
+    publish = None
+    if module.params["mutations"] is not None:
+        from ansible.module_utils.orbit_route_withdraw import (
+            WithdrawFailure,
+            publication_plan,
+        )
+        from ansible.module_utils.orbit_route_withdraw import publish as transaction
+
+        def publish(node_id):
+            # A named refusal leaves the Caddyfile as it was read: the create defers its address to the completion.
+            try:
+                plan = publication_plan(module.params["mutations"], node_id)
+                if plan is None:
+                    raise WithdrawFailure("caddy.publish_plan_missing")
+                transaction(plan, module.run_command, caddy_gid=grp.getgrnam("caddy").gr_gid)
+            except WithdrawFailure as error:
+                return error.code
+            return None
+
     try:
         module.exit_json(
             **converge(
@@ -256,6 +291,7 @@ def main():
                 module.params["node_id"],
                 module.params["signed"],
                 run,
+                publish=publish,
             )
         )
     except Exception:  # noqa: BLE001 - never expose private key or arbitrary tool output.

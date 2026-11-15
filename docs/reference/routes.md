@@ -748,7 +748,7 @@ At most four removals share one Node. A fifth waits in the Gateway, so the Node 
 
 A removal gives its hold back right after its withdrawal held, not at its end; its later steps write no Caddy, PHP pool or DNS file. Create and clone still render Caddy and shared PHP input under their publication hold.
 
-A publisher does not take the Node lock: the Gateway hold keeps it apart from every withdrawal.
+A publisher other than a clone's create does not take the Node lock: the Gateway hold keeps it apart from every withdrawal.
 
 Across a release, the [release idle guard](/reference/gateway-recovery#release-idle-guard) waits for `instance.destroy` and `instance.create` before the Swamp load. A removal that the earlier release admits after that wait holds its Nodes alone in `route_publication_holds` and frees them at its end. Its intent is unchanged, so its run takes the new workflow and still holds its Nodes alone. A publisher of another kind, admitted by the earlier release, keeps its row in `route_publication_holds`, and the new code reads that row, so no withdrawal starts beside it. A rollback to a release without `route_withdrawal_holds` ignores the rows of removals that still run; wait until no `instance.destroy` runs before a rollback.
 
@@ -779,6 +779,33 @@ Three cases are not held yet. A task provision that runs as a child of another O
 Each Cluster also has a Router lock. Setting or clearing a Router holds it through validation, setup, activation, and cleanup. Cluster state and TLD changes use it too. A competitor for the same Cluster waits up to 30 seconds and then returns HTTP 409 `cluster.router_busy`. Different Clusters use separate locks.
 
 When an operation needs several owners, it takes them in this order: Node lifecycle or role, `app-dev` source, Cluster Router, Metrics lifecycle or credential, projection, then remote host. No database transaction stays open during remote work.
+
+### Publish a development site
+
+A container clone's create publishes its Route in its `clone-route` step ([the address during the create](/reference/development-containers#the-address-during-the-create)). Its site step does not write the Caddyfile that the Gateway rendered. In `orbit_route_site`, after the certificates, it runs the other direction of the withdrawal's Node-local transaction (`publish` in `orbit_route_withdraw`). Its states are the create's captured publication of the Node (`route_mutations.restore`, the stage that a failed create's withdrawal also reads), and they hold only the Route's own groups. Under `/etc/caddy/.orbit-publish.lock`, with the same 30-second wait, these steps run:
+
+1. It reads the Caddyfile.
+2. It puts in the Route's own groups. Each group that the captured states change takes its last state, where its first block stood.
+3. It works out the own groups again from the captured states. It compares every other block, their order and the global options with what it read.
+4. It runs `caddy validate` on the candidate beside the live file.
+5. It keeps the previous generation in `/var/lib/orbit/route-previous/Caddyfile`.
+6. It checks once more that the live file is as it read it. Then it renames the candidate and reloads Caddy.
+
+A new own group goes at the end, and an own group that the last state lacks is removed. Any difference outside the own groups refuses. Blocks compare as text without the blank lines between them, which are written as one blank line.
+
+Every group the publication may change must have the Caddy source `app-dev`, the source of every development site. A captured state that changes a production, Ingress, Gateway or any other group refuses with `route.publish_foreign_change`. A public Route's Ingress site is not part of this step: the Ingress child writes it under the exclusive hold, as before.
+
+A live own group that differs from the captured states is replaced, not refused, because a retry of the same create publishes the same groups again. A second create of the same name is a new Instance, so its groups are new. Caddy reloads even when the file is unchanged, as the publication always did, because a new certificate of the Route needs it.
+
+A refusal leaves the Caddyfile as it was read. The step names the refusal and the create does not fail: `route.publish_foreign_change`, `caddy.foreign_config`, `caddy.current_config_missing`, `caddy.publish_busy`, `route.publish_lock_invalid`, `route.publish_lock_failed`, `route.file_not_utf8`, `caddy.validation_failed`, `route.live_changed`, `caddy.reload_failed` (the previous file is put back and Caddy reloads again) and `caddy.publish_plan_missing` (the intent holds no captured publication of the Node).
+
+After a refusal the site step writes `route-deferred-<node>.json` into the create's run folder and fails, so no TLS probe runs and the Gateway does not take the Route as published. The create's result says `route_publication: deferred`, the Route stays unpublished, and the completion publishes it on every Node, as for held Nodes. A Route that is served by several Nodes is deferred when one Node refused, even when another Node published its groups or failed in another way. Any other failure stays `failed`.
+
+A shell behavior locks per name, and Swamp keeps every definition and its data. So a clone's create names its site, cleanup and TLS probe steps from a pool: `route-site-<node>-<slot>`, `route-site-cleanup-<node>-<slot>` and `route-probe-209-<node>-<slot>`, where the slot is the Route ID modulo 16. One Node can hold at most 48 such definitions. Sixteen is twice the eight shared writers a Node admits, and Route IDs are given in order, so creates started together seldom share a slot. Two that do wait for one site step, about 3.5 seconds. Every other caller keeps `route-site-<node>`, `route-site-cleanup-<node>` and `route-probe-209-<node>`, and the production environment steps keep `route-env-group-<node>` and `route-env-<node>-<i>`.
+
+Measured on Beast on 2026-11-15 at load 16, with 143 site groups: `caddy validate` 0.14 to 0.21 seconds, and `systemctl reload caddy` 30 to 41 milliseconds; the reload signals Caddy, which loads the file after the call returns. So one publication holds the Node lock for about a quarter of a second.
+
+The Gateway still holds a clone create's Route Nodes alone in this release. A shared hold for creates comes in a later release, so that a rollback never runs the whole-file workflow beside a shared hold.
 
 ## Check Routes with Doctor
 

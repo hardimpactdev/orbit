@@ -454,6 +454,12 @@ Deno.test("a clone's Route publication never decides its create: published, fail
         assertEquals([failed.ready, failed.route_publication, failed.failed_step], [true, "failed", undefined], route);
         assertEquals(failed.warnings, [{code: "instance.create_route_failed", step: "route"}], route);
     }
+    // A merge that a Node refused (its mark in the run folder) changed nothing there: deferred to the completion, with no Route warning.
+    const deferred = JSON.parse(createResult(admitted, {...phases, container, route: "failed", certificates: ["succeeded"], route_deferred: true}).stdout);
+    assertEquals([deferred.ready, deferred.route_publication, deferred.warnings, deferred.failed_step], [true, "deferred", undefined, undefined]);
+    // The mark never turns a failed CSR or a published Route into a deferral.
+    assertEquals(JSON.parse(createResult(admitted, {...phases, container, route: "skipped", certificates: ["failed"], route_deferred: true}).stdout).route_publication, "failed");
+    assertEquals(JSON.parse(createResult(admitted, {...phases, container, route: "succeeded", certificates: ["succeeded"], route_deferred: true}).stdout).route_publication, "published");
     // A clone whose admission found the Route Nodes held carries no `route`; neither does a Project without one.
     assertEquals(run("skipped", [], {...admitted, route: null}).route_publication, undefined);
     // A default container create keeps its Route as a phase of the create.

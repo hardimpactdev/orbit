@@ -196,6 +196,72 @@ class RouteSiteTest(unittest.TestCase):
         self.assertLess(trust, validate)
         self.assertLess(validate, reload)
 
+    def merged(self, outcome):
+        published = []
+
+        def publish(node_id):
+            published.append(node_id)
+            return outcome
+
+        with patch.object(self, "plan", {**self.plan}):
+            original = SITE.converge
+            with patch.object(SITE, "converge", lambda *args, **kwargs: original(*args, **kwargs, publish=publish)):
+                result = self.apply()
+        return result, published
+
+    def test_merge_mode_publishes_through_the_node_transaction_not_the_whole_render(self):
+        result, published = self.merged(None)
+        self.assertEqual(published, [9])
+        self.assertIsNone(result["deferred"])
+        # The Gateway's whole render is never written: the transaction owns the Caddyfile, its validate and its reload.
+        self.assertFalse((self.root / "etc/caddy/Caddyfile").exists())
+        self.assertFalse(any("validate" in c or "reload" in c for c in self.calls))
+        self.assertEqual((self.root / "certs/current").readlink(), Path("v1"))
+        self.assertTrue((self.root / "awake").exists())
+
+    def test_a_refused_merge_defers_and_marks_no_instance_awake(self):
+        for code in ["route.publish_foreign_change", "caddy.foreign_config", "caddy.current_config_missing", "caddy.publish_busy",
+                     "route.publish_lock_invalid", "route.publish_lock_failed", "route.file_not_utf8", "caddy.validation_failed",
+                     "route.live_changed", "caddy.reload_failed", "caddy.publish_plan_missing"]:
+            with self.subTest(code=code):
+                (self.root / "awake").unlink(missing_ok=True)
+                result, _ = self.merged(code)
+                self.assertEqual(result["deferred"], code)
+                self.assertFalse((self.root / "etc/caddy/Caddyfile").exists())
+                self.assertFalse((self.root / "awake").exists())
+
+    @unittest.skipUnless(shutil.which("ansible-playbook"), "pinned Ansible required")
+    def test_real_merge_refusal_marks_the_create_run_folder_and_fails_the_site_phase(self):
+        account = pwd.getpwuid(os.getuid())
+        parent = self.root / "parent"
+        parent.mkdir()
+        route = {"route_id": 41, "nodes": {"9": {"account": account.pw_name}}, "leaf_indexes": [], "leaves": [], "trust": [],
+                 "caddy": [{"node_id": 9, "content": "# Managed by Orbit: Node Caddy build\n"}], "awake": [{"node_id": 9, "path": str(self.root / "awake")}]}
+        # The create's intent carries no captured publication for this Node: the merge refuses by name and writes no file.
+        (parent / "intent.json").write_text(json.dumps({"route": route, "route_mutations": {"artifacts": {"caddy": []}, "restore": {"publications": []}}}))
+        play = yaml.safe_load((ROOT / "swamp/ansible/route-create-site.yml").read_text())[1]
+        play.update({"hosts": "localhost", "connection": "local", "become": False})
+        play["vars"]["ansible_python_interpreter"] = sys.executable
+        library = self.root / "library"
+        library.mkdir()
+        (library / SOURCE.name).write_text(SOURCE.read_text())
+        (self.root / "tasks").mkdir()
+        (self.root / "tasks/route-access.yml").write_text((ROOT / "swamp/ansible/tasks/route-access.yml").read_text())
+        run = self.root / "run"
+        playfile = self.root / "site.json"
+        playfile.write_text(json.dumps([play]))
+        done = subprocess.run(
+            ["ansible-playbook", "-i", "localhost,", str(playfile)],
+            env=os.environ | {"ORBIT_RUN": str(run), "ORBIT_NODE_ID": "9", "ORBIT_PREPARED": "9", "ORBIT_SIGNED": "",
+                              "ORBIT_INTENT_PATH": str(parent / "intent.json"), "ORBIT_INTENT_FIELD": "route", "ORBIT_ROUTE_MERGE": "1",
+                              "ANSIBLE_LIBRARY": str(library), "ANSIBLE_MODULE_UTILS": str(ROOT / "swamp/ansible/module_utils"),
+                              "ANSIBLE_STDOUT_CALLBACK": "default", "ANSIBLE_COLLECTIONS_PATH": str(self.root / "empty")},
+            capture_output=True, text=True, check=False, timeout=60)
+        self.assertNotEqual(done.returncode, 0, done.stdout + done.stderr)
+        self.assertIn("route.publication_deferred: caddy.publish_plan_missing", done.stdout + done.stderr, done.stdout + done.stderr)
+        self.assertEqual(json.loads((parent / "route-deferred-9.json").read_text()), {"node_id": 9, "code": "caddy.publish_plan_missing"})
+        self.assertFalse((self.root / "awake").exists())
+
     def test_existing_file_mode_drift_clears_unwanted_special_bits(self):
         self.apply()
         caddy = self.root / "etc/caddy/Caddyfile"
@@ -389,6 +455,8 @@ class RouteSiteTest(unittest.TestCase):
                 "Test the PHP-FPM configuration",
                 "Reload PHP-FPM",
                 "Converge certificate links trust and Caddy files",
+                "Mark the publication deferred",
+                "Leave the address to the completion",
                 "Remove the run folder",
             ],
         )

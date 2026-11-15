@@ -1,0 +1,15 @@
+order = 861
+source_sha256 = "bc6eed4ee682331f2ae1b1f6a0dba1e32659b4f8aee001bbae71c24018063ee3"
+cases = [
+  "pinned route create: a clone's site merges under a pooled name per Node, and other callers keep their per-Node names",
+]
+file = "swamp/tests/route_create_merge_native_test.ts"
+cost = 10
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/tests/_support/native_auth.ts",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-route-create.yaml",
+  "swamp/workflows/workflow-route-create-site.yaml",
+]
