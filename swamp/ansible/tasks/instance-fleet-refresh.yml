@@ -6,8 +6,8 @@
 # `grants` reloads the nested Swamp's grants, `tokens` reads the nested Swamp's tokens when the oldest may be due, `rules` reads the fleet
 # files, and `converge` waits for the three agents and converges the base of each nested Node whose own digest changed, side by side. A
 # Node's converge is also due 7 days after its last one. The fleet's devices and keys are read, and readiness is waited for once, every time. `base` is
-# retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants or a remint
-# changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
+# retaken, with those containers stopped and started again, only for the containers whose disks changed: the grants, a remint or a Swamp
+# install changed the nested Gateway, a converge changed a task, a rule or file differed, a `base` is missing, or the record was. A migration
 # does not: a reset migrates after its restore (instance-fleet-migrate.yml). The record is removed before the
 # first write to a nested disk and written again last, so a run that stops in the middle leaves none. Input: instance-fleet.yml. The model
 # is the task VM refresh (task-vm-fleet.yml), from the Node through the Instance container.
@@ -156,6 +156,56 @@
           '/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'remint',
           intent.fleet.checkout.path ~ '/swamp/ansible/gateway-bootstrap.yml'] }}
   register: fleet_tokens
+  changed_when: true
+# The recipe's Swamp on the nested Gateway (docs/reference/development-containers.md#the-pinned-swamp). The fleet build installs Swamp once;
+# a later pin in the checkout's recipe reaches the nested Gateway here. With the Club key, two reads give the recipe's release (its version
+# and sha256) and the binary that serve runs. When serve does not run the binary at the fleet build's path for that sha256
+# (`/usr/local/lib/orbit-swamp/<sha256>/swamp`), or a read fails, the `swamp-pin` play of the nested Gateway
+# installs it by checksum through the egress proxy, restarts serve and the workers on it and checks them, and the nested Gateway's `base`
+# is retaken. A play that fails fails the refresh, and the run restores the old seed, the old binary included. Without the Club key the
+# nested Gateway's Swamp does not run, and the part is skipped.
+- name: Read the recipe's Swamp release
+  when: fleet_club.rc == 0
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'python3', '-c',
+          'import json, sys; s = json.load(open(sys.argv[1]))["tools"]["swamp"]; print(s["version"]); print(s["artifacts"]["amd64"]["sha256"])',
+          intent.fleet.checkout.path ~ '/apps/gateway/resources/machine-software/recipe.json'] }}
+  register: fleet_swamp_pin_read
+  changed_when: false
+  failed_when: false
+- name: Read the binary that serve runs
+  when: fleet_club.rc == 0
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '30'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'sh', '-c',
+          'readlink -f "/proc/$(systemctl show -p MainPID --value orbit-swamp-serve.service)/exe"'] }}
+  register: fleet_swamp_read
+  changed_when: false
+  failed_when: false
+- name: Work out whether the recipe's Swamp is due
+  vars:
+    # The recipe's version and sha256, or nothing when the read failed.
+    fleet_swamp_pin_lines: "{{ fleet_swamp_pin_read.stdout_lines if fleet_swamp_pin_read.rc | default(1) == 0 and fleet_swamp_pin_read.stdout_lines | length == 2 else [] }}"
+    fleet_swamp_serve_lines: "{{ fleet_swamp_read.stdout_lines if fleet_swamp_read.rc | default(1) == 0 and fleet_swamp_read.stdout_lines | length == 1 else [] }}"
+  ansible.builtin.set_fact:
+    # The recipe's release, or none when it could not be read.
+    fleet_swamp_version: "{{ fleet_swamp_pin_lines[0] if fleet_swamp_pin_lines else none }}"
+    # `no_key`, `pinned` (serve runs the recipe's release), `changed` (it runs another binary), `unreadable` (a read failed: the play
+    # runs and installs or fails).
+    fleet_swamp_reason: >-
+      {{ 'no_key' if fleet_club.rc != 0 else 'unreadable' if not fleet_swamp_pin_lines or not fleet_swamp_serve_lines
+         else 'pinned' if fleet_swamp_serve_lines[0] == '/usr/local/lib/orbit-swamp/' ~ fleet_swamp_pin_lines[1] ~ '/swamp' else 'changed' }}
+- name: Install the recipe's Swamp on the nested Gateway
+  when: fleet_swamp_reason in ['changed', 'unreadable']
+  ansible.builtin.command:
+    argv: >-
+      {{ ['timeout', '900'] + fleet_incus + ['exec', intent.fleet.guests.gateway, '--', 'env',
+          'ANSIBLE_CONFIG=' ~ intent.fleet.checkout.path ~ '/swamp/ansible/ansible.cfg', 'ANSIBLE_DISPLAY_FAILED_STDERR=true']
+         + (intent.fleet.proxy | dict2items | map(attribute='key') | zip(intent.fleet.proxy.values()) | map('join', '=') | list)
+         + ['/opt/orbit/ansible/venv/bin/ansible-playbook', '-i', 'localhost,', '-e', '@/opt/orbit/bootstrap/control.yml', '--tags', 'swamp-pin',
+            intent.fleet.checkout.path ~ '/swamp/ansible/gateway-bootstrap.yml'] }}
+  register: fleet_swamp
   changed_when: true
 # The migrate runs whenever the code changed: `apps/gateway` holds its migrations and the Composer lock of the packages that ship
 # migrations too. The services restart when the code changed or the tokens were reminted. A migration does not retake `base`: a reset
@@ -360,8 +410,8 @@
          else {'due': false, 'reason': 'unreadable'} }}
 
 # `base` is retaken only for the containers whose disk changed. A reset restores `base` of all three, so the set must stay consistent:
-# - a step that writes a nested container's own disk and reported a change (`fleet_disk_writers`: the grants and a remint of the
-#   nested Gateway): that container's `base`. A migration is no such writer: a reset migrates after its restore
+# - a step that writes a nested container's own disk and reported a change (`fleet_disk_writers`: the grants, a remint and a Swamp
+#   install of the nested Gateway): that container's `base`. A migration is no such writer: a reset migrates after its restore
 #   (instance-fleet-migrate.yml), so `base` need not hold each schema;
 # - a converge that changed a Node: that Node's `base` and the nested Gateway's, whose database records the converge;
 # - a missing `base`: that container's;
@@ -380,8 +430,9 @@
       {%- endfor -%}
       {{ out }}
     # Every step that writes to a nested container's own disk, with that container's role. A step that reported a change marks its
-    # container for `base`. A new writer joins this list. The remint writes the tokens, `.env` and the Swamp state of the nested Gateway. The converges mark their Node and the nested Gateway, which records them.
-    fleet_disk_writers: "{{ [['gateway', fleet_grants], ['gateway', fleet_tokens]] }}"
+    # container for `base`. A new writer joins this list. The remint writes the tokens, `.env` and the Swamp state of the nested Gateway;
+    # the Swamp install writes its binary and link. The converges mark their Node and the nested Gateway, which records them.
+    fleet_disk_writers: "{{ [['gateway', fleet_grants], ['gateway', fleet_tokens], ['gateway', fleet_swamp]] }}"
     fleet_changed_roles: >-
       {{ (fleet_disk_writers | selectattr('1', 'changed') | map('first') | list) + fleet_converge_changed_roles
          + (['gateway'] if fleet_converge_changed_roles | length > 0 else []) }}
@@ -537,6 +588,11 @@
       # Why: `age` (one is older than `fleet_token_max_age`), `incomplete` (one is missing, such as worker c's), `unreadable`, `young`,
       # `recorded` (the record's oldest token is younger than the bound, so the list was not read), `no_key`.
       tokens_reason: "{{ fleet_tokens_reason }}"
+      swamp: "{{ 'installed' if fleet_swamp is changed else 'skipped' if fleet_swamp_reason == 'no_key' else 'pinned' }}"
+      # Why: `pinned` (serve runs the recipe's release), `changed`, `unreadable`, `no_key`.
+      swamp_reason: "{{ fleet_swamp_reason }}"
+      # The recipe's release that the nested Gateway runs after the refresh, or none without the Club key.
+      swamp_version: "{{ fleet_swamp_version if fleet_swamp_reason != 'no_key' else none }}"
       base: "{{ 'retaken' if fleet_base_targets | length > 0 else 'kept' }}"
       base_containers: "{{ fleet_base_targets }}"
       record: "{{ fleet_record_state }}"

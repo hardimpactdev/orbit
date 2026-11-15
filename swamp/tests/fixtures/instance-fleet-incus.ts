@@ -30,6 +30,9 @@ const done = (output?: unknown): never => {
 const pairs = (values: string[]) =>
   Object.fromEntries(values.map((value) => [value.slice(0, value.indexOf("=")), value.slice(value.indexOf("=") + 1)]));
 const copy = <T>(value: T): T => structuredClone(value);
+/** The checkout recipe's Swamp release and its sha256, as the fixture's recipe pins it. */
+const swampPin = "20261114.210101.0-sha.537e03d1";
+const swampSha = "0171346a3588019a73a0e9d28e64447688ad87261e6eceb49b3febf6bd603da3";
 /** The nested Gateway's six Swamp tokens that the refresh keeps young (instance-fleet.yml `fleet_token_names`). */
 const tokenNames = ["serve-driver", "orbit-gateway-run", "orbit-gateway-read", "orbit-worker-a-access", "orbit-worker-b-access", "orbit-worker-c-access"];
 const iso = (milliseconds: number) => new Date(milliseconds).toISOString();
@@ -318,6 +321,26 @@ if (command[0] === "incus") {
       if (state.tokensUnreadable) fail("Error: the token store is locked");
       const tokens: Record<string, string> = state.tokens ?? Object.fromEntries(tokenNames.map((token) => [token, iso(Date.now() - 86400_000)]));
       done(JSON.stringify(Object.entries(tokens).map(([token, created]) => ({ name: token, createdAt: created, expiresAt: created })), null, 2));
+    }
+    // The refresh's two reads of the nested Gateway's Swamp: the checkout recipe's release and sha256 (`swampPin` and `swampSha`, the
+    // current pin by default) and the binary that serve runs (`swampRunning`, the fleet build's folder of that sha256 by default).
+    // `swampUnreadable` makes the first fail.
+    if (rest[0] === "python3" && rest[1] === "-c" && rest[2].includes('["tools"]["swamp"]')) {
+      if (state.swampUnreadable) fail("FileNotFoundError: recipe.json");
+      done(`${state.swampPin ?? swampPin}\n${state.swampSha ?? swampSha}`);
+    }
+    if (rest[0] === "sh" && rest[1] === "-c" && rest[2].includes("orbit-swamp-serve.service)/exe")) {
+      done(state.swampRunning ?? `/usr/local/lib/orbit-swamp/${state.swampSha ?? swampSha}/swamp`);
+    }
+    // The swamp-pin play in the nested Gateway: it installs the recipe's release, restarts serve and the workers on it and checks them.
+    // `swampPinFail` makes it fail as a play whose serve did not come back.
+    if (rest[0] === "env" && rest.some((value) => value.endsWith("ansible-playbook")) && rest.includes("swamp-pin")) {
+      if (state.swampPinFail) {
+        console.log("TASK [Wait for serve to be ready] ***\nfatal: [localhost]: FAILED! => {\"changed\": false, \"rc\": 7}");
+        fail("PLAY RECAP *********\nlocalhost                  : ok=8    changed=6    unreachable=0    failed=1    skipped=0");
+      }
+      state.swampRunning = `/usr/local/lib/orbit-swamp/${state.swampSha ?? swampSha}/swamp`;
+      done("PLAY RECAP *********\nlocalhost                  : ok=12   changed=7    unreachable=0    failed=0    skipped=0");
     }
     // The remint play in the nested Gateway: it makes the worker set whole, renews the six tokens and starts serve and the three
     // workers. `remintFail` makes it fail with a play error; its output holds no token, as the real play's.

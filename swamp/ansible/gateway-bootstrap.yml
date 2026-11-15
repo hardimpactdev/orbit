@@ -38,6 +38,16 @@
   tasks:
     - name: Renew the Swamp tokens
       ansible.builtin.import_tasks: tasks/gateway-swamp-remint.yml
+- name: Gateway Swamp, the recipe's release
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: true
+  tags:
+    - swamp-pin
+  tasks:
+    - name: Install and run the recipe's Swamp
+      ansible.builtin.import_tasks: tasks/gateway-swamp-pin.yml
 - name: Gateway Ansible collections
   hosts: localhost
   connection: local

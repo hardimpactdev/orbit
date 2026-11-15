@@ -90,7 +90,7 @@ final readonly class ContainerDeployOutcome
      * The refresh's own words for each part (docs/reference/development-containers.md#what-a-refresh-skips), or null when the run
      * has no refresh or its words are not these.
      *
-     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,seconds:array<string,int>}|null
+     * @return array{migrate:string,restart:string,converge:string,converge_reason:string,converge_nodes:list<string>,changed:int,tokens:string,tokens_reason:string,base:string,base_containers:list<string>,record:string,tools:string,tools_reason:string,shrink:string,shrink_reason:string,swamp:string,swamp_reason:string,swamp_version:?string,seconds:array<string,int>}|null
      */
     private static function fleetRefresh(mixed $raw): ?array
     {
@@ -102,7 +102,8 @@ final readonly class ContainerDeployOutcome
             'tokens' => ['reminted', 'young', 'skipped'], 'tokens_reason' => ['age', 'incomplete', 'unreadable', 'young', 'recorded', 'no_key'], 'base' => ['retaken', 'kept'],
             'record' => ['present', 'missing', 'unreadable'], 'tools' => ['present', 'built', 'failed'],
             'tools_reason' => ['current', 'missing', 'names', 'package', 'venv', 'collections', 'cleanup', 'timeout', 'unreadable'],
-            'shrink' => ['ran', 'relinked', 'failed', 'skipped'], 'shrink_reason' => ['record', 'packages', 'current', 'unreadable']];
+            'shrink' => ['ran', 'relinked', 'failed', 'skipped'], 'shrink_reason' => ['record', 'packages', 'current', 'unreadable'],
+            'swamp' => ['installed', 'pinned', 'skipped'], 'swamp_reason' => ['changed', 'unreadable', 'pinned', 'no_key']];
         $refresh = [];
         foreach ($words as $part => $allowed) {
             if (! in_array($raw[$part] ?? null, $allowed, true)) {
@@ -118,6 +119,12 @@ final readonly class ContainerDeployOutcome
             || count(array_unique($nodes)) !== count($nodes) || ($refresh['converge'] === 'skipped') !== ($nodes === [])) {
             return null;
         }
+        // The recipe's Swamp release as the refresh read it; none when it read nothing.
+        $swampVersion = $raw['swamp_version'] ?? null;
+        if (! array_key_exists('swamp_version', $raw) || ($swampVersion !== null && (! is_string($swampVersion)
+            || preg_match('/\A[0-9]{8}\.[0-9]{6}\.[0-9]+-sha\.[0-9a-f]{8}\z/', $swampVersion) !== 1))) {
+            return null;
+        }
         $containers = $raw['base_containers'] ?? [];
         if (! is_array($containers) || ! array_is_list($containers) || count($containers) > 3
             || array_filter($containers, static fn (mixed $name): bool => ! is_string($name) || preg_match('/\A[a-z0-9-]{1,63}\z/', $name) !== 1) !== []) {
@@ -126,7 +133,8 @@ final readonly class ContainerDeployOutcome
         $refresh = ['migrate' => $refresh['migrate'], 'restart' => $refresh['restart'], 'converge' => $refresh['converge'],
             'converge_reason' => $refresh['converge_reason'], 'converge_nodes' => $nodes, 'changed' => $raw['changed'], 'tokens' => $refresh['tokens'], 'tokens_reason' => $refresh['tokens_reason'],
             'base' => $refresh['base'], 'base_containers' => $containers, 'record' => $refresh['record'], 'tools' => $refresh['tools'],
-            'tools_reason' => $refresh['tools_reason'], 'shrink' => $refresh['shrink'], 'shrink_reason' => $refresh['shrink_reason']];
+            'tools_reason' => $refresh['tools_reason'], 'shrink' => $refresh['shrink'], 'shrink_reason' => $refresh['shrink_reason'],
+            'swamp' => $refresh['swamp'], 'swamp_reason' => $refresh['swamp_reason'], 'swamp_version' => $swampVersion];
         $seconds = is_array($raw['seconds'] ?? null) ? $raw['seconds'] : [];
         $refresh['seconds'] = [];
         foreach (['gateway', 'converge', 'ready', 'base', 'tools'] as $part) {

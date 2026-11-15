@@ -2291,6 +2291,10 @@ cases:
     install-root: 6ccb28b9f44de8cdf8af525fb074eeb5a7ca9a9f4c1b82e2245dc0e53ee17baa
     install-web: ''
 non_command_output:
+- file: tasks/gateway-swamp-pin.yml
+  task: Remove the other Swamp releases
+  field: loop
+  reason: Keeps the paths of the find module's own result that are one release folder deep under the Swamp root; it parses no command output.
 - file: tasks/instance-container-swap.yml
   task: Note the recorded inner cgroups
   field: ansible.builtin.set_fact.swap_paths

@@ -1,0 +1,16 @@
+order = 305
+source_sha256 = "082821a3ebf233f11c54f0ad1be34f88ed89e3682b956ff481cffbbd8c80a6a9"
+cases = [
+  "the swamp-pin play installs the release through the proxy, restarts Swamp on it in order, checks it and removes the old release",
+  "the swamp-pin play fails when a worker runs no process, and keeps the old release",
+]
+file = "swamp/tests/ansible_gateway_swamp_pin_test.ts"
+cost = 16
+inputs = [
+  "bin/swamp-shape-gate",
+  "swamp/ansible/ansible.cfg",
+  "swamp/ansible/requirements.txt",
+  "swamp/ansible/requirements.yml",
+  "swamp/ansible/shape-gate-requirements.txt",
+  "swamp/ansible/tasks/gateway-swamp-pin.yml",
+]
