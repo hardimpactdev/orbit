@@ -233,7 +233,6 @@ additionalFiles:
   - ansible/tasks/task-vm-rust.yml
   - ansible/tasks/task-vm-swamp.yml
   - ansible/tasks/task-vm-image-cache.yml
-  - ansible/tasks/task-vm-pi.yml
   - ansible/tasks/task-vm-tools.yml
   - ansible/tasks/task-vm-incus.yml
   - ansible/tasks/task-vm-nested-firewall.yml

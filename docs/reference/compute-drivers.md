@@ -79,7 +79,7 @@ An `internal` tool is an Orbit-built binary pinned by `source_commit` (12 to 40 
 
 Internal pins do not require publishing HTTPS releases. Third-party tools still require HTTPS artifact pins. Online validation fails clearly if a local file is missing or its digest differs. It never executes the binary. Existing installers keep their pre-install hash verification.
 
-The Pi pin came from `apps/pi-server`, which is [removed](/reference/old-paths#the-pi-agent-server), at source commit `23e7198f7c98`, file `pi-server-23e7198f7c98-linux-x64`, SHA-256 `df3aa5aea1788c3bcfdd576d0124b252b640c66c2bfa78e69b985bca9f39f438`. It is an `amd64` build, like every recipe artifact. It must equal `task_vms.pi.artifact_sha256`: the enrolment check compares the Pi build of the image with that setting. The first pin was `e5933d4c8696`.
+No catalogued tool is `internal` today: the Pi build, its last user, [left the recipe](/reference/old-paths#the-pi-agent-server).
 
 A profile's effective set is the union of `common` and its own list, sorted by tool identifier. A `php:<version>` entry expands to that version's PHP set. Profiles cannot refer to other profiles, so role inheritance cannot hide software or form cycles. A multi-role Node's set is the union of its roles, not the base image set.
 
@@ -623,11 +623,10 @@ The Gateway puts these in the intent:
 
 - The `recipe.json` of the release and the Vite+ lock.
 - The VM's SSH target with its recorded host key.
-- The Pi server digest and its place on the Gateway host.
 
 No task file names a version.
 
-The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust, the Swamp binary and the Pi server follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
+The `software` phase installs Ubuntu packages and file packages at their pins. It also installs `python3-venv` and `jq` from the same snapshot, which the shape gate needs. They come from the pinned Ubuntu snapshot, through their own apt configuration, with the artifact mirror first. The VM's apt sources stay as they are. Node, pnpm, Bun, Vite+, Rust and the Swamp binary follow. A tool that already shows its pinned version is left alone, so a VM at its pins reports no change.
 
 The `tools` phase installs the shape gate linters and prepares the Incus client config for the SSH user `orbit` with one serial read. Existing client configs stay in place. Task copies inherit the config, so later parallel Incus calls, including proof restores, cannot race on its first-use write. Incus creates or truncates that file before writing its YAML. The nested fleet is Incus system containers that take the checkout as a disk device, so the VM serves nothing to them.
 
@@ -1087,13 +1086,11 @@ A new host gets its base VM in the first phase of its first refresh, `base-start
 
 Until a snapshot is proved and recorded, each refresh discards any unpromoted base VM and seed before building from stock. Cloud-init can mark its package module as run even when the first boot fails to install the SSH server; restarting that VM does not run the module again. A host with a recorded snapshot keeps its existing base unless `--from-stock` is requested.
 
-The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The Pi server is fetched for it. The refresh then stops the VM, snapshots it and proves the snapshot like any other.
+The converge that follows builds everything else, because no digest is recorded yet. The seed holds no nested fleet, so the fleet phase [builds the fleet](#build-the-nested-fleet-in-the-converge). The refresh then stops the VM, snapshots it and proves the snapshot like any other.
 
 The machine recipe still describes the software of the base VM. `RecipeImageBuilds::currentRecipe()` reads the `recipe.json` and the Vite+ lock of the release the Gateway serves, and the converge intents of a refresh and of a task start carry them. The recipe identity does not name the Orbit agent, and the base holds the pinned observer build that the converge installs. The base is identified by the recipe identity that its refresh converged to, recorded on the build row. Image freshness counts a path when it belongs to a carried folder or matches any carried lock-file pattern.
 
 The converge of a refresh installs the recipe packages through the playbook. It writes the same snapshot configuration to `/var/tmp/orbit-image-apt` and installs with the `apt` module with `APT_CONFIG` pointing at it, and `allow_downgrade` because the pins are exact. The index read goes over plain http through the `apt-cacher-ng` of the VM (`localhost:3142`, no request pipelining, signatures still checked), which the first software task installs; the packages stay a direct download over https. The cache stays in the base VM, and the nested Nodes of a task VM read the snapshot indexes from it. The `check` phase asserts every package at its pin.
-
-The converge copies the pinned Pi build from the Gateway Node to 209 with official SSH and checks its SHA-256 there. The `software` phase copies it to `~orbit/.local/bin/pi-server` on the guest when the digest differs from the pin, and checks the digest again. The refresh fetches it only when the recipe of the base is older than the release's.
 
 #### The topology seed
 

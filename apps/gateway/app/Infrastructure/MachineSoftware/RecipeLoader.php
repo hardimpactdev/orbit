@@ -34,7 +34,6 @@ final readonly class RecipeLoader
             $catalog[$name] = 'artifact';
         }
         // The `php<version>-*` pins are artifacts too. The recipe's `php` object lists them, so they have no copy here.
-        $catalog['pi'] = 'internal';
 
         return $catalog;
     }

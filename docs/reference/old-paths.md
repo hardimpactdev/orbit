@@ -59,7 +59,9 @@ The Pi agent server `apps/pi-server` is removed with its CI check, its Dependabo
 
 No Node enrollment, certificate signing, VPN or worker material and no Process install accepts a `tasks.provision` Operation any more. A Node joins the fleet only through `node.add`.
 
-The machine recipe still pins the Pi build as the tool `pi` of the task VM profile `base`. It goes with the Swamp side of the task VM workflows, which reads it. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed.
+The task VM start installs no Pi server any more. Its fetch and checksum steps, the `pi_path` playbook input, the Ansible task file `task-vm-pi.yml`, the Pi line of the role's end check and the Pi unit of the VM identity are deleted.
+
+The machine recipe pins no Pi build: the tool `pi`, its entry in the task VM profile `base` and its catalog line are deleted, so the recipe identity changed. `ORBIT_PI_PORT` stays reserved: a Node service may not use the port, and the task VM hub rules name it, until the task VM settings are removed. The `pi` fields of the task VM settings, the Pi unit check of `tasks.provision` and the Pi firewall rules of the boot phase stay with the task VM runtime.
 
 ### What stays
 
