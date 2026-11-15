@@ -388,14 +388,16 @@ final class GitHubProofCommitSource implements ProofCommitSource
         }
     }
 
-    /** Why GitHub refused a read. A rate limit is a 403 or 429 with no requests left or a Retry-After; the reset comes from those headers. */
+    /** Why GitHub refused a read. A rate limit is a 429, or a 403 with no requests left, a Retry-After or a rate-limit message; the reset comes from those headers. */
     private static function failure(string $endpoint, Response $response): GitHubReadFailure
     {
         $status = $response->status();
         $retryAfter = $response->header('Retry-After');
         $remaining = $response->header('X-RateLimit-Remaining');
         $reset = $response->header('X-RateLimit-Reset');
-        if ($status === 429 || ($status === 403 && ($remaining === '0' || $retryAfter !== ''))) {
+        $message = $response->json('message');
+        // A secondary limit may answer 403 with neither header; its message names the rate limit.
+        if ($status === 429 || ($status === 403 && ($remaining === '0' || $retryAfter !== '' || (is_string($message) && stripos($message, 'rate limit') !== false)))) {
             $resetAt = match (true) {
                 ctype_digit($retryAfter) => CarbonImmutable::now('UTC')->addSeconds((int) $retryAfter)->startOfSecond(),
                 $remaining === '0' && ctype_digit($reset) => CarbonImmutable::createFromTimestampUTC((int) $reset),

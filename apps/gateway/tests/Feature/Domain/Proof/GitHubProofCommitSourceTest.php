@@ -327,6 +327,8 @@ describe('a failed GitHub read keeps its reason', function (): void {
             GitHubReadFailureKind::RateLimited, 'The commit branches read hit the GitHub rate limit (HTTP 403), which resets at 2026-11-15T06:00:00+00:00.', 1],
         'a secondary rate limit' => [fn () => Http::response(['message' => 'You have exceeded a secondary rate limit'], 429, ['Retry-After' => '60']),
             GitHubReadFailureKind::RateLimited, 'The commit branches read hit the GitHub rate limit (HTTP 429), which resets at 2026-11-15T05:03:14+00:00.', 1],
+        'a secondary rate limit without headers' => [fn () => Http::response(['message' => 'You have exceeded a secondary rate limit. Please wait a few minutes.'], 403),
+            GitHubReadFailureKind::RateLimited, 'The commit branches read hit the GitHub rate limit (HTTP 403), and GitHub gave no reset time.', 1],
         'a 401' => [fn () => Http::response(['message' => 'Bad credentials'], 401), GitHubReadFailureKind::Refused, 'The commit branches read answered HTTP 401.', 1],
         'a 403 that is not a rate limit' => [fn () => Http::response(['message' => 'Resource not accessible by integration'], 403, ['X-RateLimit-Remaining' => '4999']),
             GitHubReadFailureKind::Refused, 'The commit branches read answered HTTP 403.', 1],
