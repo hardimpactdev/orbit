@@ -111,14 +111,15 @@ final readonly class ProofRunWatch
     /**
      * Asks again for the cancel of each group whose run in a copy ended more than CopyReleaseSeconds ago and whose copy still exists
      * with no Operation on it: the cancel that the run's end queued was lost, for example in a Gateway restart, or gave up while the
-     * copy was busy. The cancel is keyed, and a group that has ended asks nothing.
+     * copy was busy. The cancel is keyed, and a group that has ended asks nothing. A run that ended more than KeptGiveUpHours ago is no
+     * longer asked for: something other than a lost cancel holds its copy, and the copy shows in the Instance list for an operator.
      */
     private function releaseCopies(): void
     {
         $copies = Instance::query()->whereNotNull('task_workspace_owner_id')
             ->whereNotIn('id', Operation::query()->select('target_id')->where('target_type', 'instance')->whereNotIn('status', OperationStatus::terminalValues()));
         $runs = Operation::query()->where('kind', ProofGroup::OwnerKind)->whereIn('status', OperationStatus::terminalValues())->where('input->copy', true)
-            ->where('finished_at', '<', now()->subSeconds(self::CopyReleaseSeconds))
+            ->whereBetween('finished_at', [now()->subHours(self::KeptGiveUpHours), now()->subSeconds(self::CopyReleaseSeconds)])
             ->whereIn('target_id', $copies->select('task_workspace_owner_id'))->pluck('id');
         foreach ($runs as $id) {
             try {

@@ -33,8 +33,8 @@ Deno.test("the batches run when every deploy step was skipped, and when the Proj
   }
 });
 
-Deno.test("a failed deploy step or a failed fetch runs no batch; the run folder goes and the report runs", () => {
-  for (const outcomes of [{ "Run dev deploy steps-0": { status: "failed" } }, { "Bring in the commit": { status: "failed" } }] as Record<string, Outcome>[]) {
+Deno.test("a failed deploy step, fetch or skip list runs no batch; the run folder goes and the report runs", () => {
+  for (const outcomes of [{ "Run dev deploy steps-0": { status: "failed" } }, { "Bring in the commit": { status: "failed" } }, { "Read the steps to skip": { status: "failed" } }] as Record<string, Outcome>[]) {
     const ran = run(step(1), outcomes);
     assertEquals(status(ran, "Read the workspace commit"), "skipped");
     assertEquals(status(ran, "Prove assigned batches"), "skipped");

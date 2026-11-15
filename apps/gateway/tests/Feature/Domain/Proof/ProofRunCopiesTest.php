@@ -20,6 +20,7 @@ use App\Domain\Proof\ProofChildStarts;
 use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
+use App\Domain\Proof\ProofCopies;
 use App\Domain\Proof\ProofGroup;
 use App\Domain\Proof\ProofRunIntent;
 use App\Domain\Proof\ProofRunWatch;
@@ -205,7 +206,7 @@ function copyProofAdmitted(): Operation
 /** @return Collection<int, Operation> */
 function copyProofRuns(): Collection
 {
-    return Operation::query()->where('kind', 'proof.command')->orderBy('id')->get();
+    return Operation::query()->where('kind', 'proof.command')->where('input->copy', true)->orderBy('id')->get();
 }
 
 /** The copy of a run as its create and completion leave it: active. */
@@ -262,6 +263,41 @@ describe('proof:run in copies: admission', function (): void {
     ]);
 });
 
+/** Task copies of other groups on the default's Node: each counts as a live copy. */
+function copyProofOtherCopies(int $count): void
+{
+    $default = Instance::query()->where('name', 'default')->firstOrFail();
+    foreach (range(1, $count) as $index) {
+        $group = Task::query()->withoutGlobalScopes()->create(['project_id' => $default->project_id, 'title' => 'Other '.$index, 'brief' => 'Other', 'status' => TaskGroupStatus::Running]);
+        $copy = $default->replicate();
+        $copy->fill(['name' => 'other-'.$index, 'checkout_path' => '/srv/other-'.$index, 'task_workspace_owner_id' => $group->id])->save();
+        $runtime = $default->runtime->replicate();
+        $runtime->fill(['instance_id' => $copy->id, 'container_name' => 'other-'.$index, 'bridge_address' => '10.253.0.'.(200 + $index), 't3_port' => null])->save();
+    }
+}
+
+describe('proof:run in copies: the shard budget', function (): void {
+    it('waits for another copy place rather than plan a shard past the longest shard budget, and runs it once it has every place it may take', function (): void {
+        // Measured seconds: both batches on one copy take (600 + 2 x 180 + 6,000) x 1.5 s, more than one shard may take.
+        $default = Instance::query()->where('name', 'default')->firstOrFail();
+        Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $default->node_id, 'node_id' => $default->node_id,
+            'status' => OperationStatus::Succeeded, 'input' => [], 'result' => ['cases' => [
+                ['program' => 'swamp/proof/firewall/allow.cases.yaml#allow', 'seconds' => 3000], ['program' => 'swamp/proof/firewall/allow.cases.yaml#refused', 'seconds' => 3000]]]]);
+        config(['orbit.tasks.copies_max' => 5]);
+        copyProofOtherCopies(2);
+        $proof = copyProofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe('Wait for a free copy place')
+            ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more copy places')
+            ->and(copyProofRuns())->toHaveCount(0);
+
+        // With as many places as a proof may take, it runs: here both places, one batch each.
+        config(['orbit.tasks.copies_max' => 6]);
+        app(ProofRunIntent::class)->admit($proof->id);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Running)->and(copyProofRuns())->toHaveCount(2);
+    });
+});
+
 describe('proof:run in copies: the start waits for the copy', function (): void {
     it('holds a run while its copy is not active, and releases it on an active copy', function (): void {
         copyProofAdmitted();
@@ -285,6 +321,24 @@ describe('proof:run in copies: the start waits for the copy', function (): void 
             ->and(collect($run->result['cases'])->pluck('verdict')->unique()->all())->toBe(['unrun']);
         Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
     });
+});
+
+describe('proof:run in copies: when a copy will never be ready', function (): void {
+    it('reads a copy that is gone or whose completion failed as failed, and a copy still being made as pending', function (Closure $change, ?string $state): void {
+        copyProofAdmitted();
+        $run = copyProofRuns()->first();
+        $change(Instance::query()->findOrFail($run->input['instance_id']));
+
+        expect(app(ProofCopies::class)->state($run->refresh()))->toBe($state);
+    })->with([
+        'being made' => [static fn (Instance $copy) => null, 'pending'],
+        'gone' => [static fn (Instance $copy) => Task::topLevel()->whereKey($copy->task_workspace_owner_id)->update(['taskable_id' => null]), 'failed'],
+        'completion failed' => [static function (Instance $copy): void {
+            $copy->update(['status' => InstanceState::SourceResolved]);
+            Operation::query()->create(['kind' => 'instance.complete', 'target_type' => 'instance', 'target_id' => $copy->id, 'node_id' => $copy->node_id,
+                'input' => [], 'state' => [], 'status' => OperationStatus::Failed, 'error_code' => 'instance.complete_failed', 'finished_at' => now(), 'sequence' => 1, 'attempts' => 0]);
+        }, 'failed'],
+    ]);
 });
 
 describe('proof:run in copies: the start input', function (): void {

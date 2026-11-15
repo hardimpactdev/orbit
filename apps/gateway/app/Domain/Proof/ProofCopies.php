@@ -65,7 +65,7 @@ final readonly class ProofCopies
 
     /**
      * Whether a held run of a copy may start: `ready` when its copy is active, `pending` while the copy's create or completion runs,
-     * `failed` when the copy failed or is gone, or null for a run that proves on a task VM.
+     * `failed` when the copy's completion failed or the copy is gone (a removal ends with the copy gone), or null for a run that proves on a task VM.
      */
     public function state(Operation $run): ?string
     {
@@ -77,7 +77,7 @@ final readonly class ProofCopies
             return 'failed';
         }
         $copy = TaskInstanceWorkspace::forGroup($group);
-        if ($copy === null || TaskCopyLifecycle::completionFailure($copy->instance) !== null || $copy->instance->status === InstanceState::Removing) {
+        if ($copy === null || TaskCopyLifecycle::completionFailure($copy->instance) !== null) {
             return 'failed';
         }
 

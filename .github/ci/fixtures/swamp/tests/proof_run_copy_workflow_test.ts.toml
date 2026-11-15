@@ -1,8 +1,8 @@
 order = 1500
-source_sha256 = "64372d01b561eeed83cf09da63637870df02742035299c52d3e4edb5d946ea99"
+source_sha256 = "c316af26c301e449c8b2888030d7cbf4e796a805f10224082098fd2ef5949f5f"
 cases = [
   "the batches run when every deploy step was skipped, and when the Project has none",
-  "a failed deploy step or a failed fetch runs no batch; the run folder goes and the report runs",
+  "a failed deploy step, fetch or skip list runs no batch; the run folder goes and the report runs",
   "a workspace at another commit runs no batch",
 ]
 file = "swamp/tests/proof_run_copy_workflow_test.ts"
