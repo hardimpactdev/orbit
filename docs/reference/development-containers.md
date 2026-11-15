@@ -1456,7 +1456,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | Sleep after an idle hour | Built; off until the operator turns it on. See below |
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
 | The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
-| A visit gets the app without the waiting page while the container is frozen | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
+| A visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
@@ -1526,15 +1526,19 @@ The script takes the Instance id only from the request's name, as digits, and ne
 
 In any other case it changes nothing, and a failure after the resume keeps the marker, so the site never proxies to a frozen container. Each step writes one line to the journal of `orbit-instance-wake.service`, with the resume's and the probe's milliseconds.
 
-The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume). Caddy's activation call gets `307` to the visitor's own path, so the browser sends the same request again, with its method and body, and gets the app. The waiting page is not shown. A request that arrives while the resume runs joins the wake and waits for it, up to the bound.
+The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume).
 
-Anything else starts the run below, in the same Operation, and the visitor gets the waiting page as before. That covers a Node without the script, such as one whose role predates it. The first read also asks for `/usr/local/libexec/orbit-instance-wake`. When it is missing, the Gateway leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
+The `instance:wake` command waits for this, and a command that joins the wake waits for it too, up to the bound. A visitor never waits for it: Caddy's activation call admits the wake and gets the waiting page at once, and the Gateway writes the request after that answer went. The page polls the visitor's path every 250 ms and loads the app once the marker is gone, about a second after the visit.
+
+A request that arrives while the resume runs joins the wake and gets the waiting page at once. A wake cancelled before the Gateway writes the request gets no request.
+
+Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node without the script, such as one whose role predates it. The first read also asks for `/usr/local/libexec/orbit-instance-wake`. When it is missing, the Gateway leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
 
 It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
 
 Each Incus call in the script has its own bound, so a resume ends within about 6.5 seconds of the request, before the workflow reaches the container. The script takes every pending request, also one that arrived during a resume, before it checks any library cache. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
 
-A Stopped container whose last sleep froze it, such as after a host reboot, now waits about a second longer for the waiting page, while the Node declines the request.
+A Stopped container whose last sleep froze it, such as after a host reboot, starts its run about a second later, while the Node declines the request.
 
 Measured on a frozen fixture clone before this path: the resume took 0.02 seconds and the web probe 0.4 seconds, but the run's start-up and playbook took 8 to 13 of the 9 to 19 seconds a visitor waited.
 
