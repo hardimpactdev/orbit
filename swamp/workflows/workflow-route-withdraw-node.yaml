@@ -37,7 +37,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/ansible-input'
-      behaviorName: '${{ "ansible-input" }}'
+      behaviorName: '${{ ("route-withdraw-input-" + string(inputs.intent.publication.node_id) + "-" + (inputs.intent.publication.route_id == "none" ? "none" : string(int(inputs.intent.publication.route_id) % 16))).split(".").join("-") }}'
       methodName: write
       inputs:
         intent:

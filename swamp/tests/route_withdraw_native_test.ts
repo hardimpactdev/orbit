@@ -94,7 +94,7 @@ Deno.test({ name: "pinned route withdraw: pooled names, no empty vpn visit, and 
         let done = await f.run(1150, false);
         assert(done.success, text(done.stdout) + text(done.stderr));
         assertEquals(f.calls().map((c) => `${c.step} ${c.name}`),
-            ["input ansible-input", "compose route-withdraw-compose-9-14", "apply route-withdraw-apply-9-14", "forward forward-result-0-14", "result route-mutation-phase"]);
+            ["input route-withdraw-input-9-14", "compose route-withdraw-compose-9-14", "apply route-withdraw-apply-9-14", "forward forward-result-0-14", "result route-mutation-phase-14"]);
         // Route 1151 (slot 15) outside the TLD: its line on the vpn Node goes, so Node 1 is visited too.
         const first = f.calls().length;
         done = await f.run(1151, true);

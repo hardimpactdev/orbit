@@ -201,7 +201,7 @@ jobs:
     task:
       type: behavior
       behaviorType: '@nckrtl/route-update-result'
-      behaviorName: '${{ "route-mutation-phase" }}'
+      behaviorName: '${{ ("route-mutation-phase-" + ("restore" in inputs.intent.route_mutations && "routes" in inputs.intent.route_mutations.restore && size(inputs.intent.route_mutations.restore.routes) > 0 ? string(int(inputs.intent.route_mutations.restore.routes[0].route_id) % 16) : "none")).split(".").join("-") }}'
       methodName: phase
       inputs:
         mode: forward

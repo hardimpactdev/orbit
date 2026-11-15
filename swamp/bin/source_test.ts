@@ -101,7 +101,6 @@ Deno.test("no workflow names a behavior by a literal and constant names are pres
     // These fixed identities must never become computed names.
     const expected = new Map(Object.entries({
         "operation-instance-migrate/input": "ansible-input",
-        "route-withdraw-node/input": "ansible-input",
         "route-dns-grace/wait-private-dns-ttl": "route-dns-grace",
         "route-ingress-apply/result": "route-ingress-result",
         "route-lan-apply/changes": "route-lan-changes",
@@ -109,7 +108,6 @@ Deno.test("no workflow names a behavior by a literal and constant names are pres
         "route-lan-apply/result": "route-lan-result",
         "route-mutation-forward/result": "route-mutation-phase",
         "route-mutation-restore/result": "route-mutation-phase",
-        "route-withdraw/result": "route-mutation-phase",
         "proof-fleet-verify/plan": "proof-verify-assigned-plan",
         "proof-fleet-verify/Check the main verdicts": "proof-verify-main-verdicts",
         "proof-fleet-verify/Name replay cases": "proof-verify-flagged-cases",

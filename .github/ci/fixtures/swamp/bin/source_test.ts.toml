@@ -1,5 +1,5 @@
 order = 140
-source_sha256 = "ca770011ed64b16d07e3d2508f155861a430040e614c6ccd9c87f96afd5b2b63"
+source_sha256 = "7b8e2a337c628f66a6281897137accb4e60400490e1604c438e9ffae170cac30"
 cases = [
   "model IDs are unique",
   "workflow queue bounds have measured per-kind budgets",

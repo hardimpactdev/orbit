@@ -1,0 +1,14 @@
+order = 864
+source_sha256 = ""
+cases = [
+  "pinned destroy: nine container removals of one Node at once all succeed, none waits on another's step name",
+]
+file = "swamp/tests/instance_destroy_slots_native_test.ts"
+cost = 10
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/tests/_support/native_auth.ts",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-destroy.yaml",
+]

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Data\Operations;
 
 use App\Data\Tasks\TaskPlaceWaitData;
+use App\Domain\Operations\OperationStatus;
 use App\Domain\Tasks\TaskPlaces;
 use App\Models\Operation;
 use DateTimeInterface;
@@ -50,6 +51,7 @@ final class OperationData extends Data
         public array|Optional $steps = new Optional,
         public ?TaskPlaceWaitData $capacityWait = null,
         public ?string $overdueSince = null,
+        public ?string $holdWaitReason = null,
     ) {}
 
     /** Public reads retain domain results without returning the execution plan. */
@@ -113,6 +115,14 @@ final class OperationData extends Data
         return $operation->current_step !== null && is_array($current) && is_string($current[$field] ?? null) ? $current[$field] : null;
     }
 
+    /** Why a Route write or a removal waits in the Gateway (RoutePublicationHolds), while it waits; null otherwise. */
+    private static function holdWaitReason(Operation $operation): ?string
+    {
+        $reason = $operation->state['hold_wait_reason'] ?? null;
+
+        return $operation->status === OperationStatus::Waiting && isset($operation->state['hold_nodes']) && is_string($reason) ? $reason : null;
+    }
+
     public static function fromModel(Operation $operation, ?string $callerNodeName = null): self
     {
         $failure = $operation->state['native_failure'] ?? null;
@@ -146,6 +156,7 @@ final class OperationData extends Data
                     ...($operation->error_code !== 'operation.timed_out' ? ['stderr_recorded' => ($failure['stderr_recorded'] ?? false) === true] : [])] : null,
             capacityWait: app(TaskPlaces::class)->waitOf($operation),
             overdueSince: is_string($operation->state['overdue_since'] ?? null) ? $operation->state['overdue_since'] : null,
+            holdWaitReason: self::holdWaitReason($operation),
         );
     }
 }
