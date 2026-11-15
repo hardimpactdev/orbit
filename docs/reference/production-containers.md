@@ -128,6 +128,13 @@ Incus keeps the removed container's dataset while a ZFS clone still depends on i
 
 A rollback runs no deploy step, fetches nothing and changes no data. It pauses automatic deploys and blocks the rolled-away commit, as [Pause](/reference/deployments#pause) describes. Without an old release, it refuses with `rollback.release_not_retained`. To go back further, deploy the earlier commit with `instance:deploy --commit`. That deploy builds a warm hot from live's snapshot.
 
+A rollback has no capacity check: no deploy runs beside it, so old takes the memory that hot would take.
+
+| Failed boundary | Serves | Old |
+| --- | --- | --- |
+| Start, readiness or switch | Live, unchanged, with its previous files back in place after a failed switch | Stopped again, and stays old |
+| Handover or retire | Old, as the new live | Is live. The Gateway records the release states that the run reached |
+
 ## Database
 
 Every release container uses the Instance's one shared database. Migrations run in hot before the switch, so live's code must work on the migrated schema:
@@ -146,11 +153,13 @@ The storage volume holds what must outlive a release: the shared paths, `storage
 
 `instance:clone` creates the volume. Instance removal removes it with the Instance.
 
+Hot's `before_activation` steps run while live serves, and both mount the same volume. Laravel names a compiled view after its path inside the app, so a view that hot compiles into `storage/framework/views` replaces the one that live serves. So each Project keeps this rule for its deploy steps: a `before_activation` step writes no compiled view or cache into a shared path; `optimize` and `view:cache` are `after_activation` steps. Orbit cannot check it; the [live proof](/decisions/0263-run-production-releases-in-hot-live-and-old-containers#live-proof-on-a-fixture-production-project) proves it on the fixture.
+
 ## Capacity
 
 Each release container has the Instance's memory limit. During a deploy, hot and live run and old is stopped. A clone's disk holds only its changed blocks.
 
-Before the clone, the deploy checks that the Node's available memory covers hot's memory limit plus 1 GiB, and that the pool has 10 GiB free. Otherwise it fails with `deployment.node_capacity` and changes nothing.
+Before it makes hot, a deploy or a [migration](#a-checkout-production-instance) checks that the Node's available memory covers hot's memory limit plus 1 GiB, and that the pool has 10 GiB free. Otherwise it fails with `deployment.node_capacity` and changes nothing.
 
 The automatic tick retries that failure at its [backoff](/reference/deployments#failures-of-automatic-deployments) times, but it does not count toward the three failures that block a commit: the cause is the Node, not the commit. A commit that waits 30 minutes raises the stalled-commit alert.
 
@@ -170,16 +179,17 @@ Two planned charts cover the two ways to the first release container: `docs/cli/
 
 [`instance:migrate`](/cli/instance/migrate) moves a checkout production Instance in these steps:
 
-1. It launches a cold hot and attaches the volume.
-2. It copies each shared path of the home into the volume, and a SQLite database of the home. The checkout still serves.
-3. It builds hot at the commit that `current` selects, as a deploy does. The steps see the copied files, such as existing Passport keys.
-4. It checks hot as ready and switches the Routes to it.
-5. It disables and stops the host Processes, Node timers and PHP-FPM pool. Then it enables and starts the new live's Processes and timers.
-6. It copies the changes again: only files that the volume lacks or holds in an older version. It deletes no file in the volume, because live already writes there.
+1. It runs the [capacity check](#capacity). A refusal is `deployment.node_capacity`. Nothing changes, and the checkout serves.
+2. It launches a cold hot and attaches the volume.
+3. It copies each shared path of the home into the volume, and a SQLite database of the home. The checkout still serves.
+4. It builds hot at the commit that `current` selects, as a deploy does. The steps see the copied files, such as existing Passport keys.
+5. It checks hot as ready and switches the Routes to it.
+6. It disables and stops the host Processes, Node timers and PHP-FPM pool. Then it enables and starts the new live's Processes and timers.
+7. It copies the changes again: only files that the volume lacks or holds in an older version. It deletes no file in the volume, because live already writes there.
 
 Each native Schedule keeps firing in the home until the run ends. Then the Gateway rewrites its workflow for the live link and sets its trigger again, as an [Instance transfer](/reference/schedules#execution) does. No fire is skipped and none runs twice.
 
-The home stays unserved until the next successful deploy. That deploy runs after the native Schedules fire in live, so nothing writes into the home any more. It copies the shared paths a last time, by the rule of step 6, and then removes the home, its stopped PHP-FPM pool and the production account.
+The home stays unserved until the next successful deploy. That deploy runs after the native Schedules fire in live, so nothing writes into the home any more. It copies the shared paths a last time, by the rule of step 7, and then removes the home, its stopped PHP-FPM pool and the production account.
 
 ## Failures
 

@@ -166,7 +166,7 @@ The build follows the [container runtime plan](/solutions/development-container-
 Each subtask is one PR of a task group that follows this one, in this order. Each one adds its errors, Pest tests and documentation, and moves its chart from planned to built.
 
 1. **Production Node and image.** The container branch of the `app-prod` role: Incus, the pool, `orbit-instances`, the bridge and the runtime folder with the static glibc PHP. The production image has the user `orbit` only, no agent and no model route.
-   - Removes: nothing yet. PHP-FPM stays for checkouts until subtask 9.
+   - Removes: nothing yet. PHP-FPM stays for checkouts until subtask 10.
    - Proof: converge a fixture `app-prod` Node twice, with no change the second time. Launch the image and check its users, and that PHP loads no PCOV.
 2. **Records.** `release_state` with at most one row per state, `runtime_version`, the storage volume of an Instance, and the Caddy site of a production Route that imports the upstream file.
    - Removes: nothing.
@@ -174,28 +174,31 @@ Each subtask is one PR of a task group that follows this one, in this order. Eac
 3. **Clone.** `instance:clone` records the Instance, creates the storage volume with the `503` upstream file, publishes the preview Route and accepts a container candidate.
    - Removes: the home preparation of a clone, the checkout candidate rule and the Node timers that a clone installs.
    - Proof: Pest tests and the cases of `create-production`; a clone of the fixture Project.
-4. **Hot deploy.** The capacity check, a warm or cold hot, the source and `.env`, the before steps, disabled units, the release snapshot, readiness, switch, handover, after steps and retire, with the `deployment.*` codes. Build requirement: no before step writes compiled views or caches into a shared path.
-   - Removes: nothing yet. The home branch of the deploy workflow stays for checkouts until subtask 9, listed in [old paths](/reference/old-paths).
-   - Proof: Pest tests and the cases of `deploy-production`; the first and second deploys of the fixture.
-5. **Work on live.** A native Schedule fire reads the live link; `process:*` acts on live; a per-minute scheduler is a container timer, enabled only in live.
+4. **Build hot.** The capacity check, a warm or cold hot, the source and `.env`, the before steps, the release snapshot, and the removal of hot on every failure, with `deployment.node_capacity`, `deployment.selection_invalid` and `deployment.step_failed`. It documents the [storage rule](/reference/production-containers#storage) for each Project's steps.
+   - Removes: nothing yet. The home branch of the deploy workflow stays for checkouts until subtask 10, listed in [old paths](/reference/old-paths).
+   - Proof: Pest tests and the build cases of `deploy-production`; on the fixture, hot builds and is removed on a failed step while live serves.
+5. **Ready, switch and retire.** Readiness, the switch with its previous files, the after steps, retire and the read-back, with `deployment.not_ready` and `deployment.switch_failed`.
+   - Removes: nothing yet.
+   - Proof: Pest tests and the switch cases of `deploy-production`; the first and second deploys of a fixture with no Process or Schedule.
+6. **Work on live.** The one rule for units and timers: hot installs them disabled, and only live has them enabled and `boot.autostart` on. The handover in its order with the bounded graceful stop. A native Schedule fire reads the live link; `process:*` acts on live.
    - Removes: production Node timers, and `restart_on_deploy` for container Instances.
-   - Proof: Pest tests of the Schedule workflow and the Process commands; a fixture deploy in which each Schedule fires once a minute.
-6. **Automatic tick.** The tick's deployed commit is live's commit, and its deploy is the hot deploy. `deployment.node_capacity` gets a retry time and never counts toward a block.
+   - Proof: Pest tests of the handover, the Schedule workflow and the Process commands; a fixture deploy in which each Schedule fires once a minute and each worker runs in live only.
+7. **Automatic tick.** The tick's deployed commit is live's commit, and its deploy is the hot deploy. `deployment.node_capacity` gets a retry time and never counts toward a block.
    - Removes: nothing.
    - Proof: Pest tests of the policy inputs and the retry rule; the capacity case on the fixture.
-7. **Rollback.** `instance:rollback` returns to old, with no `--release`.
+8. **Rollback.** `instance:rollback` returns to old, with no `--release`.
    - Removes, for container Instances: the `release` argument, the `current` swap and the PHP-FPM refresh of a rollback, and the home scan of `instance:release:list`.
    - Proof: Pest tests and the cases of `rollback-production`; a rollback and a forward rollback on the fixture.
-8. **Migrate a production checkout.** `instance:migrate` for a checkout production Instance, and the last copy and home removal in the first deploy after it. Build requirements:
+9. **Migrate a production checkout.** `instance:migrate` for a checkout production Instance, and the last copy and home removal in the first deploy after it. Build requirements:
    - Every copy after the first copies only files that the volume lacks or holds in an older version, and deletes none.
    - The last copy runs only after the native Schedules fire in live.
    - Removes: nothing yet.
    - Proof: Pest tests and the cases of `migrate-production`; the migration case of the live proof.
-9. **Remove the checkout path.** After the last production Instance has moved: the home branch of the deploy and rollback workflows, PHP-FPM in the `app-prod` role, the production account, the release layout marker and their old-paths entries.
+10. **Remove the checkout path.** After the last production Instance has moved: the home branch of the deploy and rollback workflows, PHP-FPM in the `app-prod` role, the production account, the release layout marker and their old-paths entries.
    - Removes: the whole checkout production path.
    - Proof: CI; a converge of the fixture Node shows no PHP-FPM, and no workflow names `current`.
 
-The [live proof](#live-proof-on-a-fixture-production-project) runs after subtask 8 and before any real production Instance moves. A defect it finds is fixed in the subtask that owns it.
+The [live proof](#live-proof-on-a-fixture-production-project) runs after subtask 9 and before any real production Instance moves. A defect it finds is fixed in the subtask that owns it.
 
 #### Live proof on a fixture production Project
 

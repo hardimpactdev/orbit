@@ -68,9 +68,9 @@ sequenceDiagram
   SW->>C: Run before steps<br/>incus exec · as orbit
   %%> What it does:
   %%> - each `before_activation` step in order, at the repository root; `migrate` changes the shared database here while live serves
-  %%> Requirements:
+  %%> Requirements on the Project's steps:
   %%> - every migration is expand and contract: live's code works on the new schema
-  %%> - no step writes compiled views or caches into a shared path that live reads
+  %%> - a `before_activation` step writes no compiled view or cache into a shared path; `optimize` and `view:cache` are `after_activation` steps (production-containers.md#storage)
   SW->>C: Install units, snapshot<br/>Ansible · tags release
   %%> What it does:
   %%> - installs a disabled unit for each Process and a disabled container timer for each systemd-calendar Schedule
