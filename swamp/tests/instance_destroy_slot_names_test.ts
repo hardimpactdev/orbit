@@ -44,13 +44,14 @@ function assertPooled(flow: Step[]) {
     for (let instanceId = 1; instanceId <= 1000; instanceId++) {
         for (const nodeId of [9, 12]) {
             for (const [step, name] of names(nodeId, instanceId, flow)) {
-                assertMatch(name, new RegExp(`^[a-z][a-z-]*-${nodeId}-${instanceId % Slots}$`), `${step}: ${name}`);
+                const index = step.startsWith("Remove hibernation files") ? `-${step.split("#")[1]}` : "";
+                assertMatch(name, new RegExp(`^[a-z][a-z-]*-${nodeId}-${instanceId % Slots}${index}$`), `${step}: ${name}`);
                 const key = `${nodeId} ${step.split("#")[0]}`;
                 perStep.set(key, (perStep.get(key) ?? new Set()).add(name));
             }
         }
     }
-    for (const [key, set] of perStep) assert(set.size <= Slots, `${key}: ${set.size} names`);
+    for (const [key, set] of perStep) assert(set.size <= Slots * (key.endsWith("Remove hibernation files") ? 3 : 1), `${key}: ${set.size} names`);
     return perStep;
 }
 
@@ -60,12 +61,12 @@ Deno.test("a container removal names each step from 64 slots per Node, never per
         "9 Clean container files", "9 Delete the container", "9 Prepare container removal", "9 Read container removal",
         "9 Release the Route Nodes", "9 Remove hibernation files",
     ]);
-    // Six families of 64 names per Node: 384 names at most, however many Instances a Node has had.
-    assertEquals([...perStep].filter(([key]) => key.startsWith("9 ")).reduce((sum, [, set]) => sum + set.size, 0), 6 * Slots);
-    // The three hibernation files share their removal's name and go one after the other.
-    assertEquals(new Set([...names(9, 3206)].filter(([step]) => step.startsWith("Remove hibernation files")).map(([, name]) => name)),
-        new Set(["instance-destroy-hibernation-9-6"]));
-    assertEquals((steps.find((step) => step.name === "Remove hibernation files") as Step & { concurrency?: number }).concurrency, 1);
+    // Five families of 64 names per Node and three hibernation names per slot: 512 names at most, however many Instances a Node has had.
+    assertEquals([...perStep].filter(([key]) => key.startsWith("9 ")).reduce((sum, [, set]) => sum + set.size, 0), 5 * Slots + 3 * Slots);
+    // The three hibernation files of one removal each have their own name, so they go side by side (no forEach item shares a name).
+    assertEquals([...names(9, 3206)].filter(([step]) => step.startsWith("Remove hibernation files")).map(([, name]) => name).sort(),
+        ["instance-destroy-hibernation-9-6-0", "instance-destroy-hibernation-9-6-1", "instance-destroy-hibernation-9-6-2"]);
+    assertEquals((steps.find((step) => step.name === "Remove hibernation files") as Step & { concurrency?: number }).concurrency, undefined);
 });
 
 Deno.test("a name off the pool fails the check: one per Instance, or one per Node", () => {

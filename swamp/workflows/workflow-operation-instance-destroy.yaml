@@ -41,7 +41,7 @@ inputs:
   - intent
   - execution_secrets
   additionalProperties: false
-# Step names of the container path come from a bounded pool: `<family>-<node>-<instance_id % 64>`. Swamp fails a step that waits 60 s
+# Step names of the container path come from a bounded pool: `<family>-<node>-<instance_id % 64>`, and `-<index>` for the hibernation files. Swamp fails a step that waits 60 s
 # for a name another run holds, so the Gateway keeps two removals of one slot on one Node apart for the whole run (instance_slot,
 # RoutePublicationHolds::DestroySlots); the withdrawal child names its Node steps by the Route's own slot (removal_slot).
 jobs:
@@ -400,12 +400,10 @@ jobs:
     forEach:
       item: file
       in: ${{ inputs.intent.direct_destroy.hibernation }}
-    # One name per destroy slot: the three files go one after the other under it.
-    concurrency: 1
     task:
       type: behavior
       behaviorType: '@swamp/cfgmgmt/file'
-      behaviorName: ${{ ("instance-destroy-hibernation-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64)).split(".").join("-") }}
+      behaviorName: ${{ ("instance-destroy-hibernation-" + string(inputs.node_id) + "-" + string(int(inputs.intent.instance_id) % 64) + "-" + string(self._index)).split(".").join("-") }}
       methodName: apply
       globalArgs:
         path: ${{ self.file.path }}

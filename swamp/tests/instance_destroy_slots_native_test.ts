@@ -104,7 +104,7 @@ Deno.test({ name: "pinned destroy: nine container removals of one Node at once a
             // Each removal's own steps take turns under its own slot; no two removals share a name.
             const database = ["Check they are gone", "Drop databases and users", "Fence new clients"];
             for (const [i, id] of ids.entries()) {
-                const own = calls.filter((c) => c.name.endsWith(`-9-${id % 64}`)).map((c) => c.step);
+                const own = calls.filter((c) => new RegExp(`^[a-z-]+(-5)?-9-${id % 64}(-[0-2])?$`).test(c.name)).map((c) => c.step);
                 assertEquals(own.sort(), ["Clean container files", "Delete the container", "Prepare container removal", "Read container removal",
                     "Remove hibernation files", "Remove hibernation files", "Remove hibernation files", ...(i < 2 ? database : [])].sort());
             }
