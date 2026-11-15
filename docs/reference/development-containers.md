@@ -1414,19 +1414,19 @@ Names from the workspace never become arguments. Git returns them NUL-separated,
 
 A sleeping Instance's container is frozen. Its processes keep their state and memory, but the memory moves to swap: a frozen Laravel and T3 clone holds about 13 MiB of RAM and about 340 MiB of swap. Nothing boots at the wake, so a resume takes a fraction of a second. Its disk, databases, Route, T3 threads and sessions stay. A container never prunes its dependencies.
 
-Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, and then asks the kernel to reclaim its memory. A wake writes 0 again to exactly the cgroups the sleep opened. Pages already in swap come back when they are used. No Incus setting changes.
+Incus writes `memory.swap.max = 0` for every Instance container from `limits.memory`, so a running container never swaps: a busy one meets its limit instead of filling the swap disk. A sleep opens swap (`max`) for every cgroup of the container's subtree that holds 0, freezes the container, records which pages of its processes were resident, and then asks the kernel to reclaim its memory. A wake reads the recorded pages back while the container is still frozen, resumes it, and writes 0 again to exactly the cgroups the sleep opened. Other pages in swap come back when they are used. No Incus setting changes.
+
+One helper on the Node, `/usr/local/libexec/orbit-instance-power`, does this work for every sleep, wake, deployment, start and destroy. [Prepared restore](/reference/prepared-restore) owns its contract: the plan, the bounds, the wake's state table, the fast wake's files and the result fields.
 
 **The swap subtree.** A cgroup whose `memory.swap.max` is 0 keeps its pages in RAM, even when its parent may swap. A nested-fleet Instance runs an inner Incus, which writes 0 for its own containers: `lxc.payload.nested-gateway`, `-app-dev` and `-app-prod` under the outer container's cgroup.
 
-So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. When it opened at least one inner cgroup, it records them in `/dev/shm/orbit/hibernation/app-instance-<id>.swap`, one path below the container's cgroup per line; when it opened none, it writes no record and removes one left from before. Its result counts them as `swap_subtree`. Each resume by a wake's run, a deployment or a start writes 0 to the container's own cgroup and to each recorded path that still exists, then removes the record.
+So the sleep walks the container's whole cgroup subtree and writes `max` to each `memory.swap.max` that holds 0. Before it pauses the container, it records what it opened in the [limits record](/reference/prepared-restore#files-on-the-node), `/var/lib/orbit/hibernation/instances/<id>/limits.json`. Its result counts the inner cgroups as `swap_subtree`. Each resume by a wake, a deployment or a start writes 0 to each recorded path that still exists, then removes the record.
 
-The sleep makes the record's folder first: `/dev/shm` is empty after a Node's reboot. A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them.
-
-The record is written from what the walk opened before any later step can fail, and a rescue also closes what this run opened when the record could not be written. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
+A cgroup that vanishes during the walk, or that refuses the write, is not opened and fails nothing; its pages stay in RAM, and the check of the memory left in RAM below counts them. A sleep that fails while the container still runs closes what it opened. A sleep of a container that is already frozen keeps the earlier record and reports its count as `swap_subtree`. A destroy removes the record with the container.
 
 A short-lived unit, such as `systemd-hostnamed.service`, can end while the container sleeps, and its cgroup goes with it; the resume skips that path and never fails on it. In practice only the container's own cgroup and the three inner payload roots matter.
 
-The Node's wake script closes only the container's own cgroup, and changing it would need an `app-dev` converge. So the Gateway skips [the Node's resume](#the-node-resumes-a-frozen-container) for a nested-fleet Instance and for any Instance whose last sleep has `swap_subtree` above 0; those wakes take the run. A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. A plain clone has no inner cgroup with 0, so its sleep leaves no record, and the Node's resume has none to remove.
+A cgroup with its own limit, such as polkit's 32 MiB, stays as it is. The Node's fast resume closes the same record, so it serves any `swap_subtree`; it stays off for a nested-fleet Instance.
 
 Measured on a nested-fleet default on 2026-11-14, before this rule:
 
@@ -1439,7 +1439,7 @@ Measured on a nested-fleet default on 2026-11-14, before this rule:
 | Writing the 4 values back to 0 | 1.2 s |
 | Inner Doctor healthy, 3 agents online | 4.0 s after the resume |
 
-When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM after the reclaim. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`.
+After the reclaim, the sleep reads the container's memory counters until anonymous and file memory are both 0, at most 20 times 0.1 s apart. The last read is what stays in RAM; the result reports it. When swap cannot take the memory (it is full), more than 32 MiB of anonymous memory stays in RAM. A frozen container would then hold RAM, which a sleep exists to free, so the sleep resumes the container and stops it. Its result says `sleep: stopped`; otherwise `sleep: frozen`.
 
 A nested-fleet Instance never takes this stop: a stop loses the Club key in `/run` and the tunnel `wg-nested`, which only a deployment or a start gives back. The sleep resumes it, closes swap, removes the marker and fails with `instance.container_freeze_failed`.
 
@@ -1459,6 +1459,7 @@ By hand, resume a frozen container before you stop it: `incus resume` first, the
 | The wake renews the Gateway's T3 session when it ends within 7 days or ended while the Instance slept | Built |
 | The Conn thread index reads the server one last time before a sleep is admitted, while its switch is on | Built. See [Thread index](/reference/conn#thread-index) |
 | A visit to a frozen container gets the waiting page at once and the app about a second later | Built: [the Node resumes it](#the-node-resumes-a-frozen-container), on a Node whose `app-dev` role converged with the wake script |
+| The wake reads the pages that were resident at the freeze back from swap before it resumes | In progress ([ADR 0259](/decisions/0259-restore-a-sleeping-containers-memory-before-it-resumes)); off for nested-fleet Instances. See [Prepared restore](/reference/prepared-restore) |
 | A long freeze becomes a stop | Planned |
 | A Conn connection or a task turn wakes the Instance | Planned. Conn calls `POST /api/v1/instances/{id}/wake`, which has the same access rule as the Conn remove |
 
@@ -1520,42 +1521,44 @@ A request with `X-Orbit-Probe: 1` and a request that meets the asleep marker wri
 
 The marker lives on disk, not in `/dev/shm`: a host reboot loses the frozen state, but not the marker. A sleep writes the marker before it freezes the container.
 
-**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it with `swap_subtree` 0, it is not a nested-fleet Instance, and its site has a web unit, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request on the Instance's Node, `/dev/shm/orbit/hibernation/app-instance-<id>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
+**The Node resumes a frozen container.** <a id="the-node-resumes-a-frozen-container"></a>When the Instance's last sleep froze it, it is not a nested-fleet Instance, and its Node has the power helper, the wake does not start its run at once. The Gateway records the `instance.wake` Operation under the Instance lock, as always. After the commit it writes a wake request named after the Instance and the Operation, `/dev/shm/orbit/hibernation/app-instance-<id>-op-<opid>.wake`, with the agent's existing `hibernation.marker`. That folder belongs to root and the `caddy` group with mode `0755`, so only root writes in it. The agent stays frozen ([ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained)).
 
-The `app-dev` role installs the Node's part: the script `/usr/local/libexec/orbit-instance-wake`, the service `orbit-instance-wake.service` and the path unit `orbit-instance-wake.path`, which starts the service while a request exists. The service runs as root with no capabilities, a read-only file system except the two hibernation folders and the cgroup tree, and no new privileges. It needs root because the Incus socket and the container's cgroup file belong to root; membership of `incus-admin` would give the same power.
+The `app-dev` role installs the Node's part: the power helper, a path unit that watches the request folder, and the worker template `orbit-instance-wake@<id>-<opid>.service`.
 
-The script takes the Instance id only from the request's name, as digits, and never reads its content. It renames the request to `.taken`, and acts only when the request is at most one second old, the asleep marker exists, and Incus reports `instance-<id>` of `orbit-instances` as `Frozen`. Then it resumes the container, writes `memory.swap.max = 0`, and asks FrankenPHP once for an answer below 500, within 1.5 seconds. A resumed FrankenPHP still holds its socket, so one request tells. Then it removes the marker and writes `app-instance-<id>.resumed`. Last it removes the `.taken` file.
+The worker restores the recorded pages and resumes the container through the helper. Then it checks the web port once, removes the asleep marker, and writes the outcome files under `/var/lib/orbit/hibernation/outcomes`. [The fast wake](/reference/prepared-restore#the-fast-wake) has the files, the worker's steps and the rules for a decline.
 
-In any other case it changes nothing, and a failure after the resume keeps the marker, so the site never proxies to a frozen container. Each step writes one line to the journal of `orbit-instance-wake.service`, with the resume's and the probe's milliseconds.
+The Gateway reads the request and the outcome files with the agent's `hibernation.times`, every 25 ms within 6 seconds of the request. When the outcome shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds`, `confirm_seconds`, `ready_at` and `prepared_restore.status`.
 
-The Gateway reads the request, `.taken`, `.resumed` and the marker with the agent's `hibernation.times`, first after 0.35 seconds and then every 0.1 seconds, within 3 seconds of the request. When the resume shows, the Operation succeeds at once: `wake: resumed`, `trigger_seconds` (the request's call) and `confirm_seconds` (from the request until the Gateway read the resume).
-
-The `instance:wake` command waits for this, and a command that joins the wake waits for it too, up to the bound. A visitor never waits for it: Caddy's activation call admits the wake and gets the waiting page at once, and the Gateway writes the request after that answer went. The page polls the visitor's path every 250 ms and loads the app once the marker is gone, about a second after the visit.
+The `instance:wake` command waits for this, and a command that joins the wake waits for it too, up to the bound. A visitor never waits for it: Caddy's activation call admits the wake and gets the waiting page at once, and the Gateway writes the request after that answer went. The page polls the visitor's path every 250 ms and loads the app once the marker is gone.
 
 A request that arrives while the resume runs joins the wake and gets the waiting page at once. A wake cancelled before the Gateway writes the request gets no request.
 
-Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node without the script, such as one whose role predates it. The first read also asks for `/usr/local/libexec/orbit-instance-wake`. When it is missing, the Gateway leaves that Node out of the fast path for 10 minutes, so its other wakes cost nothing extra.
+Anything else starts the run below, in the same Operation, and the waiting page stays until that run ends. That covers a Node without the helper, a worker that declined or failed, a failed agent call, and the bound. The Gateway then removes a request still there.
 
-It also covers a script that declined (another state, FrankenPHP silent), a failed agent call, and the bound. The Gateway then removes a request still there. The script ignores a request older than one second, so a request left behind never wakes the Instance later.
+The worker ignores a request older than one second, so a request left behind never wakes the Instance later.
 
-Each Incus call in the script has its own bound, so a resume ends within about 6.5 seconds of the request, before the workflow reaches the container. The script takes every pending request, also one that arrived during a resume, before it checks any library cache. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
+The run takes the helper's lock, so it waits for a worker still at work and then continues from the state the Node reached. A Gateway worker that dies during the resume leaves a queued wake: a delayed start runs its workflow 15 seconds later. A cancel during the resume keeps the Operation cancelled.
 
 A Stopped container whose last sleep froze it, such as after a host reboot, starts its run about a second later, while the Node declines the request.
 
-Measured on a frozen fixture clone before this path: the resume took 0.02 seconds and the web probe 0.4 seconds, but the run's start-up and playbook took 8 to 13 of the 9 to 19 seconds a visitor waited.
+Measured on a frozen fixture clone before the fast wake: the resume took 0.02 seconds and the web probe 0.4 seconds, but the run's start-up and playbook took 8 to 13 of the 9 to 19 seconds a visitor waited.
 
 **The wake's run.** One Ansible run reads the container's state and the marker:
 
 | Found | The wake |
 | --- | --- |
-| Frozen, marker | Resumes it, closes the swap the sleep opened, and gives FrankenPHP 10 tries one second apart (about 20 seconds at most). It boots nothing; a nested-fleet Instance keeps its inner fleet. `wake: resumed` |
+| Frozen, marker | Reads the recorded pages back, still frozen; resumes it, closes the opened swap, and gives FrankenPHP 10 tries one second apart. Nothing boots. `wake: resumed` |
 | Frozen, marker; FrankenPHP silent after the resume | Stops it by force, then boots it as below: a visitor would rather wait for a boot than for ever. `wake: restarted_after_resume`. A nested-fleet Instance is never stopped: the wake fails with `instance.web_unready` |
 | Stopped, marker (after a host reboot, or a sleep that fell back to a stop) | Boots it. `wake: started`. A nested-fleet Instance is never booted by a wake: it fails with `instance.nested_fleet_stopped`, and the marker stays |
 | Running, marker (after a host reboot with `boot.autostart`) | No start and no resume; checks FrankenPHP and removes the marker. `wake: already_running` |
 | Running, no marker | Nothing to do. `wake: already_running`, `marker_found: false` |
 | Frozen, no marker | A defect: the wake resumes it, and its result says `marker_found: false` |
 
-The result also gives `resume_seconds` and `web_probe_seconds` for a resume. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers. A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
+A resume boots nothing, so a nested-fleet Instance keeps its inner fleet.
+
+The result also gives `resume_seconds` and `web_probe_seconds` for a resume, and `restore_mode`, `ready_at` and `prepared_restore` ([Results](/reference/prepared-restore#results)). The web check goes from the Node to the container's address, not through `incus exec`. A boot starts the container and waits until each running unit is active. Then the run waits until FrankenPHP answers.
+
+A web unit that listens before the app is ready answers 5xx for a moment, so the run waits up to 5 more seconds for an answer below 500; an app that answers 5xx by itself is then served as it is. Then the run removes the marker, and the next request gets the app. A Project without a web unit has no web wait.
 
 A converge cannot run a command in a frozen container, so a container that slept through a converge may wake with a library cache that lacks the shared runtime libraries. After the marker went, so the visitor does not wait, each wake runs one check in the container: when `ldconfig -p` does not list a soname of `/opt/orbit-runtime/current/lib` at that path, it runs `ldconfig -X`.
 
@@ -1565,7 +1568,7 @@ A second check follows for the same reason. The converge keeps each container's 
 
 Only then does the run wait up to 30 seconds for T3 in an Instance with a T3 server, such as a clone; a default has none: T3 gates the end of the Operation, not the visitor's page. A wake whose T3 stays silent fails with `instance.t3_unready` while the site already serves. The runtime records `power_state` `running`, because the container runs. A wake that fails before FrankenPHP answers keeps the marker and the `power_state`, and the Route shows the failure page.
 
-A destroy removes the marker and the swap record. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
+A destroy removes the marker, and the helper's `discard` removes the plan, the limits record and the fast wake's files after any helper call still at work has ended. A sleep refuses with `instance.sleep_route_unready`, and changes nothing, while Caddy's loaded site of the Instance lacks the check: an older site gets it at the next publish of the Node's Caddy sites.
 
 The [agent development servers](#agent-development-servers) site on port 444 has no asleep check: on a sleeping clone it answers 502 until a visit to the Route wakes the Instance.
 

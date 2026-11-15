@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 8, docs/reference/development-containers.md#sleep-and-wake): freeze a development container with its memory in swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
+  %% Container runtime (ADR 0250 step 8, ADR 0259, docs/reference/development-containers.md#sleep-and-wake, docs/reference/prepared-restore.md): freeze a development container, record the pages its processes had resident, move its memory to swap and leave its Route on the wake page. Defaults and nested-fleet Instances sleep under the same rule as clones (owner decision 2026-11-14). The hibernation sweep admits the same kind after an idle hour; the command admits it at once.
   %% status: draft
   %% command: instance:sleep
   %% kind: instance.sleep
@@ -37,42 +37,40 @@ sequenceDiagram
   %%> - no container, a non-development Instance, an active task or lifecycle work starts no run
   GW->>SW: Start run, full intent<br/>operation-instance-sleep
   GW-->>CLI: 202 Accepted<br/>Operation ID
-  SW->>N: Mark the Route asleep<br/>Ansible · tags asleep
+  SW->>N: Sleep the container<br/>Ansible · tags sleep
   %%> What it does:
-  %%> - checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`
-  %%> - an Instance without a published Route, such as a default without one, has no site: nothing proxies to it, so there is nothing to check; the intent's `route` says which
+  %%> - one phase: checks that Caddy's loaded site of the Instance has the asleep rule, else `instance.sleep_route_unready`; an Instance without a published Route has no site and nothing to check; the intent's `route` says which
   %%> - writes the asleep marker, so each request from now on gets the wake page
+  %%> - installs the power helper from this commit when it differs, then runs `orbit-instance-power prepare` as the unit `orbit-instance-power-<id>`, the Instance's lock; a busy lock is retried 0.25 s apart, 40 times
+  %%> - prepare: removes the earlier plan; reads the state from Incus; writes `max` to `memory.swap.max` of every cgroup of the subtree that holds 0 and records them in `limits.json` before the pause; `incus pause`
+  %%> - prepare, frozen: lists `cgroup.procs` of the whole subtree, every process alike, and records each one's identity and the resident pages of its readable mappings; publishes the plan atomically; one `memory.reclaim`
+  %%> - then reads `memory.stat` until anonymous and file memory are 0, 20 reads 0.1 s apart; the last read is what stays in RAM
+  %%> - a frozen container stays as it is and reports its earlier sleep; a stopped one stays stopped, `not_applicable`
+  %%> - a nested-fleet Instance gets no plan: `skipped`, `placement_unproven`
   %%> Why:
+  %%> - one phase: each Ansible start costs about 4 s
   %%> - the marker comes before the freeze: a request during the freeze gets the wake page, not a hang
-  SW->>N: Freeze the container<br/>Ansible · tags freeze
-  %%> What it does:
-  %%> - writes `max` to `memory.swap.max` of every cgroup in the container's subtree that holds 0: the container's own (Incus writes 0) and, in a nested-fleet Instance, the inner payload cgroups (the inner Incus writes 0 too)
-  %%> - records the inner cgroups it opened on the Node, `/dev/shm/orbit/hibernation/app-instance-<id>.swap` (it makes the folder a Node's reboot emptied), and their count in the result, `swap_subtree`; a cgroup with its own limit, such as 32 MiB, stays as it is
-  %%> - when it opened no inner cgroup, it writes no record and removes one left from before: a plain clone's wake takes the Node's resume, which never removes it
-  %%> - a cgroup that vanishes during the walk or refuses the write is not opened and fails nothing: its pages stay in RAM, which the check below counts
-  %%> - `incus pause`, then a reclaim of the container's memory
-  %%> - the processes and their state stay; their memory goes to swap, about 13 MiB stays in RAM for a clone, 78 MiB for a nested-fleet default
-  %%> - a frozen or stopped container stays as it is; a frozen one reports the `swap_subtree` of the sleep that froze it, from its record
-  %%> Why:
-  %%> - the reclaim follows the pause, so no running process pulls a page back
+  %%> - the plan is taken frozen, so it is exact; the reclaim follows it, so nothing stays in RAM by design
   %%> - with only the outer cgroup open, 1,531 MiB of a nested default stayed in RAM: a cgroup with 0 keeps its pages
-  %%> - swap opens only while the Instance sleeps: a running container never swaps
+  %%> Not included:
+  %%> - no HTTP request, no command in the container, no app file read, no route or process-name choice
   %%> On failure:
-  %%> - a failed swap write, record write or pause writes 0 back to each cgroup it opened, recorded or not, and removes the marker, `instance.container_freeze_failed`; the container serves as before
-  opt more than 32 MiB of anonymous memory stays in RAM
+  %%> - a capture that is unsupported, too large (docs/reference/prepared-restore.md#bounds) or too slow leaves no plan; the sleep goes on, `skipped` with its reason
+  %%> - a failed swap write or pause closes each limit it opened and removes the marker, `instance.container_freeze_failed`; the container serves as before
+  opt more than 32 MiB anonymous stays in RAM, same phase
     alt a nested-fleet Instance
-      SW->>N: Resume, never stop<br/>Ansible · resume, close swap
+      Note over N: Resume, never stop<br/>helper restore, close swap
       %%> Why:
       %%> - a stop loses the Club key in /run and the tunnel `wg-nested`; only a deployment or a start gives them back
       %%> Result:
       %%> - the container runs again, swap closes on each cgroup the freeze opened, the marker goes; the run fails `instance.container_freeze_failed`
       %%> - the Instance serves as before; free swap and run the command again
     else any other Instance
-      SW->>N: Stop the container<br/>Ansible · resume, incus stop
+      Note over N: Stop the container<br/>helper restore, incus stop
       %%> Why:
       %%> - swap is full; a frozen container would hold RAM, which a sleep exists to free
       %%> Result:
-      %%> - `sleep: stopped`; the next wake boots it behind the same marker
+      %%> - `sleep: stopped`; the restore consumed the plan, `skipped`, `stopped`; the next wake boots it behind the same marker
       %%> On failure:
       %%> - the resumed container runs: swap closes again, the marker goes, `instance.container_freeze_failed`
     end
@@ -83,6 +81,7 @@ sequenceDiagram
     Note over GW: Record asleep
     %%> Result:
     %%> - the runtime's `power_state` is `stopped` for a frozen and a stopped container; the result says `sleep: frozen` or `sleep: stopped`, and `swap_subtree`, the number of inner cgroups the freeze opened
+    %%> - `prepared_restore`: `ready` with the plan's processes, bytes and `prepare_seconds`, or `unsupported`, `skipped` or `not_applicable` with a reason; `residual_anon_bytes` and `residual_file_bytes` from the last read
     %%> - `t3_turn` is `idle` when the idle sleep read T3 first, `no_server` for an Instance without a T3 server, whoever started the sleep, and `not_checked` for the command
     %%> - the Conn layer shows its T3 server asleep; the hourly renewal skips it
   else a step fails
