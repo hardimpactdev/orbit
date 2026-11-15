@@ -79,6 +79,7 @@ function fixture(containers: Record<string, Record<string, unknown>>, options: {
   Deno.copyFileSync(new URL("fleet-converge-inputs.json", root), `${folder}/fleet-converge-inputs.json`);
   // The refresh sends instance_shape_tools.py into the container the same way.
   Deno.copyFileSync(new URL("instance_shape_tools.py", root), `${folder}/instance_shape_tools.py`);
+  Deno.copyFileSync(new URL("instance_fleet_shrink.py", root), `${folder}/instance_fleet_shrink.py`);
   Deno.writeTextFileSync(`${folder}/play.yml`, [
     "- name: Run one phase of the fleet step",
     "  hosts: localhost",
@@ -238,6 +239,11 @@ const tokenRead = "incus exec nested-gateway --cwd /home/orbit/orbit/swamp -- ru
   "swamp access token list --json";
 /** The pinned shape tools in the Instance container: instance_shape_tools.py, named by the workspace's own gate, after base. */
 const toolsCall = "python3 -I -c <instance_shape_tools.py> /srv/workspace";
+/** The shrink of the nested root disks in the Instance container: instance_fleet_shrink.py, its mode, then these arguments. */
+const shrinkCall = "python3 -I -c <instance_fleet_shrink.py> ";
+const shrinkArgs = "/var/lib/orbit/fleet-shrink.json /var/lib/incus/storage-pools nested-gateway nested-app-dev nested-app-prod";
+/** What a refresh did with `base` and the shrink, and why. */
+const shrunk = (result: Record<string, unknown> | null) => [result?.base, result?.shrink, result?.shrink_reason];
 /** The remint play on the nested Gateway: it makes the worker set whole and renews the six tokens. */
 const remint = "incus exec nested-gateway -- env ANSIBLE_CONFIG=/home/orbit/orbit/swamp/ansible/ansible.cfg ANSIBLE_DISPLAY_FAILED_STDERR=true " +
   "/opt/orbit/ansible/venv/bin/ansible-playbook -i localhost, -e @/opt/orbit/bootstrap/control.yml --tags remint /home/orbit/orbit/swamp/ansible/gateway-bootstrap.yml";
@@ -504,6 +510,8 @@ Deno.test({
         ...names.map((name) => exec(name, "systemctl show --property=ActiveState --value apt-daily.service apt-daily-upgrade.service")),
         ...convergeCalls,
         ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
+        // The shrink check: no package changed since the last shrink, so it adds nothing to `base`.
+        shrinkCall + "check " + shrinkArgs,
         // `base` is due for all three, so readiness waits until they run again.
         ...names.map((name) => `incus stop ${name} --timeout 90`),
         "incus list --format csv --columns ns",
@@ -1142,7 +1150,9 @@ Deno.test({
       const result = f.refreshed()!;
       assertEquals({ ...result, seconds: undefined }, { migrate: "skipped", restart: "no", converge: "skipped", converge_reason: "unchanged",
         converge_nodes: [], changed: 0, tokens: "young", tokens_reason: "recorded", base: "kept", base_containers: [], record: "present", tools: "present",
-        tools_reason: "current", seconds: undefined });
+        tools_reason: "current", shrink: "skipped", shrink_reason: "current", seconds: undefined });
+      // Nothing changed in the nested containers' packages: one shrink check, no shrink run.
+      assertEquals(calls.filter((call) => call.startsWith(shrinkCall)), [shrinkCall + "check " + shrinkArgs]);
       // The record vouches for the oldest token: no read and no remint.
       assertEquals([calls.filter((call) => call === tokenRead).length, ran(calls, "--tags remint")], [0, false]);
       assertEquals(Object.keys(result.seconds as object), ["gateway", "converge", "ready", "base", "tools"]);
@@ -1179,6 +1189,7 @@ Deno.test({
         intentRead,
         ...compareReads,
         ...names.map((name) => `incus query /1.0/instances/${name}/snapshots?recursion=1`),
+        shrinkCall + "check " + shrinkArgs,
         ...readyCalls,
         toolsCall,
         recordWrite,
@@ -1379,6 +1390,77 @@ Deno.test({
       const calls = f.calls();
       assert(!ran(calls, parts.converge), calls.join("\n"));
       assertEquals(takes(calls), ["incus snapshot create nested-app-prod base"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      const takes = (calls: string[]) => calls.filter((call) => call.startsWith("incus snapshot create "));
+      // A nested container's package changed since the last shrink, and duperemove is not there yet: only the relink runs.
+      f.change((state) => {
+        state.shrink = { due: true, reason: "packages" };
+        state.shrinkResult = { shrink: "relinked", relinked: 345, dedupe: "missing" };
+      });
+      f.calls();
+      const relinked = f.run("refresh");
+      assert(relinked.ok, relinked.output);
+      let calls = f.calls();
+      assert(!ran(calls, parts.converge), calls.join("\n"));
+      const run = calls.indexOf(shrinkCall + "run " + shrinkArgs);
+      const deletes = calls.flatMap((call, index) => call.startsWith("incus snapshot delete ") ? [index] : []);
+      assertEquals(deletes.length, 3, calls.join("\n"));
+      assert(run > Math.max(...deletes) && run < calls.indexOf(takes(calls)[0]), calls.join("\n"));
+      assertEquals(takes(calls).length, 3);
+      for (const name of names) assertEquals(f.state().containers[name].status, "Running");
+      assertEquals(shrunk(f.refreshed()), ["retaken", "relinked", "packages"]);
+
+      // Without its dedupe the shrink is due again, and with duperemove both parts run: base of all three again.
+      f.change((state) => delete state.shrinkResult);
+      assert(f.run("refresh").ok);
+      calls = f.calls();
+      assertEquals(takes(calls).length, 3);
+      assertEquals(shrunk(f.refreshed()), ["retaken", "ran", "packages"]);
+
+      // The next refresh finds it current: one check, no run, and base stays.
+      const before = structuredClone(f.state().containers);
+      assert(f.run("refresh").ok);
+      calls = f.calls();
+      assertEquals(calls.filter((call) => call.startsWith(shrinkCall)), [shrinkCall + "check " + shrinkArgs]);
+      assertEquals(takes(calls), []);
+      for (const name of names) assertEquals(f.state().containers[name].snapshots.base, before[name].snapshots.base);
+      assertEquals(shrunk(f.refreshed()), ["kept", "skipped", "current"]);
+    } finally {
+      f.cleanup();
+    }
+  },
+});
+
+Deno.test({
+  name: "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named",
+  ignore: !hasAnsible,
+  fn() {
+    const f = refreshedOnce();
+    try {
+      f.change((state) => state.shrinkExit = 124);
+      f.calls();
+      assert(f.run("refresh").ok);
+      assertEquals(f.calls().filter((call) => call.startsWith("incus snapshot create ")), []);
+      assertEquals(shrunk(f.refreshed()), ["kept", "skipped", "unreadable"]);
+      f.change((state) => {
+        delete state.shrinkExit;
+        state.shrink = { due: true, reason: "record" };
+        state.shrinkResult = { shrink: "failed", relinked: 0, dedupe: "failed" };
+      });
+      const failed = f.run("refresh");
+      assert(failed.ok, failed.output);
+      assertEquals(shrunk(f.refreshed()), ["retaken", "failed", "record"]);
     } finally {
       f.cleanup();
     }

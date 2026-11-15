@@ -1,5 +1,5 @@
 order = 30
-source_sha256 = "edae3335c8d16591cdcffead7ff9c81468868ff67740dd1c1242eb5fa8cc4865"
+source_sha256 = "146b728a70e52a44c38a01bd2554d8fa0dc42407d03438d8c56632a0f3dc72a8"
 cases = [
   "the rules give the exported fleet its devices, ID mapping and proxy, check them, and a rerun changes nothing",
   "a start without the Club key starts the three containers, brings up wg-nested with ip and wg, and checks only that they run and the tunnel reaches the hub; a rerun only reads",
@@ -40,6 +40,8 @@ cases = [
   "a converge with changed tasks retakes base only for the changed Node and Gateway",
   "a converge without change counts retakes all three bases",
   "a missing base is retaken without another converge",
+  "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current",
+  "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named",
   "a failed refresh that changed a Node removes its old record and writes none",
   "a refresh after a failed run converges every part and retakes all three bases",
   "a deleted record runs every part and never fails the refresh",
@@ -68,9 +70,10 @@ cases = [
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps",
 ]
 file = "swamp/tests/ansible_instance_fleet_test.ts"
-cost = 2551
-slices = 65
+cost = 2618
+slices = 67
 inputs = [
+  "swamp/ansible/instance_fleet_shrink.py",
   "swamp/ansible/fleet-converge-inputs.json",
   "bin/swamp-shape-gate",
   "swamp/ansible/ansible.cfg",
@@ -154,3 +157,5 @@ inputs = [
   "a deployment starts an older fleet, refreshes its absent caller map with all Nodes stopped, and resets from the upgraded base" = 100
   "standalone starts and proof resets refuse absent caller maps, and deployment starts still refuse conflicting maps" = 60
   "a failed upgrade resumes the older fleet restored from its admitted seed without writing missing maps" = 45
+  "a due shrink retakes base of all three with the relink and the dedupe between the old base's delete and the new base; then it is current" = 45
+  "a shrink check or run that fails or prints no result never fails the refresh: a failed check keeps base, a failed run is named" = 22

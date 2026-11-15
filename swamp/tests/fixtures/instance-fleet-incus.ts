@@ -9,9 +9,12 @@ const folder = Deno.env.get("HOST_FIXTURE")!;
 const file = `${folder}/state.json`;
 const state = JSON.parse(Deno.readTextFileSync(file));
 const args = [...Deno.args];
-// A script sent with `python3 -c` (instance_node_services.py) or `python3 -I -c` (instance_shape_tools.py) is recorded by its name.
+// A script sent with `python3 -c` (instance_node_services.py) or `python3 -I -c` (instance_shape_tools.py, and instance_fleet_shrink.py,
+// whose first argument is its mode) is recorded by its name.
+const shrinkScript = args[5] === "python3" && args[6] === "-I" && args[7] === "-c" && ["check", "run"].includes(args[9]);
 const recorded = args[5] === "python3" && args[6] === "-c" ? [...args.slice(0, 7), "<instance_node_services.py>", ...args.slice(8)]
-  : args[5] === "python3" && args[6] === "-I" && args[7] === "-c" ? [...args.slice(0, 8), "<instance_shape_tools.py>", ...args.slice(9)] : args;
+  : args[5] === "python3" && args[6] === "-I" && args[7] === "-c"
+  ? [...args.slice(0, 8), shrinkScript ? "<instance_fleet_shrink.py>" : "<instance_shape_tools.py>", ...args.slice(9)] : args;
 Deno.writeTextFileSync(`${folder}/${args[0] === "--project" ? "calls" : "node-calls"}`, JSON.stringify(recorded) + "\n", { append: true });
 const save = () => Deno.writeTextFileSync(file, JSON.stringify(state));
 const fail = (message: string, code = 1): never => {
@@ -66,6 +69,21 @@ if (command[0] === "python3" && command[1] === "-c" && command[3] === "proxy") {
   done({ changed });
 }
 if (command[0] === "systemctl" && command[1] === "try-restart") done();
+
+// instance_fleet_shrink.py in the Instance container: `check` answers `shrink` (by default not due), `run` answers `shrinkResult` (by
+// default both parts ran) and makes the next check current; `shrinkExit` ends either with that code and no result line.
+if (command[0] === "python3" && command[1] === "-I" && command[2] === "-c" && ["check", "run"].includes(command[4])) {
+  if (command[5] !== "/var/lib/orbit/fleet-shrink.json" || command[6] !== "/var/lib/incus/storage-pools") fail(`The shrink script got ${command.slice(5, 7)}`);
+  if (state.shrinkExit) {
+    save();
+    console.error("Traceback (most recent call last):");
+    Deno.exit(state.shrinkExit);
+  }
+  if (command[4] === "check") done(JSON.stringify(state.shrink ?? { due: false, reason: "current" }));
+  const result = state.shrinkResult ?? { shrink: "ran", relinked: 345, dedupe: "ran" };
+  if (result.shrink === "ran") state.shrink = { due: false, reason: "current" };
+  done(JSON.stringify(result));
+}
 
 // instance_shape_tools.py in the Instance container: its last line is the result, and its programs write to standard error.
 // `tools` is what the container holds: "present" (the default) or "missing", which a build makes "present". `toolsFail` names the step
