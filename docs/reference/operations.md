@@ -624,7 +624,7 @@ After the admission commits and its execution copies are acknowledged, `SwampDis
 
 Proof children use the spaced sequence below. The API answers `202` with the queued Operation without waiting for native start confirmation. This applies to every admission through the shared dispatcher, including Instance creates and Conn pairings. The job contains only the Operation ID; it reads the committed intent and prepares any run-time execution copies when it runs. Clients follow the same Operation through queued, running and terminal states.
 
-A start whose connection fails is queued again. This covers the start's own connection and the connection of a run-time execution copy. Nothing was sent on it, and `workflow.run` is the first frame of a start, so no run can exist.
+A start whose connection fails is queued again. A start's run-time execution copies and its `workflow.run` share one connection, so this covers both. Nothing was sent on it, and `workflow.run` is the first frame of a start, so no run can exist. An admission copy refused with `429` waits once instead ([Swamp command steps](/reference/swamp-command-steps#secret-inputs)).
 
 The Operation returns to `queued` with `state.start_deferrals` counted; `started_at` stays, so its admission budget keeps counting. Its job runs again after serve's `Retry-After` plus one second, or after 5, 10 and 20 seconds when serve names none, at most 65 seconds. The new job begins the start under the same lock, so only one job ever submits it.
 

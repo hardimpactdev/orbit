@@ -10,6 +10,8 @@ use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\AgentView\WebSocketEndpoint;
 use App\Infrastructure\AgentView\WebSocketException;
 use App\Infrastructure\Gateway\GatewayHorizon;
+use App\Infrastructure\Swamp\SwampConnection;
+use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Models\Node;
 use App\Models\Operation;
@@ -141,13 +143,23 @@ function sideBySideNode(): Node
     return Node::query()->where('name', 'beast')->first() ?? containerDefaultNode();
 }
 
-/** Runs one start job as a worker does: a failed start throws after it recorded its failure. */
+/**
+ * Runs one start job as a worker does: a failed start throws after it recorded its failure. A job that runs inside another one's
+ * wait stands for another Horizon process, so it gets its own dispatch and kept connection, and the waiting job keeps its own.
+ */
 function workStart(int $operationId): void
 {
+    $process = [SwampDispatch::class => app(SwampDispatch::class), SwampConnection::class => app(SwampConnection::class)];
+    app()->instance(SwampDispatch::class, new SwampDispatch);
+    app()->instance(SwampConnection::class, new SwampConnection);
     try {
         app()->call([new StartAdmittedSwampRun($operationId), 'handle']);
     } catch (ResourceOperationException) {
         // Recorded on the Operation.
+    } finally {
+        foreach ($process as $abstract => $instance) {
+            app()->instance($abstract, $instance);
+        }
     }
 }
 

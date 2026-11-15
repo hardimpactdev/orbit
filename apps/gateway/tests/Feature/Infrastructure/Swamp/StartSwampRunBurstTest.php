@@ -2,6 +2,7 @@
 
 declare(strict_types=1);
 
+use App\Domain\Operations\DirectOperation;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Projects\ProjectType;
 use App\Domain\Shared\ResourceOperationException;
@@ -167,9 +168,9 @@ beforeEach(function (): void {
 
 it('starts every Operation released at once although serve refuses part of the burst', function (): void {
     $operations = burstCreates(4);
-    // Each create pushes its execution copies over one connection and then connects for its start: 8 connections. A limit of 7
-    // refuses the last start of the burst, as 50 refused Nick's four destroys after a removal's cleanup on 13 November.
-    $serve = new BurstLimitedServe(limit: 7);
+    // Each create pushes its execution copies and sends its start over one connection: 4 connections. A limit of 3 refuses the last
+    // start of the burst, as 50 refused four destroys after a removal's cleanup on 13 November.
+    $serve = new BurstLimitedServe(limit: 3);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
 
@@ -192,8 +193,9 @@ it('starts every Operation released at once although serve refuses part of the b
 
 it('queues a refused start again after Retry-After and sends it once when serve admits it', function (): void {
     [$operation] = burstCreates(1);
-    // The first connection carries an execution copy; the next one, before any start frame, is refused.
-    $serve = new BurstLimitedServe(limit: 1, windowSeconds: 20);
+    $this->freezeTime();
+    // Other work spent serve's window: the start's one connection, before its first execution copy, is refused.
+    $serve = new BurstLimitedServe(limit: 0, windowSeconds: 20);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
 
@@ -220,7 +222,7 @@ it('queues a refused start again after Retry-After and sends it once when serve 
 
 it('fails a start for good after its last deferral, never having sent it', function (): void {
     [$operation] = burstCreates(1);
-    $serve = new BurstLimitedServe(limit: 1, windowSeconds: 100_000);
+    $serve = new BurstLimitedServe(limit: 0, windowSeconds: 100_000);
     app()->instance(WebSocketClient::class, $serve);
     $ran = [];
 
@@ -362,4 +364,27 @@ it('does not fail a start that a duplicate job began while its deferral could no
     app(StartSwampRun::class)->refuse($operation, new ResourceOperationException('swamp.start_enqueue_failed', 'The native workflow start could not be queued.', 503), onlyQueued: true);
 
     expect($operation->refresh()->status)->toBe(OperationStatus::Running)->and($operation->error_code)->toBeNull();
+});
+
+it('queues a start again when serve refuses the start\'s own connection after its copies were already stored', function (): void {
+    $this->freezeTime();
+    [$operation] = burstCreates(1);
+    $serve = new BurstLimitedServe(limit: 100);
+    app()->instance(WebSocketClient::class, $serve);
+    // The run-time copies are stored and their digests kept, as an earlier attempt leaves them: this start pushes none again.
+    app(DirectOperation::class)->workflowInputs($operation);
+    $stored = count($serve->frames);
+    $serve->limit = 0;
+    $ran = [];
+
+    runDueStarts($ran);
+
+    expect($stored)->toBeGreaterThan(0)
+        ->and(array_slice($serve->frames, $stored))->toBe([])
+        ->and($serve->refused)->toBe(1)
+        ->and($operation->refresh()->status)->toBe(OperationStatus::Queued)
+        ->and($operation->error_code)->toBeNull()
+        ->and($operation->state['start_deferrals'])->toBe(1);
+    $pushed = Queue::pushedJobs()[StartAdmittedSwampRun::class];
+    expect(end($pushed)['job']->delay->getTimestamp() - now()->getTimestamp())->toBe(61);
 });
