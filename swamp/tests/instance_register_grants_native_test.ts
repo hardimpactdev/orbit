@@ -5,8 +5,8 @@
  * Swamp names a sensitive field's vault key from the method name (data_writer.ts at db3f6373); the grant allows the Gateway's run to
  * write only `...-register-session-...` and `...-renew-session-...`. #3794 ran the create's registration as a new method, so its sessions
  * would have gone to `...-create_register-session-...`: refused by the grant, and not the key the Gateway reads (release 2086's
- * pre-check). This test takes each real step from its workflow, runs it under the enforced grants, and checks the STORED key names and
- * that the Gateway's read of the key the step RETURNED finds the session.
+ * pre-check). This test takes each real step from its workflow, runs it under the enforced grants (a refused write of #3794's key is
+ * the control), and checks the STORED key names and that the Gateway's read of the key the step RETURNED finds the session.
  */
 import { assert, assertEquals } from "jsr:@std/assert@1";
 import { parse, stringify } from "jsr:@std/yaml@1";
@@ -95,7 +95,14 @@ async function world(inputs: RecordValue, build: (run: string) => Step[]) {
             if (!up) await new Promise((resolve) => setTimeout(resolve, 500));
         }
         assert(up, "serve did not start");
-        return { run, call, close, name: created.name as string, server: ["--server", `ws://127.0.0.1:${port}`, "--token", token] };
+        const server = ["--server", `ws://127.0.0.1:${port}`, "--token", token];
+        // The control: this serve enforces the grants per key. #3794's key, stored here directly, is refused to the Gateway's read.
+        const denied = "nckrtl-instance-t3-00000000-0000-4000-8000-000000000001-create_register-session-gateway-8-token";
+        await must(["vault", "put", "orbit-control-inputs", denied, "fixture-refused-value"]);
+        const refused = await call(["vault", "read-secret", "orbit-control-inputs", denied, ...server]);
+        assert(!refused.ok && !refused.out.includes("fixture-refused-value") && /Access denied: user:orbit-gateway/.test(refused.out + refused.err), `the release grants are not enforced: ${refused.out.slice(0, 300)}`);
+        await must(["vault", "delete", "orbit-control-inputs", denied]);
+        return { run, call, close, name: created.name as string, server };
     } catch (error) {
         await close();
         throw error;
@@ -154,7 +161,7 @@ Deno.test({ name: "a clone create's registration stores its sessions under the k
 } });
 
 Deno.test({ name: "a migrate's registration stores its sessions under the same allowed keys, which the Gateway reads", ignore: !binary, async fn() {
-    const { inputs, step } = flowStep("workflow-operation-instance-migrate.yaml", "t3-register");
+    const { step } = flowStep("workflow-operation-instance-migrate.yaml", "t3-register");
     const w = await world({ type: "object" }, (run) => {
         step.task.inputs = { ...(step.task.inputs as RecordValue), instance_id: 8, folder: run };
         delete step.guard;
@@ -163,7 +170,6 @@ Deno.test({ name: "a migrate's registration stores its sessions under the same a
         Deno.writeTextFileSync(`${run}/t3.json`, reply);
         return [step];
     });
-    void inputs;
     try {
         const done = await register(w, {}, "t3-register");
         assertEquals(done.stored.length, 2, done.stored.join(" "));

@@ -1,5 +1,5 @@
 order = 861
-source_sha256 = "ed8840393d9ddefc0f213a03875b23483800f4ea99b04983027b2a28d792d58d"
+source_sha256 = "47852341aa602b951faf49d108d9d2dfc513fb8b205a6bd1ce41e64b280802d0"
 cases = [
   "a clone create's registration stores its sessions under the keys the release grants allow and the Gateway reads",
   "a migrate's registration stores its sessions under the same allowed keys, which the Gateway reads",
@@ -16,6 +16,8 @@ inputs = [
   "swamp/config/gateway-workflow-grants.json",
   "swamp/config/serve-grants.json",
   "apps/gateway/bin/render-swamp-grants",
+  "apps/gateway/app/Infrastructure/GatewayReleases/SwampGrantRenderer.php",
+  "apps/gateway/app/Support/ValidatedData.php",
   "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
   "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",

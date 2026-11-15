@@ -52,7 +52,7 @@ function check(session: { status: number; body: string }): z.infer<typeof Authen
 }
 
 /** The run folder of a migrate's registration, which holds `t3.json`. */
-const Args = z.object({
+export const Args = z.object({
     instance_id: z.number().int().positive(),
     folder: z.string().regex(/^\/tmp\/orbit-ansible-[A-Za-z0-9-]+$/),
 });

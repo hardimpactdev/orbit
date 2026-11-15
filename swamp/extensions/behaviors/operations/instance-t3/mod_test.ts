@@ -1,6 +1,7 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { behavior, register, renew } from "./mod.ts";
+import { Args, behavior, register, renew } from "./mod.ts";
+import { CreateArgs } from "../instance-dev-command/result.ts";
 
 const gatewayToken = "private-gateway-sentinel";
 const swampToken = "private-swamp-sentinel";
@@ -228,9 +229,12 @@ Deno.test("each workflow step of @nckrtl/instance-t3 passes the arguments of the
             const method = (behavior.methods as Record<string, { arguments: { shape: Record<string, { isOptional(): boolean }> } }>)[step.task.methodName!];
             assert(method !== undefined, `${file.name} ${step.name}: no method ${step.task.methodName}`);
             const given = Object.keys(step.task.inputs ?? {}).sort();
-            const required = Object.entries(method.arguments.shape).filter(([, field]) => !field.isOptional()).map(([key]) => key);
+            // `register` takes either shape whole (RegisterArgs): the create's when the step passes `intent`, else the migrate's.
+            const shape = (step.task.methodName === "register" ? (given.includes("intent") ? CreateArgs : Args) : method.arguments).shape as
+                Record<string, { isOptional(): boolean }>;
+            const required = Object.entries(shape).filter(([, field]) => !field.isOptional()).map(([key]) => key);
             for (const key of required) assert(given.includes(key), `${file.name} ${step.name}: missing ${key}`);
-            for (const key of given) assert(key in method.arguments.shape, `${file.name} ${step.name}: unknown ${key}`);
+            for (const key of given) assert(key in shape, `${file.name} ${step.name}: unknown ${key}`);
         }
     }
     assert(seen >= 3, `${seen} steps`);
