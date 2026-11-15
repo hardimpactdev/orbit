@@ -224,6 +224,26 @@ No Cluster or Node TLD can equal, contain, or sit below either private zone: `or
 
 Doctor does not report stored TLD overlaps. Operators must inspect existing Cluster and Node TLDs and correct conflicts. This input guard does not remove stored conflicts or change their DNS publication.
 
+### Records a TLD already answers
+
+Private DNS answers by TLD. The Gateway writes no exact record that a TLD rule already answers with the same address for every requester. So a create or destroy of a Route under its Cluster TLD changes no private DNS, and its run has no DNS step.
+
+A `host-record` line is left out when all of these hold:
+
+- The listener's first matching suffix, and dnsmasq's most specific `address=` rule, both give the record's address.
+- Each requester with LAN overrides either has an override for the name itself or gets the same address from its suffix override.
+
+A LAN override for a name is left out when its requester gets the same address from its suffix override and no exact record stands in between. In practice the Cluster TLD's own override (`test`) answers every Cluster Route under it.
+
+These keep their lines:
+
+- A site on another Node than the one the TLD answers with, such as a Node-scoped Route on a member.
+- A Node-scoped Route on the Router, because a member would otherwise get the Router's LAN address from the TLD override.
+- A name outside every TLD, and the platform names.
+- Every site of a Cluster while a Router change renders it with another Router.
+
+Every requester gets the same address as with the exact record. dnsmasq on the `vpn` Node also stops giving a reverse (PTR) answer for a name left out; nothing in Orbit asks for one. Lines that an older render wrote stay until the next publication that writes the whole records file, and they give the same answers. This is ADR 0234's rule, decided on 2026-10-26.
+
 ### Inspect the selection
 
 Inspect the published catalog and the listener on the `vpn` Node. Then query from the Node whose answer you want to explain.
@@ -241,6 +261,7 @@ Inspect the published catalog and the listener on the `vpn` Node. Then query fro
 | --- | --- |
 | `overrides` has `node:<id>` for the name | That Node gets the Router's LAN address. |
 | The name is only under `records` or `suffixes` | The answer is the Router's WireGuard address. |
+| The name is in neither, under the Cluster TLD | The TLD's own override and suffix answer it ([records a TLD already answers](#records-a-tld-already-answers)). |
 | The query source is not in `requesters` | The Gateway treats the source as unknown and answers with the WireGuard address. |
 
 To remove wrong LAN intent, run the Node's provision operation again without `lan_ip`, or with the right one. The Gateway republishes the affected answers before the new Node, Cluster, Router, or Route state becomes authoritative. A refused Cluster or Router change stays refused.
