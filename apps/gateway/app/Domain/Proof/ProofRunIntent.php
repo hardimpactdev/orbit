@@ -289,8 +289,8 @@ final readonly class ProofRunIntent
     {
         try {
             return app(ProofFreshHosts::class)->assess($mergeBase);
-        } catch (GitHubApiException) {
-            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the age of the ready copies cannot be checked.', 503);
+        } catch (GitHubApiException $exception) {
+            throw ProofGitHubRefusal::from($exception, 'the age of the ready copies cannot be checked');
         }
     }
 
@@ -474,8 +474,8 @@ final readonly class ProofRunIntent
             }
 
             return new ProofSelectionResult($selected, array_values($uncovered), $everything, $base);
-        } catch (GitHubApiException) {
-            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
+        } catch (GitHubApiException $exception) {
+            throw ProofGitHubRefusal::from($exception, 'the cases cannot be selected');
         } catch (ParseException) {
             throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML.', 409);
         }
@@ -487,8 +487,8 @@ final readonly class ProofRunIntent
             $changes ??= $this->source->changes($commit);
             $list = $this->source->file($commit, ProofSelectionList::Path);
             $casesFiles = ProofSelection::casesFiles($this->source->proofPaths($commit));
-        } catch (GitHubApiException) {
-            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
+        } catch (GitHubApiException $exception) {
+            throw ProofGitHubRefusal::from($exception, 'the cases cannot be selected');
         }
 
         $selection = ProofSelection::select($list, $changes, $all, $casesFiles);
@@ -526,8 +526,8 @@ final readonly class ProofRunIntent
             return new ProofSelectionResult($selected, $selection->uncovered, $selection->everythingBecause, $selection->mergeBase);
         } catch (ParseException) {
             throw new ResourceOperationException('proof.selection_invalid', 'Malformed proof YAML.', 409);
-        } catch (GitHubApiException) {
-            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the cases cannot be selected.', 503);
+        } catch (GitHubApiException $exception) {
+            throw ProofGitHubRefusal::from($exception, 'the cases cannot be selected');
         }
     }
 }

@@ -9,6 +9,8 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubReadFailure;
+use App\Domain\GitHub\GitHubReadFailureKind;
 use App\Domain\GitHub\GitHubRepository;
 use App\Domain\GitHub\GitHubReviewOverflowException;
 use App\Domain\Proof\ProofChangedFile;
@@ -18,10 +20,13 @@ use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofSettings;
 use App\Infrastructure\GitHub\GitHubActionsReader;
+use Carbon\CarbonImmutable;
 use Illuminate\Container\Attributes\Scoped;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use PharData;
+use ReflectionClass;
 use SensitiveParameter;
 use Throwable;
 
@@ -36,25 +41,32 @@ final class GitHubProofCommitSource implements ProofCommitSource
     /** GitHub lists at most 300 files of a comparison, on its first page. */
     private const int COMPARE_FILES = 300;
 
+    /** Seconds of the pause before the one retry of a transient read. */
+    private const int RetryPauseSeconds = 2;
+
+    private const int ReadTimeoutSeconds = 10;
+
     /** @var array<string,string> One token per permission set, for the life of this request. */
     private array $tokens = [];
+
+    /** Whether this request spent its one retry of a transient read. */
+    private bool $retried = false;
 
     public function __construct(private readonly GitHubAppStore $store, private readonly GitHubApi $github, private readonly ProofSettings $settings, private readonly GitHubActionsReader $actions) {}
 
     public function commitExists(string $sha): bool
     {
-        $response = $this->get($this->contentsToken(), $this->path('/commits/'.$sha));
-        if (in_array($response->status(), [404, 422], true)) {
+        $response = $this->get($this->contentsToken(), 'commit', $this->path('/commits/'.$sha), expected: [404, 422]);
+        if ($response->status() !== 200) {
             return false;
         }
-        $this->assertOk($response);
 
         return $response->json('sha') === $sha;
     }
 
     public function branchesWithHead(string $sha): array
     {
-        $rows = $this->rows($this->get($this->contentsToken(), $this->path('/commits/'.$sha.'/branches-where-head')));
+        $rows = $this->rows($this->get($this->contentsToken(), 'commit branches', $this->path('/commits/'.$sha.'/branches-where-head')));
 
         return array_values(array_filter(array_map(static fn (mixed $row): ?string => is_array($row) && is_string($row['name'] ?? null) ? $row['name'] : null, $rows)));
     }
@@ -62,7 +74,7 @@ final class GitHubProofCommitSource implements ProofCommitSource
     public function pullRequestsWithHead(string $sha): array
     {
         $rows = $this->rows($this->get($this->token('pulls', fn (GitHubAppCredentials $c, int $i, GitHubRepository $r): string => $this->github->repositoryPullRequestReadToken($c, $i, $r)),
-            $this->path('/commits/'.$sha.'/pulls'), ['per_page' => self::PAGE_SIZE]));
+            'commit pull requests', $this->path('/commits/'.$sha.'/pulls'), ['per_page' => self::PAGE_SIZE]));
         $pullRequests = [];
         foreach ($rows as $row) {
             $number = is_array($row) ? ($row['number'] ?? null) : null;
@@ -80,11 +92,10 @@ final class GitHubProofCommitSource implements ProofCommitSource
     public function canWrite(string $login): bool
     {
         $response = $this->get($this->token('metadata', fn (GitHubAppCredentials $c, int $i, GitHubRepository $r): string => $this->github->repositoryMetadataToken($c, $i, $r)),
-            $this->path('/collaborators/'.rawurlencode($login).'/permission'));
-        if ($response->status() === 404) {
+            'collaborator permission', $this->path('/collaborators/'.rawurlencode($login).'/permission'), expected: [404]);
+        if ($response->status() !== 200) {
             return false;
         }
-        $this->assertOk($response);
 
         return in_array($response->json('permission'), ['admin', 'write'], true) || in_array($response->json('role_name'), ['admin', 'maintain', 'write'], true);
     }
@@ -101,8 +112,7 @@ final class GitHubProofCommitSource implements ProofCommitSource
 
     public function changes(string $sha): ProofChangedFiles
     {
-        $response = $this->get($this->contentsToken(), $this->path('/compare/'.rawurlencode($this->settings->baseBranch()).'...'.$sha), ['per_page' => 1]);
-        $this->assertOk($response);
+        $response = $this->get($this->contentsToken(), 'comparison', $this->path('/compare/'.rawurlencode($this->settings->baseBranch()).'...'.$sha), ['per_page' => 1]);
         $mergeBase = $response->json('merge_base_commit.sha');
         $rows = $response->json('files') ?? [];
         if (! is_string($mergeBase) || preg_match('/\A[0-9a-f]{40}\z/D', $mergeBase) !== 1 || ! is_array($rows) || ! array_is_list($rows) || count($rows) > self::COMPARE_FILES) {
@@ -132,11 +142,10 @@ final class GitHubProofCommitSource implements ProofCommitSource
 
     public function range(string $from, string $to): ?ProofCommitRange
     {
-        $response = $this->get($this->contentsToken(), $this->path('/compare/'.$from.'...'.$to), ['per_page' => 1]);
-        if (in_array($response->status(), [404, 422], true)) {
+        $response = $this->get($this->contentsToken(), 'comparison', $this->path('/compare/'.$from.'...'.$to), ['per_page' => 1], [404, 422]);
+        if ($response->status() !== 200) {
             return null;
         }
-        $this->assertOk($response);
         $status = GitHubComparisonStatus::tryFrom(is_string($response->json('status')) ? $response->json('status') : '');
         $mergeBase = $response->json('merge_base_commit.sha');
         $rows = $response->json('files') ?? [];
@@ -152,11 +161,10 @@ final class GitHubProofCommitSource implements ProofCommitSource
         $parents = [];
         $total = null;
         for ($page = 1; ; $page++) {
-            $response = $this->get($this->contentsToken(), $this->path('/compare/'.$base.'...'.$head), ['per_page' => self::PAGE_SIZE, 'page' => $page]);
-            if (in_array($response->status(), [404, 422], true)) {
+            $response = $this->get($this->contentsToken(), 'comparison', $this->path('/compare/'.$base.'...'.$head), ['per_page' => self::PAGE_SIZE, 'page' => $page], [404, 422]);
+            if ($response->status() !== 200) {
                 return null;
             }
-            $this->assertOk($response);
             $status = $response->json('status');
             if (! in_array($status, ['ahead', 'identical', 'behind', 'diverged'], true)) {
                 throw GitHubApiException::unavailable();
@@ -314,8 +322,7 @@ final class GitHubProofCommitSource implements ProofCommitSource
     /** @return array{tree: list<array<mixed>>, truncated: bool} */
     private function tree(string $sha, bool $recursive = false): array
     {
-        $response = $this->get($this->contentsToken(), $this->path('/git/trees/'.$sha), $recursive ? ['recursive' => '1'] : []);
-        $this->assertOk($response);
+        $response = $this->get($this->contentsToken(), 'git tree', $this->path('/git/trees/'.$sha), $recursive ? ['recursive' => '1'] : []);
         $tree = $response->json('tree');
         if (! is_array($tree) || ! array_is_list($tree)) {
             throw GitHubApiException::unavailable();
@@ -350,29 +357,66 @@ final class GitHubProofCommitSource implements ProofCommitSource
         return '/repos/'.rawurlencode($repository->owner).'/'.rawurlencode($repository->name).$suffix;
     }
 
-    /** @param array<string,mixed> $query */
-    private function get(#[SensitiveParameter] string $token, string $path, array $query = []): Response
+    /**
+     * One read. A transport error or a 5xx answer is read once more after a short pause, once for the life of this request (one
+     * admission), so GitHub trouble adds at most RetryPauseSeconds + ReadTimeoutSeconds to it. Any answer other than 200 or an
+     * `$expected` status fails with its reason; `$endpoint` names the read in that reason without its URL.
+     *
+     * @param  array<string,mixed>  $query
+     * @param  list<int>  $expected
+     */
+    private function get(#[SensitiveParameter] string $token, string $endpoint, string $path, array $query = [], array $expected = []): Response
     {
-        try {
-            return Http::baseUrl(self::BASE_URL)->timeout(10)->withoutRedirecting()->withToken($token)->withHeaders([
-                'Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28', 'User-Agent' => 'orbit-gateway',
-            ])->get($path, $query);
-        } catch (Throwable) {
-            throw GitHubApiException::unavailable();
+        while (true) {
+            try {
+                $response = Http::baseUrl(self::BASE_URL)->timeout(self::ReadTimeoutSeconds)->withoutRedirecting()->withToken($token)->withHeaders([
+                    'Accept' => 'application/vnd.github+json', 'X-GitHub-Api-Version' => '2022-11-28', 'User-Agent' => 'orbit-gateway',
+                ])->get($path, $query);
+                if ($response->status() === 200 || in_array($response->status(), $expected, true)) {
+                    return $response;
+                }
+                $failure = self::failure($endpoint, $response);
+            } catch (Throwable $exception) {
+                // Only the class: the message of a transport error carries the URL.
+                $failure = new GitHubReadFailure(GitHubReadFailureKind::Transient, $endpoint, transport: new ReflectionClass($exception)->getShortName());
+            }
+            if ($failure->kind !== GitHubReadFailureKind::Transient || $this->retried) {
+                throw GitHubApiException::readFailed($failure);
+            }
+            $this->retried = true;
+            Sleep::for(self::RetryPauseSeconds)->seconds();
         }
     }
 
-    private function assertOk(Response $response): void
+    /** Why GitHub refused a read. A rate limit is a 429, or a 403 with no requests left, a Retry-After or a rate-limit message; the reset comes from those headers. */
+    private static function failure(string $endpoint, Response $response): GitHubReadFailure
     {
-        if ($response->status() !== 200) {
-            throw GitHubApiException::unavailable();
+        $status = $response->status();
+        $retryAfter = $response->header('Retry-After');
+        $remaining = $response->header('X-RateLimit-Remaining');
+        $reset = $response->header('X-RateLimit-Reset');
+        $message = $response->json('message');
+        // A secondary limit may answer 403 with neither header; its message names the rate limit.
+        if ($status === 429 || ($status === 403 && ($remaining === '0' || $retryAfter !== '' || (is_string($message) && stripos($message, 'rate limit') !== false)))) {
+            $resetAt = match (true) {
+                ctype_digit($retryAfter) => CarbonImmutable::now('UTC')->addSeconds((int) $retryAfter)->startOfSecond(),
+                $remaining === '0' && ctype_digit($reset) => CarbonImmutable::createFromTimestampUTC((int) $reset),
+                default => null,
+            };
+
+            return new GitHubReadFailure(GitHubReadFailureKind::RateLimited, $endpoint, $status, resetAt: $resetAt);
         }
+
+        return new GitHubReadFailure(match (true) {
+            $status >= 500 => GitHubReadFailureKind::Transient,
+            in_array($status, [404, 422], true) => GitHubReadFailureKind::NotFound,
+            default => GitHubReadFailureKind::Refused,
+        }, $endpoint, $status);
     }
 
     /** @return list<mixed> */
     private function rows(Response $response): array
     {
-        $this->assertOk($response);
         $rows = $response->json();
 
         return is_array($rows) && array_is_list($rows) ? $rows : throw GitHubApiException::unavailable();

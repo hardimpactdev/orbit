@@ -163,7 +163,10 @@ The request answers at once with the proof Operation. The checks of the commit, 
 | `proof.capacity_timeout` | The proof was not admitted within 120 minutes of creation, while waiting for its turn, the working proof or a copy place. No case ran. |
 | `proof.execution_disabled` | Cases are selected, and proof execution is switched off. The input of the proof holds the selected cases and the uncovered paths. |
 | `proof.selection_invalid` | The selection list of the commit is malformed. The message names the line. |
-| `proof.github_unavailable` | GitHub could not be read, so the commit or its cases cannot be checked. Run the command again. |
+| `proof.github_unavailable` | A GitHub read failed with a transport error or a 5xx answer, also after one more read, so the commit or its cases cannot be checked. The message names the read and the status or error class; a failure outside the read itself, such as a malformed answer or a missing App installation, gives GitHub's or the Gateway's own reason. Run the command again. |
+| `proof.github_rate_limited` | GitHub refused a read at its primary or secondary rate limit. The message gives the reset time when GitHub sent one. Run the command again after the reset. |
+| `proof.github_refused` | GitHub refused a read or the token request with 401, a 403 that is not a rate limit, or another answer that the read does not expect. The message names the read and the status. An operator must check the Gateway GitHub App and its access to the repository. |
+| `proof.github_not_found` | A GitHub read answered 404 or 422: the commit, base or tree that the proof needs does not exist. The message names the read. Running the command again does not help. |
 | `proof.swamp_unavailable` | No active Swamp Node exists to run the proof. |
 | `node_access.required` | The calling Node has no access grant to the Gateway Node. |
 | `extension.disabled` | The tasks extension is off. |

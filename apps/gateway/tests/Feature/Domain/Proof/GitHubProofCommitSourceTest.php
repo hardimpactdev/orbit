@@ -7,10 +7,16 @@ use App\Domain\GitHub\GitHubApiException;
 use App\Domain\GitHub\GitHubAppCredentials;
 use App\Domain\GitHub\GitHubAppStore;
 use App\Domain\GitHub\GitHubComparisonStatus;
+use App\Domain\GitHub\GitHubReadFailureKind;
 use App\Domain\Proof\ProofCommitSource;
+use App\Domain\Proof\ProofCommitTrust;
+use App\Domain\Proof\ProofGitHubRefusal;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Sleep;
 use Mockery\MockInterface;
 
 uses(LazilyRefreshDatabase::class);
@@ -31,6 +37,7 @@ function githubSource(): ProofCommitSource
         $github->shouldReceive('blobContents')->with('contents-token', Mockery::any(), 'b1')->andReturn('LIST');
     }));
     Http::preventStrayRequests();
+    Sleep::fake();
 
     return app(ProofCommitSource::class);
 }
@@ -287,3 +294,88 @@ it('distinguishes an empty range from a nonancestor or missing base', function (
 
     expect(githubSource()->history($base, $base))->toBe($expected);
 })->with([['identical', 200, []], ['diverged', 200, null], ['behind', 200, null], ['missing', 404, null]]);
+
+/** The failure of one read of the branches of the commit, after the source spent what it may on it. */
+function failedBranchRead(): GitHubApiException
+{
+    try {
+        githubSource()->branchesWithHead(SOURCE_SHA);
+    } catch (GitHubApiException $exception) {
+        return $exception;
+    }
+    throw new LogicException('Expected a failed read.');
+}
+
+describe('a failed GitHub read keeps its reason', function (): void {
+    it('names the read, the status or transport error and a rate-limit reset, and retries only a transient failure', function (Closure $answer, GitHubReadFailureKind $kind, string $reason, int $requests): void {
+        CarbonImmutable::setTestNow('2026-11-15T05:02:14Z');
+        $sent = 0;
+        Http::fake(['api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA.'/branches-where-head' => function () use ($answer, &$sent) {
+            $sent++;
+
+            return $answer();
+        }]);
+
+        $exception = failedBranchRead();
+
+        expect($exception->readFailure?->kind)->toBe($kind)->and($exception->getMessage())->toBe($reason)->and($sent)->toBe($requests);
+        $requests === 2 ? Sleep::assertSequence([Sleep::for(2)->seconds()]) : Sleep::assertNeverSlept();
+    })->with([
+        'a 5xx, twice' => [fn () => Http::response(['message' => 'Server Error'], 503), GitHubReadFailureKind::Transient, 'The commit branches read answered HTTP 503.', 2],
+        'a transport error, twice' => [fn () => throw new ConnectionException('cURL error 28: timed out'), GitHubReadFailureKind::Transient, 'The commit branches read failed with ConnectionException.', 2],
+        'the primary rate limit' => [fn () => Http::response(['message' => 'API rate limit exceeded'], 403, ['X-RateLimit-Remaining' => '0', 'X-RateLimit-Reset' => '1794722400']),
+            GitHubReadFailureKind::RateLimited, 'The commit branches read hit the GitHub rate limit (HTTP 403), which resets at 2026-11-15T06:00:00+00:00.', 1],
+        'a secondary rate limit' => [fn () => Http::response(['message' => 'You have exceeded a secondary rate limit'], 429, ['Retry-After' => '60']),
+            GitHubReadFailureKind::RateLimited, 'The commit branches read hit the GitHub rate limit (HTTP 429), which resets at 2026-11-15T05:03:14+00:00.', 1],
+        'a secondary rate limit without headers' => [fn () => Http::response(['message' => 'You have exceeded a secondary rate limit. Please wait a few minutes.'], 403),
+            GitHubReadFailureKind::RateLimited, 'The commit branches read hit the GitHub rate limit (HTTP 403), and GitHub gave no reset time.', 1],
+        'a 401' => [fn () => Http::response(['message' => 'Bad credentials'], 401), GitHubReadFailureKind::Refused, 'The commit branches read answered HTTP 401.', 1],
+        'a 403 that is not a rate limit' => [fn () => Http::response(['message' => 'Resource not accessible by integration'], 403, ['X-RateLimit-Remaining' => '4999']),
+            GitHubReadFailureKind::Refused, 'The commit branches read answered HTTP 403.', 1],
+        'a 404' => [fn () => Http::response(['message' => 'Not Found'], 404), GitHubReadFailureKind::NotFound, 'The commit branches read answered HTTP 404.', 1],
+    ]);
+
+    it('reads once more after a transient failure and goes on with the answer', function (): void {
+        Http::fake(['api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA.'/branches-where-head' => Http::sequence()
+            ->push(['message' => 'Bad Gateway'], 502)->push([['name' => 'main']])]);
+
+        expect(githubSource()->branchesWithHead(SOURCE_SHA))->toBe(['main'])->and(Http::recorded())->toHaveCount(2);
+        Sleep::assertSequence([Sleep::for(2)->seconds()]);
+    });
+
+    it('retries once for the whole admission, so a long outage adds one pause and one read timeout at most', function (): void {
+        Http::fake(['api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA.'/branches-where-head' => Http::sequence()
+            ->push([], 500)->push([['name' => 'main']])->push([], 500)]);
+        $source = githubSource();
+
+        expect($source->branchesWithHead(SOURCE_SHA))->toBe(['main'])
+            ->and(fn () => $source->branchesWithHead(SOURCE_SHA))->toThrow(GitHubApiException::class, 'The commit branches read answered HTTP 500.')
+            ->and(Http::recorded())->toHaveCount(3);
+        Sleep::assertSleptTimes(1);
+    });
+
+    it('admits a commit whose first trust read failed for a moment', function (): void {
+        Http::fake([
+            'api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA => Http::sequence()->push([], 503)->push(['sha' => SOURCE_SHA]),
+            'api.github.com/repos/hardimpactdev/orbit/commits/'.SOURCE_SHA.'/branches-where-head' => Http::response([['name' => 'main']]),
+        ]);
+
+        app(ProofCommitTrust::class, ['source' => githubSource()])->assert(SOURCE_SHA);
+
+        expect(Http::recorded())->toHaveCount(3);
+    });
+
+    it('shows no token, Authorization header or URL in any refusal', function (Closure $answer): void {
+        Http::fake(['api.github.com/*' => $answer]);
+
+        $refusal = ProofGitHubRefusal::from(failedBranchRead(), 'the commit cannot be checked');
+
+        foreach (['contents-token', 'Authorization', 'Bearer', 'https://', 'api.github.com', '/repos/'] as $secret) {
+            expect($refusal->getMessage())->not->toContain($secret);
+        }
+    })->with([
+        'a transport error that quotes the request' => [fn (Request $request) => throw new ConnectionException('cURL error 7 for '.$request->url().' with Authorization: '.$request->header('Authorization')[0])],
+        'a refusal that echoes the token' => [fn (Request $request) => Http::response(['message' => 'Bad credentials '.$request->header('Authorization')[0]], 401)],
+        'a rate limit' => [fn () => Http::response([], 429, ['Retry-After' => '5'])],
+    ]);
+});

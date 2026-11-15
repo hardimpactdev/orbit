@@ -18,7 +18,7 @@ final readonly class ProofCommitTrust
 {
     public function __construct(private ProofCommitSource $source, private ProofSettings $settings) {}
 
-    /** @throws ResourceOperationException proof.commit_not_found, proof.commit_untrusted, proof.github_unavailable */
+    /** @throws ResourceOperationException proof.commit_not_found, proof.commit_untrusted, and a {@see ProofGitHubRefusal} */
     public function assert(string $sha): void
     {
         try {
@@ -28,8 +28,8 @@ final readonly class ProofCommitTrust
             if ($this->source->branchesWithHead($sha) !== [] || $this->approvedPullRequest($sha)) {
                 return;
             }
-        } catch (GitHubApiException) {
-            throw new ResourceOperationException('proof.github_unavailable', 'GitHub could not be read, so the commit cannot be checked.', 503);
+        } catch (GitHubApiException $exception) {
+            throw ProofGitHubRefusal::from($exception, 'the commit cannot be checked');
         }
 
         throw new ResourceOperationException('proof.commit_untrusted', 'The commit is not the head of a branch of the repository, nor the head of an open pull request with the label ['.$this->settings->label().'] and a maintainer\'s approval of exactly that commit.', 403);

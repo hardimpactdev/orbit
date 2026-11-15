@@ -8,6 +8,17 @@ use RuntimeException;
 
 final class GitHubApiException extends RuntimeException
 {
+    public function __construct(string $message = '', int $code = 0, public readonly ?GitHubReadFailure $readFailure = null)
+    {
+        parent::__construct($message, $code);
+    }
+
+    /** One read failed for a reason that the caller can name. */
+    public static function readFailed(GitHubReadFailure $failure): self
+    {
+        return new self($failure->describe(), 0, $failure);
+    }
+
     public static function unavailable(): self
     {
         return new self('GitHub could not be reached or refused the Project credential.');
