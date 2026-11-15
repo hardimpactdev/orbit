@@ -512,9 +512,9 @@ An ended group is `completed`, `failed`, or `cancelled`. The checkout lives on t
 
 Explicit completion runs the Project's teardown steps in the guest while the VM is `ready`, retains transcripts already recorded by turn operations, then admits the release and waits for it. A parked VM is released as it is: the release deletes a stopped VM too, and nothing starts it. Release admission locks the VM row and refuses while a resume is open.
 
-The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace and ends its `removal_failure` request, clears the keys of the identity and records the VM `destroyed`. A release that fails leaves the VM `failed`; the host sweep, or the next cancel, releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
+The release deletes the VM, its seed clone and its identity volume, and removes the hub peer. The Gateway then deletes the workspace Instance and the Node, unbinds the group from the workspace and ends its `removal_failure` request, clears the keys of the identity and records the VM `destroyed`. A release that fails leaves the VM `failed`; the next cancel releases it again. A refused teardown or release keeps the VM and the Instance, and the group asks for `removal_failure` assistance.
 
-A VM of the old pool has no place number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release, and the sweep releases such a VM again after a failed release. Rows the old pool left in `destroying` were recorded `destroyed`.
+A VM of the old pool has no place number. The release takes it the same way, by its name: it deletes the VM and its seed clone `<name>-topology-seed`, and removes its hub peer by the public key its Node records. A cancel carries this release. Rows the old pool left in `destroying` were recorded `destroyed`.
 
 The release deletes by name, so it releases only a task VM name: `<host>-tvm-<n>` for place n, under the host name it had when the place was taken, or `tvm-<id>` for the old pool. Its seed clone is `<name>-seed` or `<name>-topology-seed`. Any other name, such as a base VM or a seed, refuses with `task_vm.release_refused`. A VM whose host is not a configured task VM host is refused with `task_vm.unknown_host`. A Node without the WireGuard public key that names its hub peer is refused with `task_vm.slot_refused`.
 
@@ -676,19 +676,11 @@ Parking retains the disk, workspace and sessions. It releases CPU and memory. It
 
 ### Sweep task VM hosts
 
-The Gateway scheduler queues `SweepTaskVmHosts` every thirty minutes. It runs while task VMs are enabled. It also queues the [idle release](/reference/tasks#release-an-idle-task-vm) every five minutes.
-
-For each active configured Incus host, the job releases the task VMs that a failed start or a failed release left, old-pool VMs included: a row with no group whose release failed, or whose Operation ended without its projection. Before each release it locks the row and checks again; a refresh that holds the row as the slot of its proof leaves it alone, because its group-less VM is still starting. The release is the run of `task_vm.slot_release` ([release chart](https://github.com/hardimpactdev/orbit/blob/main/docs/cli/task/vm-release.mmd)).
-
-A task start or a refresh proof that still uses the VM keeps it. Another open refresh of the host, such as one that waits for a CI place, does not hold the other rows of the host.
-
-An Incus host has no sweep of its own: no `task_vm.sweep_host` Operation runs for it, and the job reads no instance or volume of the host. A Node named `tvm-<number>` that no task VM row owns gets one log warning per run.
+No sweep runs any more. The Gateway job `SweepTaskVmHosts`, its 30-minute schedule, the 5-minute [idle release](/reference/tasks#release-an-idle-task-vm) schedule and the per-minute observation of parked VMs are removed with the task VM runtime ([Task runtime](/reference/tasks#task-runtime)). A VM row that a failed start or release left stays until an operator removes the leftovers by hand.
 
 A VM that dies on an Incus host stays in its row until its group ends. [Doctor](/cli/doctor) reports it as `node.task_vm_missing`; the row is not failed by a sweep. Cancel or complete the group of a missing VM to release it, as for [a release](#release-a-task-vm).
 
-The sweep workflow has a 60-second worker queue timeout. Its run budget is 600 seconds. A provider failure never supplies a missing-VM observation and projects `task_vm.host_command_failed`.
-
-[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. The sweep deletes orphaned volumes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
+[Doctor](/cli/doctor) reports the VM findings in the `node` family of the host, without changes. Doctor's codes are `node.task_vm_orphaned` for an orphaned VM and `node.task_vm_missing` for a missing one. Doctor reports a missing VM on its first miss. A host whose project does not exist or cannot be listed reports `node.task_vm_inspection_failed`. Doctor checks a host only while it has `settings.task_vms` and is reachable over SSH. The fleet rollout ignores these codes.
 
 Doctor does not inspect the Node of a `parked` task VM, because the VM is stopped on purpose. Its `node` family reports one informational `node.task_vm_parked`, and the other families check nothing. So no problem is filed for a parked VM.
 
@@ -713,7 +705,7 @@ The audit lists every project with `incus query /1.0/instances?all-projects=true
 
 A **stray record** is a `ready` or `parked` task VM row on the host with no group, or whose group has ended, for more than one hour. The hour counts from the later change of the row and its group. Normally the [release](#release-a-task-vm) of the group removes such a VM within minutes, so a stray record means that release is stuck.
 
-A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable. The sweep job logs it while task VMs are enabled.
+A **stray Node** is a Node named `tvm-<number>` that has no task VM row that is not `destroyed`, 15 minutes after the Node was created. Enrollment creates the Node and links it to its row in the same job, so 15 minutes covers a slow enrollment. Doctor reports it in the Node's own `node` family, also while the Node is unreachable.
 
 | Code | Kind | Meaning |
 | --- | --- | --- |
@@ -741,7 +733,7 @@ Orbit derives progress inside `provisioning` from facts: the VM exists, the row 
 
 ### Jobs
 
-The Gateway jobs `SweepTaskVmHosts` and `ReleaseIdleTaskVms` validate and record intent. Swamp executes their effects. Each admission job has one attempt and a one-minute timeout.
+The one task VM job left is `ReleaseTaskVmSlot`, the release of a slot whose start did not pass. It runs on the Gateway's `tasks` queue; the `task-vms` queue and its supervisor are removed ([Gateway queue](/reference/gateway-queue#queues)).
 
 Provisioning, enrollment, runtime preparation, resume, destruction, parking and internal removal keep their existing synchronous implementations and tests. Their replacement Operations remain inert until their parents declare the required `node.add`, `node.remove` and Process children and those owning admissions are registered. Merely registering a Node or Process kind does not activate an incomplete parent. Admission refuses with `operation.kind_unavailable` before it records intent or changes the VM.
 
@@ -1284,7 +1276,7 @@ The converge of a refresh is bounded at 5,400 s, and the converge of a task star
 
 The candidate proof claims one CI place on its own host. A full CI pool waits within the two-hour admission budget. Task work cannot consume a CI place. The refresh VM of the old design and its group in the proof Project are not part of this run.
 
-A refresh that fails before its proof leaves its place `failed`, and the [sweep](#sweep-task-vm-hosts) releases it. The sweep leaves alone only the place that an open refresh holds. A refresh that waits for a CI place holds no place, so the places that earlier failed refreshes left are freed for it.
+A refresh that fails before its proof leaves its place `failed`. No sweep releases it any more ([Sweep task VM hosts](#sweep-task-vm-hosts)). A refresh that finds no CI place answers the [refusal](/reference/tasks#task-runtime) of the removed task VMs instead of waiting.
 
 ##### Build the nested fleet in the converge
 
@@ -1518,7 +1510,7 @@ The agent in a task VM has root through sudo, so a token anywhere in the VM, eve
 
 Packs on the standard input and output of the existing SSH commands need no new transport, keep the check that a command reaches only its group's workspace. The Gateway checks what comes back the way a fetch checks a remote: only the approved commit ID names what it pushes, and `index-pack --strict` checks every object.
 
-Most groups wait for review far longer than they work. Deleting the VM at publication frees its whole place and removes the failed park path. Re-entry reconstructs the workspace from the base and the published task branch. Separate pools stop task work from consuming CI capacity. The sweep catches failed deletion and frees capacity only after confirmed removal.
+Most groups wait for review far longer than they work. Deleting the VM at publication frees its whole place and removes the failed park path. Re-entry reconstructs the workspace from the base and the published task branch. Separate pools stop task work from consuming CI capacity. Capacity is freed only after confirmed removal.
 
 A topology declaration before the claim gives placement a known workload and the reviewer a declared set of Nodes to check. An agent's request during a turn would supply neither in advance. Resizing or moving a running group would change its environment during work. A fresh group makes that choice explicit. One size for every Orbit VM would waste capacity: most groups need no topology, but a large VM takes three places. Measurements on beast put the test Gateway, an `app-dev` Node, and the operator at about 2.7 GiB together. Four test machines filled a large VM's 12 GiB under IO.
 

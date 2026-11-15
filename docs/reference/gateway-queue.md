@@ -1,6 +1,6 @@
 ---
 title: "Gateway queue"
-description: "The Gateway's Redis connection and ACL user, six queues, Laravel Horizon, and how a release moves them."
+description: "The Gateway's Redis connection and ACL user, its queues, Laravel Horizon, and how a release moves them."
 covers:
   - apps/gateway/app/Domain/Gateway/GatewayQueue.php
   - apps/gateway/app/{Infrastructure/Gateway/GatewayQueue*,Infrastructure/Gateway/GatewayHorizon*,Console/Scheduling/**,Jobs/RunScheduledCommand.php,Providers/GatewayQueueServiceProvider.php}
@@ -26,13 +26,12 @@ After [setup](#set-up-the-queue-user), the `valkey` Docker Process on `services`
 
 ## Queues
 
-Laravel Horizon runs eight queues on the connection with six supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. The two build queues share one supervisor. Task VMs, operations, Operation starts and the prompt projection of operations keep separate supervisors:
+Laravel Horizon runs seven queues on the connection with five supervisors. The `tasks` supervisor checks `tasks` before `problems`, with balancing disabled. Collection cannot put a tick or publication behind its backlog; a running collection job finishes first. Builds, operations, Operation starts and the prompt projection of operations keep separate supervisors:
 
 | Queue | Processes | Jobs |
 | --- | --- | --- |
-| `tasks` | 3 | The scheduled commands below, an approved commit's publish, and a new container's [workspace baseline](/reference/development-containers#workspace-work-state). The Git mirror's lock keeps one push per Project at a time |
+| `tasks` | 3 | The scheduled commands below, an approved commit's publish, a new container's [workspace baseline](/reference/development-containers#workspace-work-state), and the release of a task VM slot whose start did not pass. The Git mirror's lock keeps one push per Project at a time |
 | `problems` | shares the 3 `tasks` workers | Observation context publication, the Swamp reader check, and batch metadata pruning, after waiting `tasks` jobs |
-| `task-vms` | 1 | Retained task VM lifecycle jobs and host sweep admission |
 | `builds` | 2 | Admission for [base snapshot refreshes](/reference/compute-drivers#refresh-the-base-snapshot) |
 | `operations` | 1 | The jobs that record a Swamp run in its [Operation](/reference/operations): the minute pass, schedule fires, Route promotions, registry closes. One at a time, in order |
 | `operation-starts` | 4 | Native run starts ([Direct Swamp starts](/reference/operations#direct-swamp-starts)), side by side. Job timeout 150 seconds, memory cap 256 MB |
@@ -46,9 +45,9 @@ Running side by side is safe: the status change at the start of a submission adm
 
 Each start worker uses at most 256 MB. To change the count, change `maxProcesses` and `minProcesses` of `operation-starts` in `apps/gateway/config/horizon.php`; the next release starts Horizon with it.
 
-Image and host sweep jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
+Image jobs record Operations. Swamp executes their effects under the Operation target lock, fixed command contracts and keyed receipts. Task VM provisioning, enrollment, runtime preparation, resume and destruction keep their synchronous jobs until their owning Node and Process child composition is installed.
 
-A `task-vms` job runs at most 1500 seconds, and any other job at most 1700 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
+A job runs at most 1700 seconds. Laravel makes a reservation available again after 1800 seconds if its worker did not acknowledge it. Reserving a job consumes an attempt, so with one allowed attempt the next worker fails it before its handler runs. An idle worker waits on the queue with a blocking read, so a job starts within about a second when a process is free.
 
 The build workers consume `builds`, with Horizon balancing disabled. These jobs admit image Operations. Swamp orders each run.
 
@@ -74,7 +73,7 @@ The job runs the command in its own PHP process, as the scheduler did, so a comm
 
 The last five commands are Gateway self-maintenance. They keep the Gateway's own tables and Horizon metrics, touch no Node, and start no Swamp work. PLAN decision 9 (2026-11-01) keeps them in the Gateway: housekeeping of the Gateway's own tables is not orchestration. [Interrupted Activity finalization](/cli/activity#interrupted-requests) ends at most 500 records per run. `horizon:snapshot` records Horizon's dashboard metrics and runs only while the Gateway queue is set. `queue:prune-failed`, `activitylog:clean`, and `queue:prune-batches` delete records older than the [disk retention](/reference/gateway-recovery#disk-retention) cutoffs. Failed-job pruning and Activity cleaning also run while Tasks is disabled; batch pruning runs only while Tasks is enabled.
 
-The [task VM jobs](/reference/compute-drivers#jobs) that the scheduler queues, the host sweep, and image reconciliation go to the same connection.
+The [task VM slot release](/reference/compute-drivers#jobs) and image reconciliation go to the same connection.
 
 These commands stay in the scheduler and never go to the queue, also while it is set:
 
@@ -96,7 +95,7 @@ Logs, Activity, assistance signals, and the Horizon-only collection have no sche
 
 ### Without a queue
 
-While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of the host sweep, image reconciliation, or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
+While `ORBIT_GATEWAY_QUEUE_CONNECTION` is empty, the other scheduled commands run inline with their overlap locks. `horizon:snapshot` does not run, and the Gateway creates no `horizon` Process. Native Operation starts and Task VMs need the queue. An Operation whose start cannot be queued fails with `swamp.start_enqueue_failed`. While task VMs are enabled, each due run of image reconciliation or recipe maintenance fails with an error that names the key, instead of being skipped. A task VM claim fails the same way.
 
 Operations need the queue too: the minute `ReconcileSwampOperations` job, unique for 300 seconds, reads each open run's terminal result and records it on the `operations` queue; the end of a root run also queues `ProjectEndedNativeRun` for that Operation on `operations-prompt` ([Operations](/reference/operations#how-an-operation-runs)). It is the one scheduled job that works with Swamp runs. The job records completed passes, so [`gateway:status`](/cli/gateway/status) can report [stalled reconciliation and stuck settlement](/reference/operations#recover-a-terminal-native-result) even when dispatch succeeds but the queue does not execute it.
 
@@ -155,6 +154,14 @@ php artisan tinker --execute='cache()->forget("laravel_unique_job:App\\Jobs\\Tas
 ```
 
 The key is `laravel_unique_job:` followed by the job class and its unique id, the task VM id for task VM jobs. When the newer release goes live again, it works the jobs left in Redis.
+
+### The removed `task-vms` queue
+
+The release that removed the task VM runtime also removed the `task-vms` queue and its supervisor. Its jobs were the host sweep, the idle release, the observation of parked VMs and the slot release. The first three are gone; the slot release now runs on `tasks`. A slot release is queued only when a task VM start fails, and none starts.
+
+The release drain waits only for running jobs. A job still waiting in the `task-vms` list when the release lands stays there, and no worker of the new release reads it. Each one is a periodic job that did nothing with no task VM: at most one sweep, one idle release and one observation, each held by its unique lock for at most 15 minutes. Losing them is safe. The list may be deleted by hand: `php artisan tinker --execute='app("redis")->connection("gateway")->del("queues:task-vms", "queues:task-vms:delayed", "queues:task-vms:reserved", "queues:task-vms:notify");'` as `orbit` in `/home/orbit/orbit/apps/gateway`.
+
+A switch back to the release before brings the supervisor back. It works what is left in the list with the older code, which has those classes. A slot release that the newer release queued on `tasks` is read by the older release's `tasks` workers, because the job class is the same.
 
 ### Jobs across releases
 
@@ -246,7 +253,7 @@ These commands inspect and control Horizon on the Gateway.
 | See Horizon | `orbit process:list --node=<gateway>` and `orbit process:logs <id>` |
 | Restart on the current release | `php artisan horizon:terminate` |
 | Pause and continue every queue | `php artisan horizon:pause` and `php artisan horizon:continue` |
-| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:task-vms,gateway:builds,gateway:operations` |
+| Count waiting jobs | `php artisan queue:monitor gateway:tasks,gateway:problems,gateway:builds,gateway:operations` |
 | Retry failed jobs | `php artisan queue:retry all` |
 
 Run each `php artisan` command as `orbit` in `/home/orbit/orbit/apps/gateway`.
