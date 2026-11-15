@@ -1,0 +1,28 @@
+order = 861
+source_sha256 = "ed8840393d9ddefc0f213a03875b23483800f4ea99b04983027b2a28d792d58d"
+cases = [
+  "a clone create's registration stores its sessions under the keys the release grants allow and the Gateway reads",
+  "a migrate's registration stores its sessions under the same allowed keys, which the Gateway reads",
+]
+file = "swamp/tests/instance_register_grants_native_test.ts"
+cost = 20 # 2 cases in 17-19 s locally on a loaded Beast; each case starts a token-mode serve with the rendered release grants
+after_merge = true
+reason = "Requires ORBIT_SWAMP_PROOF_BINARY at the pinned Swamp release and php for the grants renderer; hosted fixture shards do not install that proof binary."
+inputs = [
+  "swamp/tests/_support/native_auth.ts",
+  "swamp/extensions/behaviors/node-worker/config.ts",
+  "swamp/workflows/workflow-operation-instance-create.yaml",
+  "swamp/workflows/workflow-operation-instance-migrate.yaml",
+  "swamp/config/gateway-workflow-grants.json",
+  "swamp/config/serve-grants.json",
+  "apps/gateway/bin/render-swamp-grants",
+  "swamp/extensions/behaviors/operations/instance-dev-command/assets.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/complete_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/migrate_result.ts",
+  "swamp/extensions/behaviors/operations/instance-dev-command/result.ts",
+  "swamp/extensions/behaviors/operations/instance-t3/mod.ts",
+]
+
+[case_costs]
+"a clone create's registration stores its sessions under the keys the release grants allow and the Gateway reads" = 10
+"a migrate's registration stores its sessions under the same allowed keys, which the Gateway reads" = 10

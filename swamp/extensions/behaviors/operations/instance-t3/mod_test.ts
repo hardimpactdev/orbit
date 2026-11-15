@@ -1,6 +1,6 @@
 import { assert, assertEquals, assertRejects } from "jsr:@std/assert@1.0.19";
 import { parse } from "jsr:@std/yaml@1.0.12";
-import { behavior, createRegister, register, renew } from "./mod.ts";
+import { behavior, register, renew } from "./mod.ts";
 
 const gatewayToken = "private-gateway-sentinel";
 const swampToken = "private-swamp-sentinel";
@@ -56,7 +56,7 @@ const ready = {
 Deno.test("a checked reply stores both sessions as sensitive fields and returns the create's result with only their vault keys", () =>
     fixture(ready, async (run) => {
         const ctx = context();
-        await createRegister(createArgs(run), ctx);
+        await register(createArgs(run), ctx);
         assertEquals(ctx.writes.slice(0, 2), [
             { spec: "session", name: "gateway-7", data: { token: gatewayToken } },
             { spec: "session", name: "swamp-7", data: { token: swampToken } },
@@ -99,7 +99,7 @@ Deno.test("a registration whose result is not ready keeps the run folder for fin
     fixture(ready, async (run) => {
         const ctx = context();
         // A workspace without its commit line is not finished: the result names it, and finish runs after this step.
-        await createRegister(createArgs(run, { container: { launch: "succeeded", workspace: { status: "succeeded", outputs: { stdout: "" } },
+        await register(createArgs(run, { container: { launch: "succeeded", workspace: { status: "succeeded", outputs: { stdout: "" } },
             deploy: [], processes: "skipped", seed: "skipped", t3: "succeeded", register: "skipped", server: null } }), ctx);
         const data = ctx.writes[2].data as { ready: boolean; removed: boolean };
         assertEquals([data.ready, data.removed, await exists(run), await exists(`${run}-t3.json`)], [false, false, true, false]);
@@ -117,7 +117,7 @@ Deno.test("each failed check refuses with the code of POST /conn/environments, s
     for (const [reply, code] of cases) {
         await fixture(reply, async (run) => {
             const ctx = context();
-            await assertRejects(() => createRegister(createArgs(run), ctx), Error, code);
+            await assertRejects(() => register(createArgs(run), ctx), Error, code);
             assertEquals([ctx.writes, await exists(`${run}-t3.json`)], [[], false]);
         });
     }
@@ -214,7 +214,7 @@ Deno.test("a renewal without a readable copy reports conn.response_invalid and r
 });
 
 // Every workflow step that calls this behavior names a method it has and passes exactly the arguments that method requires: the
-// migrate's registration keeps `{instance_id, folder}` while the create's takes the create's result inputs (`create_register`).
+// migrate's registration keeps `{instance_id, folder}` while the create's takes the create's result inputs (both through `register`, whose method name keys the sessions).
 Deno.test("each workflow step of @nckrtl/instance-t3 passes the arguments of the method it names", async () => {
     type Step = { name: string; task?: { behaviorType?: string; methodName?: string; inputs?: Record<string, unknown> } };
     const folder = new URL("../../../../workflows/", import.meta.url);

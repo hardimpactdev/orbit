@@ -601,7 +601,7 @@ jobs:
           type: behavior
           behaviorType: '@nckrtl/instance-t3'
           behaviorName: ${{ "ic-t3-register" }}
-          methodName: create_register
+          methodName: register
           inputs: *create_inputs
       # A failed create takes back a Route it started and did not finish publishing, under the Nodes it still holds. A clone's Route that
       # `clone-route` published is active and its Nodes are free: it stays until a retry or a removal (development-containers.md#create).
