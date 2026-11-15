@@ -22,7 +22,6 @@ sequenceDiagram
   %%> Result:
   %%> - a task place in the separate task pool; a full pool waits up to two hours without an identity or workspace
   %%> - the group holds the place; its Node, WireGuard key, host key, agent secret and Pi token are new, and the public keys are pinned on the Node. Every VM holds the same model key, the placeholder of the model router guard
-  %%> - a proof is placed only on a host whose promoted image holds every change of what the image carries, up to the merge base of the proof commit with main (`TaskVmImageInputs`); otherwise the admission waits for a refreshed base within its two-hour budget
   GW->>SW: Start run, full intent<br/>tasks provision
   %%> Why:
   %%> - the same run for a person, an agent or a CI proof

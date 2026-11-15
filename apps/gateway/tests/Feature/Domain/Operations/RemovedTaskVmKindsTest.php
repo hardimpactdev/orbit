@@ -5,6 +5,7 @@ declare(strict_types=1);
 use App\Data\Operations\OperationData;
 use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\DirectOperation;
+use App\Domain\Operations\OperationBudgetTable;
 use App\Domain\Operations\OperationKinds;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Operations\RetiredOperationSettlement;
@@ -44,8 +45,13 @@ function removedTaskVmOperation(string $kind, OperationStatus $status, int $minu
 }
 
 it('has no registry entry, chart or budget for the removed kinds, and no artisan command of theirs', function (string $kind): void {
+    $charts = array_filter(glob(base_path('../../docs/cli/*/*.mmd')) ?: [], static fn (string $chart): bool => str_contains((string) file_get_contents($chart), "%% kind: {$kind}\n"));
+
     expect(OperationKinds::names())->not->toContain($kind)
         ->and(app(DirectOperation::class)->definition($kind))->toBeNull()
+        ->and(OperationBudgetTable::SecondsByKind)->not->toHaveKey($kind)
+        ->and(glob(base_path('../../docs/cli/*/*.mmd')))->not->toBeEmpty()
+        ->and($charts)->toBe([])
         ->and(array_keys(Artisan::all()))->not->toContain('task-vms:prepare-hub')->not->toContain('task-vms:image-builds')->not->toContain('task-vms:list-image-builds');
 })->with(array_keys(REMOVED_TASK_VM_KINDS));
 

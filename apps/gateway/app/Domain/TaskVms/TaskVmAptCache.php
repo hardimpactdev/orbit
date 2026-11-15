@@ -9,7 +9,7 @@ use App\Models\Node;
 
 /**
  * The package cache of a task VM: stock `apt-cacher-ng`, which the task VM role runs and opens on the nested bridge only
- * (swamp/ansible/tasks/task-vm-apt-cache.yml, docs/cli/task/vm-image-refresh.mmd). The nested Nodes read the Ubuntu snapshot indexes from it, and every
+ * (swamp/ansible/tasks/task-vm-apt-cache.yml). The nested Nodes read the Ubuntu snapshot indexes from it, and every
  * apt run of their enrollment, roles and bootstrap goes through it (swamp/ansible/tasks/apt-proxy.yml).
  */
 final readonly class TaskVmAptCache

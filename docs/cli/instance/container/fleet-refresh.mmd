@@ -1,5 +1,5 @@
 sequenceDiagram
-  %% Container runtime (ADR 0250 step 5, docs/reference/development-containers.md#refresh-after-a-release): after each Gateway release, the deployment of each nested-fleet default Instance to the release commit. It is `instance.deploy` with the fleet steps that only a nested-fleet default's intent runs. It refreshes the inner fleet and takes the seed that new Instances of that Project clone. For the nested-fleet path it replaces the release trigger and the daily run of docs/cli/task/vm-image-refresh.mmd, and it calls neither.
+  %% Container runtime (ADR 0250 step 5, docs/reference/development-containers.md#refresh-after-a-release): after each Gateway release, the deployment of each nested-fleet default Instance to the release commit. It is `instance.deploy` with the fleet steps that only a nested-fleet default's intent runs. It refreshes the inner fleet and takes the seed that new Instances of that Project clone. For the nested-fleet path it replaces the release trigger and the daily run of the task VM base refresh, which is removed.
   %% status: draft
   %% command: none · after each Gateway release · instance:deploy on the default runs the same flow
   %% kind: instance.deploy

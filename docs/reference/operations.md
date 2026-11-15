@@ -355,7 +355,9 @@ A check returns `{ outcome, deliverables, check_id, commit, head, tree, output, 
 
 ### Kinds that left the registry
 
-A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them. The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard does not wait for one. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way.
+A kind that leaves the registry keeps its old Operations as history. `operation:list`, `operation:show` and the web views show them with their stored kind, status and result; no projection class is needed to read them.
+
+The reconcile pass reads no Swamp run for them. An open one ends on a cancel request (`cancelled`), or as `failed` with `operation.timed_out` at the history budget of its kind ([Native run budgets](#native-run-budgets)). The release's idle guard waits only for the kind families it names (Instance lifecycle, deploy, Conn and Process kinds), so it does not wait for an old task VM row. The task VM kinds `task_vm.image_refresh` and `task_vm.hub_converge` left the registry this way.
 
 ## Start an operation
 

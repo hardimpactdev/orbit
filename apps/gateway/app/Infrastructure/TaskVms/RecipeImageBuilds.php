@@ -10,7 +10,7 @@ use App\Infrastructure\MachineSoftware\RecipeLoader;
 /**
  * The desired machine recipe: the recipe.json of the release the Gateway serves, and its identity. The converge intents of a task VM
  * host and of a task start carry it. The Incus recipe image build is
- * retired (docs/reference/old-paths.md); a host's base is made only by the base snapshot refresh (docs/cli/task/vm-image-refresh.mmd).
+ * retired (docs/reference/old-paths.md); a host's base was made only by the base snapshot refresh, which is removed.
  */
 final readonly class RecipeImageBuilds
 {
