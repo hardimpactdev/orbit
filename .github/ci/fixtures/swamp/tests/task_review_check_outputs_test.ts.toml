@@ -1,7 +1,7 @@
 order = 1120
-source_sha256 = "f4a498f1e249bca5d012977685fde1813bd378df59b496726b6b9d4c2c7c9a3a"
+source_sha256 = "7871947da997d55f4db98e4c63d0bbb6121b2597db7bfbbb1c803ba9e06bb24e"
 cases = [
-  "review fixes consume a direct check receipt and retain failed evidence",
+  "the check exports its receipt directly and retains failed evidence",
   "reviewer receives the passed handoff and hosted Required-check conclusions",
   "reviewer rejects evidence with another head",
   "reviewer rejects evidence with another handoff head",

@@ -3,6 +3,6 @@ name: '@nckrtl/task-turn-scripts'
 version: 2026.11.02.3
 visibility: private
 license: MIT
-description: Pi turn metadata and separate native workspace and API actions.
+description: Public task turn data shaping; ships no scripts.
 behaviors:
 - operations/task-turn/mod.ts

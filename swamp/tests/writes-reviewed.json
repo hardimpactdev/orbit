@@ -1,5 +1,5 @@
 {
- "maxUnreviewed": 208,
+ "maxUnreviewed": 171,
  "nativeDataMethods": {
   "@nckrtl/analytics-runtime#observe": "Compares supplied container observations and writes only Swamp metadata.",
   "@nckrtl/analytics-runtime#plan": "Builds runtime intents and argv as Swamp metadata without executing them.",
@@ -73,24 +73,11 @@
   "@nckrtl/task-check-data#settle": "Updates check evidence and tags only in Swamp data.",
   "@nckrtl/task-check-data#setup": "Summarizes supplied setup outcomes into Swamp data.",
   "@nckrtl/task-check-data#snapshot": "Decodes supplied Git object identities into Swamp data.",
-  "@nckrtl/task-maintenance-input#age": "Checks supplied release dates and writes only Swamp verification data.",
-  "@nckrtl/task-maintenance-input#expo": "Checks supplied Expo catalog data and writes only Swamp verification data.",
-  "@nckrtl/task-maintenance-input#inspect": "Decodes supplied manifests and builds audit argv without executing it.",
-  "@nckrtl/task-maintenance-input#plan": "Builds proposed manifests and update argv as Swamp data without applying them.",
-  "@nckrtl/task-maintenance-input#read": "Selects configured maintenance paths from supplied intent as Swamp data.",
-  "@nckrtl/task-maintenance-input#release": "Reads public registry release catalogs over HTTP GET into Swamp data.",
-  "@nckrtl/task-maintenance-input#restore": "Builds restored manifest text and sync argv without writing files or executing it.",
-  "@nckrtl/task-maintenance-input#result": "Combines supplied checkout observations into a Swamp result.",
-  "@nckrtl/task-maintenance-input#synchronized": "Compares supplied lock versions and writes only Swamp verification data.",
-  "@nckrtl/task-maintenance-input#verify": "Compares supplied locks and audit reports and writes only Swamp verification data.",
-  "@nckrtl/task-provision-data#revoke": "Summarizes supplied token revoke outcomes; it performs no revoke request.",
   "@nckrtl/task-publication-data#base": "Reads the saved base files of the run's scratch and writes only the Swamp base statement.",
   "@nckrtl/task-publication-data#imported": "Compares supplied bundle identities and writes only Swamp verification data.",
   "@nckrtl/task-publication-data#pushed": "Reads saved push replies and writes only the Swamp outcome.",
   "@nckrtl/task-publication-data#verify": "Compares supplied workspace observations and writes only Swamp verification data.",
   "@nckrtl/task-publication-data#written": "Reads the saved PR response and writes only Swamp publication metadata.",
-  "@nckrtl/task-repository-program#gate": "Checks supplied executable and snapshot observations and writes only Swamp data.",
-  "@nckrtl/task-repository-program#prepare": "Builds program argv as Swamp data without executing it.",
   "@nckrtl/task-turn-data#checked": "Decodes a supplied check result and writes only Swamp candidate data.",
   "@nckrtl/task-turn-data#difference": "Reads and redacts saved diff files into Swamp data without deleting them.",
   "@nckrtl/task-turn-data#outcome": "Decodes a supplied turn receipt into Swamp outcome data.",
@@ -105,8 +92,6 @@
   "@nckrtl/task-vm-lifecycle-input#observe": "Decodes supplied provider JSON into Swamp observations.",
   "@nckrtl/task-vm-lifecycle-input#read": "Builds provider argv as Swamp data without executing it.",
   "@nckrtl/task-vm-lifecycle-input#result": "Checks supplied provider observations and writes only the Swamp receipt.",
-  "@nckrtl/task-vm-workspace-input#read": "Serializes supplied workspace intent into Swamp data.",
-  "@nckrtl/task-vm-workspace-input#result": "Decodes supplied workspace observations into Swamp data.",
   "@nckrtl/tool-remove-command#assets": "Builds removal argv as Swamp data without executing it.",
   "@nckrtl/tool-remove-command#decide": "Checks supplied package observations and writes only the Swamp removal decision.",
   "@nckrtl/tool-write-command#assets": "Builds package argv as Swamp data without executing it.",
@@ -554,25 +539,9 @@
    "check_timer": "idempotent",
    "idle": "read-only"
   },
-  "operation-task-idle-save": {
-   "Read the saved commit": "read-only"
-  },
-  "operation-task-maintenance": {
-   "snapshot-tracked": "unreviewed",
-   "snapshot-untracked": "unreviewed"
-  },
   "operation-task-pr-ready": {
    "Read the PR": "read-only",
    "Read the PR result": "read-only"
-  },
-  "operation-task-prep": {
-   "Plan the cases 0": "unreviewed",
-   "Plan the cases 1": "unreviewed",
-   "Plan the cases 2": "unreviewed"
-  },
-  "operation-task-prep-fix": {
-   "Plan the cases 0": "unreviewed",
-   "Plan the cases 1": "unreviewed"
   },
   "operation-task-provision": {
    "Reach the VM by WireGuard": "read-only",
@@ -587,24 +556,6 @@
    "Read the copy check": "read-only",
    "Read workspace HEAD": "unreviewed"
   },
-  "operation-task-review-round": {
-   "Read the PR": "read-only"
-  },
-  "operation-task-script": {
-   "cleanup-index": "unreviewed",
-   "cleanup-local": "unreviewed",
-   "inspect": "unreviewed",
-   "output-copy": "idempotent",
-   "output-local": "unreviewed",
-   "snapshot-after-add": "unreviewed",
-   "snapshot-after-head": "unreviewed",
-   "snapshot-after-index": "unreviewed",
-   "snapshot-after-tree": "unreviewed",
-   "snapshot-before-add": "unreviewed",
-   "snapshot-before-head": "unreviewed",
-   "snapshot-before-index": "unreviewed",
-   "snapshot-before-tree": "unreviewed"
-  },
   "operation-task-sync": {
    "Clean up the VM directory": "unreviewed",
    "Clean up the scratch": "unreviewed",
@@ -612,23 +563,6 @@
    "Fetch the refs": "idempotent",
    "Prepare the VM directory": "unreviewed",
    "Read the refs": "unreviewed"
-  },
-  "operation-task-turn": {
-   "delete_local_artifacts": "unreviewed",
-   "difference_counts_copy": "idempotent",
-   "difference_patch_copy": "idempotent",
-   "observe": "unreviewed",
-   "prepare_local": "unreviewed",
-   "receipt_copy": "idempotent",
-   "receipt_exists": "read-only",
-   "restore_head": "unreviewed",
-   "restore_tree": "unreviewed",
-   "snapshot_after_head": "unreviewed",
-   "snapshot_before_head": "unreviewed"
-  },
-  "operation-task-vm-resume": {
-   "Read the guest state": "unreviewed",
-   "Wait for the guest agent": "read-only"
   },
   "operation-tool-manager-setup": {
    "Check Composer manifest": "idempotent",
@@ -782,36 +716,12 @@
    "snapshot-before-index": "unreviewed",
    "snapshot-before-tree": "unreviewed"
   },
-  "task-dependency-auth-remove": {
-   "Remove": "unreviewed"
-  },
-  "task-dependency-auth-write": {
-   "Clear": "unreviewed",
-   "Write composer": "unreviewed",
-   "Write npm": "unreviewed"
-  },
-  "task-maintenance-path": {
-   "audit-after": "unreviewed",
-   "audit-before": "unreviewed",
-   "expo-catalog": "read-only",
-   "expo-cleanup": "unreviewed",
-   "expo-fetch": "unreviewed",
-   "node-modules": "read-only",
-   "read-after-${{ self._index }}": "read-only",
-   "read-before-${{ self._index }}": "read-only",
-   "read-restored-${{ self._index }}": "read-only"
-  },
   "task-nested-apply": {
    "Check the services": "read-only",
    "Check the state": "read-only"
   },
   "task-nested-ready": {
    "Wait for Doctor": "read-only"
-  },
-  "task-vm-workspace": {
-   "account": "read-only",
-   "directory": "unreviewed",
-   "observe": "unreviewed"
   },
   "operation-instance-node-service": {
    "result": "read-only"
