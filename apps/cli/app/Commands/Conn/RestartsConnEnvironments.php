@@ -76,6 +76,9 @@ trait RestartsConnEnvironments
     {
         $read = fn (): OperationResponse => $this->sendOrThrow($connector, new ShowOperationRequest($operationId), OperationResponse::class);
         $operation = $read();
+        if (! $operation->terminal()) {
+            $this->writeFollowedOperation($operationId);
+        }
         $follower = new OperationFollower($read, null);
         try {
             while (! $operation->terminal()) {

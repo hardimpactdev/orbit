@@ -6,6 +6,7 @@ Adding Node...
 │
 └  Node enrollment Operation recorded.
 
+Following operation 1. Read it with: orbit operation:show 1
 Node enrollment running...
 
 ┌  Add Node

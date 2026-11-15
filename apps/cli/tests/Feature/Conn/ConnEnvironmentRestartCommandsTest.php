@@ -97,3 +97,18 @@ it('names the counts of a busy run in the human line', function (): void {
     expect(Artisan::call('conn:environment-restart', ['instance' => 4, '--no-interaction' => true]))->toBe(0)
         ->and(Artisan::output())->toContain('4 clone: busy (processes: 1 terminal(s), 2 command(s))');
 });
+
+it('names the followed restart Operation before it follows it', function (): void {
+    $reads = [restartOperation('running', 2), restartOperation('succeeded', 4, ['answer' => 'restarted', 'window_ms' => 6100])];
+    MockClient::global([
+        RestartConnEnvironmentRequest::class => MockResponse::make(['data' => ['restarts' => [
+            ['instance_id' => 4, 'instance' => 'clone', 'answer' => 'restarting', 'reason' => null, 'operation_id' => 9],
+        ]], 'meta' => ['request_id' => RestartRequestId]]),
+        ShowOperationRequest::class => static function () use (&$reads): MockResponse {
+            return MockResponse::make(['data' => count($reads) > 1 ? array_shift($reads) : $reads[0], 'meta' => ['request_id' => RestartRequestId]]);
+        },
+    ]);
+
+    expect(Artisan::call('conn:environment-restart', ['instance' => 4, '--no-interaction' => true]))->toBe(0)
+        ->and(Artisan::output())->toContain('Following operation 9. Read it with: orbit operation:show 9', '4 clone: restarted');
+});

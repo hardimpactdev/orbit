@@ -35,6 +35,24 @@ describe('the pull request mode of a task group', function (): void {
             ->and(Task::topLevel()->findOrFail($plain->json('data.id'))->pr_mode)->toBeNull();
     });
 
+    it('answers the mode in effect on create, update and show before the group has its copy', function (): void {
+        $this->project->update(['task_pr_mode' => TaskPrMode::PrWhenDone]);
+
+        $named = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'pr_mode' => 'review_before_pr'])
+            ->assertCreated()->assertJsonPath('data.pr_mode', 'review_before_pr')->assertJsonPath('data.pr_mode_source', 'group');
+        $plain = $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Other', 'brief' => 'Brief'])
+            ->assertCreated()->assertJsonPath('data.pr_mode', 'pr_when_done')->assertJsonPath('data.pr_mode_source', 'project');
+
+        $this->patchJson('/api/v1/tasks/'.$plain->json('data.id'), ['pr_mode' => 'review_before_pr'])->assertOk()
+            ->assertJsonPath('data.pr_mode', 'review_before_pr')->assertJsonPath('data.pr_mode_source', 'group');
+        $this->project->update(['task_pr_mode' => null]);
+        config(['orbit.tasks.pr_mode' => 'pr_when_done']);
+        $this->patchJson('/api/v1/tasks/'.$named->json('data.id'), ['title' => 'Renamed'])->assertOk();
+        Task::topLevel()->whereKey($named->json('data.id'))->update(['pr_mode' => null]);
+        $this->getJson('/api/v1/tasks/'.$named->json('data.id'))->assertOk()
+            ->assertJsonPath('data.pr_mode', 'pr_when_done')->assertJsonPath('data.pr_mode_source', 'gateway');
+    });
+
     it('refuses a value that is no mode on create and update', function (): void {
         $this->postJson('/api/v1/tasks', ['project_id' => $this->project->id, 'title' => 'Group', 'brief' => 'Brief', 'pr_mode' => 'merge_when_green'])
             ->assertUnprocessable()->assertJsonPath('error.code', 'validation.failed')->assertJsonStructure(['error' => ['details' => ['pr_mode']]]);

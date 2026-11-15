@@ -11,6 +11,7 @@ use Illuminate\Support\Sleep;
 use Illuminate\Support\Str;
 use Orbit\Sdk\Requests\Deployments\DeployInstanceRequest;
 use Orbit\Sdk\Requests\Deployments\RollbackInstanceRequest;
+use Orbit\Sdk\Requests\Instances\ShowInstanceRequest;
 use Orbit\Sdk\Requests\Operations\CancelOperationRequest;
 use Orbit\Sdk\Requests\Operations\ListOperationsRequest;
 use Orbit\Sdk\Requests\Operations\ShowOperationRequest;
@@ -22,6 +23,10 @@ use Orbit\Sdk\Requests\Tasks\TurnTaskRequest;
 use Saloon\Http\Faking\MockClient;
 use Saloon\Http\Faking\MockResponse;
 use Saloon\Http\PendingRequest;
+use Symfony\Component\Console\Output\BufferedOutput;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
+use Symfony\Component\Console\Output\ConsoleSectionOutput;
+use Symfony\Component\Console\Output\OutputInterface;
 
 beforeEach(function (): void {
     $this->originalColumns = getenv('COLUMNS');
@@ -291,6 +296,50 @@ describe('instance:rollback', function (): void {
     })->with(['human' => '--no-ansi', 'JSON' => '--json']);
 });
 
+describe('a follow that ends early', function (): void {
+    // A signal can end the CLI before any handler runs (the released binary dies on SIGINT): the id must already be on screen.
+    it('names the followed Operation before it follows, on stdout for a person and on stderr with --json', function (): void {
+        $rollback = ['id' => 43, 'kind' => 'instance.rollback', 'input' => ['release' => 'release-a']];
+        $ended = cli_operation([...$rollback, 'status' => 'succeeded', 'sequence' => 3, 'poll_after_seconds' => null]);
+        MockClient::global([
+            ShowRealtimeRequest::class => MockResponse::make(['data' => ['url' => null, 'key' => null, 'channel' => 'orbit'], 'meta' => ['request_id' => OPERATION_REQUEST_ID]]),
+            RollbackInstanceRequest::class => cli_operation_response(cli_operation($rollback), 202),
+            ShowOperationRequest::class => cli_operation_response($ended),
+        ]);
+        $line = 'Following operation 43. Read it with: orbit operation:show 43';
+
+        expect(Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', '--no-ansi' => true, '--no-interaction' => true]))->toBe(0);
+        $human = Artisan::output();
+        expect($human)->toContain($line)->and(strpos($human, $line))->toBeLessThan((int) strpos($human, 'running...'));
+
+        $output = new class extends BufferedOutput implements ConsoleOutputInterface
+        {
+            public BufferedOutput $errors;
+
+            public function __construct()
+            {
+                parent::__construct();
+                $this->errors = new BufferedOutput;
+            }
+
+            public function getErrorOutput(): OutputInterface
+            {
+                return $this->errors;
+            }
+
+            public function setErrorOutput(OutputInterface $error): void {}
+
+            public function section(): ConsoleSectionOutput
+            {
+                throw new LogicException('No sections in this test.');
+            }
+        };
+        expect(Artisan::call('instance:rollback', ['instance' => '17', '--release' => 'release-a', '--json' => true, '--no-interaction' => true], $output))->toBe(0)
+            ->and(json_decode($output->fetch(), true, flags: JSON_THROW_ON_ERROR)['id'])->toBe(43)
+            ->and($output->errors->fetch())->toBe($line."\n");
+    });
+});
+
 describe('operation commands', function (): void {
     it('lists operations with filters', function (): void {
         $mock = MockClient::global([
@@ -377,38 +426,44 @@ describe('task:start', function (): void {
         MockClient::destroyGlobal();
     });
 
-    it('follows a capacity wait and returns the final operation with its provision result', function (bool $json): void {
-        $seen = [];
-        $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
-        $mock = cli_deploy_gateway([
-            cli_operation([...$identity, 'status' => 'waiting', 'sequence' => 4, 'current_step' => 'provision']),
-            cli_operation([...$identity, 'status' => 'succeeded', 'sequence' => 7, 'poll_after_seconds' => null,
-                'result' => ['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]]),
-        ], $seen, StartTaskRequest::class, $identity);
+    it('waits by default until the copy is active, as instance:create --wait-active does, and prints the completion last', function (string $completion, string $instance, int $exit): void {
+        $mock = MockClient::global(clone_create_responses($completion, $instance, StartTaskRequest::class));
 
-        expect(Artisan::call('task:start', ['task' => '17', '--idempotency-key' => 'group.provision.c1', '--json' => $json, '--no-interaction' => true]))->toBe(0);
-        $output = Artisan::output();
-        if ($json) {
-            $data = json_decode($output, true, flags: JSON_THROW_ON_ERROR);
-            expect($data['kind'])->toBe('tasks.provision');
-            expect($data['result'])->toBe(['instance_id' => 12, 'node_id' => 34, 'starting_commit' => str_repeat('a', 40)]);
-        } else {
-            expect($output)->toContain('Provision task group [17]', 'Provision succeeded.');
-        }
+        expect(Artisan::call('task:start', ['task' => '17', '--idempotency-key' => 'group.start.c1', '--json' => true, '--no-interaction' => true]))->toBe($exit);
+        $output = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+
+        expect([$output['id'], $output['kind'], $output['status']])->toBe([902, 'instance.complete', $completion])
+            ->and($mock->findResponseByRequest(StartTaskRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.start.c1');
         $mock->assertSentCount(1, StartTaskRequest::class);
-        expect($mock->findResponseByRequest(StartTaskRequest::class)?->getPendingRequest()->headers()->get('Idempotency-Key'))->toBe('group.provision.c1');
-        expect($seen)->toBe($json ? ['', '', ''] : ['', '']);
-    })->with([false, true]);
+        $completion === 'succeeded' ? $mock->assertSent(ShowInstanceRequest::class) : $mock->assertNotSent(ShowInstanceRequest::class);
+    })->with([
+        'completed and active' => ['succeeded', 'active', 0],
+        'completion failed' => ['failed', 'source_resolved', 1],
+        'completed but not active' => ['succeeded', 'source_resolved', 1],
+    ]);
 
-    it('returns a VM error from the followed operation', function (): void {
+    it('with --no-wait ends at the copy\'s create and names the completion', function (): void {
+        $mock = MockClient::global(clone_create_responses('running', 'source_resolved', StartTaskRequest::class));
+
+        expect(Artisan::call('task:start', ['task' => '17', '--no-wait' => true, '--json' => true, '--no-interaction' => true]))->toBe(0);
+        $output = json_decode(trim(Artisan::output()), true, flags: JSON_THROW_ON_ERROR);
+        expect([$output['kind'], $output['result']['completion_operation_id']])->toBe(['instance.create', 902]);
+        $mock->assertNotSent(ShowInstanceRequest::class);
+
+        expect(Artisan::call('task:start', ['task' => '17', '--no-wait' => true, '--no-interaction' => true]))->toBe(0)
+            ->and(preg_replace('/\s+/', ' ', Artisan::output()))->toContain('Provision succeeded.', 'Completion: 902 Active when it succeeds: orbit operation:show 902');
+    });
+
+    it('returns the error of a failed create and does not wait', function (): void {
         $seen = [];
-        $identity = ['kind' => 'tasks.provision', 'target_type' => 'task_group'];
-        cli_deploy_gateway([
-            cli_operation([...$identity, 'status' => 'failed', 'sequence' => 5, 'failed_step' => 'provision', 'error_code' => 'task_vm.invalid_config', 'poll_after_seconds' => null]),
+        $identity = ['kind' => 'instance.create', 'target_type' => 'instance'];
+        $mock = cli_deploy_gateway([
+            cli_operation([...$identity, 'status' => 'failed', 'sequence' => 5, 'failed_step' => 'clone', 'error_code' => 'instance.clone_failed', 'poll_after_seconds' => null]),
         ], $seen, StartTaskRequest::class, $identity);
 
         expect(Artisan::call('task:start', ['task' => '17', '--json' => true, '--no-interaction' => true]))->toBe(1);
-        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error_code'])->toBe('task_vm.invalid_config');
+        expect(json_decode(Artisan::output(), true, flags: JSON_THROW_ON_ERROR)['error_code'])->toBe('instance.clone_failed');
+        $mock->assertNotSent(ShowInstanceRequest::class);
     });
 
     it('refuses missing or invalid group input before Gateway access', function (?string $group, string $code): void {

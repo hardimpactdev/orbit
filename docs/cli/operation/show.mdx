@@ -20,3 +20,13 @@ JSON returns the parent record, as `GET /api/v1/operations/{operation}` does. Th
 ```bash
 orbit operation:show 42
 ```
+
+## A follow that ends early
+
+A command that follows an Operation, such as `task:start`, `task:turn`, `proof` or `instance:deploy`, first prints the Operation it follows, unless the Operation has already ended:
+
+```text
+Following operation 23744. Read it with: orbit operation:show 23744
+```
+
+With `--json` the line goes to stderr, so stdout keeps one JSON document. A follow can end before its Operation does: by Ctrl-C, a timeout or a kill. A signal can end the process before the CLI prints anything more, so read the Operation later with this line's id. Ending the follow does not end the Operation, unless the command's page says otherwise.

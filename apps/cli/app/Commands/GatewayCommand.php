@@ -338,6 +338,25 @@ abstract class GatewayCommand extends Command
         return false;
     }
 
+    /**
+     * Names the Operation before the follow starts, so a caller whose follow ends early, by Ctrl-C, a timeout or a kill, can read it
+     * later (docs/cli/operation/show.mdx#a-follow-that-ends-early). A signal can end the process before any handler runs. With --json the
+     * line goes to stderr, so stdout keeps one JSON document.
+     */
+    protected function writeFollowedOperation(int $id): void
+    {
+        $line = "Following operation {$id}. Read it with: orbit operation:show {$id}";
+        if (! $this->consoleMode()->machine) {
+            $this->writeHumanMessage($line);
+
+            return;
+        }
+        $raw = $this->output->getOutput();
+        if ($raw instanceof ConsoleOutputInterface) {
+            ConsoleWriter::write($raw->getErrorOutput(), $line."\n");
+        }
+    }
+
     protected function writeHumanMessage(string $message): void
     {
         if (! $this->consoleMode()->machine) {

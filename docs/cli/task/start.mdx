@@ -4,10 +4,20 @@ sidebarTitle: "task:start"
 ---
 
 ```bash
-orbit task:start <task> [--idempotency-key=KEY] [--json]
+orbit task:start <task> [--idempotency-key=KEY] [--no-wait] [--json]
 ```
 
-Start the work place of a parent task in Todo. The task must use external orchestration and have no claimed workspace. The command follows the Operation it gets until that Operation ends. It starts no subtask, check, turn, or publication.
+Start a parent task in Todo as a copy of its Project's default Instance, and wait until the copy is `active`. The task must have no claimed workspace. It starts no subtask, check, turn, or publication.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `--idempotency-key=KEY` | none | Reuse the key to retry the same start. |
+| `--no-wait` | off | End when the copy's create ends, before the copy is `active`. |
+| `--json` | off | Print the last Operation the command followed as JSON. |
+
+By default the command waits as [`instance:create --wait-active`](/cli/instance/create#fully-set-up) does. It follows the copy's `instance.create`, then the completion that the create's result names in `completion_operation_id`, then reads the copy. It exits 0 only when the copy is `active`, so a `task:turn` right after it does not answer `tasks.copy_not_ready`. With `--json` it prints the completion. With `--no-wait` it ends at the create, exits 0 when the create succeeded, and prints `Completion: <id>` in a terminal.
+
+The API stays asynchronous: `POST /api/v1/tasks/{task}/start` answers at the admission with the `instance.create` Operation. An API caller, such as a workflow that starts a task and then sends turns, polls the same three reads: the create until it ends, then the completion named in its `result.completion_operation_id`, then `GET /api/v1/instances/{id}` until `status` is `active`. The task's own `status` is `running` from then on.
 
 A task runs only as a copy. A Project whose default Instance is a container, or that has the [`nested_fleet`](/reference/projects#nested-fleet-setting) flag on, gets a task copy. Any other Project is refused: see [No container default](#no-container-default).
 
@@ -50,7 +60,7 @@ Task VMs are removed. A task runs only in a copy of its Project's default Instan
 
 Move a checkout default into a container with [`instance:migrate`](/cli/instance/migrate), or, for a Project without a default, create one with [`instance:create`](/cli/instance/create). Then start the task again. Conn and the API show the same code and message. Every former task VM command answers the same refusal; see [Task runtime](/reference/tasks#task-runtime).
 
-`--idempotency-key` reuses the same operation for a transport retry, also the `instance.create` of a task copy. Ctrl-C stops following and leaves the operation running. Use `task:cancel` to end the parent task.
+`--idempotency-key` reuses the same operation for a transport retry, also the `instance.create` of a task copy. Ctrl-C stops following and leaves the operation running; the command prints each Operation it follows first ([a follow that ends early](/cli/operation/show#a-follow-that-ends-early)). Use `task:cancel` to end the parent task.
 
 ## How it works
 

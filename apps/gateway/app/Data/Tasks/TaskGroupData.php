@@ -10,7 +10,6 @@ use App\Domain\Tasks\AssistanceKind;
 use App\Domain\Tasks\TaskCopyAgent;
 use App\Domain\Tasks\TaskGroupActivity;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\Tasks\TaskInstanceWorkspace;
 use App\Domain\Tasks\TaskOrchestration;
 use App\Domain\Tasks\TaskPlaces;
 use App\Domain\Tasks\TaskPrMode;
@@ -150,9 +149,9 @@ final class TaskGroupData extends Data
     {
         $taskable = $group->taskable;
         $status = $group->groupStatus();
-        // Only a task copy's group has a mode (docs/reference/tasks.md#task-group-modes).
+        // Every group shows its mode from creation on: the mode needs no copy (docs/reference/tasks.md#where-the-mode-comes-from).
         try {
-            $mode = TaskInstanceWorkspace::forGroup($group) === null ? null : TaskPrModeChoice::of($group);
+            $mode = TaskPrModeChoice::of($group);
         } catch (ResourceOperationException) {
             $mode = null;
         }
