@@ -1,7 +1,10 @@
 order = 1290
-source_sha256 = "6f4dbe4ea2789f037a25d58b772ccf044528799415da8ef4b3826c404ae1544f"
+source_sha256 = "88d88e2e69573e86b52dfb98f0b1e8ec3d876deaf9df2444522ec9173999028c"
 cases = [
   "test_certificate_links_account_copy_modes_and_literal_caddy_text",
+  "test_merge_mode_publishes_through_the_node_transaction_not_the_whole_render",
+  "test_a_refused_merge_defers_and_marks_no_instance_awake",
+  "test_real_merge_refusal_marks_the_create_run_folder_and_fails_the_site_phase",
   "test_existing_file_mode_drift_clears_unwanted_special_bits",
   "test_same_content_destination_symlinks_are_replaced_without_touching_targets",
   "test_failed_validation_keeps_live_bytes_and_metadata_and_cleans_candidate",
@@ -16,9 +19,10 @@ cases = [
   "test_reused_input_is_read_only_and_child_cleanup_keeps_its_own_folder",
 ]
 file = "swamp/tests/ansible_route_site_test.py"
-cost = 23
+cost = 28
 slices = false
 inputs = [
+  "swamp/ansible/module_utils/orbit_route_withdraw.py",
   "swamp/tests/fixtures/route-access.json",
   "apps/gateway/app/Domain/Routes/RouteWebRootCommands.php",
   "swamp/ansible/requirements.txt",
@@ -29,6 +33,9 @@ inputs = [
   "swamp/workflows/workflow-route-create-site.yaml",
 ]
 [case_costs]
+"test_merge_mode_publishes_through_the_node_transaction_not_the_whole_render" = 1
+"test_a_refused_merge_defers_and_marks_no_instance_awake" = 1
+"test_real_merge_refusal_marks_the_create_run_folder_and_fails_the_site_phase" = 3
 "test_certificate_links_account_copy_modes_and_literal_caddy_text" = 1
 "test_failed_validation_keeps_live_bytes_and_metadata_and_cleans_candidate" = 1
 "test_retry_after_reload_failure_completes_without_rewriting_public_files" = 1

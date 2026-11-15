@@ -1,0 +1,21 @@
+order = 1391
+source_sha256 = "e34ffdcb47d4c4c214714c6d2f9f4c7ac189c476079f949293ea494121c1d7c1"
+cases = [
+  "test_a_publication_adds_only_its_own_groups_and_keeps_every_other_byte_and_order",
+  "test_recorded_clone_sites_publish_beside_production_ingress_and_gateway_sites",
+  "test_seven_publications_and_a_withdrawal_of_another_route_on_one_node_all_land",
+  "test_a_state_that_changes_a_production_ingress_or_gateway_site_is_refused",
+  "test_a_publication_never_changes_the_global_options_it_holds",
+  "test_a_retry_replaces_its_own_live_groups_instead_of_refusing",
+  "test_the_same_publication_twice_changes_nothing_but_still_reloads_for_new_certificates",
+  "test_a_second_create_of_the_same_name_after_a_destroy_adds_its_new_instance",
+  "test_a_held_lock_refuses_busy_and_changes_nothing",
+  "test_a_whole_file_build_between_read_and_write_refuses_live_changed",
+  "test_a_failed_validation_changes_nothing_and_keeps_no_copy",
+  "test_a_failed_reload_puts_the_file_back_and_reloads_again",
+  "test_a_file_without_the_orbit_header_is_refused",
+  "test_a_missing_file_on_a_node_that_served_sites_is_refused_and_an_empty_node_gets_its_first",
+  "test_the_plan_comes_from_the_captured_publication_of_the_node",
+]
+file = "swamp/tests/route_publish_test.py"
+inputs = ["swamp/ansible/module_utils/orbit_route_withdraw.py", "swamp/tests/fixtures/route-withdraw/recorded-destroys.json"]
