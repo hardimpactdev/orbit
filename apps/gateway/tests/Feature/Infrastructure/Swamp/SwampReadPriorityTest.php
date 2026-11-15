@@ -220,18 +220,27 @@ it('keeps the count when two processes take handshakes at the same time', functi
     foreach ([1, 2] as $_) {
         $pid = pcntl_fork();
         if ($pid === 0) {
-            $ledger = new SwampHandshakes($path, lockMilliseconds: 10_000);
-            $socket = new HandshakeCountingServe(limit: 1_000);
-            for ($index = 0; $index < 200; $index++) {
-                $ledger->connect($socket, readEndpoint('run-token'), 15, SwampCaller::Start);
+            // A child never returns into the suite: SIGKILL when all 200 went through, SIGABRT when one threw.
+            $signal = SIGABRT;
+            try {
+                $ledger = new SwampHandshakes($path, lockMilliseconds: 10_000);
+                $socket = new HandshakeCountingServe(limit: 1_000);
+                for ($index = 0; $index < 200; $index++) {
+                    $ledger->connect($socket, readEndpoint('run-token'), 15, SwampCaller::Start);
+                }
+                $signal = SIGKILL;
+            } finally {
+                posix_kill(getmypid(), $signal);
             }
-            posix_kill(getmypid(), SIGKILL);
         }
         $children[] = $pid;
     }
+    $signals = [];
     foreach ($children as $pid) {
         pcntl_waitpid($pid, $status);
+        $signals[] = pcntl_wifsignaled($status) ? pcntl_wtermsig($status) : null;
     }
+    expect($signals)->toBe([SIGKILL, SIGKILL]);
 
     $state = json_decode((string) file_get_contents($path), true);
     unlink($path);
