@@ -285,7 +285,9 @@ The container's `/etc/orbit/frankenphp.Caddyfile` trusts only the Node's bridge 
 
 The `vp-dev` preset sets its development origin from the HTTPS Route, including `/__orbit/vite`, and HMR uses that origin. PHP's scheme translation preserves these development URLs; it changes no Vite upstream or WebSocket routing.
 
-The command line runs a real PHP CLI: a static `php` from the same static build as the Instance's FrankenPHP, with the same PHP version and extensions. The CLI also loads PCOV, from the same build, so Pest TIA and `pest --coverage` work in the container. FrankenPHP does not load PCOV: only the CLI reads [`php-cli.ini`](/reference/php-runtime#container-php). `frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The [static PHP build](/reference/compute-drivers#static-php-build) defines the build and its extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
+The command line runs a real PHP CLI: a static `php` from the same static build as the Instance's FrankenPHP, with the same PHP version and extensions. The CLI also loads PCOV, from the same build, so Pest TIA and `pest --coverage` work in the container. FrankenPHP does not load PCOV: only the CLI reads [`php-cli.ini`](/reference/php-runtime#pcov-in-the-cli-only).
+
+`frankenphp php-cli` behind a `php` shim does not fit yet. It refuses the `-d` options that Composer and test runners pass, and before PHP 8.6 it cannot run `php -i` or PHP without a script. Orbit runs PHP 8.5. The [static PHP build](/reference/compute-drivers#static-php-build) defines the build and its extension list, and the runtime folder's check compares both binaries with it. The shim can replace the CLI binary once FrankenPHP accepts `-d` and Orbit runs PHP 8.6.
 
 ## Shared folders
 
@@ -294,7 +296,7 @@ The software that the app and the agents run lives once per Node, in two version
 | Path | Content | Access |
 | --- | --- | --- |
 | `/opt/orbit-runtime/<version>/php/<php-version>/bin` | `frankenphp` and `php` of one PHP version, from its [static PHP build](/reference/compute-drivers#static-php-build) once that is published and pinned | Everyone |
-| `/opt/orbit-runtime/<version>/php/<php-version>/modules` | `pcov.so` of the same build, which only the PHP CLI loads ([Container PHP](/reference/php-runtime#container-php)) | Everyone |
+| `/opt/orbit-runtime/<version>/php/<php-version>/modules` | `pcov.so` of the same build, which only the PHP CLI loads ([PCOV in the CLI only](/reference/php-runtime#pcov-in-the-cli-only)) | Everyone |
 | `/opt/orbit-runtime/<version>/bin` | `composer`, Node, npm, npx, Bun and `bunx`, Deno, `vp`, rg | Everyone |
 | `/opt/orbit-runtime/<version>/{lib,fonts}` | The [browser libraries and fonts](#browser-libraries-and-fonts) | Everyone |
 | `/opt/orbit-runtime/<version>/php-data-bridge/bridge` | The files of [PHP Data Bridge](https://github.com/nckrtl/php-data-bridge), which [container PHP loads](/reference/php-runtime#container-php). The part has no program | Everyone |

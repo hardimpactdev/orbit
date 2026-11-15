@@ -20,7 +20,7 @@ Principle: [One way, one name](/mission#principles): one build stays the source 
 
 In a container, `php -m` shows neither `pcov` nor `xdebug`. So Pest TIA and `pest --coverage` cannot run there.
 
-static-php-cli v3 marks ext-pcov and ext-xdebug `build-static: false`: it builds them only as shared extensions. The current build is a fully static musl binary, and such a binary cannot `dlopen` a shared extension. That is why the recipe's `instances.php.without` lists `pcov` and `ffi` today.
+In static-php-cli v3, ext-pcov and ext-xdebug have `build-static: false`: static-php-cli builds them only as shared extensions. The current build is a fully static musl binary, and such a binary cannot `dlopen` a shared extension. That is why the recipe's `instances.php.without` lists `pcov` and `ffi` today.
 
 [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#php) requires one build for FrankenPHP and the PHP CLI, with the same PHP and the same extensions. Two builds, one for each binary, would break that.
 
@@ -37,7 +37,7 @@ The containers run Ubuntu 26.04.1. The `Static PHP build` workflow runs on `ubun
 
 This decision amends the PHP part of [ADR 0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers#php): the PHP CLI also loads PCOV. It supersedes nothing in 0250.
 
-## Reasons
+The reasons for glibc:
 
 - **Extension loading.** A glibc binary can `dlopen`. PCOV needs it now, and other shared-only extensions can follow with one entry in `cli_extensions`.
 - **Speed.** musl's memory allocator is slower for PHP than glibc's.
@@ -52,14 +52,14 @@ This decision amends the PHP part of [ADR 0250](/decisions/0250-run-instances-an
 ## Consequences
 
 - The binaries need the container's glibc. A move of the container OS must keep a glibc at least as new as the build's.
-- PHP runtimes notes that static-php's published glibc build crashed on some CPUs ([Sury packages, not a custom PHP build](/reference/php-runtime#sury-packages-not-a-custom-php-build)). This build keeps the baseline x86_64 CPU target, and the runtime folder install runs the check on each Node, so a crash on a Node's CPU fails the install there.
+- PHP runtimes notes that static-php's published glibc build crashed on certain CPUs ([Sury packages, not a custom PHP build](/reference/php-runtime#sury-packages-not-a-custom-php-build)). This build keeps the baseline x86_64 CPU target, and the runtime folder install runs the check on each Node, so a crash on a Node's CPU fails the install there.
 - The change of `tools/static-php/craft.yml`, `bin/static-php-build` and the extension lists gives a new build id. The [two pull request flow](/reference/compute-drivers#change-a-static-build) applies: the first records the new `build` and `url` with `sha256: null`, main builds and publishes, and the second records the SHA-256. A build with `sha256: null` is not in the runtime folder. So no release may ship between the two pull requests, or `php/8.5` leaves the runtime folder of every container.
 - PCOV on by default costs test time in every CLI run of a container, also for Projects that use no coverage. Queue workers and other CLI Processes load it too.
 - A `php` of another PHP version, started by its full path, reads the same `php-cli.ini`, which names the linked version's `pcov.so`. Only the Project's PHP version is linked, so this does not happen in normal use.
 
 ## Affects
 
-- Components: apps/gateway, apps/docs, swamp
+- Components: apps/gateway, apps/docs
 - ADRs: [0250](/decisions/0250-run-instances-and-task-groups-in-incus-containers)
-- Detail: [Static PHP build](/reference/compute-drivers#static-php-build), [Container PHP](/reference/php-runtime#container-php), [PHP in a container](/reference/development-containers#php), [Shared folders](/reference/development-containers#shared-folders)
-- Verify: the `Static PHP build` workflow's proof on main; Python tests of `bin/static-php-build` and `orbit_static_php`; Ansible fixture tests of the `php/<version>` part and the CLI ini; Pest tests of the recipe field and the folder part
+- Detail: [Static PHP build](/reference/compute-drivers#static-php-build), [PCOV in the CLI only](/reference/php-runtime#pcov-in-the-cli-only), [PHP in a container](/reference/development-containers#php), [Shared folders](/reference/development-containers#shared-folders)
+- Verify: the `Static PHP build` workflow's proof on main; Python tests of `bin/static-php-build` and the Swamp module `orbit_static_php`; Ansible fixture tests of the `php/<version>` part and the CLI ini; Pest tests of the recipe field and the folder part
