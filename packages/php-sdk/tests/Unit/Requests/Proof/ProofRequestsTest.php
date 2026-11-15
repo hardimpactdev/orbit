@@ -56,12 +56,6 @@ describe('proof requests', function (): void {
         expect((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody())->toBe('{"commit":"'.PROOF_COMMIT.'","report_only":true}');
     });
 
-    it('sends keep_failed only when the VM of a failed run is to be kept', function (): void {
-        $mock = proof_send(new RunProofRequest(PROOF_COMMIT, false, false, 'proof.run.c1', true), 'queued');
-
-        expect((string) $mock->getLastPendingRequest()?->createPsrRequest()->getBody())->toBe('{"commit":"'.PROOF_COMMIT.'","keep_failed":true}');
-    });
-
     it('sends the key as a header and omits all unless it is set', function (string $commit, bool $all, string $body): void {
         $mock = proof_send(new RunProofRequest($commit, $all, false, 'proof.run.c1'), 'queued');
         $sent = $mock->getLastPendingRequest()?->createPsrRequest();
@@ -263,7 +257,7 @@ describe('proof verify responses from recorded Gateway fixtures', function (): v
                 ->and($exception->details())->toBe([]);
         }
     })->with([
-        'not a task VM' => ['refused-no-task-vm', 'proof.no_task_vm'],
+        'no group' => ['refused-group-required', 'proof.group_required'],
         'wrong project' => ['refused-wrong-project', 'proof.wrong_project'],
         'no workspace' => ['refused-no-workspace', 'tasks.no_workspace'],
         'target busy' => ['refused-target-busy', 'operation.target_busy'],

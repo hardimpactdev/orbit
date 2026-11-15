@@ -15,14 +15,12 @@ use App\Domain\Proof\ProofCommandProjection;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\Tasks\TaskGroupStatus;
 use App\Infrastructure\AgentView\WebSocketClient;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Jobs\Operations\ReconcileSwampOperations;
 use App\Jobs\Operations\StartAdmittedSwampRun;
 use App\Jobs\Proof\CancelProofGroup;
-use App\Jobs\TaskVms\ReleaseTaskVmSlot;
 use App\Models\Operation;
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Carbon;
@@ -33,13 +31,13 @@ use Illuminate\Support\Facades\Queue;
 
 require_once __DIR__.'/ProofCommandProjectionTest.php';
 
-/** The existing provision fixture, before native submission rather than after it. */
+/** The runs of the projection fixture, each with its active copy, before native submission rather than after it. */
 function proofPendingStarts(int $count = 3): array
 {
     [$proof, $records] = proofRuns(array_slice(['firewall:allow', 'firewall:list', 'firewall:deny', 'node:list', 'route:list', 'task:list'], 0, $count));
     foreach ($records as [$child]) {
         $child->update(['status' => OperationStatus::Queued, 'state' => ['swamp_start' => [
-            'key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run',
+            'key' => 'operation:'.$child->id, 'workflow' => 'operation-proof-run-copy',
         ]], 'input' => [...$child->input, 'run_budget_seconds' => 2700]]);
     }
     DB::transaction(function () use ($records): void {
@@ -137,11 +135,11 @@ it('spaces the successor from a slow answer and lets unrelated work run before i
         ->and($second->state['proof_child_start']['released_at'])->toBeNull();
 });
 
-it('continues after a definite job failure once and releases the failed provision through its existing projection', function (): void {
+it('continues after a definite job failure once and cancels the failed run\'s group, which removes its copy, through its projection', function (): void {
     $this->freezeSecond();
     Queue::fake();
     [, $records] = proofPendingStarts();
-    [[$first, $group, $vm], [$second], [$third]] = $records;
+    [[$first], [$second], [$third]] = $records;
     $job = new StartAdmittedSwampRun($first->id);
 
     $job->failed(new RuntimeException('worker stopped before submission'));
@@ -150,8 +148,7 @@ it('continues after a definite job failure once and releases the failed provisio
     app()->call([$job, 'handle']);
 
     expect($first->refresh()->status)->toBe(OperationStatus::Failed)->and($first->error_code)->toBe('swamp.start_job_failed');
-    expect($group->refresh()->status)->toBe(TaskGroupStatus::Failed);
-    Queue::assertPushed(ReleaseTaskVmSlot::class, fn ($job): bool => $job->slotId === $vm->id);
+    Queue::assertPushed(CancelProofGroup::class, fn ($job): bool => $job->operationId === $first->id);
     Queue::assertPushed(StartAdmittedSwampRun::class, 2);
     Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $second->id && $job->delay->equalTo(now()->addSeconds(20)));
     $this->travel(20)->seconds();
@@ -306,10 +303,10 @@ function proofRecoveryAnswer(Operation $child): void
     $socket->shouldReceive('receive')->andReturnUsing(function () use (&$frame, $inputs, $child): array {
         $payload = match ($frame['type']) {
             'workflow.run.search' => ['total' => 1, 'data' => ['results' => [[
-                'runId' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run', 'inputs' => $inputs,
+                'runId' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run-copy', 'inputs' => $inputs,
                 'tags' => ['orbit_start_key' => 'operation:'.$child->id],
             ]]]],
-            'workflow.history.get' => ['data' => ['id' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run', 'status' => 'running', 'inputs' => $inputs]],
+            'workflow.history.get' => ['data' => ['id' => PROOF_RUN_ID, 'workflowName' => 'operation-proof-run-copy', 'status' => 'running', 'inputs' => $inputs]],
         };
 
         return [['id' => $frame['id'], 'type' => $frame['type'], 'payload' => $payload]];

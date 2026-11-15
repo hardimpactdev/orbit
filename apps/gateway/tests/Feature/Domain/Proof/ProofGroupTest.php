@@ -8,14 +8,10 @@ use App\Domain\Proof\ProofGroup;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSize;
-use App\Domain\TaskVms\TaskVmState;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 
@@ -50,7 +46,8 @@ it('cancels the group of each run of a proof that is cancelled', function (): vo
     Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
 });
 
-it('leaves the group of a run that kept its VM when the proof is cancelled, until the keep is up', function (): void {
+// The keep of a failed run's VM is gone: a run that recorded one before keeps no group open when its proof is cancelled.
+it('cancels the group of every run of a cancelled proof, also of a failed run that recorded a kept VM', function (): void {
     Queue::fake();
     $kept = proofRunning();
     $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $kept->node_id, 'node_id' => $kept->node_id,
@@ -62,7 +59,8 @@ it('leaves the group of a run that kept its VM when the proof is cancelled, unti
 
     app(CancelOperationAction::class)->execute($proof);
 
-    Queue::assertPushed(CancelProofGroup::class, 1);
+    Queue::assertPushed(CancelProofGroup::class, 2);
+    Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id);
     Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $other->id);
 });
 it('cancels the group of a run that another proof admitted for the same commit only when that proof is cancelled', function (): void {
@@ -131,43 +129,6 @@ it('admits the cancel of the group of a cancelled proof, once, and not for a gro
     expect($code())->toBe('none');
 });
 
-it('still admits the cancel of a group that is marked cancelled while its VM is not destroyed, and stops once the VM is destroyed', function (): void {
-    $proof = proofRunning();
-    $proof->update(['status' => OperationStatus::Cancelled]);
-    Task::topLevel()->findOrFail($proof->target_id)->update(['status' => TaskGroupStatus::Cancelled]);
-    $vm = TaskVm::query()->create(['group_id' => $proof->target_id, 'host_node_id' => $proof->node_id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-1', 'wireguard_ip' => '10.44.0.150',
-        'state' => TaskVmState::Provisioning, 'size' => TaskVmSize::Normal]);
-    $code = static function () use ($proof): string {
-        try {
-            app(ProofGroup::class)->cancel($proof);
-        } catch (ResourceOperationException $exception) {
-            return $exception->errorCode;
-        }
-
-        return 'none';
-    };
-
-    // The cancelled run left its VM in provisioning and its slot taken: the cancel must reach its admission (refused here only because the tasks extension is off).
-    expect($code())->toBe('extension.disabled');
-
-    $vm->update(['state' => TaskVmState::Destroyed]);
-
-    expect($code())->toBe('none');
-});
-
-it('needs the cancel of the failed group of a kept run whose VM failed to provision, until the group is cancelled and the VM gone', function (): void {
-    $run = proofRunning();
-    Task::topLevel()->findOrFail($run->target_id)->update(['status' => TaskGroupStatus::Failed]);
-    $vm = TaskVm::query()->create(['group_id' => $run->target_id, 'host_node_id' => $run->node_id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
-        'state' => TaskVmState::Failed, 'size' => TaskVmSize::Normal]);
-
-    expect(app(ProofGroup::class)->needsCancel($run))->toBeTrue();
-
-    Task::topLevel()->findOrFail($run->target_id)->update(['status' => TaskGroupStatus::Cancelled]);
-    expect(app(ProofGroup::class)->needsCancel($run))->toBeTrue();
-    $vm->update(['state' => TaskVmState::Destroyed]);
-    expect(app(ProofGroup::class)->needsCancel($run))->toBeFalse();
-});
 it('runs the cancel of the group in a job', function (): void {
     $proof = proofRunning();
     Task::topLevel()->findOrFail($proof->target_id)->update(['status' => TaskGroupStatus::Cancelled]);

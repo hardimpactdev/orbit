@@ -9,14 +9,12 @@ use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCancelIntent;
 use App\Domain\Tasks\TaskGroupStatus;
-use App\Domain\TaskVms\TaskVmState;
 use App\Models\Instance;
 use App\Models\Operation;
 use App\Models\Task;
-use App\Models\TaskVm;
 use Closure;
 
-/** The task group of a proof.run: its keyed admissions and its cancel. The group carries the VM or the copy, so every end of a run must cancel it. */
+/** The task group of a proof.run: its keyed admissions and its cancel. The group carries the copy, so every end of a run must cancel it. */
 final readonly class ProofGroup
 {
     /** The Activity trigger of the cancels that the proof machinery makes for the groups of its own runs. */
@@ -39,17 +37,6 @@ final readonly class ProofGroup
     }
 
     /**
-     * Whether the group of `$owner` still needs its cancel: it is not cancelled, or it is and its VM is not destroyed. A cancelled run marks its
-     * group cancelled and leaves its VM as it was, in provisioning or failed, with its slot taken; that group still needs its cancel.
-     */
-    public function needsCancel(Operation $owner): bool
-    {
-        $group = $owner->target_type === 'task_group' && $owner->kind === self::OwnerKind ? Task::topLevel()->find($owner->target_id) : null;
-
-        return $group !== null && $this->holdsVm($group);
-    }
-
-    /**
      * The key part of the next cancel of a group that owns a copy: each destroy of the copy that ended without success needs a cancel of
      * its own, because the group stays bound to the copy and a replay of the earlier key would admit nothing. Empty for the first cancel.
      */
@@ -60,11 +47,6 @@ final readonly class ProofGroup
             ->whereIn('status', OperationStatus::terminalValues())->where('status', '!=', OperationStatus::Succeeded)->count();
 
         return $failed === 0 ? '' : ':'.$failed;
-    }
-
-    private function holdsVm(Task $group): bool
-    {
-        return $group->status !== TaskGroupStatus::Cancelled || TaskVm::query()->where('group_id', $group->id)->where('state', '!=', TaskVmState::Destroyed)->exists();
     }
 
     /**
@@ -80,7 +62,7 @@ final readonly class ProofGroup
             return;
         }
         $group = Task::topLevel()->find($owner->target_id);
-        if ($group === null || ! $this->holdsVm($group)) {
+        if ($group === null || $group->status === TaskGroupStatus::Cancelled) {
             return;
         }
         try {

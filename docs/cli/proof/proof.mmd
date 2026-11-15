@@ -20,6 +20,7 @@ sequenceDiagram
   %%> What it records:
   %%> - the copy's Incus project and container, its Node as the SSH target, the copy's inner fleet and the cases file; no secret, and no step calls back
   %%> Refuses:
+  %%> - a request that names no group: `proof.group_required`, before any read; task VMs are removed, so no calling Node stands for a group
   %%> - a copy whose last completion failed: `tasks.copy_completion_failed`, with its Operation, failed step, error code and the retry `orbit instance:complete ID`
   %%> - an Instance that is not a clone that keeps its nested fleet, such as a Project's default: `proof.copy_fleet_missing`; the reset never runs on it
   %%> - a group without a copy, a copy that is not active or not running, a Project without a nested fleet, a copy turn that may still run, or another operation on the group

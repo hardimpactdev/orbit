@@ -1,0 +1,1 @@
+Name the task group whose copy runs the proof: orbit proof COMMAND --group=<id>.

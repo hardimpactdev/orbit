@@ -19,7 +19,7 @@ use Laravel\Prompts\TextPrompt;
 use Orbit\Sdk\Requests\Proof\VerifyProofRequest;
 use Orbit\Sdk\Responses\Operations\OperationResponse;
 
-/** Starts a `proof.verify` operation, which runs the cases of one command on the task VM that calls, and follows it until it ends. Ctrl-C and SIGTERM cancel the run. */
+/** Starts a `proof.verify` operation, which runs the cases of one command in the task copy of a group, and follows it until it ends. Ctrl-C and SIGTERM cancel the run. */
 class ProofCommand extends GatewayCommand implements GatedExtensionCommand
 {
     use FollowsOperations;
@@ -27,12 +27,12 @@ class ProofCommand extends GatewayCommand implements GatedExtensionCommand
     #[\Override]
     protected $signature = 'proof
         {orbit-command? : The Orbit command whose cases to run, for example firewall:allow}
-        {--group= : Prove on the VM of this task group; for a Node with Gateway access}
+        {--group= : Prove in the task copy of this group; for a Node with Gateway access}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
     #[\Override]
-    protected $description = 'Run the cases of one Orbit command on this task VM, or on the VM of --group, and report a verdict for each. Ctrl-C cancels the run.';
+    protected $description = 'Run the cases of one Orbit command in the task copy of --group and report a verdict for each. Ctrl-C cancels the run.';
 
     public function extensionSlug(): ?string
     {

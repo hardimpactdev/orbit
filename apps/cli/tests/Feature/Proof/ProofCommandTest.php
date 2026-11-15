@@ -192,19 +192,19 @@ describe('proof', function (): void {
         $mock->assertSentCount(1, VerifyProofRequest::class);
         $mock->assertNotSent(ShowOperationRequest::class);
     })->with([
-        'not a task VM' => ['refused-no-task-vm', 'proof.no_task_vm'],
+        'no group' => ['refused-group-required', 'proof.group_required'],
         'wrong project' => ['refused-wrong-project', 'proof.wrong_project'],
         'no workspace' => ['refused-no-workspace', 'tasks.no_workspace'],
         'target busy' => ['refused-target-busy', 'operation.target_busy'],
         'extension off' => ['refused-extension-disabled', 'extension.disabled'],
     ]);
 
-    it('names the reason in the human refusal of a caller that is not a task VM', function (): void {
-        $recorded = gateway_fixture('proof/proof-verify/refused-no-task-vm');
+    it('names the reason in the human refusal of a request without a group', function (): void {
+        $recorded = gateway_fixture('proof/proof-verify/refused-group-required');
         MockClient::global([VerifyProofRequest::class => MockResponse::make($recorded['body'], $recorded['status'], ['Content-Type' => 'application/json'])]);
 
         expect(Artisan::call('proof', ['orbit-command' => 'firewall:allow', '--no-interaction' => true]))->toBe(1)
-            ->and(Artisan::output())->toContain('The proof runs on the task VM that calls it. This Node is not a task VM.');
+            ->and(Artisan::output())->toContain('Name the task group whose copy runs the proof: orbit proof COMMAND --group=<id>.');
     });
 
     it('keeps the standard output free of terminal control codes when narrow and piped', function (): void {

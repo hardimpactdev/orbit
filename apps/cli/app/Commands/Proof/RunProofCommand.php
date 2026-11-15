@@ -30,7 +30,6 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         {--base= : Exclusive ancestor SHA; union each intervening commit selection on the tested tree}
         {--all : Run every case, not only the cases that the commit selects}
         {--report-only : Yield capacity to task and proof work}
-        {--keep-failed : Keep the VM of a run that failed for 60 minutes, to read it}
         {--idempotency-key= : Reuse a key to retry this operation start}
         {--json : Return the final operation as machine-readable JSON}';
 
@@ -81,7 +80,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
         $connector = $connectors->make($profile);
         $key = $this->option('idempotency-key');
         $key = is_string($key) && $key !== '' ? $key : 'proof.run.'.Str::uuid();
-        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key, $this->option('keep-failed') === true, $base), OperationResponse::class);
+        $operation = $this->send($connector, new RunProofRequest($commit, $this->option('all') === true, $this->option('report-only') === true, $key, $base), OperationResponse::class);
 
         return $operation instanceof OperationResponse
             ? $this->followOperation($connector, $profile, $operation, 'Prove commit '.substr($commit, 0, 12), 'Proof')
@@ -138,16 +137,7 @@ class RunProofCommand extends GatewayCommand implements GatedExtensionCommand
             $this->writeHumanMessage('Uncovered: '.self::text($path['path'] ?? null).' ('.self::text($path['reason'] ?? null).')');
         }
 
-        // `--keep-failed`: the VM of a run that failed stays until the time shown, and then the Gateway destroys it.
-        foreach (self::entries($result['kept'] ?? null) as $kept) {
-            $group = $kept['group_id'] ?? null;
-            $released = self::text($kept['released_at'] ?? null);
-            $by = $kept['released_by'] ?? null;
-            $this->writeHumanMessage('Kept VM: '.self::text($kept['vm'] ?? null).' of '.self::text($kept['command'] ?? null).', group '.(is_int($group) ? $group : '?').', '
-                .($released !== '' ? 'released at '.$released.(is_int($by) ? ' (operation '.$by.')' : '') : 'destroyed after '.self::text($kept['keep_until'] ?? null)));
-        }
-
-        // A run whose VM workspace was not at the commit under proof ran no case: both commits say what is wrong.
+        // A run whose copy's workspace was not at the commit under proof ran no case: both commits say what is wrong.
         foreach (self::entries($result['workspace'] ?? null) as $workspace) {
             $found = self::text($workspace['found'] ?? null);
             $this->writeHumanMessage('Workspace of '.self::text($workspace['command'] ?? null).': expected '.self::text($workspace['expected'] ?? null).', found '.($found === '' ? 'no commit' : $found));

@@ -1,1 +1,1 @@
-Proof cases exist only for the Orbit repository.
+Proof cases in a task copy need a Project with a nested fleet.

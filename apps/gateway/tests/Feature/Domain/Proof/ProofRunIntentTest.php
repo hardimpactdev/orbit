@@ -2,18 +2,13 @@
 
 declare(strict_types=1);
 
-use App\Actions\Operations\CancelOperationAction;
 use App\Data\Operations\OperationData;
 use App\Domain\GitHub\GitHubApiException;
-use App\Domain\GitHub\GitHubComparisonStatus;
 use App\Domain\GitHub\GitHubReadFailure;
 use App\Domain\GitHub\GitHubReadFailureKind;
 use App\Domain\GitHub\GitHubReview;
 use App\Domain\GitHub\GitHubReviewState;
-use App\Domain\Instances\InstanceSourceLayout;
-use App\Domain\Instances\InstanceState;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Proof\ProofBatchPlan;
 use App\Domain\Proof\ProofChangedFile;
@@ -21,33 +16,25 @@ use App\Domain\Proof\ProofChangedFiles;
 use App\Domain\Proof\ProofCommitRange;
 use App\Domain\Proof\ProofCommitSource;
 use App\Domain\Proof\ProofCommitTrust;
+use App\Domain\Proof\ProofCopies;
+use App\Domain\Proof\ProofMergeBaseReplay;
 use App\Domain\Proof\ProofPullRequest;
 use App\Domain\Proof\ProofRunIntent;
-use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskVmRemoved;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmImageBuildState;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Http\Mcp\ApiDispatcher;
 use App\Http\Mcp\ApiOperationTool;
 use App\Http\Mcp\ToolManifest;
 use App\Jobs\Proof\AdmitProofRun;
-use App\Models\Cluster;
-use App\Models\Instance;
 use App\Models\Node;
 use App\Models\Operation;
 use App\Models\Project;
 use App\Models\Task;
-use App\Models\TaskVm;
-use App\Models\TaskVmImageBuild;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Support\Env;
-use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Queue;
-use Tests\Support\SwampNodeFixture;
 
 uses(LazilyRefreshDatabase::class);
 
@@ -291,37 +278,6 @@ function proofFailureDetail(Operation $proof): ?string
     return $proof->state['native_failure']['detail'] ?? null;
 }
 
-/**
- * One host with room for one large task VM and a base snapshot that a refresh built from the release `$copiesCommit`, and a commit under proof that
- * changes a firewall workflow. Returns the temporary release layout, which the test removes.
- */
-function proofHostWithCopies(object $source, ?string $copiesCommit, int $taskPlaces = 6): string
-{
-    $base = sys_get_temp_dir().'/orbit-proof-copies-'.bin2hex(random_bytes(4));
-    $commit = 'eeeeeeeeeeee0000000000000000000000000000';
-    $release = $base.'/releases/'.substr($commit, 0, 12);
-    mkdir($release.'/apps/gateway/resources/machine-software', 0700, true);
-    file_put_contents($release.'/REVISION', $commit."\n");
-    symlink('releases/'.substr($commit, 0, 12), $base.'/orbit');
-    copy(base_path('resources/machine-software/recipe.json'), $release.'/apps/gateway/resources/machine-software/recipe.json');
-    config(['orbit.gateway_checkout' => $base.'/orbit/apps/gateway', 'proof.execution' => true]);
-    app(TaskExtensionState::class)->enable();
-    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-    config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
-    $host = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'beast', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '10.44.0.7', 'wireguard_ip' => '10.44.0.7', 'user' => 'orbit']));
-    $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded, 'promoted_at' => now(),
-        'images' => ['base' => ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']]]);
-    Operation::query()->create(['kind' => 'task_vm.image_refresh', 'target_type' => 'task_vm_host', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
-        'input' => $copiesCommit === null ? [] : ['commit' => $copiesCommit],
-        'result' => ['refreshed' => true, 'host_node_id' => $host->id, 'build_id' => $build->id], 'triggered_by' => 'test']);
-    $cluster = Cluster::query()->create(['name' => 'dev', 'tld' => 'dev']);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25', [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $taskPlaces, 4, '8GiB', '20GiB', ciPlaces: 2)], '/pi', str_repeat('a', 64), ['gpt-6'], largeProjectIds: [$project->id]));
-    $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
-    proofWorld($source);
-
-    return $base;
-}
 describe('proof:run admission', function (): void {
     it('answers after one insert: the proof is recorded and the admission is queued, with no read of GitHub and no run', function (): void {
         Queue::fake();
@@ -488,29 +444,42 @@ describe('proof:run admission', function (): void {
         expect($proof->error_code)->toBe('proof.execution_disabled')->and($proof->input['cases'])->toHaveCount(1);
     });
 
-    // The task VM admission of a proof's run is removed: a proof Project without a container default fails by that name, with no VM and no wait.
-    it('fails an operator proof of a Project without a container default by the removed task VM runtime, with no VM and no waiting run', function (bool $reportOnly): void {
-        proofWorldWithoutCapacity();
-        $proof = proofAdmitted(reportOnly: $reportOnly);
+    // A proof runs only in copies: a proof Project whose tasks do not run as copies fails by the removed task VM runtime, with no group and no wait.
+    it('fails a proof of a Project whose tasks do not run as copies by the removed task VM runtime, with no group and no waiting run', function (bool $reportOnly, bool $ci): void {
+        proofWorldWithoutCopies();
+        $caller = Node::query()->where('name', 'swamp')->firstOrFail();
+        if ($ci) {
+            $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        }
+        $proof = proofAdmitted(reportOnly: $reportOnly, caller: $ci ? $caller : null);
         expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe(TaskVmRemoved::Code)
-            ->and(TaskVm::query()->count())->toBe(0)
+            ->and(Task::query()->count())->toBe(0)
             ->and(Operation::query()->where('status', OperationStatus::Waiting)->count())->toBe(0);
-    })->with([true, false]);
+    })->with(['operator' => [false, false], 'report only' => [true, false], 'CI' => [true, true]]);
 
-    it('fails the proof, and places nothing, when GitHub cannot say how old the copies are', function (): void {
-        $source = proofSource();
-        $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
-        app()->instance(ProofCommitSource::class, Mockery::mock($source::class, function ($mock) use ($source): void {
-            foreach (['commitExists', 'branchesWithHead', 'pullRequestsWithHead', 'canWrite', 'reviews', 'changes', 'file', 'proofPaths', 'caseSelection'] as $method) {
-                $mock->shouldReceive($method)->andReturnUsing(static fn (...$arguments) => $source->{$method}(...$arguments));
-            }
-            $mock->shouldReceive('range')->andThrow(GitHubApiException::unavailable());
-        }));
+    it('fails a proof whose proof Project is missing by the same refusal, with no group', function (): void {
+        proofWorldWithoutCopies();
+        config(['proof.project' => 999]);
 
         $proof = proofAdmitted();
 
-        Process::run(['rm', '-rf', $base]);
-        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.github_unavailable')->and(Task::query()->count())->toBe(0);
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe(TaskVmRemoved::Code)->and(Task::query()->count())->toBe(0);
+    });
+
+    // The refusal is the proof's own: it does not wait behind a working proof, as the task VM admission did before it refused.
+    it('refuses a proof of a Project whose tasks do not run as copies at once, even while another proof works', function (): void {
+        proofWorldWithoutCopies();
+        $project = Project::query()->sole();
+        $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Proof', 'brief' => 'Brief', 'status' => 'running']);
+        $working = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => 1, 'node_id' => 1, 'status' => OperationStatus::Running,
+            'input' => ['commit' => PROOF_SHA, 'runs' => [['command' => 'firewall:allow', 'file' => 'f', 'group_id' => $group->id, 'operation_id' => 1]]]]);
+        Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => 1, 'status' => OperationStatus::Running,
+            'input' => ['proof_operation_id' => $working->id, 'command' => 'firewall:allow', 'file' => 'f']]);
+
+        $proof = proofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe(TaskVmRemoved::Code)
+            ->and($proof->current_step)->toBeNull()->and(Operation::query()->where('kind', 'proof.command')->count())->toBe(1);
     });
 
     it('fails the proof at admission with the reason of the failed read on the Operation', function (): void {
@@ -549,82 +518,28 @@ describe('proof:run admission', function (): void {
     });
 });
 
-/**
- * The input of one run, as ProofRunIntent builds it for a proof that was recorded with `$proofInput`.
- *
- * @param  array<string,mixed>  $proofInput
- * @return array<string,mixed>
- */
-function proofRunInput(array $proofInput, array $assignments = []): array
-{
-    SwampNodeFixture::ensure();
-    $guest = Node::withoutEvents(fn (): Node => Node::query()->create(['name' => 'tvm-710', 'status' => 'active', 'platform' => 'linux', 'architecture' => 'x86_64',
-        'public_ssh_host' => '10.44.0.160', 'wireguard_ip' => '10.44.0.160', 'user' => 'orbit', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
-    $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-    $group = Task::query()->create(['project_id' => $project->id, 'title' => 'Proof', 'brief' => 'Brief', 'status' => 'reserved']);
-    $instance = Instance::query()->create(['project_id' => $project->id, 'node_id' => $guest->id, 'name' => 'workspace', 'source_layout' => InstanceSourceLayout::Checkout,
-        'source_prepare_id' => 'prepare', 'checkout_path' => '/home/orbit/apps/orbit/workspace', 'task_workspace_owner_id' => $group->id,
-        'status' => InstanceState::Reserved, 'first_setup_pending' => true]);
-    $proof = Operation::query()->create(['kind' => 'proof.run', 'target_type' => 'node', 'target_id' => $guest->id, 'node_id' => $guest->id, 'status' => OperationStatus::Running, 'input' => $proofInput]);
-    $method = new ReflectionMethod(ProofRunIntent::class, 'runInput');
-
-    return $method->invoke(app(ProofRunIntent::class), $proof, PROOF_SHA, str_repeat('c', 40), ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml'],
-        ['node_id' => $guest->id, 'execution_secrets' => []], $group, $instance, $assignments);
-}
-
-/** A host that cannot place the proof: with no VM settings every command is refused for capacity. */
-function proofWorldWithoutCapacity(): void
+/** A proof Project whose tasks do not run as copies: no nested fleet and no container default. */
+function proofWorldWithoutCopies(): void
 {
     config(['proof.execution' => true]);
     app(TaskExtensionState::class)->enable();
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
-    config(['proof.project' => $project->id, 'swamp.proof_club_api_key' => 'club-key']);
+    config(['proof.project' => $project->id]);
     $source = proofSource();
     $source->files = [new ProofChangedFile('swamp/workflows/workflow-firewall-direct.yaml', 'modified')];
     proofWorld($source);
 }
 
-describe('the intent of a run', function (): void {
-    it('carries the head and the merge base, which the proof of a new case switches the checkout to', function (): void {
-        $input = proofRunInput([]);
+describe('the merge-base replay fields', function (): void {
+    // Kept for the port of the replay to copies: the fields name exactly what the can-fail chain of proof-fleet-verify reads.
+    it('names the head, the merge base and the checkout that the can-fail jobs of proof-fleet-verify read', function (): void {
+        $fields = ProofMergeBaseReplay::fields('/srv/workspace', PROOF_SHA, str_repeat('c', 40));
+        $workflow = file_get_contents(dirname(base_path(), 2).'/swamp/workflows/workflow-proof-fleet-verify.yaml');
 
-        expect($input['verify'])->toMatchArray(['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'head' => PROOF_SHA, 'merge_base' => str_repeat('c', 40),
-            'checkout_path' => '/home/orbit/apps/orbit/workspace']);
-    });
-
-    it('carries the run budget of the batches it proves', function (): void {
-        $batch = ['command' => 'firewall:allow', 'file' => 'swamp/proof/firewall/allow.cases.yaml', 'cases' => ['a'], 'seconds' => 400.0];
-        $input = proofRunInput([], [[...$batch, 'batch' => 'one'], [...$batch, 'batch' => 'two']]);
-
-        // (600 + 2 x 180 + 800) x 1.5 = 2,640, rounded up to five minutes.
-        expect($input['run_budget_seconds'])->toBe(2700)->and(OperationRunBudgets::seconds(new Operation(['kind' => 'proof.command', 'input' => $input,
-            'state' => ['swamp_run_id' => 'run'], 'attempts' => 1])))->toBe(2700);
-    });
-
-    it('carries keep_failed only for a proof that was started with it', function (array $proofInput, bool $carried): void {
-        $input = proofRunInput($proofInput);
-
-        expect(array_key_exists('keep_failed', $input))->toBe($carried);
-        if ($carried) {
-            expect($input['keep_failed'])->toBeTrue();
+        expect($fields)->toBe(['checkout_path' => '/srv/workspace', 'head' => PROOF_SHA, 'merge_base' => str_repeat('c', 40)]);
+        foreach (['inputs.intent.?head', 'inputs.intent.?merge_base', 'inputs.intent.checkout_path'] as $read) {
+            expect($workflow)->toContain($read);
         }
-    })->with([
-        'asked for' => [['keep_failed' => true], true],
-        'not mentioned' => [[], false],
-        'false' => [['keep_failed' => false], false],
-    ]);
-});
-
-describe('keep_failed', function (): void {
-    it('is recorded on the proof only when it is asked for, so a proof without it has the input it always had', function (): void {
-        Queue::fake();
-        proofWorld(proofSource());
-
-        $kept = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, keepFailed: true);
-        $plain = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
-
-        expect($kept->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_pool' => false, 'runs' => [], 'keep_failed' => true])
-            ->and($plain->input)->toBe(['commit' => PROOF_SHA, 'all' => false, 'report_only' => false, 'caller_node_id' => null, 'ci_pool' => false, 'runs' => []]);
     });
 });
 
@@ -636,18 +551,6 @@ it('derives the CI pool only from the authenticated active ci-runner Node', func
     $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null, reportOnly: true, authenticatedCaller: $node);
     expect($proof->input)->toMatchArray(['caller_node_id' => $node->id, 'ci_pool' => $ci]);
 })->with([['ci-runner', 'active', true], ['ci-runner', 'failed', false], ['app-dev', 'active', false]]);
-
-it('keeps authenticated CI proofs waiting without children until capacity or a clear timeout', function (): void {
-    proofWorldWithoutCapacity();
-    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
-    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-    $proof = proofAdmitted(caller: $caller);
-    expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
-        ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0);
-    $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
-    app(ProofRunIntent::class)->admit($proof->id);
-    expect($proof->refresh()->status)->toBe(OperationStatus::Failed)->and($proof->error_code)->toBe('proof.capacity_timeout');
-});
 
 describe('case definition selection at admission', function (): void {
     it('records only the changed case and its reason, or succeeds with no VM when only a case is deleted', function (string $change, array $expected): void {
@@ -736,61 +639,11 @@ it('honors validated empty execution coverage alongside another selected command
     }
 })->with([['valid', false], ['stale', false], ['missing', false], ['valid', true]]);
 
-/**
- * A CI proof of the batches `one`, `two` and `three`, each one case of 3,000 measured seconds, on one host with two CI places and a base;
- * `$busy` of them are taken. Returns the admitted proof.
- */
-function proofOverBudget(int $busy): Operation
-{
-    $source = proofSource();
-    $file = 'swamp/proof/firewall/allow.cases.yaml';
-    $source->documents = [PROOF_SHA.':swamp/proof/batches.yaml' => "batches:\n  one: {}\n  two: {}\n  three: {}\n",
-        PROOF_SHA.':'.$file => "command: firewall:allow\ncases:\n  - {id: a, batch: one}\n  - {id: b, batch: two}\n  - {id: c, batch: three}\n"];
-    $base = proofHostWithCopies($source, 'dddddddddddd0000000000000000000000000000');
-    $source->ranges['dddddddddddd0000000000000000000000000000'] = new ProofCommitRange(GitHubComparisonStatus::Identical, new ProofChangedFiles(str_repeat('f', 40), [], true));
-    $host = Node::query()->where('name', 'beast')->firstOrFail();
-    // On two places one shard holds two batches: (600 + 2 x 180 + 6,000) x 1.5 s, more than one shard may take.
-    Operation::query()->create(['kind' => 'proof.command', 'target_type' => 'node', 'target_id' => $host->id, 'node_id' => $host->id, 'status' => OperationStatus::Succeeded,
-        'input' => [], 'result' => ['cases' => [['program' => $file.'#a', 'seconds' => 3000], ['program' => $file.'#b', 'seconds' => 3000], ['program' => $file.'#c', 'seconds' => 3000]]]]);
-    for ($slot = 1; $slot <= $busy; $slot++) {
-        TaskVm::query()->create(['host_node_id' => $host->id, 'provider' => 'incus', 'name' => 'beast-tvm-'.$slot, 'slot_number' => $slot, 'wireguard_ip' => '10.44.0.19'.$slot,
-            'state' => 'ready', 'capacity_pool' => 'ci', 'size' => 'large']);
-    }
-    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
-    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-
-    $proof = proofAdmitted(caller: $caller);
-    Process::run(['rm', '-rf', $base]);
-
-    return $proof;
-}
-
-it('waits for another CI place rather than plan a shard past the longest shard budget', function (): void {
-    $proof = proofOverBudget(busy: 1);
-
-    expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)->and($proof->started_at)->toBeNull()
-        ->and($proof->state['capacity_wait_reason'])->toContain('Waiting for more CI places')
-        ->and(ProofRunSettlement::children($proof->id))->toHaveCount(0)->and(Task::query()->count())->toBe(0);
-    Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
-});
-
-it('reads waiting with the wait text and no start time while held, and the status filter finds it', function (): void {
-    proofWorldWithoutCapacity();
-    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
-    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-    $proof = proofAdmitted(caller: $caller);
-
-    expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofRunIntent::WaitStep)
-        ->and($proof->started_at)->toBeNull()->and($proof->finished_at)->toBeNull()
-        ->and(Operation::query()->where('kind', 'proof.run')->where('status', OperationStatus::Waiting)->pluck('id')->all())->toBe([$proof->id])
-        ->and(Operation::query()->where('kind', 'proof.run')->where('status', OperationStatus::Running)->exists())->toBeFalse();
-});
-
 it('admits a waiting proof from its retry job, and no other status', function (): void {
     proofWorld(proofSource());
     Queue::fake();
     $waiting = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
-    $waiting->update(['status' => OperationStatus::Waiting, 'current_step' => ProofRunIntent::WaitStep]);
+    $waiting->update(['status' => OperationStatus::Waiting, 'current_step' => ProofCopies::WaitStep]);
     $queued = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'tester', null);
     $queued->update(['status' => OperationStatus::Queued]);
 
@@ -799,41 +652,6 @@ it('admits a waiting proof from its retry job, and no other status', function ()
 
     expect($waiting->refresh()->input)->toHaveKey('cases')->and($queued->refresh()->input)->not->toHaveKey('cases');
 });
-
-it('cancels a waiting proof, and its retry job then leaves it cancelled', function (): void {
-    proofWorldWithoutCapacity();
-    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
-    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-    $proof = proofAdmitted(caller: $caller);
-    expect($proof->status)->toBe(OperationStatus::Waiting);
-
-    app(CancelOperationAction::class)->execute($proof);
-    app(ProofRunIntent::class)->admit($proof->id);
-
-    expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->finished_at)->not->toBeNull()->and($proof->current_step)->toBeNull();
-});
-
-it('plans past the longest shard budget when every usable CI place is free, because no place can come to wait for', function (): void {
-    $proof = proofOverBudget(busy: 0);
-
-    // The plan goes on to the claims, and the claim answers the refusal of the removed task VMs, not the wait.
-    expect($proof->current_step)->not->toBe(ProofRunIntent::WaitStep)
-        ->and($proof->state['capacity_wait_reason'] ?? null)->toBeNull()
-        ->and($proof->error_code)->toBe(TaskVmRemoved::Code);
-});
-
-it('expires the parent admission allowance for operators as well as CI before recording any children', function (bool $ci): void {
-    proofWorldWithoutCapacity();
-    Queue::fake();
-    $caller = Node::query()->where('name', 'swamp')->firstOrFail();
-    $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
-    $proof = app(ProofRunIntent::class)->start(PROOF_SHA, false, 'test', null, authenticatedCaller: $ci ? $caller : null);
-    $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
-    app(ProofRunIntent::class)->admit($proof->id);
-    expect($proof->refresh()->error_code)->toBe('proof.capacity_timeout')
-        ->and($proof->status)->toBe(OperationStatus::Failed)->and($proof->started_at)->toBeNull()
-        ->and(ProofRunSettlement::children($proof->id))->toBeEmpty();
-})->with([false, true]);
 
 it('unions per-commit selections despite an empty net diff and drops IDs gone at the tested SHA', function (): void {
     config(['proof.execution' => false]);

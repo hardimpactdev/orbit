@@ -16,6 +16,7 @@ Check this page before you build on something. Each row is code that still runs,
 | The `instance-create-stage-`, `instance-create-redact-token-` and `instance-create-redact-model-` key prefixes in the create's declared copies, the Gateway grants, the create workflow's input pattern and `ContainerDestroyExecutionCopies` | The one-line launch copy `instance-create-launch-<operation>`; the bare copies are not written | When no Instance created on release 2079 or 2084 is left (the destroy deletes their copies) |
 | The `<name>-topology-seed` clone name in `TaskVmSlotRuns::seedClone` for VMs without a place number | Every start's VM has a place and a `<name>-seed` clone | When no VM of the old pool (`tvm-610`, `tvm-663`) is live |
 | The kind `task_vm.image_refresh`: `TaskVmImageRefreshIntent`, its projection, the workflow `operation-task-vm-image-refresh` and its children. Nothing starts it since its release step, daily schedule and artisan commands were removed | The [refresh after a release](/reference/development-containers#refresh-after-a-release) of the nested-fleet default Instance | One release after the release without its triggers, with the task VM lifecycle kinds |
+| The [task VM proof run](#the-task-vm-proof-run) | [`proof:run` in copies](/cli/proof/run#the-run) | One release after the Gateway's task VM proof branch went |
 | `GatewayRuntimeFiles::RetiredSettings`, the four `ORBIT_TASK_VMS_UPCLOUD_*` keys and `ORBIT_SWAMP_DIRECT_WRITERS` | Nothing: the `gateway` role's convergence removes them from `shared/gateway.env` | When no Gateway has them |
 | The `certificate`, `pi_port`, `control_ip` and `gateway_ip` of a task start identity: the CA files and the three `identity.env` lines (`ORBIT_PI_PORT`, `ORBIT_CONTROL_IP`, `ORBIT_GATEWAY_IP`) a task start still writes | The boot phase of the base converge (`boot.trust`) bakes the CA and the firewall into the base; the `orbit-identity` unit mounts its own share | When both hosts' bases are refreshed after the boot phase merged |
 | The project names in `TaskVmHostLeftovers::RetiredProjects` (`orbit-baselines`, `orbit-measure-nr`) and `ImageProjects` (`orbit-proto`) | Nothing: the refresh's `host-clean` phase removes them from every host | When no task VM host has them |
@@ -28,6 +29,17 @@ The admission of `task:start` mints no GitHub token. The provision clone, the se
 
 The capacity model replaces the shared CI reserve, `task_max_vms`, resource-unit admission and the `task:park` command. Hosts expose separate task and CI place counts. Publication deletes task VMs; later work claims a fresh VM. See [capacity](/reference/command-development-pipeline#capacity-ideal-state).
 
+## The task VM proof run
+
+The Gateway builds no task VM proof input any more, but these parts stay one release longer:
+
+- the workflow `operation-proof-run`, which is still the `workflow` of the kind `proof.command`; the kind only starts `operation-proof-run-copy`;
+- its test `swamp/tests/proof_keep_failed_test.ts`;
+- the task VM restore and token steps of `proof-fleet-verify` and `proof-fleet-verify-batch`, with the restore handling of `ProofVerifyProjection`;
+- the `proof.command` arm of `TaskGitHubTokens`.
+
+The steps that replay flagged cases on the merge base stay until that replay is ported to copies.
+
 ## Off in the live fleet
 
 This section describes the live Orbit fleet, not the code. On 13 November 2026 these parts stay in the code but do not run:
@@ -35,7 +47,6 @@ This section describes the live Orbit fleet, not the code. On 13 November 2026 t
 | Part | Comes back as |
 | --- | --- |
 | Task VMs (0 task places on every host) and their image refresh (held on every host, and nothing starts it) | Tasks that start from the Orbit container's snapshot |
-| Proof CI in a VM (the repository variable `ORBIT_PROOF_ENABLED` is unset) | Proof on a copy of that snapshot |
 | Automatic deploys of development Instances | One deploy per new commit, for container defaults only |
 | The nightly fleet reboot (`ORBIT_FLEET_REBOOT=false`) | The same pass, after one safe test |
 | Automatic Gateway releases (disabled; a manual deploy also pauses them) | The same tick, when the container path is stable |

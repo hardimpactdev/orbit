@@ -2,11 +2,11 @@
     "schema": 1,
     "request": "Orbit\\Sdk\\Requests\\Proof\\VerifyProofRequest",
     "route": "POST /api/v1/proof/verify",
-    "status": 409,
+    "status": 422,
     "body": {
         "error": {
-            "code": "proof.no_task_vm",
-            "message": "The proof runs on the task VM that calls it. This Node is not a task VM.",
+            "code": "proof.group_required",
+            "message": "Name the task group whose copy runs the proof: orbit proof COMMAND --group=<id>.",
             "details": {}
         }
     }

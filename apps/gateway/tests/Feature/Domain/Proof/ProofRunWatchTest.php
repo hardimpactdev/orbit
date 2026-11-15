@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationRunBudgets;
 use App\Domain\Operations\OperationStatus;
-use App\Domain\Proof\ProofKeptVms;
 use App\Domain\Proof\ProofRunSettlement;
 use App\Domain\Proof\ProofRunWatch;
-use App\Domain\Tasks\TaskCancelIntent;
-use App\Domain\Tasks\TaskCancelProjection;
-use App\Domain\Tasks\TaskGroupEnding;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\TaskVms\TaskVmCapacity;
 use App\Domain\TaskVms\TaskVmHost;
@@ -166,151 +162,48 @@ it('leaves a run alone that Swamp may have accepted: its start is uncertain, and
     expect($uncertain->refresh()->status)->toBe(OperationStatus::Running)->and($proof->refresh()->status)->toBe(OperationStatus::Running);
 });
 
-/**
- * A failed run that kept its VM (`proof:run --keep-failed`): its group is still running, and the run records the keep.
- *
- * @return array{0: Operation, 1: Task}
- */
-function watchKept(Operation $proof, string $until, ?string $asked = null, TaskGroupStatus $status = TaskGroupStatus::Running, string $command = 'firewall:allow'): array
+/** A failed run of a proof whose group is still running, as a task VM run left it. */
+function watchFailedGroup(Operation $proof, string $command = 'firewall:allow'): array
 {
-    $group = Task::query()->create(['title' => 'Proof '.$command, 'brief' => 'Prove it', 'status' => $status]);
+    $group = Task::query()->create(['title' => 'Proof '.$command, 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
     $run = watchRun($proof, $command, OperationStatus::Failed, 'proof.cases_failed', started: true);
-    $run->forceFill(['target_id' => $group->id, 'input' => [...$run->input, 'group_id' => $group->id, 'keep_failed' => true],
-        'result' => ['kept' => ['vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => $until, 'cancel_requested_at' => $asked]]])->save();
+    $run->forceFill(['target_id' => $group->id, 'input' => [...$run->input, 'group_id' => $group->id]])->save();
 
     return [$run, $group];
 }
 
-describe('the keep of a failed run', function (): void {
+describe('a failed task VM run', function (): void {
     beforeEach(fn () => Carbon::setTestNow('2026-11-07 10:00:00'));
     afterEach(fn () => Carbon::setTestNow());
 
-    it('leaves the VM and the group alone until the 60 minutes are up', function (): void {
+    // The keep of a failed run's VM (`proof:run --keep-failed`) is removed: the watch asks no cancel for a keep any more.
+    it('asks no cancel for a run that recorded a kept VM whose time is up', function (): void {
         Queue::fake();
         $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        watchKept($proof, '2026-11-07T10:00:01Z');
+        [$run, $group] = watchFailedGroup($proof);
+        $run->forceFill(['result' => ['kept' => ['vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T09:00:00Z', 'cancel_requested_at' => null]]])->save();
 
         app(ProofRunWatch::class)->sweep();
 
         Queue::assertNotPushed(CancelProofGroup::class);
+        expect($run->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
     });
 
-    it('cancels the group of the run when the time is up, with the trigger of the proof, and asks again only after a few minutes', function (): void {
-        Queue::fake();
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        [$run] = watchKept($proof, '2026-11-07T10:00:00Z');
-        $sweep = static fn () => app(ProofRunWatch::class)->sweep();
-
-        $sweep();
-        $sweep();
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
-        expect($run->refresh()->result['kept']['cancel_requested_at'])->toBe('2026-11-07T10:00:00Z');
-
-        Carbon::setTestNow('2026-11-07 10:06:00');
-        $sweep();
-
-        Queue::assertPushed(CancelProofGroup::class, 2);
-    });
-
-    it('lets go of a keep whose group and VM are gone', function (): void {
-        Queue::fake();
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        watchKept($proof, '2026-11-07T09:00:00Z', status: TaskGroupStatus::Cancelled);
-
-        app(ProofRunWatch::class)->sweep();
-
-        Queue::assertNotPushed(CancelProofGroup::class);
-    });
-
-    it('stops asking a day after the time is up, and a run whose cancel cannot be admitted does not hold the others', function (): void {
-        Queue::fake();
+    it('counts the VM of its group against the capacity of its host until the group is cancelled', function (): void {
         $node = watchNode();
         $proof = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [$old] = watchKept($proof, '2026-11-06T09:00:00Z');
-        [$broken] = watchKept($proof, '2026-11-07T09:00:00Z', command: 'firewall:deny');
-        [$fine] = watchKept($proof, '2026-11-07T09:30:00Z', command: 'firewall:list');
-        $armed = true;
-        Operation::saving(static function (Operation $operation) use (&$armed, $broken): void {
-            if ($armed && $operation->id === $broken->id) {
-                throw new RuntimeException('The write failed.');
-            }
-        });
-
-        try {
-            app(ProofRunWatch::class)->sweep();
-        } finally {
-            $armed = false;
-        }
-
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $fine->id);
-        expect($old->refresh()->result['kept']['cancel_requested_at'])->toBeNull();
-    });
-
-    it('says that a run keeps its VM only until the time is up', function (): void {
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        [$open] = watchKept($proof, '2026-11-07T10:00:01Z');
-        [$over] = watchKept($proof, '2026-11-07T10:00:00Z', command: 'firewall:deny');
-        $plain = watchRun($proof, 'firewall:list', OperationStatus::Failed, 'proof.cases_failed');
-
-        expect(ProofRunWatch::keeps($open))->toBeTrue()->and(ProofRunWatch::keeps($over))->toBeFalse()->and(ProofRunWatch::keeps($plain))->toBeFalse();
-    });
-    it('cancels only the group of the run that kept its VM, never one of another proof for the same commit and command', function (): void {
-        Queue::fake();
-        $node = watchNode();
-        $mine = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        $other = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [$kept] = watchKept($mine, '2026-11-07T09:00:00Z');
-        // The same commit and command, in a proof that was started without the flag: its failed run has no keep, and its group is running.
-        $group = Task::query()->create(['title' => 'Proof firewall:allow', 'brief' => 'Prove it', 'status' => TaskGroupStatus::Running]);
-        $stranger = watchRun($other, 'firewall:allow', OperationStatus::Failed, 'proof.cases_failed', started: true);
-        $stranger->forceFill(['target_id' => $group->id, 'result' => ['cases' => []]])->save();
-
-        app(ProofRunWatch::class)->sweep();
-
-        Queue::assertPushed(CancelProofGroup::class, 1);
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $kept->id);
-        expect($group->refresh()->status)->toBe(TaskGroupStatus::Running);
-    });
-
-    it('expires a keep although the watch of the proofs fails, so nobody has to come back', function (): void {
-        Queue::fake();
-        $node = watchNode();
-        // A proof with no run: the watch ends it, and that write fails.
-        watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [$run] = watchKept(watchProof($node, 60), '2026-11-07T09:00:00Z');
-        $armed = true;
-        Operation::saving(static function (Operation $operation) use (&$armed): void {
-            if ($armed && $operation->kind === 'proof.run') {
-                throw new RuntimeException('The write failed.');
-            }
-        });
-
-        try {
-            expect(fn () => app(ProofRunWatch::class)->sweep())->toThrow(RuntimeException::class);
-        } finally {
-            $armed = false;
-        }
-
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id);
-    });
-
-    it('counts a kept VM against the capacity of its host until the group is cancelled', function (): void {
-        $node = watchNode();
-        $proof = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
+        [, $group] = watchFailedGroup($proof);
         TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-600', 'wireguard_ip' => '10.44.0.150',
             'state' => TaskVmState::Ready, 'size' => TaskVmSize::Normal]);
 
         expect(TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus)->count())->toBe(1);
     });
 
-    it('counts a kept VM that failed to provision, which holds the CPU and the memory of its host, and counts every failed VM until deletion', function (): void {
+    it('counts a VM that failed to provision, which holds the CPU and the memory of its host, and counts every failed VM until deletion', function (): void {
         $node = watchNode();
         $proof = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
-        $kept = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
+        [, $group] = watchFailedGroup($proof);
+        TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
             'state' => TaskVmState::Failed, 'capacity_pool' => 'ci', 'size' => TaskVmSize::Normal]);
         $other = Task::query()->create(['title' => 'Another group', 'brief' => 'Brief', 'status' => TaskGroupStatus::Failed]);
         TaskVm::query()->create(['group_id' => $other->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-854', 'wireguard_ip' => '10.44.0.152',
@@ -319,90 +212,6 @@ describe('the keep of a failed run', function (): void {
         $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true, runtime: TaskVmRuntime::Vm)[$node->id];
 
         expect(TaskVm::query()->live()->where('provider', TaskVmProviderKind::Incus)->pluck('name')->all())->toBe(['tvm-853', 'tvm-854'])->and($free())->toBe(4);
-    });
-
-    it('frees the slot of a kept VM when the release of kept VMs cancels its group and the VM is destroyed', function (): void {
-        Queue::fake();
-        $node = watchNode();
-        $proof = watchProof($node, ProofRunWatch::AdmissionSeconds + 1);
-        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
-        $vm = TaskVm::query()->create(['group_id' => $group->id, 'host_node_id' => $node->id, 'provider' => TaskVmProviderKind::Incus, 'name' => 'tvm-853', 'wireguard_ip' => '10.44.0.151',
-            'state' => TaskVmState::Failed, 'capacity_pool' => 'ci', 'size' => TaskVmSize::Normal]);
-        $host = new TaskVmHost($node->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB', ciPlaces: 6);
-        $free = static fn (): int => app(TaskVmCapacity::class)->freeSlots([[$host, $node]], proof: true, runtime: TaskVmRuntime::Vm)[$node->id];
-        expect($free())->toBe(5);
-
-        // Expiry asks for release; the completed deletion frees the CI place.
-        expect(app(ProofKeptVms::class)->release($run->id))->toBeTrue();
-        Queue::assertPushed(CancelProofGroup::class, static fn (CancelProofGroup $job): bool => $job->operationId === $run->id && $job->trigger === 'proof-run');
-        $group->update(['status' => TaskGroupStatus::Cancelled]);
-        $vm->update(['state' => TaskVmState::Destroyed]);
-
-        expect($free())->toBe(6)->and(app(ProofKeptVms::class)->release($run->id))->toBeFalse();
-    });
-});
-
-describe('the released marker of a kept VM', function (): void {
-    beforeEach(fn () => Carbon::setTestNow('2026-11-07 10:00:00'));
-    afterEach(fn () => Carbon::setTestNow());
-
-    it('marks the kept VM of a group as released, with the time and the operation of the cancel, on the run and on the result of its proof', function (): void {
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
-        [$other] = watchKept($proof, '2026-11-07T11:00:00Z', command: 'firewall:list');
-        $proof->forceFill(['status' => OperationStatus::Failed, 'result' => ['commit' => WATCH_SHA, 'kept' => [
-            ['command' => 'firewall:allow', 'vm' => 'tvm-600', 'group_id' => $group->id, 'keep_until' => '2026-11-07T11:00:00Z'],
-            ['command' => 'firewall:list', 'vm' => 'tvm-601', 'group_id' => $other->target_id, 'keep_until' => '2026-11-07T11:00:00Z']]]])->save();
-        $cancel = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $run->node_id, 'input' => [], 'state' => [],
-            'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
-
-        app(ProofKeptVms::class)->released($cancel, $group->id);
-
-        $mark = ['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $cancel->id];
-        expect($run->refresh()->result['kept'])->toMatchArray($mark)->and($other->refresh()->result['kept'])->not->toHaveKey('released_at')
-            ->and($proof->refresh()->result['kept'][0])->toMatchArray($mark)->and($proof->result['kept'][1])->not->toHaveKey('released_at');
-    });
-
-    it('marks the release once, and leaves a group that kept nothing alone', function (): void {
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
-        $first = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $run->node_id, 'input' => [], 'state' => [],
-            'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
-        $second = $first->replicate();
-        $second->save();
-
-        app(ProofKeptVms::class)->released($first, $group->id);
-        Carbon::setTestNow('2026-11-07 10:30:00');
-        app(ProofKeptVms::class)->released($second, $group->id);
-        app(ProofKeptVms::class)->released($first, $group->id + 999);
-
-        expect($run->refresh()->result['kept'])->toMatchArray(['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $first->id]);
-    });
-
-    it('marks the release when the cancel of the group completes, as the projection of tasks.cancel settles it', function (): void {
-        $proof = watchProof(watchNode(), ProofRunWatch::AdmissionSeconds + 1);
-        [$run, $group] = watchKept($proof, '2026-11-07T11:00:00Z');
-        $cancel = Operation::query()->create(['kind' => 'tasks.cancel', 'target_type' => 'task_group', 'target_id' => $group->id, 'node_id' => $run->node_id, 'state' => ['swamp_run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a'],
-            'input' => ['instance_id' => 7], 'status' => OperationStatus::Running, 'sequence' => 1, 'attempts' => 0]);
-        // The cleanup that the cancel captured is not the subject here: the group ends, and the projection must then say that the kept VM is released.
-        app()->instance(TaskGroupEnding::class, new class
-        {
-            public function settle(Task $group, array $captured, string $kind): void
-            {
-                $group->update(['status' => TaskGroupStatus::Cancelled]);
-            }
-        });
-        app()->instance(TaskCancelIntent::class, new class
-        {
-            public function input(Operation $operation): array
-            {
-                return $operation->input;
-            }
-        });
-
-        app(TaskCancelProjection::class)->apply($cancel, ['run_id' => '6b69badf-4f06-4f2e-82d7-21b62c1f587a', 'status' => 'succeeded', 'started_at' => now()->subMinute()->toIso8601String(), 'finished_at' => now()->toIso8601String(), 'result' => ['group_id' => $group->id, 'instance_id' => 7, 'cleanup_complete' => true]]);
-
-        expect($run->refresh()->result['kept'])->toMatchArray(['released_at' => '2026-11-07T10:00:00Z', 'released_by' => $cancel->id]);
     });
 });
 
@@ -460,7 +269,7 @@ it('keeps the existing query count for proofs without holds while repairing held
     }
     app(ProofRunWatch::class)->sweep();
     Queue::assertPushed(StartAdmittedSwampRun::class, fn ($job): bool => $job->operationId === $held->id && $job->delay->equalTo(now()->addSeconds(20)));
-})->with(['young' => [60, 3], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 4]]);
+})->with(['young' => [60, 2], 'old' => [ProofRunWatch::AdmissionSeconds + 1, 3]]);
 
 /** The reviewer's lost queued start, still held even though its parent has ended. */
 function watchStrandedHeld(Operation $proof, int $age = 90 * 86400): Operation
@@ -516,7 +325,7 @@ it('recovers stranded children without touching an open parent child, a released
     Queue::assertPushed(CancelProofGroup::class, 1);
 })->with(['open', 'released', 'bound']);
 
-it('keeps the three empty-fleet reads (open proofs, kept VMs, copies to release) and folds stranded children into the existing watchdog selection', function (): void {
+it('keeps the two empty-fleet reads (open proofs, copies to release) and folds stranded children into the existing watchdog selection', function (): void {
     Queue::fake();
     $node = watchNode();
     $queries = [];
@@ -524,7 +333,7 @@ it('keeps the three empty-fleet reads (open proofs, kept VMs, copies to release)
         $queries[] = $query->sql;
     });
     app(ProofRunWatch::class)->sweep();
-    expect($queries)->toHaveCount(3);
+    expect($queries)->toHaveCount(2);
     $empty = count($queries);
     $proof = watchProof($node, 60);
     $child = watchStrandedHeld($proof, 60);

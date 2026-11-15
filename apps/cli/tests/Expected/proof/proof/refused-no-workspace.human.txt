@@ -1,1 +1,1 @@
-The group requires its owned task VM workspace.
+The group has no task copy.

@@ -35,6 +35,7 @@ use App\Infrastructure\Ssh\RemoteCommand;
 use App\Infrastructure\Ssh\SshConnection;
 use App\Infrastructure\Ssh\SshExecutor;
 use App\Infrastructure\Ssh\SshKeyProvider;
+use App\Jobs\Proof\AdmitProofRun;
 use App\Jobs\Proof\CancelProofGroup;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
@@ -249,6 +250,8 @@ describe('proof:run in copies: admission', function (): void {
             ->and($runs)->toHaveCount(2)->and($copies)->toHaveCount(2)
             ->and(Operation::query()->where('kind', 'instance.create')->whereIn('target_id', $copies->pluck('id'))->count())->toBe(2)
             ->and($runs->every(static fn (Operation $run): bool => $run->input['copy'] === true && $copies->contains('id', $run->input['instance_id'])))->toBeTrue()
+            // One unmeasured batch a shard: (600 + 180 + 1) x 1.5 s, rounded up to five minutes.
+            ->and($runs->pluck('input.run_budget_seconds')->all())->toBe([1200, 1200])
             ->and(collect($proof->input['runs'])->pluck('instance_id')->sort()->values()->all())->toBe($copies->pluck('id')->sort()->values()->all())
             ->and(app(DirectOperation::class)->workflowFor($runs->first()))->toBe('operation-proof-run-copy')
             ->and(Task::topLevel()->whereKey($runs->pluck('target_id'))->get()->every(static fn (Task $group): bool => $group->status === TaskGroupStatus::Reserved))->toBeTrue();
@@ -282,6 +285,47 @@ function copyProofOtherCopies(int $count): void
         $runtime->fill(['instance_id' => $copy->id, 'container_name' => 'other-'.$index, 'bridge_address' => '10.253.0.'.(200 + $index), 't3_port' => null])->save();
     }
 }
+
+describe('proof:run in copies: the wait for a copy place', function (): void {
+    it('reads waiting with the wait text and no start time while held, and the status filter finds it', function (): void {
+        config(['orbit.tasks.copies_max' => 2]);
+        $proof = copyProofAdmitted();
+
+        expect($proof->status)->toBe(OperationStatus::Waiting)->and($proof->current_step)->toBe(ProofCopies::WaitStep)
+            ->and($proof->started_at)->toBeNull()->and($proof->finished_at)->toBeNull()
+            ->and(Operation::query()->where('kind', 'proof.run')->where('status', OperationStatus::Waiting)->pluck('id')->all())->toBe([$proof->id])
+            ->and(Operation::query()->where('kind', 'proof.run')->where('status', OperationStatus::Running)->exists())->toBeFalse();
+        Queue::assertPushed(AdmitProofRun::class, static fn (AdmitProofRun $job): bool => $job->operationId === $proof->id);
+    });
+
+    it('cancels a waiting proof, and its retry job then leaves it cancelled', function (): void {
+        config(['orbit.tasks.copies_max' => 2]);
+        $proof = copyProofAdmitted();
+        expect($proof->status)->toBe(OperationStatus::Waiting);
+
+        app(CancelOperationAction::class)->execute($proof);
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->status)->toBe(OperationStatus::Cancelled)->and($proof->finished_at)->not->toBeNull()->and($proof->current_step)->toBeNull()
+            ->and(copyProofRuns())->toHaveCount(0);
+    });
+
+    it('expires the admission allowance for operators as well as CI before it records any run or copy', function (bool $ci): void {
+        config(['orbit.tasks.copies_max' => 2]);
+        $caller = Node::query()->where('name', 'control')->firstOrFail();
+        $caller->roles()->create(['role' => RoleName::CiRunner, 'status' => 'active']);
+        $proof = app(ProofRunIntent::class)->start(COPY_PROOF_SHA, false, 'test', null, authenticatedCaller: $ci ? $caller : null);
+        app(ProofRunIntent::class)->admit($proof->id);
+        expect($proof->refresh()->status)->toBe(OperationStatus::Waiting)->and($proof->input['ci_pool'])->toBe($ci);
+
+        $proof->forceFill(['created_at' => now()->subSeconds(ProofRunIntent::WaitSeconds + 1)])->save();
+        app(ProofRunIntent::class)->admit($proof->id);
+
+        expect($proof->refresh()->error_code)->toBe('proof.capacity_timeout')
+            ->and($proof->status)->toBe(OperationStatus::Failed)->and($proof->started_at)->toBeNull()
+            ->and(copyProofRuns())->toHaveCount(0)->and(Instance::query()->whereNotNull('task_workspace_owner_id')->count())->toBe(0);
+    })->with(['operator' => false, 'CI' => true]);
+});
 
 describe('proof:run in copies: the shard budget', function (): void {
     it('waits for another copy place rather than plan a shard past the longest shard budget, and runs it once it has every place it may take', function (): void {

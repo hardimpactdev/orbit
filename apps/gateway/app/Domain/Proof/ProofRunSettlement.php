@@ -136,7 +136,6 @@ final readonly class ProofRunSettlement
             $admissionInterrupted = false;
             $nativeInterrupted = false;
             $failed = false;
-            $kept = [];
             $workspace = [];
             foreach ($children as $child) {
                 $rows = self::cases($child);
@@ -152,9 +151,6 @@ final readonly class ProofRunSettlement
                 $childInput = ValidatedData::object($child->input);
                 if (is_array($child->result['workspace'] ?? null)) {
                     $workspace[] = ['command' => $childInput['command'], ...array_intersect_key(ValidatedData::object($child->result['workspace']), ['expected' => 0, 'found' => 0])];
-                }
-                if (is_array($child->result['kept'] ?? null)) {
-                    $kept[] = ['command' => $childInput['command'], ...array_intersect_key(ValidatedData::object($child->result['kept']), ['vm' => 0, 'group_id' => 0, 'keep_until' => 0, 'released_at' => 0, 'released_by' => 0])];
                 }
                 // A run that ended with no record of its cases, such as one the Gateway timed out, is one unrun row.
                 $cases = [...$cases, ...($rows !== [] ? $rows : [['program' => $childInput['file'], 'command' => $childInput['command'], 'verdict' => 'unrun', 'seconds' => 0]])];
@@ -208,7 +204,7 @@ final readonly class ProofRunSettlement
                 'status' => $status, 'finished_at' => now(), 'current_step' => null, 'failed_step' => null,
                 'error_code' => $passed ? null : ($status === OperationStatus::Interrupted ? self::RunInterrupted : ($ran ? 'proof.cases_failed' : ($workspace !== [] ? ProofCommandProjection::WorkspaceCommitMismatch : ($admissionInterrupted ? self::AdmissionInterrupted : 'proof.run_failed')))),
                 'result' => ['commit' => $input['commit'], 'outcome' => $outcome, 'cases' => $cases, 'uncovered' => $input['uncovered'], 'receipt_url' => null, 'selected_commands' => $input['selected_commands'] ?? [],
-                    ...($workspace === [] ? [] : ['workspace' => $workspace]), ...($kept === [] ? [] : ['kept' => $kept])],
+                    ...($workspace === [] ? [] : ['workspace' => $workspace])],
             ]);
         });
     }
