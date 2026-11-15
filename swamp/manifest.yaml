@@ -170,6 +170,7 @@ additionalFiles:
   - ansible/tasks/instance-egress.yml
   - ansible/tasks/instance-host.yml
   - ansible/tasks/instance-power-helper.yml
+  - ansible/tasks/instance-power-call.yml
   - ansible/tasks/instance-network-check.yml
   - ansible/tasks/instance-network-nic-check.yml
   - ansible/tasks/instance-network-move.yml

@@ -1,0 +1,34 @@
+---
+# One call of the power helper as its Instance's unit orbit-instance-power-<id>.service, the Instance's lock
+# (docs/reference/prepared-restore.md#the-power-helper). `power_call` is the command and its arguments; `power_call_stdin` is the
+# intent as JSON, or '' for none. A busy lock is only systemd's UnitExists refusal with nothing on stdout: it is tried 40 times in
+# all, 0.25 s apart (`retries` counts the tries after the first), then fails `instance.power_helper_busy`. Any other nonzero end is
+# a crash: it fails `instance.power_helper_failed` and is never tried again. Each failure leaves the asleep marker as it is.
+# `power_called` is the helper's one JSON result.
+- name: Call the power helper
+  ansible.builtin.command:
+    argv: >-
+      {{ ['systemd-run', '--unit=orbit-instance-power-' ~ container.instance_id, '--wait', '--pipe', '--collect', '--quiet',
+          '/usr/local/libexec/orbit-instance-power'] + power_call }}
+    stdin: "{{ power_call_stdin }}"
+    stdin_add_newline: false
+  register: power_call_run
+  until: power_call_run.rc == 0 or power_call_run.stdout != '' or power_busy not in power_call_run.stderr
+  retries: 39
+  delay: 0.25
+  changed_when: true
+  failed_when: false
+  vars:
+    power_busy: already loaded or has a fragment file
+
+- name: Refuse a call whose lock stayed busy
+  when: power_call_run.rc != 0 and power_call_run.stdout == '' and 'already loaded or has a fragment file' in power_call_run.stderr
+  ansible.builtin.fail: { msg: instance.power_helper_busy }
+
+- name: Refuse a call that crashed
+  when: power_call_run.rc != 0
+  ansible.builtin.fail: { msg: instance.power_helper_failed }
+
+- name: Read the helper's result
+  ansible.builtin.set_fact:
+    power_called: "{{ power_call_run.stdout | from_json }}"

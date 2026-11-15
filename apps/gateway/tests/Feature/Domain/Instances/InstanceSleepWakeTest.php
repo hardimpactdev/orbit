@@ -179,6 +179,51 @@ it('refuses a sleep that the Instance does not allow, before any run', function 
     ['task', 'instance.lifecycle_busy'], ['instance.deploy', 'operation.target_busy'], ['instance.wake', 'operation.target_busy'],
 ]);
 
+/** The power helper's plan of the sleep (docs/reference/prepared-restore.md#results): its typed fields join the existing keys. */
+it('keeps every existing sleep key and adds the typed prepared restore of the helper, dropping what the contract does not name', function (): void {
+    $clone = sleepingClone();
+    $sleep = app(InstanceSleep::class)->start($clone, null, null);
+    expect($sleep->input['web'])->toBe(['port' => 8080]);
+
+    $done = powerRun($sleep, 'succeeded', ['sleep' => 'frozen', 'swap_subtree' => 2, 'prepared_restore' => ['version' => 1, 'status' => 'ready',
+        'generation' => '6f1c1d1e-0000-4000-8000-000000000001', 'processes' => 18, 'resident_mapping_bytes' => 336117760, 'metadata_bytes' => 1357673,
+        'prepare_seconds' => 0.291, 'residual_anon_bytes' => 0, 'residual_file_bytes' => 4096, 'host_pid' => 4242, 'ranges' => [[1, 2]]]]);
+
+    expect($done->result)->toBe(['power_state' => 'stopped', 't3_turn' => 'not_checked', 'sleep' => 'frozen', 'swap_subtree' => 2,
+        'prepared_restore' => ['version' => 1, 'status' => 'ready', 'generation' => '6f1c1d1e-0000-4000-8000-000000000001', 'processes' => 18,
+            'resident_mapping_bytes' => 336117760, 'metadata_bytes' => 1357673, 'prepare_seconds' => 0.291, 'residual_anon_bytes' => 0,
+            'residual_file_bytes' => 4096]]);
+});
+
+it('projects a skipped, unsupported or not applicable plan with its closed reason, and leaves out a status or reason outside the contract', function (array $prepared, ?array $expected): void {
+    $clone = sleepingClone();
+
+    $done = powerRun(app(InstanceSleep::class)->start($clone, null, null), 'succeeded', ['sleep' => 'stopped', 'swap_subtree' => 0, 'prepared_restore' => $prepared]);
+
+    expect($done->result)->toBe(['power_state' => 'stopped', 't3_turn' => 'not_checked', 'sleep' => 'stopped', 'swap_subtree' => 0,
+        ...($expected === null ? [] : ['prepared_restore' => $expected])]);
+})->with([
+    'stop path' => [['version' => 1, 'status' => 'skipped', 'reason' => 'stopped', 'residual_anon_bytes' => 314572800, 'residual_file_bytes' => 0],
+        ['version' => 1, 'status' => 'skipped', 'reason' => 'stopped', 'residual_anon_bytes' => 314572800, 'residual_file_bytes' => 0]],
+    'nested fleet' => [['version' => 1, 'status' => 'skipped', 'reason' => 'placement_unproven'], ['version' => 1, 'status' => 'skipped', 'reason' => 'placement_unproven']],
+    'no capability' => [['version' => 1, 'status' => 'unsupported', 'reason' => 'unsupported'], ['version' => 1, 'status' => 'unsupported', 'reason' => 'unsupported']],
+    'stopped container' => [['version' => 1, 'status' => 'not_applicable'], ['version' => 1, 'status' => 'not_applicable']],
+    'unknown reason' => [['version' => 1, 'status' => 'skipped', 'reason' => 'trained_route'], null],
+    'ready without its numbers' => [['version' => 1, 'status' => 'ready', 'generation' => 'not-a-uuid'], null],
+    'wake status' => [['version' => 1, 'status' => 'complete'], null],
+]);
+
+it('keeps the helper\'s failure code and no prepared restore on a failed sleep', function (): void {
+    $clone = sleepingClone();
+
+    $failed = powerRun(app(InstanceSleep::class)->start($clone, null, null), 'failed', ['error_code' => 'instance.power_helper_busy']);
+
+    expect($failed->status->value)->toBe('failed')
+        ->and($failed->error_code)->toBe('instance.power_helper_busy')
+        ->and($failed->result)->toBe(['error_code' => 'instance.power_helper_busy'])
+        ->and($clone->runtime()->firstOrFail()->power_state)->toBe(InstanceRuntimePowerState::Running);
+});
+
 it('records a sleeping container as stopped, says that the command did not check T3, and names how it sleeps', function (): void {
     $clone = sleepingClone();
 

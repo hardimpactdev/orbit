@@ -49,6 +49,17 @@ abstract readonly class InstancePower implements DirectOperationProjection
         return [];
     }
 
+    /**
+     * The run's result keys that the Operation's result keeps, on success and on failure.
+     *
+     * @param  array<array-key, mixed>  $phase
+     * @return array<array-key, mixed>
+     */
+    protected function kept(array $phase): array
+    {
+        return array_intersect_key($phase, array_flip($this->phaseKeys()));
+    }
+
     /** Work after a terminal Operation's transaction committed. */
     protected function ended(Operation $operation): void {}
 
@@ -171,7 +182,7 @@ abstract readonly class InstancePower implements DirectOperationProjection
     {
         $phase = is_array($data['result'] ?? null) ? $data['result'] : [];
         $succeeded = ($data['status'] ?? null) === OperationStatus::Succeeded->value;
-        $kept = array_intersect_key($phase, array_flip($this->phaseKeys()));
+        $kept = $this->kept($phase);
         $endedBefore = in_array($operation->status->value, OperationStatus::terminalValues(), true);
 
         $operation = DB::transaction(function () use ($operation, $data, $phase, $succeeded, $kept): Operation {

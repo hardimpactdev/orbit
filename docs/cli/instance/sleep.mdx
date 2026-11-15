@@ -55,4 +55,5 @@ The API is `POST /api/v1/instances/{instance}/sleep`; it starts an `instance.sle
 | `instance.sleep_route_unready` | Caddy's loaded site of the Instance has no asleep rule yet. Nothing changed. Publish the Node's Caddy sites and retry. |
 | `instance.container_asleep_failed` | The asleep marker could not be written. The container still runs. |
 | `instance.power_helper_busy` | Another power action on the Instance's Node stayed busy, such as a wake still at work. The asleep marker stays. Retry later. |
+| `instance.power_helper_failed` | The power helper refused its input or crashed. The asleep marker stays; the run's output has the helper's error. Retry, or read the Node's journal. |
 | `instance.container_freeze_failed` | The container could not be frozen, the stop after a full swap failed, or swap could not take a nested-fleet Instance's memory. The marker is gone when the container still runs. |

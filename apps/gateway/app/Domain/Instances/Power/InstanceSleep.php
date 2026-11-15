@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Instances\Power;
 
+use App\Domain\Instances\InstanceContainer;
 use App\Domain\Instances\InstanceRuntimePowerState;
 use App\Domain\Instances\InstanceThreadContributions;
 use App\Domain\Operations\OperationStatus;
@@ -11,15 +12,21 @@ use App\Domain\Shared\ResourceOperationException;
 use App\Models\Instance;
 use App\Models\InstanceRuntime;
 use App\Models\Operation;
+use Illuminate\Support\Str;
 
 /**
  * `instance:sleep`: the command reads no T3 state, so its result says a turn was not checked (docs/cli/instance/sleep.mdx), and an
  * Instance without a T3 server says it has none. Its result names how the container sleeps: `frozen`, or `stopped` when swap did not
- * take its memory; and `swap_subtree`, the number of inner cgroups the freeze opened, which only the wake's run closes again.
+ * take its memory; `swap_subtree`, the number of inner cgroups the freeze opened, which only the wake's run closes again; and
+ * `prepared_restore`, the power helper's plan of the sleep (docs/reference/prepared-restore.md#results).
  */
 final readonly class InstanceSleep extends InstancePower
 {
     public const string Kind = 'instance.sleep';
+
+    /** The closed reason codes of a `skipped` or `unsupported` plan (docs/reference/prepared-restore.md#wake). */
+    public const array PreparedReasons = ['no_plan', 'plan_invalid', 'plan_stale', 'unsupported', 'placement_unproven', 'bound_processes',
+        'bound_ranges', 'bound_metadata', 'bound_residency', 'prepare_timeout', 'capture_failed', 'stopped', 'deadline'];
 
     protected function kind(): string
     {
@@ -62,6 +69,46 @@ final readonly class InstanceSleep extends InstancePower
         return ['sleep', 'swap_subtree'];
     }
 
+    /**
+     * The run's `prepared_restore` with only its documented fields, each of its type: a status and its reason, the plan's actual
+     * measurements for `ready`, and the residual bytes. A value outside the contract is left out, never guessed.
+     */
+    #[\Override]
+    protected function kept(array $phase): array
+    {
+        $kept = parent::kept($phase);
+        $prepared = $phase['prepared_restore'] ?? null;
+        if (! is_array($prepared)) {
+            return $kept;
+        }
+        $status = $prepared['status'] ?? null;
+        $reason = $prepared['reason'] ?? null;
+        $count = static fn (mixed $value): bool => is_int($value) && $value >= 0;
+        $seconds = $prepared['prepare_seconds'] ?? null;
+        $ready = is_string($prepared['generation'] ?? null) && Str::isUuid($prepared['generation'])
+            && $count($prepared['processes'] ?? null) && $count($prepared['resident_mapping_bytes'] ?? null)
+            && $count($prepared['metadata_bytes'] ?? null) && (is_int($seconds) || is_float($seconds)) && $seconds >= 0;
+        $projected = match (true) {
+            $status === 'ready' && $ready => ['version' => 1, 'status' => 'ready', 'generation' => $prepared['generation'],
+                'processes' => $prepared['processes'], 'resident_mapping_bytes' => $prepared['resident_mapping_bytes'],
+                'metadata_bytes' => $prepared['metadata_bytes'], 'prepare_seconds' => (float) $seconds],
+            in_array($status, ['unsupported', 'skipped'], true) && in_array($reason, self::PreparedReasons, true) => ['version' => 1,
+                'status' => $status, 'reason' => $reason],
+            $status === 'not_applicable' => ['version' => 1, 'status' => 'not_applicable'],
+            default => null,
+        };
+        if ($projected === null) {
+            return $kept;
+        }
+        foreach (['residual_anon_bytes', 'residual_file_bytes'] as $key) {
+            if ($count($prepared[$key] ?? null)) {
+                $projected[$key] = $prepared[$key];
+            }
+        }
+
+        return [...$kept, 'prepared_restore' => $projected];
+    }
+
     /** The Instance's newest sleep while its runtime records it stopped and that sleep succeeded: it sleeps behind its asleep marker. */
     public static function asleep(Instance $instance, InstanceRuntime $runtime): ?Operation
     {
@@ -77,10 +124,12 @@ final readonly class InstanceSleep extends InstancePower
     /**
      * The anonymous memory that may stay in RAM after the reclaim; more means swap is full, and the sleep stops the container. `route`
      * says whether a published Route has a Caddy site for the Instance: only such a site must check the asleep marker before the freeze,
-     * and an Instance without one, such as a default without a Route, sleeps with nothing to check.
+     * and an Instance without one, such as a default without a Route, sleeps with nothing to check. `web.port` is the container's web
+     * port, which the power helper records for the wake's readiness check.
      */
     protected function intent(Instance $instance): array
     {
-        return ['freeze' => ['resident_anon_mib' => 32], 'route' => $instance->routes()->where('sites_published', true)->exists()];
+        return ['freeze' => ['resident_anon_mib' => 32], 'route' => $instance->routes()->where('sites_published', true)->exists(),
+            'web' => ['port' => InstanceContainer::WebPort]];
     }
 }
