@@ -17,6 +17,6 @@ final class InstanceFleetGateway
 
     public static function holds(): bool
     {
-        return is_file((string) config('instances.fleet_marker', self::Marker));
+        return is_file(config()->string('instances.fleet_marker'));
     }
 }
