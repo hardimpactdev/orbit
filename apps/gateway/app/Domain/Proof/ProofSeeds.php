@@ -69,16 +69,25 @@ final readonly class ProofSeeds
     }
 
     /**
-     * Records which Node the seed listener of a CI Node trusts, at the end of its `ci-runner` add or converge: the sender in a passed run's
-     * intent; none for a passed run without a sender, which removed the listener, and for any other end, which may have changed the trust
+     * Records which Node the seed listener of a CI Node trusts, at the end of each run that changes it: a `ci-runner` add or role converge,
+     * and a `node:converge` with the role, which passes here when its roles phase passed. A passed run with a sender in its intent sets that
+     * sender when the run opens the listener; a `node:converge` never opens it, so it keeps the record only when the record already names
+     * that sender. A passed run without a sender removed the listener, and any other end may have changed the trust: both clear it
      * (docs/reference/node-provisioning.md#the-seed-listener). A seed copy targets only a Node whose record names the default's Node.
      *
      * @param  array<string, mixed>  $runtime  the run's role runtime intent
      */
-    public static function recordListener(int $nodeId, array $runtime, bool $passed): void
+    public static function recordListener(int $nodeId, array $runtime, bool $passed, bool $opens): void
     {
         $sender = $passed ? (ValidatedData::object($runtime['proof_seed'] ?? [])['sender'] ?? null) : null;
-        Node::query()->whereKey($nodeId)->update(['seed_sender_id' => is_array($sender) ? ValidatedData::integer($sender['node_id']) : null]);
+        $senderId = is_array($sender) ? ValidatedData::integer($sender['node_id']) : null;
+        $node = Node::query()->whereKey($nodeId);
+        if ($senderId !== null && ! $opens) {
+            $node->where('seed_sender_id', '!=', $senderId)->update(['seed_sender_id' => null]);
+
+            return;
+        }
+        $node->update(['seed_sender_id' => $senderId]);
     }
 
     /** The end of a `ci-runner` removal, passed or failed: its phase stops the listener, so the Node trusts no sender. */
