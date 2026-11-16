@@ -89,7 +89,7 @@ The quick checks of a public repository run on GitHub-hosted runners, as today. 
 ### Build order
 
 1. Make the proof blocking again, with its cases selected per changed operation. This needs proof capacity on more than one Node ([ADR 0260](/decisions/0260-share-ci-places-between-runners-and-proof-copies)).
-2. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, `Main copy proof`, the answer collector and the failure sweep, with their scripts and repository variables. The 23 fixture files whose registration marks them or some of their cases `after_merge` become units that a pull request selects by their inputs, like every other fixture. No coverage is dropped.
+2. Remove the after-merge consumers and the full set: `Main deferred fixtures`, `Main full set`, `Main copy proof`, the answer collector and the failure sweep, with their scripts and repository variables. The 23 fixture files whose registration marks the file or a list of its cases `after_merge` become units that a pull request selects by their inputs, like every other fixture. No coverage is dropped.
 3. Retire the fixtures, file by file: move each realistic uncovered case into a proof case, then delete the file and its registration. A family retires only when its proof fits the condition in [When a family retires](#when-a-family-retires).
 4. Absorb this ADR into [Implementation loop](/reference/implementation-loop#ci) and the proof pages, and retire [Main full set](/reference/main-full-set).
 

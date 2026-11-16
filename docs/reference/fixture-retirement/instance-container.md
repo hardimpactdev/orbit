@@ -40,7 +40,7 @@ This file runs the shipped `instance-container.yml` and the Instance host prepar
 | 282 | A converted default store refreshes its same-commit seed once | Designed away | A one-time conversion: only a default made before the private Node store converts its old shared store, once. No default made today takes this branch |
 | 315 | A deployment at the seed's commit retakes the seed | New | `instance:deploy` `deploy-same-commit` |
 | 359 | A retake with no free isolated ID range keeps the old seed and names the cause | Dropped | Needs a Node with every isolated ID range in use. The old seed stays until a new one exists |
-| 411 | A retake stopped between the delete and the rename is finished first | Designed away | Proposed (not built): every retake would take its new seed under `next-` first, as the pair retake (line 3401) does. Then no state lacks a whole seed. Until it is built, the case stays a fixture case |
+| 411 | A retake stopped between the delete and the rename is finished first | Designed away | Proposed (not built): every retake takes its new seed under `next-` first, as the pair retake (line 3401) does. Until it is built, the case stays |
 | 438 | A deployment sends only what the workspace lacks, also after a force-moved branch | New | `instance:deploy` `deploy-force-pushed`. Local commits in a default: designed away, a default has no T3 and no user writes |
 | 486 | A deploy step with inputs is skipped at the same inputs, and runs when one moves | New | `instance:deploy` `deploy-step-skip` |
 | 533 | A proof checkout fetches the commit by SHA and checks it out detached | Copy path | A missing commit: dropped |
