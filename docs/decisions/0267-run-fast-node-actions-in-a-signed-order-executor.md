@@ -6,7 +6,7 @@ description: "In progress. ADR 0266's executor becomes Orbit's one pattern for f
 
 # ADR 0267: Run fast Node actions in a signed-order executor
 
-[ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) built one case: sleep and wake run in a Rust executor on Gateway-signed orders. This record makes that design the general pattern for fast Node actions. An action that runs on one Node, ends in seconds, repeats safely by Operation id and has a fixed name runs in the executor. Everything else stays in Swamp. Swamp calls an executor action through the one relay command, so each action has one implementation. The second case is the Node part of an Instance create, which today runs as three Python scripts over SSH. New Rust follows BeautifulRust from the first slice, and the observer is reviewed against it.
+[ADR 0266](/decisions/0266-sleep-and-wake-containers-through-a-signed-order-executor) designed one case: sleep and wake through a Rust executor on Gateway-signed orders. This record makes that design the general pattern for fast Node actions. An action that runs on one Node, ends in seconds, repeats safely by Operation id and has a fixed name runs in the executor. Everything else stays in Swamp. Swamp calls an executor action through the one relay command, so each action has one implementation. The second case is the Node part of an Instance create, which today runs as three Python scripts over SSH. New Rust follows BeautifulRust from the first slice, and the observer is reviewed against it.
 
 ## Status
 
@@ -17,7 +17,7 @@ The owner decided P1–P9 below on 2026-11-16. This record is design only: nothi
 Principle: [One way, one name](/mission#principles), [Deterministic first](/mission#principles) and [Security fits the real threat model](/mission#principles). One executor runs every fast Node action for every caller, and one Rust module holds each action's rule. The signature is the security boundary, as in ADR 0266. Exceptions:
 
 - [No exceptions and no legacy](/mission#principles): none beyond ADR 0266's. A Python path that an action replaces is deleted in the slice that replaces it.
-- The frozen agent of [ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained): the observer gets no new command for a new action. It already passes orders through after ADR 0266 slice 2. The review slice (B1) changes the observer's code without changing its contract.
+- The frozen agent of [ADR 0253](/decisions/0253-patch-nodes-and-reboot-them-drained): the observer gets no new command for a new action. It passes orders through once ADR 0266 slice 2 lands. The review slice (B1) changes the observer's code without changing its contract.
 
 ## Context
 
@@ -61,7 +61,8 @@ Every action reuses these parts. ADR 0266 defines them; this record makes them g
 | Order checks | Signature, action, Node, target, expiry, nonce, Operation id, input, in that order. Each refusal has its own reason |
 | Target | Each action names its target kind, such as an Instance, and how the executor proves it exists on the Node from a source the observer cannot write |
 | Lock | One lock per target. Orders for one target run one at a time; different targets run in parallel |
-| Idempotency | A repeat of a done Operation returns the first result, marked `repeat`. A replayed nonce refuses and carries the first result |
+| Idempotency | The done record's key is the Operation, the action and the target. Only a repeat with all three equal returns the first result, marked `repeat` |
+| Replay | A replayed nonce refuses and carries the first result |
 | Journal and recovery | One journal write before and one after each action. At start-up the executor finishes every open order. Each action states how it finishes a half-done run |
 | Relay | `sudo -n -u orbit-executor-relay /usr/local/libexec/orbit-executor relay`, with the signed order on stdin. The Gateway's SSH fallback and every Swamp step use it |
 | Listener and hand-off | `orbit-agent-view.service` records each result on its Operation, then pushes it to the Valkey key `executor:op:<operation>` for a waiting request |
@@ -137,9 +138,11 @@ Every Python and shell file under `swamp/` that a Swamp run executes on a Node. 
 
 **Shared rules.** Five rules are used by both the clone and an Ansible phase: the NIC gate, the machine name, the Node services files, mail and the Club key. Each moves into one Rust module of the executor, and is exported as its own action. The Ansible phase that used the Python file calls that action through the relay instead (P4). The Python file goes in the same slice, so each rule has one holder at every point.
 
+**Who signs for an Ansible phase.** The Gateway signs every order; Swamp never holds the key. At admission of an Operation whose phase uses a shared rule, such as a converge or a start, the Gateway signs one order for each Instance and each shared action that the phase runs. It passes them as one workflow input, a map from Instance to orders. Orders hold no secret, so the input is public. The phase hands each Instance's order to the relay. Because the done record's key holds the target, one converge Operation gets one result per Instance. These orders expire at the end of the Operation's run budget instead of 5 s after signing: the executor accepts the longer expiry only for an order that came through the relay. A copied order can still act only once for its own Operation, action and target. `swamp workflow resume` sends the same orders again, and each returns its first result as a replayed nonce. Open points 16–18 list what this leaves open.
+
 ### The create case
 
-The Gateway admits the create as today. For a clone it then signs an `instance.clone` order with the public intent of the copy and sends it over the WebSocket (P1). It starts the Swamp run beside it, which keeps the `publication` job (the Route's CSR, site and TLS probe) and the `create` job (register, finish and the failure path). The run's `clone` job becomes one step that runs the relay with a freshly signed order for the same Operation, from the Gateway's bound Operation read. The executor returns the result of the action that the WebSocket order started, or acts once when that order never arrived. The step waits on the executor's target lock, never on Gateway state.
+The Gateway admits the create as today. For a clone it then signs an `instance.clone` order with the public intent of the copy and sends it over the WebSocket (P1). It starts the Swamp run beside it, which keeps the `publication` job (the Route's CSR, site and TLS probe) and the `create` job (register, finish and the failure path). The run's `clone` job becomes one step that hands the same signed order, passed as a workflow input at admission, to the relay. The executor returns the result of the action that the WebSocket order started, or acts once when that order never arrived. The step waits on the executor's target lock, never on Gateway state.
 
 The executor runs the copy, the start, the Club key, the checkout beside T3 and the sessions check as one action. It writes one result: the phase reached, the timings, and the checked sessions or the failed part's code. The action repeats safely: a copy that exists for this Operation is not made again, and a half-done copy is removed and made again, as `instance_clone.py` does today.
 
@@ -152,7 +155,7 @@ The completion's Node step becomes `instance.clone-complete`, and a failed clone
 New executor code follows BeautifulRust from ADR 0266's slice 1:
 
 - **Lints.** `apps/agent` becomes a Cargo workspace in that slice, with the observer and the executor as members. Its root `Cargo.toml` takes BeautifulRust's `lints/lints.toml` as `[workspace.lints]`, and `lints/clippy.toml` goes beside it. `rust-version` is set to 1.81 or newer, which the suppression lints need. The executor crate sets `[lints] workspace = true` from its first commit. A lint that is wrong for one item gets `#[expect(lint, reason = "...")]` on that item; there is no `#[allow]` and no `#![deny(warnings)]`.
-- **CI.** The agent job runs `scripts/check-crates clippy --locked --all-targets -- -D warnings` beside its tests. A task copy cannot change `.github/workflows/`, so this step lands through the maintainer pull request that ADR 0266 slice 1 already needs.
+- **CI.** The agent job runs `scripts/check-crates clippy --locked --all-targets -- -D warnings` beside its tests. A task copy cannot change `.github/workflows/`, so this step lands through the maintainer pull request that ADR 0266 slice 1 also needs.
 - **Types.** Invalid states are unrepresentable: newtypes for the Node, target, Operation and nonce; one enum for the allowlist with `FromStr`; an order is a `VerifiedOrder` only through the check function, and only a `VerifiedOrder` reaches an action.
 - **Errors.** Each area has its own error enum that implements `std::error::Error`, with one variant per refusal reason. There is no `unwrap()` outside tests; every `expect` says why it cannot fail. Public functions document `# Errors` and `# Panics`.
 - **Unsafe.** Only for the syscalls the actions need, where `rustix` has no safe call. Each block holds one operation and a `// SAFETY:` comment.
@@ -169,7 +172,7 @@ Each slice is one small pull request. It starts by updating the chart of the com
 | # | Slice | Proof | Needs 5513 |
 | --- | --- | --- | --- |
 | G1 | General order and contract: the `input` field, per-action schema and size bound, the exported allowlist the Gateway pins, the relay-only Swamp step rule in the shape guide | Order security tests with a typed input; an unknown action and an oversize input refused; a Swamp proof of a no-op action through the relay | No |
-| C1 | Shared rules into Rust: NIC gate, machine name, Node services files, mail, Club key, each as an action; their Ansible steps call the relay; the Python files go | Tests ported first; an Ansible start and converge of a real clone with T3 and Vite, then its NIC, hosts, mail and machine name checked | **Yes** |
+| C1 | The five shared rules into Rust, each an action; per-Instance orders signed at admission; Ansible steps call the relay; the Python files go | Tests ported first; an Ansible start and converge of a real clone with T3 and Vite, then its NIC, hosts, mail and machine name checked | **Yes** |
 | C2 | `instance.clone`, copy and start: seed copy, volume, NIC, files, start, services and mail | 30 copies of a real default with T3 and Vite; time against today's 5.4 s; a SIGKILL during a copy, then a repeat | **Yes** |
 | C3 | `instance.clone`, the checkout and T3: the guest part as the executor's guest mode, the Club key, the sessions check | 30 creates to a usable thread; time against today's 4.4 s; a failed checkout keeps its code | **Yes** |
 | C4 | The create flow: the Gateway's order over the WebSocket, the Swamp run's relay step, the private input path, the Swamp proof (P5) | 50 creates, time from click to usable thread against today's 15 s; the WebSocket down, then the relay; a lost result recovered by a repeat | **Yes** |
@@ -219,7 +222,9 @@ New:
 13. **The guest part.** The clone's in-container work must run inside the container as `agent`. Running the executor binary there in a guest mode puts a root-built binary in an untrusted container; it acts only as `agent` and checks no order.
 14. **"Ends in seconds" for the create.** The measured median is about 10 s for the Node part, but the steps allow 300 s and 240 s, and the checkout fetches from GitHub. The tail is not measured.
 15. **Crash recovery for a half-done copy.** Today's script removes a leftover volume and copies again. Recovery in the executor depends on that staying safe under a repeat.
-16. **Ansible calling the relay for shared rules.** A converge over many Instances then sends one signed order per Instance. The cost is not measured.
+16. **Ansible calling the relay for shared rules.** A converge over many Instances then sends one signed order per Instance. The cost of the signing at admission and of the relay calls is not measured.
+17. **The run-bound expiry for relay orders.** It widens ADR 0266's 5 s window to the run budget for relay orders. The executor's clock check needs a second bound for them. ADR 0266's Swamp fallback reads a freshly signed order from the Gateway's bound Operation read instead; the two paths are to become one before G1 lands.
+18. **Instances that appear during a run.** An Instance created after the admission has no order in the input. The phase refuses it with its own code, and the next converge covers it.
 
 ## Affects
 
