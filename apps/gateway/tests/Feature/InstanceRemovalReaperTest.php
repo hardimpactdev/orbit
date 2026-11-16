@@ -154,6 +154,16 @@ describe('the reaper never starts', function (): void {
             ->and(Operation::query()->where('triggered_by', InstanceRemovalReaper::Trigger)->exists())->toBeFalse();
     });
 
+    it('while the operator turned it off', function (): void {
+        $removal = ($this->failed)();
+        $this->travel(5)->minutes();
+        config(['instances.removal_reaper' => false]);
+
+        expect(($this->reap)())->toBe([])->and($removal->fresh()->retry_count)->toBe(0);
+        config(['instances.removal_reaper' => true]);
+        expect(($this->reap)())->toHaveCount(1);
+    });
+
     it('for an Instance that no removal was ordered for', function (): void {
         $this->travel(1)->days();
 

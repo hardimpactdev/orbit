@@ -57,6 +57,10 @@ final readonly class InstanceRemovalReaper
     /** @return list<Operation> the Operations this pass started */
     public function run(): array
     {
+        // The operator's off switch, ORBIT_INSTANCE_REMOVAL_REAPER: the pass does nothing.
+        if (! config()->boolean('instances.removal_reaper')) {
+            return [];
+        }
         $started = [];
         $removals = InstanceRemoval::query()->where('status', InstanceRemovalStatus::Failed)->where('kind', InstanceRemovalKind::Destroy)
             ->orderBy('created_at')->get();

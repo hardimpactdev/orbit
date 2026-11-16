@@ -22,6 +22,10 @@ return [
     // (docs/reference/development-containers.md#destroy): a JSON list of positive integer Project ids, like the list above.
     'default_destroy_projects' => json_decode((string) (env('ORBIT_INSTANCES_DEFAULT_DESTROY_PROJECTS') ?: '[]')),
 
+    // The removal reaper that starts failed destroys again (docs/reference/instance-removal.md#the-removal-reaper). On by default; off,
+    // its scheduled pass does nothing.
+    'removal_reaper' => filter_var(env('ORBIT_INSTANCE_REMOVAL_REAPER', true), FILTER_VALIDATE_BOOL),
+
     // The release refresh of nested-fleet defaults (docs/reference/development-containers.md#refresh-after-a-release). Off by default:
     // an operator turns it on once the Club key lives off the default's disk and a safety snapshot exists.
     'nested_fleet_refresh' => filter_var(env('ORBIT_INSTANCES_NESTED_FLEET_REFRESH', false), FILTER_VALIDATE_BOOL),
