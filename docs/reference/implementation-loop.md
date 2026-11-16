@@ -181,9 +181,17 @@ When a fork pull request selects a self-hosted unit, the plan names the unit and
 
 The units follow the hosted lane budget: each unit costs at most 150 declared seconds with startup, and each shard job has a four-minute limit, so every job ends within five minutes. A self-hosted shard holds two lanes, not four: `self_hosted_workers` in the `[budget]` of `checks.toml`. Its runner container shares the Node's memory with proof copies, and four Ansible units at once make it reclaim memory until the heaviest units run past the unit ceiling. The planner packs and the runner runs each shard with the lanes of its pool. A shard holds the units of one pool only.
 
-The costs of a `self_hosted` file come from runs on the self-hosted pool, not from hosted runs. A case without a pool time scales its hosted cost by the median pool ratio of its file. Each registry entry names the source of its cost. Self-hosted shards have their own limit, `self_hosted_shards` in the `[budget]` of `checks.toml`, set from the CI places of the pool; they do not count against the ten hosted shards. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+Each registry entry of a `self_hosted` file names the source of its cost:
 
-`capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason and size. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
+- When a run on the self-hosted pool measured a case, the case costs its pool time.
+- When a pool run planned a case's unit but did not finish it, the case costs its hosted cost scaled by its file's pool ratio.
+- The pool ratio is the median of pool time over declared cost for the file's measured units. A file with no measured unit uses the median of all measured units.
+- When the unit ceiling cut such a case, it costs the larger of its cut time and the scaled cost.
+- A file or case that no pool run has reached keeps its hosted cost until a pool run measures it.
+
+Self-hosted shards have their own limit, `self_hosted_shards` in the `[budget]` of `checks.toml`, set from the CI places of the pool; they do not count against the ten hosted shards. Selected self-hosted work beyond that limit fails `Required checks`, as hosted overflow does, with one exception: a named capacity gap.
+
+`capacity_gap` in the `[budget]` of `checks.toml` lists the self-hosted files that cannot fit the self-hosted shards when selected; [ADR 0262](/decisions/0262-prove-changed-operations-on-the-pull-request#build-order) names each one with its reason. The planner admits a gap file after all other work. Its units that fit run. The plan summary names the rest: `Not run: <file>, N units, reason: capacity gap per ADR 0262`. They do not fail `Required checks`.
 
 A listed file must be a registered `self_hosted` file. Each fixture file declares as inputs only the task files its cases run, so a change to one shared task selects only the files that run it. The migration fixture is split by phase into several files to meet this. Each case near the 180-second unit ceiling is split too. A case above the 150-second lane on the pool that cannot split yet makes its file a named capacity gap.
 
