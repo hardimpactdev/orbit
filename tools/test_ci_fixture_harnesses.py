@@ -81,7 +81,9 @@ class InputClosureTest(unittest.TestCase):
                              ('swamp/tests/fixtures/fleet-reboot-ssh.py', 'swamp/tests/fleet_reboot_unreachable_test.ts')]:
             with self.subTest(helper=helper):
                 plan = api['plan']([helper], budget, fixtures, defaults)
-                selected = {u.split('#')[0] for u in [*api['planned_units'](plan), *api['unplaced_units'](plan)]}
+                # A named capacity gap is selected even when none of its units fit: the plan names them as not run.
+                selected = {u.split('#')[0] for u in [*api['planned_units'](plan), *api['unplaced_units'](plan),
+                                                      *(u for row in plan.get('not_run', []) for u in row['units'])]}
                 self.assertIn(file, selected)
 
 
