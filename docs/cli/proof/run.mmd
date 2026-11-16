@@ -8,9 +8,9 @@ sequenceDiagram
   participant GH as GitHub
   participant Q as Proof queue<br/>FIFO
   participant SW as Swamp
-  participant CP as Proof copies
+  participant CP as CI Nodes<br/>copies · runners
   CLI->>GW: Record the proof
-  %%> Record commit, authenticated caller and options, then queue admission. The proof Project is a nested-fleet Project whose tasks run as copies of its default Instance. Operator and CI proofs use the same copy places.
+  %%> Record commit, authenticated caller and options, then queue admission. The proof Project is a nested-fleet Project whose tasks run as copies of its default Instance. Operator and CI proofs use the same CI places.
   GW-->>CLI: Follow one proof Operation
   GW->>GH: Select commands<br/>check trust
   %%> Read the trusted commit, selection list and cases. A fork needs approval of this head and run-proofs. No selected command succeeds without a copy. Trust passes before any copy exists: a copy holds the nested Club key, so untrusted code never reaches one.
@@ -50,13 +50,29 @@ sequenceDiagram
   %%> On failure:
   %%> - A child that nothing ends stops holding the place after its own deadline plus the existing 60-minute stale-hold bound. Without a deadline, use its last activity plus the longest shard budget and that bound. A timed-out lock holder uses its finish time, or last activity when absent, plus the bound.
   %%> - If that cancellation is lost, a held child of an ended or missing parent stops holding the place 60 minutes after its last activity. Admission past a stale child warns after commit and gateway:status reports gateway.proof_place_stale_child. Admission never changes the stale child.
-  %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. No free copy place uses the same allowance.
-  GW->>GW: Count copy places
-  %%> Places: at most proof.copies (2), and never the last two copy places of the Node of the proof Project's default: min(proof.copies, copies_max - live copies - 2). With no place the proof waits, retrying every 20 seconds. Read the default and its Node's ID map before the admission transaction.
+  %%> - Waiting more than 7200 seconds from creation fails proof.capacity_timeout, for both operator and CI proofs. No free CI place uses the same allowance.
+  GW->>GW: Count free CI places<br/>on every CI Node
+  %%> Which Nodes:
+  %%> - Every Node that offers proof places (ProofCopyHosts::offersPlaces) and holds the default's current seed. The default's own Node holds it.
+  %%> Places on a Node:
+  %%> - Its ci_places minus its busy runners, and no more than its MemAvailable holds whole copy peaks (proof.copy_memory). One rule, in ProofCopyHosts.
+  %%> How:
+  %%> - Read the runner state and MemAvailable of each Node from Prometheus before the admission transaction. A Node without a fresh read offers no place.
+  %%> When:
+  %%> - With no free place on any Node, the proof waits with the step "Wait for a free CI place" and tries again every 20 seconds.
   GW->>GW: Balance whole batches<br/>by measured time
-  %%> Longest measured batch first; assign each to the least loaded copy. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
+  %%> One shard per free place, at most one per batch. Longest measured batch first; assign each to the least loaded copy. Selected cases of a batch stay together. Record expected cases and all shard operations atomically. Each shard records its run budget: 600 s for the shard, 180 s for each batch and the measured case seconds, times 1.5, rounded up to five minutes, at most two hours.
   GW->>GW: Start one copy per shard
-  %%> In the admission transaction, each shard's task group starts an `instance.create` of a copy of the default's seed, the same start as a task copy, and records its run child.
+  %%> In the admission transaction, each shard takes one free place on a Node. Its task group starts an `instance.create` of a copy there, the same start as a task copy, and records its run child.
+  %%> Seed:
+  %%> - Each copy starts from its own Node's seed: the default's seed pair on the default's Node, the seed holder on a CI Node (TaskCopyStart::seed).
+  SW->>CP: Stop idle runners<br/>orbit-ci-runner-hold hold
+  %%> Why:
+  %%> - A place runs one runner job or one proof copy. A Node's idle runners would take new jobs in the places that the proof holds.
+  %%> When:
+  %%> - In each copy's create, before the copy starts its inner fleet. Under one lock per Node, the copy records its hold, then every idle runner service of the Node stops and is recorded.
+  %%> Busy runners:
+  %%> - A runner whose Runner.Worker process runs is busy. It finishes its job and is never stopped.
   GW->>GW: Hold admitted child starts
   %%> Keep unrelated Operations able to start while this proof hands over its children. Execution copies must all succeed before the first start is queued. A child is not due until its copy is `active`: Orbit checks again every 20 seconds. A copy whose create or completion failed, or that is gone, fails its child with proof.run_failed; its cases are unrun.
   loop each admitted child, in order
@@ -66,6 +82,8 @@ sequenceDiagram
   end
   SW->>CP: Bring in the commit
   %%> One Ansible phase from the copy's Node, as `orbit` in the copy: fetch the commit by SHA from the public Orbit repository through the copy's own egress, check it out detached, and run each of the Project's development deploy steps whose inputs changed since the seed. A failed fetch fails by name after 60 s. No retry.
+  %%> No mirror:
+  %%> - A proof copy needs no Git mirror of the Project on its Node, so a CI Node keeps none. Its clone brings no branch into a Node mirror; this fetch is the only way the commit comes in, on every Node.
   SW->>SW: Check the workspace commit
   %%> The workspace is at the commit under proof, or the run fails with proof.workspace_commit_mismatch before any case. Each batch's reset restarts and migrates the nested Gateway on this checkout, and the runner applies its grants and collections, so the fleet runs the tested code.
   loop each assigned batch, in order
@@ -82,6 +100,11 @@ sequenceDiagram
   %%> Capture the full report, not its 4 KiB history tail. Identify command and file on each line. Missing, duplicate or unexpected case verdicts prevent a pass; a missing expected case is unrun.
   GW->>GW: Remove the copy
   %%> Every run end (passed, failed, cancelled, timed out, interrupted, never started) cancels its group with discard, which destroys the copy. A busy copy is asked again; the watchdog asks again for every group of a proof Operation that still owns a copy.
+  SW->>CP: Start held runners<br/>orbit-ci-runner-hold release
+  %%> When:
+  %%> - In each copy's destroy, so after every run end, also a failure or a cancel. Under the Node's lock the copy drops its hold.
+  %%> What it does:
+  %%> - When no hold is left on the Node, start every runner that the holds stopped. A runner that is gone is skipped. A second release changes nothing.
   GW->>GW: Merge all shard verdicts
   %%> Wait for every admitted child, require every expected case and every selected command, and close one proof result. Preserve a native interrupted shard as inconclusive interrupted coverage, even with all passed rows. A completed failed case or a non-interrupted child that did not pass takes precedence and fails the proof. Keep every case verdict, including synthesized unrun rows. Cancellation and admission interruption keep their existing failure semantics.
   GW-->>CLI: One merged report
