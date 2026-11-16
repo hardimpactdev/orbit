@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Domain\Instances;
 
 use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
+use App\Domain\Proof\ProofCopyHosts;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskVmRemoved;
 use App\Models\Instance;
@@ -30,11 +31,15 @@ final readonly class InstancePlacement
 
     /**
      * The early check of a writer whose result can be a container, before it writes anything: development create and its admission.
+     * A CI Node that hosts proof copies takes no Instance of this writer, first (docs/reference/node-provisioning.md#proof-copies-on-a-ci-node).
      * A nested-fleet Project needs a Node whose switch is on; `place()` decides the rest once the result is known. A missing Node is
      * the writer's own not-found.
      */
     public static function assert(Project $project, ?Node $node): void
     {
+        if ($node instanceof Node && ProofCopyHosts::includes($node)) {
+            throw new ResourceOperationException('instance.node_ci_only', 'The Node is a CI Node that hosts proof copies: only a proof copy is made there.', 409);
+        }
         if ($project->nested_fleet && $node instanceof Node) {
             self::assertSwitchedOn($node);
         }

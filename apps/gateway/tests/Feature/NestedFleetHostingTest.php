@@ -225,6 +225,17 @@ describe('a CI Node that hosts proof copies', function (): void {
             ->and(ciRunnerRuntime($both))->not->toHaveKey('instances')
             ->and(app(InstanceHostIntent::class)->role($both))->toBe(RoleName::AppDev);
     });
+
+    it('refuses every create there first with instance.node_ci_only, before any record', function (bool $nested): void {
+        $node = ciNode();
+        $project = otherProject('tool', $nested);
+
+        expect(placementRefusal(fn () => InstancePlacement::assert($project, $node)))->toBe('instance.node_ci_only 409')
+            ->and(placementRefusal(fn () => containerCreate($project, $node)))->toBe('instance.node_ci_only 409')
+            ->and(Instance::query()->count())->toBe(0)
+            ->and(placementRefusal(fn () => InstancePlacement::assert($project, ciNode(0, LifecycleStatus::Active, 'ci-none', '10.44.0.34'))))
+            ->not->toBe('instance.node_ci_only 409');
+    })->with([false, true]);
 });
 
 describe('the recorded Incus project', function (): void {
