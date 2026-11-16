@@ -440,7 +440,9 @@
         - name: Run the thread's turn and wait for its run
           when: turn_target | default(none, true) is not none
           ansible.builtin.command:
-            argv: "{{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread', 'send', '--wait', '--json', turn_target, '-'] }}"
+            argv: >-
+              {{ copy_exec + ['/usr/bin/timeout', '--kill-after=30', intent.turn.seconds | string, intent.turn.t3, 'thread', 'send', '--wait', '--json',
+                 turn_target, '-'] }}
             stdin: "{{ intent.turn.prompt }}"
             stdin_add_newline: false
           register: turn_send
