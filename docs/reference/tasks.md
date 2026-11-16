@@ -461,8 +461,8 @@ A subtask that has started keeps its title, brief, position, and deliverables. A
 
 One Gateway rule decides whether a started subtask's deliverables may change, and by which correction. It takes the first that applies:
 
-1. The [path gate fix](#deliverables). The deliverable path gate holds the subtask before its implementer starts.
-2. The one correction after a failed `invalid_deliverable` step. The subtask asks for assistance. A subtask gets it once, and it takes no reason.
+1. The one correction after a failed `invalid_deliverable` step. The subtask asks for assistance. A subtask gets it once, and it takes no reason.
+2. The [path gate fix](#deliverables). The deliverable path gate holds the subtask before its implementer starts.
 3. A correction after a failed check, in a group whose workspace is a task copy.
 
 A wrong deliverable, such as a command that the copy cannot run or a path that a renumber moved, should not force a code change or a new subtask. In a group whose workspace is a task copy, the caller replaces the list with a reason:
@@ -476,13 +476,13 @@ Orbit accepts this correction when all of these hold:
 - The group has not ended.
 - The subtask is the current subtask, the first open one, and it has started.
 - Its newest handoff check failed.
-- No correction answered that check yet.
+- No correction answered that check yet, of either kind.
 
 The reason is required here, 1 to 500 characters; without it the update returns HTTP 422 `validation.failed` on `reason`. The list passes the same validation as at create: base paths, at most five, and the fields of each type. One correction answers one failed check: a second correction before a new check returns `tasks.deliverables_locked`. A refused correction stores nothing.
 
 Task activity records `deliverables corrected` with the old list, the new list, the reason and the failed check's id. `task:show` shows the new list, and the next handoff check runs it. Nothing else changes: the [done rule](#when-the-work-is-done) reads the current list, and a reviewer still reviews the next check.
 
-A `reason` on any other update, of a group or a subtask, returns HTTP 422 `tasks.reason_unexpected` and changes nothing.
+A `reason` without `deliverables`, on a group update, on a `todo` subtask, or with a correction that takes no reason returns HTTP 422 `tasks.reason_unexpected` and changes nothing. A `reason` with `deliverables` for a started subtask that no correction admits returns `tasks.deliverables_locked`, as without one.
 
 Appending a subtask records new work. Swamp decides when to resume the group.
 

@@ -112,7 +112,9 @@ final class TaskGroupGuard
         }
         $check = TaskCheck::query()->where('task_id', $task->id)->where('kind', TaskCheckKind::Handoff)->latest('id')->first();
 
-        return $check instanceof TaskCheck && $check->status === TaskCheckStatus::Failed && $task->copy_correction_check_id !== $check->id ? $check : null;
+        // One correction answers one check, whichever correction it was.
+        return $check instanceof TaskCheck && $check->status === TaskCheckStatus::Failed
+            && $task->copy_correction_check_id !== $check->id && $task->deliverable_correction_check_id !== $check->id ? $check : null;
     }
 
     public static function reasonUnexpected(): ResourceOperationException
