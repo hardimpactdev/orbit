@@ -121,7 +121,7 @@ final readonly class TaskCopyTurn
             'runtime' => $target['runtime'], 'branch' => $target['branch'], 'thread_id' => $thread->id, 'candidate' => $candidate,
             'turn' => ['t3' => $instance->runtime()->firstOrFail()->server()->program(), 'node' => InstanceContainer::Node, 'thread' => $provider === null ? 'continue' : 'new', 'provider' => $provider, 'model' => $thread->model,
                 'candidate' => $candidate, 'settle' => $settle, 'seconds' => self::TurnSeconds, 'title' => 'Orbit task '.$group->id.' thread '.$thread->id,
-                'prompt' => TaskTurnPrompt::compose($task, $prompt)],
+                'prompt' => TaskTurnPrompt::compose($task, $prompt, now())],
         ];
     }
 

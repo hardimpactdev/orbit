@@ -83,6 +83,7 @@ use App\Models\Task;
 use App\Models\TaskCheck;
 use App\Models\TaskVm;
 use App\Support\ValidatedData;
+use Carbon\CarbonImmutable;
 use Illuminate\Foundation\Testing\LazilyRefreshDatabase;
 use Illuminate\Support\Arr;
 use Illuminate\Support\Facades\DB;
@@ -1465,6 +1466,7 @@ describe('a turn of a group that owns a copy', function (): void {
     it('admits one tasks.copy_turn on the copy\'s Node with the composed prompt and the copy\'s model, and names no credential', function (): void {
         $group = copyGroup(copySource()->project);
         $copy = finishedCopy($group, startCopy($group));
+        $this->travelTo(CarbonImmutable::parse('2026-11-16T10:00:00.5Z'));
 
         $turn = copyTurn($group);
 
@@ -1477,7 +1479,9 @@ describe('a turn of a group that owns a copy', function (): void {
                 'thread' => 'new', 'provider' => 'claudeMedium', 'model' => 'claude-opus-5-5', 'candidate' => null, 'settle' => [], 'seconds' => 3600,
                 'title' => 'Orbit task '.$group->id.' thread '.$thread->id])
             // The implementer learns how to ask: a question ends the turn.
-            ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
+            // Every turn learns its clock: the admission's time and the end of its bound.
+            ->and($turn->input['turn']['prompt'])->toBe("Subtask: Step\n\nBrief:\nDo it\n\nThis turn started at 2026-11-16T10:00:00Z and Orbit ends it at 2026-11-16T11:00:00Z. "
+                ."Commit your work before then.\n\nPrompt of this turn:\nRun Doctor and commit a note.\n\n"
                 .'To ask a question, use your question tool. Asking ends this turn; the answer comes as the next turn.')
             ->and($thread->only(['driver', 'role', 'model', 'effort', 'provider_instance', 'node_id']))->toBe(['driver' => 't3', 'role' => 'implementer', 'model' => 'claude-opus-5-5',
                 'effort' => 'medium', 'provider_instance' => 'claudeMedium', 'node_id' => $copy->node_id])
@@ -1728,6 +1732,8 @@ describe('a turn of a group that owns a copy', function (): void {
             // The phase checks the candidate out for the reviewer, and the prompt names it.
             ->and($review->input['turn'])->toMatchArray(['thread' => 'new', 'provider' => 'claudeHigh', 'candidate' => $check->commit_sha])
             ->and($review->input['turn']['prompt'])->toContain("Prompt of this turn:\nReview the checked commit.\n\nThe checked commit under review: {$check->commit_sha}.")
+            // The reviewer learns its clock as the implementer does.
+            ->and($review->input['turn']['prompt'])->toMatch('/\n\nThis turn started at (\S+Z) and Orbit ends it at \S+Z\. Commit your work before then\.\n\nPrompt of this turn:\n/')
             // A reviewer that approves sends the pull request text with its copy key (docs/reference/tasks.md#the-reviewers-pull-request-text).
             ->and($review->input['turn']['prompt'])->toEndWith("\n\n".TaskCopyTurn::PrTextRule)
             ->and($again->input['turn']['candidate'])->toBe($check->commit_sha)
