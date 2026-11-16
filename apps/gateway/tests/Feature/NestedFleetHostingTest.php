@@ -17,6 +17,7 @@ use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceMachineName;
 use App\Domain\Instances\InstancePlacement;
 use App\Domain\Instances\InstanceState;
+use App\Domain\Nodes\NativeNodeRoleRemovalInput;
 use App\Domain\Nodes\NativeNodeRoleRuntimeInput;
 use App\Domain\Nodes\NodeRoleRuntimeInput;
 use App\Domain\Nodes\RoleName;
@@ -354,6 +355,44 @@ describe('the seed of the proof default on each Node that offers proof places', 
             ])
             ->and(collect($firewall->remove($node, RoleName::CiRunner)['remove'])->pluck('comment')->filter(static fn (string $name): bool => str_starts_with($name, 'orbit:proof-seed'))->values()->all())
             ->toBe(['orbit:proof-seed-deny', 'orbit:proof-seed']);
+    });
+
+    it('removes the seed listener, its trust entry by name and both firewall rules at a ci-runner removal', function (): void {
+        $source = (string) proofSeedDefault()->node()->firstOrFail()->wireguard_ip;
+        seedSwampNode();
+        $node = ciNode(3, LifecycleStatus::Removing);
+        Node::withoutEvents(fn (): bool => $node->update(['ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
+        $removal = app(NativeNodeRoleRemovalInput::class)->capture($node, $node->roles()->sole(), []);
+
+        expect(collect($removal['firewall'])->pluck('input.argv')->filter(static fn (array $argv): bool => str_starts_with((string) end($argv), 'orbit:proof-seed'))->values()->all())->toBe([
+            ['ufw', '--force', 'delete', 'deny', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed-deny'],
+            ['ufw', '--force', 'delete', 'allow', 'in', 'on', 'orbit', 'proto', 'tcp', 'from', $source, 'to', '10.44.0.30', 'port', '8444', 'comment', 'orbit:proof-seed'],
+        ]);
+
+        // The commands run on a stub incus: the trust entry goes by the fingerprint the Node lists for its name, and only this listener goes.
+        $folder = sys_get_temp_dir().'/proof-seed-removal-'.bin2hex(random_bytes(4));
+        mkdir($folder.'/bin', 0700, true);
+        file_put_contents($folder.'/bin/incus', "#!/bin/sh\ncase \"\$1 \$2 \$3\" in\n"
+            ."  'config trust list') printf 'other,aaaa\\norbit-proof-seed,bbbb\\n';;\n"
+            ."  'config get core.https_address') cat {$folder}/listener;;\n"
+            ."  *) echo \"\$*\" >> {$folder}/calls;;\nesac\n");
+        chmod($folder.'/bin/incus', 0755);
+        $run = static function (array $action) use ($folder): void {
+            $env = ['PATH' => $folder.'/bin:/usr/bin:/bin'];
+            if (Process::fromShellCommandline($action['only_if'], env: $env)->run() === 0) {
+                Process::fromShellCommandline($action['command'], env: $env)->mustRun();
+            }
+        };
+        $actions = collect($removal['commands'])->filter(static fn (array $action): bool => str_contains($action['command'], 'incus config'))->values();
+        expect($actions)->toHaveCount(2);
+        foreach (['10.44.0.30:8444', '10.44.0.30:9443'] as $listener) {
+            @unlink($folder.'/calls');
+            file_put_contents($folder.'/listener', $listener."\n");
+            $actions->each($run);
+            expect(file($folder.'/calls', FILE_IGNORE_NEW_LINES))->toBe($listener === '10.44.0.30:8444'
+                ? ['config trust remove bbbb', 'config unset core.https_address'] : ['config trust remove bbbb']);
+        }
+        exec('rm -rf '.escapeshellarg($folder));
     });
 
     it('has no targets while the proof default has no seed', function (): void {

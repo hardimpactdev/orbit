@@ -75,7 +75,7 @@ final readonly class NodeRoleFirewallInput
      *
      * @return list<UfwManagedRule>
      */
-    private function proofSeedRules(Node $node): array
+    public function proofSeedRules(Node $node): array
     {
         $default = app(ProofSeeds::class)->defaultNode();
         $listener = $this->catalog->proofSeedListener($node, $default);
