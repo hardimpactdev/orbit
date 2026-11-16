@@ -18,10 +18,14 @@ use Illuminate\Support\Facades\DB;
 /**
  * Records a copy turn: the thread's state and error, and its transcript in the Gateway's archive,
  * which outlives the copy. A turn that asked keeps its questions on the thread until the thread's next turn. The result names the
- * provider instance, the model and the effort the thread started with. T3's CLI reports no token use, so the metrics stay null.
+ * provider instance, the model and the effort the thread started with, the agent thread's id and the agent's last reply; the transcript
+ * stays out of it. T3's CLI reports no token use, so the metrics stay null.
  */
 final readonly class TaskCopyTurnProjection implements DirectOperationProjection, DirectOperationStartRefusal
 {
+    /** The most characters of the agent's reply that a turn's result holds. */
+    public const int ReplyLimit = 16384;
+
     public function input(Operation $operation): array
     {
         return ['intent' => $operation->input, 'execution_secrets' => []];
@@ -41,6 +45,8 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
                 $result['provider_instance'] = $thread->provider_instance;
                 $result['model'] = $thread->model;
                 $result['effort'] = $thread->effort;
+                $result['agent_id'] = $thread->id;
+                $result['reply'] = self::reply($operation->target_id, $thread->id, $result['transcript'] ?? null);
             }
             if (in_array($data['status'] ?? null, ['failed', 'interrupted'], true) && isset($result['error_code'])) {
                 $data['error_code'] = $result['error_code'];
@@ -52,6 +58,26 @@ final readonly class TaskCopyTurnProjection implements DirectOperationProjection
 
             return $projected;
         });
+    }
+
+    /**
+     * The text of the transcript's last entry that the user did not write, cut at the end past ReplyLimit with a marker that names the
+     * rest and where to read it; null without such an entry (docs/cli/task/turn.mdx#a-task-that-runs-in-a-copy).
+     */
+    private static function reply(int $group, int $agent, mixed $transcript): ?string
+    {
+        $text = null;
+        foreach (is_array($transcript) ? $transcript : [] as $entry) {
+            if (is_array($entry) && ($entry['label'] ?? null) !== 'user' && is_string($entry['text'] ?? null)) {
+                $text = $entry['text'];
+            }
+        }
+        if ($text === null || mb_strlen($text) <= self::ReplyLimit) {
+            return $text;
+        }
+        $rest = mb_strlen($text) - self::ReplyLimit;
+
+        return mb_substr($text, 0, self::ReplyLimit)." [cut: {$rest} more characters; read task:agent:show {$group} {$agent}]";
     }
 
     /** Swamp refused to start the run: the thread that the admission created ran no turn. */

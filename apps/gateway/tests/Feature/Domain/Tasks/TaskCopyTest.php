@@ -1944,6 +1944,66 @@ describe('a turn of a group that owns a copy', function (): void {
             ->and(array_column($read['data']['entries'] ?? $read['entries'] ?? [], 'text'))->toBe(['Run Doctor.', 'Committed d867aba2.']);
     });
 
+    it('names the agent thread and the agent\'s last reply in the result, so a driver reads the turn in one call', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+        $transcript = [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => 'An earlier reply.', 'at' => ''],
+            ['id' => 'run:1:1', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Committed d867aba2.', 'at' => ''],
+            ['id' => 'run:1:2', 'kind' => 'message', 'label' => 'user', 'text' => 'Thanks.', 'at' => '']];
+
+        $ended = copyTurnEnded($turn, 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => $transcript]);
+
+        expect($ended->result)->toMatchArray(['agent_id' => $turn->input['thread_id'], 'reply' => 'Committed d867aba2.'])
+            ->and($ended->result)->not->toHaveKey('transcript');
+    });
+
+    it('cuts a reply longer than its bound at the end and says where the rest is', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+        $agent = $turn->input['thread_id'];
+        $long = str_repeat('é', TaskCopyTurnProjection::ReplyLimit).'tail';
+        $exact = str_repeat('é', TaskCopyTurnProjection::ReplyLimit);
+
+        $cut = copyTurnEnded($turn, 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => $long, 'at' => '']]]);
+        $whole = copyTurnEnded(copyTurn($group), 'succeeded', [...copyTurnDone('mcp:1'), 'transcript' => [['id' => 'run:2:0', 'kind' => 'message', 'label' => 'assistant', 'text' => $exact, 'at' => '']]]);
+
+        expect(TaskCopyTurnProjection::ReplyLimit)->toBe(16384)
+            ->and($cut->result['reply'])->toBe($exact." [cut: 4 more characters; read task:agent:show {$group->id} {$agent}]")
+            ->and($whole->result['reply'])->toBe($exact);
+    });
+
+    it('names no reply for a turn with no transcript or with user entries only', function (array $shaped): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+
+        $ended = copyTurnEnded($turn, 'succeeded', [...array_diff_key(copyTurnDone('mcp:1'), ['transcript' => true]), ...$shaped]);
+
+        expect($ended->result)->toHaveKey('reply')->and($ended->result['reply'])->toBeNull()
+            ->and($ended->result['agent_id'])->toBe($turn->input['thread_id']);
+    })->with([
+        'no transcript' => [[]],
+        'an empty transcript' => [['transcript' => []]],
+        'user entries only' => [['transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'user', 'text' => 'Run Doctor.', 'at' => '']]]],
+    ]);
+
+    it('names the agent thread and its last reply for a failed turn too', function (): void {
+        Storage::fake('local');
+        $group = copyGroup(copySource()->project);
+        finishedCopy($group, startCopy($group));
+        $turn = copyTurn($group);
+
+        $failed = copyTurnEnded($turn, 'failed', ['state' => 'failed', 'error' => 'Bound.', 'error_code' => 'tasks.turn_timeout', 'ended' => false, 't3_thread_id' => 'mcp:1',
+            'run_id' => null, 'transcript' => [['id' => 'run:1:0', 'kind' => 'message', 'label' => 'assistant', 'text' => 'Half done.', 'at' => '']]]);
+
+        expect($failed->result)->toMatchArray(['agent_id' => $turn->input['thread_id'], 'reply' => 'Half done.']);
+    });
+
     it('hands the copy\'s new T3 thread and its title to the extensions once the turn\'s projection committed', function (): void {
         Storage::fake('local');
         $group = copyGroup(copySource()->project);
