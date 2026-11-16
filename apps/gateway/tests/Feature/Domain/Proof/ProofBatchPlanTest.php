@@ -222,7 +222,7 @@ it('plans the worst node selection at its floor, balances the other copies and n
         + array_sum(array_column($shard, 'seconds'));
     $shards = ProofBatchPlan::split($batches, 10);
     $ends = array_map($copyEnds, $shards);
-    // A batch never splits, so no plan ends before the longest batch on a copy of its own.
+    // These batches carry no case times, so none splits: no plan ends before the longest batch on a copy of its own.
     $floor = max(array_map(static fn (array $batch): float => $copyEnds([$batch]), $batches));
 
     expect(count($shards))->toBe(10)
@@ -232,6 +232,44 @@ it('plans the worst node selection at its floor, balances the other copies and n
         // Five minutes needs these batches shorter: their cases alone are longer than what is left after admission, copy, reset and setup.
         ->and(array_values(array_map(static fn (array $batch): string => $batch['command'].' '.$batch['batch'], array_filter($batches, static fn (array $batch): bool => $copyEnds([$batch]) > $limit))))
         ->toBe(['node:converge fresh-fleet', 'node:converge no-grant', 'node:role:add fresh-fleet', 'node:role:add ufw-fault', 'node:metrics fresh-fleet', 'node:metrics node-down', 'node:show fresh-fleet']);
+});
+
+/**
+ * One command alone from the push: admission, the copy creates and the commit, then on each copy one reset and setup and its cases.
+ * Case seconds measured in a copy after the converged seed and the phase skip: base-scope 43 (79 without a digest record). The other
+ * seconds are from proof 25268. required-only of role-add is an estimate: 149 less its dropped repeat converge (49 in a copy).
+ */
+it('fits node:converge alone into five minutes from the push and names what keeps node:role:add over', function (): void {
+    $before = 57 + 75 + 9;
+    $reset = 60 + 36;
+    $part = static fn (string $command, string $batch, array $seconds, bool $readOnly = false): array => ['command' => $command,
+        'file' => $command.'.cases.yaml', 'batch' => $batch, 'cases' => array_keys($seconds), 'seconds' => array_sum($seconds),
+        'read_only' => $readOnly, 'case_seconds' => array_values($seconds)];
+    $ends = static fn (array $shards): array => array_map(static fn (array $shard): float => $before
+        + max(1, count(array_filter($shard, static fn (array $batch): bool => ! $batch['read_only']))) * $reset + array_sum(array_column($shard, 'seconds')), $shards);
+    // The cases that wait for the ID map window (default-scope, selected-roles, gateway-authority-without-target-grant,
+    // application-repeat) are not planned.
+    $converge = [
+        $part('node:converge', 'fresh-fleet', ['base-scope' => 43.0]),
+        $part('node:converge', 'fresh-fleet', ['refusals' => 11.0], true),
+        $part('node:converge', 'no-grant', ['caller-refused' => 2.0]),
+        $part('node:converge', 'node-down', ['node-unreachable' => 10.0 /* estimate */]),
+    ];
+    $roleAdd = [
+        $part('node:role:add', 'fresh-fleet', ['required-only' => 100.0 /* estimate */]),
+        $part('node:role:add', 'fresh-fleet', ['refusals' => 14.0], true),
+        $part('node:role:add', 'ufw-fault', ['failure-after-partial-change' => 96.0]),
+        $part('node:role:add', 'node-down', ['unreachable-node' => 30.0 /* estimate */]),
+        $part('node:role:add', 'no-grant', ['shared-node-authority' => 60.0 /* estimate */]),
+    ];
+    $over = static fn (array $batches) => array_values(array_map(static fn (array $batch): string => $batch['batch'].' '.implode(' ', $batch['cases']),
+        array_filter($batches, static fn (array $batch): bool => $ends([[$batch]])[0] > 300)));
+
+    expect(max($ends(ProofBatchPlan::split($converge, 10))))->toBeLessThanOrEqual(300.0)
+        ->and(max($ends(ProofBatchPlan::split($converge, 10))))->toBe(280.0)
+        // Role-add needs its two role Operations shorter: 237 s of fixed time leaves 63 s for the cases of a copy.
+        ->and(max($ends(ProofBatchPlan::split($roleAdd, 10))))->toBe(337.0)
+        ->and($over($roleAdd))->toBe(['fresh-fleet required-only', 'ufw-fault failure-after-partial-change']);
 });
 
 it('never plans a case that waits for a named reason, and refuses a wait without one', function (): void {
