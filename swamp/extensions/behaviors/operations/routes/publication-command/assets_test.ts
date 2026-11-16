@@ -227,6 +227,46 @@ Deno.test("PHP metadata resolves canonical account placeholders from the Node ob
         content: pool(1, 5).replaceAll("/__ORBIT_NODE_HOME__", "/home/orbit"),
     });
 });
+Deno.test("a restore takes back a scope written with the group name and keeps the other scope's bytes", () => {
+    const scope = (id: number, group: string) =>
+        `[orbit-instance-${id}]\ngroup = ${group}\nchdir = /home/orbit/app-${id}\n`;
+    const captured = (id: number) =>
+        `[orbit-instance-${id}]\ngroup = __ORBIT_NODE_GROUP__\nchdir = /__ORBIT_NODE_HOME__/app-${id}\n`;
+    const named = JSON.stringify({
+        ...JSON.parse(account),
+        group_name: "orbit",
+    });
+    const restore = (current: string, value = named) =>
+        composePhp({
+            ...placement,
+            direction: "restore",
+            before: php(captured(2)),
+            after: php(captured(1) + captured(2)),
+            account: value,
+            current: JSON.stringify({ "8.4": current }),
+        });
+    assertEquals(
+        restore(scope(1, "orbit") + scope(2, "orbit")).files[0].content,
+        scope(2, "orbit"),
+    );
+    assertEquals(
+        restore(scope(1, "1000") + scope(2, "orbit")).files[0].content,
+        scope(2, "orbit"),
+    );
+    for (
+        const [current, value] of [
+            [scope(1, "orbit").replace("app-1", "app-9"), named],
+            [scope(1, "orbit"), account],
+            [scope(1, "staff"), named],
+        ]
+    ) {
+        assertThrows(
+            () => restore(current, value),
+            Error,
+            "php.owned_revision_conflict",
+        );
+    }
+});
 Deno.test("PHP account and version-move policy are checked before any file operation", () => {
     const before = php(pool(1, 5)), after = php(pool(1, 7));
     assertEquals(planPhp({ ...placement, before, after }).versions, ["8.4"]);

@@ -131,6 +131,8 @@ jobs:
         - -c
         - '/usr/bin/python3 -B - <<''PYTHON''
 
+          import grp
+
           import json
 
           import os
@@ -140,7 +142,9 @@ jobs:
 
           account = pwd.getpwnam(os.environ["ORBIT_NODE_USER"])
 
-          print(json.dumps({"user": account.pw_name, "home": account.pw_dir, "group": str(account.pw_gid)}))
+          name = next((group.gr_name for group in grp.getgrall() if group.gr_gid == account.pw_gid), None)
+
+          print(json.dumps({"user": account.pw_name, "home": account.pw_dir, "group": str(account.pw_gid), "group_name": name}))
 
           PYTHON
 

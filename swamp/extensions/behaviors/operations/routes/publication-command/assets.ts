@@ -135,18 +135,21 @@ export function composePhp(raw: unknown) {
     const value = PhpCompose.parse(raw);
     const { current: _current, account: _account, ...plan } = value;
     const { versions } = planPhp(plan);
-    // The primary gid, as route-create-site writes it into every pool.
+    // The primary gid, as route-create-site writes it into every pool. A publisher before it wrote the group's name, so a scope of the
+    // Route in that form counts as the captured one.
     const account = z.object({
         user: Name,
         group: z.string().regex(/^[0-9]{1,10}$/),
+        group_name: z.string().regex(/^[\w.][\w.$-]{0,63}$/).nullable()
+            .optional(),
         home: z.string().startsWith("/"),
     }).strict().parse(JSON.parse(value.account));
     if (account.user !== value.user) throw new Error("php.account_conflict");
     const current = z.record(Version, z.string()).parse(
         JSON.parse(value.current),
     );
-    const resolve = (text: string) =>
-        text.replaceAll("__ORBIT_NODE_GROUP__", account.group).replaceAll(
+    const resolve = (text: string, group = account.group) =>
+        text.replaceAll("__ORBIT_NODE_GROUP__", group).replaceAll(
             "/__ORBIT_NODE_HOME__",
             account.home,
         );
@@ -160,7 +163,12 @@ export function composePhp(raw: unknown) {
         if (!(version in current)) {
             throw new Error("php.current_config_missing");
         }
-        const content = mergePhp(previous, desired, current[version]);
+        const named = account.group_name
+            ? [before, after].map((side) =>
+                resolve(side.configurations[version] ?? "", account.group_name!)
+            )
+            : [];
+        const content = mergePhp(previous, desired, current[version], named);
         return [{
             version,
             path: `/etc/php/${version}/fpm/pool.d/orbit-scopes.conf`,
@@ -302,7 +310,7 @@ type Context = {
 };
 export const behavior = {
     type: "@nckrtl/route-publication-command",
-    version: "2026.11.14.1",
+    version: "2026.11.16.1",
     resources: {
         caddy: {
             schema: CaddyPublication,
