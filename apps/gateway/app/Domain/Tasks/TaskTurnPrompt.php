@@ -6,12 +6,13 @@ namespace App\Domain\Tasks;
 
 use App\Domain\Shared\ResourceOperationException;
 use App\Models\Task;
+use Carbon\CarbonInterface;
 use LogicException;
 
 /**
  * The prompt the agent receives for one turn in a task copy: the title and brief of the group, the title, brief and deliverables of the
- * subtask, Orbit's copy rules, then the prompt of the caller. The admission records this text as the admitted prompt. See
- * docs/cli/task/copy-turn.mmd.
+ * subtask, Orbit's copy rules, the turn's clock, then the prompt of the caller. The admission records this text as the admitted prompt.
+ * See docs/cli/task/copy-turn.mmd.
  */
 final readonly class TaskTurnPrompt
 {
@@ -25,7 +26,8 @@ final readonly class TaskTurnPrompt
         ."- Commit your work before this turn ends.\n"
         .'- Never print an environment file, a token, a key or a session value.';
 
-    public static function compose(Task $subtask, string $prompt): string
+    /** @param  CarbonInterface  $started  the admission's time: the turn's clock starts there and Orbit cuts it TaskCopyTurn::TurnSeconds later */
+    public static function compose(Task $subtask, string $prompt, CarbonInterface $started): string
     {
         $group = $subtask->parent ?? throw new LogicException('A turn prompt needs the group of its subtask.');
         $parts = ['Task group: '.$group->title, "Group brief:\n".$group->brief, 'Subtask: '.$subtask->title, "Brief:\n".$subtask->brief];
@@ -34,6 +36,9 @@ final readonly class TaskTurnPrompt
             $parts[] = "Deliverables:\n".implode("\n", array_map(static fn (TaskDeliverable $deliverable): string => $deliverable->line(), $deliverables));
         }
         $parts[] = self::CopyRules;
+        $started = $started->toImmutable()->utc();
+        $parts[] = 'This turn started at '.$started->toIso8601ZuluString().' and Orbit ends it at '
+            .$started->addSeconds(TaskCopyTurn::TurnSeconds)->toIso8601ZuluString().'. Commit your work before then.';
         $parts[] = "Prompt of this turn:\n".$prompt;
         $text = implode("\n\n", $parts);
         if (strlen(mb_convert_encoding($text, 'UTF-16LE', 'UTF-8')) / 2 > self::Limit) {

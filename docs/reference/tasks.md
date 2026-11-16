@@ -256,7 +256,7 @@ The role `consult` and the field `model` were options of the Pi turn on a task V
 
 No `tasks.provision` Operation starts any more: a task start makes a task copy. An old one that is still open holds its group as every open Operation does, so other work returns `operation.target_busy` until the reconcile pass ends it.
 
-A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role, in this order: the group's title and brief, read from the subtask's parent; the title, brief and deliverables of the subtask; Orbit's copy rules; then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
+A subtask outside the group returns 404. Only the first open subtask by position can run; another returns HTTP 409 `tasks.subtask_not_current`. The admission composes the prompt for every role. First come the group's title and brief, read from the subtask's parent, then the title, brief and deliverables of the subtask. Orbit's copy rules and the turn's clock follow, then the prompt of the caller. It records that text as the admitted prompt. A composed prompt over 100000 characters, the group's brief included, returns 422 `tasks.prompt_too_large`.
 
 The copy rules are one fixed text, the same for the implementer and the reviewer. They name no command of one Project:
 
@@ -878,6 +878,10 @@ A turn has a bound of 3,600 seconds. A turn that its bound cuts stops its own ru
 Every earlier turn that is over in Orbit but may still run in the copy, because it was cut, cancelled or lost, is settled by the next turn. That turn's phase first stops the earlier run when T3 still shows it active. It settles the earlier turn once T3 shows its run over and a reviewer's checkout is clean on the task branch. A stop that fails leaves the earlier turn unsettled, and the next turn fails with `tasks.copy_turn_unended`. The work in the copy stays. So `operation:cancel <turn>` and then a new turn stop a running turn's run.
 
 A question ends a turn: Orbit stores it and stops the run, and the role's next turn, or a message to the thread from a T3 client, answers it. The thread and its transcript stay on the Gateway after the copy is gone.
+
+Each turn's prompt gives the agent its clock: the time Orbit admitted the turn and that time plus the one-hour bound, in UTC, with the ask to commit before the end. The turn's result names `agent_id`, the agent thread that [`task:agent:show`](/cli/task/agent-show) reads, and `reply`, the transcript's last entry that the agent wrote, bounded at 16,384 characters with a marker that says how much was cut. The transcript is the whole thread's, so a turn in which the agent wrote nothing shows an earlier turn's reply.
+
+A driver reads a turn from its result alone; the whole transcript stays in the archive ([result fields](/cli/task/turn#a-task-that-runs-in-a-copy)).
 
 [`task:sync`](/cli/task/sync#a-task-copy) brings the Project's newest default branch into it, as [bring main into a copy](#bring-main-into-a-copy) describes. [`task:publish`](#publish-an-external-group) pushes its checked commit and opens the pull request from 209. [`orbit proof --group`](/cli/proof/proof) runs one command's proof cases in a nested-fleet copy, as `agent`, against the copy's own nested fleet.
 
