@@ -1,5 +1,5 @@
 order = 40
-source_sha256 = "ed619b0fcb2f84af869d08adb96d09a296883cbf66cd6010a41c15806da6504d"
+source_sha256 = "2efaa9a1a1ff9d46d69fd0ea54e2ff2d26b090f8a7450228486ae205e97fd9ae"
 cases = [
   "the first build makes the container, checks out the default branch, starts FrankenPHP and seeds it; a rerun changes nothing",
   "a converted default Node store refreshes its same-commit seed once at the existing snapshot boundary",
@@ -25,6 +25,7 @@ cases = [
   "a wake's start removes the marker before the T3 wait: a silent T3 fails the wake while the site serves",
   "a wake's start of a Project without a web unit removes the marker without a web wait",
   "a wake hands a Frozen container to the power helper, which restores and resumes it and closes swap; no boot; the marker goes",
+  "a wake that follows the Node's fast wake of its Operation reports that wake's ready file, and no other Operation's",
   "a resumed container whose web unit stays silent is stopped and booted, then woken as a stopped one",
   "a wake boots a Stopped container behind its marker, verifies a Running one without a start, and reports a Frozen one without a marker",
   "a wake's helper closes the swap of the container and of each inner cgroup the sleep opened, and leaves a cgroup with its own limit",
