@@ -1,0 +1,21 @@
+[package]
+name = "orbit-executor-core"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+description = "Order format, caller and order checks, done records, journal and relay of the Orbit executor (ADR 0266, ADR 0267)"
+
+[dependencies]
+base64 = "0.22"
+libc = "0.2"
+ed25519-dalek = { version = "2", default-features = false, features = ["std", "zeroize"] }
+rustix = { version = "1", features = ["fs", "net", "process"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints]
+workspace = true
