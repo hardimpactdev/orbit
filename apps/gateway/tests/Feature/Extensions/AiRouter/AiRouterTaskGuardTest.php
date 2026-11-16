@@ -7,8 +7,6 @@ use App\Domain\Nodes\RoleName;
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmHost;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Infrastructure\Swamp\SwampCommandStep;
 use App\Infrastructure\Swamp\SwampDispatch;
 use App\Models\Node;
@@ -32,9 +30,6 @@ function guardRouter(): Node
 {
     $services = guardNode('services', '10.44.0.3');
     guardNode('swamp', '10.44.0.15')->roles()->create(['role' => RoleName::Swamp, 'status' => LifecycleStatus::Active]);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     // A stand-in for the vault write: it returns the reference, as the Swamp copy does.
     app()->instance(SwampCommandStep::class, new class
     {

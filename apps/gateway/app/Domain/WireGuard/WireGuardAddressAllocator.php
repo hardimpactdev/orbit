@@ -5,24 +5,25 @@ declare(strict_types=1);
 namespace App\Domain\WireGuard;
 
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Models\Node;
 use InvalidArgumentException;
 
 final readonly class WireGuardAddressAllocator
 {
+    /** A range of the fleet subnet that the allocator never hands to a Node. */
+    public const string ReservedRange = '10.44.0.128/25';
+
     public function __construct(
         private VpnSettings $settings,
     ) {}
 
     /**
-     * The next free fleet address. It never lies in the range reserved for task VMs. It reads the
-     * range through `TaskVmSettings`, so an invalid task VM config fails with `task_vm.invalid_config`.
+     * The next free fleet address. It never lies in the {@see self::ReservedRange}.
      */
     public function next(): string
     {
         $subnet = $this->subnet();
-        $reserved = Ipv4Subnet::from(resolve(TaskVmSettings::class)->wireguardRange);
+        $reserved = Ipv4Subnet::from(self::ReservedRange);
         $used = $this->nodeAddresses();
 
         foreach ($subnet->usableAddresses() as $address) {
@@ -39,8 +40,7 @@ final readonly class WireGuardAddressAllocator
     }
 
     /**
-     * The next free address inside a range of the fleet subnet, such as the task VM range that
-     * `TaskVmSettings` validated.
+     * The next free address inside a range of the fleet subnet.
      *
      * @param  list<string>  $taken  addresses that are reserved but may not belong to a Node yet
      */

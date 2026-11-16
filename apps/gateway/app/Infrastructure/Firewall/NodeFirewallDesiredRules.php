@@ -24,8 +24,8 @@ final readonly class NodeFirewallDesiredRules
     ) {}
 
     /**
-     * The rules role and Metrics converge keep on the Node: baseline, each active role, the task VM image
-     * peers that `task-vms:prepare-host` keeps, then Metrics, then the rules extensions contribute.
+     * The rules role and Metrics converge keep on the Node: the Instance bridge input, baseline, each active role, then Metrics,
+     * then the rules extensions contribute.
      *
      * @return list<DesiredFirewallRule>
      */
@@ -33,7 +33,7 @@ final readonly class NodeFirewallDesiredRules
     {
         $rows = [];
 
-        foreach ([...$this->catalog->taskHostInput($node), ...$this->catalog->instanceHostInput($node)] as $rule) {
+        foreach ($this->catalog->instanceHostInput($node) as $rule) {
             $rows[] = new DesiredFirewallRule($rule->shape->comment, null, $rule->shape);
         }
 

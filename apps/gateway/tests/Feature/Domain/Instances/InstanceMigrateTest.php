@@ -716,7 +716,7 @@ describe('migration without a default seed', function (): void {
             ->and($clone['files'][0]['content'])->toContain("ORBIT_INSTANCE=feature\n", "ORBIT_PROJECT_ID={$project->id}\n", "ORBIT_PROJECT_NAME=\"tool\"\n", "ORBIT_NODE=beast\n")
             ->and($operation->input['container'])->toMatchArray(['config' => ['limits.cpu' => '4', 'limits.memory' => '8GiB', 'limits.processes' => '4096'],
                 'root_disk_pool' => 'orbit-instances', 'root_disk_size' => '40GiB'])
-            ->and(array_column($operation->input['container']['firewall'], 'comment'))->toBe(["orbit:instance-{$feature->id}-t3-task-vms", "orbit:instance-{$feature->id}-t3"])
+            ->and(array_column($operation->input['container']['firewall'], 'comment'))->toBe(["orbit:instance-{$feature->id}-t3"])
             ->and($operation->input['container']['branch'])->toBe('feature')
             ->and($operation->input['migrate']['default'])->toBeFalse();
     });

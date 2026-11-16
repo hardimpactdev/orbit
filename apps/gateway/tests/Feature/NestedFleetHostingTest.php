@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use App\Actions\Nodes\AllocateInstanceBridgeAction;
 use App\Actions\Schedules\RunScheduleAction;
-use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Doctor\DoctorFamily;
 use App\Domain\Doctor\FactDoctor;
 use App\Domain\Instances\BaselineNormalInstanceContainer;
@@ -33,7 +32,6 @@ use App\Domain\Proof\ProofSeeds;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\Tasks\TaskCopyStart;
-use App\Domain\WireGuard\Ipv4Subnet;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
 use App\Infrastructure\AgentView\WebSocketClient;
@@ -97,10 +95,11 @@ function recordedNestedInstance(Project $project, Node $node, string $name = 'de
 }
 
 /** Task VM host settings with VM places and two task container places. @return array<string, mixed> */
+/** A `task_vms` value as a Node still stores it; no code reads it any more. */
 function taskVms(int $taskPlaces, int $ciPlaces): array
 {
-    return NodeTaskVmsData::validated(['cidr' => '10.252.10.0/24', 'task_places' => $taskPlaces, 'ci_places' => $ciPlaces,
-        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2]], Ipv4Subnet::from('10.44.0.0/24'))->toArray();
+    return ['cidr' => '10.252.10.0/24', 'task_places' => $taskPlaces, 'ci_places' => $ciPlaces, 'project' => 'orbit-tasks', 'network' => 'orbittask0',
+        'containers' => ['cidr' => '10.252.11.0/24', 'task_places' => 2, 'project' => 'orbit-task-containers', 'network' => 'orbittaskc0']];
 }
 
 function otherProject(string $slug, bool $nested = false): Project
@@ -1085,21 +1084,21 @@ describe('a switched-on Node', function (): void {
             ->and(app(InstanceHostIntent::class)->for($other)['ids'])->toBe(13_172_736 + 2 * 101_000_000);
     });
 
-    it('counts task container places from settings.task_vms.containers, never the VM places', function (): void {
+    it('counts no ID maps for the task container places that a Node still stores in settings.task_vms', function (): void {
         $node = containerDefaultNode();
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true,
             'task_vms' => taskVms(7, 5)]]);
-        expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + (2 + 1) * 101_000_000 + 2 * 101_000_000);
+        expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + 2 * 101_000_000);
     });
 
-    it('counts a Node\'s CI places from settings.ci, with or without task container places', function (bool $containers, int $places): void {
+    it('counts a Node\'s CI places from settings.ci, and no stored task container places', function (bool $containers, int $places): void {
         $node = containerDefaultNode();
         $node->update(['settings' => [...$node->settings, 'nested_fleet' => true, 'ci' => ['places' => 3, 'proof_only' => false],
             ...($containers ? ['task_vms' => taskVms(7, 5)] : [])]]);
         expect(app(InstanceHostIntent::class)->for($node->refresh())['ids'])->toBe(13_172_736 + ($places + 1) * 101_000_000 + 2 * 101_000_000);
     })->with([
         'CI places only' => [false, 3],
-        'CI and task container places' => [true, 3 + 2],
+        'CI and stored task container places' => [true, 3],
     ]);
 
     it('keeps recorded nested runtimes in the ID demand and the folder refresh after the switch is off', function (): void {

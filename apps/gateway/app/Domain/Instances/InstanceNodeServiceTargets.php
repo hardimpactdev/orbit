@@ -186,7 +186,7 @@ final class InstanceNodeServiceTargets
     private static function assertPortAllowed(Node $node, int $port): void
     {
         $fixed = [22, 80, 443, InstanceDevPorts::Listener, InstanceHostIntent::T3Port, 2375, 2376, ...VitePortAllocator::EXCLUDED_PORTS,
-            ValidatedData::integer(config('orbit.websocket.port')), ValidatedData::integer(config('orbit.pi.port'))];
+            ValidatedData::integer(config('orbit.websocket.port'))];
         $reserved = DatabaseServer::query()->where('node_id', $node->id)->where('port', $port)->exists()
             || in_array($port, $fixed, true) || array_any(InstanceDevPorts::infrastructurePorts($node),
                 static fn (string $reserved): bool => FirewallPort::contains(str_replace('-', ':', $reserved), $port));

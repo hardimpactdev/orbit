@@ -408,7 +408,7 @@ describe('Node service attachment records', function (): void {
             ->assertJsonPath('error.code', 'instance.node_service_port_reserved');
 
         $this->assertDatabaseCount('instance_node_service_targets', 0);
-    })->with([22, 80, 443, 444, 2375, 2376, 3128, 3773, 3774, 3800, 3999, 8318, 8319, 8790, 3306, 5432, 5672, 6379, 8000, 8080, 8443, 9000, 9090, 9200, 11211, 15672, 27017]);
+    })->with([22, 80, 443, 444, 2375, 2376, 3128, 3773, 3800, 3999, 8318, 8319, 8790, 3306, 5432, 5672, 6379, 8000, 8080, 8443, 9000, 9090, 9200, 11211, 15672, 27017]);
 
     it('reserves configured SSH and extension-owned ports through the shared catalog', function (string $case, int $port): void {
         [$instance, $node, $input] = nodeServiceAttachmentFixture();
@@ -441,6 +441,15 @@ describe('Node service attachment records', function (): void {
         $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
 
         $this->postJson("/api/v1/instances/{$instance->id}/node-service-targets", $input)->assertOk()->assertJsonPath('data.port', 1025);
+    });
+
+    it('accepts port 3774, which no retired Pi setting reserves any more', function (): void {
+        [$instance, $node, $input] = nodeServiceAttachmentFixture();
+        OrbitProcess::query()->findOrFail($input['process_id'])->update(['runtime_config' => ['ports' => ['0.0.0.0:3774:1025']]]);
+        $input['port'] = 3774;
+        $this->withServerVariables(['REMOTE_ADDR' => $node->wireguard_ip]);
+
+        $this->postJson("/api/v1/instances/{$instance->id}/node-service-targets", $input)->assertOk()->assertJsonPath('data.port', 3774);
     });
 
     it('requires an active caller and access to the Instance Node', function (): void {

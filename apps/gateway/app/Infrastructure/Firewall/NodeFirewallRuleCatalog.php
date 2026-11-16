@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Infrastructure\Firewall;
 
-use App\Data\Nodes\NodeTaskVmContainersData;
 use App\Domain\Analytics\AnalyticsRoleSettings;
 use App\Domain\Analytics\AnalyticsRoleSettingsRepository;
 use App\Domain\Analytics\AnalyticsStorageConnection;
@@ -15,27 +14,32 @@ use App\Domain\Instances\InstanceEgress;
 use App\Domain\Instances\InstanceHostIntent;
 use App\Domain\Instances\InstanceOwnSite;
 use App\Domain\Nodes\RoleName;
-use App\Domain\Nodes\Storage\NodeSettingsNormalizer;
 use App\Domain\Proof\ProofSeeds;
 use App\Domain\Routes\PublicRouteEligibility;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
 use App\Domain\WireGuard\Ipv4Subnet;
 use App\Domain\WireGuard\LanAddress;
+use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Metrics\MetricsFootprint;
 use App\Infrastructure\Metrics\ServiceMetricsConfigRenderer;
-use App\Infrastructure\TaskVms\TaskVmHubPolicy;
 use App\Models\Node;
 use App\Models\NodeRole;
 use App\Models\Process;
 
 final readonly class NodeFirewallRuleCatalog
 {
-    /** The DHCP, DNS over TCP and DNS over UDP input rules of a task VM host's VM bridge, in that order. */
+    /**
+     * The DHCP, DNS over TCP and DNS over UDP input rules that a task VM host's VM bridge once had, in that order. No rule is desired
+     * under them any more; Node removal still deletes them by comment.
+     */
     public const array TaskHostInputComments = ['orbit:task-vms-dhcp', 'orbit:task-vms-dns-tcp', 'orbit:task-vms-dns-udp'];
 
-    /** The same rules for the bridge of a host's task containers. Each bridge has its own names: a withdrawal deletes rules by comment. */
+    /** The same rules that the bridge of a host's task containers once had. */
     public const array TaskContainerInputComments = ['orbit:task-containers-dhcp', 'orbit:task-containers-dns-tcp', 'orbit:task-containers-dns-udp'];
+
+    /** The vpn hub's retired routes into the reserved range, in the order control SSH, control TLS, Swamp Pi. */
+    public const array RetiredReservedRangeComments = ['orbit:task-vm-control-ssh', 'orbit:task-vm-control-web', 'orbit:task-vm-swamp-pi'];
 
     /**
      * DHCP, the egress proxy and a container's own site for the Instance bridge of a Node on the build list, and no DNS: the proxy
@@ -58,41 +62,6 @@ final readonly class NodeFirewallRuleCatalog
             InstanceEgress::rule(InstanceHostIntent::Network, $gateway),
             ...($role === RoleName::AppDev ? InstanceOwnSite::rules($gateway) : []),
         ];
-    }
-
-    /** @return list<UfwManagedRule> */
-    public function taskHostInput(Node $node): array
-    {
-        $host = app(NodeSettingsNormalizer::class)->fromStored($node->settings)?->task_vms;
-        if ($host === null) {
-            return [];
-        }
-
-        return [
-            ...$this->bridgeInput($host->network, $host->cidr, self::TaskHostInputComments),
-            ...($host->containers instanceof NodeTaskVmContainersData
-                ? $this->bridgeInput($host->containers->network, $host->containers->cidr, self::TaskContainerInputComments) : []),
-        ];
-    }
-
-    /**
-     * DHCP from the bridge, and DNS over TCP and UDP to its address, under `$comments` in that order.
-     *
-     * @param  list<string>  $comments
-     * @return list<UfwManagedRule>
-     */
-    private function bridgeInput(string $network, string $cidr, array $comments): array
-    {
-        [$bridge] = Ipv4Subnet::from($cidr)->usableRange();
-        $rules = [$this->dhcpInput($network, $comments[0])];
-        foreach (['tcp' => $comments[1], 'udp' => $comments[2]] as $protocol => $comment) {
-            $rules[] = new UfwManagedRule(
-                new UfwRuleShape($comment, 'allow', 'in', 'any', $bridge, '53', $protocol, $network, null, 'v4'),
-                ['sudo', 'ufw', 'allow', 'in', 'on', $network, 'proto', $protocol, 'from', 'any', 'to', $bridge, 'port', '53', 'comment', $comment],
-            );
-        }
-
-        return $rules;
     }
 
     /** DHCP from the bridge, under `$comment`. */
@@ -169,7 +138,7 @@ final readonly class NodeFirewallRuleCatalog
                 new UfwRuleShape('orbit-ci-runners', 'allow', 'fwd', 'any', 'any', 'any', 'any', 'orbitci0', null, null),
                 ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbitci0', 'comment', 'orbit-ci-runners'],
             )],
-            RoleName::Vpn => [...app(TaskVmHubPolicy::class)->managedRules(), ...$this->vpnLanSsh($node)],
+            RoleName::Vpn => $this->vpnLanSsh($node),
             RoleName::Router => $this->routerLanIngress($node),
             RoleName::Ingress => $this->ingressPublicHttp($node),
             RoleName::AppDev => [],
@@ -246,6 +215,10 @@ final readonly class NodeFirewallRuleCatalog
             return $this->ingressPublicHttp($node) === [] ? [...$rules, ...$this->ingressRules()] : $rules;
         }
 
+        if ($role === RoleName::Vpn) {
+            return [...$rules, ...$this->retiredReservedRangeRoutes()];
+        }
+
         if ($role === RoleName::AppProd) {
             return [
                 ...$rules,
@@ -265,6 +238,22 @@ final readonly class NodeFirewallRuleCatalog
             $this->rule('orbit:app-dev-direct-http', '80'),
             $this->rule('orbit:app-dev-direct-https', '443'),
         ];
+    }
+
+    /**
+     * The routes the vpn hub once kept into the reserved range for task VMs: control SSH, control TLS and the Swamp Pi port. The
+     * converge deletes them by comment, so the source does not need to match the installed one.
+     *
+     * @return list<UfwManagedRule>
+     */
+    private function retiredReservedRangeRoutes(): array
+    {
+        $range = WireGuardAddressAllocator::ReservedRange;
+
+        return array_map(static fn (string $comment, string $port): UfwManagedRule => new UfwManagedRule(
+            new UfwRuleShape($comment, 'allow', 'fwd', 'any', $range, $port, 'tcp', 'orbit', 'orbit', 'v4'),
+            ['sudo', 'ufw', 'route', 'allow', 'in', 'on', 'orbit', 'out', 'on', 'orbit', 'proto', 'tcp', 'from', 'any', 'to', $range, 'port', $port, 'comment', $comment],
+        ), self::RetiredReservedRangeComments, ['22', '443', '3774']);
     }
 
     /** @return list<UfwManagedRule> */

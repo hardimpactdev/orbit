@@ -7,7 +7,6 @@ namespace App\Domain\Nodes\Storage;
 use App\Data\Nodes\NodeCiData;
 use App\Data\Nodes\NodeSettingsData;
 use App\Data\Nodes\NodeStorageAppsData;
-use App\Data\Nodes\NodeTaskVmsData;
 use Spatie\LaravelData\Optional;
 
 final readonly class NodeSettingsNormalizer
@@ -20,7 +19,6 @@ final readonly class NodeSettingsNormalizer
 
         $normalized = new NodeSettingsData(
             apps: $this->nested($settings->appsPath()),
-            task_vms: $settings->task_vms,
             nested_fleet: $settings->nested_fleet,
             ci: $settings->ci,
         );
@@ -39,7 +37,6 @@ final readonly class NodeSettingsNormalizer
 
         return array_filter([
             'apps' => $normalized->appsPath() === null ? null : ['path' => $normalized->appsPath()],
-            'task_vms' => $normalized->task_vms?->toArray(),
             'nested_fleet' => $normalized->nested_fleet ? true : null,
             'ci' => $normalized->ci()?->toArray(),
         ], static fn (array|bool|null $member): bool => $member !== null);
@@ -47,7 +44,7 @@ final readonly class NodeSettingsNormalizer
 
     /**
      * The stored settings with the member this normalizer manages, `apps.path`, set or cleared.
-     * Every other key stays, such as the `t3` connection that T3 Code registration writes.
+     * Every other key stays, such as the `t3` connection that T3 Code registration writes, and a `task_vms` value that no code reads.
      *
      * @return array<string, mixed>|null
      */
@@ -82,11 +79,6 @@ final readonly class NodeSettingsNormalizer
             $result['ci'] = $normalized->ci()->toArray();
         }
 
-        unset($result['task_vms']);
-        if ($normalized?->task_vms !== null) {
-            $result['task_vms'] = $normalized->task_vms->toArray();
-        }
-
         return $result === [] ? null : $result;
     }
 
@@ -98,7 +90,6 @@ final readonly class NodeSettingsNormalizer
 
         return $this->normalize(new NodeSettingsData(
             apps: $this->nestedFromStored($value['apps'] ?? null),
-            task_vms: is_array($value['task_vms'] ?? null) ? NodeTaskVmsData::from($value['task_vms']) : null,
             nested_fleet: ($value['nested_fleet'] ?? false) === true,
             ci: is_array($value['ci'] ?? null) ? NodeCiData::from($value['ci']) : new Optional,
         ));

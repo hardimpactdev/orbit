@@ -7,13 +7,10 @@ namespace App\Actions\Nodes;
 use App\Actions\Operations\StartOperationAction;
 use App\Data\Nodes\NodeData;
 use App\Data\Nodes\NodeSettingsData;
-use App\Data\Nodes\NodeTaskVmContainersData;
-use App\Data\Nodes\NodeTaskVmsData;
 use App\Domain\Broadcasting\RecordEventBroadcaster;
 use App\Domain\Broadcasting\RecordEventType;
 use App\Domain\Nodes\ManagedUserAccount;
 use App\Domain\Nodes\ManagedUserAccountResolver;
-use App\Domain\Nodes\NodeBridges;
 use App\Domain\Nodes\NodeLanAddress;
 use App\Domain\Nodes\NodeProvisioningLock;
 use App\Domain\Nodes\NodeProvisioningLockException;
@@ -27,12 +24,9 @@ use App\Domain\Nodes\Storage\StoragePath;
 use App\Domain\Nodes\UpdateNodeResult;
 use App\Domain\Shared\LifecycleStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmRuntime;
-use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Swamp\SwampSshExecutionInput;
 use App\Models\Node;
 use App\Models\Operation;
-use App\Models\TaskVm;
 use Illuminate\Support\Facades\DB;
 
 final readonly class UpdateNodeAction
@@ -48,17 +42,17 @@ final readonly class UpdateNodeAction
     ) {}
 
     /**
-     * Saves record fields at once. Apps preparation and task-host input withdrawal start a run; its settings
-     * are stored when the run succeeds, while a new name, platform, LAN address, either hold or CI places in the same request are already saved.
+     * Saves record fields at once. Apps preparation starts a run; its settings are stored when the run succeeds, while a new name,
+     * platform, LAN address, reboot hold or CI places in the same request are already saved.
      * A record-only request whose values all equal the stored ones writes nothing and is reported unchanged.
      */
     public function execute(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller = null, ?string $requestId = null,
-        bool $hasLanIp = false, ?string $lanIp = null, ?bool $rebootHold = null, ?bool $imageRefreshHold = null): UpdateNodeResult
+        bool $hasLanIp = false, ?string $lanIp = null, ?bool $rebootHold = null): UpdateNodeResult
     {
         try {
-            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold): UpdateNodeResult {
+            return $this->provisioningLock->run($node->name, function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold): UpdateNodeResult {
                 $node->refresh();
-                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold);
+                $update = fn (): UpdateNodeResult => $this->update($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold);
 
                 return $name === null || $name === $node->name ? $update() : $this->provisioningLock->run($name, $update);
             });
@@ -68,34 +62,21 @@ final readonly class UpdateNodeAction
     }
 
     private function update(Node $node, ?string $name, ?string $platform, NodeSettingsPatch $settings, ?Node $caller, ?string $requestId,
-        bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $imageRefreshHold): UpdateNodeResult
+        bool $hasLanIp, ?string $lanIp, ?bool $rebootHold): UpdateNodeResult
     {
         $written = false;
-        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold, &$written): Node|Operation {
+        $result = DB::transaction(function () use ($node, $name, $platform, $settings, $caller, $requestId, $hasLanIp, $lanIp, $rebootHold, &$written): Node|Operation {
             $node->refresh();
-            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold, $imageRefreshHold);
+            $written = $this->record($node, $name, $platform, $hasLanIp, $lanIp, $rebootHold);
             $written = $this->recordCi($node, $settings) || $written;
             if ($settings->isEmpty()) {
                 return $node;
             }
             $merged = $settings->merge($this->normalizer->fromStored($node->settings));
             $normalized = $this->normalizer->normalize($merged);
-            $this->validateHostBridge($node, $normalized);
             $create = $this->hasActiveRole($node, RoleName::AppDev);
-            $previousHost = $this->normalizer->fromStored($node->settings)?->task_vms;
-            $this->keepLiveContainers($node, $previousHost, $normalized?->task_vms);
-            $nextHost = $normalized?->task_vms;
-            // Each bridge's input rules go when the bridge goes or moves; the next base refresh prepares the new one.
-            $retireVmInput = $settings->hasTaskVms && $previousHost !== null
-                && ($nextHost === null || $previousHost->network !== $nextHost->network || $previousHost->cidr !== $nextHost->cidr);
-            $before = $previousHost?->containers;
-            $after = $nextHost?->containers;
-            $retireContainerInput = $settings->hasTaskVms && $before instanceof NodeTaskVmContainersData
-                && (! $after instanceof NodeTaskVmContainersData || [$before->network, $before->cidr] !== [$after->network, $after->cidr]);
-            $retireComments = [...($retireVmInput ? NodeFirewallRuleCatalog::TaskHostInputComments : []),
-                ...($retireContainerInput ? NodeFirewallRuleCatalog::TaskContainerInputComments : [])];
             $prepareStorage = $settings->hasApps && ($create || $normalized?->appsPath() !== null);
-            if (! $prepareStorage && $retireComments === []) {
+            if (! $prepareStorage) {
                 $written = $this->persist($node, $normalized) || $written;
 
                 return $node;
@@ -106,14 +87,13 @@ final readonly class UpdateNodeAction
             }
             // Orbit creates each managed account with its own group and home, so the root is checked here, not on the Node.
             $account = new ManagedUserAccount($node->user, $node->user, $node->user === 'root' ? '/root' : '/home/'.$node->user);
-            $root = $prepareStorage ? $this->validator->validateEffective($normalized, $node, $account) : null;
+            $root = $this->validator->validateEffective($normalized, $node, $account);
 
             return $this->operations->execute('node.update', 'node', $node->id, $node->id, [
                 'ssh' => app(SwampSshExecutionInput::class)->forNode($node),
                 'node_id' => $node->id, 'caller_node_id' => $caller?->id,
-                'root' => $root?->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
-                'task_host_input_comments' => $retireComments,
-                'settings_patch' => ['apps' => $settings->hasApps, 'task_vms' => $settings->hasTaskVms, 'nested_fleet' => $settings->hasNestedFleet],
+                'root' => $root->value, 'user' => $account->user, 'group' => $account->group, 'settings' => $this->normalizer->stored($normalized),
+                'settings_patch' => ['apps' => $settings->hasApps, 'nested_fleet' => $settings->hasNestedFleet],
             ], 'operator', $requestId, expectedWriter: 'direct');
         });
 
@@ -131,7 +111,7 @@ final readonly class UpdateNodeAction
      * Saves the name, platform, LAN address and holds, the registry facts that need no run, and reports whether one changed. The LAN
      * address selects where Orbit renders LAN traffic, the hub endpoint included (ADR 0251); each render picks it up.
      */
-    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold, ?bool $imageRefreshHold): bool
+    private function record(Node $node, ?string $name, ?string $platform, bool $hasLanIp, ?string $lanIp, ?bool $rebootHold): bool
     {
         // Enrollment observes a managed Node's platform, so only an unmanaged Node takes one from this command.
         if ($platform !== null && ((is_string($node->ssh_host_fingerprint) && $node->ssh_host_fingerprint !== '') || $node->roles()->exists())) {
@@ -154,9 +134,6 @@ final readonly class UpdateNodeAction
         }
         if ($rebootHold !== null) {
             $node->reboot_hold = $rebootHold;
-        }
-        if ($imageRefreshHold !== null) {
-            $node->image_refresh_hold = $imageRefreshHold;
         }
         if (! $node->isDirty()) {
             return false;
@@ -184,15 +161,11 @@ final readonly class UpdateNodeAction
     }
 
     /**
-     * The Node's roots are prepared or inspected first, over SSH and outside any transaction. The bridge check and the write then
-     * run in one transaction, which the connection begins IMMEDIATE, so an Instance bridge allocation cannot slip between them.
+     * The Node's roots are prepared or inspected first, over SSH and outside any transaction. The write then runs in one transaction.
      */
     public function persistDuringProvisioning(Node $node, ?NodeSettingsData $settings): void
     {
         $normalized = $this->normalizer->normalize($settings);
-        // Refuse before any SSH work; the transaction checks both again under the lock.
-        $this->validateHostBridge($node, $normalized);
-        $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->validator->validateGrammar($normalized);
         if ($this->hasActiveRole($node, RoleName::AppDev)) {
             $this->prepareEffectiveRoots($node, $normalized);
@@ -201,8 +174,6 @@ final readonly class UpdateNodeAction
         }
         DB::transaction(function () use ($node, $normalized): void {
             $node->refresh();
-            $this->validateHostBridge($node, $normalized);
-            $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
             $this->persist($node, $normalized);
         });
     }
@@ -211,8 +182,6 @@ final readonly class UpdateNodeAction
     public function enrollmentIntent(Node $node, ?NodeSettingsData $settings): array
     {
         $normalized = $this->normalizer->normalize($settings);
-        $this->validateHostBridge($node, $normalized);
-        $this->keepLiveContainers($node, $this->normalizer->fromStored($node->settings)?->task_vms, $normalized?->task_vms);
         $this->validator->validateGrammar($normalized);
         $create = $this->hasActiveRole($node, RoleName::AppDev);
         $storage = null;
@@ -223,43 +192,6 @@ final readonly class UpdateNodeAction
         }
 
         return ['settings' => $this->normalizer->stored($normalized), 'storage' => $storage];
-    }
-
-    /**
-     * No bridge of the host, its VM bridge or its container bridge, may overlap a task bridge of another host or the
-     * Instance bridge of any Node, its own included.
-     */
-    private function validateHostBridge(Node $node, ?NodeSettingsData $settings): void
-    {
-        $host = $settings?->task_vms;
-        if ($host === null) {
-            return;
-        }
-        $recorded = NodeBridges::recorded(replacing: $node->id);
-        foreach (NodeBridges::taskBridges($host->toArray()) as $bridge) {
-            if (NodeBridges::overlapsAny($bridge, $recorded)) {
-                throw new ResourceOperationException('node.settings_invalid', 'A task_vms bridge overlaps a bridge of another host or an Instance bridge.');
-            }
-        }
-    }
-
-    /**
-     * A host keeps the container side its live task containers run on: their project, bridge and bridge network
-     * (docs/reference/old-paths.md#off-in-the-live-fleet). Its places may change.
-     */
-    private function keepLiveContainers(Node $node, ?NodeTaskVmsData $previous, ?NodeTaskVmsData $next): void
-    {
-        $before = $previous?->containers;
-        if (! $before instanceof NodeTaskVmContainersData) {
-            return;
-        }
-        $after = $next?->containers;
-        if ($after instanceof NodeTaskVmContainersData && [$after->project, $after->network, $after->cidr] === [$before->project, $before->network, $before->cidr]) {
-            return;
-        }
-        if (TaskVm::query()->live()->where('host_node_id', $node->id)->where('runtime', TaskVmRuntime::Container)->exists()) {
-            throw new ResourceOperationException('task_vm.runtime_in_use', 'The host has a task container that is not destroyed, so its containers project, network and cidr stay.', 409);
-        }
     }
 
     private function prepareEffectiveRoots(Node $node, ?NodeSettingsData $normalized): void

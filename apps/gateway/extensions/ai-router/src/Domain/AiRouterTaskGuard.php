@@ -6,7 +6,7 @@ namespace Orbit\Extensions\AiRouter\Domain;
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmSettings;
+use App\Domain\WireGuard\WireGuardAddressAllocator;
 use App\Infrastructure\Firewall\NodeFirewallRuleCatalog;
 use App\Infrastructure\Firewall\UfwManagedRule;
 use App\Infrastructure\Firewall\UfwRuleShape;
@@ -48,7 +48,7 @@ final readonly class AiRouterTaskGuard
     /** Guard and forwarder runs share it: two at once could each drop the other's forwarder Node from the guard. */
     public const string LockPrefix = 'ai_router_guard:';
 
-    public function __construct(private AiRouterState $state, private TaskVmSettings $settings, private AiRouterModelForwarder $forwarder,
+    public function __construct(private AiRouterState $state, private AiRouterModelForwarder $forwarder,
         private AiRouterSecrets $secrets, private SwampSshExecutionInput $ssh) {}
 
     /** The router's Node once the extension was set up, or null. */
@@ -125,7 +125,7 @@ final readonly class AiRouterTaskGuard
     public function rules(Node $node): array
     {
         $address = $this->address($node);
-        $range = $this->settings->wireguardRange;
+        $range = WireGuardAddressAllocator::ReservedRange;
         $port = (string) self::Port;
 
         return [
@@ -233,7 +233,7 @@ final readonly class AiRouterTaskGuard
      */
     private function sources(array $forwarders): array
     {
-        return [$this->settings->wireguardRange, ...array_map($this->address(...), $forwarders)];
+        return [WireGuardAddressAllocator::ReservedRange, ...array_map($this->address(...), $forwarders)];
     }
 
     /** The Node's WireGuard IPv4 address; `ai_router.node_invalid` when it has none. */

@@ -66,7 +66,8 @@ final readonly class AgentWatchListAction
     /**
      * The bridges of a task VM host, whose logs the agent reads for the egress fact (docs/reference/task-vm-egress-log.md):
      * `network` of its task VMs and, on a host with task containers, `container_network`. Agents before 0.15.0 read only
-     * `network`. Another Node gets null, and its agent reads nothing.
+     * `network`. Another Node gets null, and its agent reads nothing. A stored host without its own names used the defaults that the
+     * retired task VM settings held, `orbittask0` and `orbittaskc0`.
      *
      * @return array{network: string, container_network: string|null}|null
      */
@@ -76,14 +77,14 @@ final readonly class AgentWatchListAction
         if (! is_array($task)) {
             return null;
         }
-        $network = self::bridge($task['network'] ?? config('task_vms.incus.host_defaults.network'));
+        $network = self::bridge($task['network'] ?? 'orbittask0');
         if ($network === null) {
             return null;
         }
         $containers = $task['containers'] ?? null;
 
         return ['network' => $network, 'container_network' => is_array($containers)
-            ? self::bridge($containers['network'] ?? config('task_vms.incus.host_defaults.containers.network')) : null];
+            ? self::bridge($containers['network'] ?? 'orbittaskc0') : null];
     }
 
     /**

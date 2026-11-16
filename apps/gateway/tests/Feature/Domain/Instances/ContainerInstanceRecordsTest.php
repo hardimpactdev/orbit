@@ -62,7 +62,7 @@ describe('Instance bridges', function (): void {
             ->and($beast->refresh()->instance_bridge)->toBe('10.253.0.0/24');
     });
 
-    it('skips a range that a task bridge or the VPN subnet overlaps', function (): void {
+    it('skips a range that a stored task bridge or the VPN subnet overlaps', function (): void {
         recordsNode('shark', '10.44.0.11', ['task_vms' => ['cidr' => '10.253.0.0/23', 'task_places' => 1, 'ci_places' => 0,
             'containers' => ['cidr' => '10.253.3.0/25', 'task_places' => 1]]]);
         app(VpnSettings::class)->configure('10.253.2.0/24');
@@ -89,18 +89,6 @@ describe('Instance bridges', function (): void {
             // No container uses it yet, so the record of a clashing CI bridge may give it back (docs/reference/development-containers.md#nodes).
             ->and(Node::query()->whereKey($beast->id)->update(['instance_bridge' => null]))->toBe(1);
     });
-
-    it('refuses task VM host settings whose bridge overlaps an Instance bridge, also its own Node\'s', function (bool $own): void {
-        $other = recordsNode('shark', '10.44.0.11');
-        $beast = recordsNode();
-        $beast->roles()->create(['role' => 'gateway', 'status' => 'active']);
-        app(AllocateInstanceBridgeAction::class)->execute($own ? $beast : $other);
-
-        $this->withServerVariables(['REMOTE_ADDR' => $beast->wireguard_ip])
-            ->patchJson("/api/v1/nodes/{$beast->id}", ['task_vms' => ['cidr' => '10.253.0.0/24', 'task_places' => 1, 'ci_places' => 0]])
-            ->assertStatus(422)->assertJsonPath('error.code', 'node.settings_invalid');
-        expect($beast->refresh()->settings)->toBeNull();
-    })->with(['another Node' => false, 'its own Node' => true]);
 });
 
 describe('Instance runtimes', function (): void {

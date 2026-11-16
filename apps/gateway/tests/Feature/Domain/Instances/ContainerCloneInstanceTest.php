@@ -287,10 +287,8 @@ describe('a clone of the container default', function (): void {
             ->and($clone['t3']['t3'])->toBe('/opt/orbit-agent/current/agent/bin/t3')
             ->and($clone['model_environment'])->toBe(['path' => '/home/agent/.config/orbit/model.env', 'uid' => 2750, 'gid' => 2750, 'mode' => '0600', 'frame' => '#orbit-model-environment'])
             ->and($clone['links'][0])->toBe(['path' => '/home/agent/.claude/CLAUDE.md', 'target' => '/home/agent/.config/orbit/agent/AGENTS.md'])
-            // WireGuard peers reach T3, the task VM range first refused.
+            // WireGuard peers reach T3; no rule refuses the reserved range.
             ->and($container['firewall'])->toBe([
-                ['route' => 'yes', 'interface_in' => 'orbit', 'interface_out' => 'orbitinst0', 'to_ip' => '10.253.0.3', 'to_port' => '3773', 'proto' => 'tcp',
-                    'rule' => 'deny', 'from_ip' => '10.44.0.128/25', 'comment' => "orbit:instance-{$id}-t3-task-vms"],
                 ['route' => 'yes', 'interface_in' => 'orbit', 'interface_out' => 'orbitinst0', 'to_ip' => '10.253.0.3', 'to_port' => '3773', 'proto' => 'tcp',
                     'rule' => 'allow', 'from_ip' => 'any', 'comment' => "orbit:instance-{$id}-t3"],
             ])
@@ -354,7 +352,7 @@ describe('a clone of the container default', function (): void {
         $rule = ['rule' => 'allow', 'interface_in' => 'orbitinst0', 'to_ip' => '10.44.0.7', 'to_port' => '5432', 'proto' => 'tcp'];
         expect(containerIntentOf($defaultOperation)['firewall'])->toEqual([[...$rule, 'from_ip' => '10.253.0.2', 'comment' => "orbit:instance-{$default->id}-database"]])
             ->and(containerIntentOf($operation)['acl_rules']['egress'])->toBe([['action' => 'allow', 'destination' => '10.44.0.7/32', 'protocol' => 'tcp', 'destination_port' => '5432', 'state' => 'enabled']])
-            ->and(containerIntentOf($operation)['firewall'][2])->toMatchArray([...$rule, 'from_ip' => '10.253.0.3'])
+            ->and(containerIntentOf($operation)['firewall'][1])->toMatchArray([...$rule, 'from_ip' => '10.253.0.3'])
             ->and($database->database_server_id)->toBe($server->id)
             ->and(ValidatedData::object($operation->input['direct_provisioning'])['server_database'])->toMatchArray(['source' => $source->database,
                 'source_owner' => $source->username]);

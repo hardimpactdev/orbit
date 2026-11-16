@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 use App\Domain\Operations\OperationStatus;
 use App\Domain\Shared\ResourceOperationException;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmModelRoute;
 use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmSize;
 use App\Domain\TaskVms\TaskVmState;
 use App\Models\Node;
@@ -38,9 +36,6 @@ function routeNode(string $name, string $address): Node
 function routeWorld(): Node
 {
     $services = routeNode('services', '10.44.0.3');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
     appliedTaskGuard($services);
 
@@ -60,8 +55,6 @@ it('gives every task VM the guard origin and the one fixed key, and never the ro
 
 it('refuses the route until a run applied the guard', function (): void {
     $services = routeNode('services', '10.44.0.3');
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, null, '10.44.0.128/25',
-        [new TaskVmHost(9, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', 6, 4, '8GiB', '20GiB')], '/pi', str_repeat('a', 64), ['gpt-6']));
     app(AiRouterState::class)->enable($services->id, 'services-valkey', 'http://10.44.0.3:8317', 'management', 'read', 'control');
 
     expect(fn () => app(TaskVmModelRoute::class)->assertReady())->toThrow(ResourceOperationException::class, 'ai-router:task-guard');

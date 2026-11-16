@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Domain\Nodes;
 
-use App\Domain\TaskVms\TaskVmHost;
+use App\Domain\WireGuard\Ipv4Subnet;
 use App\Models\InstanceRuntime;
 use App\Models\Node;
 
@@ -66,7 +66,7 @@ final readonly class NodeBridges
         $bridge = long2ip($long & ((-1 << (32 - $length)) & 0xFFFF_FFFF)).'/'.$length;
         Node::query()->whereKey($nodeId)->update(['ci_bridge' => $bridge]);
         $instance = Node::query()->whereKey($nodeId)->value('instance_bridge');
-        if (is_string($instance) && TaskVmHost::overlap($instance, $bridge) && ! InstanceRuntime::query()->where('node_id', $nodeId)->exists()) {
+        if (is_string($instance) && self::overlap($instance, $bridge) && ! InstanceRuntime::query()->where('node_id', $nodeId)->exists()) {
             Node::query()->whereKey($nodeId)->update(['instance_bridge' => null]);
         }
     }
@@ -74,6 +74,14 @@ final readonly class NodeBridges
     /** @param  list<string>  $bridges */
     public static function overlapsAny(string $cidr, array $bridges): bool
     {
-        return array_any($bridges, static fn (string $bridge): bool => TaskVmHost::overlap($cidr, $bridge));
+        return array_any($bridges, static fn (string $bridge): bool => self::overlap($cidr, $bridge));
+    }
+
+    /** True when two bridge networks share an address. */
+    public static function overlap(string $cidr, string $other): bool
+    {
+        [$a, $b] = [Ipv4Subnet::from($cidr), Ipv4Subnet::from($other)];
+
+        return $a->contains($b->networkAddress()) || $b->contains($a->networkAddress());
     }
 }

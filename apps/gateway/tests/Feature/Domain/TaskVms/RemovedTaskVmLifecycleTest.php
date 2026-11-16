@@ -33,10 +33,8 @@ use App\Domain\Tasks\TaskExtensionState;
 use App\Domain\Tasks\TaskGroupStatus;
 use App\Domain\Tasks\TaskProvisionIntent;
 use App\Domain\Tasks\TaskStatus;
-use App\Domain\TaskVms\TaskVmHost;
 use App\Domain\TaskVms\TaskVmImageBuildState;
 use App\Domain\TaskVms\TaskVmProviderKind;
-use App\Domain\TaskVms\TaskVmSettings;
 use App\Domain\TaskVms\TaskVmState;
 use App\Http\Middleware\RequireActiveWireGuardPeer;
 use App\Http\Middleware\RequireNodeAccess;
@@ -78,9 +76,6 @@ function vmEraHost(int $taskPlaces = 2, bool $snapshot = true, int $ciPlaces = 2
         'ssh_host_fingerprint' => 'SHA256:fixture', 'ssh_host_key_type' => 'ssh-ed25519', 'ssh_host_key' => 'fixture-public-key']));
     $project = Project::query()->create(['name' => 'orbit', 'slug' => 'orbit', 'repository_url' => 'https://github.com/hardimpactdev/orbit.git', 'default_branch' => 'main', 'root' => 'public']);
     config(['proof.project' => $project->id]);
-    app()->instance(TaskVmSettings::class, new TaskVmSettings(true, $cluster->id, '10.44.0.128/25',
-        [new TaskVmHost($host->id, 'orbit-tasks', 'orbittask0', '10.252.7.0/24', $taskPlaces, 4, '8GiB', '20GiB', ciPlaces: $ciPlaces)],
-        '/pi', str_repeat('a', 64), ['gpt-6']));
     $base = $snapshot ? ['project' => 'orbit-tasks', 'type' => 'snapshot', 'vm' => 'beast-base', 'seed' => 'beast-base-seed', 'snapshot' => 'r20261107120000']
         : ['project' => 'orbit-tasks', 'type' => 'virtual-machine', 'fingerprint' => str_repeat('b', 64)];
     $build = TaskVmImageBuild::query()->create(['host_node_id' => $host->id, 'recipe_identity' => 'recipe-1', 'state' => TaskVmImageBuildState::Succeeded,
@@ -196,7 +191,7 @@ function vmEraCiProofWorld(int $places, bool $casesOnly = false): Node
     vmEraControlNodes();
     vmEraServices();
     app(TaskExtensionState::class)->enable();
-    config(['proof.execution' => true, 'swamp.proof_club_api_key' => 'club-key']);
+    config(['proof.execution' => true]);
     $commit = str_repeat('a', 40);
     $source = Mockery::mock(ProofCommitSource::class);
     $source->shouldReceive('commitExists')->andReturn(true);
