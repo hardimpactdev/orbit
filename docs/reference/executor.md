@@ -30,7 +30,26 @@ The converge writes:
 | `/etc/systemd/system/orbit-executor.service` | A plain service that runs `orbit-executor serve`, with `Restart=always` |
 | `/etc/sudoers.d/orbit-executor-relay` | The Node user may run exactly `orbit-executor relay` as `orbit-executor-relay` |
 
-The converge also makes the system user `orbit-executor-relay`. A changed binary or file restarts the service. The converge refuses with `executor.release_missing` when the delivery has no executor artifact, and with `executor.keys_invalid` when the Gateway pins no key or more than two.
+The converge also makes the system user `orbit-executor-relay`. A changed binary or file restarts the service.
+
+### Rollout
+
+Nothing uses the executor yet, so a converge skips its install until the Gateway has both parts it needs. The intent then names the reason as `skip`, and the converge records `executor install skipped: <reason>` in its run:
+
+- `executor.release_missing`: the Gateway's pinned agent delivery has no `executor-linux-x86_64` artifact.
+- `executor.keys_missing`: `ORBIT_EXECUTOR_PUBLIC_KEYS` is empty.
+
+Roll out in this order:
+
+1. Publish a release whose agent delivery carries `orbit-executor-linux-x86_64`, and move the Gateway's agent pin to it. The release check accepts the executor beside the agents and checks its digest like theirs.
+2. Set `ORBIT_EXECUTOR_PUBLIC_KEYS` on the Gateway.
+3. Converge each `app-dev` Node.
+
+From then on the install is required, and a wrong pin fails the converge:
+
+- A pin with no release URL fails with `executor.release_invalid`.
+- More than two keys fail with `executor.keys_invalid`.
+- A binary whose SHA-256 differs from the pin is never installed.
 
 systemd only starts the executor at boot and restarts it after a crash. No systemd call, script, path unit or socket unit sits on an action's path.
 
@@ -65,9 +84,9 @@ Orders for one target run one at a time under that target's lock; different targ
 
 The journal is `/var/lib/orbit/executor/journal`, one JSON record per line. Before an action the executor writes an `open` record, and after it a `done` record. A repeat writes a `seen` record for its nonce.
 
-One writer thread owns the file. Each connection thread hands it a record and waits until the record is written, so the `open` record is on file before the action runs. No write is synced on the order's path: the writer syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
+One writer thread appends. Each connection thread hands it a record and waits until the record is written, so the `open` record is on file before the action runs. No record waits for a disk sync: a separate syncer thread syncs the file once a second. The page cache survives an executor crash, and a Node reboot expires every order.
 
-The journal keeps only its live records: the nonces that have not expired, every order still open without a result, and the done records of the last 24 hours. The writer compacts the journal to these records every 10 minutes, or after 10,000 new records, while the executor runs. It writes the compacted file, syncs it, and renames it into place.
+The journal keeps only its live records: the nonces that have not expired, every order still open without a result, and the done records of the last 24 hours. The writer compacts the journal to these records every 10 minutes, or after 10,000 new records, while the executor runs. The syncer writes and syncs the compacted file. The writer then adds the records appended meanwhile and renames the file into place. Until that rename every record goes to the old journal, so a crash at any point leaves a complete journal.
 
 At start-up the executor reads the journal, keeps the same live records and rewrites the journal with them. Then it runs every `open` order without a `done` record again and records its result. It pushes nothing by itself: the Gateway learns the result by sending the same Operation again.
 
@@ -84,4 +103,8 @@ cargo clippy --locked -p orbit-executor-core -p orbit-executor --all-targets -- 
 cargo test --locked -p orbit-executor-core -p orbit-executor
 ```
 
-The unit tests cover every order check and refusal, the caller policy, the journal, the replay across a restart and the recovery of an open order. `crates/executor/tests/socket.rs` runs the real relay binary against a real socket.
+The unit tests cover every order check and refusal, the caller policy, the journal and its compaction, the replay across a restart and the recovery of an open order. `crates/executor/tests/socket.rs` runs the core's relay entry point against a real socket; the shipped binary takes only `relay`, with the fixed socket.
+
+## Proof key
+
+The Swamp proof of `node:converge` (`swamp/proof/node/converge.cases.yaml`) sends a signed `proof.noop` through the relay on the nested `app-dev` Node. Its runner step `executor_key` runs `tools/swamp-proof-guest/executor-order.php` on the nested Gateway as its managed user. It makes one Ed25519 key that only the proof uses: the secret half stays in that Gateway's own `storage/app/private/executor-proof.key`, mode `0600`, and the public half goes into that Gateway's own `.env` as `ORBIT_EXECUTOR_PUBLIC_KEYS`. The step then clears the Gateway's config and restarts Horizon. `executor_order` signs each order with the same script. No key is committed, and the secret half never leaves the nested Gateway.
