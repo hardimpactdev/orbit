@@ -20,6 +20,12 @@ inputs:
         - node.converge
     intent:
       type: object
+      properties:
+        # The bound of the roles phase: 1800 on an Instance fleet Node's app-dev converge (NodeDesiredConvergeInput), else absent.
+        roles_seconds:
+          type: integer
+          minimum: 900
+          maximum: 1800
     execution_secrets:
       type: object
       additionalProperties:
@@ -287,7 +293,7 @@ jobs:
           behaviorName: ${{ "node-converge-converge-roles-" + string(inputs.node_id) }}
           methodName: execute
           inputs:
-            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ntimeout \"$ORBIT_ROLES_SECONDS\" /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags roles \"$ORBIT_ANSIBLE/$ORBIT_PLAYBOOK\" > \"$ORBIT_RUN/roles.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/roles-meta.json\"\nexit \"$code\""
+            run: "umask 077\nexport ANSIBLE_CONFIG=\"$ORBIT_ANSIBLE/ansible.cfg\"\nexport ANSIBLE_SSH_ARGS=\"-o StrictHostKeyChecking=yes -o GlobalKnownHostsFile=/dev/null -o UserKnownHostsFile=$ORBIT_RUN/known_hosts -o IdentitiesOnly=yes -o ControlMaster=auto -o ControlPersist=60s\"\nexport ANSIBLE_STDOUT_CALLBACK=ansible.posix.json\nstarted=$(date +%s)\ncode=0\ncase \"$ORBIT_ROLES_SECONDS\" in 9[0-9][0-9]|1[0-7][0-9][0-9]|1800) ;; *) echo \"roles_seconds must be 900 to 1800\" >&2; exit 2 ;; esac\ntimeout \"$ORBIT_ROLES_SECONDS\" /opt/orbit/ansible/venv/bin/ansible-playbook -i \"$ORBIT_RUN/inventory.json\" -e \"@$ORBIT_RUN/vars.yml\" -e \"orbit_run=$ORBIT_RUN\" --tags roles \"$ORBIT_ANSIBLE/$ORBIT_PLAYBOOK\" > \"$ORBIT_RUN/roles.json\" || code=$?\nprintf '{\"exit_code\":%s,\"elapsed_seconds\":%s}\\n' \"$code\" \"$(( $(date +%s) - started ))\" > \"$ORBIT_RUN/roles-meta.json\"\nexit \"$code\""
             env:
               ORBIT_RUN: '${{ "/tmp/orbit-ansible-" + run.id }}'
               ORBIT_ANSIBLE: '${{ steps["Write the intent"].outputs.assets }}'
